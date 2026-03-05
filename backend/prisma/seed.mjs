@@ -1,9 +1,89 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import { buildSeedData } from '../src/legacy/seed/buildSeedData.js';
 
 const prisma = new PrismaClient();
 
+function toTier(value) {
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'GOLD') return 'GOLD';
+  if (normalized === 'SILVER') return 'SILVER';
+  return 'BRONZE';
+}
+
+function toApprovalStatus(value) {
+  const normalized = String(value || '').toUpperCase();
+  if (normalized === 'APPROVED') return 'APPROVED';
+  if (normalized === 'REJECTED') return 'REJECTED';
+  if (normalized === 'AWAITING_APPROVAL' || normalized === 'UNDERREVIEW' || normalized === 'UNDER_REVIEW') {
+    return 'AWAITING_APPROVAL';
+  }
+  return 'NEEDS_ONBOARDING';
+}
+
+function toOpportunityStatus(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'open') return 'OPEN';
+  if (normalized === 'invite_only' || normalized === 'invite-only') return 'INVITE_ONLY';
+  return 'CLOSED';
+}
+
+function toDealStatus(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (['active', 'live', 'running'].includes(normalized)) return 'ACTIVE';
+  if (['completed', 'done', 'closed'].includes(normalized)) return 'COMPLETED';
+  if (['paused', 'on_hold', 'on-hold'].includes(normalized)) return 'PAUSED';
+  if (['archived'].includes(normalized)) return 'ARCHIVED';
+  return 'DRAFT';
+}
+
+function toListingStatus(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (['active', 'live', 'scheduled', 'pending_approval', 'pending-approval'].includes(normalized)) return 'ACTIVE';
+  if (['paused', 'on_hold', 'on-hold'].includes(normalized)) return 'PAUSED';
+  return 'ARCHIVED';
+}
+
+function toDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function asNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildReviewDashboardPayload(reviews) {
+  if (!Array.isArray(reviews) || reviews.length === 0) return { score: 0, trends: [] };
+
+  const avgScore =
+    reviews.reduce((sum, review) => sum + Number(review.score || review.overallRating || 0), 0) / reviews.length;
+
+  const trends = reviews.map((review) => ({
+    id: review.id,
+    sessionId: review.sessionId,
+    score: Number(review.score || review.overallRating || 0),
+    createdAt: review.createdAt
+  }));
+
+  return {
+    score: Math.round(avgScore * 10) / 10,
+    trends
+  };
+}
+
 async function main() {
+  const seed = buildSeedData();
+  const seedUser = seed.users?.[0];
+  const seedProfile = seed.creatorProfiles?.[0];
+  const onboardingProfile = seed.onboardingWorkflows?.[0]?.form?.profile ?? {};
+
+  if (!seedUser || !seedProfile) {
+    throw new Error('Seed data missing required user/profile records.');
+  }
+
   await prisma.mediaAsset.deleteMany();
   await prisma.appRecord.deleteMany();
   await prisma.analyticsEvent.deleteMany();
@@ -19,163 +99,390 @@ async function main() {
 
   const creator = await prisma.user.create({
     data: {
-      email: 'creator@mylivedealz.com',
+      id: seedUser.id,
+      email: seedUser.email ?? 'creator@mylivedealz.com',
+      phone: onboardingProfile.phone ?? null,
       passwordHash,
       role: 'CREATOR',
-      approvalStatus: 'APPROVED',
-      onboardingCompleted: true,
+      approvalStatus: toApprovalStatus(seedUser.approvalStatus),
+      onboardingCompleted: Boolean(seedUser.onboardingCompleted),
       creatorProfile: {
         create: {
-          name: 'Ronald Isabirye',
-          handle: 'ronald.creates',
-          tier: 'SILVER',
-          tagline: 'Live commerce host for Beauty, Tech, and Faith-compatible offers.',
-          bio: 'Creator focused on trusted live selling and conversion-ready campaigns.',
-          categories: JSON.stringify(['Beauty & Skincare', 'Tech & Gadgets']),
-          regions: JSON.stringify(['East Africa']),
-          languages: JSON.stringify(['English', 'Luganda']),
-          followers: 18200,
-          rating: 4.8,
-          totalSalesDriven: 31240,
-          isKycVerified: true
+          id: seedProfile.id,
+          name: seedProfile.name,
+          handle: seedProfile.handle,
+          tier: toTier(seedProfile.tier),
+          tagline: seedProfile.tagline ?? null,
+          bio: seedProfile.bio ?? null,
+          categories: JSON.stringify(seedProfile.categories ?? []),
+          regions: JSON.stringify(seedProfile.regions ?? []),
+          languages: JSON.stringify(seedProfile.languages ?? []),
+          followers: Number(seedProfile.followers ?? 0),
+          rating: Number(seedProfile.rating ?? 0),
+          totalSalesDriven: Number(seedProfile.totalSalesDriven ?? 0),
+          isKycVerified: Boolean(seedProfile.isKycVerified)
         }
       }
     }
   });
 
-  const sellers = await Promise.all([
-    prisma.seller.create({
-      data: {
-        name: 'GlowUp Hub',
-        type: 'Seller',
-        category: 'Beauty & Skincare',
-        region: 'East Africa',
-        rating: 4.9,
-        isVerified: true
-      }
-    }),
-    prisma.seller.create({
-      data: {
-        name: 'GadgetMart Africa',
-        type: 'Seller',
-        category: 'Tech & Gadgets',
-        region: 'East Africa',
-        rating: 4.7,
-        isVerified: true
-      }
-    })
-  ]);
+  const sellerRows = (seed.sellers || []).map((seller) => ({
+    id: seller.id,
+    name: seller.name,
+    type: seller.type || 'Seller',
+    category: Array.isArray(seller.categories) && seller.categories[0] ? seller.categories[0] : seller.category || null,
+    region: seller.region || null,
+    rating: Number(seller.rating || 0),
+    isVerified: Number(seller.rating || 0) >= 4.7
+  }));
 
-  await prisma.opportunity.createMany({
-    data: [
-      {
-        sellerId: sellers[0].id,
-        title: 'Autumn Beauty Flash',
-        description: 'Two-part Beauty Flash live plus supporting clips and tracked links.',
-        payBand: '$400 - $700 + commission',
-        status: 'OPEN'
-      },
-      {
-        sellerId: sellers[1].id,
-        title: 'Tech Friday Mega Live',
-        description: 'Series focused on EV-friendly gadgets and accessories.',
-        payBand: '$900 - $1,400 flat',
-        status: 'OPEN'
-      }
-    ]
-  });
+  if (sellerRows.length) {
+    await prisma.seller.createMany({ data: sellerRows });
+  }
 
-  const deal = await prisma.deal.create({
-    data: {
+  const validSellerIds = new Set(sellerRows.map((seller) => seller.id));
+  const opportunityRows = (seed.opportunities || [])
+    .filter((opportunity) => validSellerIds.has(opportunity.sellerId))
+    .map((opportunity) => ({
+      id: opportunity.id,
+      sellerId: opportunity.sellerId,
+      title: opportunity.title,
+      description: opportunity.summary || opportunity.description || null,
+      payBand: opportunity.payBand || null,
+      status: toOpportunityStatus(opportunity.status)
+    }));
+
+  if (opportunityRows.length) {
+    await prisma.opportunity.createMany({ data: opportunityRows });
+  }
+
+  const contractByCampaignId = new Map(
+    (seed.contracts || []).map((contract) => [contract.campaignId, contract])
+  );
+  const sellerById = new Map((seed.sellers || []).map((seller) => [seller.id, seller]));
+
+  const campaignDeals = (seed.campaigns || []).map((campaign) => {
+    const contract = contractByCampaignId.get(campaign.id);
+    const seller = sellerById.get(campaign.sellerId);
+    return {
+      id: campaign.id,
       userId: creator.id,
-      title: 'Creator Intro Deal',
-      description: 'Kickoff deal prepared for marketplace publishing',
-      category: 'Beauty & Skincare',
-      price: 29,
+      title: campaign.title,
+      description: [campaign.type, campaign.note].filter(Boolean).join(' - ') || null,
+      category: Array.isArray(seller?.categories) && seller.categories[0] ? seller.categories[0] : seller?.category || null,
+      price: asNumber(campaign.value),
       currency: 'USD',
-      status: 'ACTIVE'
-    }
+      status: toDealStatus(campaign.status),
+      startAt: toDate(contract?.startDate),
+      endAt: toDate(contract?.endDate)
+    };
   });
 
-  await prisma.marketplaceListing.create({
-    data: {
+  const adzDeals = (seed.adzCampaigns || []).map((campaign) => ({
+    id: `deal_${campaign.id}`,
+    userId: creator.id,
+    title: campaign.campaignName,
+    description: campaign.campaignSubtitle || null,
+    category: campaign.supplier?.category || null,
+    price: asNumber(campaign.offers?.[0]?.price),
+    currency: campaign.compensation?.currency || 'USD',
+    status: toDealStatus(campaign.status),
+    startAt: toDate(campaign.startISO),
+    endAt: toDate(campaign.endISO)
+  }));
+
+  const dealRows = [...campaignDeals, ...adzDeals];
+  if (dealRows.length) {
+    await prisma.deal.createMany({ data: dealRows });
+  }
+
+  const dealIds = new Set(dealRows.map((deal) => deal.id));
+  const adzById = new Map((seed.adzCampaigns || []).map((campaign) => [campaign.id, campaign]));
+  const marketplaceRows = (seed.links || []).map((link) => {
+    const campaignId = link.campaign?.id;
+    const mappedDealId =
+      campaignId && dealIds.has(campaignId)
+        ? campaignId
+        : campaignId && dealIds.has(`deal_${campaignId}`)
+          ? `deal_${campaignId}`
+          : null;
+
+    const adz = campaignId ? adzById.get(campaignId) : null;
+    const inferredPrice = asNumber(adz?.offers?.[0]?.price);
+    return {
+      id: link.id,
       userId: creator.id,
-      dealId: deal.id,
-      title: 'GlowUp Starter Bundle',
-      description: 'Live-ready bundle with promo routing support',
-      price: 29,
-      currency: 'USD',
-      status: 'ACTIVE'
-    }
+      dealId: mappedDealId,
+      title: link.title,
+      description: [link.subtitle, link.note].filter(Boolean).join(' - ') || null,
+      price: inferredPrice,
+      currency: link.metrics?.currency || 'USD',
+      status: toListingStatus(link.status)
+    };
   });
 
-  await prisma.analyticsEvent.createMany({
-    data: [
-      { userId: creator.id, eventType: 'VIEW', value: 1200, meta: JSON.stringify({ surface: 'home' }) },
-      { userId: creator.id, eventType: 'CLICK', value: 320, meta: JSON.stringify({ surface: 'dealz-marketplace' }) },
-      { userId: creator.id, eventType: 'PURCHASE', value: 42, meta: JSON.stringify({ surface: 'promo-ad' }) }
-    ]
-  });
+  if (marketplaceRows.length) {
+    await prisma.marketplaceListing.createMany({ data: marketplaceRows });
+  }
 
-  await prisma.mediaAsset.create({
-    data: {
+  const analyticsRows = [];
+  for (const campaign of seed.analytics?.campaigns || []) {
+    analyticsRows.push({
       userId: creator.id,
-      name: 'Hero Promo Poster',
+      eventType: 'IMPRESSION',
+      value: Math.max(0, Math.round(Number(campaign.engagements || 0))),
+      meta: JSON.stringify({ source: 'campaign', id: campaign.id, name: campaign.name, seller: campaign.seller })
+    });
+    analyticsRows.push({
+      userId: creator.id,
+      eventType: 'PURCHASE',
+      value: Math.max(0, Math.round(Number(campaign.sales || 0))),
+      meta: JSON.stringify({ source: 'campaign', id: campaign.id, name: campaign.name, seller: campaign.seller })
+    });
+  }
+  for (const link of seed.links || []) {
+    analyticsRows.push({
+      userId: creator.id,
+      eventType: 'CLICK',
+      value: Math.max(0, Math.round(Number(link.metrics?.clicks || 0))),
+      meta: JSON.stringify({ source: 'link', id: link.id, title: link.title })
+    });
+    analyticsRows.push({
+      userId: creator.id,
+      eventType: 'PURCHASE',
+      value: Math.max(0, Math.round(Number(link.metrics?.purchases || 0))),
+      meta: JSON.stringify({ source: 'link', id: link.id, title: link.title })
+    });
+  }
+  for (const replay of seed.replays || []) {
+    analyticsRows.push({
+      userId: creator.id,
+      eventType: 'VIEW',
+      value: Math.max(0, Math.round(Number(replay.views || 0))),
+      meta: JSON.stringify({ source: 'replay', id: replay.id, sessionId: replay.sessionId })
+    });
+  }
+
+  if (analyticsRows.length) {
+    await prisma.analyticsEvent.createMany({ data: analyticsRows });
+  }
+
+  const mediaRows = [];
+  for (const asset of seed.assets || []) {
+    mediaRows.push({
+      id: `media_${asset.id}`,
+      userId: creator.id,
+      name: asset.title || asset.id,
+      kind: asset.mediaType || 'file',
+      url: asset.previewUrl || null
+    });
+  }
+  for (const upload of seed.uploads || []) {
+    mediaRows.push({
+      id: `media_${upload.id}`,
+      userId: creator.id,
+      name: upload.name || upload.fileName || upload.id,
+      kind: upload.kind || 'file',
+      url: upload.url || null
+    });
+  }
+  for (const replay of seed.replays || []) {
+    mediaRows.push({
+      id: `media_cover_${replay.id}`,
+      userId: creator.id,
+      name: `${replay.title} cover`,
       kind: 'image',
-      url: 'https://cdn.mylivedealz.com/assets/hero-poster.jpg'
+      url: replay.coverUrl || null
+    });
+  }
+  for (const campaign of seed.adzCampaigns || []) {
+    if (campaign.heroImageUrl) {
+      mediaRows.push({
+        id: `media_hero_${campaign.id}`,
+        userId: creator.id,
+        name: `${campaign.campaignName} hero`,
+        kind: 'image',
+        url: campaign.heroImageUrl
+      });
     }
-  });
+  }
 
-  await prisma.appRecord.createMany({
-    data: [
-      { userId: creator.id, domain: 'dashboard', entityType: 'bootstrap', entityId: 'default', payload: { featureFlags: { liveStudio: true }, navBadges: { notifications: 2 } } },
-      { userId: creator.id, domain: 'dashboard', entityType: 'feed', entityId: 'home', payload: { hero: { title: 'Welcome back, Ronald' }, quickStats: [{ label: 'Active deals', value: 1 }] } },
-      { userId: creator.id, domain: 'dashboard', entityType: 'my_day', entityId: 'today', payload: { agenda: [], tasks: [] } },
-      { userId: null, domain: 'dashboard', entityType: 'landing', entityId: 'public', payload: { title: 'MyLiveDealz Creator', subtitle: 'Run live shopping, pitches, and payouts' } },
+  if (mediaRows.length) {
+    await prisma.mediaAsset.createMany({ data: mediaRows });
+  }
 
-      { userId: creator.id, domain: 'discovery', entityType: 'invite', entityId: 'invite_1', payload: { seller: 'GlowUp Hub', campaign: 'Autumn Beauty Flash', status: 'pending' } },
-      { userId: creator.id, domain: 'discovery', entityType: 'campaign_board', entityId: 'cb_1', payload: { title: 'Autumn Beauty Flash', stage: 'negotiating' } },
-      { userId: creator.id, domain: 'discovery', entityType: 'dealz_marketplace', entityId: 'dm_1', payload: { title: 'GlowUp Starter Bundle', type: 'live_plus_adz', status: 'active' } },
+  const appRecordRows = [];
+  const pushRecord = (domain, entityType, entityId, payload, userId = creator.id) => {
+    appRecordRows.push({ userId, domain, entityType, entityId, payload });
+  };
 
-      { userId: creator.id, domain: 'collaboration', entityType: 'campaign', entityId: 'camp_1', payload: { title: 'GlowUp Flash', stage: 'active' } },
-      { userId: creator.id, domain: 'collaboration', entityType: 'proposal', entityId: 'prop_1', payload: { brand: 'GlowUp Hub', status: 'in_negotiation', messages: [] } },
-      { userId: creator.id, domain: 'collaboration', entityType: 'contract', entityId: 'contract_1', payload: { title: 'GlowUp Contract', status: 'active' } },
-      { userId: creator.id, domain: 'collaboration', entityType: 'task', entityId: 'task_1', payload: { title: 'Prepare promo script', column: 'todo', comments: [] } },
-      { userId: creator.id, domain: 'collaboration', entityType: 'asset', entityId: 'asset_1', payload: { title: 'Product teaser clip', status: 'draft' } },
+  pushRecord(
+    'dashboard',
+    'bootstrap',
+    'default',
+    {
+      featureFlags: {
+        liveStudio: true,
+        adzBuilder: true,
+        creatorTools: true
+      },
+      navBadges: {
+        notifications: (seed.notifications || []).filter((notification) => !notification.read).length
+      }
+    }
+  );
+  pushRecord(
+    'dashboard',
+    'feed',
+    'home',
+    {
+      hero: {
+        title: `Welcome back, ${seedProfile.name}`,
+        subtitle: seedProfile.tagline
+      },
+      quickStats: [
+        { label: 'Active campaigns', value: (seed.campaigns || []).filter((campaign) => campaign.status === 'active').length },
+        { label: 'Open opportunities', value: (seed.opportunities || []).filter((opportunity) => toOpportunityStatus(opportunity.status) === 'OPEN').length },
+        { label: 'Pending invites', value: (seed.invites || []).filter((invite) => String(invite.status || '').toLowerCase() === 'pending').length }
+      ]
+    }
+  );
+  pushRecord(
+    'dashboard',
+    'my_day',
+    'today',
+    {
+      agenda: (seed.liveSessions || []).slice(0, 4).map((session) => ({
+        id: session.id,
+        title: session.title,
+        startsAt: session.startISO,
+        status: session.status
+      })),
+      tasks: (seed.tasks || []).slice(0, 6)
+    }
+  );
+  pushRecord(
+    'dashboard',
+    'landing',
+    'public',
+    { title: 'MyLiveDealz Creator', subtitle: 'Run live shopping, pitches, and payouts' },
+    null
+  );
 
-      { userId: creator.id, domain: 'live', entityType: 'session', entityId: 'live_1', payload: { title: 'Friday Live Session', status: 'scheduled' } },
-      { userId: creator.id, domain: 'live', entityType: 'studio', entityId: 'live_1', payload: { mode: 'builder', status: 'ready', moments: [] } },
-      { userId: creator.id, domain: 'live', entityType: 'replay', entityId: 'live_1', payload: { sessionId: 'live_1', published: false } },
-      { userId: creator.id, domain: 'live', entityType: 'tool_config', entityId: 'audience-notifications', payload: { enabled: true } },
-      { userId: creator.id, domain: 'live', entityType: 'tool_config', entityId: 'live-alerts', payload: { enabled: true } },
-      { userId: creator.id, domain: 'live', entityType: 'tool_config', entityId: 'overlays', payload: { style: 'default' } },
-      { userId: creator.id, domain: 'live', entityType: 'tool_config', entityId: 'post-live', payload: { autoPublish: false } },
-      { userId: creator.id, domain: 'live', entityType: 'tool_config', entityId: 'streaming', payload: { destinations: [] } },
-      { userId: creator.id, domain: 'live', entityType: 'tool_config', entityId: 'safety', payload: { strictMode: false } },
+  for (const sellerId of seedProfile.followingSellerIds || []) {
+    pushRecord('discovery', 'followed_seller', sellerId, { sellerId, followedAt: seed.meta?.seededAt || new Date().toISOString() });
+  }
+  for (const opportunityId of seedProfile.savedOpportunityIds || []) {
+    pushRecord('discovery', 'saved_opportunity', opportunityId, { opportunityId, savedAt: seed.meta?.seededAt || new Date().toISOString() });
+  }
+  for (const invite of seed.invites || []) {
+    pushRecord('discovery', 'invite', invite.id, invite);
+  }
+  for (const campaign of seed.campaigns || []) {
+    pushRecord('discovery', 'campaign_board', campaign.id, campaign);
+  }
+  for (const link of seed.links || []) {
+    pushRecord('discovery', 'dealz_marketplace', link.id, link);
+  }
 
-      { userId: creator.id, domain: 'adz', entityType: 'campaign', entityId: 'adz_1', payload: { title: 'GlowUp Shoppable Ad', status: 'draft' } },
-      { userId: creator.id, domain: 'adz', entityType: 'performance', entityId: 'adz_1', payload: { clicks: 120, purchases: 8, earnings: 240 } },
-      { userId: creator.id, domain: 'adz', entityType: 'link', entityId: 'link_1', payload: { title: 'GlowUp promo link', shortUrl: 'https://mldz.link/glowup' } },
+  for (const campaign of seed.campaigns || []) pushRecord('collaboration', 'campaign', campaign.id, campaign);
+  for (const proposal of seed.proposals || []) pushRecord('collaboration', 'proposal', proposal.id, proposal);
+  for (const contract of seed.contracts || []) pushRecord('collaboration', 'contract', contract.id, contract);
+  for (const task of seed.tasks || []) pushRecord('collaboration', 'task', task.id, task);
+  for (const asset of seed.assets || []) pushRecord('collaboration', 'asset', asset.id, asset);
 
-      { userId: creator.id, domain: 'finance', entityType: 'earnings_summary', entityId: 'main', payload: { available: 1240, pending: 320, lifetime: 8140 } },
-      { userId: creator.id, domain: 'finance', entityType: 'analytics_overview', entityId: 'main', payload: { rank: 'Silver', score: 82 } },
-      { userId: creator.id, domain: 'finance', entityType: 'subscription', entityId: 'main', payload: { plan: 'pro', cycle: 'monthly' } },
+  for (const session of seed.liveSessions || []) {
+    pushRecord('live', 'session', session.id, session);
+    pushRecord('live', 'studio', session.id, {
+      mode: 'builder',
+      sessionId: session.id,
+      status: session.status,
+      scenes: session.scenes || [],
+      moments: []
+    });
+  }
+  for (const replay of seed.replays || []) pushRecord('live', 'replay', replay.sessionId || replay.id, replay);
+  for (const giveaway of seed.campaignGiveaways || []) {
+    const campaignId = giveaway.campaignId || giveaway.id || `giveaway_${Math.random().toString(36).slice(2, 8)}`;
+    pushRecord('live', 'campaign_giveaway', campaignId, giveaway);
+  }
+  const toolKeyToEntityId = {
+    audienceNotifications: 'audience-notifications',
+    liveAlerts: 'live-alerts',
+    overlays: 'overlays',
+    postLive: 'post-live',
+    streaming: 'streaming',
+    safety: 'safety'
+  };
+  for (const [key, payload] of Object.entries(seed.toolConfigs || {})) {
+    const entityId = toolKeyToEntityId[key] || key;
+    pushRecord('live', 'tool_config', entityId, payload);
+  }
 
-      { userId: creator.id, domain: 'settings', entityType: 'profile', entityId: 'main', payload: { timezone: 'Africa/Kampala', language: 'en' } },
-      { userId: creator.id, domain: 'settings', entityType: 'notification', entityId: 'notif_1', payload: { title: 'New invite', read: false } },
-      { userId: creator.id, domain: 'settings', entityType: 'role', entityId: 'owner', payload: { name: 'Owner', perms: { '*': true } } },
-      { userId: creator.id, domain: 'settings', entityType: 'member', entityId: 'member_1', payload: { email: 'creator@mylivedealz.com', roleId: 'owner' } },
-      { userId: creator.id, domain: 'settings', entityType: 'crew_session', entityId: 'live_1', payload: { members: [] } },
-      { userId: creator.id, domain: 'settings', entityType: 'audit_log', entityId: 'log_1', payload: { action: 'Seed initialized', at: new Date().toISOString() } },
+  for (const campaign of seed.adzCampaigns || []) {
+    pushRecord('adz', 'campaign', campaign.id, campaign);
+    pushRecord('adz', 'performance', campaign.id, campaign.performance || { clicks: 0, purchases: 0, earnings: 0 });
+    pushRecord('adz', 'marketplace', campaign.id, {
+      id: campaign.id,
+      title: campaign.campaignName,
+      subtitle: campaign.campaignSubtitle,
+      supplier: campaign.supplier,
+      status: campaign.status
+    });
+  }
+  for (const link of seed.links || []) pushRecord('adz', 'link', link.id, link);
+  if ((seed.adzCampaigns || []).length) {
+    const firstAdz = seed.adzCampaigns[0];
+    pushRecord('adz', 'promo_ad', firstAdz.id, firstAdz);
+  }
 
-      { userId: creator.id, domain: 'workflow', entityType: 'onboarding', entityId: 'main', payload: { status: 'completed' } },
-      { userId: creator.id, domain: 'workflow', entityType: 'account_approval', entityId: 'main', payload: { status: 'approved' } },
-      { userId: creator.id, domain: 'workflow', entityType: 'content_approval', entityId: 'content_1', payload: { title: 'Intro clip', status: 'pending' } },
+  pushRecord('finance', 'earnings_summary', 'main', seed.earnings?.summary || { available: 0, pending: 0, lifetime: 0 });
+  for (const payout of seed.payouts || []) pushRecord('finance', 'payout', payout.id, payout);
+  pushRecord(
+    'finance',
+    'analytics_overview',
+    'main',
+    {
+      rank: seed.analytics?.rank?.currentTier || 'Bronze',
+      score: Number(seed.analytics?.rank?.progressPercent || 0),
+      benchmarks: seed.analytics?.benchmarks || {}
+    }
+  );
+  pushRecord('finance', 'subscription', 'main', seed.subscription || { plan: 'basic', cycle: 'monthly' });
 
-      { userId: creator.id, domain: 'reviews', entityType: 'dashboard', entityId: 'main', payload: { score: 4.8, trends: [] } },
-      { userId: creator.id, domain: 'reviews', entityType: 'live_review', entityId: 'lr_1', payload: { sessionId: 'live_1', score: 4.7 } }
-    ]
-  });
+  pushRecord('settings', 'profile', 'main', seed.settings || {});
+  for (const notification of seed.notifications || []) pushRecord('settings', 'notification', notification.id, notification);
+  for (const role of seed.roles || []) pushRecord('settings', 'role', role.id, role);
+  for (const member of seed.members || []) {
+    pushRecord('settings', 'member', member.id, member);
+    if (String(member.status || '').toLowerCase() === 'invited') {
+      pushRecord('settings', 'role_invite', `invite_${member.id}`, member);
+    }
+  }
+  for (const device of seed.settings?.settings?.devices || []) pushRecord('settings', 'device', device.id, device);
+  pushRecord('settings', 'roles_security', 'main', seed.workspaceSecurity || {});
+  for (const session of seed.crew?.sessions || []) pushRecord('settings', 'crew_session', session.sessionId, session);
+  for (const log of seed.auditLogs || []) pushRecord('settings', 'audit_log', log.id, log);
+  pushRecord('settings', 'payout_verification', 'main', seed.settings?.payout?.verification || { verified: false });
+
+  for (const upload of seed.uploads || []) pushRecord('workflow', 'upload', upload.id, upload);
+  pushRecord('workflow', 'onboarding', 'main', seed.onboardingWorkflows?.[0] || { status: 'draft' });
+  pushRecord('workflow', 'account_approval', 'main', seed.accountApprovals?.[0] || { status: 'pending' });
+  for (const submission of seed.contentApprovals || []) pushRecord('workflow', 'content_approval', submission.id, submission);
+
+  pushRecord('reviews', 'dashboard', 'main', buildReviewDashboardPayload(seed.reviews || []));
+  for (const review of seed.reviews || []) pushRecord('reviews', 'live_review', review.id, review);
+
+  // Persist the entire frontend/backoffice mock seed 1:1 for full data parity and direct SQL access.
+  // This keeps every top-level section from buildSeedData available in MySQL.
+  pushRecord('frontend_seed', 'snapshot', 'buildSeedData', seed);
+  for (const [section, payload] of Object.entries(seed)) {
+    pushRecord('frontend_seed', 'section', section, payload);
+  }
+
+  if (appRecordRows.length) {
+    await prisma.appRecord.createMany({ data: appRecordRows });
+  }
 }
 
 main()
