@@ -1,19 +1,46 @@
 import { created, noContent, ok } from "../lib/http.js";
-import { createSession, hashPassword, invalidateSession, sanitizeUser, verifyPassword } from "../lib/auth.js";
-import { ensure, pushAudit, requireFields } from "../lib/utils.js";
+import {
+  assertStrongPassword,
+  assertValidEmail,
+  createSession,
+  hashPassword,
+  invalidateSession,
+  normalizeEmail,
+  sanitizeUser,
+  verifyPassword
+} from "../lib/auth.js";
+import { ensure, id, pushAudit, requireFields } from "../lib/utils.js";
+
+function normalizeHandle(rawHandle, fallbackName) {
+  const selected = String(rawHandle || fallbackName || "");
+  return selected
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9._-]+/g, ".")
+    .replace(/\.{2,}/g, ".")
+    .replace(/(^[._-]+|[._-]+$)/g, "");
+}
 
 export function registerAuthRoutes(router, { sessionTtlDays }) {
   router.add("POST", "/api/auth/register", { tag: "auth", description: "Create a creator account." }, async ({ store, readBody }) => {
     const body = await readBody();
     requireFields(body, ["email", "password", "name"]);
 
-    const email = String(body.email).toLowerCase().trim();
+    const email = normalizeEmail(body.email);
+    const name = String(body.name || "").trim();
+    const handle = normalizeHandle(body.handle, body.name);
+    assertValidEmail(email);
+    assertStrongPassword(String(body.password));
+    ensure(name.length >= 2 && name.length <= 120, "Name must be between 2 and 120 characters.", "INVALID_NAME", 400);
+    ensure(handle.length >= 3 && handle.length <= 40, "Handle must be between 3 and 40 characters.", "INVALID_HANDLE", 400);
+    ensure(/^[a-z0-9._-]+$/.test(handle), "Handle can include letters, numbers, dots, underscores, and hyphens.", "INVALID_HANDLE", 400);
 
     const user = store.update((db) => {
-      ensure(!db.users.some((entry) => entry.email === email), "That email is already registered.", "EMAIL_TAKEN", 409);
+      ensure(!db.users.some((entry) => normalizeEmail(entry.email) === email), "That email is already registered.", "EMAIL_TAKEN", 409);
+      ensure(!db.creatorProfiles.some((entry) => String(entry.handle || "").toLowerCase() === handle), "That handle is already in use.", "HANDLE_TAKEN", 409);
 
-      const userId = `user_${Date.now()}`;
-      const creatorId = `creator_${Date.now()}`;
+      const userId = id("user");
+      const creatorId = id("creator");
       const user = {
         id: userId,
         email,
@@ -27,8 +54,8 @@ export function registerAuthRoutes(router, { sessionTtlDays }) {
       const profile = {
         id: creatorId,
         userId,
-        name: String(body.name),
-        handle: String(body.handle || body.name).toLowerCase().replace(/\s+/g, "."),
+        name,
+        handle,
         tier: "Bronze",
         tagline: "",
         bio: "",
@@ -45,7 +72,7 @@ export function registerAuthRoutes(router, { sessionTtlDays }) {
 
       db.users.push(user);
       db.creatorProfiles.push(profile);
-      pushAudit(db, { actor: body.name, action: "Account registered", detail: email, severity: "info" });
+      pushAudit(db, { actor: name, action: "Account registered", detail: email, severity: "info" });
 
       const token = createSession(db, userId, sessionTtlDays);
       return { token, user: sanitizeUser(user, profile) };
@@ -57,10 +84,11 @@ export function registerAuthRoutes(router, { sessionTtlDays }) {
   router.add("POST", "/api/auth/login", { tag: "auth", description: "Log in with email and password." }, async ({ store, readBody }) => {
     const body = await readBody();
     requireFields(body, ["email", "password"]);
-    const email = String(body.email).toLowerCase().trim();
+    const email = normalizeEmail(body.email);
+    assertValidEmail(email);
 
     const login = store.update((db) => {
-      const user = db.users.find((entry) => entry.email === email);
+      const user = db.users.find((entry) => normalizeEmail(entry.email) === email);
       ensure(user, "The email or password is incorrect.", "INVALID_CREDENTIALS", 401);
       ensure(verifyPassword(String(body.password), user.passwordHash), "The email or password is incorrect.", "INVALID_CREDENTIALS", 401);
 

@@ -50,6 +50,56 @@ test("logs in with the seed creator account", async () => {
   token = response.json.data.token;
 });
 
+test("rejects registration with an invalid email", async () => {
+  const response = await requestJson("/api/auth/register", {
+    method: "POST",
+    body: {
+      email: "not-an-email",
+      password: "Password123!",
+      name: "Invalid Email User"
+    }
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.json.ok, false);
+  assert.equal(response.json.error.code, "INVALID_EMAIL");
+});
+
+test("rejects registration with a weak password", async () => {
+  const response = await requestJson("/api/auth/register", {
+    method: "POST",
+    body: {
+      email: "weak.password@example.com",
+      password: "password",
+      name: "Weak Password User"
+    }
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.json.ok, false);
+  assert.equal(response.json.error.code, "WEAK_PASSWORD");
+});
+
+test("invalidates a token after logout", async () => {
+  const loginResponse = await requestJson("/api/auth/login", {
+    method: "POST",
+    body: { email: "creator@mylivedealz.com", password: "Password123!" }
+  });
+  assert.equal(loginResponse.status, 200);
+  const activeToken = loginResponse.json.data.token;
+
+  const logoutResponse = await requestJson("/api/auth/logout", {
+    method: "POST",
+    token: activeToken
+  });
+  assert.equal(logoutResponse.status, 204);
+
+  const meResponse = await requestJson("/api/me", { token: activeToken });
+  assert.equal(meResponse.status, 401);
+  assert.equal(meResponse.json.ok, false);
+  assert.equal(meResponse.json.error.code, "INVALID_SESSION");
+});
+
 test("returns bootstrap data with nav badges", async () => {
   const response = await requestJson("/api/app/bootstrap", { token });
   assert.equal(response.status, 200);

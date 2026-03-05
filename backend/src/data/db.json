@@ -2,7 +2,7 @@
   "meta": {
     "version": 1,
     "seededAt": "2026-03-05T08:15:54.252Z",
-    "updatedAt": "2026-03-05T08:38:17.825Z"
+    "updatedAt": "2026-03-05T10:07:05.173Z"
   },
   "users": [
     {
@@ -29,11 +29,11 @@
       "expiresAt": "2026-04-04T08:16:03.938Z"
     },
     {
-      "id": "sess_be6d5a72413a4373ac9b22487c8860ca",
-      "token": "3299808944f62822299dc875f3d98dfe2c3542b1faccad7743eddcb0dc6909ed4eb9ab021fad040dccb43c6de77ea0e4",
+      "id": "sess_18043836cb6548348c2f8dfe689b1246",
+      "token": "b1eb96e9e54e6196efc18d6d6a00e960da97542e4c60626a4be020f934f04291973d66bee4f0e9dd507e39a79678d037",
       "userId": "user_ronald",
-      "createdAt": "2026-03-05T08:31:21.783Z",
-      "expiresAt": "2026-04-04T08:31:21.783Z"
+      "createdAt": "2026-03-05T10:07:05.173Z",
+      "expiresAt": "2026-04-04T10:07:05.173Z"
     }
   ],
   "creatorProfiles": [
@@ -5472,6 +5472,38 @@
     }
   },
   "auditLogs": [
+    {
+      "id": "audit_1226e0a38010452b83c0577c156324a0",
+      "at": "2026-03-05T10:07:05.173Z",
+      "severity": "info",
+      "actor": "creator@mylivedealz.com",
+      "action": "Logged in",
+      "detail": "Creator session created"
+    },
+    {
+      "id": "audit_15c55303baa94c598b0fb86478343f8a",
+      "at": "2026-03-05T10:06:58.129Z",
+      "severity": "info",
+      "actor": "creator@mylivedealz.com",
+      "action": "Logged out",
+      "detail": "Creator session invalidated"
+    },
+    {
+      "id": "audit_28bf3f13bd754cf798bc1abe2b2eb7e2",
+      "at": "2026-03-05T10:06:53.351Z",
+      "severity": "info",
+      "actor": "creator@mylivedealz.com",
+      "action": "Logged in",
+      "detail": "Creator session created"
+    },
+    {
+      "id": "audit_7a762e0a86a7427483ab45c88849d23b",
+      "at": "2026-03-05T10:06:27.770Z",
+      "severity": "info",
+      "actor": "creator@mylivedealz.com",
+      "action": "Logged out",
+      "detail": "Creator session invalidated"
+    },
     {
       "id": "audit_882a1782df6c4b1ab53188c1a19fc325",
       "at": "2026-03-05T08:31:21.783Z",
