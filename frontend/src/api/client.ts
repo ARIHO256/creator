@@ -194,6 +194,18 @@ function normalizePaginatedResult<T>(result: ApiResult<T[]>): PaginatedResult<T>
   };
 }
 
+function isAbortLikeError(error: unknown): boolean {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") {
+    return true;
+  }
+
+  const name = typeof error === "object" && error !== null && "name" in error ? String((error as { name?: unknown }).name || "") : "";
+  const message =
+    typeof error === "object" && error !== null && "message" in error ? String((error as { message?: unknown }).message || "") : String(error || "");
+
+  return name === "AbortError" || /aborted/i.test(message);
+}
+
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly getToken: () => string | null;
@@ -229,6 +241,9 @@ export class ApiClient {
         signal: options.signal
       });
     } catch (error) {
+      if (isAbortLikeError(error)) {
+        throw new ApiClientError(0, "REQUEST_ABORTED", "Request aborted.", error);
+      }
       const message = error instanceof Error ? error.message : "Network request failed.";
       throw new ApiClientError(0, "NETWORK_ERROR", message, error);
     }

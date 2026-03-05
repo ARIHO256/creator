@@ -49,7 +49,9 @@ export function useApiQuery<TData, TSelected = TData>(
     if (!enabled) return undefined;
 
     const controller = new AbortController();
-    void cache.fetch(stableQueryKey, () => fetcher(controller.signal), { staleTime });
+    void cache.fetch(stableQueryKey, () => fetcher(controller.signal), { staleTime }).catch(() => {
+      // The cache already stores errors; swallow promise rejections for fire-and-forget query fetches.
+    });
     return () => controller.abort();
   }, [cache, enabled, fetcher, hasEntry, stableQueryKey, staleTime]);
 
