@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
 import { randomUUID } from 'crypto';
+import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
@@ -165,21 +166,22 @@ export class AuthService {
 
   private async issueTokens(userId: string, email: string | null, role: string, family?: string) {
     const accessSecret = this.configService.get<string>('auth.accessSecret')!;
-    const accessTtl = this.configService.get<string>('auth.accessTtl')!;
+    const accessExpiresIn = this.configService.get<string>('auth.accessTtl') as SignOptions['expiresIn'];
     const refreshSecret = this.configService.get<string>('auth.refreshSecret')!;
     const refreshDays = this.configService.get<number>('auth.refreshTtlDays')!;
+    const refreshExpiresIn = `${refreshDays}d` as SignOptions['expiresIn'];
 
     const tokenFamily = family ?? randomUUID();
     const refreshTokenId = randomUUID();
 
     const accessToken = await this.jwtService.signAsync(
       { sub: userId, email, role },
-      { secret: accessSecret, expiresIn: accessTtl }
+      { secret: accessSecret, expiresIn: accessExpiresIn }
     );
 
     const refreshToken = await this.jwtService.signAsync(
       { sub: userId, tokenId: refreshTokenId, family: tokenFamily },
-      { secret: refreshSecret, expiresIn: `${refreshDays}d` }
+      { secret: refreshSecret, expiresIn: refreshExpiresIn }
     );
 
     const refreshHash = await hash(refreshToken, 12);
@@ -199,7 +201,7 @@ export class AuthService {
       accessToken,
       refreshToken,
       tokenType: 'Bearer',
-      expiresIn: accessTtl
+      expiresIn: accessExpiresIn
     };
   }
 }

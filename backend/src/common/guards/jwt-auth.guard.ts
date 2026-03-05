@@ -1,4 +1,5 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
@@ -7,8 +8,9 @@ import { RequestUser } from '../types/request-user.type.js';
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
-    private readonly reflector: Reflector,
-    private readonly jwtService: JwtService
+    @Inject(Reflector) private readonly reflector: Reflector,
+    @Inject(JwtService) private readonly jwtService: JwtService,
+    private readonly configService: ConfigService
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -34,8 +36,13 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
+      const accessSecret = this.configService.get<string>('auth.accessSecret');
+      if (!accessSecret) {
+        throw new UnauthorizedException('JWT access secret is not configured');
+      }
+
       request.user = this.jwtService.verify<RequestUser>(token, {
-        secret: process.env.JWT_ACCESS_SECRET
+        secret: accessSecret
       });
       return true;
     } catch {

@@ -6,6 +6,8 @@ import { PrismaService } from './prisma.service.js';
 export class PrismaAppStateStore {
   private readonly logger = new Logger(PrismaAppStateStore.name);
   private readonly snapshotId = process.env.APP_STATE_SNAPSHOT_ID ?? 'creator-app-main';
+  private readonly snapshotDomain = 'app_state';
+  private readonly snapshotEntityType = 'snapshot';
   private cache: Record<string, any> | null = null;
   private readyPromise: Promise<void> | null = null;
   private flushChain: Promise<void> = Promise.resolve();
@@ -53,11 +55,14 @@ export class PrismaAppStateStore {
   }
 
   private async ensureLoaded() {
-    const record = await this.prisma.creatorAppState.upsert({
+    const record = await this.prisma.appRecord.upsert({
       where: { id: this.snapshotId },
       update: {},
       create: {
         id: this.snapshotId,
+        domain: this.snapshotDomain,
+        entityType: this.snapshotEntityType,
+        entityId: this.snapshotId,
         payload: buildSeedData()
       }
     });
@@ -67,10 +72,16 @@ export class PrismaAppStateStore {
   }
 
   private async persist(payload: Record<string, any>) {
-    await this.prisma.creatorAppState.upsert({
+    await this.prisma.appRecord.upsert({
       where: { id: this.snapshotId },
       update: { payload },
-      create: { id: this.snapshotId, payload }
+      create: {
+        id: this.snapshotId,
+        domain: this.snapshotDomain,
+        entityType: this.snapshotEntityType,
+        entityId: this.snapshotId,
+        payload
+      }
     });
   }
 }
