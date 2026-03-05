@@ -2,12 +2,10 @@
 // Multi-step onboarding: Profile → Socials → KYC → Payout → Preferences → Review
 // EVzone colours: Orange #f77f00, Green #03cd8c, Light Grey #f2f2f2
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
-import { useAuth } from "../../contexts/AuthContext";
-import { useOnboardingWorkflowQuery, useSaveOnboardingDraftMutation, useSubmitOnboardingMutation } from "../../hooks/api/useCreatorWorkflow";
 
 const STEPS = ["Profile", "Socials", "KYC", "Payout", "Preferences", "Review"];
 
@@ -44,106 +42,6 @@ type FormData = {
   models: string[];
 };
 
-function defaultWizardFormData(): FormData {
-  return {
-    name: "Ronald Isabirye",
-    handle: "@ronald.creates",
-    tagline: "EV & commerce storyteller",
-    bio: "Creator focused on EVs, tech and cross-border commerce stories.",
-    timezone: "Africa/Kampala",
-    currency: "USD",
-    contentLanguages: ["English"],
-    audienceRegions: ["East Africa", "Asia"],
-    socials: {
-      instagram: "",
-      tiktok: "",
-      youtube: ""
-    },
-    primaryPlatform: "Instagram",
-    extraSocials: [],
-    kycStatus: "pending",
-    kycIdUploaded: false,
-    kycSelfieUploaded: false,
-    payoutMethod: "",
-    payoutAccount: "",
-    categories: ["Beauty & Skincare", "Tech & Gadgets"],
-    models: ["Flat fee", "Commission"]
-  };
-}
-
-function toWorkflowForm(formData: FormData): Record<string, unknown> {
-  return {
-    profile: {
-      name: formData.name,
-      handle: formData.handle,
-      tagline: formData.tagline,
-      bio: formData.bio,
-      timezone: formData.timezone,
-      currency: formData.currency,
-      contentLanguages: formData.contentLanguages,
-      audienceRegions: formData.audienceRegions
-    },
-    socials: {
-      ...formData.socials,
-      primaryPlatform: formData.primaryPlatform,
-      extra: formData.extraSocials
-    },
-    kyc: {
-      status: formData.kycStatus,
-      idUploaded: formData.kycIdUploaded,
-      selfieUploaded: formData.kycSelfieUploaded
-    },
-    payout: {
-      method: formData.payoutMethod,
-      account: formData.payoutAccount,
-      currency: formData.currency
-    },
-    preferences: {
-      lines: formData.categories,
-      models: formData.models
-    }
-  };
-}
-
-function fromWorkflowForm(value: Record<string, unknown> | undefined): FormData {
-  const fallback = defaultWizardFormData();
-  const profile = (value?.profile as Record<string, unknown> | undefined) ?? {};
-  const socials = (value?.socials as Record<string, unknown> | undefined) ?? {};
-  const kyc = (value?.kyc as Record<string, unknown> | undefined) ?? {};
-  const payout = (value?.payout as Record<string, unknown> | undefined) ?? {};
-  const preferences = (value?.preferences as Record<string, unknown> | undefined) ?? {};
-
-  return {
-    ...fallback,
-    name: String(profile.name ?? fallback.name),
-    handle: String(profile.handle ?? fallback.handle),
-    tagline: String(profile.tagline ?? fallback.tagline),
-    bio: String(profile.bio ?? fallback.bio),
-    timezone: String(profile.timezone ?? fallback.timezone),
-    currency: String(profile.currency ?? fallback.currency),
-    contentLanguages: Array.isArray(profile.contentLanguages) ? profile.contentLanguages.map((entry) => String(entry)) : fallback.contentLanguages,
-    audienceRegions: Array.isArray(profile.audienceRegions) ? profile.audienceRegions.map((entry) => String(entry)) : fallback.audienceRegions,
-    socials: {
-      instagram: String(socials.instagram ?? fallback.socials.instagram),
-      tiktok: String(socials.tiktok ?? fallback.socials.tiktok),
-      youtube: String(socials.youtube ?? fallback.socials.youtube)
-    },
-    primaryPlatform: String(socials.primaryPlatform ?? fallback.primaryPlatform),
-    extraSocials: Array.isArray(socials.extra) ? socials.extra.map((entry) => ({
-      platform: String((entry as Record<string, unknown>)?.platform ?? ""),
-      handle: String((entry as Record<string, unknown>)?.handle ?? ""),
-      followers: String((entry as Record<string, unknown>)?.followers ?? "")
-    })) : fallback.extraSocials,
-    kycStatus: String(kyc.status ?? fallback.kycStatus),
-    kycIdUploaded: Boolean(kyc.idUploaded ?? fallback.kycIdUploaded),
-    kycSelfieUploaded: Boolean(kyc.selfieUploaded ?? fallback.kycSelfieUploaded),
-    payoutMethod: String(payout.method ?? fallback.payoutMethod),
-    payoutAccount: String((payout.account ?? (payout.bank as Record<string, unknown> | undefined)?.accountNumber ?? fallback.payoutAccount) || ""),
-    categories: Array.isArray(preferences.lines) ? preferences.lines.map((entry) => String(entry)) : fallback.categories,
-    models: Array.isArray(preferences.models) ? preferences.models.map((entry) => String(entry)) : fallback.models
-  };
-}
-
 function isStepValid(stepIndex: number, formData: FormData): boolean {
   const trim = (v: string | undefined): string => (v || "").trim();
 
@@ -178,54 +76,53 @@ function isStepValid(stepIndex: number, formData: FormData): boolean {
 
 function CreatorOnboardingWizardPage() {
   const navigate = useNavigate();
-  const { refresh } = useAuth();
-  const onboardingQuery = useOnboardingWorkflowQuery();
-  const saveDraftMutation = useSaveOnboardingDraftMutation();
-  const submitMutation = useSubmitOnboardingMutation();
-  const hydratedRef = useRef(false);
 
   const [stepIndex, setStepIndex] = useState(0);
-  const [formData, setFormData] = useState<FormData>(defaultWizardFormData);
-
-  useEffect(() => {
-    if (!onboardingQuery.data || hydratedRef.current) {
-      return;
-    }
-
-    setFormData(fromWorkflowForm(onboardingQuery.data.form));
-    setStepIndex(Number(onboardingQuery.data.stepIndex || 0));
-    hydratedRef.current = true;
-  }, [onboardingQuery.data]);
-
-  useEffect(() => {
-    if (!hydratedRef.current) {
-      return undefined;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void saveDraftMutation.mutateAsync({
-        form: toWorkflowForm(formData),
-        stepIndex,
-        maxUnlocked: Math.max(stepIndex, onboardingQuery.data?.maxUnlocked ?? stepIndex)
-      }).catch(() => undefined);
-    }, 400);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [formData, onboardingQuery.data?.maxUnlocked, saveDraftMutation, stepIndex]);
+  const [formData, setFormData] = useState({
+    name: "Ronald Isabirye",
+    handle: "@ronald.creates",
+    tagline: "EV & commerce storyteller",
+    bio: "Creator focused on EVs, tech and cross-border commerce stories.",
+    timezone: "Africa/Kampala",
+    currency: "USD",
+    contentLanguages: ["English"],
+    audienceRegions: ["East Africa", "Asia"],
+    socials: {
+      instagram: "",
+      tiktok: "",
+      youtube: ""
+    },
+    primaryPlatform: "Instagram",
+    extraSocials: [],
+    kycStatus: "pending",
+    kycIdUploaded: false,
+    kycSelfieUploaded: false,
+    payoutMethod: "",
+    payoutAccount: "",
+    categories: ["Beauty & Skincare", "Tech & Gadgets"],
+    models: ["Flat fee", "Commission"]
+  });
 
   const isFirstStep = stepIndex === 0;
   const isLastStep = stepIndex === STEPS.length - 1;
   const canContinue = isStepValid(stepIndex, formData);
 
-  const goNext = async () => {
+  const goNext = () => {
     if (isLastStep && canContinue) {
-      await submitMutation.mutateAsync({
-        form: toWorkflowForm(formData),
-        stepIndex,
-        maxUnlocked: Math.max(stepIndex, onboardingQuery.data?.maxUnlocked ?? stepIndex)
-      });
-      await refresh();
-      navigate("/account-approval");
+      // Save form data to localStorage for the approval page
+      try {
+        localStorage.setItem('creatorOnb.name', formData.name);
+        localStorage.setItem('creatorOnb.niche', formData.categories.join(', ') || 'Not set');
+        localStorage.setItem('creatorOnb.id', formData.handle || 'pending');
+        localStorage.setItem('creatorOnb.status', 'Submitted');
+        localStorage.setItem('signup.role', 'creator');
+      } catch (e) {
+        console.error('Failed to save onboarding data:', e);
+      }
+
+      // In a real system, we'd clear any guest flags and redirect to Sign In
+      // so the user has to deliberately log in with their new credentials.
+      navigate("/auth");
     } else if (!isLastStep && canContinue) {
       setStepIndex((i) => i + 1);
     }
@@ -253,7 +150,7 @@ function CreatorOnboardingWizardPage() {
             </span>
             <button
               className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 font-medium transition-colors"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/home")}
             >
               Exit onboarding
             </button>
@@ -328,7 +225,7 @@ function CreatorOnboardingWizardPage() {
             </button>
             <button
               className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-sm text-slate-600 dark:text-slate-200 font-medium"
-              onClick={() => navigate("/")}
+              onClick={() => navigate("/home")}
             >
               Save & exit
             </button>

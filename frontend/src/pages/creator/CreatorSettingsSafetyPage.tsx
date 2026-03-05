@@ -28,29 +28,24 @@ import {
   Users,
   X
 } from "lucide-react";
-import { useCreateUploadMutation } from "../../hooks/api/useCreatorWorkflow";
-import {
-  useRemoveSettingsDeviceMutation,
-  useSendPayoutVerificationCodeMutation,
-  useSettingsQuery,
-  useSignOutAllSettingsDevicesMutation,
-  useUpdateSettingsMutation,
-  useVerifyPayoutSettingsMutation
-} from "../../hooks/api/useSettings";
-import type { CreatorSettings } from "../../api/types";
 
 /**
  * Creator Settings & Safety (Premium)
- * - Now backed by the dedicated Creator Settings domain and settings APIs.
+ * - Designed to work with the Premium Onboarding flow (v2.5) by reading/writing the same localStorage payload.
  * - Uses Orange as the primary color to match Roles & Permissions.
  * - Adds a compliance-friendly "scroll-to-bottom to enable consent" pattern for policy review inside Settings.
  *
- * NOTE: Replace policy/legal placeholder copy before production.
+ * NOTE: This is a UI preview. Replace policy text with final legal copy before production.
  */
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
 // const LIGHT_GREY = "#f2f2f2"; // Kept for reference but often overridden by dark mode classes
+
+
+const STORAGE_KEY = "mldz_creator_onboarding_v2_4";
+const STORAGE_KEY_LEGACY = "mldz_creator_onboarding_v2_3";
+
 function cx(...xs: (string | undefined | null | false)[]) {
   return xs.filter(Boolean).join(" ");
 }
@@ -616,7 +611,7 @@ interface UploadMiniProps {
   title: string;
   helper?: string;
   value?: string;
-  onPick: (file: File) => void | Promise<void>;
+  onPick: (val: string) => void;
   accept?: string;
 }
 
@@ -640,7 +635,7 @@ function UploadMini({ title, helper, value, onPick, accept = "*/*" }: UploadMini
             className="hidden"
             onChange={(e) => {
               const file = e.target.files && e.target.files[0];
-              if (file) void onPick(file);
+              if (file) onPick(file.name);
               // reset so the same file can be picked again
               e.target.value = "";
             }}
@@ -989,79 +984,6 @@ function normalizeFormFromOnboarding(input: SettingsForm): SettingsForm {
   return next;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function normalizeFormFromSettingsRecord(input: CreatorSettings): SettingsForm {
-  const raw = isRecord(input) ? input : {};
-  const merged = deepMerge(defaultForm(), raw);
-  const normalized = normalizeFormFromOnboarding(merged as SettingsForm);
-
-  const rootNotifications = isRecord(raw.notifications) ? raw.notifications : {};
-  const nestedSettings = isRecord(raw.settings) ? raw.settings : {};
-  const nestedNotifications = isRecord(nestedSettings.notifications) ? nestedSettings.notifications : {};
-  const nestedCalendar = isRecord(nestedSettings.calendar) ? nestedSettings.calendar : {};
-  const nestedPrivacy = isRecord(nestedSettings.privacy) ? nestedSettings.privacy : {};
-  const rootSecurity = isRecord(raw.security) ? raw.security : {};
-  const rootDevices = Array.isArray(rootSecurity.devices) ? (rootSecurity.devices as Device[]) : [];
-  const nestedDevices = Array.isArray(nestedSettings.devices) ? (nestedSettings.devices as Device[]) : [];
-  const nestedAudit = Array.isArray(nestedSettings.audit) ? (nestedSettings.audit as AuditLog[]) : [];
-
-  normalized.settings = {
-    ...defaultSettings(),
-    ...normalized.settings,
-    calendar: {
-      ...defaultSettings().calendar,
-      ...normalized.settings.calendar,
-      ...nestedCalendar
-    },
-    notifications: {
-      ...defaultSettings().notifications,
-      ...normalized.settings.notifications,
-      ...nestedNotifications,
-      ...rootNotifications
-    },
-    privacy: {
-      ...defaultSettings().privacy,
-      ...normalized.settings.privacy,
-      ...nestedPrivacy
-    },
-    devices: nestedDevices.length > 0 ? nestedDevices : rootDevices.length > 0 ? rootDevices : normalized.settings.devices,
-    audit: nestedAudit.length > 0 ? nestedAudit : normalized.settings.audit
-  };
-
-  return normalized;
-}
-
-function buildSettingsPayload(form: SettingsForm): Partial<CreatorSettings> {
-  const updatedAt = new Date().toISOString();
-  const audit = Array.isArray(form.settings.audit) ? form.settings.audit.slice(0, 50) : [];
-
-  return {
-    profile: form.profile as unknown as Record<string, unknown>,
-    socials: form.socials as unknown as Record<string, unknown>,
-    preferences: form.preferences as unknown as Record<string, unknown>,
-    kyc: form.kyc as unknown as Record<string, unknown>,
-    payout: form.payout as unknown as Record<string, unknown>,
-    review: form.review as unknown as Record<string, unknown>,
-    notifications: form.settings.notifications as unknown as Record<string, unknown>,
-    security: {
-      devices: form.settings.devices,
-      updatedAt
-    },
-    settings: {
-      calendar: form.settings.calendar,
-      notifications: form.settings.notifications,
-      privacy: form.settings.privacy,
-      devices: form.settings.devices,
-      audit,
-      updatedAt
-    },
-    updatedAt
-  };
-}
-
 function getPrimaryPlatformName(form: SettingsForm): string {
   const sp = normalizePrimaryPlatform(form.socials.primaryPlatform);
   if (sp === "instagram") return "Instagram";
@@ -1146,14 +1068,6 @@ function policyAllSeen(form: SettingsForm): boolean {
 export default function CreatorSettingsSafetyPremium() {
   const navigate = useNavigate();
   const { toasts, push } = useToasts();
-  const settingsQuery = useSettingsQuery();
-  const updateSettingsMutation = useUpdateSettingsMutation();
-  const createUploadMutation = useCreateUploadMutation();
-  const sendPayoutVerificationMutation = useSendPayoutVerificationCodeMutation();
-  const verifyPayoutMutation = useVerifyPayoutSettingsMutation();
-  const removeSettingsDeviceMutation = useRemoveSettingsDeviceMutation();
-  const signOutAllDevicesMutation = useSignOutAllSettingsDevicesMutation();
-  const hydratedRef = useRef(false);
 
   const [form, setForm] = useState<SettingsForm>(() => defaultForm());
   const [saved, setSaved] = useState(true);
@@ -1198,63 +1112,39 @@ export default function CreatorSettingsSafetyPremium() {
     return { done, total, pct: Math.round((done / total) * 100) };
   }, [form, primaryPlatformName]);
 
-  // Load from the dedicated settings domain
+  // Load from onboarding storage
   useEffect(() => {
-    if (settingsQuery.data && !hydratedRef.current) {
-      setForm(normalizeFormFromSettingsRecord(settingsQuery.data));
-      hydratedRef.current = true;
-      push("Settings loaded from your backend profile.", "success");
-      return;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const merged = deepMerge(defaultForm(), parsed);
+        setForm(normalizeFormFromOnboarding(merged));
+        push("Settings loaded from onboarding.", "success");
+      }
+    } catch {
+      // ignore
     }
-
-    if (!settingsQuery.isLoading && !hydratedRef.current) {
-      hydratedRef.current = true;
-    }
-  }, [settingsQuery.data, settingsQuery.isLoading, push]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Autosave
   useEffect(() => {
-    if (!hydratedRef.current) return undefined;
-
     setSaved(false);
     const t = setTimeout(() => {
-      void updateSettingsMutation
-        .mutateAsync(buildSettingsPayload(form))
-        .then(() => setSaved(true))
-        .catch(() => {
-          setSaved(true);
-          push("Could not save settings to the backend settings API.", "error");
-        });
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+      } catch {
+        // ignore
+      }
+      setSaved(true);
     }, 450);
     return () => clearTimeout(t);
-  }, [form, push, updateSettingsMutation]);
+  }, [form]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function update(path: string, value: any) {
     setForm((prev) => setDeep(prev, path, value));
-  }
-
-  async function handleWorkflowUpload(
-    file: File,
-    options: { purpose: string; namePath: string; uploadedPath?: string; successMessage: string }
-  ) {
-    try {
-      const upload = await createUploadMutation.mutateAsync({
-        name: file.name,
-        type: file.type || "application/octet-stream",
-        size: file.size,
-        purpose: options.purpose,
-        relatedEntityType: "settings",
-        relatedEntityId: settingsQuery.data?.userId || "current"
-      });
-
-      update(options.namePath, upload.name || file.name);
-      if (options.uploadedPath) update(options.uploadedPath, true);
-      push(options.successMessage, "success");
-    } catch (error) {
-      console.error(error);
-      push("Upload failed. Please try again.", "error");
-    }
   }
 
   function toggleInArray(path: string, value: string) {
@@ -1341,26 +1231,17 @@ export default function CreatorSettingsSafetyPremium() {
     push("Seller unblocked.", "success");
   }
 
-  async function logoutDevice(deviceId: string) {
-    try {
-      const updatedSettings = await removeSettingsDeviceMutation.mutateAsync(deviceId);
-      setForm(normalizeFormFromSettingsRecord(updatedSettings));
-      push("Device signed out.", "success");
-    } catch (error) {
-      console.error(error);
-      push(error instanceof Error ? error.message : "Could not sign out that device.", "error");
-    }
+  function logoutDevice(deviceId: string) {
+    const next = (form.settings.devices || []).filter((d) => d.id !== deviceId);
+    update("settings.devices", next);
+    addAudit("Device signed out", deviceId);
+    push("Device signed out.", "success");
   }
 
-  async function signOutEverywhere() {
-    try {
-      const updatedSettings = await signOutAllDevicesMutation.mutateAsync();
-      setForm(normalizeFormFromSettingsRecord(updatedSettings));
-      push("All devices signed out.", "success");
-    } catch (error) {
-      console.error(error);
-      push(error instanceof Error ? error.message : "Could not sign out all devices.", "error");
-    }
+  function signOutEverywhere() {
+    update("settings.devices", []);
+    addAudit("Signed out everywhere", "All sessionz revoked");
+    push("All devices signed out.", "success");
   }
 
   function downloadData() {
@@ -1738,7 +1619,7 @@ export default function CreatorSettingsSafetyPremium() {
                 {creatorType !== "Individual" ? (
                   <SoftButton
                     onClick={() => {
-                      navigate("/roles-permissions");
+                      push("Opening Roles & Permissions (demo).", "success");
                     }}
                   >
                     <Users className="h-4 w-4" /> Roles & Permissions
@@ -1746,7 +1627,7 @@ export default function CreatorSettingsSafetyPremium() {
                 ) : (
                   <SoftButton
                     onClick={() => {
-                      navigate("/subscription");
+                      push("Upgrade to Team/Agency plan (demo).", "success");
                     }}
                   >
                     <Sparkles className="h-4 w-4" /> Upgrade
@@ -1853,34 +1734,8 @@ export default function CreatorSettingsSafetyPremium() {
             </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <UploadMini
-                title="Profile photo"
-                helper="JPG/PNG, 1:1 recommended."
-                value={form.profile.profilePhotoName}
-                onPick={async (file) => {
-                  await handleWorkflowUpload(file, {
-                    purpose: "settings_profile_photo",
-                    namePath: "profile.profilePhotoName",
-                    successMessage: "Profile photo uploaded."
-                  });
-                  addAudit("Profile photo uploaded", file.name);
-                }}
-                accept="image/*"
-              />
-              <UploadMini
-                title="Media kit"
-                helper="PDF recommended; use for supplier pitches."
-                value={form.profile.mediaKitName}
-                onPick={async (file) => {
-                  await handleWorkflowUpload(file, {
-                    purpose: "settings_media_kit",
-                    namePath: "profile.mediaKitName",
-                    successMessage: "Media kit uploaded."
-                  });
-                  addAudit("Media kit uploaded", file.name);
-                }}
-                accept=".pdf,application/pdf"
-              />
+              <UploadMini title="Profile photo" helper="JPG/PNG, 1:1 recommended." value={form.profile.profilePhotoName} onPick={(name) => update("profile.profilePhotoName", name)} accept="image/*" />
+              <UploadMini title="Media kit" helper="PDF recommended; use for supplier pitches." value={form.profile.mediaKitName} onPick={(name) => update("profile.mediaKitName", name)} accept=".pdf,application/pdf" />
             </div>
 
             <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
@@ -1959,14 +1814,7 @@ export default function CreatorSettingsSafetyPremium() {
                       title="Team logo"
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.team.logoName}
-                      onPick={async (file) => {
-                        await handleWorkflowUpload(file, {
-                          purpose: "settings_team_logo",
-                          namePath: "profile.team.logoName",
-                          successMessage: "Team logo uploaded."
-                        });
-                        addAudit("Team logo uploaded", file.name);
-                      }}
+                      onPick={(name) => update("profile.team.logoName", name)}
                       accept="image/*"
                     />
                   </div>
@@ -2002,14 +1850,7 @@ export default function CreatorSettingsSafetyPremium() {
                       title="Agency logo"
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.agency.logoName}
-                      onPick={async (file) => {
-                        await handleWorkflowUpload(file, {
-                          purpose: "settings_agency_logo",
-                          namePath: "profile.agency.logoName",
-                          successMessage: "Agency logo uploaded."
-                        });
-                        addAudit("Agency logo uploaded", file.name);
-                      }}
+                      onPick={(name) => update("profile.agency.logoName", name)}
                       accept="image/*"
                     />
                   </div>
@@ -2067,7 +1908,7 @@ export default function CreatorSettingsSafetyPremium() {
                     </div>
                     <PrimaryButton
                       onClick={() => {
-                        navigate("/roles-permissions");
+                        push("Opening Roles & Permissions (demo).", "success");
                       }}
                     >
                       <Users className="h-4 w-4" /> Open
@@ -2085,7 +1926,7 @@ export default function CreatorSettingsSafetyPremium() {
                     </div>
                     <PrimaryButton
                       onClick={() => {
-                        navigate("/Crew-manager");
+                        push("Opening Crew Management (demo).", "success");
                       }}
                     >
                       <Calendar className="h-4 w-4" /> Open
@@ -2435,7 +2276,7 @@ export default function CreatorSettingsSafetyPremium() {
                     onChange={(v) => {
                       update("settings.calendar.googleConnected", v);
                       addAudit("Calendar sync updated", v ? "connected" : "disconnected");
-                      push(v ? "Calendar sync preference saved." : "Calendar sync preference saved.", "success");
+                      push(v ? "Google Calendar connected (demo)." : "Google Calendar disconnected (demo).", "success");
                     }}
                   />
                 </div>
@@ -2499,13 +2340,9 @@ export default function CreatorSettingsSafetyPremium() {
                     title="ID document"
                     helper={form.kyc.idUploaded ? "Uploaded" : "Required"}
                     value={form.kyc.idFileName}
-                    onPick={async (file) => {
-                      await handleWorkflowUpload(file, {
-                        purpose: "settings_kyc_id",
-                        namePath: "kyc.idFileName",
-                        uploadedPath: "kyc.idUploaded",
-                        successMessage: "ID document uploaded."
-                      });
+                    onPick={(name) => {
+                      update("kyc.idFileName", name);
+                      update("kyc.idUploaded", true);
                       addAudit("KYC doc uploaded", "ID document");
                     }}
                   />
@@ -2513,13 +2350,9 @@ export default function CreatorSettingsSafetyPremium() {
                     title="Selfie"
                     helper={form.kyc.selfieUploaded ? "Uploaded" : "Required"}
                     value={form.kyc.selfieFileName}
-                    onPick={async (file) => {
-                      await handleWorkflowUpload(file, {
-                        purpose: "settings_kyc_selfie",
-                        namePath: "kyc.selfieFileName",
-                        uploadedPath: "kyc.selfieUploaded",
-                        successMessage: "Selfie uploaded."
-                      });
+                    onPick={(name) => {
+                      update("kyc.selfieFileName", name);
+                      update("kyc.selfieUploaded", true);
                       addAudit("KYC doc uploaded", "Selfie");
                     }}
                   />
@@ -2527,13 +2360,9 @@ export default function CreatorSettingsSafetyPremium() {
                     title="Address proof"
                     helper={form.kyc.addressUploaded ? "Uploaded" : "Optional"}
                     value={form.kyc.addressFileName}
-                    onPick={async (file) => {
-                      await handleWorkflowUpload(file, {
-                        purpose: "settings_kyc_address",
-                        namePath: "kyc.addressFileName",
-                        uploadedPath: "kyc.addressUploaded",
-                        successMessage: "Address proof uploaded."
-                      });
+                    onPick={(name) => {
+                      update("kyc.addressFileName", name);
+                      update("kyc.addressUploaded", true);
                       addAudit("KYC doc uploaded", "Address proof");
                     }}
                   />
@@ -2547,39 +2376,27 @@ export default function CreatorSettingsSafetyPremium() {
                       <UploadMini
                         title="Registration"
                         value={form.kyc.org.registrationName}
-                        onPick={async (file) => {
-                          await handleWorkflowUpload(file, {
-                            purpose: "settings_org_registration",
-                            namePath: "kyc.org.registrationName",
-                            uploadedPath: "kyc.org.registrationUploaded",
-                            successMessage: "Registration document uploaded."
-                          });
+                        onPick={(name) => {
+                          update("kyc.org.registrationName", name);
+                          update("kyc.org.registrationUploaded", true);
                           addAudit("Org doc uploaded", "Registration");
                         }}
                       />
                       <UploadMini
                         title="Tax certificate"
                         value={form.kyc.org.taxName}
-                        onPick={async (file) => {
-                          await handleWorkflowUpload(file, {
-                            purpose: "settings_org_tax",
-                            namePath: "kyc.org.taxName",
-                            uploadedPath: "kyc.org.taxUploaded",
-                            successMessage: "Tax certificate uploaded."
-                          });
+                        onPick={(name) => {
+                          update("kyc.org.taxName", name);
+                          update("kyc.org.taxUploaded", true);
                           addAudit("Org doc uploaded", "Tax");
                         }}
                       />
                       <UploadMini
                         title="Authorization letter"
                         value={form.kyc.org.authorizationName}
-                        onPick={async (file) => {
-                          await handleWorkflowUpload(file, {
-                            purpose: "settings_org_authorization",
-                            namePath: "kyc.org.authorizationName",
-                            uploadedPath: "kyc.org.authorizationUploaded",
-                            successMessage: "Authorization letter uploaded."
-                          });
+                        onPick={(name) => {
+                          update("kyc.org.authorizationName", name);
+                          update("kyc.org.authorizationUploaded", true);
                           addAudit("Org doc uploaded", "Authorization");
                         }}
                       />
@@ -2595,9 +2412,7 @@ export default function CreatorSettingsSafetyPremium() {
                       <div className="text-sm">Devices</div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">Manage active sessions.</div>
                     </div>
-                    <GhostButton onClick={() => {
-                      void signOutEverywhere();
-                    }}>
+                    <GhostButton onClick={signOutEverywhere}>
                       <Lock className="h-4 w-4" /> Sign out all
                     </GhostButton>
                   </div>
@@ -2615,9 +2430,7 @@ export default function CreatorSettingsSafetyPremium() {
                           <button
                             type="button"
                             className="px-3 py-2 rounded-2xl border border-slate-200 bg-white text-sm hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-700"
-                            onClick={() => {
-                              void logoutDevice(d.id);
-                            }}
+                            onClick={() => logoutDevice(d.id)}
                           >
                             Sign out
                           </button>
@@ -2807,44 +2620,23 @@ export default function CreatorSettingsSafetyPremium() {
                           push("Select a payout method first.", "error");
                           return;
                         }
-
-                        void sendPayoutVerificationMutation
-                          .mutateAsync({ payout: form.payout as unknown as Record<string, unknown> })
-                          .then((updatedSettings) => {
-                            setForm(normalizeFormFromSettingsRecord(updatedSettings));
-                            push("Verification code sent.", "success");
-                          })
-                          .catch((error) => {
-                            console.error(error);
-                            push(error instanceof Error ? error.message : "Could not send the verification code.", "error");
-                          });
+                        update("payout.verification.status", "code_sent");
+                        update("payout.verification.lastSentTo", form.payout.method);
+                        addAudit("Verification code sent", form.payout.method);
+                        push("Verification code sent (demo).", "success");
                       }}
-                      disabled={sendPayoutVerificationMutation.isPending}
                     >
-                      <Upload className="h-4 w-4" /> {sendPayoutVerificationMutation.isPending ? "Sending…" : "Send code"}
+                      <Upload className="h-4 w-4" /> Send code
                     </GhostButton>
 
                     <PrimaryButton
                       onClick={() => {
-                        if (!form.payout.method) {
-                          push("Select a payout method first.", "error");
-                          return;
-                        }
-
-                        void verifyPayoutMutation
-                          .mutateAsync({ payout: form.payout as unknown as Record<string, unknown> })
-                          .then((updatedSettings) => {
-                            setForm(normalizeFormFromSettingsRecord(updatedSettings));
-                            push("Payout method verified.", "success");
-                          })
-                          .catch((error) => {
-                            console.error(error);
-                            push(error instanceof Error ? error.message : "Could not verify the payout method.", "error");
-                          });
+                        update("payout.verification.status", "verified");
+                        addAudit("Payout verified", form.payout.method || "method");
+                        push("Payout verified (demo).", "success");
                       }}
-                      disabled={verifyPayoutMutation.isPending}
                     >
-                      <Check className="h-4 w-4" /> {verifyPayoutMutation.isPending ? "Verifying…" : "Mark verified"}
+                      <Check className="h-4 w-4" /> Mark verified
                     </PrimaryButton>
                   </div>
 
@@ -3124,8 +2916,7 @@ export default function CreatorSettingsSafetyPremium() {
               <div className="mt-4 flex justify-end">
                 <PrimaryButton
                   onClick={() => {
-                    window.open("https://support.mylivedealz.com", "_blank");
-                    push("Support center opened.", "success");
+                    push("Support chat opened (demo).", "success");
                     addAudit("Support contacted", "Creator Success");
                   }}
                 >
@@ -3136,7 +2927,7 @@ export default function CreatorSettingsSafetyPremium() {
           </Card >
 
           <footer className="py-6 text-xs text-slate-500 dark:text-slate-400">
-            © {new Date().getFullYear()} MyLiveDealz · Premium Settings & Safety
+            © {new Date().getFullYear()} MyLiveDealz · Premium Settings & Safety (preview)
           </footer>
         </main>
       </div>

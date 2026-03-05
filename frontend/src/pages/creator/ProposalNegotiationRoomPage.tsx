@@ -1,579 +1,603 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { CircularProgress } from "@mui/material";
-import { useNavigate, useSearchParams } from "react-router-dom";
+// Round 2 – Page 8: Proposal & Negotiation Room (Creator)
+// Purpose: Single workspace to review, chat, and adjust terms. Mirrors seller side.
+// Light mode, EVzone orange primary (#f77f00), premium layout.
+
+import React, { useState, useMemo, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
+// import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
-import type { ProposalRecord, ProposalTermBlock } from "../../api/types";
-import { useNotification } from "../../contexts/NotificationContext";
-import {
-  useProposalRoomQuery,
-  useSendProposalMessageMutation,
-  useTransitionProposalMutation,
-  useUpdateProposalMutation
-} from "../../hooks/api/useProposals";
-import {
-  canRespondToProposal,
-  formatMoney,
-  formatProposalMessageTime,
-  getProposalOriginBadgeClass,
-  getProposalOriginLabel,
-  getProposalStatusBadgeClass,
-  getProposalStatusLabel,
-  normalizeProposalStatus
-} from "../../utils/collaborationUi";
 
-const STATUS_STEPS = ["Received", "Reviewing", "Negotiating", "Contract"] as const;
+const STATUS_STEPS = [
+  "Draft",
+  "Negotiating",
+  "Final review",
+  "Contract created"
+] as const;
 
-type ClauseSuggestion = {
-  id: string;
-  field: keyof ProposalTermBlock;
-  title: string;
-  value: string;
+type Status = typeof STATUS_STEPS[number];
+
+type Terms = {
+  deliverables: string;
+  schedule: string;
+  compensation: string;
 };
 
-const CLAUSE_SUGGESTIONS: ClauseSuggestion[] = [
-  {
-    id: "kill-fee",
-    field: "killFee",
-    title: "Add kill fee",
-    value: "50% of the agreed flat fee if the campaign is cancelled within 24 hours of go-live."
-  },
-  {
-    id: "exclusivity-window",
-    field: "exclusivityWindow",
-    title: "Limit exclusivity",
-    value: "7 days across direct category competitors only."
-  },
-  {
-    id: "usage-rights",
-    field: "compensation",
-    title: "Clarify usage rights",
-    value: "Includes 90-day brand usage rights for short clips and replay highlights."
-  }
-];
+type Message = {
+  id: number;
+  from: "seller" | "creator";
+  name: string;
+  avatar: string;
+  time: string;
+  body: string;
+};
 
-function buildRoomStepIndex(proposal: ProposalRecord): number {
-  const status = normalizeProposalStatus(proposal.status);
-  switch (status) {
-    case "draft":
-      return 0;
-    case "sent_to_brand":
-      return 1;
-    case "in_negotiation":
-      return 2;
-    case "accepted":
-    case "contract_created":
-      return 3;
-    case "declined":
-    case "archived":
-      return 1;
-    default:
-      return 0;
-  }
-}
 
-function createTermsFromProposal(proposal: ProposalRecord | null | undefined): ProposalTermBlock {
-  return {
-    deliverables: proposal?.terms.deliverables ?? "",
-    schedule: proposal?.terms.schedule ?? "",
-    compensation: proposal?.terms.compensation ?? "",
-    exclusivityWindow: proposal?.terms.exclusivityWindow ?? "",
-    killFee: proposal?.terms.killFee ?? ""
-  };
-}
+function ProposalNegotiationRoomPage() {
+  const location = useLocation();
+  const origin = (location.state as { origin?: string })?.origin || "from-seller";
+  // const { theme } = useTheme();
+  const [status, setStatus] = useState<Status>("Negotiating");
 
-export function ProposalNegotiationRoomPage() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const proposalId = searchParams.get("proposalId")?.trim();
-  const { showError, showInfo, showSuccess } = useNotification();
+  const baseTerms = useMemo(
+    () => ({
+      deliverables: `• 1x 60–90 min live session (Autumn Beauty Flash)\n• 3x short clips (15–30s) for Shoppable Adz\n• 2x Instagram stories with swipe-up`,
+      schedule: `• Live date: Friday, 20:00–21:30 EAT\n• Clips delivery: within 48 hours after live\n• Stories: 24 hours before and after live`,
+      compensation: `• Flat fee: $400\n• Commission: 5% on live-driven sales\n• Payment terms: 50% upfront, 50% 7 days after live`
+    }),
+    []
+  );
 
-  const proposalQuery = useProposalRoomQuery(proposalId);
-  const sendMessageMutation = useSendProposalMessageMutation();
-  const transitionMutation = useTransitionProposalMutation();
-  const updateProposalMutation = useUpdateProposalMutation();
+  const [terms, setTerms] = useState<Terms>(baseTerms);
 
-  const proposal = proposalQuery.data ?? null;
-  const [termsDraft, setTermsDraft] = useState<ProposalTermBlock>(createTermsFromProposal(proposal));
-  const [draftMessage, setDraftMessage] = useState("");
-  const [attachedFile, setAttachedFile] = useState<File | null>(null);
-  const [appliedSuggestions, setAppliedSuggestions] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setTermsDraft(createTermsFromProposal(proposal));
-    setAppliedSuggestions([]);
-  }, [
-    proposal?.id,
-    proposal?.terms.compensation,
-    proposal?.terms.deliverables,
-    proposal?.terms.exclusivityWindow,
-    proposal?.terms.killFee,
-    proposal?.terms.schedule
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 1,
+      from: "seller",
+      name: "GlowUp Hub",
+      avatar: "GH",
+      time: "10:14",
+      body:
+        "Hi Ronald, we’re excited to do the Autumn Beauty Flash with you. We’ve drafted the terms – feel free to adjust.",
+    },
+    {
+      id: 2,
+      from: "creator",
+      name: "You",
+      avatar: "RY",
+      time: "10:20",
+      body:
+        "Thanks! I’d like to add a small clip package and clarify payment timing. See edits under Compensation.",
+    },
+    {
+      id: 3,
+      from: "seller",
+      name: "GlowUp Hub",
+      avatar: "GH",
+      time: "10:32",
+      body:
+        "Looks good overall. Can we cap the commission only on live sales, not 7 days after?",
+    }
   ]);
 
-  const hasLocalChanges = useMemo(() => {
-    if (!proposal) return false;
-    return JSON.stringify(termsDraft) !== JSON.stringify(createTermsFromProposal(proposal));
-  }, [proposal, termsDraft]);
+  const [draftMessage, setDraftMessage] = useState("");
 
-  const visibleSuggestions = useMemo(
-    () => CLAUSE_SUGGESTIONS.filter((suggestion) => !appliedSuggestions.includes(suggestion.id)),
-    [appliedSuggestions]
-  );
+  const hasChanges = {
+    deliverables: terms.deliverables !== baseTerms.deliverables,
+    schedule: terms.schedule !== baseTerms.schedule,
+    compensation: terms.compensation !== baseTerms.compensation
+  };
 
   const riskHints = useMemo(() => {
-    const hints: string[] = [];
-    if (!termsDraft.schedule.toLowerCase().includes("payment")) {
-      hints.push("Payment timing is not clearly stated in the schedule.");
+    const hints = [];
+    if (!terms.schedule.toLowerCase().includes("payment")) {
+      hints.push("Payment timing is not clearly defined in the schedule.");
     }
-    if (!termsDraft.compensation.toLowerCase().includes("usage")) {
-      hints.push("Usage rights are not clearly defined yet.");
+    if (!terms.deliverables.toLowerCase().includes("clips") &&
+      !terms.deliverables.toLowerCase().includes("stories")) {
+      hints.push("No evergreen or promo assets beyond the live are defined.");
     }
-    if (!termsDraft.killFee.trim()) {
-      hints.push("There is no kill fee recorded if the live is cancelled late.");
+    if (!terms.compensation.toLowerCase().includes("kill fee")) {
+      hints.push("No kill fee specified if campaign is cancelled last minute.");
     }
-    if (!termsDraft.exclusivityWindow.trim()) {
-      hints.push("There is no exclusivity window for competing brands.");
+    if (!terms.compensation.toLowerCase().includes("exclusivity")) {
+      hints.push("No exclusivity window set – consider limiting competitors.");
     }
     return hints;
-  }, [termsDraft]);
+  }, [terms]);
 
-  const stepIndex = proposal ? buildRoomStepIndex(proposal) : 0;
-  const statusLabel = proposal ? getProposalStatusLabel(proposal.status, proposal.origin) : "";
-  const statusClass = proposal ? getProposalStatusBadgeClass(proposal.status) : "";
-  const originLabel = proposal ? getProposalOriginLabel(proposal.origin) : "";
-  const originClass = proposal ? getProposalOriginBadgeClass(proposal.origin) : "";
-  const canRespond = proposal ? canRespondToProposal(proposal) : false;
-
-  const handleSaveTerms = async () => {
-    if (!proposal) return;
-    try {
-      await updateProposalMutation.mutateAsync({
-        proposalId: proposal.id,
-        payload: {
-          terms: termsDraft
-        }
-      });
-      showSuccess("Proposal terms saved.");
-    } catch (error) {
-      showError(error instanceof Error ? error.message : "Could not save proposal terms.");
+  const clauseSuggestions = [
+    {
+      id: "kill-fee",
+      title: "Add kill fee",
+      body: "In case of cancellation within 24 hours, a 50% kill fee is due."
+    },
+    {
+      id: "exclusivity",
+      title: "Limit exclusivity",
+      body: "Exclusivity limited to 7 days for competing Beauty & Skincare lives."
+    },
+    {
+      id: "usage-rights",
+      title: "Clarify usage rights",
+      body: "Brand may use live clips and assets for 90 days across social platforms."
     }
-  };
+  ];
 
-  const handleApplySuggestion = (suggestion: ClauseSuggestion) => {
-    setTermsDraft((current) => ({
-      ...current,
-      [suggestion.field]: suggestion.value
+  const [appliedSuggestions, setAppliedSuggestions] = useState<string[]>([]);
+
+  // Filter out applied suggestions
+  const visibleSuggestions = clauseSuggestions.filter(s => !appliedSuggestions.includes(s.id));
+
+  const handleApplyClause = (suggestionId: string, text: string) => {
+    const field: keyof Terms = "compensation";
+
+    setTerms((prev) => ({
+      ...prev,
+      [field]: prev[field] + (prev[field].endsWith("\n") ? "" : "\n") + `• ${text}`
     }));
-    setAppliedSuggestions((current) => [...current, suggestion.id]);
+    setAppliedSuggestions(prev => [...prev, suggestionId]);
   };
 
-  const handleSendMessage = async () => {
-    if (!proposal) return;
-    const body = draftMessage.trim();
-    if (!body && !attachedFile) return;
+  const handleTermChange = (field: keyof Terms, value: string): void => {
+    setTerms((prev) => ({ ...prev, [field]: value }));
+  };
 
-    let finalBody = body;
-    if (attachedFile) {
-      finalBody = `${finalBody}${finalBody ? "\n\n" : ""}[Attachment: ${attachedFile.name}]`;
-    }
+  /* Attachment logic */
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
 
-    try {
-      await sendMessageMutation.mutateAsync({
-        proposalId: proposal.id,
-        payload: { body: finalBody || "[Attachment sent]" }
-      });
+  const handleAttachClick = () => {
+    fileInputRef.current?.click();
+  };
 
-      if (normalizeProposalStatus(proposal.status) === "draft") {
-        await transitionMutation.mutateAsync({
-          proposalId: proposal.id,
-          payload: {
-            status: "in_negotiation",
-            note: proposal.notesShort
-          }
-        });
-      }
-
-      setDraftMessage("");
-      setAttachedFile(null);
-      showSuccess("Message sent.");
-    } catch (error) {
-      showError(error instanceof Error ? error.message : "Could not send message.");
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setAttachedFile(e.target.files[0]);
     }
   };
 
-  const handleTransition = async (status: "accepted" | "declined") => {
-    if (!proposal) return;
-    try {
-      const result = await transitionMutation.mutateAsync({
-        proposalId: proposal.id,
-        payload: {
-          status,
-          note:
-            status === "accepted"
-              ? "Accepted from proposal room."
-              : "Declined from proposal room."
-        }
-      });
+  const handleSendMessage = () => {
+    const trimmed = draftMessage.trim();
+    if (!trimmed && !attachedFile) return;
 
-      if (status === "accepted" && result.contract) {
-        showSuccess(`Accepted. Contract ${result.contract.title} is now available.`);
-      } else {
-        showSuccess(status === "accepted" ? "Proposal accepted." : "Proposal declined.");
-      }
-    } catch (error) {
-      showError(error instanceof Error ? error.message : "Could not update proposal status.");
-    }
+    const newMsg: Message = {
+      id: messages.length + 1,
+      from: "creator",
+      name: "You",
+      avatar: "RY",
+      time: "Now",
+      body: attachedFile
+        ? `${trimmed}\n\n📎 Attached: ${attachedFile.name}`
+        : trimmed
+    };
+
+    setMessages((prev) => [...prev, newMsg]);
+    setDraftMessage("");
+    setAttachedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  if (!proposalId) {
-    return (
-      <div className="min-h-full bg-slate-50 pb-8 dark:bg-slate-950">
-        <PageHeader pageTitle="Proposal Room" />
-        <div className="mx-auto flex w-full max-w-[1200px] px-3 pt-4 sm:px-4 lg:px-8">
-          <EmptyPanel
-            title="No proposal selected"
-            body="Open this page from Proposals Inbox or append ?proposalId=... to the URL to load a negotiation room."
-          />
-        </div>
-      </div>
-    );
-  }
-
-  if (proposalQuery.isLoading) {
-    return (
-      <div className="min-h-full bg-slate-50 pb-8 dark:bg-slate-950">
-        <PageHeader pageTitle="Proposal Room" />
-        <div className="flex min-h-[60vh] items-center justify-center">
-          <CircularProgress size={28} />
-        </div>
-      </div>
-    );
-  }
-
-  if (proposalQuery.isError || !proposal) {
-    return (
-      <div className="min-h-full bg-slate-50 pb-8 dark:bg-slate-950">
-        <PageHeader pageTitle="Proposal Room" />
-        <div className="mx-auto flex w-full max-w-[1200px] px-3 pt-4 sm:px-4 lg:px-8">
-          <EmptyPanel
-            title="Proposal not found"
-            body="This proposal could not be loaded. It may have been deleted, or the id in the URL may be wrong."
-          />
-        </div>
-      </div>
-    );
-  }
+  // const _currentStepIndex = STATUS_STEPS.indexOf(status);
 
   return (
-    <div className="min-h-full bg-slate-50 pb-8 dark:bg-slate-950">
+    <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <PageHeader
-        pageTitle="Proposal Room"
-        rightContent={
-          <div className="hidden items-center gap-2 text-xs text-slate-500 dark:text-slate-400 xl:flex">
-            <span>{proposal.brand}</span>
-            <span>•</span>
-            <span>{proposal.campaign}</span>
-          </div>
+        pageTitle="Proposal & Negotiation Room"
+        badge={
+          <span className="text-xs text-slate-500 dark:text-slate-300">Proposal ID: P-101 · Autumn Beauty Flash</span>
         }
       />
 
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-3 pt-4 sm:px-4 lg:px-8">
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex items-start gap-4">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-slate-200 text-lg font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                {proposal.initials}
-              </div>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{proposal.brand}</h1>
-                  <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${originClass}`}>
-                    {originLabel}
-                  </span>
-                  <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClass}`}>
-                    {statusLabel}
-                  </span>
+      <main className="flex-1 flex flex-col w-full p-2 sm:p-4 md:p-6 lg:p-8 pt-6 sm:pt-8 gap-4 overflow-y-auto overflow-x-hidden">
+        <div className="w-full max-w-full flex flex-col gap-4">
+          {/* Top summary + status bar */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 sm:p-4 flex flex-col gap-3 text-sm">
+            <div className="flex flex-col xl:flex-row gap-3 md:gap-4 justify-between">
+              <div className="flex-1 flex gap-3">
+                <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-md font-semibold dark:font-bold transition-colors">
+                  GH
                 </div>
-                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{proposal.campaign}</p>
-                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{proposal.lastActivity}</p>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-md font-semibold dark:font-bold">GlowUp Hub</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-900 text-white">
+                      Top Brand · Beauty & Skincare
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium mb-0.5">
+                    Autumn Beauty Flash · Serum Launch
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-300 mb-0.5">
+                    Live + Shoppable Adz campaign to push the new GlowUp serum across East Africa.
+                  </p>
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-300 mt-1">
+                    <span>Live window: Friday · 20:00–21:30 EAT</span>
+                    <span className="h-1 w-1 rounded-full bg-slate-300" />
+                    <span>Region: East Africa · Online only</span>
+                    <span className="h-1 w-1 rounded-full bg-slate-300" />
+                    <span>Category: Beauty & Skincare</span>
+                  </div>
+                </div>
+              </div>
+              <div className="w-full xl:w-64 flex flex-col justify-between gap-2">
+                {origin === "from-seller" && <AgreementStatusBar status={status} />}
+                <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-200 mt-1">
+                  <span>Last updated: 2h ago</span>
+                  <span>Owner: You</span>
+                </div>
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-2">
-              {canRespond && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => void handleTransition("declined")}
-                    disabled={transitionMutation.isPending}
-                    className="rounded-full border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-900/20"
-                  >
-                    {transitionMutation.isPending ? "Updating..." : "Decline"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleTransition("accepted")}
-                    disabled={transitionMutation.isPending}
-                    className="rounded-full bg-[#f77f00] px-4 py-2 text-sm font-semibold text-white hover:bg-[#e26f00] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {transitionMutation.isPending ? "Updating..." : "Accept"}
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                onClick={() => navigate("/proposals")}
-                className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-              >
-                Back to inbox
-              </button>
+            <div className="mt-2 border-t border-slate-100 dark:border-slate-700 pt-2">
+              <h3 className="text-xs font-semibold dark:font-bold mb-1">Proposed deliverables</h3>
+              <ul className="list-disc pl-4 text-sm text-slate-600 dark:text-slate-200 space-y-0.5">
+                <li>1x 60–90 min live session focussed on new GlowUp serum.</li>
+                <li>3x short clips for Shoppable Adz (15–30 seconds each).</li>
+                <li>2x Instagram stories before and after the live.</li>
+              </ul>
             </div>
-          </div>
+          </section>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-4">
-            <MetricCard label="Base fee" value={formatMoney(proposal.baseFeeMax, proposal.currency)} />
-            <MetricCard label="Commission" value={`${proposal.commissionPct}%`} />
-            <MetricCard label="Estimated value" value={formatMoney(proposal.estimatedValue, proposal.currency)} />
-            <MetricCard label="Messages" value={String(proposal.messages.length)} />
-          </div>
-
-          <div className="mt-5 grid gap-2 sm:grid-cols-4">
-            {STATUS_STEPS.map((label, index) => {
-              const active = index <= stepIndex;
-              const current = index === stepIndex;
-              return (
-                <div
-                  key={label}
-                  className={`rounded-2xl border px-3 py-3 text-center text-xs font-semibold uppercase tracking-wide ${
-                    active
-                      ? current
-                        ? "border-[#f77f00] bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-200"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200"
-                      : "border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400"
-                  }`}
-                >
-                  {label}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-          <div className="space-y-4">
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Term editor</h2>
-                <button
-                  type="button"
-                  onClick={() => void handleSaveTerms()}
-                  disabled={!hasLocalChanges || updateProposalMutation.isPending}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold text-white transition ${
-                    !hasLocalChanges || updateProposalMutation.isPending
-                      ? "cursor-not-allowed bg-slate-300 dark:bg-slate-700"
-                      : "bg-[#f77f00] hover:bg-[#e26f00]"
-                  }`}
-                >
-                  {updateProposalMutation.isPending ? "Saving..." : hasLocalChanges ? "Save terms" : "Saved"}
-                </button>
+          {/* Main grid: Terms editor + Chat + Extras */}
+          <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1.4fr)] gap-4 items-start">
+            {/* Terms editor + risks */}
+            <div className="flex flex-col gap-3">
+              <div className="lg:hidden flex flex-col gap-2">
+                <CollapsibleWrapper title="Terms Editor" defaultExpanded={false}>
+                  <TermsEditor
+                    terms={terms}
+                    origin={origin}
+                  />
+                </CollapsibleWrapper>
+                <CollapsibleWrapper title="Potential Risks" defaultExpanded={false}>
+                  <RiskHints hints={riskHints} />
+                </CollapsibleWrapper>
+              </div>
+              <div className="hidden lg:flex flex-col gap-3">
+                <TermsEditor
+                  terms={terms}
+                  origin={origin}
+                />
+                <RiskHints hints={riskHints} />
               </div>
 
-              <div className="mt-4 grid gap-3">
-                <TermEditor label="Deliverables" value={termsDraft.deliverables} onChange={(value) => setTermsDraft((current) => ({ ...current, deliverables: value }))} />
-                <TermEditor label="Schedule" value={termsDraft.schedule} onChange={(value) => setTermsDraft((current) => ({ ...current, schedule: value }))} />
-                <TermEditor label="Compensation" value={termsDraft.compensation} onChange={(value) => setTermsDraft((current) => ({ ...current, compensation: value }))} />
-                <TermEditor label="Exclusivity window" value={termsDraft.exclusivityWindow} onChange={(value) => setTermsDraft((current) => ({ ...current, exclusivityWindow: value }))} />
-                <TermEditor label="Kill fee" value={termsDraft.killFee} onChange={(value) => setTermsDraft((current) => ({ ...current, killFee: value }))} />
-              </div>
-
-              <div className="mt-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Clause suggestions</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {visibleSuggestions.map((suggestion) => (
+              {/* Action Buttons */}
+              {origin === "from-seller" && (
+                <div className="flex items-center gap-3 mt-2">
+                  {status === "Final review" && (
                     <button
-                      key={suggestion.id}
-                      type="button"
-                      onClick={() => handleApplySuggestion(suggestion)}
-                      className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+                      className="flex-1 py-2.5 rounded-xl bg-[#03cd8c] text-white font-bold text-sm hover:bg-[#02b075] transition-all shadow-sm flex items-center justify-center gap-2"
+                      onClick={() => setStatus("Contract created")}
                     >
-                      {suggestion.title}
+                      <span>✍️</span>
+                      <span>Sign & Accept</span>
                     </button>
-                  ))}
-                  {visibleSuggestions.length === 0 && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">All preset suggestions have been applied.</span>
+                  )}
+                  {status === "Contract created" && (
+                    <div className="flex-1 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 font-bold text-sm flex items-center justify-center gap-2">
+                      <span>✓</span>
+                      <span>Contract Active</span>
+                    </div>
                   )}
                 </div>
-              </div>
+              )}
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Negotiation risk check</h2>
-              <div className="mt-4 space-y-2">
-                {riskHints.length ? (
-                  riskHints.map((hint) => (
-                    <div
-                      key={hint}
-                      className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
-                    >
-                      {hint}
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-200">
-                    The core commercial points are clearly covered in the current draft.
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Room note</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  Use this page to keep the commercial conversation in one place. Save terms first, then use the message thread to explain the revision or ask for confirmation.
-                </p>
-              </div>
+            {/* Chat thread */}
+            <div className="flex flex-col gap-3">
+              <ChatThread
+                messages={messages}
+                draftMessage={draftMessage}
+                onDraftChange={setDraftMessage}
+                onSend={handleSendMessage}
+                onAttach={handleAttachClick}
+                attachedFile={attachedFile}
+              />
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleFileChange}
+              />
             </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Conversation</h2>
-                <span className="text-xs text-slate-500 dark:text-slate-400">{proposal.messages.length} messages</span>
-              </div>
-
-              <div className="mt-4 max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                {proposal.messages.length ? (
-                  proposal.messages.map((message) => <MessageBubble key={message.id} message={message} />)
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
-                    No messages yet. Use the composer below to open the negotiation thread.
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                <textarea
-                  rows={5}
-                  value={draftMessage}
-                  onChange={(event) => setDraftMessage(event.target.value)}
-                  placeholder="Write your response, counter-offer, or clarification..."
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      className="hidden"
-                      onChange={(event) => setAttachedFile(event.target.files?.[0] ?? null)}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                    >
-                      Attach file
-                    </button>
-                    {attachedFile && (
-                      <button
-                        type="button"
-                        onClick={() => setAttachedFile(null)}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                      >
-                        {attachedFile.name} ✕
-                      </button>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => void handleSendMessage()}
-                    disabled={sendMessageMutation.isPending || (!draftMessage.trim() && !attachedFile)}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold text-white transition ${
-                      sendMessageMutation.isPending || (!draftMessage.trim() && !attachedFile)
-                        ? "cursor-not-allowed bg-slate-300 dark:bg-slate-700"
-                        : "bg-[#f77f00] hover:bg-[#e26f00]"
-                    }`}
-                  >
-                    {sendMessageMutation.isPending ? "Sending..." : "Send message"}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Quick facts</h2>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <MetricCard label="Offer type" value={proposal.offerType} />
-                <MetricCard label="Category" value={proposal.category} />
-                <MetricCard label="Region" value={proposal.region} />
-                <MetricCard label="Status" value={statusLabel} />
-              </div>
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Short note</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                  {proposal.notesShort || "No summary note recorded yet."}
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{value}</p>
-    </div>
-  );
-}
-
-function TermEditor({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <label className="space-y-1">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">{label}</span>
-      <textarea
-        rows={3}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-      />
-    </label>
-  );
-}
-
-function MessageBubble({ message }: { message: ProposalRecord["messages"][number] }) {
-  const isCreator = message.from === "creator";
-  return (
-    <div className={`flex ${isCreator ? "justify-end" : "justify-start"}`}>
-      <div
-        className={`max-w-[88%] rounded-2xl border px-4 py-3 ${
-          isCreator
-            ? "border-orange-200 bg-orange-50 text-slate-800 dark:border-orange-800 dark:bg-orange-900/20 dark:text-slate-100"
-            : "border-slate-200 bg-slate-50 text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-        }`}
-      >
-        <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">
-          <span>{message.name}</span>
-          <span>•</span>
-          <span>{formatProposalMessageTime(message.time)}</span>
+          </section>
         </div>
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{message.body}</p>
+      </main>
+    </div>
+  );
+}
+
+/* Agreement status bar */
+type AgreementStatusBarProps = {
+  status: Status;
+};
+
+function AgreementStatusBar({ status }: AgreementStatusBarProps) {
+  const currentIndex = STATUS_STEPS.indexOf(status);
+
+  return (
+    <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-3 py-2 text-xs transition-colors">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-semibold dark:font-bold">Agreement status</span>
+        <span className="text-slate-500 dark:text-slate-300 hidden sm:inline">{status}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        {STATUS_STEPS.map((step, idx) => {
+          const active = idx === currentIndex;
+          const completed = idx < currentIndex;
+          return (
+            <div key={step} className="flex-1 flex items-center">
+              <div
+                className={`flex items-center justify-center h-6 w-6 rounded-full border text-xs font-semibold dark:font-bold ${completed
+                  ? "bg-[#03cd8c] border-[#03cd8c] text-white"
+                  : active
+                    ? "bg-[#f77f00] border-[#f77f00] text-white"
+                    : "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-300"
+                  }`}
+              >
+                {completed ? "✓" : idx + 1}
+              </div>
+              {idx < STATUS_STEPS.length - 1 && (
+                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700 mx-1 transition-colors" />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function EmptyPanel({ title, body }: { title: string; body: string }) {
+/* Terms editor */
+type TermsEditorProps = {
+  terms: Terms;
+  baseTerms: Terms;
+  hasChanges: Record<keyof Terms, boolean>;
+  onTermChange: (field: keyof Terms, value: string) => void;
+};
+
+function TermsEditor({ terms, origin }: { terms: Terms; origin: string }) {
   return (
-    <div className="w-full rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-      <p className="mx-auto mt-2 max-w-xl text-sm text-slate-600 dark:text-slate-300">{body}</p>
+    <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 flex flex-col gap-3 text-sm">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Locked Terms</h3>
+        <span className="text-xs text-slate-500 dark:text-slate-300">
+          {origin === "from-seller"
+            ? "Only suppliers can edit terms in negotiation."
+            : "Review your pitched terms. Brands will respond if they accept or wish to negotiate."}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+        <TermColumn
+          title="Deliverables"
+          value={terms.deliverables}
+        />
+        <TermColumn
+          title="Schedule"
+          value={terms.schedule}
+        />
+        <TermColumn
+          title="Compensation"
+          value={terms.compensation}
+        />
+      </div>
     </div>
   );
 }
+
+function TermColumn({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold dark:font-bold">{title}</span>
+        <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-[10px] border border-slate-200 dark:border-slate-700 transition-colors">
+          Read Only
+        </span>
+      </div>
+      <div className="border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-xs bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 min-h-[120px] whitespace-pre-wrap transition-colors">
+        {value}
+      </div>
+    </div>
+  );
+}
+
+/* Risk hints */
+type RiskHintsProps = {
+  hints: string[];
+};
+
+function RiskHints({ hints }: RiskHintsProps) {
+  if (!hints || hints.length === 0) return null;
+  return (
+    <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-2xl p-3 flex flex-col gap-1 text-xs text-amber-800 dark:text-amber-300 transition-colors">
+      <div className="flex items-center gap-1 text-amber-800 mb-1">
+        <span>⚠️</span>
+        <span className="font-semibold dark:font-bold text-sm">Potential risks detected</span>
+      </div>
+      <ul className="list-disc pl-4 text-amber-900 space-y-0.5">
+        {hints.map((hint, idx) => (
+          <li key={idx}>{hint}</li>
+        ))}
+      </ul>
+      <p className="mt-1 text-xs text-amber-900">
+        Address these points to protect both you and the brand before moving to Final review.
+      </p>
+    </div>
+  );
+}
+
+/* Clause suggestions */
+type ClauseSuggestion = {
+  id: string;
+  title: string;
+  body: string;
+};
+
+type ClauseSuggestionsProps = {
+  suggestions: ClauseSuggestion[];
+  onApply: (id: string, text: string) => void;
+};
+
+function ClauseSuggestions({ suggestions, onApply }: ClauseSuggestionsProps) {
+  if (suggestions.length === 0) return null;
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 text-sm">
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Clause suggestions</h3>
+        <span className="text-xs text-slate-500 dark:text-slate-300">Optional, but recommended</span>
+      </div>
+      <ul className="space-y-1.5">
+        {suggestions.map((sugg: ClauseSuggestion) => (
+          <li
+            key={sugg.id}
+            className="border border-slate-100 dark:border-slate-700 rounded-xl px-2.5 py-1.5 bg-white dark:bg-slate-800 flex items-start justify-between gap-2 transition-colors"
+          >
+            <div>
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-xs">✨</span>
+                <span className="text-sm font-medium">{sugg.title}</span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">{sugg.body}</p>
+            </div>
+            <button
+              className="text-xs px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-900 whitespace-nowrap transition-colors"
+              onClick={() => onApply(sugg.id, sugg.body)}
+            >
+              Apply
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/* Chat thread */
+type ChatThreadProps = {
+  messages: Message[];
+  draftMessage: string;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onAttach: () => void;
+  attachedFile: File | null;
+};
+
+function ChatThread({ messages, draftMessage, onDraftChange, onSend, onAttach, attachedFile }: ChatThreadProps) {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom whenever messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 flex flex-col h-[420px] md:h-[480px] text-sm">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <h3 className="text-sm font-semibold dark:text-slate-50 dark:font-bold">Negotiation chat</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-300">
+            Chat with the brand while you adjust terms. All changes are visible to both sides.
+          </p>
+        </div>
+        <span className="text-xs text-slate-500 dark:text-slate-300 hidden md:inline">
+          Messages are kept with the contract record.
+        </span>
+      </div>
+      <div className="flex-1 border border-slate-100 dark:border-slate-700 rounded-xl p-2.5 bg-slate-50 dark:bg-slate-800 overflow-y-auto space-y-2 transition-colors">
+        {messages.map((msg: Message) => (
+          <ChatMessage key={msg.id} message={msg} />
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="mt-2 flex items-center gap-1 text-xs text-slate-500 dark:text-slate-300">
+        <span>Attach:</span>
+        <button
+          className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+          onClick={onAttach}
+        >
+          Concept note
+        </button>
+        <button
+          className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+          onClick={onAttach}
+        >
+          Draft script
+        </button>
+        <button
+          className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+          onClick={onAttach}
+        >
+          File
+        </button>
+      </div>
+      {attachedFile && (
+        <div className="mt-2 text-xs text-emerald-600 font-medium flex items-center gap-1">
+          <span>📎 Attached: {attachedFile.name}</span>
+        </div>
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <textarea
+          rows={2}
+          className="flex-1 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-800 focus:border-slate-400 dark:focus:border-slate-600 outline-none resize-none transition-colors"
+          placeholder="Type a message to the brand…"
+          value={draftMessage}
+          onChange={(e) => onDraftChange(e.target.value)}
+        />
+        <button
+          className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white text-sm font-semibold hover:bg-[#e26f00]"
+          onClick={onSend}
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type ChatMessageProps = {
+  message: Message;
+};
+
+function ChatMessage({ message }: ChatMessageProps) {
+  const isCreator = message.from === "creator";
+  const alignment = isCreator ? "justify-end" : "justify-start";
+  const bubbleColor = isCreator
+    ? "bg-[#f77f00] text-white"
+    : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 transition-colors";
+
+  return (
+    <div className={`flex ${alignment}`}>
+      <div
+        className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm shadow-sm ${bubbleColor}`}
+      >
+        <div className="flex items-center justify-between mb-0.5">
+          <span className="text-xs font-semibold">
+            {isCreator ? "You" : message.name}
+          </span>
+          <span className="text-tiny opacity-80">{message.time}</span>
+        </div>
+        <p className="text-sm whitespace-pre-line">{message.body}</p>
+      </div>
+    </div>
+  );
+}
+
+/* Helper to wrap mobile collapsible sections */
+function CollapsibleWrapper({ title, children, defaultExpanded = false }: { title: string; children: React.ReactNode; defaultExpanded?: boolean }) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden transition-all shadow-sm">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full px-4 py-3 flex items-center justify-between text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+      >
+        <span>{title}</span>
+        <span>{expanded ? "▴" : "▾"}</span>
+      </button>
+      {expanded && <div className="p-0 border-t border-slate-50 dark:border-slate-800">{children}</div>}
+    </div>
+  );
+}
+
+export { ProposalNegotiationRoomPage };

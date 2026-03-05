@@ -1,475 +1,1022 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { CalendarClock, CheckCircle2, Copy, ExternalLink, Film, MessageCircle, Plus, Save, Scissors, Sparkles, UploadCloud, Video } from "lucide-react";
-import { PageHeader } from "../../components/PageHeader";
-import { useNotification } from "../../contexts/NotificationContext";
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+import { CircularProgress } from '@mui/material';
+import { useNotification } from '../../contexts/NotificationContext';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 import {
-  useLiveSessionQuery,
-  usePublishReplayMutation,
-  useReplayBySessionQuery,
-  useUpdateReplayMutation
-} from "../../hooks/api/useLiveRuntime";
-import type { LiveReplayClipRecord } from "../../api/types";
-import { formatDateTime, getLiveHeroImage } from "../../utils/runtimeData";
+  AlertTriangle,
+  BadgeCheck,
+  BarChart3,
+  CheckCircle2,
+  Copy,
+  Download,
+  ExternalLink,
+  Film,
+  Info,
+  Lock,
+  MessageCircle,
+  Phone,
+  Plus,
+  Scissors,
+  Send,
+  Sparkles,
+  Timer,
+  Trash2,
+  X,
+} from 'lucide-react';
 
-const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
+/**
+ * G. Post-Live Publisher
+ * Role: Creator, Seller Manager
+ * Surface: Creator Studio Web
+ * Placement: Live Sessionz Pro → Post-Live
+ *
+ * Features:
+ * • Replay page review + publish
+ * • Clip selection and export plan
+ * • “Send replay” to messaging channels
+ * • Post-live conversion booster:
+ *    - cart recovery reminders
+ *    - price-drop messages
+ *    - restock alerts
+ *
+ * Notes:
+ * - Self-contained demo UI (no backend).
+ * - TailwindCSS assumed.
+ */
 
-function parseSessionId(search: string): string | undefined {
-  const value = new URLSearchParams(search).get("sessionId") || undefined;
-  return value?.trim() || undefined;
+const ORANGE = '#f77f00';
+
+const ROUTES = {
+  liveDashboard: '/live-dashboard',
+  liveBuilder: '/live-builder',
+  audienceNotifications: '/audience-notifications',
+  overlaysCtas: '/overlays-ctas-pro',
+  postLive: '/post-live-publisher',
+};
+
+const cx = (...xs: Array<string | false | null | undefined>) => xs.filter(Boolean).join(' ');
+
+function safeNav(url: string) {
+  if (typeof window === 'undefined') return;
+  window.location.assign(url);
 }
 
-function Pill({ label, tone = "neutral" }: { label: string; tone?: "neutral" | "good" | "warn" }) {
-  const toneClass =
+function parseSearch() {
+  if (typeof window === 'undefined') return new URLSearchParams();
+  return new URLSearchParams(window.location.search);
+}
+
+type SessionStatus = 'Draft' | 'Scheduled' | 'Live' | 'Ended';
+type ChannelKey = 'whatsapp' | 'telegram' | 'line' | 'viber' | 'rcs';
+
+type Channel = {
+  key: ChannelKey;
+  name: string;
+  short: string;
+  connected: 'Connected' | 'Needs re-auth' | 'Blocked';
+  supportsRich: boolean;
+  costPerMessageUSD: number;
+};
+
+type AudienceKey = 'past_buyers' | 'attendees' | 'vip_list' | 'category_interest';
+
+type Clip = {
+  id: string;
+  title: string;
+  startSec: number;
+  endSec: number;
+  format: '9:16' | '16:9' | '1:1';
+  status: 'Draft' | 'Queued' | 'Exported';
+};
+
+function fmtInt(n: number) {
+  return Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(n);
+}
+
+function fmtLocal(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+
+
+function Pill({
+  tone = "neutral",
+  children,
+  title,
+}: {
+  tone?: "neutral" | "good" | "warn" | "bad" | "pro";
+  children: React.ReactNode;
+  title?: string;
+}) {
+  const cls =
     tone === "good"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300"
+      ? "bg-emerald-50 text-emerald-800 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20"
       : tone === "warn"
-        ? "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
-        : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
-  return <span className={cx("inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold", toneClass)}>{label}</span>;
-}
-
-function SectionCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+        ? "bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20"
+        : tone === "bad"
+          ? "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:ring-rose-500/20"
+          : tone === "pro"
+            ? "bg-violet-50 text-violet-800 ring-violet-200 dark:bg-violet-500/10 dark:text-violet-400 dark:ring-violet-500/20"
+            : "bg-slate-100 text-slate-800 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700";
   return (
-    <section className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm transition-colors">
-      <div className="mb-4">
-        <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h2>
-        {subtitle ? <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p> : null}
-      </div>
+    <span title={title} className={cx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-semibold ring-1 whitespace-nowrap", cls)}>
       {children}
-    </section>
+    </span>
   );
 }
 
-function MetricTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Btn({
+  tone = "neutral",
+  children,
+  onClick,
+  disabled,
+  left,
+  title,
+}: {
+  tone?: "neutral" | "primary" | "ghost" | "danger";
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  left?: React.ReactNode;
+  title?: string;
+}) {
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed";
+  const cls =
+    tone === "primary"
+      ? "text-white hover:brightness-95 shadow-sm"
+      : tone === "danger"
+        ? "bg-rose-600 text-white hover:brightness-95 shadow-sm"
+        : tone === "ghost"
+          ? "bg-transparent text-slate-900 dark:text-slate-50 hover:bg-slate-100 dark:hover:bg-slate-800"
+          : "bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 ring-1 ring-slate-200 dark:ring-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm";
   return (
-    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 transition-colors">
-      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-2 text-xl font-extrabold text-slate-900 dark:text-slate-100">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{hint}</div> : null}
+    <button
+      title={title}
+      className={cx(base, cls)}
+      style={tone === "primary" ? { background: ORANGE } : undefined}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+    >
+      {disabled && tone === 'primary' ? <CircularProgress size={16} color="inherit" /> : left}
+      {children}
+    </button>
+  );
+}
+
+function Toggle({ value, onChange, disabled }: { value: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={() => (!disabled ? onChange(!value) : undefined)}
+      className={cx(
+        "relative inline-flex h-5 w-10 sm:h-6 sm:w-11 items-center rounded-full transition",
+        disabled ? "bg-slate-200 dark:bg-slate-800 cursor-not-allowed" : value ? "bg-slate-900 dark:bg-slate-100" : "bg-slate-300 dark:bg-slate-700",
+      )}
+      aria-pressed={value}
+    >
+      <span className={cx("inline-block h-4 w-4 sm:h-5 sm:w-5 transform rounded-full bg-white dark:bg-slate-900 shadow-sm transition", value ? "translate-x-5" : "translate-x-1")} />
+    </button>
+  );
+}
+
+function Modal({
+  open,
+  title,
+  onClose,
+  children,
+  right,
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  right?: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end justify-center sm:items-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="relative flex w-full max-w-4xl flex-col bg-white dark:bg-slate-900 shadow-2xl transition-all h-[90vh] sm:h-auto sm:max-h-[90vh] rounded-t-3xl sm:rounded-3xl overflow-hidden">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 px-4 py-3">
+          <div className="text-base font-semibold text-slate-900 dark:text-slate-50">{title}</div>
+          <div className="flex items-center gap-2">
+            {right}
+            <Btn tone="ghost" onClick={onClose} left={<X className="h-4 w-4" />}>
+              Close
+            </Btn>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto p-4">{children}</div>
+      </div>
     </div>
   );
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (next: boolean) => void }) {
+function MiniSparkline({ data }: { data: number[] }) {
+  const w = 240;
+  const h = 80;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const pts = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * w;
+      const y = h - ((v - min) / Math.max(1e-6, max - min)) * h;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={cx(
-        "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-        checked ? "bg-[#f77f00]" : "bg-slate-300 dark:bg-slate-700"
-      )}
-      aria-pressed={checked}
-    >
-      <span className={cx("inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform", checked ? "translate-x-5" : "translate-x-1")} />
-    </button>
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-20 w-full transition-colors">
+      <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-900 dark:text-slate-100" />
+      <polyline points={`${pts} ${w},${h} 0,${h}`} fill="currentColor" opacity="0.08" className="text-slate-900 dark:text-slate-100" />
+    </svg>
   );
 }
 
-function LinkButton({ onClick, icon, children }: { onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-700"
-    >
-      {icon}
-      {children}
-    </button>
+export default function PostLivePublisherPage() {
+  const { showSuccess, showNotification } = useNotification();
+  const { run, isPending } = useAsyncAction();
+  const sp = useMemo(() => parseSearch(), []);
+  const sessionId = sp.get('sessionId') ?? 'LS-20418';
+
+  const [plan, setPlan] = useState<'Standard' | 'Pro'>('Pro');
+  const isPro = plan === 'Pro';
+
+  const session = useMemo(
+    () => ({
+      id: sessionId,
+      title: 'Autumn Beauty Flash',
+      status: 'Ended' as SessionStatus,
+      endedISO: new Date(Date.now() - 33 * 60 * 1000).toISOString(),
+      replayUrl: `https://mylivedealz.com/replay/${sessionId}`,
+      coverUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=70',
+    }),
+    [sessionId],
   );
-}
 
-function buildDefaultClips(title: string): LiveReplayClipRecord[] {
-  return [
-    { id: "clip_hook", title: `${title} Hook`, startSec: 0, endSec: 20, format: "9:16", status: "Draft" },
-    { id: "clip_offer", title: `${title} Offer close`, startSec: 20, endSec: 45, format: "1:1", status: "Draft" }
-  ];
-}
-
-export default function PostLivePublisherPage(): JSX.Element {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { showError, showNotification, showSuccess } = useNotification();
-  const sessionId = useMemo(() => parseSessionId(location.search), [location.search]);
-
-  const sessionQuery = useLiveSessionQuery(sessionId, { enabled: Boolean(sessionId) });
-  const replayQuery = useReplayBySessionQuery(sessionId, { enabled: Boolean(sessionId) });
-  const updateReplayMutation = useUpdateReplayMutation();
-  const publishReplayMutation = usePublishReplayMutation();
-
-  const session = sessionQuery.data;
-  const replay = replayQuery.data;
-  const heroImage = getLiveHeroImage(session);
-
-  const [title, setTitle] = useState("");
-  const [hook, setHook] = useState("");
-  const [retention, setRetention] = useState("");
-  const [notesText, setNotesText] = useState("");
-  const [replayUrl, setReplayUrl] = useState("");
-  const [coverUrl, setCoverUrl] = useState("");
+  // Replay/publish state
+  const [published, setPublished] = useState(false);
+  const [schedulePublish, setSchedulePublish] = useState(false);
+  const [publishAt, setPublishAt] = useState(() => new Date(Date.now() + 30 * 60 * 1000).toISOString());
   const [allowComments, setAllowComments] = useState(true);
   const [showProductStrip, setShowProductStrip] = useState(true);
-  const [scheduledPublishAt, setScheduledPublishAt] = useState("");
-  const [clips, setClips] = useState<LiveReplayClipRecord[]>([]);
 
-  useEffect(() => {
-    if (!replay) return;
-    setTitle(replay.title || session?.title || "Untitled replay");
-    setHook(replay.hook || "");
-    setRetention(replay.retention || "");
-    setNotesText(Array.isArray(replay.notes) ? replay.notes.join("\n") : "");
-    setReplayUrl(replay.replayUrl || "");
-    setCoverUrl(replay.coverUrl || heroImage || "");
-    setAllowComments(Boolean(replay.allowComments ?? true));
-    setShowProductStrip(Boolean(replay.showProductStrip ?? true));
-    setScheduledPublishAt(replay.scheduledPublishAt ? String(replay.scheduledPublishAt).slice(0, 16) : "");
-    setClips(Array.isArray(replay.clips) && replay.clips.length ? replay.clips : buildDefaultClips(replay.title || session?.title || "Replay"));
-  }, [heroImage, replay, session?.title]);
+  // Clips
+  const [clips, setClips] = useState<Clip[]>([
+    { id: 'c1', title: 'GlowUp Bundle – Key benefits', startSec: 140, endSec: 210, format: '9:16', status: 'Exported' },
+    { id: 'c2', title: 'Price drop moment', startSec: 520, endSec: 560, format: '9:16', status: 'Queued' },
+    { id: 'c3', title: 'Buyer Q&A – shipping', startSec: 760, endSec: 840, format: '16:9', status: 'Draft' },
+  ]);
 
-  const notes = useMemo(
-    () => notesText.split(/\n|,/).map((entry) => entry.trim()).filter(Boolean),
-    [notesText]
-  );
-
-  const clipCount = clips.length;
-  const publishedLabel = replay?.published ? "Published" : "Draft";
-
-  const handleSave = async () => {
-    if (!replay?.id) return;
-    try {
-      await updateReplayMutation.mutateAsync({
-        replayId: replay.id,
-        payload: {
-          title: title.trim() || session?.title || "Untitled replay",
-          hook: hook.trim(),
-          retention: retention.trim(),
-          notes,
-          replayUrl: replayUrl.trim(),
-          coverUrl: coverUrl.trim(),
-          allowComments,
-          showProductStrip,
-          clips,
-          scheduledPublishAt: scheduledPublishAt ? new Date(scheduledPublishAt).toISOString() : null
-        }
-      });
-      showSuccess("Replay draft saved to the backend.");
-    } catch {
-      showError("Replay draft could not be saved.");
-    }
-  };
-
-  const handlePublish = async () => {
-    if (!replay?.id) return;
-    try {
-      await publishReplayMutation.mutateAsync({
-        replayId: replay.id,
-        payload: {
-          title: title.trim() || session?.title || "Untitled replay",
-          hook: hook.trim(),
-          retention: retention.trim(),
-          notes,
-          replayUrl: replayUrl.trim(),
-          coverUrl: coverUrl.trim(),
-          allowComments,
-          showProductStrip,
-          clips,
-          scheduledPublishAt: scheduledPublishAt ? new Date(scheduledPublishAt).toISOString() : null,
-          published: true
-        }
-      });
-      showSuccess("Replay published from backend state.");
-    } catch {
-      showError("Replay could not be published.");
-    }
-  };
-
-  const updateClip = (clipId: string, patch: Partial<LiveReplayClipRecord>) => {
-    setClips((current) => current.map((clip) => (clip.id === clipId ? { ...clip, ...patch } : clip)));
-  };
+  const [clipModal, setClipModal] = useState(false);
+  const [clipTitle, setClipTitle] = useState('');
+  const [clipStart, setClipStart] = useState(120);
+  const [clipEnd, setClipEnd] = useState(160);
+  const [clipFormat, setClipFormat] = useState<'9:16' | '16:9' | '1:1'>('9:16');
 
   const addClip = () => {
-    setClips((current) => [
-      ...current,
-      {
-        id: `clip_${Date.now()}`,
-        title: `New clip ${current.length + 1}`,
-        startSec: 0,
-        endSec: 30,
-        format: "9:16",
-        status: "Draft"
-      }
-    ]);
+    const title = clipTitle.trim() || 'New clip';
+    const id = `c_${Math.random().toString(16).slice(2)}`;
+    setClips((s) => [{ id, title, startSec: Math.min(clipStart, clipEnd - 1), endSec: Math.max(clipEnd, clipStart + 1), format: clipFormat, status: 'Draft' }, ...s]);
+    setClipModal(false);
+    setClipTitle('');
   };
 
-  if (!sessionId) {
-    return (
-      <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 transition-colors">
-        <PageHeader pageTitle="Post-Live Publisher" />
-        <main className="px-4 py-8 sm:px-6 lg:px-8">
-          <SectionCard title="No session selected" subtitle="Open Post-Live from an ended live session first.">
-            <button
-              type="button"
-              onClick={() => navigate("/live-dashboard-2")}
-              className="rounded-2xl bg-[#f77f00] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:brightness-95"
-            >
-              Back to live dashboard
-            </button>
-          </SectionCard>
-        </main>
-      </div>
-    );
-  }
+  // Channels (send replay)
+  const channels: Channel[] = useMemo(
+    () => [
+      { key: 'whatsapp', name: 'WhatsApp', short: 'WA', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.002 },
+      { key: 'telegram', name: 'Telegram', short: 'TG', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.0 },
+      { key: 'line', name: 'LINE', short: 'LINE', connected: 'Needs re-auth', supportsRich: true, costPerMessageUSD: 0.003 },
+      { key: 'viber', name: 'Viber', short: 'Viber', connected: 'Connected', supportsRich: false, costPerMessageUSD: 0.0015 },
+      { key: 'rcs', name: 'RCS', short: 'RCS', connected: 'Connected', supportsRich: false, costPerMessageUSD: 0.008 },
+    ],
+    [],
+  );
 
-  const loading = sessionQuery.isLoading || replayQuery.isLoading;
-  const failed = sessionQuery.isError || replayQuery.isError || !session || !replay;
+  const [enabledChannels, setEnabledChannels] = useState<Record<ChannelKey, boolean>>({
+    whatsapp: true,
+    telegram: true,
+    line: false,
+    viber: false,
+    rcs: false,
+  });
+
+  const [audience, setAudience] = useState<AudienceKey>('past_buyers');
+  const [scheduleSends, setScheduleSends] = useState(true);
+  const [sendNow, setSendNow] = useState(false);
+  const [templatePack, setTemplatePack] = useState<'Default' | 'VIP' | 'High intent'>('Default');
+
+  // Booster toggles
+  const [cartRecovery, setCartRecovery] = useState(true);
+  const [priceDrop, setPriceDrop] = useState(false);
+  const [restock, setRestock] = useState(true);
+
+  const metrics = useMemo(
+    () => ({
+      viewers: 18420,
+      clicks: 3120,
+      orders: 284,
+      gmv: 9210,
+      addToCart: 740,
+      cartAbandon: 310,
+      ctr: 0.169,
+      conv: 0.091,
+      ordersSeries: [4, 6, 8, 10, 9, 12, 15, 14, 18, 17, 16, 19, 21, 18, 16],
+    }),
+    [],
+  );
+  void metrics; // Suppress unused
+
+  const enabledChannelList = useMemo(() => channels.filter((c) => enabledChannels[c.key]), [channels, enabledChannels]);
+
+  const estimatedReach = useMemo(() => {
+    // demo reach: depends on audience segment
+    return audience === 'past_buyers' ? 3400 : audience === 'attendees' ? 5200 : audience === 'vip_list' ? 420 : 1800;
+  }, [audience]);
+
+  const estimatedCost = useMemo(() => {
+    const costPer = enabledChannelList.reduce((sum, c) => sum + c.costPerMessageUSD, 0);
+    return estimatedReach * costPer;
+  }, [estimatedReach, enabledChannelList]);
+
+  const publishBlocked = (schedulePublish && !publishAt) || isPending;
+
+  const preflight = useMemo(() => {
+    const items: Array<{ label: string; ok: boolean; detail?: string }> = [
+      { label: 'Replay cover + title ready', ok: true },
+      { label: 'At least 1 clip selected (optional)', ok: clips.length >= 1, detail: clips.length ? `${clips.length} clip(s)` : 'None' },
+      { label: 'Messaging channels connected', ok: enabledChannelList.every((c) => c.connected === 'Connected'), detail: enabledChannelList.some((c) => c.connected !== 'Connected') ? 'Reconnect required' : undefined },
+    ];
+    return items;
+  }, [clips.length, enabledChannelList]);
+  void preflight; // Suppress unused
 
   return (
-    <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 transition-colors">
-      <PageHeader
-        pageTitle="Post-Live Publisher"
-        badge={
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill label={publishedLabel} tone={replay?.published ? "good" : "warn"} />
-            {replay?.publishedAt ? <Pill label={`Published ${formatDateTime(replay.publishedAt)}`} /> : null}
-          </div>
-        }
-        rightContent={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={!replay || updateReplayMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <Save className="h-4 w-4" />
-              Save draft
-            </button>
-            <button
-              type="button"
-              onClick={() => void handlePublish()}
-              disabled={!replay || publishReplayMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-2xl bg-[#f77f00] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <UploadCloud className="h-4 w-4" />
-              Publish replay
-            </button>
-          </div>
-        }
-      />
-
-      <main className="space-y-6 px-4 py-6 sm:px-6 lg:px-8">
-        {loading ? (
-          <SectionCard title="Loading replay workspace" subtitle="Fetching the session and replay payload from the backend.">
-            <div className="text-sm text-slate-500 dark:text-slate-400">Preparing your post-live tools…</div>
-          </SectionCard>
-        ) : failed ? (
-          <SectionCard title="Replay workspace unavailable" subtitle="This session or replay draft could not be loaded.">
-            <div className="text-sm text-rose-700 dark:text-rose-300">Please go back to the live dashboard and reopen Post-Live.</div>
-          </SectionCard>
-        ) : (
-          <>
-            <SectionCard title={session.title} subtitle={`${session.seller || "Unassigned seller"} · ${session.campaign || "Unassigned campaign"}`}>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-                <div className="overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 transition-colors">
-                  {coverUrl || heroImage ? (
-                    <img src={coverUrl || heroImage} alt={session.title} className="h-full min-h-[220px] w-full object-cover" />
-                  ) : (
-                    <div className="flex min-h-[220px] items-center justify-center text-slate-400 dark:text-slate-500">
-                      <Video className="h-10 w-10" />
-                    </div>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <MetricTile label="Session ended" value={formatDateTime(session.scheduledFor)} hint="Published builder schedule" />
-                  <MetricTile label="Replay clips" value={String(clipCount)} hint="Backend-persisted clip plan" />
-                  <MetricTile label="Comments" value={allowComments ? "On" : "Off"} hint="Replay audience interaction" />
-                </div>
-              </div>
-            </SectionCard>
-
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.1fr)_420px]">
-              <div className="space-y-6">
-                <SectionCard title="Replay metadata" subtitle="These fields now save directly to the replay record in the API.">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Field label="Replay title">
-                      <input value={title} onChange={(event) => setTitle(event.target.value)} className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]" />
-                    </Field>
-                    <Field label="Replay URL">
-                      <input value={replayUrl} onChange={(event) => setReplayUrl(event.target.value)} className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]" />
-                    </Field>
-                    <Field label="Hook summary">
-                      <input value={hook} onChange={(event) => setHook(event.target.value)} className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]" />
-                    </Field>
-                    <Field label="Retention insight">
-                      <input value={retention} onChange={(event) => setRetention(event.target.value)} className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]" />
-                    </Field>
-                    <Field label="Cover image URL">
-                      <input value={coverUrl} onChange={(event) => setCoverUrl(event.target.value)} className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]" />
-                    </Field>
-                    <Field label="Scheduled publish time">
-                      <input type="datetime-local" value={scheduledPublishAt} onChange={(event) => setScheduledPublishAt(event.target.value)} className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]" />
-                    </Field>
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <Field label="Replay notes">
-                      <textarea value={notesText} onChange={(event) => setNotesText(event.target.value)} rows={6} className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]" placeholder="One note per line" />
-                    </Field>
-                    <div className="space-y-4">
-                      <ToggleRow label="Allow comments" hint="Keep replay conversation open for viewers." checked={allowComments} onChange={setAllowComments} />
-                      <ToggleRow label="Show product strip" hint="Display the item carousel below the replay." checked={showProductStrip} onChange={setShowProductStrip} />
-                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Quick actions</div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <LinkButton onClick={() => navigate(`/live-studio?sessionId=${encodeURIComponent(session.id)}`)} icon={<Film className="h-4 w-4" />}>Back to studio</LinkButton>
-                          <LinkButton onClick={() => navigate(`/live-builder?sessionId=${encodeURIComponent(session.id)}`)} icon={<Sparkles className="h-4 w-4" />}>Open builder</LinkButton>
-                          <LinkButton onClick={() => {
-                            void navigator.clipboard.writeText(replayUrl || replay.replayUrl || "");
-                            showNotification("Replay link copied.");
-                          }} icon={<Copy className="h-4 w-4" />}>Copy replay link</LinkButton>
-                          <LinkButton onClick={() => window.open(replayUrl || replay.replayUrl || "_blank", "_blank")} icon={<ExternalLink className="h-4 w-4" />}>Preview link</LinkButton>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </SectionCard>
-
-                <SectionCard title="Replay clips" subtitle="Edit the post-live clip plan that will be saved with the replay.">
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div className="text-sm text-slate-500 dark:text-slate-400">Each clip block below is persisted back to the replay draft on save or publish.</div>
-                    <button
-                      type="button"
-                      onClick={addClip}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-700"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Add clip
-                    </button>
-                  </div>
-                  <div className="space-y-3">
-                    {clips.map((clip) => (
-                      <div key={clip.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 transition-colors">
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_120px_120px_120px]">
-                          <input
-                            value={clip.title}
-                            onChange={(event) => updateClip(clip.id, { title: event.target.value })}
-                            className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]"
-                          />
-                          <input
-                            type="number"
-                            min={0}
-                            value={clip.startSec}
-                            onChange={(event) => updateClip(clip.id, { startSec: Number(event.target.value || 0) })}
-                            className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]"
-                          />
-                          <input
-                            type="number"
-                            min={0}
-                            value={clip.endSec}
-                            onChange={(event) => updateClip(clip.id, { endSec: Number(event.target.value || 0) })}
-                            className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]"
-                          />
-                          <select
-                            value={clip.format}
-                            onChange={(event) => updateClip(clip.id, { format: event.target.value })}
-                            className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 outline-none transition focus:border-[#f77f00]"
-                          >
-                            <option value="9:16">9:16</option>
-                            <option value="1:1">1:1</option>
-                            <option value="16:9">16:9</option>
-                          </select>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <Pill label={`${clip.startSec}s → ${clip.endSec}s`} />
-                          <Pill label={clip.status} tone={clip.status.toLowerCase() === "exported" ? "good" : "neutral"} />
-                          <button
-                            type="button"
-                            onClick={() => setClips((current) => current.filter((entry) => entry.id !== clip.id))}
-                            className="ml-auto inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-800 dark:bg-slate-900 dark:text-rose-300 dark:hover:bg-rose-900/10"
-                          >
-                            Remove clip
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </SectionCard>
+    <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
+      {/* Header */}
+      <div className="sticky top-0 z-40 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur transition-colors">
+        <div className="w-full px-4 md:px-6 lg:px-8 py-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] sm:text-xs text-slate-500 dark:text-slate-400">
+                <button className="hover:text-slate-700 dark:hover:text-slate-200" onClick={() => safeNav(ROUTES.liveDashboard)}>
+                  Live Sessionz Pro
+                </button>
+                <span className="text-slate-300 dark:text-slate-700">/</span>
+                <span className="text-slate-900 dark:text-slate-200">Post‑Live</span>
               </div>
 
-              <div className="space-y-6">
-                <SectionCard title="Distribution checklist" subtitle="Post-publish actions now work from the replay record, not mock state.">
-                  <div className="space-y-3 text-sm">
-                    <ChecklistRow icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />} title="Replay payload" text="Metadata, notes, clip plan, and toggles save back to the backend replay object." />
-                    <ChecklistRow icon={<CalendarClock className="h-4 w-4 text-[#f77f00]" />} title="Timed release" text={scheduledPublishAt ? `Scheduled for ${formatDateTime(new Date(scheduledPublishAt).toISOString())}` : "No delayed publish time set."} />
-                    <ChecklistRow icon={<Scissors className="h-4 w-4 text-[#f77f00]" />} title="Clip workflow" text={`${clipCount} clips ready for post-live export planning.`} />
-                    <ChecklistRow icon={<MessageCircle className="h-4 w-4 text-[#f77f00]" />} title="Engagement mode" text={allowComments ? "Comments remain enabled for replay engagement." : "Comments are disabled for this replay."} />
-                  </div>
-                </SectionCard>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <div className="truncate text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-50 tracking-tight">{session.title}</div>
+                <div className="flex items-center gap-1.5">
+                  <Pill tone="neutral">
+                    <Timer className="h-3.5 w-3.5" />
+                    {session.status}
+                  </Pill>
+                  <Pill tone="neutral">
+                    <Film className="h-3.5 w-3.5" />
+                    Replay
+                  </Pill>
+                  <Pill tone={isPro ? "pro" : "neutral"}>
+                    {isPro ? <BadgeCheck className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                    {plan}
+                  </Pill>
+                </div>
+              </div>
 
-                <SectionCard title="Send & share" subtitle="Use the replay URL generated from the published payload.">
-                  <div className="space-y-3 text-sm text-slate-600 dark:text-slate-400">
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4">
-                      <div className="font-semibold text-slate-900 dark:text-slate-100">Replay URL</div>
-                      <div className="mt-2 break-all text-xs">{replayUrl || replay.replayUrl || "No replay URL saved yet."}</div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <LinkButton onClick={() => {
-                        void navigator.clipboard.writeText(replayUrl || replay.replayUrl || "");
-                        showNotification("Replay URL copied for WhatsApp/Telegram sharing.");
-                      }} icon={<Copy className="h-4 w-4" />}>Copy for messaging</LinkButton>
-                      <LinkButton onClick={() => navigate("/audience-notification")} icon={<MessageCircle className="h-4 w-4" />}>Audience notifications</LinkButton>
-                    </div>
-                  </div>
-                </SectionCard>
+              <div className="mt-1 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">
+                Ended <span className="font-semibold text-slate-900 dark:text-slate-200">{fmtLocal(session.endedISO)}</span> • Replay URL{" "}
+                <span className="font-semibold text-slate-900 dark:text-slate-200">{session.replayUrl}</span>
               </div>
             </div>
-          </>
-        )}
-      </main>
-    </div>
-  );
-}
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
-      {children}
-    </label>
-  );
-}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                onClick={() => setPlan((p) => (p === "Pro" ? "Standard" : "Pro"))}
+                title="Demo: toggle plan"
+              >
+                <Sparkles className="h-4 w-4" />
+                Plan: {plan}
+              </button>
 
-function ToggleRow({
-  label,
-  hint,
-  checked,
-  onChange
-}: {
-  label: string;
-  hint: string;
-  checked: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 transition-colors">
-      <div>
-        <div className="font-semibold text-slate-900 dark:text-slate-100">{label}</div>
-        <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{hint}</div>
+              <div className="hidden sm:block">
+                <Btn
+                  tone="ghost"
+                  onClick={async () => {
+                    await navigator.clipboard?.writeText(session.replayUrl);
+                    showSuccess("Replay link copied");
+                  }}
+                  left={<Copy className="h-4 w-4" />}
+                >
+                  Copy replay link
+                </Btn>
+              </div>
+
+              <Btn tone="neutral" onClick={() => showNotification("Preview replay page (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+                Preview
+              </Btn>
+
+              <Btn
+                tone="primary"
+                disabled={publishBlocked}
+                onClick={() => run(async () => {
+                  setPublished(true);
+                }, { successMessage: "Replay published successfully!" })}
+                left={<CheckCircle2 className="h-4 w-4" />}
+              >
+                {isPending ? "Publishing..." : "Publish"}
+              </Btn>
+            </div>
+          </div>
+        </div>
       </div>
-      <Toggle checked={checked} onChange={onChange} />
-    </div>
-  );
-}
 
-function ChecklistRow({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 transition-colors">
-      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-        {icon}
-        {title}
+      {/* Content */}
+      <div className="flex-1 w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          {/* Left */}
+          <div className="lg:col-span-7 space-y-4">
+            {/* Replay page review */}
+            <div className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm transition">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Replay page</div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Review how the replay appears to buyers, then publish.</div>
+                </div>
+                <Pill tone={published ? "good" : "warn"}>
+                  {published ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                  {published ? "Published" : "Not published"}
+                </Pill>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
+                <div className="md:col-span-5">
+                  <div className="overflow-hidden rounded-2xl ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm">
+                    <img src={session.coverUrl} alt="Replay cover" className="aspect-[4/3] w-full object-cover" />
+                  </div>
+                  <div className="mt-2 rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                    <div className="text-xs font-semibold text-slate-700 dark:text-slate-400">Replay URL</div>
+                    <div className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{session.replayUrl}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Btn
+                        tone="neutral"
+                        onClick={async () => {
+                          await navigator.clipboard?.writeText(session.replayUrl);
+                          showSuccess("Copied replay URL");
+                        }}
+                        left={<Copy className="h-4 w-4" />}
+                      >
+                        Copy
+                      </Btn>
+                      <Btn tone="ghost" onClick={() => showNotification("Open replay (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+                        Open
+                      </Btn>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-7 space-y-3">
+                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Publish controls</div>
+                      <Pill tone={isPro ? "pro" : "neutral"}>
+                        {isPro ? <BadgeCheck className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                        Pro
+                      </Pill>
+                    </div>
+
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Publish replay page</div>
+                          <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Make the replay page visible to buyers.</div>
+                        </div>
+                        <Toggle value={published} onChange={setPublished} />
+                      </div>
+
+                      <div className="flex items-center justify-between rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Schedule publish</div>
+                          <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Publish later (best for timed drops).</div>
+                        </div>
+                        <Toggle value={schedulePublish} onChange={setSchedulePublish} disabled={!isPro} />
+                      </div>
+
+                      {schedulePublish ? (
+                        <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                          <div className="text-xs font-semibold text-slate-700 dark:text-slate-400">Publish at</div>
+                          <input
+                            type="datetime-local"
+                            value={new Date(publishAt).toISOString().slice(0, 16)}
+                            onChange={(e) => setPublishAt(new Date(e.target.value).toISOString())}
+                            className="mt-2 w-full rounded-xl bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 ring-1 ring-slate-200 dark:ring-slate-700 outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition"
+                          />
+                        </div>
+                      ) : null}
+
+                      {!isPro ? (
+                        <div className="rounded-2xl bg-amber-50 dark:bg-amber-500/10 p-3 ring-1 ring-amber-200 dark:ring-amber-500/20 text-sm text-amber-900 dark:text-amber-400 transition">
+                          <div className="font-semibold">Why locked</div>
+                          <div className="mt-1">Scheduled publishing is Pro.</div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Comments</div>
+                        <Toggle value={allowComments} onChange={setAllowComments} />
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Allow replay comments (where supported).</div>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Product strip</div>
+                        <Toggle value={showProductStrip} onChange={setShowProductStrip} />
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Show featured items under replay.</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-amber-50 dark:bg-amber-500/10 p-3 ring-1 ring-amber-200 dark:ring-amber-500/20 text-sm text-amber-900 dark:text-amber-400 transition">
+                    <div className="font-semibold text-xs sm:text-sm">Rights reminder</div>
+                    <div className="mt-1 text-xs">Only publish replays that contain licensed music/video and approved assets.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Clips */}
+            <div className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm transition">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Clips</div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Select moments and generate an export plan.</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Btn tone="neutral" onClick={() => setClipModal(true)} left={<Plus className="h-4 w-4" />}>
+                    New clip
+                  </Btn>
+                  <Btn
+                    tone="ghost"
+                    onClick={() => showNotification("Auto highlights (demo)")}
+                    left={<Sparkles className="h-4 w-4" />}
+                    disabled={!isPro}
+                  >
+                    Auto highlights
+                  </Btn>
+                </div>
+              </div>
+
+              {!isPro ? (
+                <div className="mt-3 rounded-2xl bg-amber-50 dark:bg-amber-500/10 p-3 ring-1 ring-amber-200 dark:ring-amber-500/20 text-sm text-amber-900 dark:text-amber-400 transition">
+                  <div className="font-semibold">Why locked</div>
+                  <div className="mt-1">Auto highlight extraction is Pro.</div>
+                </div>
+              ) : null}
+
+              <div className="mt-3 grid grid-cols-1 gap-2">
+                {clips.map((c) => (
+                  <div key={c.id} className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="truncate text-sm font-semibold text-slate-900 dark:text-slate-50">{c.title}</div>
+                          <Pill tone="neutral">
+                            <Scissors className="h-3.5 w-3.5" />
+                            {c.format}
+                          </Pill>
+                          <Pill tone={c.status === "Exported" ? "good" : c.status === "Queued" ? "warn" : "neutral"}>
+                            {c.status === "Exported" ? <CheckCircle2 className="h-3.5 w-3.5" /> : c.status === "Queued" ? <Timer className="h-3.5 w-3.5" /> : <Info className="h-3.5 w-3.5" />}
+                            {c.status}
+                          </Pill>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                          {c.startSec}s → {c.endSec}s ({Math.max(1, c.endSec - c.startSec)}s)
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Btn
+                          tone="ghost"
+                          onClick={() => {
+                            setClips((s) => s.map((x) => (x.id === c.id ? { ...x, status: x.status === "Draft" ? "Queued" : x.status } : x)));
+                            showNotification("Queued export (demo)");
+                          }}
+                          left={<Download className="h-4 w-4" />}
+                          disabled={c.status !== "Draft"}
+                        >
+                          Export
+                        </Btn>
+                        <Btn
+                          tone="ghost"
+                          onClick={() => {
+                            setClips((s) => s.filter((x) => x.id !== c.id));
+                            showNotification("Clip removed");
+                          }}
+                          left={<Trash2 className="h-4 w-4" />}
+                        >
+                          Remove
+                        </Btn>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 rounded-2xl bg-slate-900 dark:bg-black p-3 text-white transition">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-[10px] text-white/60">Export plan</div>
+                    <div className="mt-1 text-sm font-semibold">Recommended: TikTok/Shorts/Reels (9:16), YouTube (16:9), Catalog (1:1).</div>
+                  </div>
+                  <Pill tone="pro">
+                    <Lock className="h-3.5 w-3.5" />
+                    Pro
+                  </Pill>
+                </div>
+                <div className="mt-2 text-[10px] text-white/50">In production: integrate with your asset library + approval workflow.</div>
+              </div>
+            </div>
+
+            {/* Send replay */}
+            <div className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm transition">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Send replay</div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Notify audiences that the replay is ready.</div>
+                </div>
+                <Pill tone="neutral">
+                  <MessageCircle className="h-3.5 w-3.5" />
+                  Messaging
+                </Pill>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
+                <div className="md:col-span-7 space-y-3">
+                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                    <div className="text-[10px] sm:text-xs font-semibold text-slate-700 dark:text-slate-400">Channels</div>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {channels.map((c) => (
+                        <div key={c.key} className="flex items-center justify-between rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">{c.name}</div>
+                              <Pill tone={c.connected === "Connected" ? "good" : c.connected === "Needs re-auth" ? "warn" : "bad"}>
+                                {c.connected === "Connected" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                                {c.connected}
+                              </Pill>
+                            </div>
+                            <div className="mt-1 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">{c.supportsRich ? "Rich preview supported" : "Plain text only"}</div>
+                          </div>
+                          <Toggle value={enabledChannels[c.key]} onChange={(v) => setEnabledChannels((s) => ({ ...s, [c.key]: v }))} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label>
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-400">Audience</div>
+                        <select
+                          value={audience}
+                          onChange={(e) => setAudience(e.target.value as AudienceKey)}
+                          className="mt-2 w-full rounded-xl bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 ring-1 ring-slate-200 dark:ring-slate-700 outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition"
+                        >
+                          <option value="past_buyers">Past buyers</option>
+                          <option value="attendees">Live attendees</option>
+                          <option value="vip_list">VIP list</option>
+                          <option value="category_interest">Segment by interest</option>
+                        </select>
+                      </label>
+
+                      <label>
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-400">Template pack</div>
+                        <select
+                          value={templatePack}
+                          onChange={(e) => setTemplatePack(e.target.value as 'Default' | 'VIP' | 'High intent')}
+                          className="mt-2 w-full rounded-xl bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-50 ring-1 ring-slate-200 dark:ring-slate-700 outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition"
+                        >
+                          <option>Default</option>
+                          <option>VIP</option>
+                          <option>High intent</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Schedule sends</div>
+                        <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">T+10m and T+2h recommended for best attendance & sales.</div>
+                      </div>
+                      <Toggle value={scheduleSends} onChange={setScheduleSends} />
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Send now</div>
+                        <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Use sparingly to avoid spam penalties.</div>
+                      </div>
+                      <Toggle value={sendNow} onChange={setSendNow} />
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-400">Estimated reach</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">{fmtInt(estimatedReach)}</div>
+                        {!isPro ? <div className="mt-1 text-[10px] text-amber-900/80 dark:text-amber-400/80">Why locked: estimates are Pro.</div> : null}
+                      </div>
+                      <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm transition">
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-400">Estimated cost</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">{isPro ? `$${estimatedCost.toFixed(2)}` : "—"}</div>
+                        {!isPro ? <div className="mt-1 text-[10px] text-amber-900/80 dark:text-amber-400/80">Upgrade to Pro to view costs.</div> : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Btn
+                      tone="neutral"
+                      onClick={() => showNotification('Preview message (demo)')}
+                      left={<Phone className="h-4 w-4" />}
+                    >
+                      Preview
+                    </Btn>
+                    <Btn
+                      tone="primary"
+                      onClick={() => run(async () => {
+                        // Demo logic
+                      }, { successMessage: "Replay notification queued!" })}
+                      disabled={enabledChannelList.length === 0 || isPending}
+                      left={<Send className="h-4 w-4" />}
+                    >
+                      {isPending ? "Queuing..." : "Queue sends"}
+                    </Btn>
+                  </div>
+                </div>
+
+                <div className="md:col-span-5 space-y-3">
+                  <div className="rounded-3xl bg-slate-900 p-4 text-white">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-xs text-white/80">Message preview</div>
+                        <div className="mt-1 text-sm font-semibold">Replay is ready — tap to continue shopping.</div>
+                      </div>
+                      <Pill tone="neutral">
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        Template
+                      </Pill>
+                    </div>
+                    <div className="mt-3 rounded-2xl bg-white/10 p-3 text-sm">
+                      🎬 Replay ready: <span className="font-semibold">{session.title}</span>
+                      <br />
+                      Tap to watch + shop: <span className="underline">{session.replayUrl}</span>
+                    </div>
+                    <div className="mt-3 text-[10px] text-white/50">In production: admin-approved template packs + compliance rules.</div>
+                  </div>
+
+                  <div className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm transition">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Performance snapshot</div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                        <div className="text-xs text-slate-600 dark:text-slate-400">Viewers</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">{fmtInt(metrics.viewers)}</div>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                        <div className="text-xs text-slate-600 dark:text-slate-400">Orders</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">{fmtInt(metrics.orders)}</div>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                        <div className="text-xs text-slate-600 dark:text-slate-400">CTR</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">{(metrics.ctr * 100).toFixed(1)}%</div>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                        <div className="text-xs text-slate-600 dark:text-slate-400">GMV</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-50">${fmtInt(metrics.gmv)}</div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-semibold text-slate-700 dark:text-slate-400">Orders trend</div>
+                        <Pill tone="neutral">
+                          <BarChart3 className="h-3.5 w-3.5" />
+                          Sparkline
+                        </Pill>
+                      </div>
+                      <div className="mt-2 text-slate-900 dark:text-slate-100">
+                        <MiniSparkline data={metrics.ordersSeries} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Conversion boosters */}
+            <div className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm transition">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Post‑live conversion boosters</div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Recover carts and re-engage shoppers after the stream.</div>
+                </div>
+                <Pill tone={isPro ? "pro" : "neutral"}>
+                  {isPro ? <BadgeCheck className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
+                  Premium
+                </Pill>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Cart recovery</div>
+                    <Toggle value={cartRecovery} onChange={setCartRecovery} />
+                  </div>
+                  <div className="mt-1 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">Remind users who added to cart but didn’t checkout.</div>
+                  <div className="mt-2 text-[10px] font-semibold text-slate-700 dark:text-slate-500">Recommended: T+2h, T+24h</div>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Price‑drop messages</div>
+                    <Toggle value={priceDrop} onChange={setPriceDrop} disabled={!isPro} />
+                  </div>
+                  <div className="mt-1 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">Notify watchers when you drop price post‑live.</div>
+                  {!isPro ? <div className="mt-2 text-[10px] text-amber-900/80 dark:text-amber-400/80">Why locked: price-drop automation is Pro.</div> : null}
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Restock alerts</div>
+                    <Toggle value={restock} onChange={setRestock} />
+                  </div>
+                  <div className="mt-1 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400">Alert users when sold-out items return.</div>
+                  <div className="mt-2 text-[10px] font-semibold text-slate-700 dark:text-slate-500">Recommended: “Restocked” + “Last chance”</div>
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-2xl bg-amber-50 dark:bg-amber-500/10 p-3 ring-1 ring-amber-200 dark:ring-amber-500/20 text-sm text-amber-900 dark:text-amber-400 transition">
+                <div className="font-semibold text-xs sm:text-sm">Compliance</div>
+                <div className="mt-1 text-xs">Use admin-approved templates and respect channel frequency caps to avoid deliverability issues.</div>
+              </div>
+
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <Btn tone="ghost" onClick={() => showNotification('Preview booster plan (demo)')} left={<Phone className="h-4 w-4" />}>
+                  Preview
+                </Btn>
+                <Btn tone="primary" onClick={() => run(async () => {
+                  // Save logic
+                }, { successMessage: "Booster plan saved!" })} left={<CheckCircle2 className="h-4 w-4" />}>
+                  {isPending ? "Saving..." : "Save booster plan"}
+                </Btn>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Preflight + quick actions */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm transition">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Post‑live preflight</div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Recommended checks before publishing and sending.</div>
+                </div>
+                <Pill tone={preflight.every((x) => x.ok) ? "good" : "warn"}>
+                  {preflight.every((x) => x.ok) ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                  {preflight.every((x) => x.ok) ? "Ready" : "Review"}
+                </Pill>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {preflight.map((p) => (
+                  <div key={p.label} className="flex items-center justify-between rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">{p.label}</div>
+                      {p.detail ? <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">{p.detail}</div> : null}
+                    </div>
+                    <Pill tone={p.ok ? "good" : "warn"}>
+                      {p.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                      {p.ok ? "OK" : "Fix"}
+                    </Pill>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-slate-200 dark:ring-slate-800 shadow-sm transition">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">Quick actions</div>
+              <div className="mt-3 grid grid-cols-1 gap-2">
+                <Btn tone="neutral" onClick={() => safeNav(ROUTES.liveBuilder)} left={<ExternalLink className="h-4 w-4" />}>
+                  Open Live Builder
+                </Btn>
+                <Btn tone="neutral" onClick={() => safeNav(ROUTES.audienceNotifications)} left={<ExternalLink className="h-4 w-4" />}>
+                  Audience Notifications
+                </Btn>
+                <Btn tone="neutral" onClick={() => safeNav(ROUTES.overlaysCtas)} left={<ExternalLink className="h-4 w-4" />}>
+                  Overlays & CTAs
+                </Btn>
+              </div>
+
+              <div className="mt-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 text-[10px] sm:text-xs text-slate-700 dark:text-slate-400 transition">
+                Tip: publish replay first, then send replay notifications and booster reminders in that order.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Clip modal */}
+        <Modal
+          open={clipModal}
+          title="Create clip"
+          onClose={() => setClipModal(false)}
+          right={
+            <Pill tone="neutral">
+              <Scissors className="h-3.5 w-3.5" />
+              Clip builder
+            </Pill>
+          }
+        >
+          <div className="space-y-4">
+            <div className="rounded-3xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <div className="text-sm font-semibold text-slate-900">Clip details</div>
+
+              <label className="mt-3 block">
+                <div className="text-xs font-semibold text-slate-700">Title</div>
+                <input
+                  value={clipTitle}
+                  onChange={(e) => setClipTitle(e.target.value)}
+                  placeholder="e.g., Price drop moment"
+                  className="mt-2 w-full rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-slate-300"
+                />
+              </label>
+
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label>
+                  <div className="text-xs font-semibold text-slate-700">Format</div>
+                  <select
+                    value={clipFormat}
+                    onChange={(e) => setClipFormat(e.target.value as "9:16" | "16:9" | "1:1")}
+                    className="mt-2 w-full rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    <option value="9:16">9:16 (Vertical)</option>
+                    <option value="16:9">16:9 (Landscape)</option>
+                    <option value="1:1">1:1 (Square)</option>
+                  </select>
+                </label>
+
+                <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+                  <div className="text-xs font-semibold text-slate-700">Duration</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{Math.max(1, Math.abs(clipEnd - clipStart))}s</div>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+                  <div className="text-xs font-semibold text-slate-700">Start (sec)</div>
+                  <input type="range" min={0} max={3600} value={clipStart} onChange={(e) => setClipStart(Number(e.target.value))} className="mt-2 w-full" />
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{clipStart}s</div>
+                </div>
+                <div className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+                  <div className="text-xs font-semibold text-slate-700">End (sec)</div>
+                  <input type="range" min={1} max={3600} value={clipEnd} onChange={(e) => setClipEnd(Number(e.target.value))} className="mt-2 w-full" />
+                  <div className="mt-1 text-sm font-semibold text-slate-900">{clipEnd}s</div>
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-2xl bg-amber-50 p-3 ring-1 ring-amber-200 text-sm text-amber-900">
+                <div className="font-semibold">Publishing note</div>
+                <div className="mt-1">Clips should use licensed audio and approved visuals (same compliance as replay).</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Btn tone="ghost" onClick={() => setClipModal(false)}>
+                Cancel
+              </Btn>
+              <Btn tone="primary" onClick={addClip} left={<Plus className="h-4 w-4" />}>
+                Add clip
+              </Btn>
+            </div>
+          </div>
+        </Modal>
+
       </div>
-      <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{text}</div>
     </div>
   );
 }

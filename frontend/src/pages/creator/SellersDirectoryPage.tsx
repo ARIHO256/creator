@@ -1,561 +1,1033 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { CircularProgress } from "@mui/material";
-import { useNavigate } from "react-router-dom";
-import { PageHeader } from "../../components/PageHeader";
-import { PitchDrawer } from "../../components/PitchDrawer";
-import type { PitchFormSubmission } from "../../components/PitchForm";
-import { useNotification } from "../../contexts/NotificationContext";
-import { useCreateProposalMutation } from "../../hooks/api/useProposals";
-import { useSellersQuery, useToggleSellerFollowMutation } from "../../hooks/api/useSellers";
-import type { SellerRecord } from "../../api/types";
-import type { PageId } from "../../layouts/CreatorShellLayout";
-import {
-  formatCompactNumber,
-  formatMoney,
-  getSellerRelationshipBadgeClass,
-  getSellerRelationshipLabel,
-  proposalRoomPath,
-  sellerSupportsDiscovery
-} from "../../utils/collaborationUi";
+// Round 2 – Page 6: Suppliers Directory & Discovery Pool (Creator View)
+// Purpose: Give creators a curated directory of suppliers to approach.
+// EVzone / MyLiveDealz styling with primary orange #f77f00.
 
-type SellersDirectoryPageProps = {
-  onChangePage?: (page: PageId) => void;
+import React, { useState, useMemo } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useScrollLock } from "../../hooks/useScrollLock";
+// import { useTheme } from "../../contexts/ThemeContext";
+import { PageHeader } from "../../components/PageHeader";
+import { useCreator } from "../../contexts/CreatorContext";
+import type { PageId } from "../../layouts/CreatorShellLayout";
+
+type Trend = "up" | "down" | "flat";
+
+type Seller = {
+  id: number;
+  name: string;
+  initials: string;
+  tagline: string;
+  categories: string[];
+  followers: number;
+  livesCompleted: number;
+  avgOrderValue: number;
+  badge: string;
+  collabStatus: string;
+  rating: number;
+  region: string;
+  similarTo: string[];
+  relationship: string;
+  fitScore: number;
+  fitReason: string;
+  followersTrend: Trend;
+  livesTrend: Trend;
+  orderTrend: Trend;
+  trustBadges: string[];
+
+  lastActive: string;
+  supplierType: "Seller" | "Provider";
+  isActivelyCollaborating: boolean;
+  hasActiveCampaigns: boolean;
 };
 
-type ViewTab = "all" | "followed" | "recommended";
-type SortMode = "fit" | "followers" | "rating" | "lives";
 
-function estimateProposalValue(seller: SellerRecord, model: PitchFormSubmission["collaborationModel"]): number {
-  if (model === "Flat fee") return Math.round(seller.avgOrderValue * 18);
-  if (model === "Commission") return Math.round(seller.avgOrderValue * 12);
-  return Math.round(seller.avgOrderValue * 22);
-}
+function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) => void }) {
+  // const { theme } = useTheme();
+  const [search, setSearch] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const [minFollowers, setMinFollowers] = useState<string>("");
+  const [minRating, setMinRating] = useState<string>("Any");
 
-export function SellersDirectoryPage({ onChangePage }: SellersDirectoryPageProps) {
-  const navigate = useNavigate();
-  const { showError, showSuccess } = useNotification();
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("All");
-  const [regionFilter, setRegionFilter] = useState("All");
-  const [viewTab, setViewTab] = useState<ViewTab>("all");
-  const [sortMode, setSortMode] = useState<SortMode>("fit");
-  const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null);
-  const [pitchTarget, setPitchTarget] = useState<SellerRecord | null>(null);
 
-  useEffect(() => {
-    onChangePage?.("sellers");
-  }, [onChangePage]);
+  const { followedSellerIds: followedSellers, toggleFollowSeller } = useCreator();
 
-  const sellersQuery = useSellersQuery(
-    {
-      q: search.trim() || undefined,
-      region: regionFilter !== "All" ? regionFilter : undefined,
-      openOnly: true
-    },
-    { staleTime: 30_000 }
+  const [selectedSeller, setSelectedSeller] = useState<Seller | null>(null);
+  const [showInvite, setShowInvite] = useState<boolean>(false);
+
+  const [viewTab, setViewTab] = useState("all"); // all | followed | new
+  const [sortBy, setSortBy] = useState("relevance"); // relevance | followers | rating | lives
+  const [aiHint, setAiHint] = useState("");
+  const [presetFilter, setPresetFilter] = useState("none"); // none | live-first | faith | high-ticket
+  const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+  };
+
+  const handleFilterChange = (setter: (v: string) => void, val: string) => {
+    setIsTransitioning(true);
+    setter(val);
+    setTimeout(() => setIsTransitioning(false), 300);
+  };
+
+  const sellers = useMemo<Seller[]>(
+    () => [
+      {
+        id: 1,
+        name: "GlowUp Hub",
+        initials: "GH",
+        tagline: "Beauty & skincare for glowing routines.",
+        categories: ["Beauty", "Skincare"],
+        followers: 42000,
+        livesCompleted: 38,
+        avgOrderValue: 22,
+        badge: "Top Brand",
+        collabStatus: "Open to collabs",
+        rating: 4.8,
+        region: "Africa",
+        similarTo: ["Grace Living Store"],
+        relationship: "2 past campaigns",
+        fitScore: 93,
+        fitReason: "You convert 3.1× platform avg in Beauty.",
+        followersTrend: "up" as Trend,
+        livesTrend: "up" as Trend,
+        orderTrend: "flat" as Trend,
+        trustBadges: ["Verified", "Fast payouts"],
+        lastActive: "Active this week",
+        supplierType: "Seller",
+        isActivelyCollaborating: true,
+        hasActiveCampaigns: true
+      },
+      {
+        id: 2,
+        name: "GadgetMart Africa",
+        initials: "GA",
+        tagline: "Everyday gadgets with an EV twist.",
+        categories: ["Tech", "Gadgets"],
+        followers: 35500,
+        livesCompleted: 24,
+        avgOrderValue: 45,
+        badge: "Top Brand",
+        collabStatus: "Open to collabs",
+        rating: 4.5,
+        region: "Africa / Asia",
+        similarTo: ["EV Gadget World"],
+        relationship: "1 past Tech Friday series",
+        fitScore: 86,
+        fitReason: "Strong Tech Friday performance with their niche.",
+        followersTrend: "up" as Trend,
+        livesTrend: "up" as Trend,
+        orderTrend: "up" as Trend,
+        trustBadges: ["Verified"],
+        lastActive: "Live 2 days ago",
+        supplierType: "Seller",
+        isActivelyCollaborating: true,
+        hasActiveCampaigns: false
+      },
+      {
+        id: 3,
+        name: "Grace Living Store",
+        initials: "GL",
+        tagline: "Faith-compatible wellness & lifestyle.",
+        categories: ["Faith", "Wellness"],
+        followers: 18800,
+        livesCompleted: 17,
+        avgOrderValue: 28,
+        badge: "Faith friendly",
+        collabStatus: "Invite only",
+        rating: 4.9,
+        region: "Africa",
+        similarTo: ["GlowUp Hub"],
+        relationship: "New (no campaigns yet)",
+        fitScore: 88,
+        fitReason: "High retention in Faith-compatible sessions.",
+        followersTrend: "up" as Trend,
+        livesTrend: "flat" as Trend,
+        orderTrend: "flat" as Trend,
+        trustBadges: ["Low return rate"],
+        lastActive: "Active this week",
+        supplierType: "Provider",
+        isActivelyCollaborating: false,
+        hasActiveCampaigns: true
+      },
+      {
+        id: 4,
+        name: "EV Gadget World",
+        initials: "EG",
+        tagline: "Accessories & gadgets for EV owners.",
+        categories: ["EV", "Mobility", "Tech"],
+        followers: 15200,
+        livesCompleted: 9,
+        avgOrderValue: 60,
+        badge: "New Seller",
+        collabStatus: "Open to collabs",
+        rating: 4.2,
+        region: "Global",
+        similarTo: ["GadgetMart Africa"],
+        relationship: "New EV-focused potential",
+        fitScore: 72,
+        fitReason: "Category match; limited collab history in this sub-niche.",
+        followersTrend: "up" as Trend,
+        livesTrend: "up" as Trend,
+        orderTrend: "up" as Trend,
+        trustBadges: ["Fast payouts"],
+        lastActive: "Active this month",
+        supplierType: "Seller",
+        isActivelyCollaborating: false,
+        hasActiveCampaigns: true
+      },
+      {
+        id: 5,
+        name: "ShopNow Foods",
+        initials: "SF",
+        tagline: "Groceries & pantry delivered same day.",
+        categories: ["Food", "Groceries"],
+        followers: 8600,
+        livesCompleted: 5,
+        avgOrderValue: 18,
+        badge: "New Seller",
+        collabStatus: "Not seeking",
+        rating: 4.0,
+        region: "Africa",
+        similarTo: [],
+        relationship: "New",
+        fitScore: 60,
+        fitReason: "Outside your top-performing categories.",
+        followersTrend: "flat",
+        livesTrend: "flat",
+        orderTrend: "flat",
+        trustBadges: [],
+        lastActive: "Occasionally active",
+        supplierType: "Seller",
+        isActivelyCollaborating: false,
+        hasActiveCampaigns: false
+      }
+    ],
+    []
   );
-  const toggleFollowMutation = useToggleSellerFollowMutation();
-  const createProposalMutation = useCreateProposalMutation();
 
-  const allSellers = useMemo(() => sellersQuery.data?.items ?? [], [sellersQuery.data?.items]);
 
-  const categories = useMemo(() => {
-    const next = new Set<string>();
-    allSellers.forEach((seller) => seller.categories.forEach((category) => next.add(category)));
-    return ["All", ...Array.from(next).sort((left, right) => left.localeCompare(right))];
-  }, [allSellers]);
 
-  const regions = useMemo(() => {
-    const next = new Set<string>();
-    allSellers.forEach((seller) => next.add(seller.region));
-    return ["All", ...Array.from(next).sort((left, right) => left.localeCompare(right))];
-  }, [allSellers]);
+  const openInvite = (seller: Seller) => {
+    setSelectedSeller(seller);
+    setShowInvite(true);
+  };
 
+  const closeInvite = () => {
+    setShowInvite(false);
+    setSelectedSeller(null);
+  };
+
+  // Base filters: search, category, followers, rating
   const filteredSellers = useMemo(() => {
-    const base = allSellers.filter((seller) => sellerSupportsDiscovery(seller));
-    const categoryFiltered =
-      categoryFilter === "All" ? base : base.filter((seller) => seller.categories.includes(categoryFilter));
+    return sellers.filter((s) => {
+      const q = search.trim().toLowerCase();
+      if (q) {
+        const inName = s.name.toLowerCase().includes(q);
+        const inTagline = s.tagline.toLowerCase().includes(q);
+        const inCategory = s.categories.some((c) =>
+          c.toLowerCase().includes(q)
+        );
+        if (!inName && !inTagline && !inCategory) return false;
+      }
+      if (categoryFilter !== "All") {
+        if (!s.categories.includes(categoryFilter)) return false;
+      }
+      if (minFollowers) {
+        const min = Number(minFollowers) || 0;
+        if (s.followers < min) return false;
+      }
+      if (minRating !== "Any") {
+        const mr = Number(minRating);
+        if (s.rating < mr) return false;
+      }
+      // Creators should only see opportunities from suppliers they can actually collab with.
+      // Requirements: Hide opportunities from suppliers that are not open for collaboration or not linked to the creator.
+      // Invite-only suppliers should not appear and request invite does not also apply here.
+      if (s.collabStatus === "Invite only" || s.collabStatus === "Not seeking") return false;
 
-    const tabFiltered = categoryFiltered.filter((seller) => {
-      if (viewTab === "followed") return seller.isFollowing;
-      if (viewTab === "recommended") return seller.fitScore >= 85 || seller.badge.toLowerCase().includes("top");
       return true;
     });
+  }, [sellers, search, categoryFilter, minFollowers, minRating]);
 
-    return [...tabFiltered].sort((left, right) => {
-      if (sortMode === "followers") return right.followers - left.followers;
-      if (sortMode === "rating") return right.rating - left.rating;
-      if (sortMode === "lives") return right.livesCompleted - left.livesCompleted;
-      if (right.fitScore !== left.fitScore) return right.fitScore - left.fitScore;
-      if (right.rating !== left.rating) return right.rating - left.rating;
-      return right.followers - left.followers;
-    });
-  }, [allSellers, categoryFilter, sortMode, viewTab]);
-
-  useEffect(() => {
-    if (!filteredSellers.length) {
-      setSelectedSellerId(null);
-      return;
+  // Preset filters (Live-first / Faith-friendly / High-ticket)
+  const presetFilteredSellers = useMemo(() => {
+    let result = filteredSellers;
+    if (presetFilter === "live-first") {
+      result = result.filter((s) => s.livesCompleted >= 10);
+    } else if (presetFilter === "faith") {
+      result = result.filter(
+        (s) =>
+          s.categories.includes("Faith") || s.badge === "Faith friendly"
+      );
+    } else if (presetFilter === "high-ticket") {
+      result = result.filter((s) => s.avgOrderValue >= 50);
     }
+    return result;
+  }, [filteredSellers, presetFilter]);
 
-    setSelectedSellerId((current) => {
-      if (current && filteredSellers.some((seller) => seller.id === current)) return current;
-      return filteredSellers[0]?.id ?? null;
-    });
-  }, [filteredSellers]);
-
-  const selectedSeller = useMemo(
-    () => filteredSellers.find((seller) => seller.id === selectedSellerId) ?? filteredSellers[0] ?? null,
-    [filteredSellers, selectedSellerId]
-  );
-
-  const stats = useMemo(() => {
-    const followedCount = allSellers.filter((seller) => seller.isFollowing).length;
-    const recommendedCount = allSellers.filter((seller) => seller.fitScore >= 85).length;
-    return {
-      total: allSellers.length,
-      followedCount,
-      recommendedCount
-    };
-  }, [allSellers]);
-
-  const handleToggleFollow = async (seller: SellerRecord) => {
-    try {
-      const nextFollow = !seller.isFollowing;
-      await toggleFollowMutation.mutateAsync({ sellerId: seller.id, follow: nextFollow });
-      showSuccess(nextFollow ? `You are now following ${seller.name}.` : `You unfollowed ${seller.name}.`);
-    } catch (error) {
-      showError(error instanceof Error ? error.message : "Could not update follow state.");
+  // Apply view tab (All / Followed / New)
+  const tabFilteredSellers = useMemo(() => {
+    let result = presetFilteredSellers;
+    if (viewTab === "followed") {
+      result = result.filter((s) => followedSellers.includes(s.id));
+    } else if (viewTab === "new") {
+      result = result.filter(
+        (s) => s.badge === "New Seller" || s.relationship === "New"
+      );
     }
+    return result;
+  }, [presetFilteredSellers, viewTab, followedSellers]);
+
+  // Sorting logic
+  const sortedSellers = useMemo(() => {
+    const arr = [...tabFilteredSellers];
+    arr.sort((a, b) => {
+      if (sortBy === "followers") {
+        return b.followers - a.followers;
+      }
+      if (sortBy === "rating") {
+        return b.rating - a.rating;
+      }
+      if (sortBy === "lives") {
+        return b.livesCompleted - a.livesCompleted;
+      }
+      // relevance – approximate by fitScore, then rating, then followers
+      if (sortBy === "relevance") {
+        if (b.fitScore !== a.fitScore) return b.fitScore - a.fitScore;
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return b.followers - a.followers;
+      }
+      return 0;
+    });
+    return arr;
+  }, [tabFilteredSellers, sortBy]);
+
+  const recommended = useMemo(() => sortedSellers.filter((s) => s.badge === "Top Brand"), [sortedSellers]);
+  const similarBrands = useMemo(() => sortedSellers.filter((s) =>
+    s.similarTo.includes("GlowUp Hub") || s.similarTo.includes("GadgetMart Africa")
+  ), [sortedSellers]);
+
+  const handleAiSuggest = () => {
+    setIsAiDialogOpen(true);
   };
 
-  const handlePitchSubmit = async (payload: PitchFormSubmission) => {
-    if (!pitchTarget) return;
-
-    const estimatedValue = estimateProposalValue(pitchTarget, payload.collaborationModel);
-    const proposal = await createProposalMutation.mutateAsync({
-      sellerId: pitchTarget.id,
-      campaign: `${pitchTarget.brand} creator pitch`,
-      offerType:
-        payload.collaborationModel === "Hybrid"
-          ? "Hybrid live + ad pitch"
-          : payload.collaborationModel === "Commission"
-            ? "Commission-led creator pitch"
-            : "Flat fee creator pitch",
-      category: pitchTarget.categories[0] ?? "General",
-      region: pitchTarget.region,
-      baseFeeMin: Math.max(0, Math.round(estimatedValue * 0.7)),
-      baseFeeMax: estimatedValue,
-      currency: "USD",
-      commissionPct: payload.collaborationModel === "Commission" || payload.collaborationModel === "Hybrid" ? 5 : 0,
-      estimatedValue,
-      origin: "creator",
-      notesShort: payload.message,
-      deliverables: "Creator-led live session, short clips, and CTA links",
-      schedule: "Scheduling to be agreed with the seller",
-      compensation:
-        payload.collaborationModel === "Commission"
-          ? "Commission-first proposal"
-          : payload.collaborationModel === "Flat fee"
-            ? "Flat-fee proposal"
-            : "Hybrid proposal",
-      exclusivityWindow: "To be negotiated",
-      killFee: "To be negotiated"
-    });
-
-    showSuccess(`Proposal draft created for ${pitchTarget.name}.`);
-    setPitchTarget(null);
-    navigate(proposalRoomPath(proposal.id));
+  const togglePreset = (preset: string) => {
+    setPresetFilter((current) => (current === preset ? "none" : preset));
   };
 
   return (
-    <div className="min-h-full bg-slate-50 pb-8 dark:bg-slate-950">
-      <PageHeader
-        pageTitle="Sellers Directory"
-        rightContent={
-          <div className="hidden items-center gap-2 text-xs text-slate-500 dark:text-slate-400 xl:flex">
-            <span>{stats.total} discoverable sellers</span>
-            <span>•</span>
-            <span>{stats.followedCount} followed</span>
+    <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
+      <PageHeader pageTitle="Supplier Directory" />
+
+      <main className="flex-1 flex flex-col w-full p-3 sm:p-4 md:p-6 lg:p-8 pt-8 gap-8 overflow-y-auto overflow-x-hidden">
+        <div className="w-full space-y-4">
+          {/* Top Search Bar */}
+          <div className="w-full max-w-full bg-white dark:bg-slate-900 rounded-3xl p-4 shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-4 items-center">
+            <div className="flex-1 relative w-full group">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#f77f00] transition-colors">🔍</span>
+              <input
+                className="w-full bg-slate-50 dark:bg-slate-800/50 border-2 border-transparent focus:border-[#f77f00] dark:focus:border-[#f77f00] rounded-2xl pl-11 pr-4 py-3 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 font-bold"
+                placeholder="Search by brand name, category or niche..."
+                value={search}
+                onChange={(e) => handleSearchChange(e.target.value)}
+              />
+            </div>
+            <button
+              className="w-full md:w-auto px-8 py-3 rounded-2xl bg-[#f77f00] hover:bg-[#e26f00] text-white text-sm font-black shadow-lg shadow-orange-500/20 transition-all hover:-translate-y-0.5"
+              onClick={handleAiSuggest}
+            >
+              Suggest brands
+            </button>
           </div>
-        }
-      />
 
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-3 pt-4 sm:px-4 lg:px-8">
-        <section className="grid gap-3 md:grid-cols-3">
-          <SummaryCard label="Discoverable sellers" value={String(stats.total)} detail="Open or invite-only collaborations" />
-          <SummaryCard label="Recommended for you" value={String(stats.recommendedCount)} detail="High-fit sellers based on your profile" />
-          <SummaryCard label="Already followed" value={String(stats.followedCount)} detail="Quick shortlist for repeat outreach" />
-        </section>
+          {/* Top Horizontal Filters */}
+          <div className="w-full bg-white dark:bg-slate-900 rounded-3xl p-4 shadow-sm border border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-end gap-6">
+              {/* Category filter */}
+              <div className="flex flex-col gap-1.5 min-w-[160px]">
+                <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 dark:text-slate-500 px-1">Category</label>
+                <select
+                  className="w-full border-2 border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800/80 text-xs font-bold text-slate-700 dark:text-slate-200 focus:border-[#f77f00] outline-none transition-all cursor-pointer appearance-none"
+                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f77f00'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1rem' }}
+                  value={categoryFilter}
+                  onChange={(e) => handleFilterChange(setCategoryFilter, e.target.value)}
+                >
+                  <option value="All" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">All Categories</option>
+                  <option value="Beauty" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Beauty</option>
+                  <option value="Skincare" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Skincare</option>
+                  <option value="Tech" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Tech</option>
+                  <option value="Gadgets" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Gadgets</option>
+                  <option value="Faith" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Faith</option>
+                  <option value="Wellness" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Wellness</option>
+                  <option value="EV" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">EV</option>
+                  <option value="Mobility" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Mobility</option>
+                  <option value="Food" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Food</option>
+                  <option value="Groceries" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Groceries</option>
+                </select>
+              </div>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="grid gap-3 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-              <div className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Search</span>
-                    <input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Search sellers, brand, region..."
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </label>
+              {/* Followers Min filter */}
+              <div className="flex flex-col gap-1.5 min-w-[140px]">
+                <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 dark:text-slate-500 px-1">Followers Min</label>
+                <input
+                  type="number"
+                  className="w-full border-2 border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800/50 text-xs font-bold text-slate-700 dark:text-slate-200 focus:border-[#f77f00] outline-none transition-all"
+                  placeholder="e.g. 5000"
+                  value={minFollowers}
+                  onChange={(e) => handleFilterChange(setMinFollowers, e.target.value)}
+                />
+              </div>
 
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Category</span>
-                    <select
-                      value={categoryFilter}
-                      onChange={(event) => setCategoryFilter(event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      {categories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+              {/* Rating filter */}
+              <div className="flex flex-col gap-1.5 min-w-[140px]">
+                <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 dark:text-slate-500 px-1">Rating</label>
+                <select
+                  className="w-full border-2 border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800/80 text-xs font-bold text-slate-700 dark:text-slate-200 focus:border-[#f77f00] outline-none transition-all cursor-pointer appearance-none"
+                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f77f00'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1rem' }}
+                  value={minRating}
+                  onChange={(e) => handleFilterChange(setMinRating, e.target.value)}
+                >
+                  <option value="Any" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Any Rating</option>
+                  <option value="4" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">★ 4.0+</option>
+                  <option value="4.5" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">★ 4.5+</option>
+                </select>
+              </div>
 
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Region</span>
-                    <select
-                      value={regionFilter}
-                      onChange={(event) => setRegionFilter(event.target.value)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      {regions.map((region) => (
-                        <option key={region} value={region}>
-                          {region}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-1">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Sort</span>
-                    <select
-                      value={sortMode}
-                      onChange={(event) => setSortMode(event.target.value as SortMode)}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      <option value="fit">Best fit</option>
-                      <option value="followers">Followers</option>
-                      <option value="rating">Rating</option>
-                      <option value="lives">Lives completed</option>
-                    </select>
-                  </label>
-                </div>
-
+              {/* Quick Presets */}
+              <div className="flex flex-col gap-1.5 flex-1 min-w-[300px]">
+                <label className="text-[10px] uppercase font-black tracking-widest text-slate-400 dark:text-slate-500 px-1">Quick Presets</label>
                 <div className="flex flex-wrap gap-2">
-                  {[
-                    { id: "all", label: "All" },
-                    { id: "followed", label: "Followed" },
-                    { id: "recommended", label: "Recommended" }
-                  ].map((tab) => {
-                    const active = viewTab === tab.id;
-                    return (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setViewTab(tab.id as ViewTab)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          active
-                            ? "border-[#f77f00] bg-[#f77f00] text-white"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="mt-4 min-h-[480px] space-y-3">
-                {sellersQuery.isLoading ? (
-                  <div className="flex h-[360px] items-center justify-center">
-                    <CircularProgress size={28} />
-                  </div>
-                ) : filteredSellers.length === 0 ? (
-                  <EmptyPanel
-                    title="No sellers match this filter"
-                    body="Adjust the category, region, or search terms to reveal more sellers."
+                  <PresetChip
+                    label="Live-first"
+                    active={presetFilter === "live-first"}
+                    onClick={() => togglePreset("live-first")}
                   />
-                ) : (
-                  filteredSellers.map((seller) => (
-                    <SellerListRow
-                      key={seller.id}
-                      seller={seller}
-                      selected={seller.id === selectedSeller?.id}
-                      onSelect={() => setSelectedSellerId(seller.id)}
-                      onToggleFollow={() => void handleToggleFollow(seller)}
-                      isMutating={toggleFollowMutation.isPending && selectedSeller?.id === seller.id}
-                    />
-                  ))
-                )}
+                  <PresetChip
+                    label="Faith-friendly"
+                    active={presetFilter === "faith"}
+                    onClick={() => togglePreset("faith")}
+                  />
+                  <PresetChip
+                    label="High-ticket"
+                    active={presetFilter === "high-ticket"}
+                    onClick={() => togglePreset("high-ticket")}
+                  />
+                  <button
+                    className="ml-auto px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-[#f77f00] hover:border-[#f77f00] transition-all"
+                    onClick={() => {
+                      setIsTransitioning(true);
+                      setSearch("");
+                      setCategoryFilter("All");
+                      setMinFollowers("");
+                      setMinRating("Any");
+                      setSortBy("relevance");
+                      setPresetFilter("none");
+                      setViewTab("all");
+                      setTimeout(() => setIsTransitioning(false), 300);
+                    }}
+                  >
+                    Reset all
+                  </button>
+                </div>
               </div>
             </div>
-
-            <div className="min-h-[580px] rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-              {selectedSeller ? (
-                <div className="space-y-5">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-slate-200 text-lg font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                        {selectedSeller.initials}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{selectedSeller.name}</h2>
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getSellerRelationshipBadgeClass(
-                              selectedSeller.relationship
-                            )}`}
-                          >
-                            {getSellerRelationshipLabel(selectedSeller.relationship)}
-                          </span>
-                          {selectedSeller.inviteOnly && (
-                            <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
-                              Invite only
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{selectedSeller.tagline}</p>
-                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{selectedSeller.fitReason}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleToggleFollow(selectedSeller)}
-                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                      >
-                        {selectedSeller.isFollowing ? "Unfollow" : "Follow"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPitchTarget(selectedSeller)}
-                        className="rounded-full bg-[#f77f00] px-4 py-2 text-sm font-semibold text-white hover:bg-[#e26f00]"
-                      >
-                        Start pitch
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onChangePage?.("opportunities");
-                          navigate("/opportunities", { state: { sellerId: selectedSeller.id, sellerName: selectedSeller.name } });
-                        }}
-                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                      >
-                        View opportunities
-                      </button>
-                    </div>
+          </div>
+          {aiHint && (
+            <div className="animate-in fade-in slide-in-from-top-4 duration-500 max-w-2xl">
+              <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-200 dark:border-orange-900/30 rounded-3xl px-5 py-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <span className="text-xl">✨</span>
+                  <div>
+                    <p className="text-[10px] font-black text-orange-800 dark:text-orange-400 uppercase tracking-widest mb-0.5">AI Hint</p>
+                    <p className="text-xs text-orange-900/80 dark:text-orange-300 font-medium leading-relaxed">{aiHint}</p>
                   </div>
-
-                  <div className="grid gap-3 md:grid-cols-4">
-                    <DetailMetric label="Followers" value={formatCompactNumber(selectedSeller.followers)} />
-                    <DetailMetric label="Rating" value={selectedSeller.rating.toFixed(1)} />
-                    <DetailMetric label="Average order" value={formatMoney(selectedSeller.avgOrderValue, "USD")} />
-                    <DetailMetric label="Lives completed" value={String(selectedSeller.livesCompleted)} />
-                  </div>
-
-                  <section className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Fit and positioning</h3>
-                      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        {selectedSeller.name} is currently {selectedSeller.openToCollabs ? "open to new creator collaborations" : "running invite-only collaborations"} in{" "}
-                        {selectedSeller.region}. Their strongest categories are {selectedSeller.categories.join(", ")}.
-                      </p>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <MiniBlock
-                          title="Fit score"
-                          body={`${selectedSeller.fitScore}/100 match based on your categories, sales profile, and audience overlap.`}
-                        />
-                        <MiniBlock
-                          title="Collaboration status"
-                          body={selectedSeller.collabStatus || "No current collaboration note provided."}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Trust and readiness</h3>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {selectedSeller.trustBadges.map((badge) => (
-                          <span
-                            key={badge}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                          >
-                            {badge}
-                          </span>
-                        ))}
-                      </div>
-
-                      <div className="mt-4 rounded-2xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Recommended next move</p>
-                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                          {selectedSeller.inviteOnly
-                            ? "Lead with a concise, value-first pitch and ask for access to the collaboration brief."
-                            : "Open with a draft proposal so you can lock deliverables, timeline, and pricing in the proposal room."}
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Categories and market</h3>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">{selectedSeller.region}</span>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {selectedSeller.categories.map((category) => (
-                        <span
-                          key={category}
-                          className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 dark:border-orange-800 dark:bg-orange-900/30 dark:text-orange-200"
-                        >
-                          {category}
-                        </span>
-                      ))}
-                    </div>
-                  </section>
                 </div>
-              ) : (
-                <EmptyPanel title="Pick a seller" body="Select a seller from the list to inspect the brand, metrics, and collaboration options." />
-              )}
+                <button
+                  onClick={() => setAiHint("")}
+                  className="p-2 hover:bg-orange-100 dark:hover:bg-orange-900/20 rounded-full transition-colors"
+                >
+                  <span className="text-orange-500 font-bold">✕</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </section>
-      </div>
-
-      <PitchDrawer
-        isOpen={Boolean(pitchTarget)}
-        onClose={() => setPitchTarget(null)}
-        recipientName={pitchTarget?.name ?? ""}
-        recipientInitials={pitchTarget?.initials ?? ""}
-        recipientRegion={pitchTarget?.region}
-        defaultCategory={pitchTarget?.categories[0]}
-        onSubmit={handlePitchSubmit}
-        submitLabel={createProposalMutation.isPending ? "Creating draft..." : "Create proposal draft"}
-      />
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</p>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{detail}</p>
-    </div>
-  );
-}
-
-function SellerListRow({
-  seller,
-  selected,
-  onSelect,
-  onToggleFollow,
-  isMutating
-}: {
-  seller: SellerRecord;
-  selected: boolean;
-  onSelect: () => void;
-  onToggleFollow: () => void;
-  isMutating: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full rounded-2xl border p-3 text-left transition ${
-        selected
-          ? "border-[#f77f00] bg-orange-50 dark:bg-orange-900/20"
-          : "border-slate-200 bg-white hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-100">
-            {seller.initials}
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate font-semibold text-slate-900 dark:text-slate-100">{seller.name}</p>
-              <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getSellerRelationshipBadgeClass(
-                  seller.relationship
-                )}`}
-              >
-                {getSellerRelationshipLabel(seller.relationship)}
-              </span>
-            </div>
-            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{seller.tagline}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <span>{seller.region}</span>
-              <span>•</span>
-              <span>{formatCompactNumber(seller.followers)} followers</span>
-              <span>•</span>
-              <span>{seller.rating.toFixed(1)}★</span>
-            </div>
-          </div>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onToggleFollow();
-          }}
-          className="rounded-full border border-slate-200 px-3 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          {isMutating ? "..." : seller.isFollowing ? "Following" : "Follow"}
-        </button>
-      </div>
+        <div className={`transition - opacity duration - 300 ${isTransitioning ? "opacity-0" : "opacity-100"} `}>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {seller.categories.slice(0, 2).map((category) => (
-          <span
-            key={category}
-            className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-          >
-            {category}
-          </span>
-        ))}
-        <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white dark:bg-slate-100 dark:text-slate-900">
-          Fit {seller.fitScore}
-        </span>
-      </div>
+          {/* Master Grid Area */}
+          <section className="flex-1 space-y-6">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+                  {["all", "followed", "new"].map((tab) => (
+                    <button
+                      key={tab}
+                      className={`px - 4 py - 1.5 rounded - lg text - [11px] font - black uppercase tracking - widest transition - all ${viewTab === tab
+                          ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                        } `}
+                      onClick={() => {
+                        setIsTransitioning(true);
+                        setViewTab(tab);
+                        setTimeout(() => setIsTransitioning(false), 300);
+                      }}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+                <div className="h-4 border-l border-slate-200 dark:border-slate-700" />
+                <span className="text-xs text-slate-400 font-medium">
+                  <span className="text-slate-900 dark:text-slate-100 font-black">{sortedSellers.length}</span> results
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] uppercase font-black text-slate-400">Sort By:</label>
+                <select
+                  className="bg-transparent border-none text-sm font-bold text-slate-700 dark:text-slate-200 focus:ring-0 outline-none cursor-pointer appearance-none pr-6"
+                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23f77f00'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0px center', backgroundSize: '0.875rem' }}
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  <option value="relevance" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold">Relevance</option>
+                  <option value="followers" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold">Followers Count</option>
+                  <option value="rating" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold">Top Rated</option>
+                  <option value="lives" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold">Live Sessions</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 items-stretch">
+              {sortedSellers.map((s) => (
+                <SellerCard
+                  key={s.id}
+                  seller={s}
+                  followed={followedSellers.includes(s.id)}
+                  onToggleFollow={() => toggleFollowSeller(s.id)}
+                  onInvite={openInvite}
+                  onChangePage={onChangePage}
+                  isRecommended={s.badge === "Top Brand"}
+                  isSimilar={s.similarTo.includes("GlowUp Hub") || s.similarTo.includes("GadgetMart Africa")}
+                />
+              ))}
+            </div>
+
+            {sortedSellers.length === 0 && (
+              <div className="bg-white dark:bg-slate-900 rounded-[32px] p-20 text-center border-2 border-dashed border-slate-100 dark:border-slate-800">
+                <div className="text-4xl mb-4">🔍</div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">No matching suppliers</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-300 max-w-sm mx-auto">
+                  Try adjusting your filters or search terms to find more suppliers in the directory.
+                </p>
+                <button
+                  className="mt-6 px-6 py-2 rounded-full border border-slate-200 dark:border-slate-700 text-sm font-bold hover:bg-slate-50"
+                  onClick={() => {
+                    setIsTransitioning(true);
+                    setSearch("");
+                    setCategoryFilter("All");
+                    setMinFollowers("");
+                    setMinRating("Any");
+                    setSortBy("relevance");
+                    setPresetFilter("none");
+                    setViewTab("all");
+                    setTimeout(() => setIsTransitioning(false), 300);
+                  }}
+                >
+                  Clear search
+                </button>
+              </div>
+            )}
+          </section>
+        </div>
+      </main>
+
+      {showInvite && selectedSeller && (
+        <InviteModal seller={selectedSeller} onClose={closeInvite} />
+      )}
+
+      {isAiDialogOpen && (
+        <AiDiscoveryDialog
+          sellers={sortedSellers}
+          onClose={() => setIsAiDialogOpen(false)}
+          onViewSeller={(seller) => {
+            setIsAiDialogOpen(false);
+            openInvite(seller);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+type PresetChipProps = {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+};
+
+function PresetChip({ label, active, onClick }: PresetChipProps) {
+  return (
+    <button
+      className={`px - 4 py - 1.5 rounded - xl border - 2 text - xs font - bold transition - all ${active
+          ? "bg-[#f77f00] border-[#f77f00] text-white shadow-lg shadow-orange-500/20"
+          : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-200 dark:hover:border-slate-700 hover:text-slate-700 dark:hover:text-slate-200 shadow-sm"
+        } `}
+      onClick={onClick}
+    >
+      {label}
     </button>
   );
 }
 
-function DetailMetric({ label, value }: { label: string; value: string }) {
+type SellerCardProps = {
+  seller: Seller;
+  compact?: boolean;
+  followed: boolean;
+  onToggleFollow: () => void;
+  onInvite: (seller: Seller) => void;
+  onChangePage?: (page: PageId) => void;
+  isRecommended?: boolean;
+  isSimilar?: boolean;
+};
+
+function SellerCard({ seller, followed, onToggleFollow, onInvite, onChangePage: _onChangePage, isRecommended, isSimilar }: SellerCardProps) {
+  const navigate = useNavigate();
+  const statusColor =
+    seller.collabStatus === "Open to collabs"
+      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700"
+      : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700";
+  // Future-ready visibility gate for opportunity CTA.
+  const canViewOpportunity = seller.hasActiveCampaigns || seller.isActivelyCollaborating;
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">{value}</p>
+    <article
+      className="h-full flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[24px] p-4 shadow-sm transition-all hover:-translate-y-1 hover:shadow-xl hover:border-slate-300 dark:hover:border-slate-700 group ring-offset-2 focus-within:ring-2 ring-orange-500/50"
+    >
+      {/* Header section */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-4 min-w-0">
+          <div className="h-10 w-10 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 flex items-center justify-center text-base font-bold text-[#f77f00] transition-colors flex-shrink-0">
+            {seller.initials}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-50 truncate leading-tight">
+                {seller.name}
+              </h3>
+              <span className="text-[10px] uppercase font-medium tracking-wide text-slate-500 px-1.5 py-0.5 border border-slate-100 dark:border-slate-700 rounded-md bg-slate-50/50 dark:bg-slate-800/50 flex-shrink-0">
+                {seller.supplierType}
+              </span>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400 line-clamp-1 mb-2">
+              {seller.tagline}
+            </p>
+          </div>
+        </div>
+        <div className="flex-shrink-0 flex flex-col items-end gap-1.5">
+          {isRecommended && (
+            <span className="px-2.5 py-1 rounded-full bg-orange-500 text-white text-[10px] font-semibold uppercase tracking-wide shadow-lg shadow-orange-500/20">
+              Recommended
+            </span>
+          )}
+          {isSimilar && !isRecommended && (
+            <span className="px-2.5 py-1 rounded-full bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-semibold uppercase tracking-wide">
+              Similar Match
+            </span>
+          )}
+          <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-medium">
+            {seller.badge}
+          </span>
+        </div>
+      </div>
+
+      {/* Categories area */}
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        {seller.categories.map((cat: string) => (
+            <span
+              key={cat}
+              className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300 font-medium transition-colors"
+            >
+              {cat}
+            </span>
+        ))}
+      </div>
+
+      {/* Divider */}
+      <div className="my-5 border-t border-slate-100 dark:border-slate-800" />
+
+      {/* Main Stats sub-row */}
+      <div className="grid grid-cols-3 gap-4 mb-5">
+        <StatItem
+          label="Followers"
+          value={`${(seller.followers / 1000).toFixed(1)} k`}
+          trend={seller.followersTrend}
+        />
+        <StatItem
+          label="Live sessions"
+          value={seller.livesCompleted}
+          trend={seller.livesTrend}
+        />
+        <StatItem
+          label="Avg order"
+          value={`$${seller.avgOrderValue} `}
+          trend={seller.orderTrend}
+        />
+      </div>
+
+      {/* Content Body - flex-1 to push footer down */}
+      <div className="flex-1 flex flex-col gap-3 mb-6">
+        <div className="flex-1 bg-slate-50/50 dark:bg-slate-800/30 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/50 flex flex-col justify-center">
+          <div className="flex items-center gap-2 mb-1.5 shrink-0">
+            <span className="text-md">✨</span>
+            <span className="text-[11px] font-semibold text-[#f77f00]">AI Compatibility Note</span>
+          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
+            {seller.fitReason}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5 px-1 shrink-0">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">Relationship</span>
+            <span className="text-slate-900 dark:text-slate-100 font-semibold">{seller.relationship}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-500 font-medium">Last Active</span>
+            <span className="text-slate-900 dark:text-slate-100 font-semibold">{seller.lastActive}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer Actions - pinned at bottom */}
+      <div className="flex flex-col gap-3 pt-4 border-t border-slate-50 dark:border-slate-800">
+        <div className="flex items-center justify-between mb-1">
+          <div className={`px-3 py-1 rounded-xl border text-xs font-medium flex items-center gap-1.5 ${statusColor}`}>
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            {seller.collabStatus}
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFollow();
+            }}
+            className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all ${followed
+                ? "bg-slate-900 dark:bg-slate-700 text-white"
+                : "bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 text-slate-500 hover:text-slate-900 hover:border-slate-200"
+              }`}
+          >
+            {followed ? "Following" : "+ Follow"}
+          </button>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            className="flex-1 py-2.5 px-4 rounded-2xl bg-[#f77f00] text-white text-sm font-semibold shadow-lg shadow-orange-500/20 hover:bg-[#e26f00] transition-all hover:shadow-orange-500/30"
+            onClick={() => onInvite(seller)}
+          >
+            Invite to collaborate
+          </button>
+
+          {canViewOpportunity && (
+            <button
+              className="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-100 text-sm font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              onClick={() => {
+                navigate("/opportunities", {
+                  state: {
+                    supplierName: seller.name,
+                    onlyCurrent: true,
+                    source: "supplier-directory"
+                  }
+                });
+              }}
+              title={`View current opportunities for ${seller.name}`}
+            >
+              View Opportunity
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+
+
+type StatItemProps = {
+  label: string;
+  value: string | number;
+  trend: Trend;
+};
+
+function StatItem({ label, value, trend }: StatItemProps) {
+  let trendSymbol = "";
+  let trendColor = "text-slate-500 dark:text-slate-300";
+  if (trend === "up") {
+    trendSymbol = "↑";
+    trendColor = "text-emerald-600";
+  } else if (trend === "down") {
+    trendSymbol = "↓";
+    trendColor = "text-red-500";
+  } else if (trend === "flat") {
+    trendSymbol = "↔";
+    trendColor = "text-slate-500 dark:text-slate-300";
+  }
+
+  return (
+    <div className="flex flex-col">
+      <span className="text-xs text-slate-500 dark:text-slate-300">{label}</span>
+      <div className="flex items-center gap-1">
+        <span className="text-sm font-semibold dark:font-bold text-slate-800 dark:text-slate-50">
+          {value}
+        </span>
+        {trend && (
+          <span className={`text - tiny ${trendColor} `}>{trendSymbol}</span>
+        )}
+      </div>
     </div>
   );
 }
 
-function MiniBlock({ title, body }: { title: string; body: string }) {
+type InviteModalProps = {
+  seller: Seller;
+  onClose: () => void;
+};
+
+function InviteModal({ seller, onClose }: InviteModalProps) {
+  const [message, setMessage] = useState(
+    `Hi ${seller.name}, I’d love to collaborate with you on upcoming lives.I believe my audience would resonate well with your brand.`
+  );
+  const [model, setModel] = useState("Hybrid");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  // Lock background scroll when drawer is open
+  useScrollLock(true);
+
+  const handleSendInvite = () => {
+    if (!message.trim()) return;
+    setIsSubmitting(true);
+    // Simulate backend call
+    setTimeout(() => {
+      setIsSubmitting(false);
+      setIsSuccess(true);
+      // Auto close after showing success
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    }, 1500);
+  };
+
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{body}</p>
+    <div
+      className="fixed inset-0 z-[60] flex justify-end bg-black/40 backdrop-blur-[2px] transition-all animate-in fade-in duration-300"
+      onClick={onClose}
+    >
+      <div
+        className="w-full md:max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col text-sm transition-transform duration-300 animate-in slide-in-from-right"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-sm font-semibold dark:font-bold transition-colors">
+              {seller.initials}
+            </div>
+            <div>
+              <div className="flex items-center gap-1">
+                <span className="text-sm font-bold uppercase tracking-widest text-slate-400">Invite {seller.name}</span>
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-300">{seller.region}</div>
+            </div>
+          </div>
+          <button
+            className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors border border-slate-200 dark:border-slate-700"
+            onClick={onClose}
+            aria-label="Close drawer"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3 space-y-3 relative">
+          {isSuccess && (
+            <div className="absolute inset-0 z-10 bg-white dark:bg-slate-900 flex flex-col items-center justify-center p-6 animate-in fade-in duration-300">
+              <div className="h-16 w-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-4">
+                <span className="text-3xl">🎉</span>
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">Invite Sent!</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
+                {seller.name} has been notified. We’ve routed your request to their supplier team.
+              </p>
+            </div>
+          )}
+
+          <section className="space-y-1">
+            <h3 className="text-xs font-semibold dark:font-bold">Collaboration model</h3>
+            <div className="flex flex-wrap gap-1">
+              {["Flat fee", "Commission", "Hybrid"].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`px - 2.5 py - 0.5 rounded - full text - xs border transition - colors ${model === m
+                      ? "bg-[#f77f00] border-[#f77f00] text-white"
+                      : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                    } `}
+                  onClick={() => setModel(m)}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="space-y-1">
+            <h3 className="text-xs font-semibold">Invite message</h3>
+            <textarea
+              rows={4}
+              className="w-full border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-900 focus:outline-none focus:border-slate-400 transition-colors"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+            />
+            <p className="text-xs text-slate-500 dark:text-slate-300">
+              Keep it concise. Sellers can see your Creator profile and performance stats.
+            </p>
+          </section>
+
+          <button
+            className={`w - full py - 2 rounded - full text - white text - sm font - semibold transition - all ${isSubmitting
+                ? "bg-slate-300 dark:bg-slate-700 cursor-wait"
+                : "bg-[#f77f00] hover:bg-[#e26f00]"
+              } `}
+            onClick={handleSendInvite}
+            disabled={isSubmitting || isSuccess}
+          >
+            {isSubmitting ? "Sending invite..." : "Send invite"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
-function EmptyPanel({ title, body }: { title: string; body: string }) {
+// --- New AI Discovery Dialog ---
+function AiDiscoveryDialog({ sellers, onClose, onViewSeller }: { sellers: Seller[], onClose: () => void, onViewSeller: (s: Seller) => void }) {
+  const [stage, setStage] = useState<"scanning" | "analyzing" | "results">("scanning");
+
+  React.useEffect(() => {
+    const timer1 = setTimeout(() => setStage("analyzing"), 1500);
+    const timer2 = setTimeout(() => setStage("results"), 3000);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, []);
+
+  // Lock background scroll when dialog is open
+  useScrollLock(true);
+
+  const recommendedSellers = React.useMemo(() => {
+    // Simple mock logic: pick top 3 from the passed list (or defaults if list empty)
+    return sellers.slice(0, 3);
+  }, [sellers]);
+
   return (
-    <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center dark:border-slate-700 dark:bg-slate-900">
-      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-      <p className="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-300">{body}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl shadow-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+
+        {/* Header */}
+        <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🤖</span>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">AI Discovery Assistant</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Powered by Creator Intelligence™</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+            ✕
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 overflow-y-auto">
+          {stage === "scanning" && (
+            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+              <div className="relative">
+                <div className="h-16 w-16 rounded-full border-4 border-slate-100 dark:border-slate-800 animate-spin border-t-[#f77f00]"></div>
+                <span className="absolute inset-0 flex items-center justify-center text-2xl animate-pulse">🔍</span>
+              </div>
+              <div>
+                <h3 className="text-md font-bold text-slate-900 dark:text-slate-100">Scanning Supplier Directory...</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Looking for brands matching your audience demographics.</p>
+              </div>
+            </div>
+          )}
+
+          {stage === "analyzing" && (
+            <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+              <div className="h-16 w-16 rounded-full bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-3xl animate-bounce">
+                🧠
+              </div>
+              <div>
+                <h3 className="text-md font-bold text-slate-900 dark:text-slate-100">Analyzing Compatibility...</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">Checking historical conversion rates and brand affinity.</p>
+              </div>
+            </div>
+          )}
+
+          {stage === "results" && (
+            <div className="flex flex-col gap-4 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 rounded-xl p-3 flex gap-2">
+                <span className="text-lg">✨</span>
+                <div>
+                  <p className="text-xs font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-widest">Analysis Complete</p>
+                  <p className="text-sm text-emerald-900/80 dark:text-emerald-300 font-medium">Found {recommendedSellers.length} high-potential suppliers for your next campaign.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {recommendedSellers.map(seller => (
+                  <div key={seller.id} className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-bold text-sm">
+                        {seller.initials}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm dark:text-slate-100">{seller.name}</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{seller.categories.join(", ")}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onViewSeller(seller)}
+                      className="text-xs font-bold text-[#f77f00] hover:bg-orange-50 dark:hover:bg-orange-900/20 px-3 py-1.5 rounded-full transition-colors"
+                    >
+                      View Profile
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {stage === "results" && (
+          <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-6 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 text-white font-bold text-sm hover:bg-slate-800 transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+export { SellersDirectoryPage };

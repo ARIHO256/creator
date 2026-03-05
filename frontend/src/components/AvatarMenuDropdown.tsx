@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import type { PageId } from "../layouts/CreatorShellLayout";
 import { useScrollLock } from "../hooks/useScrollLock";
-import { useWorkspaceAccess } from "../hooks/useWorkspaceAccess";
 
 type AvatarMenuDropdownProps = {
   userName?: string;
@@ -21,8 +20,6 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
 }) => {
   const { theme, toggleTheme } = useTheme();
   const darkMode = theme === "dark";
-  const reviewsAccess = useWorkspaceAccess("reviews.view");
-  const subscriptionAccess = useWorkspaceAccess("subscription.view");
   const [open, setOpen] = useState<boolean>(false);
   const [dnd, setDnd] = useState<boolean>(false);
   // Removed showShortcuts state
@@ -208,14 +205,12 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
                 onClick={() => handleChangePage("live-studio")}
                 darkMode={darkMode}
               />
-              {reviewsAccess.allowed ? (
-                <MenuItem
-                  label="Reviews"
-                  hint="Audience feedback"
-                  onClick={() => handleChangePage("reviews")}
-                  darkMode={darkMode}
-                />
-              ) : null}
+              <MenuItem
+                label="Reviews"
+                hint="Audience feedback"
+                onClick={() => handleChangePage("reviews")}
+                darkMode={darkMode}
+              />
             </MenuSection>
 
             <Divider darkMode={darkMode} />
@@ -228,14 +223,12 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
                 onClick={() => handleChangePage("settings")}
                 darkMode={darkMode}
               />
-              {subscriptionAccess.allowed ? (
-                <MenuItem
-                  label="Subscription"
-                  hint="Plan & billing"
-                  onClick={() => handleChangePage("subscription")}
-                  darkMode={darkMode}
-                />
-              ) : null}
+              <MenuItem
+                label="Subscription"
+                hint="Plan & billing"
+                onClick={() => handleChangePage("subscription")}
+                darkMode={darkMode}
+              />
               <MenuItem
                 label="Security & devices"
                 hint="2FA, sessionz"

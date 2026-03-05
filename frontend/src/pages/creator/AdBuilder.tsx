@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ApiClientError } from "../../api/client";
-import { useAdBuilderCampaignQuery, usePublishAdBuilderCampaignMutation, useSaveAdBuilderCampaignMutation } from "../../hooks/api/useAdBuilder";
 import {
   BadgeCheck,
   Check,
@@ -69,7 +67,8 @@ const ORANGE = "#f77f00";
 const HERO_IMAGE_REQUIRED = { width: 1920, height: 1080 } as const;
 const ITEM_POSTER_REQUIRED = { width: 500, height: 500 } as const;
 
-// Storage key for Asset Library picker round-trip
+// Storage keys for Asset Library picker round-trip
+const BUILDER_DRAFT_KEY = "mldz:adBuilder:builderDraft:v1";
 const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
 
 type ViewerMode = "fullscreen" | "modal";
@@ -1516,36 +1515,19 @@ export default function AdBuilder({
   // "Drawer-like route" support (optional)
   const [drawerMode, setDrawerMode] = useState(isDrawer);
   const [returnTo, setReturnTo] = useState<string | null>(null);
-  const [adId, setAdId] = useState<string | undefined>(() => {
-    if (typeof window === "undefined") return _initialAdId || undefined;
-    const sp = new URLSearchParams(window.location.search);
-    return sp.get("adId") || _initialAdId || undefined;
-  });
-  const hasHydratedPersistedRef = useRef(false);
-  const hasAppliedPickerReturnRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      if (isDrawer) {
-        setDrawerMode(true);
-      }
+    if (isDrawer) {
+      setDrawerMode(true);
       return;
     }
-
+    if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     const embed = sp.get("embed");
     const rt = sp.get("returnTo");
-    const routeAdId = sp.get("adId") || _initialAdId || undefined;
-
     setReturnTo(rt);
-    setDrawerMode(isDrawer || embed === "drawer" || embed === "1");
-    setAdId((prev) => (prev === routeAdId ? prev : routeAdId));
-  }, [_initialAdId, isDrawer]);
-
-  useEffect(() => {
-    hasHydratedPersistedRef.current = false;
-    hasAppliedPickerReturnRef.current = false;
-  }, [adId]);
+    setDrawerMode(embed === "drawer" || embed === "1");
+  }, [isDrawer]);
 
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
@@ -1563,17 +1545,8 @@ export default function AdBuilder({
     { key: "review", label: "Review", desc: "Preflight + generate" },
   ];
   const [step, setStep] = useState<BuilderStep>("offer");
-  const adBuilderCampaignQuery = useAdBuilderCampaignQuery(adId, {
-    enabled: Boolean(adId),
-    staleTime: 5_000,
-  });
-  const saveAdBuilderCampaignMutation = useSaveAdBuilderCampaignMutation();
-  const publishAdBuilderCampaignMutation = usePublishAdBuilderCampaignMutation();
-  const persistedCampaignMissing =
-    adBuilderCampaignQuery.error instanceof ApiClientError &&
-    adBuilderCampaignQuery.error.status === 404;
 
-  const stepKeys = useMemo<BuilderStep[]>(() => ["offer", "creative", "tracking", "schedule", "review"], []);
+  const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
 
   const handleNext = () => {
     const currentIndex = stepKeys.indexOf(step);
@@ -1592,9 +1565,7 @@ export default function AdBuilder({
   };
 
   const [isGenerated, setIsGenerated] = useState(false);
-  const [adStatus, setAdStatus] = useState<string>("draft");
   const [showSharePanel, setShowSharePanel] = useState(false);
-  const isPersisting = saveAdBuilderCampaignMutation.isPending || publishAdBuilderCampaignMutation.isPending;
 
   // Preflight is collapsible and collapsed by default (per requirement)
   const [preflightOpen, setPreflightOpen] = useState(false);
@@ -1730,79 +1701,10 @@ export default function AdBuilder({
     return effectivePlatforms.map((p) => {
       const utmSource = p.toLowerCase().replace(/\s+/g, "");
       const link = buildShortLink(builder.shortDomain, builder.shortSlug, { ...mergedUtm, utm_source: utmSource });
-      const text = `${builder.ctaText || "Shop the featured dealz"}
-${link}`;
+      const text = `${builder.ctaText || "Shop the featured dealz"}\n${link}`;
       return { platform: p, link, text };
     });
   }, [effectivePlatforms, mergedUtm, builder.shortDomain, builder.shortSlug, builder.ctaText]);
-
-  const buildPersistedAdBuilderState = useCallback(
-    () => ({
-      ts: Date.now(),
-      step,
-      builder,
-      externalAssets,
-      isGenerated,
-      showSharePanel,
-    }),
-    [builder, externalAssets, isGenerated, showSharePanel, step],
-  );
-
-  const buildAdBuilderSummary = useCallback(
-    (statusOverride?: string, generatedOverride?: boolean) => ({
-      title: campaign?.name || "New Shoppable Ad",
-      subtitle: primaryOffer
-        ? `${primaryOffer.name} • ${money(primaryOffer.currency, primaryOffer.price)}`
-        : "",
-      sellerId: supplier?.id || null,
-      sellerName: supplier?.name,
-      campaignId: campaign?.id || null,
-      campaignName: campaign?.name,
-      platforms: effectivePlatforms,
-      startISO: startsAt.toISOString(),
-      endISO: endsAt.toISOString(),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      heroImageUrl: heroImageAsset?.url || "",
-      heroIntroVideoUrl: heroVideoAsset?.url || "",
-      offers: selectedOffers.map((offer) => ({
-        id: offer.id,
-        name: offer.name,
-        type: offer.type,
-        price: offer.price,
-        basePrice: offer.basePrice,
-        currency: offer.currency,
-        stockLeft: offer.stockLeft,
-        sold: offer.sold,
-        posterUrl: perOfferPosterUrl[offer.id] || offer.catalogPosterUrl,
-        videoUrl: perOfferVideoUrl[offer.id] || offer.catalogVideoUrl,
-        isPrimary: offer.id === builder.primaryOfferId,
-      })),
-      shortLink,
-      generated: generatedOverride ?? isGenerated,
-      status:
-        statusOverride ||
-        (generatedOverride ?? isGenerated ? adStatus || "scheduled" : adStatus || "draft"),
-    }),
-    [
-      adStatus,
-      builder.primaryOfferId,
-      campaign?.id,
-      campaign?.name,
-      effectivePlatforms,
-      endsAt,
-      heroImageAsset?.url,
-      heroVideoAsset?.url,
-      isGenerated,
-      perOfferPosterUrl,
-      perOfferVideoUrl,
-      primaryOffer,
-      selectedOffers,
-      shortLink,
-      startsAt,
-      supplier?.id,
-      supplier?.name,
-    ],
-  );
 
   // Viewer state
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -1908,180 +1810,75 @@ ${link}`;
   }
 
   // Asset library picker wiring (independent page)
-  const hydratePersistedAdBuilder = useCallback(
-    (saved: any) => {
-      if (!saved || typeof saved !== "object") return;
-      if (saved?.builder && typeof saved.builder === "object") {
-        setBuilder((prev) => ({
-          ...prev,
-          ...(saved.builder as Partial<BuilderState>),
-        }));
-      }
-      if (
-        typeof saved?.step === "string" &&
-        stepKeys.includes(saved.step as BuilderStep)
-      ) {
-        setStep(saved.step as BuilderStep);
-      }
-      if (saved?.externalAssets && typeof saved.externalAssets === "object") {
-        setExternalAssets(saved.externalAssets as Record<string, Asset>);
-      }
-      if (typeof saved?.isGenerated === "boolean") {
-        setIsGenerated(saved.isGenerated);
-      }
-      if (typeof saved?.showSharePanel === "boolean") {
-        setShowSharePanel(saved.showSharePanel);
-      }
-    },
-    [stepKeys],
-  );
-
-  const syncAdUrl = useCallback((nextAdId: string) => {
-    if (typeof window === "undefined" || !nextAdId) return;
-    const u = new URL(window.location.href);
-    u.searchParams.set("adId", nextAdId);
-    const qs = u.searchParams.toString();
-    window.history.replaceState({}, "", u.pathname + (qs ? `?${qs}` : ""));
-  }, []);
-
-  const persistDraftToBackend = useCallback(async () => {
-    const result = await saveAdBuilderCampaignMutation.mutateAsync({
-      adId,
-      builderState: buildPersistedAdBuilderState(),
-      summary: buildAdBuilderSummary(adStatus, isGenerated),
-    });
-
-    setAdId(result.id);
-    syncAdUrl(result.id);
-    if (typeof result.generated === "boolean") {
-      setIsGenerated(result.generated);
-    }
-    if (typeof result.status === "string" && result.status) {
-      setAdStatus(result.status);
-    }
-    if (
-      result.builderState?.builder &&
-      typeof result.builderState.builder === "object"
-    ) {
-      setBuilder((prev) => ({
-        ...prev,
-        ...(result.builderState?.builder as Partial<BuilderState>),
-      }));
-    }
-
-    return result;
-  }, [
-    adId,
-    adStatus,
-    buildAdBuilderSummary,
-    buildPersistedAdBuilderState,
-    isGenerated,
-    saveAdBuilderCampaignMutation,
-    syncAdUrl,
-  ]);
-
-  const publishDraftToBackend = useCallback(async () => {
-    const saved = await persistDraftToBackend();
-    const result = await publishAdBuilderCampaignMutation.mutateAsync({
-      adId: saved.id,
-      payload: {
-        status: "scheduled",
-      },
-    });
-
-    setAdId(result.id);
-    syncAdUrl(result.id);
-    setIsGenerated(Boolean(result.generated ?? true));
-    setAdStatus(typeof result.status === "string" ? result.status : "scheduled");
-    return result;
-  }, [
-    persistDraftToBackend,
-    publishAdBuilderCampaignMutation,
-    syncAdUrl,
-  ]);
-
-  const handleSaveAdDraft = useCallback(async () => {
+  function persistDraftForPicker() {
     try {
-      await persistDraftToBackend();
-      setToast("Draft saved.");
+      sessionStorage.setItem(
+        BUILDER_DRAFT_KEY,
+        JSON.stringify({
+          ts: Date.now(),
+          step,
+          builder,
+          externalAssets,
+        }),
+      );
     } catch {
-      setToast("Could not save draft.");
+      // ignore
     }
-  }, [persistDraftToBackend]);
+  }
 
-  const buildReturnToUrl = useCallback(
-    (targetAdId?: string) => {
-      const u = new URL(window.location.href);
-      const effectiveAdId = targetAdId || adId;
-      if (effectiveAdId) {
-        u.searchParams.set("adId", effectiveAdId);
-      }
-      u.searchParams.set("restore", "1");
-      u.searchParams.set("step", step);
-      u.searchParams.delete("assetId");
-      u.searchParams.delete("applyTo");
-      return u.pathname + "?" + u.searchParams.toString();
-    },
-    [adId, step],
-  );
+  function buildReturnToUrl() {
+    const u = new URL(window.location.href);
+    u.searchParams.set("restore", "1");
+    u.searchParams.set("step", step);
+    // clean old picker params
+    u.searchParams.delete("assetId");
+    u.searchParams.delete("applyTo");
+    return u.pathname + "?" + u.searchParams.toString();
+  }
 
-  const openAssetLibraryPicker = useCallback(
-    async (applyTo: string) => {
-      if (typeof window === "undefined") return;
-      const saved = await persistDraftToBackend();
-      syncAdUrl(saved.id);
-      const picker = new URL("/asset-library", window.location.origin);
-      picker.searchParams.set("mode", "picker");
-      picker.searchParams.set("target", "shoppable");
-      picker.searchParams.set("applyTo", applyTo);
-      picker.searchParams.set("returnTo", buildReturnToUrl(saved.id));
-      window.location.assign(picker.toString());
-    },
-    [buildReturnToUrl, persistDraftToBackend, syncAdUrl],
-  );
+  function openAssetLibraryPicker(applyTo: string) {
+    if (typeof window === "undefined") return;
+    persistDraftForPicker();
+    const picker = new URL("/asset-library", window.location.origin);
+    picker.searchParams.set("mode", "picker");
+    picker.searchParams.set("target", "shoppable");
+    picker.searchParams.set("applyTo", applyTo);
+    picker.searchParams.set("returnTo", buildReturnToUrl());
+    // Mini-step exists inside picker mode, so this is treated as "suggested applyTo"
+    window.location.assign(picker.toString());
+  }
 
-  const launchAssetLibraryPicker = useCallback(
-    (applyTo: string) => {
-      void openAssetLibraryPicker(applyTo).catch(() => {
-        setToast("Could not open Asset Library right now.");
-      });
-    },
-    [openAssetLibraryPicker],
-  );
+  function coerceAssetFromPickerPayload(payload: Record<string, unknown>): Asset | null {
+    if (!payload || typeof payload !== "object") return null;
+    const id = String(payload.id || "");
+    if (!id) return null;
 
-  const coerceAssetFromPickerPayload = useCallback(
-    (payload: Record<string, unknown>): Asset | null => {
-      if (!payload || typeof payload !== "object") return null;
-      const id = String(payload.id || "");
-      if (!id) return null;
+    // AssetLibrary_updated emits: { id, title, subtitle, ownerLabel, mediaType, status, previewKind, previewUrl, thumbnailUrl, desktopMode, ... }
+    const title = String(payload.title || payload.name || "Asset");
+    const ownerLabel = String(payload.ownerLabel || payload.owner || "Host");
+    const owner: AssetOwner = ownerLabel.toLowerCase().includes("supplier") || ownerLabel.toLowerCase().includes("seller") ? "Supplier" : ownerLabel.toLowerCase().includes("catalog") ? "Catalog" : "Host";
 
-      const title = String(payload.title || payload.name || "Asset");
-      const ownerLabel = String(payload.ownerLabel || payload.owner || "Host");
-      const owner: AssetOwner = ownerLabel.toLowerCase().includes("supplier") || ownerLabel.toLowerCase().includes("seller") ? "Supplier" : ownerLabel.toLowerCase().includes("catalog") ? "Catalog" : "Host";
+    const kind: MediaKind = payload.previewKind === "video" || payload.mediaType === "video" ? "video" : "image";
+    const status: AssetStatus = payload.status === "approved" ? "approved" : payload.status === "rejected" ? "rejected" : "pending";
 
-      const kind: MediaKind = payload.previewKind === "video" || payload.mediaType === "video" ? "video" : "image";
-      const status: AssetStatus = payload.status === "approved" ? "approved" : payload.status === "rejected" ? "rejected" : "pending";
+    const url = String(payload.previewUrl || payload.url || payload.thumbnailUrl || "");
+    if (!url) return null;
 
-      const url = String(payload.previewUrl || payload.url || payload.thumbnailUrl || "");
-      if (!url) return null;
+    const desktopMode: ViewerMode | undefined = payload.desktopMode === "fullscreen" || payload.desktopMode === "modal" ? payload.desktopMode : undefined;
 
-      const desktopMode: ViewerMode | undefined = payload.desktopMode === "fullscreen" || payload.desktopMode === "modal" ? payload.desktopMode : undefined;
+    return {
+      id,
+      title,
+      owner,
+      kind,
+      status,
+      url,
+      posterUrl: kind === "video" ? String(payload.thumbnailUrl || payload.posterUrl || "") || undefined : undefined,
+      desktopMode,
+    };
+  }
 
-      return {
-        id,
-        title,
-        owner,
-        kind,
-        status,
-        url,
-        posterUrl: kind === "video" ? String(payload.thumbnailUrl || payload.posterUrl || "") || undefined : undefined,
-        desktopMode,
-      };
-    },
-    [],
-  );
-
-  const applyPickedAssetToBuilder = useCallback((asset: Asset, applyTo: string) => {
+  function applyPickedAssetToBuilder(asset: Asset, applyTo: string) {
     setExternalAssets((m) => ({ ...m, [asset.id]: asset }));
 
     setBuilder((prev) => {
@@ -2099,84 +1896,45 @@ ${link}`;
       }
       return next;
     });
-  }, []);
+  }
 
-  useEffect(() => {
-    if (!adId) return;
-    if (hasHydratedPersistedRef.current) return;
-    if (adBuilderCampaignQuery.isLoading || adBuilderCampaignQuery.isFetching) {
-      return;
-    }
-
-    const persisted = adBuilderCampaignQuery.data;
-    const savedState = persisted?.builderState;
-    if (savedState && typeof savedState === "object" && savedState.builder) {
-      hydratePersistedAdBuilder(savedState);
-      if (typeof persisted.generated === "boolean") {
-        setIsGenerated(persisted.generated);
-      }
-      if (typeof persisted.status === "string" && persisted.status) {
-        setAdStatus(persisted.status);
-      }
-      if (persisted?.id) {
-        setAdId(persisted.id);
-        syncAdUrl(persisted.id);
-      }
-    }
-
-    hasHydratedPersistedRef.current = true;
-  }, [
-    adBuilderCampaignQuery.data,
-    adBuilderCampaignQuery.isFetching,
-    adBuilderCampaignQuery.isLoading,
-    adId,
-    hydratePersistedAdBuilder,
-    syncAdUrl,
-  ]);
-
+  // Restore from Asset Library picker return
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     const shouldRestore = sp.get("restore") === "1" || sp.has("assetId");
     const assetId = sp.get("assetId") || "";
     const applyTo = sp.get("applyTo") || "";
-    const stepParam = sp.get("step");
 
-    if (stepParam && stepKeys.includes(stepParam as BuilderStep)) {
-      setStep(stepParam as BuilderStep);
-    }
-
-    const waitingForPersistedState =
-      shouldRestore &&
-      Boolean(adId) &&
-      !adBuilderCampaignQuery.data?.builderState &&
-      !persistedCampaignMissing &&
-      (adBuilderCampaignQuery.isLoading || adBuilderCampaignQuery.isFetching);
-
-    if (waitingForPersistedState) {
-      return;
-    }
-
-    if (assetId && !hasAppliedPickerReturnRef.current) {
+    if (shouldRestore) {
       try {
-        const pickRaw = window.sessionStorage.getItem(ASSET_PICK_KEY);
-        if (pickRaw) {
-          const parsed = JSON.parse(pickRaw);
-          const payload = parsed?.payload || parsed;
-          if (payload?.id === assetId) {
-            const a = coerceAssetFromPickerPayload(payload);
-            if (a) {
-              applyPickedAssetToBuilder(a, applyTo || "");
-              hasAppliedPickerReturnRef.current = true;
-            }
-          }
+        const raw = sessionStorage.getItem(BUILDER_DRAFT_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          if (saved?.builder) setBuilder(saved.builder);
+          if (saved?.step) setStep(saved.step);
+          if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
         }
       } catch {
         // ignore
       }
     }
 
-    if (shouldRestore || assetId) {
+    if (assetId) {
+      try {
+        const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
+        if (pickRaw) {
+          const parsed = JSON.parse(pickRaw);
+          const payload = parsed?.payload || parsed;
+          if (payload?.id === assetId) {
+            const a = coerceAssetFromPickerPayload(payload);
+            if (a) applyPickedAssetToBuilder(a, applyTo || "");
+          }
+        }
+      } catch {
+        // ignore
+      }
+      // Clean query params to prevent re-apply on refresh
       const clean = new URL(window.location.href);
       clean.searchParams.delete("assetId");
       clean.searchParams.delete("applyTo");
@@ -2184,16 +1942,7 @@ ${link}`;
       clean.searchParams.delete("step");
       window.history.replaceState({}, "", clean.pathname + (clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : ""));
     }
-  }, [
-    adBuilderCampaignQuery.data,
-    adBuilderCampaignQuery.isFetching,
-    adBuilderCampaignQuery.isLoading,
-    adId,
-    applyPickedAssetToBuilder,
-    coerceAssetFromPickerPayload,
-    persistedCampaignMissing,
-    stepKeys,
-  ]);
+  }, []);
 
   // Supplier -> campaign resets offers
   function resetScope(nextSupplierId: string, nextCampaignId: string) {
@@ -2282,28 +2031,8 @@ ${link}`;
     return { ok, issues };
   }, [builder, selectedOffers, startsAt, endsAt, assetById]);
 
-  const handlePublishAd = useCallback(async () => {
-    if (!preflight.ok) return;
-    try {
-      await publishDraftToBackend();
-      setShowSharePanel(true);
-      setToast(isGenerated ? "Ad updated" : "Success! Your ad is now visible to followers.");
-    } catch {
-      setToast("Could not publish this ad yet.");
-    }
-  }, [isGenerated, preflight.ok, publishDraftToBackend]);
-
-  const normalizedAdStatus = String(adStatus || "draft").toLowerCase();
-  const statusLabel = isGenerated
-    ? normalizedAdStatus === "scheduled"
-      ? "Scheduled"
-      : normalizedAdStatus === "pending_approval"
-        ? "Pending approval"
-        : "Generated"
-    : preflight.ok
-      ? "Ready"
-      : "Draft";
-  const statusTone: "good" | "warn" = isGenerated || preflight.ok ? "good" : "warn";
+  const statusLabel = isGenerated ? "Generated" : preflight.ok ? "Ready" : "Draft";
+  const statusTone: "good" | "warn" = isGenerated ? "good" : preflight.ok ? "good" : "warn";
 
   // Viewer props: for hero viewer, we need product chooser and selected product info
   const heroProducts = useMemo(() => {
@@ -2401,8 +2130,8 @@ ${link}`;
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Btn tone="neutral" onClick={() => void handleSaveAdDraft()} left={<CheckCircle2 className="h-4 w-4" />} disabled={isPersisting}>
-              {isPersisting ? "Saving…" : "Save draft"}
+            <Btn tone="neutral" onClick={() => setToast("Draft saved (demo)")} left={<CheckCircle2 className="h-4 w-4" />}>
+              Save draft
             </Btn>
             <Btn
               tone="neutral"
@@ -2750,7 +2479,7 @@ ${link}`;
                     <img src={heroImageAsset?.url || "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop"} alt="Hero" className="h-40 w-full object-cover" />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Btn tone="primary" onClick={() => launchAssetLibraryPicker("hero_image")} left={<Search className="h-4 w-4" />}>
+                    <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_image")} left={<Search className="h-4 w-4" />}>
                       Choose from Asset Library
                     </Btn>
                   </div>
@@ -2787,7 +2516,7 @@ ${link}`;
                       </Pill>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <Btn tone="primary" onClick={() => launchAssetLibraryPicker("hero_video")} left={<Film className="h-4 w-4" />}>
+                      <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_video")} left={<Film className="h-4 w-4" />}>
                         Choose intro video
                       </Btn>
                       <Btn tone="ghost" onClick={openHeroViewer} left={<Play className="h-4 w-4" />}>
@@ -2851,7 +2580,7 @@ ${link}`;
                               <img src={posterAsset?.url || o.catalogPosterUrl} alt="Poster" className="h-40 w-full object-cover" />
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
-                              <Btn tone="primary" onClick={() => launchAssetLibraryPicker(`item_poster:${o.id}`)} left={<Search className="h-4 w-4" />}>
+                              <Btn tone="primary" onClick={() => openAssetLibraryPicker(`item_poster:${o.id}`)} left={<Search className="h-4 w-4" />}>
                                 Choose poster
                               </Btn>
                               <Btn tone="ghost" onClick={() => setBuilder((p) => ({ ...p, itemPosterByOfferId: { ...p.itemPosterByOfferId, [o.id]: undefined } }))} left={<X className="h-4 w-4" />}>
@@ -2876,7 +2605,7 @@ ${link}`;
                               <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Desktop viewer: {(videoAsset?.desktopMode || "modal").toUpperCase()}</div>
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
-                              <Btn tone="primary" onClick={() => launchAssetLibraryPicker(`item_video:${o.id}`)} left={<Film className="h-4 w-4" />}>
+                              <Btn tone="primary" onClick={() => openAssetLibraryPicker(`item_video:${o.id}`)} left={<Film className="h-4 w-4" />}>
                                 Choose video
                               </Btn>
                               <Btn tone="ghost" onClick={() => setBuilder((p) => ({ ...p, itemVideoByOfferId: { ...p.itemVideoByOfferId, [o.id]: undefined } }))} left={<X className="h-4 w-4" />}>
@@ -3267,13 +2996,17 @@ ${link}`;
                   <div className="mt-3 flex gap-2">
                     <Btn
                       tone="primary"
-                      disabled={!preflight.ok || isPersisting}
-                      onClick={() => void handlePublishAd()}
+                      disabled={!preflight.ok}
+                      onClick={() => {
+                        setIsGenerated(true);
+                        setToast(isGenerated ? "Ad updated" : "Success! Your ad is now visible to followers.");
+                        setShowSharePanel(true);
+                      }}
                       left={<BadgeCheck className="h-4 w-4" />}
                       className="w-full"
                       title={!preflight.ok ? "Fix preflight issues" : undefined}
                     >
-                      {isPersisting ? "Publishing…" : isGenerated ? "Update Ad" : "Publish Ad"}
+                      {isGenerated ? "Update Ad" : "Publish Ad"}
                     </Btn>
                     <Btn tone="neutral" onClick={() => setToast("Saved as template (demo)")} left={<Sparkles className="h-4 w-4" />} className="w-full">
                       Save template

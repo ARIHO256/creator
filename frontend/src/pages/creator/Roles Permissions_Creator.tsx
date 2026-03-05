@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
   Ban,
+  BarChart3,
   Building2,
   CalendarClock,
   Check,
@@ -33,26 +34,13 @@ import {
   TrendingUp,
   User,
   UserPlus,
+  UserRound,
   Users,
   Video,
   Wand2,
   Zap
 } from "lucide-react";
 import { PageHeader } from "../../components/PageHeader";
-import { useApiCache } from "../../api/cache";
-import { queryKeys } from "../../api/queryKeys";
-import {
-  useAuditLogsQuery,
-  useCreateWorkspaceRoleMutation,
-  useDeleteWorkspaceRoleMutation,
-  useInviteWorkspaceMemberMutation,
-  useRolesWorkspaceQuery,
-  useUpdateWorkspaceSecurityMutation,
-  useUpdateWorkspaceMemberMutation,
-  useUpdateWorkspaceRoleMutation
-} from "../../hooks/api/useWorkspaceRoles";
-import { useRemoveSettingsDeviceMutation, useSettingsQuery, useSignOutAllSettingsDevicesMutation } from "../../hooks/api/useSettings";
-import type { RolesWorkspaceRecord, UpdateWorkspaceSecurityInput, WorkspaceMemberRecord, WorkspaceRoleRecord } from "../../api/types";
 
 /**
  * Roles & Permissions — Premium (Regenerated)
@@ -67,12 +55,11 @@ import type { RolesWorkspaceRecord, UpdateWorkspaceSecurityInput, WorkspaceMembe
  * Notes:
  * - Permissions are organized by capability group (e.g., Shoppable Adz, Live Sessionz).
  * - Sensitive permissions show a warning badge and hint.
- * - /roles-permissions is backend-driven for: role CRUD, permission toggles, member role/status updates,
- *   invites/revoke invite, workspace security policy toggles, and audit log rows.
- * - Some “Quick actions” buttons are still presentation-only placeholders.
+ * - This file is self-contained UI (demo data); wire to your API as needed.
  */
 
 const ORANGE = "#f77f00";
+const ROLES_STORAGE_KEY = "mldz:roles:v1";
 
 function cx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
@@ -108,7 +95,7 @@ type Role = {
 };
 
 type MemberStatus = "Active" | "Invited" | "Inactive" | "Suspended";
-type Seat = "Creator" | "Manager" | "Supplier Guest" | "Support Ops" | "Owner" | "Team";
+type Seat = "Creator" | "Manager" | "Supplier Guest" | "Support Ops";
 
 type Member = {
   id: string;
@@ -131,6 +118,19 @@ type Invite = {
   expiresAtLabel: string;
   status: "Pending" | "Accepted" | "Expired" | "Revoked";
 };
+
+type AuditEvent = {
+  id: string;
+  at: string;
+  actor: string;
+  action: string;
+  detail?: string;
+  severity?: "info" | "warn" | "critical";
+};
+
+function nowLabel() {
+  return new Date().toLocaleString();
+}
 
 function useToasts() {
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; tone: "default" | "success" | "error" }>>([]);
@@ -508,26 +508,6 @@ const PERM_GROUPS: PermGroup[] = [
     ]
   },
   {
-    id: "account_pages",
-    title: "Account Pages",
-    icon: <BadgeCheck className="h-4 w-4" />,
-    desc: "Control access to creator feedback and account subscription pages.",
-    perms: [
-      {
-        id: "reviews.view",
-        label: "View Reviews page",
-        hint: "Lets the role open Reviews and see creator/team review performance.",
-        surface: ["Web"]
-      },
-      {
-        id: "subscription.view",
-        label: "View My Subscription page",
-        hint: "Lets the role open subscription status, plan details, and billing cycle.",
-        surface: ["Web"]
-      }
-    ]
-  },
-  {
     id: "admin",
     title: "Workspace Settings",
     icon: <Settings className="h-4 w-4" />,
@@ -537,6 +517,16 @@ const PERM_GROUPS: PermGroup[] = [
       { id: "admin.manage_roles", label: "Manage roles & permissions", surface: ["Web"], sensitive: true },
       { id: "admin.security", label: "Security settings (2FA, SSO)", surface: ["Web"], sensitive: true },
       { id: "admin.audit", label: "View audit log", surface: ["Web"], sensitive: true }
+    ]
+  },
+  {
+    id: "account",
+    title: "Account & Performance",
+    icon: <BarChart3 className="h-4 w-4" />,
+    desc: "Manage reviews, subscriptions, and team performance.",
+    perms: [
+      { id: "reviews.view", label: "View Reviews", hint: "See team performance and reviews.", surface: ["Web"] },
+      { id: "subscription.view", label: "View My Subscription", hint: "See subscription details and status.", surface: ["Web"] }
     ]
   }
 ];
@@ -574,7 +564,11 @@ function defaultRoles(): Role[] {
     badge: "System",
     icon: <Crown className="h-4 w-4" />,
     description: "Full access across Shoppable Adz, Live Sessionz Pro, tracking, and workspace settings.",
-    perms: buildPermMap(ids, true)
+    perms: {
+      ...buildPermMap(ids, true),
+      "reviews.view": true,
+      "subscription.view": true
+    }
   };
 
   const creatorManager: Role = {
@@ -839,110 +833,6 @@ function defaultRoles(): Role[] {
   return [owner, creatorManager, shoppableManager, liveProducer, moderator, analyst, finance, supportOps, supplierGuest, viewer];
 }
 
-const DEFAULT_ROLE_TEMPLATES = defaultRoles();
-const DEFAULT_ROLE_TEMPLATE_INDEX = DEFAULT_ROLE_TEMPLATES.reduce<Record<string, Role>>((accumulator, role) => {
-  accumulator[role.id] = role;
-  return accumulator;
-}, {});
-
-function pickRoleTemplate(record: WorkspaceRoleRecord): Role | undefined {
-  const directTemplateId =
-    record.id === "role_creator_owner"
-      ? "owner"
-      : record.id === "role_producer"
-        ? "live_producer"
-        : record.id === "role_moderator"
-          ? "moderator"
-          : record.id;
-
-  if (DEFAULT_ROLE_TEMPLATE_INDEX[directTemplateId]) {
-    return DEFAULT_ROLE_TEMPLATE_INDEX[directTemplateId];
-  }
-
-  const name = String(record.name || "").trim().toLowerCase();
-  if (name.includes("owner")) return DEFAULT_ROLE_TEMPLATE_INDEX.owner;
-  if (name.includes("producer")) return DEFAULT_ROLE_TEMPLATE_INDEX.live_producer;
-  if (name.includes("moderator")) return DEFAULT_ROLE_TEMPLATE_INDEX.moderator;
-  if (name.includes("finance")) return DEFAULT_ROLE_TEMPLATE_INDEX.finance;
-  if (name.includes("support")) return DEFAULT_ROLE_TEMPLATE_INDEX.support_ops;
-  if (name.includes("viewer")) return DEFAULT_ROLE_TEMPLATE_INDEX.viewer;
-  if (name.includes("supplier")) return DEFAULT_ROLE_TEMPLATE_INDEX.supplier_guest;
-  if (name.includes("analyst")) return DEFAULT_ROLE_TEMPLATE_INDEX.analyst;
-  if (name.includes("ad")) return DEFAULT_ROLE_TEMPLATE_INDEX.shoppable_manager;
-  return DEFAULT_ROLE_TEMPLATE_INDEX.creator_manager;
-}
-
-function mapWorkspaceRoleRecord(record: WorkspaceRoleRecord): Role {
-  const template = pickRoleTemplate(record);
-  return {
-    id: String(record.id),
-    name: String(record.name || template?.name || "Workspace Role"),
-    badge: String(record.badge || template?.badge || "Custom").toLowerCase() === "system" ? "System" : "Custom",
-    icon: template?.icon || <User className="h-4 w-4" />,
-    description: String(record.description || template?.description || "Workspace role"),
-    perms: {
-      ...(template?.perms || buildPermMap(allPermIds(), false)),
-      ...(record.perms || {})
-    }
-  };
-}
-
-function normalizeMemberStatus(value: string | undefined): MemberStatus {
-  const normalized = String(value || "active").trim().toLowerCase();
-  if (normalized === "invited" || normalized === "pending") return "Invited";
-  if (normalized === "inactive") return "Inactive";
-  if (normalized === "suspended") return "Suspended";
-  return "Active";
-}
-
-function normalizeSeat(value: string | undefined): Seat {
-  const normalized = String(value || "Team").trim().toLowerCase();
-  if (normalized === "owner") return "Owner";
-  if (normalized === "team") return "Team";
-  if (normalized === "creator") return "Creator";
-  if (normalized === "manager") return "Manager";
-  if (normalized === "supplier guest") return "Supplier Guest";
-  if (normalized === "support ops") return "Support Ops";
-  return "Team";
-}
-
-function buildMemberAvatar(name: string | undefined, email: string | undefined) {
-  const label = encodeURIComponent(String(name || email || "Workspace Member"));
-  return `https://ui-avatars.com/api/?name=${label}&background=f77f00&color=ffffff&rounded=true`;
-}
-
-function mapWorkspaceMemberRecord(record: WorkspaceMemberRecord): Member {
-  return {
-    id: String(record.id),
-    name: String(record.name || record.email || "Workspace member"),
-    email: String(record.email || ""),
-    avatarUrl: buildMemberAvatar(String(record.name || record.email || "Workspace member"), String(record.email || "")),
-    status: normalizeMemberStatus(typeof record.status === "string" ? record.status : undefined),
-    seat: normalizeSeat(typeof record.seat === "string" ? record.seat : undefined),
-    roleId: String(record.roleId || ""),
-    lastActiveLabel: String(record.lastActiveLabel || (String(record.status || "").toLowerCase() === "invited" ? "Pending" : "Recently")),
-    twoFA: String(record.twoFA || "Off").toLowerCase() === "on" ? "On" : "Off"
-  };
-}
-
-function mapWorkspaceInviteRecord(record: WorkspaceMemberRecord): Invite {
-  return {
-    id: String(record.id),
-    email: String(record.email || ""),
-    roleId: String(record.roleId || ""),
-    seat: normalizeSeat(typeof record.seat === "string" ? record.seat : undefined),
-    createdAtLabel: String((record as { createdAtLabel?: string }).createdAtLabel || "Recently"),
-    expiresAtLabel: String((record as { expiresAtLabel?: string }).expiresAtLabel || "In 7 days"),
-    status: String(record.status || "invited").toLowerCase() === "revoked"
-      ? "Revoked"
-      : String(record.status || "invited").toLowerCase() === "accepted"
-        ? "Accepted"
-        : String(record.status || "invited").toLowerCase() === "expired"
-          ? "Expired"
-          : "Pending"
-  };
-}
-
 /** ---------------- Demo Data ---------------- */
 
 function initialMembers(): Member[] {
@@ -1017,36 +907,66 @@ function initialInvites(): Invite[] {
   ];
 }
 
+function initialAudit(): AuditEvent[] {
+  return [
+    { id: "a1", at: nowLabel(), actor: "Amina K.", action: "Updated role permissions", detail: "Shoppable Adz Manager → enabled tracking & integrations", severity: "info" },
+    { id: "a2", at: nowLabel(), actor: "Chris M.", action: "Generated a Shoppable Ad", detail: "Valentine Glow Week → share links enabled", severity: "info" },
+    { id: "a3", at: nowLabel(), actor: "Support Ops", action: "Viewed Tracking & Integrations", detail: "Read-only troubleshooting", severity: "warn" }
+  ];
+}
+
 /** ---------------- Main Page ---------------- */
 
 type TabKey = "roles" | "members" | "invites" | "suppliers" | "security";
 
 export default function RolesPermissionsPremium() {
   const { toasts, push } = useToasts();
-  const cache = useApiCache();
-  const rolesWorkspaceQuery = useRolesWorkspaceQuery({ staleTime: 10_000 });
-  const auditLogsQuery = useAuditLogsQuery({ staleTime: 10_000 });
-  const settingsQuery = useSettingsQuery({ staleTime: 60_000 });
-  const createRoleMutation = useCreateWorkspaceRoleMutation();
-  const updateRoleMutation = useUpdateWorkspaceRoleMutation();
-  const deleteRoleMutation = useDeleteWorkspaceRoleMutation();
-  const inviteMemberMutation = useInviteWorkspaceMemberMutation();
-  const updateMemberMutation = useUpdateWorkspaceMemberMutation();
-  const updateWorkspaceSecurityMutation = useUpdateWorkspaceSecurityMutation();
-  const removeSettingsDeviceMutation = useRemoveSettingsDeviceMutation();
-  const signOutAllSettingsDevicesMutation = useSignOutAllSettingsDevicesMutation();
 
   const [tab, setTab] = useState<TabKey>("roles");
 
-  const [roles, setRoles] = useState<Role[]>(() => defaultRoles());
+  const [roles, setRoles] = useState<Role[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(ROLES_STORAGE_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            // Re-inject icons for system roles as they are not serializable
+            const defaults = defaultRoles();
+            return parsed.map(r => {
+              const def = defaults.find(d => d.id === r.id);
+              if (def) {
+                r.icon = def.icon;
+              } else {
+                r.icon = <User className="h-4 w-4" />;
+              }
+              return r;
+            });
+          }
+        } catch (e) {
+          console.error("Failed to parse saved roles", e);
+        }
+      }
+    }
+    return defaultRoles();
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // Strip icons before stringifying as React nodes contain circular structures
+      const serializableRoles = roles.map(({ icon, ...rest }) => rest);
+      localStorage.setItem(ROLES_STORAGE_KEY, JSON.stringify(serializableRoles));
+    }
+  }, [roles]);
+
   const [members, setMembers] = useState<Member[]>(() => initialMembers());
   const [invites, setInvites] = useState<Invite[]>(() => initialInvites());
+  const [audit, setAudit] = useState<AuditEvent[]>(() => initialAudit());
 
   const [selectedRoleId, setSelectedRoleId] = useState<string>(roles[0]?.id || "owner");
   const selectedRole = useMemo(() => roles.find((r) => r.id === selectedRoleId) || roles[0], [roles, selectedRoleId]);
 
   const [permSearch, setPermSearch] = useState("");
-  const [roleSearch, setRoleSearch] = useState("");
   const [roleNameDraft, setRoleNameDraft] = useState("");
   const [roleDescDraft, setRoleDescDraft] = useState("");
 
@@ -1056,8 +976,31 @@ export default function RolesPermissionsPremium() {
 
   // invite form
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRoleId, setInviteRoleId] = useState(roles[0]?.id || "viewer");
+  const [inviteRoleId, setInviteRoleId] = useState("viewer");
   const [inviteSeat, setInviteSeat] = useState<Seat>("Manager");
+
+  // security (demo toggles)
+  const [require2FA, setRequire2FA] = useState(true);
+  const [allowExternalInvites, setAllowExternalInvites] = useState(false);
+  const [supplierGuestExpiryHours, setSupplierGuestExpiryHours] = useState(24);
+
+  const [activeRole, setActiveRole] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("userRole")?.toLowerCase() || "owner";
+    }
+    return "owner";
+  });
+
+  const switchActiveRole = (roleId: string) => {
+    const roleIdLower = roleId.toLowerCase();
+    if (typeof window !== "undefined") {
+      localStorage.setItem("userRole", roleIdLower);
+      setActiveRole(roleIdLower);
+      push(`Session switched to ${roleIdLower} role.`, "success");
+      log("Owner", "Switched active session role", roleIdLower, "info");
+      // Optional: window.location.reload(); // For standard app flow
+    }
+  };
 
   const permIndex = useMemo(() => {
     const m = new Map<string, Perm>();
@@ -1080,173 +1023,9 @@ export default function RolesPermissionsPremium() {
     return n;
   }, [selectedRole, permIndex]);
 
-  const canManageRoles = useMemo(
-    () =>
-      Boolean(
-        rolesWorkspaceQuery.data?.effectivePermissions?.["roles.manage"] ||
-          rolesWorkspaceQuery.data?.effectivePermissions?.["admin.manage_roles"] ||
-          String(rolesWorkspaceQuery.data?.currentMember?.seat || "").toLowerCase() === "owner"
-      ),
-    [rolesWorkspaceQuery.data?.currentMember?.seat, rolesWorkspaceQuery.data?.effectivePermissions]
-  );
-
-  const workspaceSecurity = rolesWorkspaceQuery.data?.workspaceSecurity;
-  const inviteDomainAllowlist = useMemo(() => {
-    const fallback = ["creator.com", "studio.com", "mylivedealz.com", "studio.test"];
-    const fromApi = workspaceSecurity?.inviteDomainAllowlist;
-    const list = Array.isArray(fromApi) && fromApi.length ? fromApi : fallback;
-    return list.map((entry) => String(entry).trim().toLowerCase()).filter(Boolean);
-  }, [workspaceSecurity?.inviteDomainAllowlist]);
-  const require2FA = workspaceSecurity?.require2FA ?? true;
-  const allowExternalInvites = workspaceSecurity?.allowExternalInvites ?? false;
-  const supplierGuestExpiryHours = useMemo(() => {
-    const raw = workspaceSecurity?.supplierGuestExpiryHours;
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return 24;
-    return Math.max(1, Math.min(168, Math.round(value)));
-  }, [workspaceSecurity?.supplierGuestExpiryHours]);
-
-  const rolesMutationBusy =
-    createRoleMutation.isPending ||
-    updateRoleMutation.isPending ||
-    deleteRoleMutation.isPending ||
-    inviteMemberMutation.isPending ||
-    updateMemberMutation.isPending ||
-    updateWorkspaceSecurityMutation.isPending;
-
-  const deviceMutationBusy = removeSettingsDeviceMutation.isPending || signOutAllSettingsDevicesMutation.isPending;
-
-  const settingsDevices = useMemo(() => {
-    const record = settingsQuery.data as unknown as Record<string, unknown> | undefined;
-    const nestedSettings = record && typeof record === "object" && !Array.isArray(record) ? (record.settings as Record<string, unknown> | undefined) : undefined;
-    const nestedDevices = nestedSettings && Array.isArray(nestedSettings.devices) ? (nestedSettings.devices as Array<Record<string, unknown>>) : [];
-    const rootSecurity = record && typeof record === "object" && !Array.isArray(record) ? (record.security as Record<string, unknown> | undefined) : undefined;
-    const rootDevices = rootSecurity && Array.isArray(rootSecurity.devices) ? (rootSecurity.devices as Array<Record<string, unknown>>) : [];
-    const devices = nestedDevices.length ? nestedDevices : rootDevices;
-    return devices;
-  }, [settingsQuery.data]);
-
-  const syncWorkspaceState = useCallback((workspace: RolesWorkspaceRecord | undefined) => {
-    if (!workspace) return;
-    const nextRoles = workspace.roles.length ? workspace.roles.map(mapWorkspaceRoleRecord) : defaultRoles();
-    const nextMembers = workspace.members.length ? workspace.members.map(mapWorkspaceMemberRecord) : initialMembers();
-    const nextInvites = workspace.invites.length ? workspace.invites.map(mapWorkspaceInviteRecord) : initialInvites();
-    setRoles(nextRoles);
-    setMembers(nextMembers);
-    setInvites(nextInvites);
-    setSelectedRoleId((current) => (nextRoles.some((role) => role.id === current) ? current : workspace.currentMember?.roleId || nextRoles[0]?.id || current));
-    setInviteRoleId((current) => (nextRoles.some((role) => role.id === current) ? current : nextRoles[0]?.id || current));
-  }, []);
-
-  useEffect(() => {
-    syncWorkspaceState(rolesWorkspaceQuery.data);
-  }, [rolesWorkspaceQuery.data, syncWorkspaceState]);
-
-  const setWorkspaceCache = useCallback(
-    (workspace: RolesWorkspaceRecord) => {
-      cache.setData(queryKeys.settings.roles(), workspace);
-    },
-    [cache]
-  );
-
-  const applyWorkspaceOptimistic = useCallback(
-    (updater: (current: RolesWorkspaceRecord) => RolesWorkspaceRecord) => {
-      const current = rolesWorkspaceQuery.data;
-      if (!current) return undefined;
-      const next = updater(current);
-      setWorkspaceCache(next);
-      return current;
-    },
-    [rolesWorkspaceQuery.data, setWorkspaceCache]
-  );
-
-  async function refreshWorkspaceFromServer() {
-    try {
-      await rolesWorkspaceQuery.refetch();
-    } catch {
-      // no-op: local optimistic state is already visible; error toast is handled per action.
-    }
-  }
-
-  function restoreWorkspace(snapshot: RolesWorkspaceRecord | undefined) {
-    if (snapshot) {
-      setWorkspaceCache(snapshot);
-      return;
-    }
-    void refreshWorkspaceFromServer();
-  }
-
-  async function refreshAuditLogsFromServer() {
-    try {
-      await auditLogsQuery.refetch();
-    } catch {
-      // no-op
-    }
-  }
-
-  const buildWorkspaceWithUpdatedRole = useCallback(
-    (current: RolesWorkspaceRecord, roleId: string, updater: (role: WorkspaceRoleRecord) => WorkspaceRoleRecord) => {
-      const nextRoles = current.roles.map((role) => (role.id === roleId ? updater(role) : role));
-      const currentMember = current.currentMember || null;
-      const currentRole = currentMember ? nextRoles.find((role) => role.id === currentMember.roleId) || null : null;
-      return {
-        ...current,
-        roles: nextRoles,
-        effectivePermissions: currentRole?.perms || current.effectivePermissions || {}
-      };
-    },
-    []
-  );
-
-  const buildWorkspaceWithUpdatedMember = useCallback(
-    (current: RolesWorkspaceRecord, memberId: string, updater: (member: WorkspaceMemberRecord) => WorkspaceMemberRecord) => {
-      const nextMembers = current.members.map((member) => (member.id === memberId ? updater(member) : member));
-      const nextCurrentMember = current.currentMember?.id === memberId ? nextMembers.find((member) => member.id === memberId) || current.currentMember : current.currentMember;
-      const nextCurrentRole = nextCurrentMember ? current.roles.find((role) => role.id === nextCurrentMember.roleId) || null : null;
-      return {
-        ...current,
-        members: nextMembers,
-        invites: nextMembers.filter((member) => String(member.status || "").toLowerCase() === "invited"),
-        currentMember: nextCurrentMember,
-        effectivePermissions: nextCurrentRole?.perms || current.effectivePermissions || {}
-      };
-    },
-    []
-  );
-
-  async function patchWorkspaceSecurity(patch: UpdateWorkspaceSecurityInput, toast?: string) {
-    if (!canManageRoles) {
-      push("You do not have permission to change security settings.", "error");
-      return;
-    }
-
-    const snapshot = applyWorkspaceOptimistic((current) => {
-      const fallbackAllowlist = ["creator.com", "studio.com", "mylivedealz.com", "studio.test"];
-      const currentSecurity = current.workspaceSecurity || {
-        require2FA: true,
-        allowExternalInvites: false,
-        supplierGuestExpiryHours: 24,
-        inviteDomainAllowlist: fallbackAllowlist
-      };
-
-      return {
-        ...current,
-        workspaceSecurity: {
-          ...currentSecurity,
-          ...patch
-        }
-      };
-    });
-
-    try {
-      await updateWorkspaceSecurityMutation.mutateAsync(patch);
-      if (toast) push(toast, "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not save security settings right now.", "error");
-    }
+  function log(actor: string, action: string, detail?: string, severity: AuditEvent["severity"] = "info") {
+    const e: AuditEvent = { id: `${Date.now()}_${Math.random()}`, at: nowLabel(), actor, action, detail, severity };
+    setAudit((a) => [e, ...a]);
   }
 
   function openEditRole() {
@@ -1256,229 +1035,115 @@ export default function RolesPermissionsPremium() {
     setEditRoleOpen(true);
   }
 
-  async function saveRoleMeta() {
+  function saveRoleMeta() {
     if (!selectedRole) return;
-    if (!canManageRoles) {
-      push("You do not have permission to update roles.", "error");
-      return;
-    }
-
-    const nextName = roleNameDraft.trim() || selectedRole.name;
-    const nextDescription = roleDescDraft.trim() || selectedRole.description;
-    const snapshot = applyWorkspaceOptimistic((current) =>
-      buildWorkspaceWithUpdatedRole(current, selectedRole.id, (role) => ({
-        ...role,
-        name: nextName,
-        description: nextDescription
-      }))
+    setRoles((rs) =>
+      rs.map((r) => (r.id === selectedRole.id ? { ...r, name: roleNameDraft.trim() || r.name, description: roleDescDraft.trim() || r.description } : r))
     );
-
-    try {
-      await updateRoleMutation.mutateAsync({
-        roleId: selectedRole.id,
-        payload: {
-          name: nextName,
-          description: nextDescription
-        }
-      });
-      setEditRoleOpen(false);
-      push("Role updated.", "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not update this role right now.", "error");
-    }
+    setEditRoleOpen(false);
+    push("Role updated.", "success");
+    log("Owner", "Updated role metadata", `${selectedRole.name} → ${roleNameDraft.trim() || selectedRole.name}`);
   }
 
-  async function setPerm(roleId: string, permId: string, value: boolean) {
-    if (!canManageRoles) {
-      push("You do not have permission to change permissions.", "error");
-      return;
-    }
-
-    const snapshot = applyWorkspaceOptimistic((current) =>
-      buildWorkspaceWithUpdatedRole(current, roleId, (role) => ({
-        ...role,
-        perms: {
-          ...(role.perms || {}),
-          [permId]: value
-        }
-      }))
+  function setPerm(roleId: string, permId: string, value: boolean) {
+    setRoles((rs) =>
+      rs.map((r) => {
+        if (r.id !== roleId) return r;
+        return { ...r, perms: { ...r.perms, [permId]: value } };
+      })
     );
-
-    try {
-      await updateRoleMutation.mutateAsync({
-        roleId,
-        payload: {
-          perms: {
-            [permId]: value
-          }
-        }
-      });
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not save that permission change.", "error");
-    }
   }
 
-  async function setGroupAll(roleId: string, groupId: string, value: boolean) {
+  function setGroupAll(roleId: string, groupId: string, value: boolean) {
     const g = PERM_GROUPS.find((x) => x.id === groupId);
     if (!g) return;
-    if (!canManageRoles) {
-      push("You do not have permission to change permissions.", "error");
-      return;
-    }
-
-    const nextPermPatch = g.perms.reduce<Record<string, boolean>>((accumulator, perm) => {
-      accumulator[perm.id] = value;
-      return accumulator;
-    }, {});
-
-    const snapshot = applyWorkspaceOptimistic((current) =>
-      buildWorkspaceWithUpdatedRole(current, roleId, (role) => ({
-        ...role,
-        perms: {
-          ...(role.perms || {}),
-          ...nextPermPatch
-        }
-      }))
+    setRoles((rs) =>
+      rs.map((r) => {
+        if (r.id !== roleId) return r;
+        const next = { ...r.perms };
+        g.perms.forEach((p) => {
+          next[p.id] = value;
+        });
+        return { ...r, perms: next };
+      })
     );
-
-    try {
-      await updateRoleMutation.mutateAsync({
-        roleId,
-        payload: {
-          perms: nextPermPatch
-        }
-      });
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not save that permission group update.", "error");
-    }
   }
 
-  async function duplicateRole() {
+  function duplicateRole() {
     if (!selectedRole) return;
-    if (!canManageRoles) {
-      push("You do not have permission to duplicate roles.", "error");
-      return;
-    }
-
-    try {
-      const createdRole = await createRoleMutation.mutateAsync({
-        name: `${selectedRole.name} (Copy)`,
-        badge: "Custom",
-        description: selectedRole.description,
-        perms: selectedRole.perms
-      });
-      setSelectedRoleId(createdRole.id);
-      push("Role duplicated.", "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      push("Could not duplicate that role right now.", "error");
-    }
+    const id = `custom_${Math.floor(Date.now() / 1000)}_${Math.floor(Math.random() * 999)}`;
+    const copy: Role = {
+      ...selectedRole,
+      id,
+      name: `${selectedRole.name} (Copy)`,
+      badge: "Custom"
+    };
+    setRoles((rs) => [copy, ...rs]);
+    setSelectedRoleId(id);
+    push("Role duplicated.", "success");
+    log("Owner", "Duplicated role", `${selectedRole.name} → ${copy.name}`);
   }
 
-  async function createRole() {
-    if (!canManageRoles) {
-      push("You do not have permission to create roles.", "error");
-      return;
-    }
-
-    try {
-      const createdRole = await createRoleMutation.mutateAsync({
-        name: "New role",
-        badge: "Custom",
-        description: "Custom role. Configure permissions as needed.",
-        perms: buildPermMap(allPermIds(), false)
-      });
-      setSelectedRoleId(createdRole.id);
-      setCreateRoleOpen(false);
-      push("New role created.", "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      push("Could not create a new role right now.", "error");
-    }
+  function createRole() {
+    const ids = allPermIds();
+    const id = `custom_${Math.floor(Date.now() / 1000)}_${Math.floor(Math.random() * 999)}`;
+    const r: Role = {
+      id,
+      name: "New role",
+      badge: "Custom",
+      icon: <User className="h-4 w-4" />,
+      description: "Custom role. Configure permissions as needed.",
+      perms: buildPermMap(ids, false)
+    };
+    setRoles((rs) => [r, ...rs]);
+    setSelectedRoleId(id);
+    setCreateRoleOpen(false);
+    push("New role created.", "success");
+    log("Owner", "Created role", r.name);
   }
 
-  async function deleteRole() {
+  function deleteRole() {
     if (!selectedRole) return;
-    if (selectedRole.badge === "System" || SYSTEM_ROLE_IDS.includes(selectedRole.id)) {
+    if (SYSTEM_ROLE_IDS.includes(selectedRole.id)) {
       push("System roles cannot be deleted.", "error");
       return;
     }
-    if (!canManageRoles) {
-      push("You do not have permission to delete roles.", "error");
-      return;
-    }
-
-    const snapshot = applyWorkspaceOptimistic((current) => {
-      const nextRoles = current.roles.filter((role) => role.id !== selectedRole.id);
-      const nextSelectedRole = nextRoles[0] || null;
-      const nextCurrentMember = current.currentMember || null;
-      const nextCurrentRole = nextCurrentMember ? nextRoles.find((role) => role.id === nextCurrentMember.roleId) || null : null;
-      return {
-        ...current,
-        roles: nextRoles,
-        effectivePermissions: nextCurrentRole?.perms || current.effectivePermissions || {}
-      };
-    });
-
-    try {
-      await deleteRoleMutation.mutateAsync({ roleId: selectedRole.id });
-      setSelectedRoleId(roles.filter((role) => role.id !== selectedRole.id)[0]?.id || "owner");
-      push("Role deleted.", "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not delete that role right now.", "error");
-    }
+    const name = selectedRole.name;
+    setRoles((rs) => rs.filter((r) => r.id !== selectedRole.id));
+    setSelectedRoleId("owner");
+    push("Role deleted.", "success");
+    log("Owner", "Deleted role", name, "warn");
   }
 
-  async function inviteMember() {
+  function inviteMember() {
     const email = inviteEmail.trim();
     if (!email.includes("@")) {
       push("Enter a valid email.", "error");
       return;
     }
-    if (!canManageRoles) {
-      push("You do not have permission to invite members.", "error");
-      return;
-    }
 
-    const normalizedEmail = email.toLowerCase();
-    const domain = normalizedEmail.split("@")[1] || "";
-    const isExternal = domain ? !inviteDomainAllowlist.includes(domain) : true;
+    // simple external invite guardrail
+    const domain = email.split("@")[1] || "";
+    const isExternal = !["creator.com", "studio.com"].includes(domain);
     if (isExternal && !allowExternalInvites) {
       push("External invites are blocked by policy. Enable in Security settings.", "error");
       return;
     }
 
-    const inviteName = email.split("@")[0]?.replace(/[._-]+/g, " ") || "New member";
-
-    try {
-      await inviteMemberMutation.mutateAsync({
-        name: inviteName,
-        email: normalizedEmail,
-        roleId: inviteRoleId,
-        seat: inviteSeat
-      });
-      setInviteOpen(false);
-      setInviteEmail("");
-      push("Invite sent.", "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      push("Could not send that invite right now.", "error");
-    }
+    const inv: Invite = {
+      id: `inv_${Date.now()}_${Math.random()}`,
+      email,
+      roleId: inviteRoleId,
+      seat: inviteSeat,
+      createdAtLabel: "Now",
+      expiresAtLabel: "In 7 days",
+      status: "Pending"
+    };
+    setInvites((x) => [inv, ...x]);
+    setInviteOpen(false);
+    setInviteEmail("");
+    push("Invite sent.", "success");
+    log("Owner", "Invited member", `${email} (${inviteSeat})`);
   }
 
   function copyInviteLink(inv: Invite) {
@@ -1487,86 +1152,22 @@ export default function RolesPermissionsPremium() {
     push("Invite link copied.", "success");
   }
 
-  async function revokeInvite(inv: Invite) {
-    if (!canManageRoles) {
-      push("You do not have permission to revoke invites.", "error");
-      return;
-    }
-
-    const snapshot = applyWorkspaceOptimistic((current) =>
-      buildWorkspaceWithUpdatedMember(current, inv.id, (member) => ({
-        ...member,
-        status: "revoked"
-      }))
-    );
-
-    try {
-      await updateMemberMutation.mutateAsync({
-        memberId: inv.id,
-        payload: { status: "revoked" }
-      });
-      push("Invite revoked.", "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not revoke that invite.", "error");
-    }
+  function revokeInvite(inv: Invite) {
+    setInvites((xs) => xs.map((x) => (x.id === inv.id ? { ...x, status: "Revoked" } : x)));
+    push("Invite revoked.", "success");
+    log("Owner", "Revoked invite", inv.email, "warn");
   }
 
-  async function changeMemberRole(memberId: string, roleId: string) {
-    if (!canManageRoles) {
-      push("You do not have permission to update members.", "error");
-      return;
-    }
-
-    const snapshot = applyWorkspaceOptimistic((current) =>
-      buildWorkspaceWithUpdatedMember(current, memberId, (member) => ({
-        ...member,
-        roleId
-      }))
-    );
-
-    try {
-      await updateMemberMutation.mutateAsync({
-        memberId,
-        payload: { roleId }
-      });
-      push("Role updated.", "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not update that member role.", "error");
-    }
+  function changeMemberRole(memberId: string, roleId: string) {
+    setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, roleId } : m)));
+    push("Role updated.", "success");
+    log("Owner", "Changed member role", `${memberId} → ${roleId}`);
   }
 
-  async function changeMemberStatus(memberId: string, status: MemberStatus) {
-    if (!canManageRoles) {
-      push("You do not have permission to update members.", "error");
-      return;
-    }
-
-    const normalizedStatus = status.toLowerCase();
-    const snapshot = applyWorkspaceOptimistic((current) =>
-      buildWorkspaceWithUpdatedMember(current, memberId, (member) => ({
-        ...member,
-        status: normalizedStatus
-      }))
-    );
-
-    try {
-      await updateMemberMutation.mutateAsync({
-        memberId,
-        payload: { status: normalizedStatus }
-      });
-      push(`Member status: ${status}`, "success");
-      void refreshWorkspaceFromServer();
-      void refreshAuditLogsFromServer();
-    } catch {
-      restoreWorkspace(snapshot);
-      push("Could not update that member status.", "error");
-    }
+  function changeMemberStatus(memberId: string, status: MemberStatus) {
+    setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, status } : m)));
+    push(`Member status: ${status}`, "success");
+    log("Owner", "Changed member status", `${memberId} → ${status}`, status === "Suspended" ? "critical" : "warn");
   }
 
   // filtered permission groups for editor
@@ -1578,12 +1179,6 @@ export default function RolesPermissionsPremium() {
       perms: g.perms.filter((p) => (p.label + " " + (p.hint || "") + " " + p.id).toLowerCase().includes(q))
     })).filter((g) => g.perms.length > 0);
   }, [permSearch]);
-
-  const rolesFiltered = useMemo(() => {
-    const q = roleSearch.trim().toLowerCase();
-    if (!q) return roles;
-    return roles.filter((role) => `${role.name} ${role.description} ${role.badge}`.toLowerCase().includes(q));
-  }, [roleSearch, roles]);
 
   // summary metrics
   const seatsUsed = members.filter((m) => m.status === "Active").length;
@@ -1597,10 +1192,10 @@ export default function RolesPermissionsPremium() {
         pageTitle="Roles & Permissions"
         rightContent={
           <div className="flex flex-wrap items-center gap-2">
-            <SmallBtn tone="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => setInviteOpen(true)} disabled={!canManageRoles || rolesMutationBusy}>
+            <SmallBtn tone="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => setInviteOpen(true)}>
               Invite
             </SmallBtn>
-            <SmallBtn icon={<Plus className="h-4 w-4" />} onClick={() => setCreateRoleOpen(true)} disabled={!canManageRoles || rolesMutationBusy}>
+            <SmallBtn icon={<Plus className="h-4 w-4" />} onClick={() => setCreateRoleOpen(true)}>
               New role
             </SmallBtn>
           </div>
@@ -1636,13 +1231,14 @@ export default function RolesPermissionsPremium() {
         </div>
 
         {/* Info Banner */}
-        <div className="text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-3">
-          <div>
-            Updated for Shoppable Adz + Live Sessionz Pro + Asset Library + Dealz Marketplace. Roles now sync to backend workspace records.
+        <div className="flex flex-col md:flex-row gap-2">
+          <div className="flex-1 text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            Updated for Shoppable Adz + Live Sessionz Pro + Asset Library + Dealz Marketplace. Use this as your RBAC model.
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill tone={rolesWorkspaceQuery.isFetching ? "warn" : "good"} text={rolesWorkspaceQuery.isFetching ? "Syncing" : "Synced"} />
-            <Pill tone={canManageRoles ? "brand" : "neutral"} text={canManageRoles ? "Can manage roles" : "View only"} />
+          <div className="flex items-center gap-2 text-xs font-bold px-4 py-3 rounded-2xl border border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-950/40 dark:bg-orange-950/20 dark:text-orange-300">
+            <UserRound className="h-4 w-4" />
+            <span>Active Session Role:</span>
+            <span className="uppercase">{activeRole}</span>
           </div>
         </div>
         {/* Summary row */}
@@ -1681,7 +1277,7 @@ export default function RolesPermissionsPremium() {
                   <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Roles</div>
                   <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Pick a role to edit permissions and assign to members.</div>
                 </div>
-                <SmallBtn tone="ghost" icon={<Copy className="h-4 w-4" />} onClick={duplicateRole} title="Duplicate selected role" disabled={!canManageRoles || rolesMutationBusy}>
+                <SmallBtn tone="ghost" icon={<Copy className="h-4 w-4" />} onClick={duplicateRole} title="Duplicate selected role">
                   Duplicate
                 </SmallBtn>
               </div>
@@ -1689,17 +1285,12 @@ export default function RolesPermissionsPremium() {
               <div className="p-3">
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-2 flex items-center gap-2 transition-colors">
                   <Search className="h-4 w-4 text-slate-500" />
-                  <input
-                    className="bg-transparent outline-none text-sm w-full dark:text-slate-200"
-                    placeholder="Search roles…"
-                    value={roleSearch}
-                    onChange={(e) => setRoleSearch(e.target.value)}
-                  />
+                  <input className="bg-transparent outline-none text-sm w-full dark:text-slate-200" placeholder="Search roles…" onChange={() => { }} />
                 </div>
               </div>
 
               <div className="px-3 pb-3 space-y-2 max-h-[560px] overflow-auto scrollbar-hide">
-                {rolesFiltered.map((r) => {
+                {roles.map((r) => {
                   const active = r.id === selectedRoleId;
                   const enabled = Object.values(r.perms).filter(Boolean).length;
                   const isSystem = r.badge === "System";
@@ -1748,10 +1339,18 @@ export default function RolesPermissionsPremium() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <SmallBtn icon={<Pencil className="h-4 w-4" />} onClick={openEditRole} disabled={!canManageRoles || rolesMutationBusy}>
+                    <SmallBtn
+                      tone="primary"
+                      icon={<Crown className="h-4 w-4" />}
+                      onClick={() => switchActiveRole(selectedRole?.id || "owner")}
+                      disabled={activeRole === (selectedRole?.id || "").toLowerCase()}
+                    >
+                      {activeRole === (selectedRole?.id || "").toLowerCase() ? "Current session role" : "Switch to this role"}
+                    </SmallBtn>
+                    <SmallBtn icon={<Pencil className="h-4 w-4" />} onClick={openEditRole}>
                       Edit
                     </SmallBtn>
-                    <SmallBtn tone="danger" icon={<Trash2 className="h-4 w-4" />} onClick={deleteRole} disabled={!canManageRoles || rolesMutationBusy || selectedRole?.badge === "System" || SYSTEM_ROLE_IDS.includes(selectedRole?.id || "")} title={selectedRole?.badge === "System" || SYSTEM_ROLE_IDS.includes(selectedRole?.id || "") ? "System roles cannot be deleted" : "Delete role"}>
+                    <SmallBtn tone="danger" icon={<Trash2 className="h-4 w-4" />} onClick={deleteRole} disabled={SYSTEM_ROLE_IDS.includes(selectedRole?.id || "")} title={SYSTEM_ROLE_IDS.includes(selectedRole?.id || "") ? "System roles cannot be deleted" : "Delete role"}>
                       Delete
                     </SmallBtn>
                   </div>
@@ -1809,10 +1408,10 @@ export default function RolesPermissionsPremium() {
                               icon={<Check className="h-4 w-4" />}
                               onClick={() => {
                                 if (!selectedRole) return;
-                                void setGroupAll(selectedRole.id, g.id, true);
+                                setGroupAll(selectedRole.id, g.id, true);
                                 push(`Enabled ${g.title}.`, "success");
+                                log("Owner", "Enabled permission group", g.title);
                               }}
-                              disabled={!canManageRoles || rolesMutationBusy}
                             >
                               Enable all
                             </SmallBtn>
@@ -1820,10 +1419,10 @@ export default function RolesPermissionsPremium() {
                               icon={<Ban className="h-4 w-4" />}
                               onClick={() => {
                                 if (!selectedRole) return;
-                                void setGroupAll(selectedRole.id, g.id, false);
+                                setGroupAll(selectedRole.id, g.id, false);
                                 push(`Disabled ${g.title}.`, "success");
+                                log("Owner", "Disabled permission group", g.title, "warn");
                               }}
-                              disabled={!canManageRoles || rolesMutationBusy}
                             >
                               Disable all
                             </SmallBtn>
@@ -1845,11 +1444,11 @@ export default function RolesPermissionsPremium() {
                                 <div key={p.id} className={cx("rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 transition-colors shadow-sm", p.sensitive && "border-amber-200 dark:border-amber-800/50")}>
                                   <Toggle
                                     checked={checked}
-                                    disabled={!canManageRoles || rolesMutationBusy}
                                     onChange={(v) => {
                                       if (!selectedRole) return;
-                                      void setPerm(selectedRole.id, p.id, v);
+                                      setPerm(selectedRole.id, p.id, v);
                                       push(`${v ? "Enabled" : "Disabled"}: ${p.label}`, "success");
+                                      log("Owner", `${v ? "Enabled" : "Disabled"} permission`, `${selectedRole.name}: ${p.label}`, p.sensitive ? "warn" : "info");
                                     }}
                                     label={p.label}
                                     hint={hintBits.length ? hintBits.join(" · ") : undefined}
@@ -1887,7 +1486,7 @@ export default function RolesPermissionsPremium() {
                 <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Members</div>
                 <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Assign roles, manage statuses, and enforce 2FA policy.</div>
               </div>
-              <SmallBtn tone="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => setInviteOpen(true)} disabled={!canManageRoles || rolesMutationBusy}>
+              <SmallBtn tone="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => setInviteOpen(true)}>
                 Invite member
               </SmallBtn>
             </div>
@@ -1922,10 +1521,8 @@ export default function RolesPermissionsPremium() {
                         <select
                           className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-bold outline-none text-slate-800 dark:text-slate-200 transition-colors"
                           value={m.roleId}
-                          onChange={(e) => {
-                            void changeMemberRole(m.id, e.target.value);
-                          }}
-                          disabled={!canManageRoles || rolesMutationBusy || (m.status !== "Active" && m.status !== "Invited")}
+                          onChange={(e) => changeMemberRole(m.id, e.target.value)}
+                          disabled={m.status !== "Active" && m.status !== "Invited"}
                           title={m.status === "Suspended" ? "Suspended members cannot be edited." : undefined}
                         >
                           {roles.map((r) => (
@@ -1958,22 +1555,16 @@ export default function RolesPermissionsPremium() {
                             <SmallBtn
                               tone="danger"
                               icon={<Ban className="h-4 w-4" />}
-                              onClick={() => {
-                                void changeMemberStatus(m.id, "Suspended");
-                              }}
+                              onClick={() => changeMemberStatus(m.id, "Suspended")}
                               title="Suspend access"
-                              disabled={!canManageRoles || rolesMutationBusy}
                             >
                               Suspend
                             </SmallBtn>
                           ) : m.status === "Suspended" ? (
                             <SmallBtn
                               icon={<CheckCircle2 className="h-4 w-4" />}
-                              onClick={() => {
-                                void changeMemberStatus(m.id, "Active");
-                              }}
+                              onClick={() => changeMemberStatus(m.id, "Active")}
                               title="Re-activate access"
-                              disabled={!canManageRoles || rolesMutationBusy}
                             >
                               Reactivate
                             </SmallBtn>
@@ -1981,11 +1572,8 @@ export default function RolesPermissionsPremium() {
                             <SmallBtn
                               tone="ghost"
                               icon={<CheckCircle2 className="h-4 w-4" />}
-                              onClick={() => {
-                                void changeMemberStatus(m.id, "Active");
-                              }}
+                              onClick={() => changeMemberStatus(m.id, "Active")}
                               title="Mark active"
-                              disabled={!canManageRoles || rolesMutationBusy}
                             >
                               Activate
                             </SmallBtn>
@@ -2019,7 +1607,7 @@ export default function RolesPermissionsPremium() {
                 <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Invites</div>
                 <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Pending invitations and policies (expiry, revoke, resend).</div>
               </div>
-              <SmallBtn tone="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => setInviteOpen(true)} disabled={!canManageRoles || rolesMutationBusy}>
+              <SmallBtn tone="primary" icon={<UserPlus className="h-4 w-4" />} onClick={() => setInviteOpen(true)}>
                 New invite
               </SmallBtn>
             </div>
@@ -2053,7 +1641,7 @@ export default function RolesPermissionsPremium() {
                           <SmallBtn tone="ghost" icon={<Copy className="h-4 w-4" />} onClick={() => copyInviteLink(inv)} disabled={inv.status !== "Pending"}>
                             Copy
                           </SmallBtn>
-                          <SmallBtn tone="danger" icon={<Ban className="h-4 w-4" />} onClick={() => { void revokeInvite(inv); }} disabled={!canManageRoles || rolesMutationBusy || inv.status !== "Pending"}>
+                          <SmallBtn tone="danger" icon={<Ban className="h-4 w-4" />} onClick={() => revokeInvite(inv)} disabled={inv.status !== "Pending"}>
                             Revoke
                           </SmallBtn>
                         </div>
@@ -2111,23 +1699,13 @@ export default function RolesPermissionsPremium() {
                   <div className="flex items-center gap-2">
                     <SmallBtn
                       icon={<Minus className="h-4 w-4" />}
-                      onClick={() => {
-                        const next = Math.max(1, supplierGuestExpiryHours - 1);
-                        void patchWorkspaceSecurity({ supplierGuestExpiryHours: next });
-                      }}
-                      disabled={!canManageRoles || rolesMutationBusy || supplierGuestExpiryHours <= 1}
+                      onClick={() => setSupplierGuestExpiryHours((h) => Math.max(1, h - 1))}
+                      disabled={supplierGuestExpiryHours <= 1}
                     >
                       -1h
                     </SmallBtn>
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 transition-colors">{supplierGuestExpiryHours}h</div>
-                    <SmallBtn
-                      icon={<Plus className="h-4 w-4" />}
-                      onClick={() => {
-                        const next = Math.min(168, supplierGuestExpiryHours + 1);
-                        void patchWorkspaceSecurity({ supplierGuestExpiryHours: next });
-                      }}
-                      disabled={!canManageRoles || rolesMutationBusy}
-                    >
+                    <SmallBtn icon={<Plus className="h-4 w-4" />} onClick={() => setSupplierGuestExpiryHours((h) => Math.min(168, h + 1))}>
                       +1h
                     </SmallBtn>
                   </div>
@@ -2169,9 +1747,10 @@ export default function RolesPermissionsPremium() {
                   <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 transition-colors">
                     <Toggle
                       checked={require2FA}
-                      disabled={!canManageRoles || rolesMutationBusy}
                       onChange={(v) => {
-                        void patchWorkspaceSecurity({ require2FA: v }, `2FA requirement ${v ? "enabled" : "disabled"}.`);
+                        setRequire2FA(v);
+                        push(`2FA requirement ${v ? "enabled" : "disabled"}.`, "success");
+                        log("Owner", "Changed security setting", `Require 2FA: ${v ? "ON" : "OFF"}`, "warn");
                       }}
                       label="Require 2FA for all members"
                       hint="Strongly recommended for sensitive workflows: payouts, tracking, destination keys, incident reports."
@@ -2181,14 +1760,16 @@ export default function RolesPermissionsPremium() {
                   <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 transition-colors">
                     <Toggle
                       checked={allowExternalInvites}
-                      disabled={!canManageRoles || rolesMutationBusy}
                       onChange={(v) => {
-                        void patchWorkspaceSecurity({ allowExternalInvites: v }, `External invites ${v ? "enabled" : "disabled"}.`);
+                        setAllowExternalInvites(v);
+                        push(`External invites ${v ? "enabled" : "disabled"}.`, "success");
+                        log("Owner", "Changed invite policy", `External invites: ${v ? "ON" : "OFF"}`, "warn");
                       }}
                       label="Allow external invites"
                       hint="If OFF, only whitelisted domains can be invited."
                     />
                   </div>
+
                 </div>
 
                 <div className="mt-4 rounded-3xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/10 p-4 transition-colors">
@@ -2205,75 +1786,8 @@ export default function RolesPermissionsPremium() {
               </div>
 
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Devices & sessions</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Backend-driven from your account security settings. Sign out devices to revoke sessions.</div>
-                  </div>
-                  <SmallBtn
-                    tone="danger"
-                    icon={<Ban className="h-4 w-4" />}
-                    onClick={() => {
-                      void signOutAllSettingsDevicesMutation
-                        .mutateAsync()
-                        .then(() => push("Signed out all devices.", "success"))
-                        .catch(() => push("Could not sign out all devices.", "error"));
-                    }}
-                    disabled={deviceMutationBusy || settingsDevices.length === 0}
-                  >
-                    Sign out all
-                  </SmallBtn>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {settingsQuery.isLoading ? (
-                    <div className="text-sm text-slate-700 dark:text-slate-300">Loading devices…</div>
-                  ) : settingsDevices.length === 0 ? (
-                    <div className="text-sm text-slate-700 dark:text-slate-300">No devices found.</div>
-                  ) : (
-                    settingsDevices.map((device) => {
-                      const id = String(device.id || "");
-                      const name = String(device.name || device.label || "Device");
-                      const location = String(device.location || "");
-                      const lastActive = String(device.lastActive || device.lastActiveLabel || "");
-                      const isCurrent = Boolean(device.current);
-
-                      return (
-                        <div
-                          key={id || name}
-                          className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 flex items-start justify-between gap-3 transition-colors"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{name}</div>
-                              {isCurrent ? <Pill tone="good" text="Current" /> : null}
-                            </div>
-                            <div className="mt-1 text-xs text-slate-600 dark:text-slate-400 truncate">
-                              {location ? `${location} · ` : ""}
-                              {lastActive ? `Last active: ${lastActive}` : ""}
-                            </div>
-                          </div>
-
-                          <SmallBtn
-                            tone={isCurrent ? "ghost" : "danger"}
-                            icon={<Ban className="h-4 w-4" />}
-                            disabled={deviceMutationBusy || !id || isCurrent}
-                            title={isCurrent ? "You can't sign out the current session from here." : "Sign out device"}
-                            onClick={() => {
-                              if (!id) return;
-                              void removeSettingsDeviceMutation
-                                .mutateAsync(id)
-                                .then(() => push("Device signed out.", "success"))
-                                .catch(() => push("Could not sign out that device.", "error"));
-                            }}
-                          >
-                            Sign out
-                          </SmallBtn>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Device & session policies (demo)</div>
+                <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">Add your device list, login sessions, and revocation controls here.</div>
               </div>
             </div>
 
@@ -2283,62 +1797,35 @@ export default function RolesPermissionsPremium() {
                   <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Audit log</div>
                   <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">High-signal events: role changes, invites, share link generation, safety incidents.</div>
                 </div>
-                <SmallBtn
-                  icon={<Copy className="h-4 w-4" />}
-                  onClick={() => {
-                    const payload = JSON.stringify(auditLogsQuery.data || [], null, 2);
-                    navigator.clipboard?.writeText(payload)
-                      .then(() => push("Audit exported to clipboard.", "success"))
-                      .catch(() => push("Could not export audit right now.", "error"));
-                  }}
-                  disabled={!auditLogsQuery.data || auditLogsQuery.data.length === 0}
-                >
+                <SmallBtn icon={<Copy className="h-4 w-4" />} onClick={() => push("Export audit (demo).")}>
                   Export
                 </SmallBtn>
               </div>
 
               <div className="p-4 space-y-3 max-h-[520px] overflow-auto scrollbar-hide">
-                {auditLogsQuery.isLoading ? (
-                  <div className="text-sm text-slate-700 dark:text-slate-300">Loading audit logs…</div>
-                ) : (auditLogsQuery.data || []).length === 0 ? (
-                  <div className="text-sm text-slate-700 dark:text-slate-300">No audit events yet.</div>
-                ) : (
-                  (auditLogsQuery.data || []).map((a) => {
-                    const severity = String(a.severity || "info").toLowerCase();
-                    const isCritical = severity === "critical" || severity === "error";
-                    const isWarn = severity === "warn" || severity === "warning";
-                    const label = isCritical ? "Critical" : isWarn ? "Warn" : "Info";
-                    const at = (() => {
-                      const d = new Date(String(a.at));
-                      return Number.isNaN(d.getTime()) ? String(a.at) : d.toLocaleString();
-                    })();
-
-                    return (
-                      <div
-                        key={a.id}
-                        className={cx(
-                          "rounded-3xl border p-3 shadow-sm transition-colors",
-                          isCritical
-                            ? "border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-900/10"
-                            : isWarn
-                              ? "border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/10"
-                              : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
-                        )}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{String(a.action || "")}</div>
-                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              {String(a.actor || "")} · {at}
-                            </div>
-                            {a.detail ? <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">{String(a.detail)}</div> : null}
-                          </div>
-                          <Pill tone={isCritical ? "bad" : isWarn ? "warn" : "neutral"} text={label} />
+                {audit.map((a) => (
+                  <div
+                    key={a.id}
+                    className={cx(
+                      "rounded-3xl border p-3 shadow-sm transition-colors",
+                      a.severity === "critical" ? "border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-900/10" : a.severity === "warn" ? "border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/10" : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{a.action}</div>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          {a.actor} · {a.at}
                         </div>
+                        {a.detail ? <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">{a.detail}</div> : null}
                       </div>
-                    );
-                  })
-                )}
+                      <Pill
+                        tone={a.severity === "critical" ? "bad" : a.severity === "warn" ? "warn" : "neutral"}
+                        text={a.severity === "critical" ? "Critical" : a.severity === "warn" ? "Warn" : "Info"}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -2373,10 +1860,10 @@ export default function RolesPermissionsPremium() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2 justify-end p-1">
-          <SmallBtn icon={<Ban className="h-4 w-4" />} onClick={() => setEditRoleOpen(false)} disabled={rolesMutationBusy}>
+          <SmallBtn icon={<Ban className="h-4 w-4" />} onClick={() => setEditRoleOpen(false)}>
             Cancel
           </SmallBtn>
-          <SmallBtn tone="primary" icon={<Save className="h-4 w-4" />} onClick={() => { void saveRoleMeta(); }} disabled={!canManageRoles || rolesMutationBusy}>
+          <SmallBtn tone="primary" icon={<Save className="h-4 w-4" />} onClick={saveRoleMeta}>
             Save
           </SmallBtn>
         </div>
@@ -2396,10 +1883,10 @@ export default function RolesPermissionsPremium() {
         </div>
 
         <div className="mt-4 flex justify-end gap-2 p-1">
-          <SmallBtn onClick={() => setCreateRoleOpen(false)} icon={<Ban className="h-4 w-4" />} disabled={rolesMutationBusy}>
+          <SmallBtn onClick={() => setCreateRoleOpen(false)} icon={<Ban className="h-4 w-4" />}>
             Cancel
           </SmallBtn>
-          <SmallBtn tone="primary" onClick={() => { void createRole(); }} icon={<Plus className="h-4 w-4" />} disabled={!canManageRoles || rolesMutationBusy}>
+          <SmallBtn tone="primary" onClick={createRole} icon={<Plus className="h-4 w-4" />}>
             Create role
           </SmallBtn>
         </div>
@@ -2418,7 +1905,6 @@ export default function RolesPermissionsPremium() {
               className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-slate-200 dark:focus:ring-slate-800 text-slate-900 dark:text-slate-100 transition-colors"
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
-              disabled={!canManageRoles || rolesMutationBusy}
               placeholder="name@company.com"
             />
             <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">
@@ -2432,7 +1918,6 @@ export default function RolesPermissionsPremium() {
               className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-bold outline-none text-slate-900 dark:text-slate-100 transition-colors"
               value={inviteSeat}
               onChange={(e) => setInviteSeat(e.target.value as Seat)}
-              disabled={!canManageRoles || rolesMutationBusy}
             >
               <option value="Creator" className="bg-white dark:bg-slate-900">Creator</option>
               <option value="Manager" className="bg-white dark:bg-slate-900">Manager</option>
@@ -2449,7 +1934,6 @@ export default function RolesPermissionsPremium() {
             className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-bold outline-none text-slate-900 dark:text-slate-100 transition-colors"
             value={inviteRoleId}
             onChange={(e) => setInviteRoleId(e.target.value)}
-            disabled={!canManageRoles || rolesMutationBusy}
           >
             {roles.map((r) => (
               <option key={r.id} value={r.id} className="bg-white dark:bg-slate-900">
@@ -2461,10 +1945,10 @@ export default function RolesPermissionsPremium() {
         </div>
 
         <div className="mt-4 flex justify-end gap-2 p-1">
-          <SmallBtn onClick={() => setInviteOpen(false)} icon={<Ban className="h-4 w-4" />} disabled={rolesMutationBusy}>
+          <SmallBtn onClick={() => setInviteOpen(false)} icon={<Ban className="h-4 w-4" />}>
             Cancel
           </SmallBtn>
-          <SmallBtn tone="primary" onClick={() => { void inviteMember(); }} icon={<UserPlus className="h-4 w-4" />} disabled={!canManageRoles || rolesMutationBusy}>
+          <SmallBtn tone="primary" onClick={inviteMember} icon={<UserPlus className="h-4 w-4" />}>
             Send invite
           </SmallBtn>
         </div>

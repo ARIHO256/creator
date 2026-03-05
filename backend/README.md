@@ -1,36 +1,47 @@
 # MyLiveDealz Creator Backend
 
-Runnable backend scaffold for the **MyLiveDealz Creator App**.
+Production-oriented backend bridge for the **MyLiveDealz Creator App** using:
 
-This backend is built to unblock backend work for the uploaded Creator portal. It focuses on:
-- real route structure that matches the current frontend modules
-- working authentication and persistence
-- seed data aligned with the current mock-heavy screens
-- a clean page-to-API contract so the frontend can be wired progressively
+- **NestJS** application structure
+- **Fastify** HTTP adapter
+- **Prisma ORM**
+- **PostgreSQL** persistence
 
-## Why this backend looks the way it does
+## What changed in this regeneration
 
-The uploaded frontend is rich in features but still mostly driven by:
-- localStorage-based auth and approval flags
-- mock arrays embedded inside page files
-- local-only state for proposals, contracts, live sessions, assets, and payouts
+The earlier uploaded backend was a dependency-free prototype built on `node:http` plus a JSON file store.
+This regeneration upgrades the backend package so your technical team gets a more realistic drop-in base:
 
-Because of that, this backend is deliberately designed as a **functional prototype backend**:
-- **dependency-free Node.js**
-- **JSON file persistence**
-- **REST endpoints for every major app module**
-- **seed data** using the same sellers, campaigns, and creator persona already present in the app
+- NestJS bootstrapping and application lifecycle
+- Fastify adapter instead of a custom HTTP server
+- Prisma-backed persistence to PostgreSQL
+- Dockerized local PostgreSQL for fast setup
+- Route contract preserved from the existing Creator App backend prototype
+- Legacy Creator App route handlers mounted through a compatibility bridge so the frontend API surface stays stable
 
-This lets you run and test a backend immediately, then later swap the persistence layer for PostgreSQL or Prisma without changing the API surface too much.
+## Important architecture note
+
+To keep the Creator App route surface intact **without breaking the existing frontend contract**, the current regeneration uses a **Prisma-backed JSON snapshot bridge**:
+
+- Prisma persists the full Creator App state in PostgreSQL (`CreatorAppState.payload` as JSONB)
+- the existing Creator App route logic is preserved under `src/legacy/`
+- NestJS + Fastify mount that route layer through a compatibility bootstrap
+
+This is intentionally more plug-and-play than the old file-based prototype, while still being a safe stepping stone toward a fully normalized Prisma schema.
 
 ## Quick start
 
 ```bash
-cd mldz_creator_backend
-node src/server.js
+cp .env.example .env
+docker compose up -d postgres
+npm install
+npm run prisma:generate
+npm run prisma:deploy
+npm run prisma:seed
+npm run dev
 ```
 
-The server starts on:
+The API will start on:
 
 ```text
 http://127.0.0.1:4010
@@ -43,22 +54,43 @@ Email: creator@mylivedealz.com
 Password: Password123!
 ```
 
-## Run tests
+## Available scripts
 
 ```bash
+npm run dev            # tsx watch mode
+npm run start          # run the NestJS app directly with tsx
+npm run build          # compile to dist/
+npm run start:prod     # run compiled output
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:deploy
+npm run prisma:seed
 npm test
 ```
 
-## Environment variables
+## Folder map
 
-Copy `.env.example` and override as needed.
+```text
+backend/
+  prisma/
+    schema.prisma
+    seed.mjs
+    migrations/
+  src/
+    app.module.ts
+    main.ts
+    platform/
+      prisma.service.ts
+      app-state.store.ts
+      legacy-api.bootstrap.ts
+    legacy/
+      lib/
+      routes/
+      seed/
+  test/
+```
 
-- `PORT` - API port
-- `HOST` - bind host
-- `MLDZ_DB_FILE` - JSON data file path
-- `SESSION_TTL_DAYS` - token lifetime
-
-## Main route groups
+## Route groups preserved
 
 ### System
 - `GET /health`
@@ -69,6 +101,7 @@ Copy `.env.example` and override as needed.
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/me`
+- `POST /api/auth/switch-role`
 
 ### Bootstrap and dashboards
 - `GET /api/app/bootstrap`
@@ -106,6 +139,7 @@ Copy `.env.example` and override as needed.
 - `GET /api/live/sessions`
 - `POST /api/live/sessions`
 - `PATCH /api/live/sessions/:id`
+- `GET /api/live/studio/default`
 - `GET /api/live/studio/:id`
 - `POST /api/live/studio/:id/start`
 - `POST /api/live/studio/:id/end`
@@ -146,54 +180,28 @@ Copy `.env.example` and override as needed.
 - `GET /api/notifications`
 - `PATCH /api/notifications/:id/read`
 - `GET /api/roles`
+- `PATCH /api/roles/security`
 - `POST /api/roles/invites`
 - `PATCH /api/roles/members/:id`
 - `GET /api/crew`
 - `PATCH /api/crew/sessions/:id`
 - `GET /api/audit-logs`
 
-## Data model covered
+## Why this is more plug-and-play than the old prototype
 
-The seed and route layer cover these practical backend domains:
+- **No custom HTTP server**: the app now boots through NestJS and Fastify.
+- **No JSON file persistence**: state is now persisted in PostgreSQL through Prisma.
+- **No lost API surface**: the existing Creator App contract remains intact under `src/legacy`.
+- **Safer migration path**: your team can normalize domain tables incrementally without reworking the frontend first.
 
-- users and sessions
-- creator public profile and settings
-- sellers and opportunities
-- invites and proposals
-- campaigns and contracts
-- tasks and comments
-- assets and review states
-- live sessions and live studio state
-- replays and reviews
-- shoppable ad campaigns
-- tracked links
-- earnings and payouts
-- analytics and subscription
-- notifications
-- roles, members, crew assignments
-- tool configs for audience alerts, overlays, streaming, post-live, and moderation
-- audit logs
+## Recommended next hardening step
 
-## Suggested next production step
+After your frontend team is stable on the API contract, normalize the largest JSON domains first:
 
-When you are ready to move beyond prototype mode:
+1. auth + sessions
+2. workspace members / roles / invites
+3. campaigns + live sessions
+4. proposals / contracts / tasks
+5. finance + payouts + subscription
 
-1. replace `JsonStore` with PostgreSQL
-2. move auth from opaque tokens to JWT or session cookies
-3. store media in S3, Cloudinary, or a CDN-backed object store
-4. add webhook handlers for payouts and billing
-5. split route handlers into controller/service/repository layers
-6. add rate limiting, request validation, and observability
-
-## Frontend wiring order
-
-Best integration order:
-
-1. auth + bootstrap
-2. settings/profile
-3. sellers/opportunities/invites
-4. proposals/contracts/tasks/assets
-5. live schedule + live studio
-6. adz + links
-7. earnings/analytics/subscription
-8. roles/crew/audit
+That turns this bridge into a fully normalized Prisma backend without throwing away the route work already done.

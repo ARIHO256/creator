@@ -1,141 +1,140 @@
-import React, { useState } from "react";
-import { CheckCircle2 } from "lucide-react";
-import type { AppRole } from "../api/types";
-import { PageHeader } from "../components/PageHeader";
-import { useNotification } from "../contexts/NotificationContext";
-import { useAuth } from "../contexts/AuthContext";
+import React from "react";
 import type { PageId } from "../layouts/CreatorShellLayout";
+// import { useTheme } from "../contexts/ThemeContext";
 
 type RoleSwitcherPageProps = {
   onChangePage: (page: PageId) => void;
 };
 
-type RoleCardRecord = {
-  id: AppRole;
+type Role = {
+  id: "buyer" | "seller" | "creator" | "provider";
   label: string;
   icon: string;
-  description: string;
+  desc: string;
   color: string;
 };
 
-const ROLE_CARDS: RoleCardRecord[] = [
-  {
-    id: "Buyer",
-    label: "Buyer",
-    icon: "🛒",
-    description: "Browse dealz, watch creator sessions, and follow the shopping journey from discovery to checkout.",
-    color: "from-blue-500 to-indigo-600"
-  },
-  {
-    id: "Seller",
-    label: "Seller",
-    icon: "🏪",
-    description: "Move into the supplier lens for storefront, campaigns, invite workflows, and performance management.",
-    color: "from-emerald-500 to-teal-600"
-  },
-  {
-    id: "Creator",
-    label: "Creator",
-    icon: "🎥",
-    description: "Return to the creator workspace for pitching, live sessions, ad builders, tracked links, and earnings.",
-    color: "from-[#f77f00] to-orange-600"
-  },
-  {
-    id: "Provider",
-    label: "Provider",
-    icon: "🤝",
-    description: "Switch to the service-provider context for production, moderation, and creator support workflows.",
-    color: "from-purple-500 to-violet-600"
-  }
-];
+export const RoleSwitcherPage: React.FC<RoleSwitcherPageProps> = ({
+  onChangePage
+}) => {
+  // const { theme } = useTheme(); // Unused
 
-export const RoleSwitcherPage: React.FC<RoleSwitcherPageProps> = ({ onChangePage }) => {
-  const { user, switchRole } = useAuth();
-  const { showError, showSuccess } = useNotification();
-  const [pendingRole, setPendingRole] = useState<AppRole | null>(null);
-  const currentRole = user?.currentRole ?? "Creator";
-
-  const handleSelectRole = async (role: AppRole) => {
-    if (role === currentRole || pendingRole) return;
-    setPendingRole(role);
-
-    try {
-      await switchRole(role);
-      showSuccess(`Switched to ${role}.`);
-      onChangePage("home");
-    } catch (error) {
-      showError(error instanceof Error ? error.message : `Could not switch to ${role}.`);
-    } finally {
-      setPendingRole(null);
+  const roles: Role[] = [
+    {
+      id: "buyer",
+      label: "Buyer",
+      icon: "🛒",
+      desc: "Shop curated dealz, watch live sessions, and enjoy the MyLive experience.",
+      color: "from-blue-500 to-indigo-600"
+    },
+    {
+      id: "seller",
+      label: "Seller",
+      icon: "🏪",
+      desc: "Launch your products, manage your storefront, and grow your brand.",
+      color: "from-emerald-500 to-teal-600"
+    },
+    {
+      id: "creator",
+      label: "Creator",
+      icon: "🎥",
+      desc: "Supplier with brands, showcase products, and monetize your influence.",
+      color: "from-[#f77f00] to-orange-600"
+    },
+    {
+      id: "provider",
+      label: "Provider",
+      icon: "🤝",
+      desc: "Offer services, support creators, and expand your professional network.",
+      color: "from-purple-500 to-violet-600"
     }
-  };
+  ];
 
   return (
-    <div className="min-h-screen bg-[#f2f2f2] text-slate-900 dark:bg-slate-950 dark:text-slate-50">
-      <PageHeader
-        pageTitle="Role Switcher"
-        mobileViewType="hide"
-        badge={
-          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-            🔁 Current role: {currentRole}
-          </span>
-        }
-      />
+    <div className="flex-1 flex flex-col items-center justify-center relative min-h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 transition-colors">
+      {/* Immersive Animated Background Blobs */}
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20 dark:opacity-40">
+        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-orange-500 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] bg-blue-500 rounded-full blur-[120px] animate-pulse delay-700" />
+      </div>
 
-      <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-3 py-6 sm:px-4 lg:px-8">
-        <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="max-w-3xl">
-            <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#f77f00]">Multi-role shell</p>
-            <h2 className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Choose how you want to use MyLiveDealz right now</h2>
-            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-300">
-              This page now saves your role selection to the backend session, so your current role persists across refreshes and updates the runtime shell immediately.
-            </p>
-          </div>
-        </section>
+      <div className="relative z-10 w-full max-w-6xl px-6 py-12 flex flex-col items-center">
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {ROLE_CARDS.map((role) => {
-            const isCurrent = role.id === currentRole;
-            const isPending = pendingRole === role.id;
-            return (
-              <button
-                key={role.id}
-                type="button"
-                onClick={() => void handleSelectRole(role.id)}
-                disabled={isCurrent || Boolean(pendingRole)}
-                className={`group relative overflow-hidden rounded-[2rem] border p-6 text-left shadow-sm transition ${
-                  isCurrent
-                    ? "border-[#f77f00] bg-amber-50 dark:bg-[#f77f00]/10"
-                    : "border-slate-200 bg-white hover:-translate-y-1 hover:border-[#f77f00] dark:border-slate-800 dark:bg-slate-900"
-                } disabled:cursor-not-allowed`}
-              >
-                <div className={`mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br text-2xl text-white shadow-lg ${role.color}`}>
-                  {role.icon}
-                </div>
 
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-black text-slate-900 transition group-hover:text-[#f77f00] dark:text-white">{role.label}</h3>
-                    <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-300">{role.description}</p>
-                  </div>
-                  {isCurrent ? <CheckCircle2 className="h-5 w-5 text-[#f77f00]" /> : null}
-                </div>
+        {/* Logo */}
+        {/* Professional "Windowed" Responsive Logo Section */}
+        {/* Professional Layered Logo for Pixel-Perfect Brand Fidelity */}
+        <div className="mb-10 relative h-16 sm:h-20 md:h-24 w-full max-w-[200px] sm:max-w-[300px] md:max-w-[400px] flex items-center justify-center">
+          {/* Light Mode Logo (Black) */}
+          <img
+            src="/MyliveDealz PNG Logo 1 Black.png"
+            alt="MyLiveDealz"
+            className="h-full w-full object-contain dark:hidden"
+          />
+          {/* Dark Mode Logo (White) */}
+          <img
+            src="/MyliveDealz PNG Logo 1 White.png"
+            alt="MyLiveDealz"
+            className="h-full w-full object-contain hidden dark:block"
+          />
+        </div>
 
-                <div className="mt-6 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.2em]">
-                  {isCurrent ? (
-                    <span className="text-[#f77f00]">Current</span>
-                  ) : isPending ? (
-                    <span className="text-slate-500 dark:text-slate-300">Switching...</span>
-                  ) : (
-                    <span className="text-slate-500 dark:text-slate-300">Enter role</span>
-                  )}
-                  <span className="text-slate-400">→</span>
-                </div>
-              </button>
-            );
-          })}
-        </section>
-      </main>
+        {/* Header Text */}
+        <div className="text-center mb-12 max-w-2xl">
+          <h1 className="text-2xl sm:text-3xl font-black mb-4 tracking-tight text-slate-900 dark:text-white">
+            Choose how you want to use MyLiveDealz today
+          </h1>
+          <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+            You can switch roles anytime. This shell will later route you to the dedicated Buyer, Seller or Creator experiences.
+          </p>
+        </div>
+
+        {/* Roles Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 w-full max-w-5xl">
+          {roles.filter(r => r.id !== 'creator').map((role) => (
+            <RoleCard key={role.id} role={role} onChangePage={onChangePage} />
+          ))}
+        </div>
+
+        {/* Footer Info */}
+        <div className="mt-12 text-center text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">
+          MyLiveDealz Multi-Role Ecosystem
+        </div>
+      </div>
     </div>
+  );
+};
+
+type RoleCardProps = {
+  role: Role;
+  onChangePage: (page: PageId) => void;
+};
+
+const RoleCard: React.FC<RoleCardProps> = ({ role, onChangePage }) => {
+  const targetPage: PageId = "home";
+
+  return (
+    <button
+      className="group relative flex flex-col items-center text-center p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none hover:border-[#f77f00] dark:hover:border-[#f77f00] transition-all duration-300 transform hover:-translate-y-2"
+      onClick={() => onChangePage(targetPage)}
+    >
+      {/* Decorative Gradient Icon Background */}
+      <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${role.color} flex items-center justify-center text-3xl mb-6 shadow-lg shadow-black/10 group-hover:scale-110 transition-transform duration-300`}>
+        {role.icon}
+      </div>
+
+      <h3 className="text-xl font-black mb-3 text-slate-900 dark:text-white group-hover:text-[#f77f00] transition-colors">
+        {role.label}
+      </h3>
+      <p className="text-sm text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+        {role.desc}
+      </p>
+
+      {/* Hover Selection Indicator */}
+      <div className="absolute bottom-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-2 text-[#f77f00] text-xs font-black uppercase tracking-widest">
+        <span>Enter {role.label}</span>
+        <span>→</span>
+      </div>
+    </button>
   );
 };

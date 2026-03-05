@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
-import { Eye, EyeOff, PinOff, Settings2 } from "lucide-react";
+import { Eye, EyeOff, GripVertical, Pin, PinOff, Settings2 } from "lucide-react";
 import { useMobile } from "../hooks/useMobile";
 import { formatCurrencyValue } from "../utils/formatUtils";
-import { useEarningsSummaryQuery } from "../hooks/api/useFinance";
 
 type MoneyBarProps = {
   onViewEarnings: () => void;
@@ -16,7 +15,7 @@ type WidgetType = {
   accent?: boolean;
 };
 
-const FALLBACK_WIDGETS: WidgetType[] = [
+const WIDGETS: WidgetType[] = [
   { id: "available", label: "Available now", value: 720, currency: "USD" },
   { id: "pending", label: "Pending", value: 1980, currency: "USD" },
   { id: "projected", label: "Projected this month", value: 3400, currency: "USD", accent: true },
@@ -24,7 +23,6 @@ const FALLBACK_WIDGETS: WidgetType[] = [
 
 export const MoneyBar: React.FC<MoneyBarProps> = ({ onViewEarnings }) => {
   const isMobile = useMobile();
-  const { data: earningsSummary } = useEarningsSummaryQuery();
   // Load initial state from localStorage if available
   const [hiddenWidgetIds, setHiddenWidgetIds] = useState<string[]>(() => {
     try {
@@ -67,15 +65,7 @@ export const MoneyBar: React.FC<MoneyBarProps> = ({ onViewEarnings }) => {
     );
   };
 
-  const widgets = earningsSummary?.summary
-    ? [
-        { id: "available", label: "Available now", value: Number(earningsSummary.summary.available || 0), currency: String(earningsSummary.summary.currency || "USD") },
-        { id: "pending", label: "Pending", value: Number(earningsSummary.summary.pending || 0), currency: String(earningsSummary.summary.currency || "USD") },
-        { id: "projected", label: "Projected this month", value: Number(earningsSummary.summary.projected || 0), currency: String(earningsSummary.summary.currency || "USD"), accent: true }
-      ]
-    : FALLBACK_WIDGETS;
-
-  const visibleWidgets = widgets.filter((w) => !hiddenWidgetIds.includes(w.id));
+  const visibleWidgets = WIDGETS.filter((w) => !hiddenWidgetIds.includes(w.id));
 
   return (
     <div className="fixed top-14 left-0 right-0 w-full h-10 bg-slate-900 dark:bg-slate-950 text-sm text-slate-50 px-2 sm:px-3 md:px-4 lg:px-6 xl:px-8 flex items-center gap-2 z-[42] transition-colors shadow-sm">
@@ -116,7 +106,7 @@ export const MoneyBar: React.FC<MoneyBarProps> = ({ onViewEarnings }) => {
                 Visible Widgets
               </div>
               <div className="flex flex-col gap-1">
-                {widgets.map((widget) => {
+                {WIDGETS.map((widget) => {
                   const isHidden = hiddenWidgetIds.includes(widget.id);
                   return (
                     <button

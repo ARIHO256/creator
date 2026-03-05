@@ -22,14 +22,6 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
-import {
-  useContentApprovalsQuery,
-  useCreateContentApprovalMutation,
-  useNudgeContentApprovalMutation,
-  useResubmitContentApprovalMutation,
-  useWithdrawContentApprovalMutation
-} from "../../hooks/api/useCreatorWorkflow";
-import type { ContentApprovalRecord } from "../../api/types";
 
 // MyLiveDealz · Creator Portal
 // Page: Awaiting Approval (Submitted Content)
@@ -199,71 +191,161 @@ function nextStepCopy(status: SubmissionStatus, desk: Desk) {
   return "";
 }
 
-function toSubmission(record: ContentApprovalRecord): Submission {
-  return {
-    id: record.id,
-    title: record.title,
-    campaign: record.campaign,
-    supplier: {
-      name: record.supplier?.name || "Unknown supplier",
-      type: (record.supplier?.type === "Provider" ? "Provider" : "Seller") as SupplierType
-    },
-    channel: (["Instagram", "TikTok", "YouTube", "WhatsApp"].includes(record.channel) ? record.channel : "Instagram") as Submission["channel"],
-    type: (["Video", "Image", "Caption", "Doc"].includes(record.type) ? record.type : "Video") as SubmissionType,
-    desk: (["General", "Faith", "Medical", "Education"].includes(record.desk) ? record.desk : "General") as Desk,
-    status: (["Pending", "Under Review", "Escalated", "Changes Requested", "Approved", "Rejected"].includes(record.status)
-      ? record.status
-      : "Pending") as SubmissionStatus,
-    riskScore: Number(record.riskScore || 0),
-    submittedAtISO: record.submittedAtISO || nowISO(),
-    dueAtISO: record.dueAtISO || nowISO(),
-    notesFromCreator: record.notesFromCreator || "",
-    caption: record.caption || "",
-    assets: Array.isArray(record.assets)
-      ? record.assets.map((asset) => ({
-        name: asset.name,
-        type: (["Video", "Image", "Caption", "Doc"].includes(asset.type) ? asset.type : "Doc") as SubmissionType,
-        size: asset.size
-      }))
-      : [],
-    flags: {
-      missingDisclosure: Boolean(record.flags?.missingDisclosure),
-      sensitiveClaim: Boolean(record.flags?.sensitiveClaim),
-      brandRestriction: Boolean(record.flags?.brandRestriction)
-    },
-    lastUpdatedISO: record.lastUpdatedISO || record.submittedAtISO || nowISO(),
-    audit: Array.isArray(record.audit) ? record.audit.map((entry) => ({ atISO: entry.atISO, msg: entry.msg })) : []
+function seedSubmissions(): Submission[] {
+  const now = new Date();
+  const iso = (d: Date) => d.toISOString();
+
+  const mk = (minsAgo: number, dueMinsFromNow: number) => {
+    const s = new Date(now.getTime() - minsAgo * 60000);
+    const due = new Date(now.getTime() + dueMinsFromNow * 60000);
+    return { submitted: iso(s), due: iso(due) };
   };
+
+  const a1 = mk(140, 980);
+  const a2 = mk(980, -120);
+  const a3 = mk(60, 420);
+  const a4 = mk(3100, 0);
+  const a5 = mk(220, 240);
+
+  const base: Submission[] = [
+    {
+      id: "SUB-001",
+      title: "IG Reel Draft — Serum Promo",
+      campaign: "GlowUp Serum Promo",
+      supplier: { name: "GlowUp Hub", type: "Seller" },
+      channel: "Instagram",
+      type: "Video",
+      desk: "General",
+      status: "Under Review",
+      riskScore: 28,
+      submittedAtISO: a1.submitted,
+      dueAtISO: a1.due,
+      notesFromCreator: "Short 15s hook + benefits + CTA. Please confirm compliance wording.",
+      caption:
+        "GlowUp Serum Dealz now live. Limited stock. Tap to shop with my link. #MyLiveDealz #ShoppableAdz #ad",
+      assets: [
+        { name: "ig-reel-draft.mp4", type: "Video", size: "14.8 MB" },
+        { name: "cover-4x5.png", type: "Image", size: "1.2 MB" }
+      ],
+      flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
+      lastUpdatedISO: a1.submitted,
+      audit: [
+        { atISO: a1.submitted, msg: "Submitted" },
+        { atISO: new Date(new Date(a1.submitted).getTime() + 18 * 60000).toISOString(), msg: "Moved to Under Review" }
+      ]
+    },
+    {
+      id: "SUB-002",
+      title: "TikTok Script — Tech Friday Mega",
+      campaign: "Tech Friday Mega",
+      supplier: { name: "GadgetMart Africa", type: "Seller" },
+      channel: "TikTok",
+      type: "Caption",
+      desk: "General",
+      status: "Changes Requested",
+      riskScore: 52,
+      submittedAtISO: a2.submitted,
+      dueAtISO: a2.due,
+      notesFromCreator: "Script focuses on unboxing + quick price anchor + bundle CTA.",
+      caption:
+        "Tech Friday Mega Live: gadgets bundles + fast checkout. Join live and shop. {LINK}",
+      assets: [{ name: "tiktok-script.txt", type: "Doc", size: "12 KB" }],
+      flags: { missingDisclosure: true, sensitiveClaim: false, brandRestriction: false },
+      lastUpdatedISO: a2.due,
+      audit: [
+        { atISO: a2.submitted, msg: "Submitted" },
+        { atISO: new Date(new Date(a2.submitted).getTime() + 65 * 60000).toISOString(), msg: "Changes requested: add #ad disclosure" }
+      ]
+    },
+    {
+      id: "SUB-003",
+      title: "YouTube Shorts Cut — Gadget Unboxing",
+      campaign: "Gadget Unboxing Marathon",
+      supplier: { name: "GadgetMart Africa", type: "Seller" },
+      channel: "YouTube",
+      type: "Video",
+      desk: "General",
+      status: "Pending",
+      riskScore: 35,
+      submittedAtISO: a3.submitted,
+      dueAtISO: a3.due,
+      notesFromCreator: "45s cut, includes pricing overlay and CTA.",
+      caption:
+        "New unboxing. Watch and shop with my link. #MyLiveDealz #LiveSessionz",
+      assets: [{ name: "shorts-cut.mp4", type: "Video", size: "38.4 MB" }],
+      flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
+      lastUpdatedISO: a3.submitted,
+      audit: [{ atISO: a3.submitted, msg: "Submitted" }]
+    },
+    {
+      id: "SUB-004",
+      title: "WhatsApp Broadcast Copy — Repair Booking",
+      campaign: "Repair Booking Offer",
+      supplier: { name: "FixNow Mobile", type: "Provider" },
+      channel: "WhatsApp",
+      type: "Caption",
+      desk: "General",
+      status: "Approved",
+      riskScore: 12,
+      submittedAtISO: a4.submitted,
+      dueAtISO: a4.due,
+      notesFromCreator: "Simple broadcast message and CTA to book.",
+      caption:
+        "Need a trusted mobile repair? Book here: {LINK} (Fast, clear pricing). #MyLiveDealz",
+      assets: [{ name: "whatsapp-broadcast.txt", type: "Doc", size: "8 KB" }],
+      flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
+      lastUpdatedISO: a4.due,
+      audit: [
+        { atISO: a4.submitted, msg: "Submitted" },
+        { atISO: new Date(new Date(a4.submitted).getTime() + 90 * 60000).toISOString(), msg: "Approved" }
+      ]
+    },
+    {
+      id: "SUB-005",
+      title: "Faith-compatible Caption — Wellness",
+      campaign: "Faith & Wellness",
+      supplier: { name: "Grace Living Store", type: "Seller" },
+      channel: "Instagram",
+      type: "Caption",
+      desk: "Faith",
+      status: "Escalated",
+      riskScore: 79,
+      submittedAtISO: a5.submitted,
+      dueAtISO: a5.due,
+      notesFromCreator: "Please validate tone and desk guidelines.",
+      caption:
+        "Wellness picks for your routine. Shop responsibly with my link. #MyLiveDealz",
+      assets: [{ name: "caption-faith.txt", type: "Doc", size: "6 KB" }],
+      flags: { missingDisclosure: true, sensitiveClaim: true, brandRestriction: true },
+      lastUpdatedISO: a5.submitted,
+      audit: [
+        { atISO: a5.submitted, msg: "Submitted" },
+        { atISO: new Date(new Date(a5.submitted).getTime() + 22 * 60000).toISOString(), msg: "Escalated to Faith Desk" }
+      ]
+    }
+  ];
+
+  // Load from localStorage
+  const localStr = localStorage.getItem("pendingSubmissions");
+  if (localStr) {
+    try {
+      const local = JSON.parse(localStr) as Submission[];
+      return [...local, ...base];
+    } catch (e) {
+      console.error("Failed to parse local submissions", e);
+    }
+  }
+
+  return base;
 }
 
 export default function CreatorAwaitingApproval(): JSX.Element {
   const navigate = useNavigate();
-  const contentApprovalsQuery = useContentApprovalsQuery();
-  const createContentApprovalMutation = useCreateContentApprovalMutation();
-  const nudgeContentApprovalMutation = useNudgeContentApprovalMutation();
-  const withdrawContentApprovalMutation = useWithdrawContentApprovalMutation();
-  const resubmitContentApprovalMutation = useResubmitContentApprovalMutation();
-
-  const submissions = useMemo<Submission[]>(
-    () => (contentApprovalsQuery.data || []).map((record) => toSubmission(record)),
-    [contentApprovalsQuery.data]
-  );
-
-  const [selectedId, setSelectedId] = useState<string>("");
+  const [submissions, setSubmissions] = useState<Submission[]>(() => seedSubmissions());
+  const [selectedId, setSelectedId] = useState<string>(() => seedSubmissions()[0].id);
   const [filter, setFilter] = useState<CreatorFilter>("Awaiting");
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<ViewState>("list");
-
-  useEffect(() => {
-    if (!submissions.length) {
-      if (selectedId) setSelectedId("");
-      return;
-    }
-
-    if (!selectedId || !submissions.some((item) => item.id === selectedId)) {
-      setSelectedId(submissions[0].id);
-    }
-  }, [selectedId, submissions]);
 
   // On large screens, always detail. On small, depends on state.
   // We handle this via CSS hiding/showing mostly, or conditional rendering.
@@ -296,28 +378,34 @@ export default function CreatorAwaitingApproval(): JSX.Element {
     return byFilter.filter((s) => `${s.title} ${s.campaign} ${s.supplier.name} ${s.channel} ${s.type} ${s.status}`.toLowerCase().includes(q));
   }, [submissions, filter, query]);
 
-  const handleCreateNew = async () => {
-    try {
-      const created = await createContentApprovalMutation.mutateAsync({
-        title: "New submission",
-        campaign: "Creator campaign",
-        supplier: { name: "Pending supplier", type: "Seller" },
-        channel: "Instagram",
-        type: "Video",
-        desk: "General",
-        status: "Pending",
-        notesFromCreator: "Add your latest creative notes here.",
-        caption: "Draft caption awaiting creator edits.",
-        assets: []
-      });
-      setSelectedId(created.id);
-      setFilter("All");
-      setMobileView("detail");
-      toast("Submission created");
-    } catch (error) {
-      console.error(error);
-      toast("Could not create submission");
-    }
+  const pushAudit = (id: string, msg: string) => {
+    setSubmissions((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? { ...s, lastUpdatedISO: nowISO(), audit: [{ atISO: nowISO(), msg }, ...s.audit] }
+          : s
+      )
+    );
+  };
+
+  const setStatus = (id: string, status: SubmissionStatus, msg: string) => {
+    setSubmissions((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+            ...s,
+            status,
+            lastUpdatedISO: nowISO(),
+            audit: [{ atISO: nowISO(), msg }, ...s.audit]
+          }
+          : s
+      )
+    );
+  };
+
+  const handleCreateNew = () => {
+    // Navigate to content submission page
+    navigate("/content-submission");
   };
 
   const handleSelect = (id: string) => {
@@ -325,48 +413,6 @@ export default function CreatorAwaitingApproval(): JSX.Element {
     setMobileView("detail");
     // Scroll to top of detail view (optional)
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleNudge = async (submissionId: string) => {
-    try {
-      await nudgeContentApprovalMutation.mutateAsync(submissionId);
-      toast("Nudge sent");
-    } catch (error) {
-      console.error(error);
-      toast("Could not send nudge");
-    }
-  };
-
-  const handleWithdraw = async (submissionId: string) => {
-    try {
-      await withdrawContentApprovalMutation.mutateAsync(submissionId);
-      toast("Withdrawn");
-    } catch (error) {
-      console.error(error);
-      toast("Could not withdraw submission");
-    }
-  };
-
-  const handleResubmit = async (submissionId: string) => {
-    try {
-      const current = submissions.find((item) => item.id === submissionId);
-      await resubmitContentApprovalMutation.mutateAsync({
-        submissionId,
-        payload: {
-          title: current?.title,
-          campaign: current?.campaign,
-          channel: current?.channel,
-          type: current?.type,
-          desk: current?.desk,
-          notesFromCreator: current?.notesFromCreator,
-          caption: current?.caption
-        }
-      });
-      toast("Resubmitted");
-    } catch (error) {
-      console.error(error);
-      toast("Could not resubmit submission");
-    }
   };
 
   return (
@@ -451,10 +497,6 @@ export default function CreatorAwaitingApproval(): JSX.Element {
               </div>
 
               <div className="mt-3 space-y-2">
-                {contentApprovalsQuery.isLoading ? (
-                  <EmptyState title="Loading submissions" subtitle="Fetching your latest approval queue from the backend." />
-                ) : null}
-
                 {visible.length === 0 ? (
                   <EmptyState title="No submissions" subtitle="Try changing filters or clearing the search." />
                 ) : (
@@ -465,7 +507,8 @@ export default function CreatorAwaitingApproval(): JSX.Element {
                       active={s.id === selectedId}
                       onSelect={() => handleSelect(s.id)}
                       onNudge={() => {
-                        void handleNudge(s.id);
+                        pushAudit(s.id, "Creator nudged reviewer");
+                        toast("Nudge sent");
                       }}
                     />
                   ))
@@ -495,13 +538,16 @@ export default function CreatorAwaitingApproval(): JSX.Element {
                 item={selected}
                 onCopy={() => copyToClipboard(selected.caption)}
                 onNudge={() => {
-                  void handleNudge(selected.id);
+                  pushAudit(selected.id, "Creator nudged reviewer");
+                  toast("Nudge sent");
                 }}
                 onWithdraw={() => {
-                  void handleWithdraw(selected.id);
+                  setStatus(selected.id, "Rejected", "Withdrawn by creator");
+                  toast("Withdrawn");
                 }}
                 onResubmit={() => {
-                  void handleResubmit(selected.id);
+                  setStatus(selected.id, "Pending", "Resubmitted after changes");
+                  toast("Resubmitted");
                 }}
               />
             )}

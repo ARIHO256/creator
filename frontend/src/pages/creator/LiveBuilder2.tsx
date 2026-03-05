@@ -11,10 +11,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useCreator } from "../../contexts/CreatorContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
-import { ApiClientError } from "../../api/client";
-import { useLiveBuilderSessionQuery, useLiveCampaignGiveawayInventoryQuery, usePublishLiveBuilderSessionMutation, useSaveLiveBuilderSessionMutation } from "../../hooks/api/useLiveBuilder";
 import { CircularProgress } from "@mui/material";
-import type { LiveCampaignGiveawayInventoryEntry } from "../../api/types";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -272,102 +269,6 @@ function parseQuantity(raw: string): number | null {
   return Math.floor(n);
 }
 
-function normalizeMaxQuantity(maxQuantity?: number | null): number | null {
-  if (typeof maxQuantity !== "number" || !Number.isFinite(maxQuantity)) return null;
-  if (maxQuantity < 1) return 0;
-  return Math.floor(maxQuantity);
-}
-
-function stepQuantityValue(raw: string, delta: number, maxQuantity?: number | null) {
-  const current = parseQuantity(raw) ?? 1;
-  const max = normalizeMaxQuantity(maxQuantity);
-  const next = Math.max(1, current + delta);
-  if (max === 0) return "1";
-  if (max !== null) return String(Math.min(max, next));
-  return String(next);
-}
-
-function QuantityStepper({
-  value,
-  onChange,
-  maxQuantity,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (nextValue: string) => void;
-  maxQuantity?: number | null;
-  disabled?: boolean;
-}) {
-  const parsed = parseQuantity(value) ?? 1;
-  const max = normalizeMaxQuantity(maxQuantity);
-  const canDecrease = !disabled && parsed > 1;
-  const canIncrease = !disabled && max !== 0 && (max === null || parsed < max);
-
-  return (
-    <div className="mt-1 flex h-10 items-center overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 transition-colors">
-      <button
-        type="button"
-        className="grid h-full w-11 place-items-center border-r border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
-        onClick={() => onChange(stepQuantityValue(value, -1, max))}
-        disabled={!canDecrease}
-        aria-label="Decrease quantity"
-      >
-        <Minus className="h-4 w-4" />
-      </button>
-      <input
-        value={value}
-        onChange={(e) => onChange(sanitizeQuantityInput(e.target.value))}
-        inputMode="numeric"
-        placeholder="1"
-        className="h-full min-w-0 flex-1 border-0 bg-transparent px-3 text-center text-[12px] font-semibold outline-none"
-      />
-      <button
-        type="button"
-        className="grid h-full w-11 place-items-center border-l border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
-        onClick={() => onChange(stepQuantityValue(value, 1, max))}
-        disabled={!canIncrease}
-        aria-label="Increase quantity"
-      >
-        <Plus className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
-
-function GiveawayInventoryInfo({
-  totalQuantity,
-  availableQuantity,
-  loading = false,
-  emptyMessage,
-}: {
-  totalQuantity?: number | null;
-  availableQuantity?: number | null;
-  loading?: boolean;
-  emptyMessage: string;
-}) {
-  if (loading) {
-    return <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Loading supplier giveaway availability...</div>;
-  }
-
-  const hasNumbers = typeof totalQuantity === "number" && typeof availableQuantity === "number";
-  if (!hasNumbers) {
-    return <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">{emptyMessage}</div>;
-  }
-
-  return (
-    <div className="mt-2 grid gap-2 rounded-2xl border border-amber-200/70 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 p-2.5 text-[11px] text-slate-700 dark:text-slate-300 sm:grid-cols-2">
-      <div>
-        <div className="font-semibold text-slate-900 dark:text-slate-100">Total Giveaway Quantity (set by Supplier)</div>
-        <div className="mt-0.5">Campaign Total: {totalQuantity}</div>
-      </div>
-      <div>
-        <div className="font-semibold text-slate-900 dark:text-slate-100">Available Quantity</div>
-        <div className="mt-0.5">Available (Supplier): {availableQuantity}</div>
-      </div>
-    </div>
-  );
-}
-
 /* ---------------------------------- Types --------------------------------- */
 
 export type LivePlatform =
@@ -388,8 +289,6 @@ export type LiveGoalMetric =
 
 export type LiveGiveaway = {
   id: string;
-  source?: "featured" | "custom";
-  campaignGiveawayId?: string;
   /** If set, the giveaway uses the linked featured item’s title/image on the promo page */
   linkedItemId?: string;
   /** Custom prize title (required for custom giveaways) */
@@ -409,6 +308,7 @@ export type SupplierCustomGiveawayPreset = {
   imageUrl?: string;
   notes?: string;
   quantity: number;
+  claimedCount?: number;
 };
 
 export type Supplier = {
@@ -454,6 +354,7 @@ export type LiveItem = {
 
   // Product fields
   stock?: number;
+  claimedCount?: number;
   retailPricePreview?: string; // e.g. "$59 → $44"
   wholesalePricePreview?: string; // e.g. "$41 → $44"
   wholesaleMoq?: number;
@@ -479,13 +380,13 @@ export type LiveItem = {
 export type RunSegment = {
   id: string;
   type:
-    | "Opener"
-    | "Product demo"
-    | "Q&A"
-    | "Price drop"
-    | "Flash Sale"
-    | "Closing"
-    | "Custom";
+  | "Opener"
+  | "Product demo"
+  | "Q&A"
+  | "Price drop"
+  | "Flash Sale"
+  | "Closing"
+  | "Custom";
   title: string;
   durationMin: number;
   notes?: string;
@@ -770,8 +671,9 @@ const supplierCustomGiveawayPresetsSeed: Record<
       campaignId: "cp_autumn_beauty",
       title: "Premium Vanity Pouch",
       imageUrl: `https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
-      notes: "Gift pouch supplied for live winners.",
-      quantity: 5,
+      notes: "Exclusive giveaway for high-potential leads.",
+      quantity: 10,
+      claimedCount: 6,
     },
   ],
   cp_tech_friday: [
@@ -782,6 +684,7 @@ const supplierCustomGiveawayPresetsSeed: Record<
       imageUrl: `https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
       notes: "Supplier-approved creator kit giveaway.",
       quantity: 2,
+      claimedCount: 1,
     },
     {
       id: "sgw_gift_card",
@@ -790,6 +693,7 @@ const supplierCustomGiveawayPresetsSeed: Record<
       imageUrl: `https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
       notes: "Digital voucher for live-session winners.",
       quantity: 4,
+      claimedCount: 3,
     },
   ],
   cp_wellness: [
@@ -800,6 +704,7 @@ const supplierCustomGiveawayPresetsSeed: Record<
       imageUrl: `https://images.unsplash.com/photo-1515378791036-0648a814c963?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
       notes: "Supplier-set service credit for booked attendees.",
       quantity: 3,
+      claimedCount: 1,
     },
   ],
 };
@@ -815,16 +720,14 @@ function normalizeSupplierCustomGiveawayPresets(
         (g?.source === "custom" || !g?.linkedItemId) &&
         String(g?.title || "").trim(),
     )
-    .map((g, idx) => ({
-      id: typeof g?.id === "string" && g.id ? g.id : `supplier_gw_${idx}`,
-      campaignId,
-      title: String(g?.title || "").trim(),
-      imageUrl: typeof g?.imageUrl === "string" ? g.imageUrl : undefined,
-      notes: typeof g?.notes === "string" ? g.notes : undefined,
-      quantity:
-        typeof g?.quantity === "number" && g.quantity > 0
-          ? Math.floor(g.quantity)
-          : 1,
+    .map((g) => ({
+      id: String(g.id),
+      campaignId: String(g.campaignId || ""),
+      title: String(g.title || "Untitled"),
+      imageUrl: String(g.imageUrl || ""),
+      notes: String(g.notes || ""),
+      quantity: Number(g.quantity || 0),
+      claimedCount: Number(g.claimedCount || 0)
     }))
     .filter((g) => g.title.length > 0);
 }
@@ -939,6 +842,7 @@ const catalogSeed: LiveItem[] = [
     imageUrl: `https://images.unsplash.com/photo-1557180295-76eee20ae8aa?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
     badge: "Live-only 25% off",
     stock: 12,
+    claimedCount: 4,
     retailPricePreview: "$59 → $44",
     wholesalePricePreview: "$41 → $44",
     wholesaleMoq: 10,
@@ -951,7 +855,8 @@ const catalogSeed: LiveItem[] = [
     name: "Auralink TWS Buds (ANC)",
     imageUrl: `https://images.unsplash.com/photo-1518443854922-108a0e71c8bf?auto=format&fit=crop&w=${ITEM_POSTER_REQUIRED.width}&h=${ITEM_POSTER_REQUIRED.height}&q=60`,
     badge: "Bundle & Save",
-    stock: 0,
+    stock: 250,
+    claimedCount: 25,
     retailPricePreview: "$79 → $55",
     wholesalePricePreview: "$49 → $52",
     wholesaleMoq: 20,
@@ -1640,7 +1545,7 @@ function ScrollableTimePicker({
         className={cx(
           "w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-left text-sm ring-1 ring-slate-200 dark:ring-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors",
           disabled &&
-            "opacity-50 cursor-not-allowed hover:bg-white dark:hover:bg-slate-800",
+          "opacity-50 cursor-not-allowed hover:bg-white dark:hover:bg-slate-800",
         )}
         title={label}
       >
@@ -1749,7 +1654,7 @@ function Drawer({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
+            transition={{ duration: 0.2 }}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onClose}
           />
@@ -1757,8 +1662,8 @@ function Drawer({
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
-            transition={{ type: "tween", duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-0 bg-slate-50 dark:bg-slate-950 shadow-2xl transition-colors flex flex-col will-change-transform"
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="absolute inset-0 bg-slate-50 dark:bg-slate-950 shadow-2xl transition-colors flex flex-col"
           >
             <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 transition-colors shrink-0">
               <div className="px-4 py-3 flex items-start justify-between gap-3">
@@ -2503,7 +2408,7 @@ function PromoLinkPreviewPhone({
                       const image = linked?.imageUrl || g.imageUrl;
                       const qty =
                         typeof (g as any).quantity === "number" &&
-                        (g as any).quantity > 0
+                          (g as any).quantity > 0
                           ? Math.floor((g as any).quantity)
                           : 1;
 
@@ -2824,7 +2729,7 @@ function FeaturedItemViewer({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
+            transition={{ duration: 0.2 }}
             className="absolute inset-0 bg-black/75 backdrop-blur-md"
             onClick={onClose}
           />
@@ -3032,8 +2937,8 @@ function FeaturedItemViewer({
                     </div>
 
                     {isProduct &&
-                    priceMode === "wholesale" &&
-                    item.wholesaleMoq ? (
+                      priceMode === "wholesale" &&
+                      item.wholesaleMoq ? (
                       <div className="mt-1 text-[13px] text-slate-600 dark:text-slate-400">
                         Minimum Order Quantity:{" "}
                         <span className="font-bold text-slate-900 dark:text-white">
@@ -3239,7 +3144,7 @@ function CatalogPicker({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
+            transition={{ duration: 0.2 }}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onClose}
           />
@@ -3541,44 +3446,14 @@ export function LiveBuilderView({
 }) {
   const { showSuccess, showError, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
-  const [draft, setDraft] = useState<LiveSessionDraft>(() => {
-    const search = parseSearch();
-    const seededSessionId =
-      initialSessionId || search.get("sessionId") || `ls_${Math.random().toString(16).slice(2, 8)}`;
-    const seededDealId = prefillDealId || search.get("dealId") || undefined;
-    return defaultDraft(seededSessionId, seededDealId);
-  });
-  const [sessionId, setSessionId] = useState<string | undefined>(() => {
-    const search = parseSearch();
-    return initialSessionId || search.get("sessionId") || undefined;
-  });
+  const [draft, setDraft] = useState<LiveSessionDraft>(() =>
+    defaultDraft(
+      initialSessionId || `ls_${Math.random().toString(16).slice(2, 8)}`,
+      prefillDealId,
+    ),
+  );
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [step, setStep] = useState<StepKey>("setup");
-  const hasHydratedPersistedRef = useRef(false);
-  const hasAppliedPickerReturnRef = useRef(false);
-  const liveBuilderSessionQuery = useLiveBuilderSessionQuery(sessionId, {
-    enabled: Boolean(sessionId),
-    staleTime: 5_000,
-  });
-  const liveCampaignGiveawayInventoryQuery = useLiveCampaignGiveawayInventoryQuery(draft.campaignId, sessionId, {
-    enabled: Boolean(draft.campaignId),
-    staleTime: 5_000,
-  });
-  const saveLiveBuilderSessionMutation = useSaveLiveBuilderSessionMutation();
-  const publishLiveBuilderSessionMutation = usePublishLiveBuilderSessionMutation();
-
-  useEffect(() => {
-    if (!initialSessionId) return;
-    setSessionId((prev) => (prev === initialSessionId ? prev : initialSessionId));
-    setDraft((prev) =>
-      prev.id === initialSessionId ? prev : { ...prev, id: initialSessionId },
-    );
-  }, [initialSessionId]);
-
-  useEffect(() => {
-    hasHydratedPersistedRef.current = false;
-    hasAppliedPickerReturnRef.current = false;
-  }, [sessionId]);
 
   // Rank tier gates max live duration (Bronze/Silver/Gold).
   // TODO: Wire this to CreatorContext.rankTier once the context is extended.
@@ -3848,51 +3723,11 @@ export function LiveBuilderView({
     [supplierCustomGiveawayPresets, customGiveaway.presetId],
   );
 
-  const featuredGiveawayInventoryMap = useMemo(() => {
-    const map = new Map<string, LiveCampaignGiveawayInventoryEntry>();
-    (liveCampaignGiveawayInventoryQuery.data?.featuredItems || []).forEach((entry) => {
-      if (entry.itemId) map.set(entry.itemId, entry);
-    });
-    return map;
-  }, [liveCampaignGiveawayInventoryQuery.data?.featuredItems]);
-
-  const customGiveawayInventoryMap = useMemo(() => {
-    const map = new Map<string, LiveCampaignGiveawayInventoryEntry>();
-    (liveCampaignGiveawayInventoryQuery.data?.customGiveaways || []).forEach((entry) => {
-      map.set(entry.id, entry);
-    });
-    return map;
-  }, [liveCampaignGiveawayInventoryQuery.data?.customGiveaways]);
-
-  const selectedFeaturedGiveawayInventory = useMemo(
-    () => (giveawayLinkedItemId ? featuredGiveawayInventoryMap.get(giveawayLinkedItemId) || null : null),
-    [featuredGiveawayInventoryMap, giveawayLinkedItemId],
-  );
-
-  const selectedCustomGiveawayInventory = useMemo(
-    () => (customGiveaway.presetId ? customGiveawayInventoryMap.get(customGiveaway.presetId) || null : null),
-    [customGiveaway.presetId, customGiveawayInventoryMap],
-  );
-
   const featuredGiveawayQty = parseQuantity(giveawayQuantity);
-  const featuredGiveawayAvailableQuantity = selectedFeaturedGiveawayInventory?.availableQuantity ?? null;
-  const hasFeaturedSupplierQuantity = typeof selectedFeaturedGiveawayInventory?.totalQuantity === "number";
-  const isFeaturedGiveawayQtyValid =
-    featuredGiveawayQty !== null &&
-    hasFeaturedSupplierQuantity &&
-    typeof featuredGiveawayAvailableQuantity === "number" &&
-    featuredGiveawayAvailableQuantity > 0 &&
-    featuredGiveawayQty <= featuredGiveawayAvailableQuantity;
+  const isFeaturedGiveawayQtyValid = featuredGiveawayQty !== null;
 
   const customGiveawayQty = parseQuantity(customGiveaway.quantity);
-  const customGiveawayAvailableQuantity = selectedCustomGiveawayInventory?.availableQuantity ?? null;
-  const hasCustomSupplierQuantity = typeof selectedCustomGiveawayInventory?.totalQuantity === "number";
-  const isCustomGiveawayQtyValid =
-    customGiveawayQty !== null &&
-    hasCustomSupplierQuantity &&
-    typeof customGiveawayAvailableQuantity === "number" &&
-    customGiveawayAvailableQuantity > 0 &&
-    customGiveawayQty <= customGiveawayAvailableQuantity;
+  const isCustomGiveawayQtyValid = customGiveawayQty !== null;
 
   useEffect(() => {
     if (!draft.products.length) {
@@ -3962,28 +3797,6 @@ export function LiveBuilderView({
     customGiveaway.quantity,
   ]);
 
-  useEffect(() => {
-    if (giveawayAddMode !== "featured") return;
-    const max = normalizeMaxQuantity(selectedFeaturedGiveawayInventory?.availableQuantity);
-    if (max === null) return;
-    const parsed = parseQuantity(giveawayQuantity);
-    if (max === 0) return;
-    if (parsed === null || parsed > max) {
-      setGiveawayQuantity(String(Math.max(1, max)));
-    }
-  }, [giveawayAddMode, giveawayQuantity, selectedFeaturedGiveawayInventory?.availableQuantity]);
-
-  useEffect(() => {
-    if (giveawayAddMode !== "custom") return;
-    const max = normalizeMaxQuantity(selectedCustomGiveawayInventory?.availableQuantity);
-    if (max === null) return;
-    const parsed = parseQuantity(customGiveaway.quantity);
-    if (max === 0) return;
-    if (parsed === null || parsed > max) {
-      setCustomGiveaway((s) => ({ ...s, quantity: String(Math.max(1, max)) }));
-    }
-  }, [giveawayAddMode, customGiveaway.quantity, selectedCustomGiveawayInventory?.availableQuantity]);
-
   const supplier = useMemo(
     () => suppliersSeed.find((p) => p.id === draft.supplierId),
     [draft.supplierId],
@@ -4005,7 +3818,7 @@ export function LiveBuilderView({
     () =>
       draft.creatives.openerAssetId
         ? externalAssets[draft.creatives.openerAssetId] ||
-          assetsSeed.find((a) => a.id === draft.creatives.openerAssetId)
+        assetsSeed.find((a) => a.id === draft.creatives.openerAssetId)
         : undefined,
     [draft.creatives.openerAssetId, externalAssets],
   );
@@ -4013,7 +3826,7 @@ export function LiveBuilderView({
     () =>
       draft.creatives.lowerThirdAssetId
         ? externalAssets[draft.creatives.lowerThirdAssetId] ||
-          assetsSeed.find((a) => a.id === draft.creatives.lowerThirdAssetId)
+        assetsSeed.find((a) => a.id === draft.creatives.lowerThirdAssetId)
         : undefined,
     [draft.creatives.lowerThirdAssetId, externalAssets],
   );
@@ -4076,306 +3889,121 @@ export function LiveBuilderView({
         : true,
     ) && draft.compliance.musicRightsConfirmed;
 
-  const persistedSessionMissing =
-    liveBuilderSessionQuery.error instanceof ApiClientError &&
-    liveBuilderSessionQuery.error.status === 404;
-
-  const buildPersistedBuilderState = useCallback(
-    () => ({
-      ts: Date.now(),
-      step,
-      draft,
-      externalAssets,
-      activeFeaturedItemId,
-      activeFeaturedItemKey,
-      giveawayUi: {
-        giveawayPanelOpen,
-        giveawayAddMode,
-        giveawayLinkedItemId,
-        giveawayQuantity,
-        customGiveaway,
-      },
-    }),
-    [
-      step,
-      draft,
-      externalAssets,
-      activeFeaturedItemId,
-      activeFeaturedItemKey,
-      giveawayPanelOpen,
-      giveawayAddMode,
-      giveawayLinkedItemId,
-      giveawayQuantity,
-      customGiveaway,
-    ],
-  );
-
-  const buildLiveBuilderSummary = useCallback(
-    (statusOverride?: LiveStatus) => ({
-      title: draft.title,
-      sellerId: draft.supplierId || null,
-      sellerName: supplier?.name,
-      campaignId: draft.campaignId || null,
-      campaignName: campaign?.name,
-      hostId: draft.hostId || null,
-      hostName: host?.name,
-      scheduledFor: startISO,
-      time: draft.startTime,
-      location: draft.locationLabel,
-      simulcast: draft.platforms,
-      status: statusOverride || draft.status,
-      durationMin: draft.durationMinutes,
-      productsCount: draft.products.length,
-      scriptsReady: draft.teleprompterScript.trim().length > 0,
-      assetsReady: Boolean(
-        draft.heroImageUrl ||
-          draft.heroVideoUrl ||
-          draft.creatives.openerAssetId ||
-          draft.creatives.lowerThirdAssetId ||
-          draft.creatives.overlayAssetIds.length,
-      ),
-      role: "Host",
-    }),
-    [
-      campaign?.name,
-      draft,
-      host?.name,
-      startISO,
-      supplier?.name,
-    ],
-  );
-
-  const persistDraftToBackend = useCallback(async () => {
-    const result = await saveLiveBuilderSessionMutation.mutateAsync({
-      sessionId: sessionId || draft.id,
-      builderState: buildPersistedBuilderState(),
-      summary: buildLiveBuilderSummary(),
-    });
-
-    setSessionId(result.id);
-    setDraft((prev) => ({
-      ...prev,
-      id: result.id,
-      status:
-        result.builderState?.draft &&
-        typeof result.builderState.draft === "object" &&
-        typeof (result.builderState.draft as Record<string, unknown>).status ===
-          "string"
-          ? ((result.builderState.draft as Record<string, unknown>)
-              .status as LiveStatus)
-          : prev.status,
-    }));
-
-    if (typeof window !== "undefined") {
-      const u = new URL(window.location.href);
-      u.searchParams.set("sessionId", result.id);
-      if (prefillDealId) {
-        u.searchParams.set("dealId", prefillDealId);
-      }
-      const qs = u.searchParams.toString();
-      window.history.replaceState({}, "", u.pathname + (qs ? `?${qs}` : ""));
-    }
-
-    return result;
-  }, [
-    buildLiveBuilderSummary,
-    buildPersistedBuilderState,
-    draft.id,
-    saveLiveBuilderSessionMutation,
-    sessionId,
-  ]);
-
-  const publishDraftToBackend = useCallback(async () => {
-    const saved = await persistDraftToBackend();
-    const result = await publishLiveBuilderSessionMutation.mutateAsync({
-      sessionId: saved.id,
-      payload: {
-        status: "Scheduled",
-      },
-    });
-
-    setSessionId(result.id);
-    setDraft((prev) => ({
-      ...prev,
-      id: result.id,
-      status: "Scheduled",
-    }));
-
-    return result;
-  }, [persistDraftToBackend, publishLiveBuilderSessionMutation]);
-
-  const openLiveStudio = useCallback(async () => {
-    const saved = await persistDraftToBackend();
-    safeNav(
-      `${ROUTES.liveStudio}?sessionId=${encodeURIComponent(saved.id)}`,
-    );
-  }, [persistDraftToBackend]);
-
-  const isPersisting =
-    isPending ||
-    saveLiveBuilderSessionMutation.isPending ||
-    publishLiveBuilderSessionMutation.isPending;
-
   /* ---------------------- Asset Library picker handoff ---------------------- */
 
+  const LIVE_DRAFT_KEY = "mldz:liveBuilder:draft:v1";
   const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
+  const CREATOR_LIVE_DRAFT_KEY = "creator_live_draft";
 
-  const hydrateSavedLiveBuilder = useCallback(
-    (
-      saved: any,
-      options: {
-        restoreSelection?: boolean;
-      } = {},
-    ) => {
-      if (!saved || typeof saved !== "object") return;
-
-      if (saved?.draft) {
-        const restored = saved.draft as LiveSessionDraft;
-
-        const rawGiveaways = Array.isArray((restored as any).giveaways)
-          ? ((restored as any).giveaways as any[])
-          : [];
-        const normalizedGiveaways: LiveGiveaway[] = rawGiveaways.map(
-          (g: any, idx: number) => ({
-            id: typeof g?.id === "string" && g.id ? g.id : `gw_${idx}`,
-            source:
-              g?.source === "featured" || g?.source === "custom"
-                ? g.source
-                : undefined,
-            campaignGiveawayId:
-              typeof g?.campaignGiveawayId === "string"
-                ? g.campaignGiveawayId
-                : undefined,
-            linkedItemId:
-              typeof g?.linkedItemId === "string" ? g.linkedItemId : undefined,
-            title: typeof g?.title === "string" ? g.title : undefined,
-            imageUrl: typeof g?.imageUrl === "string" ? g.imageUrl : undefined,
-            notes: typeof g?.notes === "string" ? g.notes : undefined,
-            showOnPromo:
-              typeof g?.showOnPromo === "boolean" ? g.showOnPromo : true,
-            quantity:
-              typeof g?.quantity === "number" && g.quantity > 0
-                ? Math.floor(g.quantity)
-                : 1,
-          }),
-        );
-
-        setDraft({
-          ...restored,
-          giveaways: normalizedGiveaways,
-          teleprompterScript:
-            typeof (restored as any).teleprompterScript === "string"
-              ? (restored as any).teleprompterScript
-              : "",
-        });
+  const persistDraftForPicker = useCallback(() => {
+    try {
+      const payload = {
+        ts: Date.now(),
+        step,
+        draft,
+        externalAssets,
+        activeFeaturedItemId,
+        activeFeaturedItemKey,
+        giveawayUi: {
+          giveawayPanelOpen,
+          giveawayAddMode,
+          giveawayLinkedItemId,
+          giveawayQuantity,
+          customGiveaway,
+        },
+      };
+      sessionStorage.setItem(LIVE_DRAFT_KEY, JSON.stringify(payload));
+      sessionStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
+      try {
+        localStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
+        localStorage.setItem(LIVE_DRAFT_KEY, JSON.stringify(payload));
+      } catch {
+        // ignore (storage may be unavailable)
       }
+    } catch (error) {
+      console.error("Failed to persist draft for picker:", error);
+    }
+  }, [
+    step,
+    draft,
+    externalAssets,
+    activeFeaturedItemId,
+    activeFeaturedItemKey,
+    giveawayPanelOpen,
+    giveawayAddMode,
+    giveawayLinkedItemId,
+    giveawayQuantity,
+    customGiveaway,
+  ]);
 
-      if (saved?.step && STEPS.some((s) => s.key === saved.step)) {
-        setStep(saved.step as StepKey);
+  // Persist draft locally so it survives refresh and can be read by Live Studio later (no backend dependency).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const t = window.setTimeout(() => {
+      try {
+        const payload = {
+          ts: Date.now(),
+          step,
+          draft,
+          externalAssets,
+          activeFeaturedItemId,
+          activeFeaturedItemKey,
+          giveawayUi: {
+            giveawayPanelOpen,
+            giveawayAddMode,
+            giveawayLinkedItemId,
+            giveawayQuantity,
+            customGiveaway,
+          },
+        };
+        localStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
+        // Keep the builder key in sync for other pages that may read it.
+        localStorage.setItem(LIVE_DRAFT_KEY, JSON.stringify(payload));
+        sessionStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
+      } catch {
+        // ignore (storage may be unavailable)
       }
-      if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
-      if (
-        options.restoreSelection &&
-        typeof saved?.activeFeaturedItemId === "string"
-      ) {
-        setActiveFeaturedItemId(saved.activeFeaturedItemId);
-      }
-      if (
-        options.restoreSelection &&
-        typeof saved?.activeFeaturedItemKey === "string"
-      ) {
-        setActiveFeaturedItemKey(saved.activeFeaturedItemKey);
-      }
+    }, 180);
+    return () => window.clearTimeout(t);
+  }, [
+    step,
+    draft,
+    externalAssets,
+    activeFeaturedItemId,
+    activeFeaturedItemKey,
+    giveawayPanelOpen,
+    giveawayAddMode,
+    giveawayLinkedItemId,
+    giveawayQuantity,
+    customGiveaway,
+  ]);
 
-      const ui = saved?.giveawayUi;
-      if (ui && typeof ui === "object") {
-        if (typeof (ui as any).giveawayPanelOpen === "boolean") {
-          setGiveawayPanelOpen(Boolean((ui as any).giveawayPanelOpen));
-        }
-        if (
-          (ui as any).giveawayAddMode === "featured" ||
-          (ui as any).giveawayAddMode === "custom"
-        ) {
-          setGiveawayAddMode((ui as any).giveawayAddMode);
-        }
-        if (typeof (ui as any).giveawayLinkedItemId === "string") {
-          setGiveawayLinkedItemId((ui as any).giveawayLinkedItemId);
-        }
-        if (typeof (ui as any).giveawayQuantity === "string") {
-          setGiveawayQuantity((ui as any).giveawayQuantity);
-        }
-
-        const cg = (ui as any).customGiveaway;
-        if (cg && typeof cg === "object") {
-          setCustomGiveaway({
-            presetId: typeof cg.presetId === "string" ? cg.presetId : "",
-            quantity: typeof cg.quantity === "string" ? cg.quantity : "1",
-          });
-        }
-      }
-    },
-    [],
-  );
-
-  const syncSessionUrl = useCallback(
-    (nextSessionId: string) => {
-      if (typeof window === "undefined" || !nextSessionId) return;
-      const u = new URL(window.location.href);
-      u.searchParams.set("sessionId", nextSessionId);
-      if (prefillDealId) {
-        u.searchParams.set("dealId", prefillDealId);
-      }
-      const qs = u.searchParams.toString();
-      window.history.replaceState({}, "", u.pathname + (qs ? `?${qs}` : ""));
-    },
-    [prefillDealId],
-  );
-
-  const buildReturnToUrl = useCallback(
-    (targetSessionId?: string): string => {
-      const u = new URL(ROUTES.liveBuilder, window.location.origin);
-      const effectiveSessionId = targetSessionId || sessionId || draft.id;
-      if (effectiveSessionId) {
-        u.searchParams.set("sessionId", effectiveSessionId);
-      }
-      if (prefillDealId) {
-        u.searchParams.set("dealId", prefillDealId);
-      }
-      u.searchParams.set("restore", "1");
-      u.searchParams.set("step", step);
-      u.searchParams.delete("assetId");
-      u.searchParams.delete("applyTo");
-      return u.pathname + `?${u.searchParams.toString()}`;
-    },
-    [draft.id, prefillDealId, sessionId, step],
-  );
+  const buildReturnToUrl = useCallback((): string => {
+    const u = new URL(window.location.href);
+    u.searchParams.set("restore", "1");
+    u.searchParams.set("step", step);
+    // Clean any previous picker params
+    u.searchParams.delete("assetId");
+    u.searchParams.delete("applyTo");
+    const qs = u.searchParams.toString();
+    return u.pathname + (qs ? `?${qs}` : "");
+  }, [step]);
 
   const openAssetLibraryPicker = useCallback(
-    async (applyTo?: string) => {
+    (applyTo?: string) => {
       if (typeof window === "undefined") return;
-      const saved = await persistDraftToBackend();
-      syncSessionUrl(saved.id);
-      const returnTo = buildReturnToUrl(saved.id);
+      persistDraftForPicker();
+      const returnTo = buildReturnToUrl();
 
       const picker = new URL("/asset-library", window.location.origin);
       picker.searchParams.set("mode", "picker");
       picker.searchParams.set("target", "live");
-      picker.searchParams.set("dealId", prefillDealId || saved.id);
+      picker.searchParams.set("dealId", prefillDealId || draft.id);
       if (applyTo) picker.searchParams.set("applyTo", applyTo);
       picker.searchParams.set("returnTo", returnTo);
       window.location.assign(picker.toString());
     },
-    [buildReturnToUrl, persistDraftToBackend, prefillDealId, syncSessionUrl],
-  );
-
-  const launchAssetLibraryPicker = useCallback(
-    (applyTo?: string) => {
-      void openAssetLibraryPicker(applyTo).catch((error) => {
-        console.error("Failed to open Asset Library picker", error);
-        showError("Unable to open Asset Library right now.");
-      });
-    },
-    [openAssetLibraryPicker, showError],
+    [persistDraftForPicker, buildReturnToUrl, prefillDealId, draft.id],
   );
 
   const coerceOwner = useCallback(
@@ -4530,60 +4158,131 @@ export function LiveBuilderView({
     [activeFeaturedItemId],
   );
 
-  useEffect(() => {
-    if (!sessionId) return;
-    if (hasHydratedPersistedRef.current) return;
-    if (liveBuilderSessionQuery.isLoading || liveBuilderSessionQuery.isFetching) {
-      return;
-    }
-
-    const persisted = liveBuilderSessionQuery.data;
-    const savedState = persisted?.builderState;
-    if (savedState && typeof savedState === "object" && savedState.draft) {
-      hydrateSavedLiveBuilder(savedState, { restoreSelection: true });
-      if (persisted?.id) {
-        setSessionId(persisted.id);
-        syncSessionUrl(persisted.id);
-      }
-    }
-
-    hasHydratedPersistedRef.current = true;
-  }, [
-    hydrateSavedLiveBuilder,
-    liveBuilderSessionQuery.data,
-    liveBuilderSessionQuery.isFetching,
-    liveBuilderSessionQuery.isLoading,
-    sessionId,
-    syncSessionUrl,
-  ]);
+  const crewOk = useMemo(() => {
+    // Mock logic: Sarah A. (mod_1) has a conflict
+    const allCrew = [...draft.team.moderators, ...draft.team.cohosts];
+    return !allCrew.some((m) => m.id === "mod_1");
+  }, [draft.team.moderators, draft.team.cohosts]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const sp = new URLSearchParams(window.location.search);
     const shouldRestore = sp.get("restore") === "1" || sp.has("assetId");
+
     const stepParam = sp.get("step");
     if (stepParam && STEPS.some((s) => s.key === stepParam)) {
       setStep(stepParam as StepKey);
     }
 
-    const waitingForPersistedState =
-      shouldRestore &&
-      Boolean(sessionId) &&
-      !liveBuilderSessionQuery.data?.builderState &&
-      !persistedSessionMissing &&
-      (liveBuilderSessionQuery.isLoading || liveBuilderSessionQuery.isFetching);
+    const readSaved = () => {
+      try {
+        const raw = shouldRestore
+          ? sessionStorage.getItem(LIVE_DRAFT_KEY) ||
+          sessionStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
+          localStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
+          localStorage.getItem(LIVE_DRAFT_KEY)
+          : localStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
+          localStorage.getItem(LIVE_DRAFT_KEY) ||
+          sessionStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
+          sessionStorage.getItem(LIVE_DRAFT_KEY);
 
-    if (waitingForPersistedState) {
-      return;
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    };
+
+    const hydrate = (saved: any) => {
+      if (!saved || typeof saved !== "object") return;
+
+      if (saved?.draft) {
+        const restored = saved.draft as LiveSessionDraft;
+
+        const rawGiveaways = Array.isArray((restored as any).giveaways)
+          ? ((restored as any).giveaways as any[])
+          : [];
+        const normalizedGiveaways: LiveGiveaway[] = rawGiveaways.map(
+          (g: any, idx: number) => ({
+            id: typeof g?.id === "string" && g.id ? g.id : `gw_${idx}`,
+            linkedItemId:
+              typeof g?.linkedItemId === "string" ? g.linkedItemId : undefined,
+            title: typeof g?.title === "string" ? g.title : undefined,
+            imageUrl: typeof g?.imageUrl === "string" ? g.imageUrl : undefined,
+            notes: typeof g?.notes === "string" ? g.notes : undefined,
+            showOnPromo:
+              typeof g?.showOnPromo === "boolean" ? g.showOnPromo : true,
+            quantity:
+              typeof g?.quantity === "number" && g.quantity > 0
+                ? Math.floor(g.quantity)
+                : 1,
+          }),
+        );
+
+        setDraft({
+          ...restored,
+          giveaways: normalizedGiveaways,
+          teleprompterScript:
+            typeof (restored as any).teleprompterScript === "string"
+              ? (restored as any).teleprompterScript
+              : "",
+        });
+      }
+
+      if (saved?.step && STEPS.some((s) => s.key === saved.step)) {
+        setStep(saved.step as StepKey);
+      }
+      if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
+      if (shouldRestore && typeof saved?.activeFeaturedItemId === "string")
+        setActiveFeaturedItemId(saved.activeFeaturedItemId);
+      if (shouldRestore && typeof saved?.activeFeaturedItemKey === "string")
+        setActiveFeaturedItemKey(saved.activeFeaturedItemKey);
+
+      const ui = saved?.giveawayUi;
+      if (ui && typeof ui === "object") {
+        if (typeof (ui as any).giveawayPanelOpen === "boolean")
+          setGiveawayPanelOpen(Boolean((ui as any).giveawayPanelOpen));
+        if (
+          (ui as any).giveawayAddMode === "featured" ||
+          (ui as any).giveawayAddMode === "custom"
+        )
+          setGiveawayAddMode((ui as any).giveawayAddMode);
+        if (typeof (ui as any).giveawayLinkedItemId === "string")
+          setGiveawayLinkedItemId((ui as any).giveawayLinkedItemId);
+        if (typeof (ui as any).giveawayQuantity === "string")
+          setGiveawayQuantity((ui as any).giveawayQuantity);
+
+        const cg = (ui as any).customGiveaway;
+        if (cg && typeof cg === "object") {
+          setCustomGiveaway({
+            presetId: typeof cg.presetId === "string" ? cg.presetId : "",
+            quantity: typeof cg.quantity === "string" ? cg.quantity : "1",
+          });
+        }
+      }
+    };
+
+    const saved = readSaved();
+    if (saved?.draft) {
+      const restored = saved.draft as LiveSessionDraft;
+
+      // Avoid clobbering an explicitly requested sessionId with some other saved draft.
+      if (
+        shouldRestore ||
+        !initialSessionId ||
+        (restored as any).id === initialSessionId
+      ) {
+        hydrate(saved);
+      }
     }
 
     const assetId = sp.get("assetId") || "";
     const applyTo = sp.get("applyTo") || "";
 
-    if (assetId && !hasAppliedPickerReturnRef.current) {
+    if (assetId) {
       try {
-        const pickRaw = window.sessionStorage.getItem(ASSET_PICK_KEY);
+        const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
         if (pickRaw) {
           const parsed = JSON.parse(pickRaw);
           const payload = parsed?.payload || parsed;
@@ -4591,8 +4290,8 @@ export function LiveBuilderView({
             const a = toLiveAsset(payload);
             if (a) {
               setExternalAssets((prevMap) => ({ ...prevMap, [a.id]: a }));
+
               setDraft((prev) => applyPickedAssetToDraft(prev, a, applyTo));
-              hasAppliedPickerReturnRef.current = true;
             }
           }
         }
@@ -4607,23 +4306,13 @@ export function LiveBuilderView({
       clean.searchParams.delete("applyTo");
       clean.searchParams.delete("restore");
       const qs = clean.searchParams.toString();
-      window.history.replaceState({}, "", clean.pathname + (qs ? `?${qs}` : ""));
+      window.history.replaceState(
+        {},
+        "",
+        clean.pathname + (qs ? `?${qs}` : ""),
+      );
     }
-  }, [
-    applyPickedAssetToDraft,
-    liveBuilderSessionQuery.data,
-    liveBuilderSessionQuery.isFetching,
-    liveBuilderSessionQuery.isLoading,
-    persistedSessionMissing,
-    sessionId,
-    toLiveAsset,
-  ]);
-
-  const crewOk = useMemo(() => {
-    // Mock logic: Sarah A. (mod_1) has a conflict
-    const allCrew = [...draft.team.moderators, ...draft.team.cohosts];
-    return !allCrew.some((m) => m.id === "mod_1");
-  }, [draft.team.moderators, draft.team.cohosts]);
+  }, [applyPickedAssetToDraft, toLiveAsset, initialSessionId, showError]);
 
   const canPublish =
     setupOk &&
@@ -4762,44 +4451,6 @@ export function LiveBuilderView({
 
   const availableItemsForPins = useMemo(() => draft.products, [draft.products]);
 
-  const handleSaveLiveDraft = useCallback(() => {
-    void run(
-      async () => persistDraftToBackend(),
-      {
-        successMessage: "Draft saved successfully!",
-        errorMessage: "Could not save this live session draft.",
-        delay: 0,
-      },
-    );
-  }, [persistDraftToBackend, run]);
-
-  const handlePublishLiveDraft = useCallback(() => {
-    if (!canPublish) return;
-    void run(
-      async () => {
-        const published = await publishDraftToBackend();
-        setShowSharePanel(true);
-        return published;
-      },
-      {
-        successMessage: "Success! Your session is now visible to followers.",
-        errorMessage: "Could not publish this live session yet.",
-        delay: 0,
-      },
-    );
-  }, [canPublish, publishDraftToBackend, run]);
-
-  const handleOpenLiveStudio = useCallback(() => {
-    void run(
-      async () => openLiveStudio(),
-      {
-        errorMessage: "Could not open Live Studio.",
-        showSuccess: false,
-        delay: 0,
-      },
-    );
-  }, [openLiveStudio, run]);
-
   return (
     <div className="space-y-4 pb-28 sm:pb-20" style={{ overflowAnchor: "none" }}>
       {/* Header */}
@@ -4850,11 +4501,17 @@ export function LiveBuilderView({
           ) : null}
 
           <SoftButton
-            onClick={handleSaveLiveDraft}
-            disabled={isPersisting}
+            onClick={() =>
+              run(async () => {
+                persistDraftForPicker();
+              }, {
+                successMessage: "Draft saved successfully!",
+              })
+            }
+            disabled={isPending}
             title="Save"
           >
-            {isPersisting ? (
+            {isPending ? (
               <CircularProgress size={14} color="inherit" />
             ) : (
               <CheckCircle2 className="h-4 w-4" />
@@ -4863,13 +4520,23 @@ export function LiveBuilderView({
           </SoftButton>
 
           <PrimaryButton
-            disabled={!canPublish || isPersisting}
-            onClick={handlePublishLiveDraft}
+            disabled={!canPublish || isPending}
+            onClick={() =>
+              run(
+                async () => {
+                  setDraft((d) => ({ ...d, status: "Scheduled" }));
+                },
+                {
+                  successMessage: "Session published/scheduled!",
+                  delay: 1500,
+                },
+              )
+            }
             title={
               !canPublish ? "Complete preflight to publish" : "Publish session"
             }
           >
-            {isPersisting ? (
+            {isPending ? (
               <CircularProgress size={14} color="inherit" />
             ) : (
               <Zap className="h-4 w-4" />
@@ -5225,7 +4892,7 @@ export function LiveBuilderView({
                       />
                     </div>
                     <SoftButton
-                      onClick={() => launchAssetLibraryPicker("promoHeroVideo")}
+                      onClick={() => openAssetLibraryPicker("promoHeroVideo")}
                     >
                       <ImageIcon className="h-4 w-4" /> Pick from Asset Library
                     </SoftButton>
@@ -5248,7 +4915,7 @@ export function LiveBuilderView({
                       />
                     </div>
                     <SoftButton
-                      onClick={() => launchAssetLibraryPicker("promoHeroImage")}
+                      onClick={() => openAssetLibraryPicker("promoHeroImage")}
                     >
                       <ImageIcon className="h-4 w-4" /> Pick hero image
                     </SoftButton>
@@ -5375,7 +5042,7 @@ export function LiveBuilderView({
                                     e.stopPropagation();
                                     setActiveFeaturedItemId(it.id);
                                     setActiveFeaturedItemKey(rowKey);
-                                    launchAssetLibraryPicker(
+                                    openAssetLibraryPicker(
                                       `itemPoster:${it.id}`,
                                     );
                                   }}
@@ -5390,7 +5057,7 @@ export function LiveBuilderView({
                                     e.stopPropagation();
                                     setActiveFeaturedItemId(it.id);
                                     setActiveFeaturedItemKey(rowKey);
-                                    launchAssetLibraryPicker(
+                                    openAssetLibraryPicker(
                                       `itemVideo:${it.id}`,
                                     );
                                   }}
@@ -5476,9 +5143,9 @@ export function LiveBuilderView({
                                     products: d.products.map((x, i) =>
                                       i === idx
                                         ? {
-                                            ...x,
-                                            badge: nextBadge || undefined,
-                                          }
+                                          ...x,
+                                          badge: nextBadge || undefined,
+                                        }
                                         : x,
                                     ),
                                   }));
@@ -5585,10 +5252,10 @@ export function LiveBuilderView({
                                       <div className="mt-2 text-[15px] font-semibold tracking-[-0.01em] text-slate-900 dark:text-slate-100">
                                         {hasGoal
                                           ? formatGoalTarget(
-                                              goalMetric,
-                                              it.goalTarget!,
-                                              it.kind,
-                                            )
+                                            goalMetric,
+                                            it.goalTarget!,
+                                            it.kind,
+                                          )
                                           : "No goal set yet"}
                                       </div>
                                       <div className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
@@ -5650,10 +5317,10 @@ export function LiveBuilderView({
                                                         (x, i) =>
                                                           i === idx
                                                             ? {
-                                                                ...x,
-                                                                goalMetric:
-                                                                  opt.value,
-                                                              }
+                                                              ...x,
+                                                              goalMetric:
+                                                                opt.value,
+                                                            }
                                                             : x,
                                                       ),
                                                     }));
@@ -5701,10 +5368,10 @@ export function LiveBuilderView({
                                               value={
                                                 hasGoal
                                                   ? String(
-                                                      Math.floor(
-                                                        it.goalTarget!,
-                                                      ),
-                                                    )
+                                                    Math.floor(
+                                                      it.goalTarget!,
+                                                    ),
+                                                  )
                                                   : ""
                                               }
                                               onChange={(e) => {
@@ -5718,18 +5385,18 @@ export function LiveBuilderView({
                                                     (x, i) =>
                                                       i === idx
                                                         ? {
-                                                            ...x,
-                                                            goalMetric:
-                                                              x.goalMetric ||
-                                                              getDefaultGoalMetric(
-                                                                x.kind,
-                                                              ),
-                                                            goalTarget: cleaned
-                                                              ? parseQuantity(
-                                                                  cleaned,
-                                                                ) || undefined
-                                                              : undefined,
-                                                          }
+                                                          ...x,
+                                                          goalMetric:
+                                                            x.goalMetric ||
+                                                            getDefaultGoalMetric(
+                                                              x.kind,
+                                                            ),
+                                                          goalTarget: cleaned
+                                                            ? parseQuantity(
+                                                              cleaned,
+                                                            ) || undefined
+                                                            : undefined,
+                                                        }
                                                         : x,
                                                   ),
                                                 }));
@@ -5756,9 +5423,9 @@ export function LiveBuilderView({
                                                   (x, i) =>
                                                     i === idx
                                                       ? {
-                                                          ...x,
-                                                          goalTarget: undefined,
-                                                        }
+                                                        ...x,
+                                                        goalTarget: undefined,
+                                                      }
                                                       : x,
                                                 ),
                                               }));
@@ -5790,14 +5457,14 @@ export function LiveBuilderView({
                                                       (x, i) =>
                                                         i === idx
                                                           ? {
-                                                              ...x,
-                                                              goalMetric:
-                                                                x.goalMetric ||
-                                                                getDefaultGoalMetric(
-                                                                  x.kind,
-                                                                ),
-                                                              goalTarget: preset,
-                                                            }
+                                                            ...x,
+                                                            goalMetric:
+                                                              x.goalMetric ||
+                                                              getDefaultGoalMetric(
+                                                                x.kind,
+                                                              ),
+                                                            goalTarget: preset,
+                                                          }
                                                           : x,
                                                     ),
                                                   }));
@@ -5847,10 +5514,10 @@ export function LiveBuilderView({
                                           <div className="mt-1 text-[12px] font-semibold text-slate-900 dark:text-slate-100">
                                             {hasGoal
                                               ? formatGoalTarget(
-                                                  goalMetric,
-                                                  it.goalTarget!,
-                                                  it.kind,
-                                                )
+                                                goalMetric,
+                                                it.goalTarget!,
+                                                it.kind,
+                                              )
                                               : "Optional"}
                                           </div>
                                         </div>
@@ -5946,7 +5613,7 @@ export function LiveBuilderView({
                           const showOnPromo = g.showOnPromo !== false;
                           const qty =
                             typeof (g as any).quantity === "number" &&
-                            (g as any).quantity > 0
+                              (g as any).quantity > 0
                               ? Math.floor((g as any).quantity)
                               : 1;
 
@@ -6084,32 +5751,60 @@ export function LiveBuilderView({
                             </div>
 
                             <div className="lg:min-w-0">
-                              <Label>Use for this session</Label>
-                              <QuantityStepper
-                                value={giveawayQuantity}
-                                onChange={setGiveawayQuantity}
-                                maxQuantity={featuredGiveawayAvailableQuantity}
-                                disabled={!draft.products.length || !selectedFeaturedGiveawayInventory || featuredGiveawayAvailableQuantity === 0}
-                              />
-                              <GiveawayInventoryInfo
-                                totalQuantity={selectedFeaturedGiveawayInventory?.totalQuantity}
-                                availableQuantity={selectedFeaturedGiveawayInventory?.availableQuantity}
-                                loading={liveCampaignGiveawayInventoryQuery.isLoading}
-                                emptyMessage={
-                                  !draft.products.length
-                                    ? "Add featured items first."
-                                    : "Supplier has not set a giveaway quantity for this featured item yet."
-                                }
-                              />
+                              <Label>Quantity</Label>
+                              <div className="mt-1 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                  onClick={() => {
+                                    const curr = parseQuantity(giveawayQuantity) || 1;
+                                    if (curr > 1) setGiveawayQuantity(String(curr - 1));
+                                  }}
+                                >
+                                  <Minus className="h-4 w-4" />
+                                </button>
+                                <input
+                                  value={giveawayQuantity}
+                                  onChange={(e) =>
+                                    setGiveawayQuantity(
+                                      sanitizeQuantityInput(e.target.value),
+                                    )
+                                  }
+                                  inputMode="numeric"
+                                  placeholder="1"
+                                  className="h-10 w-full px-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12px] text-center text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-amber-200 dark:focus:ring-amber-800 transition-colors"
+                                />
+                                <button
+                                  type="button"
+                                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                  onClick={() => {
+                                    const curr = parseQuantity(giveawayQuantity) || 0;
+                                    const product = draft.products.find(p => p.id === giveawayLinkedItemId);
+                                    const max = (product?.stock ?? 999) - (product?.claimedCount ?? 0);
+                                    if (curr < max) setGiveawayQuantity(String(curr + 1));
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              </div>
                               {!isFeaturedGiveawayQtyValid ? (
                                 <div className="mt-1 text-[11px] text-rose-600">
-                                  {featuredGiveawayAvailableQuantity === 0
-                                    ? "This featured item has no remaining giveaway quantity available."
-                                    : hasFeaturedSupplierQuantity
-                                      ? `Choose a quantity between 1 and ${featuredGiveawayAvailableQuantity}.`
-                                      : "Supplier quantity is required before this giveaway can be added."}
+                                  Quantity is required (min 1).
                                 </div>
                               ) : null}
+                              {isFeaturedGiveawayQtyValid && (() => {
+                                const q = parseQuantity(giveawayQuantity) || 0;
+                                const product = draft.products.find(p => p.id === giveawayLinkedItemId);
+                                const max = (product?.stock ?? 999) - (product?.claimedCount ?? 0);
+                                if (q > max) {
+                                  return (
+                                    <div className="mt-1 text-[11px] text-rose-600">
+                                      Exceeds available stock ({max}).
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
                             </div>
 
                             <div className="lg:self-start">
@@ -6121,21 +5816,21 @@ export function LiveBuilderView({
                                 disabled={
                                   !draft.products.length ||
                                   !giveawayLinkedItemId ||
-                                  !isFeaturedGiveawayQtyValid
+                                  !isFeaturedGiveawayQtyValid ||
+                                  (parseQuantity(giveawayQuantity) || 0) > ((draft.products.find(p => p.id === giveawayLinkedItemId)?.stock ?? 999) - (draft.products.find(p => p.id === giveawayLinkedItemId)?.claimedCount ?? 0))
                                 }
                                 onClick={() => {
                                   if (!giveawayLinkedItemId) return;
                                   const qty = parseQuantity(giveawayQuantity);
+                                  const product = draft.products.find(p => p.id === giveawayLinkedItemId);
+                                  const maxAvailable = (product?.stock ?? 999) - (product?.claimedCount ?? 0);
+
                                   if (!qty) {
                                     showError("Quantity is required (min 1).");
                                     return;
                                   }
-                                  if (!selectedFeaturedGiveawayInventory) {
-                                    showError("Supplier quantity is not configured for this featured item yet.");
-                                    return;
-                                  }
-                                  if (qty > (selectedFeaturedGiveawayInventory.availableQuantity || 0)) {
-                                    showError(`Use a quantity between 1 and ${selectedFeaturedGiveawayInventory.availableQuantity}.`);
+                                  if (qty > maxAvailable) {
+                                    showError(`Quantity exceeds available stock (${maxAvailable}).`);
                                     return;
                                   }
                                   setDraft((d) => ({
@@ -6144,8 +5839,6 @@ export function LiveBuilderView({
                                       ...d.giveaways,
                                       {
                                         id: `gw_${Math.random().toString(16).slice(2, 7)}`,
-                                        source: "featured",
-                                        campaignGiveawayId: selectedFeaturedGiveawayInventory.id,
                                         linkedItemId: giveawayLinkedItemId,
                                         showOnPromo: true,
                                         quantity: qty,
@@ -6158,6 +5851,29 @@ export function LiveBuilderView({
                                 <Plus className="h-4 w-4" /> Add
                               </SoftButton>
                             </div>
+
+                            {giveawayLinkedItemId && (() => {
+                              const product = draft.products.find(p => p.id === giveawayLinkedItemId);
+                              const stock = product?.stock ?? 0;
+                              const claimed = product?.claimedCount ?? 0;
+                              const available = Math.max(0, stock - claimed);
+                              return (
+                                <div className="col-span-full mt-2 flex flex-col gap-1 border-t border-slate-100 dark:border-slate-800 pt-2">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-500 dark:text-slate-400">Total Giveaway Quantity (set by Supplier):</span>
+                                    <span className="font-bold text-slate-900 dark:text-slate-100">
+                                      {stock}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-500 dark:text-slate-400">Available Quantity (after deducting what has been given out already (if applicable)):</span>
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                      {available}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="mt-3 grid gap-3 lg:gap-2 lg:grid-cols-[minmax(0,1fr)_140px_140px] lg:items-start">
@@ -6196,37 +5912,70 @@ export function LiveBuilderView({
                             </div>
 
                             <div className="lg:self-start">
-                              <Label>Use for this session</Label>
-                              <QuantityStepper
-                                value={customGiveaway.quantity}
-                                onChange={(nextValue) =>
-                                  setCustomGiveaway((s) => ({
-                                    ...s,
-                                    quantity: nextValue,
-                                  }))
+                              <Label>Quantity</Label>
+                              <div className="mt-1 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                  onClick={() => {
+                                    const curr =
+                                      parseQuantity(customGiveaway.quantity) ||
+                                      1;
+                                    if (curr > 1) {
+                                      setCustomGiveaway((s) => ({
+                                        ...s,
+                                        quantity: String(curr - 1),
+                                      }));
+                                    }
+                                  }}
+                                >
+                                  <Minus className="h-4 w-4" />
+                                </button>
+                                <input
+                                  value={customGiveaway.quantity}
+                                  onChange={(e) =>
+                                    setCustomGiveaway((s) => ({
+                                      ...s,
+                                      quantity: sanitizeQuantityInput(
+                                        e.target.value,
+                                      ),
+                                    }))
+                                  }
+                                  inputMode="numeric"
+                                  className="h-10 w-full px-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12px] text-center text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-amber-200 dark:focus:ring-amber-800 transition-colors"
+                                />
+                                <button
+                                  type="button"
+                                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                  onClick={() => {
+                                    const curr =
+                                      parseQuantity(customGiveaway.quantity) ||
+                                      0;
+                                    const max =
+                                      (selectedCustomGiveawayPreset?.quantity || 999) - (selectedCustomGiveawayPreset?.claimedCount || 0);
+                                    if (curr < max) {
+                                      setCustomGiveaway((s) => ({
+                                        ...s,
+                                        quantity: String(curr + 1),
+                                      }));
+                                    }
+                                  }}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              </div>
+                              {isCustomGiveawayQtyValid && (() => {
+                                const q = parseQuantity(customGiveaway.quantity) || 0;
+                                const max = (selectedCustomGiveawayPreset?.quantity || 999) - (selectedCustomGiveawayPreset?.claimedCount || 0);
+                                if (q > max) {
+                                  return (
+                                    <div className="mt-1 text-[11px] text-rose-600">
+                                      Exceeds available stock ({max}).
+                                    </div>
+                                  );
                                 }
-                                maxQuantity={customGiveawayAvailableQuantity}
-                                disabled={!customGiveaway.presetId || !selectedCustomGiveawayInventory || customGiveawayAvailableQuantity === 0}
-                              />
-                              <GiveawayInventoryInfo
-                                totalQuantity={selectedCustomGiveawayInventory?.totalQuantity}
-                                availableQuantity={selectedCustomGiveawayInventory?.availableQuantity}
-                                loading={liveCampaignGiveawayInventoryQuery.isLoading}
-                                emptyMessage={
-                                  !supplierCustomGiveawayPresets.length
-                                    ? "No supplier-set custom giveaway items are available for this campaign yet."
-                                    : "Supplier quantity is not configured for this custom giveaway yet."
-                                }
-                              />
-                              {!isCustomGiveawayQtyValid ? (
-                                <div className="mt-1 text-[11px] text-rose-600">
-                                  {customGiveawayAvailableQuantity === 0
-                                    ? "This custom giveaway has no remaining quantity available."
-                                    : hasCustomSupplierQuantity
-                                      ? `Choose a quantity between 1 and ${customGiveawayAvailableQuantity}.`
-                                      : "Supplier quantity is required before this giveaway can be added."}
-                                </div>
-                              ) : null}
+                                return null;
+                              })()}
                             </div>
 
                             <div className="lg:self-start">
@@ -6238,7 +5987,8 @@ export function LiveBuilderView({
                                 disabled={
                                   !customGiveaway.presetId ||
                                   !supplierCustomGiveawayPresets.length ||
-                                  !isCustomGiveawayQtyValid
+                                  !isCustomGiveawayQtyValid ||
+                                  (parseQuantity(customGiveaway.quantity) || 0) > ((selectedCustomGiveawayPreset?.quantity || 999) - (selectedCustomGiveawayPreset?.claimedCount || 0))
                                 }
                                 onClick={() => {
                                   const preset =
@@ -6255,16 +6005,14 @@ export function LiveBuilderView({
                                   const qty = parseQuantity(
                                     customGiveaway.quantity,
                                   );
+                                  const maxAvailable = (preset.quantity || 999) - (preset.claimedCount || 0);
+
                                   if (!qty) {
                                     showError("Quantity is required (min 1).");
                                     return;
                                   }
-                                  if (!selectedCustomGiveawayInventory) {
-                                    showError("Supplier quantity is not configured for this custom giveaway yet.");
-                                    return;
-                                  }
-                                  if (qty > (selectedCustomGiveawayInventory.availableQuantity || 0)) {
-                                    showError(`Use a quantity between 1 and ${selectedCustomGiveawayInventory.availableQuantity}.`);
+                                  if (qty > maxAvailable) {
+                                    showError(`Quantity exceeds available stock (${maxAvailable}).`);
                                     return;
                                   }
                                   setDraft((d) => ({
@@ -6273,8 +6021,6 @@ export function LiveBuilderView({
                                       ...d.giveaways,
                                       {
                                         id: `gw_${Math.random().toString(16).slice(2, 7)}`,
-                                        source: "custom",
-                                        campaignGiveawayId: selectedCustomGiveawayInventory.id,
                                         title: preset.title,
                                         imageUrl: preset.imageUrl,
                                         notes: preset.notes,
@@ -6293,36 +6039,31 @@ export function LiveBuilderView({
                               </SoftButton>
                             </div>
 
-                            {selectedCustomGiveawayPreset ? (
-                              <div className="lg:col-span-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/40 p-2.5 flex items-center gap-3 transition-colors">
-                                <div className="h-14 w-14 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center ring-1 ring-slate-200 dark:ring-slate-700 shrink-0">
-                                  {selectedCustomGiveawayPreset.imageUrl ? (
-                                    <img
-                                      src={
-                                        selectedCustomGiveawayPreset.imageUrl
-                                      }
-                                      alt={selectedCustomGiveawayPreset.title}
-                                      className="h-full w-full object-cover"
-                                    />
-                                  ) : (
-                                    <Package className="h-5 w-5 text-slate-400 dark:text-slate-500" />
-                                  )}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
-                                    {selectedCustomGiveawayPreset.title}
+                            {selectedCustomGiveawayPreset && (() => {
+                              const stock = selectedCustomGiveawayPreset.quantity;
+                              const claimed = selectedCustomGiveawayPreset.claimedCount || 0;
+                              const available = Math.max(0, stock - claimed);
+                              return (
+                                <div className="col-span-full mt-2 flex flex-col gap-1 border-t border-slate-100 dark:border-slate-800 pt-2">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-500 dark:text-slate-400">
+                                      Total Giveaway Quantity (set by Supplier):
+                                    </span>
+                                    <span className="font-bold text-slate-900 dark:text-slate-100">
+                                      {stock}
+                                    </span>
                                   </div>
-                                  <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                                    Supplier preset • Use the stepper to choose how many to allocate to this live session.
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-500 dark:text-slate-400">
+                                      Available Quantity (after deducting what has been given out already (if applicable)):
+                                    </span>
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                      {available}
+                                    </span>
                                   </div>
-                                  {selectedCustomGiveawayPreset.notes ? (
-                                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
-                                      {selectedCustomGiveawayPreset.notes}
-                                    </div>
-                                  ) : null}
                                 </div>
-                              </div>
-                            ) : null}
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -6453,1034 +6194,1051 @@ export function LiveBuilderView({
                 </div>
               </div>
             </Card>
-          ) : null}
+          ) : null
+          }
 
-          {step === "creatives" ? (
-            <Card
-              title="Creatives"
-              subtitle="Attach approved assets (opener, lower third, overlays) from the Asset Library."
-            >
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 transition-colors">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
-                        Opener
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Plays at the start of the session.
-                      </div>
-                    </div>
-                    <SoftButton
-                      onClick={() => launchAssetLibraryPicker("opener")}
-                    >
-                      Browse <Wand2 className="h-4 w-4" />
-                    </SoftButton>
-                  </div>
-                  <div className="mt-3 aspect-[16/9] rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden grid place-items-center transition-colors">
-                    {openerAsset?.previewKind === "video" ? (
-                      <video
-                        className="w-full h-full object-cover"
-                        src={openerAsset?.previewUrl}
-                        controls
-                      />
-                    ) : openerAsset?.previewUrl ? (
-                      <img
-                        className="w-full h-full object-cover"
-                        src={openerAsset.previewUrl}
-                        alt={openerAsset?.name || "Opener"}
-                      />
-                    ) : (
-                      <div className="text-[12px] text-slate-500 dark:text-slate-400">
-                        No opener selected
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 transition-colors">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
-                        Lower third
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Ticker + price + countdown.
-                      </div>
-                    </div>
-                    <SoftButton
-                      onClick={() => launchAssetLibraryPicker("lowerThird")}
-                    >
-                      Browse <Wand2 className="h-4 w-4" />
-                    </SoftButton>
-                  </div>
-                  <div className="mt-3 aspect-[16/9] rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden grid place-items-center transition-colors">
-                    {lowerThirdAsset?.previewUrl ? (
-                      <img
-                        className="w-full h-full object-cover"
-                        src={lowerThirdAsset?.previewUrl}
-                        alt={lowerThirdAsset?.name || "Lower third"}
-                      />
-                    ) : (
-                      <div className="text-[12px] text-slate-500 dark:text-slate-400">
-                        No lower third selected
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 transition-colors">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
-                        Overlays
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        Multiple overlays allowed (price drop, proof,
-                        disclaimers).
-                      </div>
-                    </div>
-                    <SoftButton
-                      onClick={() => launchAssetLibraryPicker("overlay")}
-                    >
-                      Add overlay <Plus className="h-4 w-4" />
-                    </SoftButton>
-                  </div>
-
-                  <div className="mt-3 grid sm:grid-cols-3 gap-2">
-                    {overlayAssets.length ? (
-                      overlayAssets.map((a) => (
-                        <div
-                          key={a.id}
-                          className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden transition-colors"
-                        >
-                          <div className="aspect-[16/9] bg-slate-100 dark:bg-slate-800 transition-colors">
-                            {a.previewKind === "video" ? (
-                              <video
-                                className="w-full h-full object-cover"
-                                src={a.previewUrl}
-                                controls
-                              />
-                            ) : (
-                              <img
-                                className="w-full h-full object-cover"
-                                src={a.previewUrl}
-                                alt={a.name}
-                              />
-                            )}
-                          </div>
-                          <div className="p-2 flex items-center justify-between gap-2">
-                            <div className="text-[11px] font-semibold truncate text-slate-900 dark:text-slate-100">
-                              {a.name}
-                            </div>
-                            <button
-                              className="h-8 w-8 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 grid place-items-center transition-colors"
-                              title="Remove"
-                              onClick={() =>
-                                setDraft((d) => ({
-                                  ...d,
-                                  creatives: {
-                                    ...d.creatives,
-                                    overlayAssetIds:
-                                      d.creatives.overlayAssetIds.filter(
-                                        (id) => id !== a.id,
-                                      ),
-                                  },
-                                }))
-                              }
-                            >
-                              <X className="h-4 w-4 text-slate-700 dark:text-slate-300" />
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-[12px] text-slate-500 dark:text-slate-400 transition-colors">
-                        No overlays selected yet.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="sm:col-span-2 rounded-3xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-3 transition-colors">
-                  <div className="flex items-start gap-2">
-                    <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-300 mt-0.5" />
-                    <div>
-                      <div className="text-[12px] font-semibold text-emerald-900 dark:text-emerald-100">
-                        Approved assets only
-                      </div>
-                      <div className="text-[11px] text-emerald-800 dark:text-emerald-300 mt-0.5">
-                        Creators upload content → ops approves → assets become
-                        available here. Helps trust & compliance.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ) : null}
-
-          {step === "stream" ? (
-            <div className="space-y-4">
-              {/* 1. Destinations (Simulcast Platforms) */}
+          {
+            step === "creatives" ? (
               <Card
-                title="Destinations"
-                subtitle="Select which platforms will receive your live stream broadcast simultaneously."
+                title="Creatives"
+                subtitle="Attach approved assets (opener, lower third, overlays) from the Asset Library."
               >
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {(
-                    [
-                      "TikTok Live",
-                      "Instagram Live",
-                      "YouTube Live",
-                      "Facebook Live",
-                    ] as Exclude<LivePlatform, "Other">[]
-                  ).map((p) => (
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+                          Opener
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Plays at the start of the session.
+                        </div>
+                      </div>
+                      <SoftButton
+                        onClick={() => openAssetLibraryPicker("opener")}
+                      >
+                        Browse <Wand2 className="h-4 w-4" />
+                      </SoftButton>
+                    </div>
+                    <div className="mt-3 aspect-[16/9] rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden grid place-items-center transition-colors">
+                      {openerAsset?.previewKind === "video" ? (
+                        <video
+                          className="w-full h-full object-cover"
+                          src={openerAsset?.previewUrl}
+                          controls
+                        />
+                      ) : openerAsset?.previewUrl ? (
+                        <img
+                          className="w-full h-full object-cover"
+                          src={openerAsset.previewUrl}
+                          alt={openerAsset?.name || "Opener"}
+                        />
+                      ) : (
+                        <div className="text-[12px] text-slate-500 dark:text-slate-400">
+                          No opener selected
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+                          Lower third
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Ticker + price + countdown.
+                        </div>
+                      </div>
+                      <SoftButton
+                        onClick={() => openAssetLibraryPicker("lowerThird")}
+                      >
+                        Browse <Wand2 className="h-4 w-4" />
+                      </SoftButton>
+                    </div>
+                    <div className="mt-3 aspect-[16/9] rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 overflow-hidden grid place-items-center transition-colors">
+                      {lowerThirdAsset?.previewUrl ? (
+                        <img
+                          className="w-full h-full object-cover"
+                          src={lowerThirdAsset?.previewUrl}
+                          alt={lowerThirdAsset?.name || "Lower third"}
+                        />
+                      ) : (
+                        <div className="text-[12px] text-slate-500 dark:text-slate-400">
+                          No lower third selected
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-2 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+                          Overlays
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Multiple overlays allowed (price drop, proof,
+                          disclaimers).
+                        </div>
+                      </div>
+                      <SoftButton
+                        onClick={() => openAssetLibraryPicker("overlay")}
+                      >
+                        Add overlay <Plus className="h-4 w-4" />
+                      </SoftButton>
+                    </div>
+
+                    <div className="mt-3 grid sm:grid-cols-3 gap-2">
+                      {overlayAssets.length ? (
+                        overlayAssets.map((a) => (
+                          <div
+                            key={a.id}
+                            className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden transition-colors"
+                          >
+                            <div className="aspect-[16/9] bg-slate-100 dark:bg-slate-800 transition-colors">
+                              {a.previewKind === "video" ? (
+                                <video
+                                  className="w-full h-full object-cover"
+                                  src={a.previewUrl}
+                                  controls
+                                />
+                              ) : (
+                                <img
+                                  className="w-full h-full object-cover"
+                                  src={a.previewUrl}
+                                  alt={a.name}
+                                />
+                              )}
+                            </div>
+                            <div className="p-2 flex items-center justify-between gap-2">
+                              <div className="text-[11px] font-semibold truncate text-slate-900 dark:text-slate-100">
+                                {a.name}
+                              </div>
+                              <button
+                                className="h-8 w-8 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 grid place-items-center transition-colors"
+                                title="Remove"
+                                onClick={() =>
+                                  setDraft((d) => ({
+                                    ...d,
+                                    creatives: {
+                                      ...d.creatives,
+                                      overlayAssetIds:
+                                        d.creatives.overlayAssetIds.filter(
+                                          (id) => id !== a.id,
+                                        ),
+                                    },
+                                  }))
+                                }
+                              >
+                                <X className="h-4 w-4 text-slate-700 dark:text-slate-300" />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-[12px] text-slate-500 dark:text-slate-400 transition-colors">
+                          No overlays selected yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-2 rounded-3xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-3 transition-colors">
+                    <div className="flex items-start gap-2">
+                      <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-300 mt-0.5" />
+                      <div>
+                        <div className="text-[12px] font-semibold text-emerald-900 dark:text-emerald-100">
+                          Approved assets only
+                        </div>
+                        <div className="text-[11px] text-emerald-800 dark:text-emerald-300 mt-0.5">
+                          Creators upload content → ops approves → assets become
+                          available here. Helps trust & compliance.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ) : null
+          }
+
+          {
+            step === "stream" ? (
+              <div className="space-y-4">
+                {/* 1. Destinations (Simulcast Platforms) */}
+                <Card
+                  title="Destinations"
+                  subtitle="Select which platforms will receive your live stream broadcast simultaneously."
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {(
+                      [
+                        "TikTok Live",
+                        "Instagram Live",
+                        "YouTube Live",
+                        "Facebook Live",
+                      ] as Exclude<LivePlatform, "Other">[]
+                    ).map((p) => (
+                      <Toggle
+                        key={p}
+                        checked={Boolean(draft.stream.simulcast[p])}
+                        onChange={(v) =>
+                          setDraft((d) => ({
+                            ...d,
+                            stream: {
+                              ...d.stream,
+                              simulcast: { ...d.stream.simulcast, [p]: v },
+                            },
+                          }))
+                        }
+                        label={p}
+                      />
+                    ))}
+                  </div>
+                </Card>
+
+                {/* 2. Output Profile (RTMP Ingest) */}
+                <Card
+                  title="Output Profile"
+                  subtitle="Primary broadcast credentials for your streaming software (OBS, vMix, etc)."
+                  right={
+                    <div className="flex items-center gap-2">
+                      <SoftButton onClick={copyAllStreamCredentials}>
+                        <Copy className="h-4 w-4" /> Copy all
+                      </SoftButton>
+                    </div>
+                  }
+                >
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label>Ingest URL</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={draft.stream.ingestUrl}
+                          onChange={(v) =>
+                            setDraft((d) => ({
+                              ...d,
+                              stream: { ...d.stream, ingestUrl: v },
+                            }))
+                          }
+                          placeholder="rtmps://…"
+                        />
+                        <SoftButton
+                          className="mt-1"
+                          onClick={copyIngestUrl}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </SoftButton>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Stream key</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          value={draft.stream.streamKey}
+                          onChange={(v) =>
+                            setDraft((d) => ({
+                              ...d,
+                              stream: { ...d.stream, streamKey: v },
+                            }))
+                          }
+                          placeholder="sk_live_…"
+                        />
+                        <SoftButton
+                          className="mt-1"
+                          onClick={regenerateStreamKey}
+                        >
+                          <Sparkles className="h-4 w-4" />
+                        </SoftButton>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* 3. Advanced Settings */}
+                <Card
+                  title="Advanced Settings"
+                  subtitle="Configure technical behavior for the master stream and cloud recording."
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <Toggle
-                      key={p}
-                      checked={Boolean(draft.stream.simulcast[p])}
+                      checked={draft.stream.autoStart}
                       onChange={(v) =>
                         setDraft((d) => ({
                           ...d,
-                          stream: {
-                            ...d.stream,
-                            simulcast: { ...d.stream.simulcast, [p]: v },
-                          },
+                          stream: { ...d.stream, autoStart: v },
                         }))
                       }
-                      label={p}
+                      label="Auto-start"
+                      hint="Goes live as soon as data arrives."
                     />
-                  ))}
-                </div>
-              </Card>
-
-              {/* 2. Output Profile (RTMP Ingest) */}
-              <Card
-                title="Output Profile"
-                subtitle="Primary broadcast credentials for your streaming software (OBS, vMix, etc)."
-                right={
-                  <div className="flex items-center gap-2">
-                    <SoftButton onClick={copyAllStreamCredentials}>
-                      <Copy className="h-4 w-4" /> Copy all
-                    </SoftButton>
-                  </div>
-                }
-              >
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label>Ingest URL</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={draft.stream.ingestUrl}
-                        onChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            stream: { ...d.stream, ingestUrl: v },
-                          }))
-                        }
-                        placeholder="rtmps://…"
-                      />
-                      <SoftButton
-                        className="mt-1"
-                        onClick={copyIngestUrl}
-                      >
-                        <Copy className="h-4 w-4" />
-                      </SoftButton>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Stream key</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={draft.stream.streamKey}
-                        onChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            stream: { ...d.stream, streamKey: v },
-                          }))
-                        }
-                        placeholder="sk_live_…"
-                      />
-                      <SoftButton
-                        className="mt-1"
-                        onClick={regenerateStreamKey}
-                      >
-                        <Sparkles className="h-4 w-4" />
-                      </SoftButton>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-
-              {/* 3. Advanced Settings */}
-              <Card
-                title="Advanced Settings"
-                subtitle="Configure technical behavior for the master stream and cloud recording."
-              >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <Toggle
-                    checked={draft.stream.autoStart}
-                    onChange={(v) =>
-                      setDraft((d) => ({
-                        ...d,
-                        stream: { ...d.stream, autoStart: v },
-                      }))
-                    }
-                    label="Auto-start"
-                    hint="Goes live as soon as data arrives."
-                  />
-                  <Toggle
-                    checked={draft.stream.recording}
-                    onChange={(v) =>
-                      setDraft((d) => ({
-                        ...d,
-                        stream: { ...d.stream, recording: v },
-                      }))
-                    }
-                    label="Recording"
-                    hint="Save master replay to Asset Library."
-                  />
-                  <Toggle
-                    checked={draft.stream.lowLatency}
-                    onChange={(v) =>
-                      setDraft((d) => ({
-                        ...d,
-                        stream: { ...d.stream, lowLatency: v },
-                      }))
-                    }
-                    label="Low latency"
-                    hint="Improves real-time chat sync."
-                  />
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 transition-colors">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
-                    <div>
-                      <div className="text-[13px] font-bold text-amber-900 dark:text-amber-100">
-                        Broadcast Compliance
-                      </div>
-                      <div className="text-[11px] text-amber-800 dark:text-amber-300 mt-1 leading-relaxed">
-                        By going live, you confirm that all music and multimedia
-                        assets in the stream are properly licensed. Unlicensed
-                        content may result in immediate termination of the
-                        session.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          ) : null}
-
-          {step === "team" ? (
-            <Card
-              title="Team & moderation"
-              subtitle="Assign moderators, cohosts, and safety rules."
-            >
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
-                  <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                    <Users className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
-                    Moderators
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {draft.team.moderators.map((m) => (
-                      <div
-                        key={m.id}
-                        className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 flex items-center justify-between gap-2 transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
-                              {m.name}
-                            </div>
-                            {m.id === "mod_1" && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
-                                <AlertTriangle className="h-3 w-3" /> Conflict
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {m.email}
-                          </div>
-                        </div>
-                        <SoftButton
-                          onClick={() =>
-                            setDraft((d) => ({
-                              ...d,
-                              team: {
-                                ...d.team,
-                                moderators: d.team.moderators.filter(
-                                  (x) => x.id !== m.id,
-                                ),
-                              },
-                            }))
-                          }
-                        >
-                          Remove <X className="h-4 w-4" />
-                        </SoftButton>
-                      </div>
-                    ))}
-                    <SoftButton
-                      onClick={() =>
+                    <Toggle
+                      checked={draft.stream.recording}
+                      onChange={(v) =>
                         setDraft((d) => ({
                           ...d,
-                          team: {
-                            ...d.team,
-                            moderators: [
-                              ...d.team.moderators,
-                              {
-                                id: `md_${Math.random().toString(16).slice(2, 6)}`,
-                                name: "New mod",
-                                email: "new@mod.io",
-                              },
-                            ],
-                          },
+                          stream: { ...d.stream, recording: v },
                         }))
                       }
-                    >
-                      <Plus className="h-4 w-4" /> Add moderator
-                    </SoftButton>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
-                  <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                    <Mic className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
-                    Cohosts
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {draft.team.cohosts.map((c) => (
-                      <div
-                        key={c.id}
-                        className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 flex items-center justify-between gap-2 transition-colors"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
-                              {c.name}
-                            </div>
-                            {c.id === "mod_1" /* sharing key for demo */ && (
-                              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
-                                <AlertTriangle className="h-3 w-3" /> Conflict
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {c.handle || "—"}
-                          </div>
-                        </div>
-                        <SoftButton
-                          onClick={() =>
-                            setDraft((d) => ({
-                              ...d,
-                              team: {
-                                ...d.team,
-                                cohosts: d.team.cohosts.filter(
-                                  (x) => x.id !== c.id,
-                                ),
-                              },
-                            }))
-                          }
-                        >
-                          Remove <X className="h-4 w-4" />
-                        </SoftButton>
-                      </div>
-                    ))}
-                    <SoftButton
-                      onClick={() =>
+                      label="Recording"
+                      hint="Save master replay to Asset Library."
+                    />
+                    <Toggle
+                      checked={draft.stream.lowLatency}
+                      onChange={(v) =>
                         setDraft((d) => ({
                           ...d,
-                          team: {
-                            ...d.team,
-                            cohosts: [
-                              ...d.team.cohosts,
-                              {
-                                id: `ch_${Math.random().toString(16).slice(2, 6)}`,
-                                name: "New cohost",
-                                handle: "@cohost",
-                              },
-                            ],
-                          },
+                          stream: { ...d.stream, lowLatency: v },
                         }))
                       }
-                    >
-                      <Plus className="h-4 w-4" /> Add cohost
-                    </SoftButton>
+                      label="Low latency"
+                      hint="Improves real-time chat sync."
+                    />
                   </div>
-                </div>
 
-                <div className="sm:col-span-2 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
-                  <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                    <ShieldCheck className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
-                    Moderation rules
+                  <div className="mt-6 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <div>
+                        <div className="text-[13px] font-bold text-amber-900 dark:text-amber-100">
+                          Broadcast Compliance
+                        </div>
+                        <div className="text-[11px] text-amber-800 dark:text-amber-300 mt-1 leading-relaxed">
+                          By going live, you confirm that all music and multimedia
+                          assets in the stream are properly licensed. Unlicensed
+                          content may result in immediate termination of the
+                          session.
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="mt-3 grid sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label>Blocked terms (comma separated)</Label>
-                      <Input
-                        value={draft.team.blockedTerms.join(", ")}
-                        onChange={(v) =>
+                </Card>
+              </div>
+            ) : null
+          }
+
+          {
+            step === "team" ? (
+              <Card
+                title="Team & moderation"
+                subtitle="Assign moderators, cohosts, and safety rules."
+              >
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
+                    <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                      <Users className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
+                      Moderators
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {draft.team.moderators.map((m) => (
+                        <div
+                          key={m.id}
+                          className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 flex items-center justify-between gap-2 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+                                {m.name}
+                              </div>
+                              {m.id === "mod_1" && (
+                                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" /> Conflict
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {m.email}
+                            </div>
+                          </div>
+                          <SoftButton
+                            onClick={() =>
+                              setDraft((d) => ({
+                                ...d,
+                                team: {
+                                  ...d.team,
+                                  moderators: d.team.moderators.filter(
+                                    (x) => x.id !== m.id,
+                                  ),
+                                },
+                              }))
+                            }
+                          >
+                            Remove <X className="h-4 w-4" />
+                          </SoftButton>
+                        </div>
+                      ))}
+                      <SoftButton
+                        onClick={() =>
                           setDraft((d) => ({
                             ...d,
                             team: {
                               ...d.team,
-                              blockedTerms: v
-                                .split(",")
-                                .map((x) => x.trim())
-                                .filter(Boolean)
-                                .slice(0, 30),
+                              moderators: [
+                                ...d.team.moderators,
+                                {
+                                  id: `md_${Math.random().toString(16).slice(2, 6)}`,
+                                  name: "New mod",
+                                  email: "new@mod.io",
+                                },
+                              ],
                             },
                           }))
                         }
-                        placeholder="guaranteed, miracle, …"
-                      />
+                      >
+                        <Plus className="h-4 w-4" /> Add moderator
+                      </SoftButton>
                     </div>
-                    <div className="flex items-end">
-                      <Toggle
-                        checked={draft.team.pinnedGuidelines}
-                        onChange={(v) =>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
+                    <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                      <Mic className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
+                      Cohosts
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {draft.team.cohosts.map((c) => (
+                        <div
+                          key={c.id}
+                          className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 flex items-center justify-between gap-2 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
+                                {c.name}
+                              </div>
+                              {c.id === "mod_1" /* sharing key for demo */ && (
+                                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
+                                  <AlertTriangle className="h-3 w-3" /> Conflict
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                              {c.handle || "—"}
+                            </div>
+                          </div>
+                          <SoftButton
+                            onClick={() =>
+                              setDraft((d) => ({
+                                ...d,
+                                team: {
+                                  ...d.team,
+                                  cohosts: d.team.cohosts.filter(
+                                    (x) => x.id !== c.id,
+                                  ),
+                                },
+                              }))
+                            }
+                          >
+                            Remove <X className="h-4 w-4" />
+                          </SoftButton>
+                        </div>
+                      ))}
+                      <SoftButton
+                        onClick={() =>
                           setDraft((d) => ({
                             ...d,
-                            team: { ...d.team, pinnedGuidelines: v },
+                            team: {
+                              ...d.team,
+                              cohosts: [
+                                ...d.team.cohosts,
+                                {
+                                  id: `ch_${Math.random().toString(16).slice(2, 6)}`,
+                                  name: "New cohost",
+                                  handle: "@cohost",
+                                },
+                              ],
+                            },
                           }))
                         }
-                        label="Pinned guidelines"
-                        hint="Shows rules in the live chat."
-                      />
+                      >
+                        <Plus className="h-4 w-4" /> Add cohost
+                      </SoftButton>
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-2 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
+                    <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                      <ShieldCheck className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
+                      Moderation rules
+                    </div>
+                    <div className="mt-3 grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <Label>Blocked terms (comma separated)</Label>
+                        <Input
+                          value={draft.team.blockedTerms.join(", ")}
+                          onChange={(v) =>
+                            setDraft((d) => ({
+                              ...d,
+                              team: {
+                                ...d.team,
+                                blockedTerms: v
+                                  .split(",")
+                                  .map((x) => x.trim())
+                                  .filter(Boolean)
+                                  .slice(0, 30),
+                              },
+                            }))
+                          }
+                          placeholder="guaranteed, miracle, …"
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <Toggle
+                          checked={draft.team.pinnedGuidelines}
+                          onChange={(v) =>
+                            setDraft((d) => ({
+                              ...d,
+                              team: { ...d.team, pinnedGuidelines: v },
+                            }))
+                          }
+                          label="Pinned guidelines"
+                          hint="Shows rules in the live chat."
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </Card>
-          ) : null}
+              </Card>
+            ) : null
+          }
 
-          {step === "schedule" ? (
-            <Card
-              title="Schedule"
-              subtitle="Select Duration first, then choose either Start or End (timezone-aware). The other side auto-calculates and can roll dates across midnight."
-            >
-              <div className="space-y-4">
-                {/* Duration first (required flow) */}
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div className="min-w-0">
-                      <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
-                        Duration
-                      </div>
-                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                        Select a preset (or choose Custom). Your {rankTier} tier
-                        allows up to {tierMaxHoursLabel}. When duration is set,
-                        you only need to set either Start or End.
-                      </div>
-                    </div>
-
-                    <div className="w-full md:w-[320px]">
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                        Time zone
-                      </div>
-                      <select
-                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-slate-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
-                        value={
-                          TIMEZONE_PRESETS.some(
-                            (o) => o.id === draft.timezoneLabel,
-                          )
-                            ? draft.timezoneLabel
-                            : "__custom__"
-                        }
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === "__custom__") return;
-                          recomputeSchedule({ timezoneLabel: v });
-                        }}
-                      >
-                        {TIMEZONE_PRESETS.map((o) => (
-                          <option key={o.id} value={o.id}>
-                            {o.label}
-                          </option>
-                        ))}
-                        <option value="__custom__">Custom…</option>
-                      </select>
-
-                      {!TIMEZONE_PRESETS.some(
-                        (o) => o.id === draft.timezoneLabel,
-                      ) ? (
-                        <div className="mt-2">
-                          <input
-                            value={draft.timezoneLabel}
-                            onChange={(e) =>
-                              recomputeSchedule({
-                                timezoneLabel: e.target.value,
-                              })
-                            }
-                            className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-slate-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
-                            placeholder="Type an IANA time zone e.g. Africa/Kampala"
-                          />
-                          {!isValidTimeZone(draft.timezoneLabel) ? (
-                            <div className="mt-1 text-xs font-bold text-amber-700 dark:text-amber-400">
-                              Invalid time zone. Using Local for calculations
-                              until fixed.
-                            </div>
-                          ) : null}
+          {
+            step === "schedule" ? (
+              <Card
+                title="Schedule"
+                subtitle="Select Duration first, then choose either Start or End (timezone-aware). The other side auto-calculates and can roll dates across midnight."
+              >
+                <div className="space-y-4">
+                  {/* Duration first (required flow) */}
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                          Duration
                         </div>
-                      ) : null}
-
-                      <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                        Times are scheduled in this time zone. Viewers may see
-                        local conversions on their devices.
+                        <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                          Select a preset (or choose Custom). Your {rankTier} tier
+                          allows up to {tierMaxHoursLabel}. When duration is set,
+                          you only need to set either Start or End.
+                        </div>
                       </div>
-                    </div>
-                  </div>
 
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      I will set:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        recomputeSchedule({ scheduleAnchor: "start" })
-                      }
-                      className={cx(
-                        "rounded-full px-3 py-1 text-xs font-extrabold transition",
-                        draft.scheduleAnchor === "start"
-                          ? "bg-[#f77f00] text-white"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700",
-                      )}
-                    >
-                      Start time
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        recomputeSchedule({ scheduleAnchor: "end" })
-                      }
-                      className={cx(
-                        "rounded-full px-3 py-1 text-xs font-extrabold transition",
-                        draft.scheduleAnchor === "end"
-                          ? "bg-[#f77f00] text-white"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700",
-                      )}
-                    >
-                      End time
-                    </button>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 ml-1">
-                      {draft.scheduleAnchor === "start"
-                        ? "Auto-calculates End"
-                        : "Auto-calculates Start"}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                        Preset
-                      </div>
-                      <select
-                        className="mt-1 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-slate-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
-                        value={
-                          draft.durationMode === "preset"
-                            ? draft.durationMinutes
-                            : "custom"
-                        }
-                        onChange={(e) => {
-                          if (e.target.value === "custom") {
-                            recomputeSchedule({ durationMode: "custom" });
-                          } else {
-                            recomputeSchedule({
-                              durationMode: "preset",
-                              durationMinutes: parseInt(e.target.value, 10),
-                            });
+                      <div className="w-full md:w-[320px]">
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Time zone
+                        </div>
+                        <select
+                          className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-slate-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
+                          value={
+                            TIMEZONE_PRESETS.some(
+                              (o) => o.id === draft.timezoneLabel,
+                            )
+                              ? draft.timezoneLabel
+                              : "__custom__"
                           }
-                        }}
-                      >
-                        {DURATION_PRESETS.map((m) => (
-                          <option key={m} value={String(m)}>
-                            {m} minutes
-                          </option>
-                        ))}
-                        <option value="custom">Custom…</option>
-                      </select>
-                    </div>
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__custom__") return;
+                            recomputeSchedule({ timezoneLabel: v });
+                          }}
+                        >
+                          {TIMEZONE_PRESETS.map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.label}
+                            </option>
+                          ))}
+                          <option value="__custom__">Custom…</option>
+                        </select>
 
-                    <div className="rounded-2xl bg-slate-50 dark:bg-slate-950 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition-colors">
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                        Custom duration
-                      </div>
-                      <div className="mt-1">
-                        {draft.durationMode === "custom" ? (
-                          <div className="flex items-center gap-2">
+                        {!TIMEZONE_PRESETS.some(
+                          (o) => o.id === draft.timezoneLabel,
+                        ) ? (
+                          <div className="mt-2">
                             <input
-                              type="number"
-                              min={15}
-                              max={tierMaxMinutes}
-                              step={1}
-                              value={draft.durationMinutes}
+                              value={draft.timezoneLabel}
                               onChange={(e) =>
                                 recomputeSchedule({
-                                  durationMode: "custom",
-                                  durationMinutes: clampDurationMinutes(
-                                    parseInt(e.target.value || "60", 10),
-                                  ),
+                                  timezoneLabel: e.target.value,
                                 })
                               }
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-2 py-1 text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 dark:[color-scheme:dark]"
+                              className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-slate-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
+                              placeholder="Type an IANA time zone e.g. Africa/Kampala"
                             />
-                            <span className="text-xs font-bold text-slate-500">
-                              min
-                            </span>
+                            {!isValidTimeZone(draft.timezoneLabel) ? (
+                              <div className="mt-1 text-xs font-bold text-amber-700 dark:text-amber-400">
+                                Invalid time zone. Using Local for calculations
+                                until fixed.
+                              </div>
+                            ) : null}
                           </div>
-                        ) : (
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Choose “Custom…” above to type a specific duration.
-                          </div>
+                        ) : null}
+
+                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          Times are scheduled in this time zone. Viewers may see
+                          local conversions on their devices.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        I will set:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          recomputeSchedule({ scheduleAnchor: "start" })
+                        }
+                        className={cx(
+                          "rounded-full px-3 py-1 text-xs font-extrabold transition",
+                          draft.scheduleAnchor === "start"
+                            ? "bg-[#f77f00] text-white"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700",
                         )}
-                      </div>
+                      >
+                        Start time
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          recomputeSchedule({ scheduleAnchor: "end" })
+                        }
+                        className={cx(
+                          "rounded-full px-3 py-1 text-xs font-extrabold transition",
+                          draft.scheduleAnchor === "end"
+                            ? "bg-[#f77f00] text-white"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700",
+                        )}
+                      >
+                        End time
+                      </button>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 ml-1">
+                        {draft.scheduleAnchor === "start"
+                          ? "Auto-calculates End"
+                          : "Auto-calculates Start"}
+                      </span>
                     </div>
-                  </div>
 
-                  <div className="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-950 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition-colors">
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Result
-                    </div>
-                    <div className="mt-1 text-lg font-extrabold text-slate-900 dark:text-slate-100">
-                      {draft.durationMinutes} minutes
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {draft.scheduleAnchor === "start"
-                        ? "End time auto-fills from Start + Duration (date may roll)."
-                        : "Start time auto-fills from End - Duration (date may roll back)."}
-                    </div>
-                    {/* Visual check of the result range in the chosen timezone */}
-                    <div className="mt-2 text-sm font-bold text-slate-900 dark:text-slate-100">
-                      {fmtInTimeZone(
-                        new Date(draft.startDateISO + "T" + draft.startTime),
-                        draft.timezoneLabel,
-                      )}{" "}
-                      →{" "}
-                      {fmtInTimeZone(
-                        new Date(draft.endDateISO + "T" + draft.endTime),
-                        draft.timezoneLabel,
-                      )}
-                    </div>
-                  </div>
-                </div>
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Preset
+                        </div>
+                        <select
+                          className="mt-1 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-slate-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
+                          value={
+                            draft.durationMode === "preset"
+                              ? draft.durationMinutes
+                              : "custom"
+                          }
+                          onChange={(e) => {
+                            if (e.target.value === "custom") {
+                              recomputeSchedule({ durationMode: "custom" });
+                            } else {
+                              recomputeSchedule({
+                                durationMode: "preset",
+                                durationMinutes: parseInt(e.target.value, 10),
+                              });
+                            }
+                          }}
+                        >
+                          {DURATION_PRESETS.map((m) => (
+                            <option key={m} value={String(m)}>
+                              {m} minutes
+                            </option>
+                          ))}
+                          <option value="custom">Custom…</option>
+                        </select>
+                      </div>
 
-                {/* Start / End inputs */}
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  {/* Start */}
-                  <div
-                    className={cx(
-                      "rounded-3xl border p-4 transition-colors",
-                      draft.scheduleAnchor === "start"
-                        ? "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-                        : "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 opacity-70",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
-                        Start
-                      </div>
-                      {draft.scheduleAnchor === "start" ? (
-                        <Pill tone="good" text="Set" />
-                      ) : (
-                        <Pill tone="neutral" text="Auto" />
-                      )}
-                    </div>
-                    <div className="mt-3 space-y-3">
-                      <div>
-                        <Label>Date</Label>
-                        <input
-                          type="date"
-                          disabled={draft.scheduleAnchor === "end"}
-                          className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:[color-scheme:dark]"
-                          value={draft.startDateISO}
-                          onChange={(e) =>
-                            recomputeSchedule({
-                              scheduleAnchor: "start",
-                              startDateISO: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label>Time</Label>
-                        <ScrollableTimePicker
-                          value={draft.startTime}
-                          disabled={draft.scheduleAnchor === "end"}
-                          onChange={(v) =>
-                            recomputeSchedule({
-                              scheduleAnchor: "start",
-                              startTime: v,
-                            })
-                          }
-                          label={
-                            draft.scheduleAnchor === "start"
-                              ? "Scrollable list (required)"
-                              : "Auto-calculated"
-                          }
-                          direction="up"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* End */}
-                  <div
-                    className={cx(
-                      "rounded-3xl border p-4 transition-colors",
-                      draft.scheduleAnchor === "end"
-                        ? "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
-                        : "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 opacity-70",
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
-                        End
-                      </div>
-                      {draft.scheduleAnchor === "end" ? (
-                        <Pill tone="good" text="Set" />
-                      ) : (
-                        <Pill tone="neutral" text="Auto" />
-                      )}
-                    </div>
-                    <div className="mt-3 space-y-3">
-                      <div>
-                        <Label>Date</Label>
-                        <input
-                          type="date"
-                          disabled={draft.scheduleAnchor === "start"}
-                          className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:[color-scheme:dark]"
-                          value={draft.endDateISO}
-                          onChange={(e) =>
-                            recomputeSchedule({
-                              scheduleAnchor: "end",
-                              endDateISO: e.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label>Time</Label>
-                        <ScrollableTimePicker
-                          value={draft.endTime}
-                          disabled={draft.scheduleAnchor === "start"}
-                          onChange={(v) =>
-                            recomputeSchedule({
-                              scheduleAnchor: "end",
-                              endTime: v,
-                            })
-                          }
-                          label={
-                            draft.scheduleAnchor === "end"
-                              ? "Scrollable list (required)"
-                              : "Auto-calculated"
-                          }
-                          direction="up"
-                        />
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-950 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition-colors">
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Custom duration
+                        </div>
+                        <div className="mt-1">
+                          {draft.durationMode === "custom" ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min={15}
+                                max={tierMaxMinutes}
+                                step={1}
+                                value={draft.durationMinutes}
+                                onChange={(e) =>
+                                  recomputeSchedule({
+                                    durationMode: "custom",
+                                    durationMinutes: clampDurationMinutes(
+                                      parseInt(e.target.value || "60", 10),
+                                    ),
+                                  })
+                                }
+                                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-2 py-1 text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 dark:[color-scheme:dark]"
+                              />
+                              <span className="text-xs font-bold text-slate-500">
+                                min
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                              Choose “Custom…” above to type a specific duration.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="mt-3 rounded-2xl bg-slate-50 dark:bg-slate-950 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition-colors">
-                      <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100">
-                        Ad ends
+                    <div className="mt-4 rounded-2xl bg-slate-50 dark:bg-slate-950 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition-colors">
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Result
                       </div>
-                      <div className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-slate-100">
+                      <div className="mt-1 text-lg font-extrabold text-slate-900 dark:text-slate-100">
+                        {draft.durationMinutes} minutes
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                        {draft.scheduleAnchor === "start"
+                          ? "End time auto-fills from Start + Duration (date may roll)."
+                          : "Start time auto-fills from End - Duration (date may roll back)."}
+                      </div>
+                      {/* Visual check of the result range in the chosen timezone */}
+                      <div className="mt-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+                        {fmtInTimeZone(
+                          new Date(draft.startDateISO + "T" + draft.startTime),
+                          draft.timezoneLabel,
+                        )}{" "}
+                        →{" "}
                         {fmtInTimeZone(
                           new Date(draft.endDateISO + "T" + draft.endTime),
                           draft.timezoneLabel,
                         )}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
-                        Always shown explicitly (in chosen time zone).
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {(() => {
-                  const val = mockValidateSchedule(
-                    draft.campaignId,
-                    draft.startDateISO,
-                    draft.startTime,
-                    draft.endDateISO,
-                    draft.endTime,
-                  );
-                  if (!val.ok) {
-                    return (
-                      <div className="mt-4 flex items-start gap-2 rounded-3xl bg-red-50 dark:bg-red-900/20 p-4 text-xs text-red-900 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-800 transition-colors">
-                        <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
-                        <div>
-                          <div className="font-extrabold text-red-900 dark:text-red-100">
-                            Schedule Violation
-                          </div>
-                          <div className="mt-0.5 leading-relaxed">
-                            {val.error}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-
-                <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 transition-colors">
-                  <div className="flex items-start gap-2">
-                    <Info className="h-4 w-4 text-amber-900 dark:text-amber-300 mt-0.5" />
-                    <div>
-                      <div className="text-xs font-bold text-amber-900 dark:text-amber-100">
-                        Scroll time picker
-                      </div>
-                      <div className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
-                        Time selection opens as a vertically scrollable list of
-                        time options.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ) : null}
-
-          {step === "review" ? (
-            <Card
-              title="Review & publish"
-              subtitle="Final QA, compliance, and go-live readiness."
-            >
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 transition-colors">
-                  <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                    <ShieldCheck className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
-                    Compliance
-                  </div>
-                  <Toggle
-                    checked={draft.compliance.requiresDisclosure}
-                    onChange={(v) =>
-                      setDraft((d) => ({
-                        ...d,
-                        compliance: { ...d.compliance, requiresDisclosure: v },
-                      }))
-                    }
-                    label="Disclosure required"
-                    hint="Adds a disclosure banner in session."
-                  />
-                  {draft.compliance.requiresDisclosure ? (
-                    <div>
-                      <Label>Disclosure text</Label>
-                      <TextArea
-                        value={draft.compliance.disclosureText}
-                        onChange={(v) =>
-                          setDraft((d) => ({
-                            ...d,
-                            compliance: { ...d.compliance, disclosureText: v },
-                          }))
-                        }
-                        rows={3}
-                      />
-                    </div>
-                  ) : null}
-                  <Toggle
-                    checked={draft.compliance.musicRightsConfirmed}
-                    onChange={(v) =>
-                      setDraft((d) => ({
-                        ...d,
-                        compliance: {
-                          ...d.compliance,
-                          musicRightsConfirmed: v,
-                        },
-                      }))
-                    }
-                    label="Music rights confirmed"
-                    hint="Required to publish."
-                  />
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 transition-colors">
-                  <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                    <Settings className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
-                    Publish actions
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-[11px] text-slate-600 dark:text-slate-400 transition-colors">
-                    <div className="font-semibold text-slate-700 dark:text-slate-300">
-                      Summary
-                    </div>
-                    <div className="mt-1">
-                      Supplier: {supplier?.name || "—"}
-                    </div>
-                    <div>Campaign: {campaign?.name || "—"}</div>
-                    <div>
-                      Host: {host ? `${host.name} (${host.handle})` : "—"}
-                    </div>
-                    <div>Platforms: {draft.platforms.join(", ") || "—"}</div>
-                    {draft.platforms.includes("Other") ? (
-                      <div>Other platform: {draft.platformOther || "—"}</div>
-                    ) : null}
-                    <div className="mt-1">Start: {fmtDT(startISO)}</div>
-                    <div>End: {fmtDT(endISO)}</div>
-                    <div className="mt-1">
-                      Featured items: {draft.products.length}
-                    </div>
-                    <div>
-                      Commerce goals:{" "}
-                      {draft.products.filter(
-                        (it) =>
-                          typeof it.goalTarget === "number" &&
-                          it.goalTarget > 0,
-                      ).length
-                        ? `${draft.products.filter((it) => typeof it.goalTarget === "number" && it.goalTarget > 0).length} configured`
-                        : "Not set"}
-                    </div>
-                    <div>
-                      Giveaways: {draft.giveaways.length}
-                      {draft.giveaways.length
-                        ? ` (Total qty: ${draft.giveaways.reduce((sum, g) => sum + (typeof (g as any).quantity === "number" && (g as any).quantity > 0 ? Math.floor((g as any).quantity) : 1), 0)})`
-                        : ""}
-                    </div>
-                    <div>Segments: {draft.runOfShow.length}</div>
-                    <div className="mt-1">
-                      Promo link: {draft.publicJoinUrl ? "Ready" : "Missing"}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <PrimaryButton
-                      disabled={!canPublish || isPersisting}
-                      onClick={handlePublishLiveDraft}
-                    >
-                      {isPersisting ? (
-                        <CircularProgress size={14} color="inherit" />
-                      ) : (
-                        <>Publish <Zap className="h-4 w-4" /></>
+                  {/* Start / End inputs */}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    {/* Start */}
+                    <div
+                      className={cx(
+                        "rounded-3xl border p-4 transition-colors",
+                        draft.scheduleAnchor === "start"
+                          ? "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+                          : "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 opacity-70",
                       )}
-                    </PrimaryButton>
-                    <SoftButton onClick={handleOpenLiveStudio} disabled={isPersisting}>
-                      Rehearse <MonitorPlay className="h-4 w-4" />
-                    </SoftButton>
-                    <SoftButton onClick={() => safeNav(ROUTES.adzPerformance)}>
-                      Analytics <BarChart3 className="h-4 w-4" />
-                    </SoftButton>
-                  </div>
-
-                  {!canPublish ? (
-                    <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2 transition-colors">
-                      <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-700 dark:text-amber-400" />
-                      <div>
-                        <div className="font-semibold text-amber-900 dark:text-emerald-100">
-                          Complete preflight to publish
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                          Start
+                        </div>
+                        {draft.scheduleAnchor === "start" ? (
+                          <Pill tone="good" text="Set" />
+                        ) : (
+                          <Pill tone="neutral" text="Auto" />
+                        )}
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <Label>Date</Label>
+                          <input
+                            type="date"
+                            disabled={draft.scheduleAnchor === "end"}
+                            className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:[color-scheme:dark]"
+                            value={draft.startDateISO}
+                            onChange={(e) =>
+                              recomputeSchedule({
+                                scheduleAnchor: "start",
+                                startDateISO: e.target.value,
+                              })
+                            }
+                          />
                         </div>
                         <div>
-                          Most commonly missing: promo details, featured items,
-                          or music rights confirmation.
+                          <Label>Time</Label>
+                          <ScrollableTimePicker
+                            value={draft.startTime}
+                            disabled={draft.scheduleAnchor === "end"}
+                            onChange={(v) =>
+                              recomputeSchedule({
+                                scheduleAnchor: "start",
+                                startTime: v,
+                              })
+                            }
+                            label={
+                              draft.scheduleAnchor === "start"
+                                ? "Scrollable list (required)"
+                                : "Auto-calculated"
+                            }
+                            direction="up"
+                          />
                         </div>
                       </div>
                     </div>
-                  ) : null}
+
+                    {/* End */}
+                    <div
+                      className={cx(
+                        "rounded-3xl border p-4 transition-colors",
+                        draft.scheduleAnchor === "end"
+                          ? "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
+                          : "border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 opacity-70",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-extrabold text-slate-900 dark:text-slate-100">
+                          End
+                        </div>
+                        {draft.scheduleAnchor === "end" ? (
+                          <Pill tone="good" text="Set" />
+                        ) : (
+                          <Pill tone="neutral" text="Auto" />
+                        )}
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <Label>Date</Label>
+                          <input
+                            type="date"
+                            disabled={draft.scheduleAnchor === "start"}
+                            className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed dark:[color-scheme:dark]"
+                            value={draft.endDateISO}
+                            onChange={(e) =>
+                              recomputeSchedule({
+                                scheduleAnchor: "end",
+                                endDateISO: e.target.value,
+                              })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label>Time</Label>
+                          <ScrollableTimePicker
+                            value={draft.endTime}
+                            disabled={draft.scheduleAnchor === "start"}
+                            onChange={(v) =>
+                              recomputeSchedule({
+                                scheduleAnchor: "end",
+                                endTime: v,
+                              })
+                            }
+                            label={
+                              draft.scheduleAnchor === "end"
+                                ? "Scrollable list (required)"
+                                : "Auto-calculated"
+                            }
+                            direction="up"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 rounded-2xl bg-slate-50 dark:bg-slate-950 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition-colors">
+                        <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100">
+                          Ad ends
+                        </div>
+                        <div className="mt-0.5 text-sm font-extrabold text-slate-900 dark:text-slate-100">
+                          {fmtInTimeZone(
+                            new Date(draft.endDateISO + "T" + draft.endTime),
+                            draft.timezoneLabel,
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                          Always shown explicitly (in chosen time zone).
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const val = mockValidateSchedule(
+                      draft.campaignId,
+                      draft.startDateISO,
+                      draft.startTime,
+                      draft.endDateISO,
+                      draft.endTime,
+                    );
+                    if (!val.ok) {
+                      return (
+                        <div className="mt-4 flex items-start gap-2 rounded-3xl bg-red-50 dark:bg-red-900/20 p-4 text-xs text-red-900 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-800 transition-colors">
+                          <AlertTriangle className="h-5 w-5 shrink-0 text-red-600 dark:text-red-400" />
+                          <div>
+                            <div className="font-extrabold text-red-900 dark:text-red-100">
+                              Schedule Violation
+                            </div>
+                            <div className="mt-0.5 leading-relaxed">
+                              {val.error}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 transition-colors">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 text-amber-900 dark:text-amber-300 mt-0.5" />
+                      <div>
+                        <div className="text-xs font-bold text-amber-900 dark:text-amber-100">
+                          Scroll time picker
+                        </div>
+                        <div className="text-xs text-amber-800 dark:text-amber-300 mt-0.5">
+                          Time selection opens as a vertically scrollable list of
+                          time options.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </Card>
-          ) : null}
+              </Card>
+            ) : null
+          }
+
+          {
+            step === "review" ? (
+              <Card
+                title="Review & publish"
+                subtitle="Final QA, compliance, and go-live readiness."
+              >
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 transition-colors">
+                    <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                      <ShieldCheck className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
+                      Compliance
+                    </div>
+                    <Toggle
+                      checked={draft.compliance.requiresDisclosure}
+                      onChange={(v) =>
+                        setDraft((d) => ({
+                          ...d,
+                          compliance: { ...d.compliance, requiresDisclosure: v },
+                        }))
+                      }
+                      label="Disclosure required"
+                      hint="Adds a disclosure banner in session."
+                    />
+                    {draft.compliance.requiresDisclosure ? (
+                      <div>
+                        <Label>Disclosure text</Label>
+                        <TextArea
+                          value={draft.compliance.disclosureText}
+                          onChange={(v) =>
+                            setDraft((d) => ({
+                              ...d,
+                              compliance: { ...d.compliance, disclosureText: v },
+                            }))
+                          }
+                          rows={3}
+                        />
+                      </div>
+                    ) : null}
+                    <Toggle
+                      checked={draft.compliance.musicRightsConfirmed}
+                      onChange={(v) =>
+                        setDraft((d) => ({
+                          ...d,
+                          compliance: {
+                            ...d.compliance,
+                            musicRightsConfirmed: v,
+                          },
+                        }))
+                      }
+                      label="Music rights confirmed"
+                      hint="Required to publish."
+                    />
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3 transition-colors">
+                    <div className="text-[12px] font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                      <Settings className="h-4 w-4 text-slate-700 dark:text-slate-300" />{" "}
+                      Publish actions
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-3 text-[11px] text-slate-600 dark:text-slate-400 transition-colors">
+                      <div className="font-semibold text-slate-700 dark:text-slate-300">
+                        Summary
+                      </div>
+                      <div className="mt-1">
+                        Supplier: {supplier?.name || "—"}
+                      </div>
+                      <div>Campaign: {campaign?.name || "—"}</div>
+                      <div>
+                        Host: {host ? `${host.name} (${host.handle})` : "—"}
+                      </div>
+                      <div>Platforms: {draft.platforms.join(", ") || "—"}</div>
+                      {draft.platforms.includes("Other") ? (
+                        <div>Other platform: {draft.platformOther || "—"}</div>
+                      ) : null}
+                      <div className="mt-1">Start: {fmtDT(startISO)}</div>
+                      <div>End: {fmtDT(endISO)}</div>
+                      <div className="mt-1">
+                        Featured items: {draft.products.length}
+                      </div>
+                      <div>
+                        Commerce goals:{" "}
+                        {draft.products.filter(
+                          (it) =>
+                            typeof it.goalTarget === "number" &&
+                            it.goalTarget > 0,
+                        ).length
+                          ? `${draft.products.filter((it) => typeof it.goalTarget === "number" && it.goalTarget > 0).length} configured`
+                          : "Not set"}
+                      </div>
+                      <div>
+                        Giveaways: {draft.giveaways.length}
+                        {draft.giveaways.length
+                          ? ` (Total qty: ${draft.giveaways.reduce((sum, g) => sum + (typeof (g as any).quantity === "number" && (g as any).quantity > 0 ? Math.floor((g as any).quantity) : 1), 0)})`
+                          : ""}
+                      </div>
+                      <div>Segments: {draft.runOfShow.length}</div>
+                      <div className="mt-1">
+                        Promo link: {draft.publicJoinUrl ? "Ready" : "Missing"}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <PrimaryButton
+                        disabled={!canPublish}
+                        onClick={() => {
+                          if (canPublish) {
+                            setDraft((d) => ({ ...d, status: "Scheduled" }));
+                            setToast(
+                              "Success! Your session is now visible to followers.",
+                            );
+                            setShowSharePanel(true);
+                            // Redirecting is commented out for now to show the share panel
+                            // setTimeout(() => safeNav(ROUTES.liveDashboard), 1000);
+                          }
+                        }}
+                      >
+                        Publish <Zap className="h-4 w-4" />
+                      </PrimaryButton>
+                      <SoftButton onClick={() => safeNav(ROUTES.liveStudio)}>
+                        Rehearse <MonitorPlay className="h-4 w-4" />
+                      </SoftButton>
+                      <SoftButton onClick={() => safeNav(ROUTES.adzPerformance)}>
+                        Analytics <BarChart3 className="h-4 w-4" />
+                      </SoftButton>
+                    </div>
+
+                    {!canPublish ? (
+                      <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-[11px] text-amber-800 dark:text-amber-300 flex items-start gap-2 transition-colors">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-700 dark:text-amber-400" />
+                        <div>
+                          <div className="font-semibold text-amber-900 dark:text-emerald-100">
+                            Complete preflight to publish
+                          </div>
+                          <div>
+                            Most commonly missing: promo details, featured items,
+                            or music rights confirmation.
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </Card>
+            ) : null
+          }
 
           {/* Sticky Bottom Action Row — Stabilized with contain-layout to prevent page jumping */}
           <div
@@ -7522,8 +7280,15 @@ export function LiveBuilderView({
                   </PrimaryButton>
                 ) : (
                   <PrimaryButton
-                    disabled={!canPublish || isPersisting}
-                    onClick={handlePublishLiveDraft}
+                    disabled={!canPublish}
+                    onClick={() => {
+                      if (!canPublish) return;
+                      setDraft((d) => ({ ...d, status: "Scheduled" }));
+                      setToast(
+                        "Success! Your session is now visible to followers.",
+                      );
+                      setShowSharePanel(true);
+                    }}
                     className="rounded-2xl px-8 py-2.5 shadow-lg shadow-orange-500/20"
                     title={
                       !canPublish
@@ -7531,20 +7296,16 @@ export function LiveBuilderView({
                         : "Publish session"
                     }
                   >
-                    {isPersisting ? (
-                      <CircularProgress size={14} color="inherit" />
-                    ) : (
-                      <>Publish <Zap className="h-4 w-4" /></>
-                    )}
+                    Publish <Zap className="h-4 w-4" />
                   </PrimaryButton>
                 )}
               </div>
             </div>
           </div>
-        </div>
+        </div >
 
         {/* Right rail */}
-        <div className="lg:col-span-5 space-y-4">
+        < div className="lg:col-span-5 space-y-4" >
           <PromoLinkPreviewPhone
             draft={draft}
             host={host}
@@ -7567,7 +7328,7 @@ export function LiveBuilderView({
               Quick actions
             </div>
             <div className="grid gap-2">
-              <SoftButton onClick={() => launchAssetLibraryPicker()}>
+              <SoftButton onClick={() => openAssetLibraryPicker()}>
                 <Layers className="h-4 w-4" /> Asset Library
               </SoftButton>
               <SoftButton
@@ -7591,10 +7352,10 @@ export function LiveBuilderView({
               </SoftButton>
             </div>
           </div>
-        </div>
-      </div>
+        </div >
+      </div >
       {/* Modals / drawers */}
-      <CatalogPicker
+      < CatalogPicker
         open={catalogOpen}
         onClose={() => setCatalogOpen(false)}
         campaignId={draft.campaignId}
@@ -7609,7 +7370,7 @@ export function LiveBuilderView({
       />
 
       {/* Mobile preview drawer */}
-      <Drawer
+      < Drawer
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
         title="Promo link preview"
@@ -7621,7 +7382,7 @@ export function LiveBuilderView({
           host={host || undefined}
           supplier={supplier || undefined}
         />
-      </Drawer>
+      </Drawer >
 
       <AnimatePresence>
         {showSharePanel && (
@@ -7637,7 +7398,7 @@ export function LiveBuilderView({
       </AnimatePresence>
 
       {toast ? <Toast message={toast} /> : null}
-    </div>
+    </div >
   );
 }
 

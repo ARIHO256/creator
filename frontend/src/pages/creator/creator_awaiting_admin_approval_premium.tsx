@@ -22,26 +22,27 @@ import {
   Upload
 } from "lucide-react";
 import { useTheme } from "../../contexts/ThemeContext";
-import { useAuth } from "../../contexts/AuthContext";
-import {
-  useAccountApprovalQuery,
-  useCreateUploadMutation,
-  useDevApproveAccountApprovalMutation,
-  useRefreshAccountApprovalMutation,
-  useResubmitAccountApprovalMutation,
-  useUpdateAccountApprovalDraftMutation
-} from "../../hooks/api/useCreatorWorkflow";
-import type { UploadRecord } from "../../api/types";
 
 // MyLiveDealz - Creator Awaiting Admin Approval (Premium)
+// Based on the attached old version, redesigned to be more premium and fully interactive.
 // Flow:
 // - Statuses: Submitted → Under review → Action required → Resubmitted → Approved
 // - Shows what to expect, ETA, notifications, and next steps
 // - If Action required: shows admin feedback + checklist + attachments + resubmit
-// - Fully backed by the workflow API for restore, refresh, and resubmission state
+// - Uses localStorage to restore creator onboarding summary and to keep drafts
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
+
+const STORAGE_STATUS_KEY = "mldz_creator_approval_status";
+const STORAGE_DRAFT_KEY = "mldz_creator_approval_draft";
+
+const ONBOARDING_KEYS_TO_TRY = [
+  "mldz_creator_onboarding_v2_3",
+  "mldz_creator_onboarding_v2",
+  "mldz_creator_onboarding_v2_2",
+  "mldz_creator_onboarding_v2_1"
+];
 
 const STATUS_STEPS: StatusStep[] = [
   {
@@ -101,6 +102,15 @@ function cx(...xs: (string | boolean | undefined | null)[]): string {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function safeJsonParse<T>(s: string | null, fallback: T): T {
+  if (!s) return fallback;
+  try {
+    return JSON.parse(s);
+  } catch {
+    return fallback;
+  }
 }
 
 function formatEta(mins: number): string {
@@ -254,27 +264,50 @@ function Button({ children, onClick, variant = "secondary", disabled = false, cl
   );
 }
 
-function UploadDropzone({
-  files,
-  onAddFiles,
-  onRemoveFile,
-  toast
-}: {
-  files: UploadRecord[];
-  onAddFiles: (files: FileList | File[]) => void | Promise<void>;
-  onRemoveFile: (fileId: string) => void;
-  toast: (msg: string, tone?: "success" | "error") => void;
-}) {
+function UploadDropzone({ files, setFiles, toast }: { files: File[]; setFiles: React.Dispatch<React.SetStateAction<File[]>>; toast: (msg: string, tone?: "success" | "error") => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dnd, setDnd] = useState(false);
   const [info, setInfo] = useState("");
 
+  const MAX_SIZE = 20 * 1024 * 1024;
+
+  function addFiles(fileList: FileList | null | File[]) {
+    const arr = Array.from(fileList || []);
+    const accepted: File[] = [];
+    let ignored = 0;
+
+    for (const f of arr) {
+      if (f.size > MAX_SIZE) {
+        ignored++;
+        continue;
+      }
+      accepted.push(f);
+    }
+
+    if (accepted.length) {
+      setFiles((prev) => [...prev, ...accepted]);
+      toast(`${accepted.length} file(s) added.`, "success");
+    }
+
+    if (ignored) {
+      const msg = `${ignored} file(s) ignored (too large).`;
+      setInfo(msg);
+      toast(msg, "error");
+    } else {
+      setInfo(accepted.length ? "Files added" : "");
+    }
+  }
+
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     if (e.target.files) {
-      void onAddFiles(e.target.files);
-      setInfo("Files uploaded");
+      addFiles(e.target.files);
     }
     e.target.value = "";
+  }
+
+  function remove(i: number) {
+    setFiles((prev) => prev.filter((_, idx) => idx !== i));
+    toast("File removed.", "success");
   }
 
   function formatSize(bytes: number) {
@@ -302,8 +335,7 @@ function UploadDropzone({
           e.preventDefault();
           setDnd(false);
           if (e.dataTransfer?.files) {
-            void onAddFiles(e.dataTransfer.files);
-            setInfo("Files uploaded");
+            addFiles(e.dataTransfer.files);
           }
         }}
         className={cx(
@@ -334,19 +366,16 @@ function UploadDropzone({
 
       {files.length ? (
         <ul className="border border-slate-200 bg-white rounded-2xl overflow-hidden">
-          {files.map((f) => (
-            <li key={f.id || f.name} className="px-3 py-2 flex items-center justify-between gap-3 border-b last:border-b-0">
+          {files.map((f, i) => (
+            <li key={`${f.name}_${i}`} className="px-3 py-2 flex items-center justify-between gap-3 border-b last:border-b-0">
               <div className="min-w-0">
                 <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-50 truncate">{f.name}</div>
-                <div className="text-[11px] text-slate-500 dark:text-slate-400">{formatSize(Number(f.size || 0))}</div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400">{formatSize(f.size)}</div>
               </div>
               <button
                 type="button"
                 className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200"
-                onClick={() => {
-                  onRemoveFile(String(f.id));
-                  toast("File removed.", "success");
-                }}
+                onClick={() => remove(i)}
               >
                 Remove
               </button>
@@ -375,50 +404,67 @@ interface OnboardingData {
 export default function CreatorAwaitingApprovalPremium() {
   const { toasts, push } = useToasts();
   const navigate = useNavigate();
-  const { refresh } = useAuth();
-  const accountApprovalQuery = useAccountApprovalQuery();
-  const updateApprovalDraftMutation = useUpdateAccountApprovalDraftMutation();
-  const refreshAccountApprovalMutation = useRefreshAccountApprovalMutation();
-  const resubmitAccountApprovalMutation = useResubmitAccountApprovalMutation();
-  const devApproveMutation = useDevApproveAccountApprovalMutation();
-  const createUploadMutation = useCreateUploadMutation();
-  const hydratedRef = useRef(false);
 
   const qp = useMemo<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
     return Object.fromEntries(new URLSearchParams(window.location.search).entries());
   }, []);
 
+  // Pull onboarding summary if available
   const onboarding = useMemo<OnboardingData | null>(() => {
-    const snapshot = accountApprovalQuery.data?.onboardingSnapshot;
-    return snapshot && typeof snapshot === "object" ? (snapshot as OnboardingData) : null;
-  }, [accountApprovalQuery.data?.onboardingSnapshot]);
+    if (typeof window === "undefined") return null;
+    for (const k of ONBOARDING_KEYS_TO_TRY) {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const parsed = safeJsonParse<OnboardingData | null>(raw, null);
+        if (parsed && typeof parsed === "object") return parsed;
+      }
+    }
+    return null;
+  }, []);
 
   const displayName =
-    qp.name || accountApprovalQuery.data?.displayName || onboarding?.profile?.name || "New Creator";
+    qp.name || onboarding?.profile?.name || localStorage.getItem("creatorOnb.name") || "New Creator";
 
-  const creatorHandle = qp.handle || accountApprovalQuery.data?.creatorHandle || onboarding?.profile?.handle || "";
+  const creatorHandle = qp.handle || onboarding?.profile?.handle || "";
 
   const creatorId =
-    qp.creatorId || accountApprovalQuery.data?.creatorId || "pending";
+    qp.creatorId || localStorage.getItem("creatorOnb.id") || "pending";
 
   const primaryLine =
-    qp.niche || accountApprovalQuery.data?.primaryLine || onboarding?.preferences?.lines?.[0] || "Not set";
+    qp.niche || onboarding?.preferences?.lines?.[0] || localStorage.getItem("creatorOnb.niche") || "Not set";
 
-  const [status, setStatus] = useState<string>(qp.status || "UnderReview");
+  // status
+  const [status, setStatus] = useState<string>(() => {
+    if (typeof window === "undefined") return "UnderReview";
+    return qp.status || localStorage.getItem(STORAGE_STATUS_KEY) || "UnderReview";
+  });
 
   const [etaMin, setEtaMin] = useState(() => {
-    const v = Number(qp.etaMin || 90);
+    const v = Number(qp.etaMin || localStorage.getItem("creatorOnb.etaMin") || 90);
     return Number.isFinite(v) ? v : 90;
   });
 
-  const [submittedAt, setSubmittedAt] = useState(() => nowIso());
+  const [submittedAt] = useState(() => {
+    if (typeof window === "undefined") return nowIso();
+    return localStorage.getItem("creatorOnb.submittedAt") || nowIso();
+  });
 
-  const [adminReason, setAdminReason] = useState(() => qp.reason || "");
+  // Admin feedback and checklist (used for SendBack)
+  const [adminReason, setAdminReason] = useState(() => {
+    return qp.reason || localStorage.getItem("creatorOnb.adminReason") || "";
+  });
 
-  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>([]);
+  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(() => {
+    if (typeof window === "undefined") return [];
+    return safeJsonParse<AdminDoc[]>(localStorage.getItem("creatorOnb.adminDocs") || "[]", []);
+  });
 
   const [items, setItems] = useState<ChecklistItem[]>(() => {
+    if (typeof window === "undefined") return [];
+    const cached = safeJsonParse<ChecklistItem[]>(localStorage.getItem("creatorOnb.items") || "[]", []);
+    if (Array.isArray(cached) && cached.length) return cached;
+
     const itemsFromQ = (qp.items || "")
       .split(",")
       .map((s) => s.trim())
@@ -429,8 +475,8 @@ export default function CreatorAwaitingApprovalPremium() {
   });
 
   const [newItem, setNewItem] = useState("");
-  const [note, setNote] = useState("");
-  const [files, setFiles] = useState<UploadRecord[]>([]);
+  const [note, setNote] = useState(() => localStorage.getItem("creatorOnb.note") || "");
+  const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
 
   const [prefEmail, setPrefEmail] = useState(true);
@@ -439,41 +485,6 @@ export default function CreatorAwaitingApprovalPremium() {
   const [showSubmission, setShowSubmission] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-
-  function applyApprovalState(record: {
-    status?: string;
-    etaMin?: number;
-    submittedAt?: string;
-    adminReason?: string;
-    adminDocs?: AdminDoc[];
-    items?: ChecklistItem[];
-    note?: string;
-    attachments?: UploadRecord[];
-    preferences?: { email?: boolean; inApp?: boolean };
-  }) {
-    setStatus(record.status || "UnderReview");
-    setEtaMin(Number(record.etaMin || 90));
-    setSubmittedAt(record.submittedAt || nowIso());
-    setAdminReason(record.adminReason || "");
-    setAdminDocs(record.adminDocs || []);
-    setItems(record.items || []);
-    setNote(record.note || "");
-    setFiles(record.attachments || []);
-    setPrefEmail(record.preferences?.email ?? true);
-    setPrefInApp(record.preferences?.inApp ?? true);
-  }
-
-  useEffect(() => {
-    if (accountApprovalQuery.data && !hydratedRef.current) {
-      applyApprovalState(accountApprovalQuery.data);
-      hydratedRef.current = true;
-      return;
-    }
-
-    if (!accountApprovalQuery.isLoading && !hydratedRef.current) {
-      hydratedRef.current = true;
-    }
-  }, [accountApprovalQuery.data, accountApprovalQuery.isLoading]);
 
   const currentIndex = useMemo(() => {
     const map: Record<string, number> = {
@@ -513,21 +524,25 @@ export default function CreatorAwaitingApprovalPremium() {
     }
   }, [status, adminReason, items.length, adminDocs.length]);
 
+  // Persist
   useEffect(() => {
-    if (!hydratedRef.current) return undefined;
-
-    const timeoutId = window.setTimeout(() => {
-      void updateApprovalDraftMutation.mutateAsync({
-        note,
-        items,
-        attachments: files,
-        preferences: { email: prefEmail, inApp: prefInApp },
-        onboardingSnapshot: onboarding as unknown as Record<string, unknown>
-      }).catch(() => undefined);
-    }, 350);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [files, items, note, onboarding, prefEmail, prefInApp, updateApprovalDraftMutation]);
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(STORAGE_STATUS_KEY, status);
+      localStorage.setItem("creatorOnb.etaMin", String(etaMin));
+      localStorage.setItem("creatorOnb.submittedAt", submittedAt);
+      localStorage.setItem("creatorOnb.adminReason", adminReason || "");
+      localStorage.setItem("creatorOnb.adminDocs", JSON.stringify(adminDocs || []));
+      localStorage.setItem("creatorOnb.items", JSON.stringify(items || []));
+      localStorage.setItem("creatorOnb.note", note || "");
+      localStorage.setItem(
+        STORAGE_DRAFT_KEY,
+        JSON.stringify({ adminReason, adminDocs, items, note })
+      );
+    } catch {
+      // ignore
+    }
+  }, [status, etaMin, submittedAt, adminReason, adminDocs, items, note]);
 
   function toggleItem(id: string) {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, done: !it.done } : it)));
@@ -541,58 +556,49 @@ export default function CreatorAwaitingApprovalPremium() {
     push("Checklist item added.", "success");
   }
 
-  async function handleApprovalUploads(fileList: FileList | File[]) {
-    const picked = Array.from(fileList || []);
-    if (!picked.length) return;
-
-    try {
-      const uploaded = await Promise.all(
-        picked.map((file) =>
-          createUploadMutation.mutateAsync({
-            name: file.name,
-            type: file.type || "application/octet-stream",
-            size: file.size,
-            purpose: "approval_resubmission",
-            relatedEntityType: "account_approval",
-            relatedEntityId: accountApprovalQuery.data?.id || "current"
-          })
-        )
-      );
-      setFiles((prev) => [...prev, ...uploaded]);
-      push(`${uploaded.length} file${uploaded.length === 1 ? "" : "s"} uploaded.`, "success");
-    } catch (error) {
-      console.error(error);
-      push("Failed to upload one or more files.", "error");
-    }
-  }
-
   async function refreshStatus() {
     setRefreshing(true);
     setNotice("");
     push("Refreshing status...", "success");
 
-    try {
-      const next = await refreshAccountApprovalMutation.mutateAsync();
-      applyApprovalState(next);
-      await refresh();
+    await new Promise((r) => setTimeout(r, 700));
 
-      if (next.status === "Approved") {
+    // Simple simulation rules
+    if (status === "UnderReview") {
+      const nextEta = Math.max(5, etaMin - 15);
+      setEtaMin(nextEta);
+
+      // Simulate possible send-back if key onboarding data is missing
+      const missingKyc = onboarding ? !(onboarding?.kyc?.idUploaded && onboarding?.kyc?.selfieUploaded) : false;
+      const missingProfile = onboarding ? !(onboarding?.profile?.name && onboarding?.profile?.handle) : false;
+      const shouldSendBack = missingKyc || missingProfile;
+
+      if (nextEta <= 10 && !shouldSendBack) {
+        setStatus("Approved");
         push("Approved. Creator tools are unlocked.", "success");
-      } else if (next.status === "SendBack") {
+      } else if (shouldSendBack) {
+        setStatus("SendBack");
+        setEtaMin(60);
         push("Action required. Please review admin feedback.", "error");
-      } else if (next.status === "Resubmitted") {
-        push("Back in review. We are checking your updates.", "success");
-      } else if (next.status === "UnderReview") {
-        push("Still under review. Thanks for your patience.", "success");
       } else {
-        push("Status is up to date.", "success");
+        push("Still under review. Thanks for your patience.", "success");
       }
-    } catch (error) {
-      console.error(error);
-      push("Could not refresh approval status.", "error");
-    } finally {
-      setRefreshing(false);
+    } else if (status === "Resubmitted") {
+      const nextEta = Math.max(5, etaMin - 15);
+      setEtaMin(nextEta);
+      if (nextEta <= 10) {
+        setStatus("Approved");
+        push("Approved. Welcome to Creator Studio.", "success");
+      } else {
+        push("Back in review. We are checking your updates.", "success");
+      }
+    } else if (status === "SendBack") {
+      push("Action required. Complete checklist and resubmit.", "error");
+    } else {
+      push("Status is up to date.", "success");
     }
+
+    setRefreshing(false);
   }
 
   async function resubmit() {
@@ -605,43 +611,21 @@ export default function CreatorAwaitingApprovalPremium() {
     }
 
     push("Submitting updates...", "success");
+    await new Promise((r) => setTimeout(r, 800));
 
-    try {
-      const next = await resubmitAccountApprovalMutation.mutateAsync({
-        note,
-        items,
-        attachmentIds: files.map((file) => file.id),
-        preferences: { email: prefEmail, inApp: prefInApp }
-      });
-      applyApprovalState(next);
-      await refresh();
-      push("Resubmitted. Back in review.", "success");
-    } catch (error) {
-      console.error(error);
-      push("Resubmission failed.", "error");
-    }
+    setStatus("Resubmitted");
+    setEtaMin(60);
+    setFiles([]);
+    push("Resubmitted. Back in review.", "success");
   }
 
-  async function clearDraft() {
+  function clearDraft() {
     setNotice("");
     setFiles([]);
     setNote("");
     setNewItem("");
     setItems((prev) => prev.map((x) => ({ ...x, done: false })));
-
-    try {
-      await updateApprovalDraftMutation.mutateAsync({
-        note: "",
-        items: items.map((x) => ({ ...x, done: false })),
-        attachments: [],
-        preferences: { email: prefEmail, inApp: prefInApp },
-        onboardingSnapshot: onboarding as unknown as Record<string, unknown>
-      });
-      push("Draft cleared.", "success");
-    } catch (error) {
-      console.error(error);
-      push("Could not clear the draft.", "error");
-    }
+    push("Draft cleared.", "success");
   }
 
   const heroTitle =
@@ -668,7 +652,7 @@ export default function CreatorAwaitingApprovalPremium() {
         onClose={() => setShowSubmission(false)}
       >
         <div className="text-[12px] text-slate-600 dark:text-slate-400">
-          This preview is loaded from the onboarding and approval workflow API.
+          This preview is pulled from localStorage when available. In production, this comes from your API.
         </div>
         <pre className="mt-3 text-[11px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 overflow-auto max-h-[420px] text-slate-700 dark:text-slate-300">
           {JSON.stringify(onboarding || { note: "No onboarding data found" }, null, 2)}
@@ -756,17 +740,10 @@ export default function CreatorAwaitingApprovalPremium() {
             </Button>
             <Button
               variant="dark"
-              onClick={async () => {
-                try {
-                  const approved = await devApproveMutation.mutateAsync();
-                  applyApprovalState(approved);
-                  await refresh();
-                  push("Account approved for testing. Opening Auth page...", "success");
-                  navigate("/auth-redirect");
-                } catch (error) {
-                  console.error(error);
-                  push("Could not approve the account for testing.", "error");
-                }
+              onClick={() => {
+                localStorage.setItem("mldz_creator_approval_status", "Approved");
+                push("Account approved for testing. Opening Auth page...", "success");
+                navigate("/auth-redirect");
               }}
             >
               Go to Sign In <ArrowRight className="h-4 w-4" />
@@ -1009,14 +986,7 @@ export default function CreatorAwaitingApprovalPremium() {
                 />
               </div>
 
-              <UploadDropzone
-                files={files}
-                onAddFiles={handleApprovalUploads}
-                onRemoveFile={(fileId) => {
-                  setFiles((prev) => prev.filter((file) => file.id !== fileId));
-                }}
-                toast={push}
-              />
+              <UploadDropzone files={files} setFiles={setFiles} toast={push} />
 
               {notice ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 text-[12px]">{notice}</div>
