@@ -1,0 +1,44 @@
+import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { AppRecordsService } from '../../platform/app-records.service.js';
+
+@Injectable()
+export class SettingsService {
+  constructor(private readonly records: AppRecordsService) {}
+
+  settings(userId: string) {
+    return this.records.getByEntityId('settings', 'profile', 'main', userId).then((r)=>r.payload).catch(()=>({}));
+  }
+  updateSettings(userId: string, body: any) { return this.records.upsert('settings', 'profile', 'main', body, userId); }
+  sendPayoutCode(userId: string, body: any) { return { sent: true, channel: body?.channel || 'email', codeId: randomUUID() }; }
+  verifyPayout(userId: string, body: any) { return this.records.upsert('settings', 'payout_verification', 'main', { verified: true, ...body }, userId); }
+  signOutDevice(userId: string, id: string) { return this.records.remove('settings', 'device', id, userId).catch(()=>({deleted:true})); }
+  signOutAll(userId: string) { return this.records.list('settings','device',userId).then(async (rows)=>{ for (const row of rows) { await this.records.remove('settings','device',row.entityId!,userId).catch(()=>null);} return {signedOutAll:true};}); }
+
+  notifications(userId: string) { return this.records.list('settings', 'notification', userId).then((rows)=>rows.map((r)=>({id:r.entityId,...(r.payload as any)}))); }
+  async notificationRead(userId: string, id: string) { const rec = await this.records.getByEntityId('settings','notification',id,userId); return this.records.update('settings','notification',id,{...(rec.payload as any),read:true},userId); }
+  async notificationReadAll(userId: string) { const rows = await this.records.list('settings','notification',userId); for (const row of rows) { await this.records.update('settings','notification',row.entityId!,{...(row.payload as any),read:true},userId);} return {updated:rows.length}; }
+
+  roles(userId: string) {
+    return Promise.all([
+      this.records.list('settings','role',userId),
+      this.records.list('settings','member',userId),
+      this.records.list('settings','role_invite',userId)
+    ]).then(([roles,members,invites]) => ({
+      roles: roles.map((r)=>({id:r.entityId,...(r.payload as any)})),
+      members: members.map((r)=>({id:r.entityId,...(r.payload as any)})),
+      invites: invites.map((r)=>({id:r.entityId,...(r.payload as any)}))
+    }));
+  }
+
+  security(userId: string, body: any) { return this.records.upsert('settings','roles_security','main',body,userId); }
+  createRole(userId: string, body: any) { const id = body.id || randomUUID(); return this.records.create('settings','role',body,id,userId); }
+  updateRole(userId: string, id: string, body: any) { return this.records.update('settings','role',id,body,userId); }
+  deleteRole(userId: string, id: string) { return this.records.remove('settings','role',id,userId); }
+  createInvite(userId: string, body: any) { const id = body.id || randomUUID(); return this.records.create('settings','role_invite',body,id,userId); }
+  updateMember(userId: string, id: string, body: any) { return this.records.upsert('settings','member',id,body,userId); }
+
+  crew(userId: string) { return this.records.list('settings','crew_session',userId).then((rows)=>rows.map((r)=>({id:r.entityId,...(r.payload as any)}))); }
+  crewSession(userId: string, id: string, body: any) { return this.records.upsert('settings','crew_session',id,body,userId); }
+  auditLogs(userId: string) { return this.records.list('settings','audit_log',userId).then((rows)=>rows.map((r)=>({id:r.entityId,...(r.payload as any)}))); }
+}
