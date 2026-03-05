@@ -7,7 +7,21 @@
   "scripts": {
     "dev": "node src/server.js",
     "start": "node src/server.js",
+    "dev:nest": "node --loader ts-node/esm src/nest/main.ts",
+    "start:nest": "node --loader ts-node/esm src/nest/main.ts",
     "test": "node --test"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
   },
   "engines": {
     "node": ">=20"
