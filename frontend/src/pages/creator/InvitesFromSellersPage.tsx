@@ -2,14 +2,14 @@
 // Purpose: Show collaboration invites brands have sent to the Creator.
 // Web-first, mobile-responsive, premium MyLiveDealz styling (primary orange #f77f00).
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
 import { useNavigate } from "react-router-dom";
-import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
+import { backendApi, type InviteRecord } from "../../lib/api";
 
 type InviteStatus = "New" | "In discussion" | "Accepted" | "Declined" | "Expired";
 
@@ -128,6 +128,47 @@ const INVITES: Invite[] = [
   }
 ];
 
+const mapInviteStatus = (status?: string): InviteStatus => {
+  const value = String(status || "").toLowerCase();
+  if (value === "accepted") return "Accepted";
+  if (value === "declined") return "Declined";
+  if (value === "expired") return "Expired";
+  if (value === "in discussion" || value === "negotiating" || value === "countered") return "In discussion";
+  return "New";
+};
+
+const mapInviteRecord = (entry: InviteRecord, index: number): Invite => ({
+  id: String(entry.id || `INV-${index + 1}`),
+  brand: entry.seller || "Supplier",
+  initials:
+    entry.sellerInitials ||
+    String(entry.seller || "SP")
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() ||
+    "SP",
+  campaign: entry.campaign || "Campaign",
+  inviteType: entry.type || "Live collaboration",
+  category: entry.category || "General",
+  region: entry.region || "Global",
+  baseFee: Number(entry.baseFee || 0),
+  currency: entry.currency || "USD",
+  commissionPct: Number(entry.commissionPct || 0),
+  estimatedValue: Number(entry.estimatedValue || entry.baseFee || 0),
+  status: mapInviteStatus(entry.status),
+  daysAgo: 0,
+  expiresIn: "Open",
+  fitScore: Number(entry.fitScore || 70),
+  fitReason: entry.fitReason || "Matched by campaign preferences.",
+  messageShort: entry.messageShort || "New invite from supplier.",
+  lastActivity: entry.lastActivity || "Updated recently",
+  supplierDescription: entry.supplierDescription || "Supplier invite from MyLiveDealz.",
+  supplierRating: Number(entry.supplierRating || 0)
+});
+
 const TABS = [
   { id: "all", label: "All" },
   { id: "new", label: "New" },
@@ -160,6 +201,7 @@ export function InvitesFromSellersPage() {
 
   const navigate = useNavigate();
   const [invites, setInvites] = useState<Invite[]>(INVITES); // Initialize from constant, but manageable
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
   const [statusFilter, setStatusFilter] = useState<"All" | InviteStatus>("All");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
@@ -169,8 +211,33 @@ export function InvitesFromSellersPage() {
   );
   const [isPitchDrawerOpen, setIsPitchDrawerOpen] = useState(false);
   const [pitchRecipient, setPitchRecipient] = useState<Invite | null>(null);
-  const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadInvites = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getInvites();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapInviteRecord);
+        if (mapped.length > 0) {
+          setInvites(mapped);
+          setSelectedInviteId(mapped[0]?.id ?? null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load invites from backend");
+        }
+      }
+    };
+
+    void loadInvites();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openPitchDrawer = (invite?: Invite) => {
     setPitchRecipient(invite || null);
@@ -180,8 +247,7 @@ export function InvitesFromSellersPage() {
   // Actions
   const handleAccept = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
+      await backendApi.respondInvite(id, "accepted");
       setInvites((prev) =>
         prev.map((inv) => (inv.id === id ? { ...inv, status: "Accepted" } : inv))
       );
@@ -190,8 +256,7 @@ export function InvitesFromSellersPage() {
 
   const handleDecline = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
+      await backendApi.respondInvite(id, "declined");
       setInvites((prev) =>
         prev.map((inv) => (inv.id === id ? { ...inv, status: "Declined" } : inv))
       );
@@ -240,6 +305,11 @@ export function InvitesFromSellersPage() {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
+          {backendError ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
           {/* Header summary + actions */}
           <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
             <div>

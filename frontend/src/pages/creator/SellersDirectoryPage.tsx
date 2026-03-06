@@ -2,13 +2,14 @@
 // Purpose: Give creators a curated directory of suppliers to approach.
 // EVzone / MyLiveDealz styling with primary orange #f77f00.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useScrollLock } from "../../hooks/useScrollLock";
 // import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
 import { useCreator } from "../../contexts/CreatorContext";
 import type { PageId } from "../../layouts/CreatorShellLayout";
+import { backendApi, type SellerRecord } from "../../lib/api";
 
 type Trend = "up" | "down" | "flat";
 
@@ -38,6 +39,47 @@ type Seller = {
   supplierType: "Seller" | "Provider";
   isActivelyCollaborating: boolean;
   hasActiveCampaigns: boolean;
+  backendId?: string;
+};
+
+const mapSellerRecord = (entry: SellerRecord, index: number): Seller => {
+  const category = entry.category || "General";
+  const name = entry.name || `Seller ${index + 1}`;
+  const initials = name
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  return {
+    id: index + 1,
+    backendId: entry.id,
+    name,
+    initials: initials || "SP",
+    tagline: `${category} supplier on MyLiveDealz.`,
+    categories: [category],
+    followers: 10000 + index * 1500,
+    livesCompleted: 5 + index * 2,
+    avgOrderValue: 20 + index * 4,
+    badge: entry.isVerified ? "Top Brand" : "New Seller",
+    collabStatus: "Open to collabs",
+    rating: Number(entry.rating || 0),
+    region: entry.region || "Global",
+    similarTo: [],
+    relationship: "New",
+    fitScore: Math.max(60, Math.min(98, Math.round((Number(entry.rating || 0) / 5) * 100))),
+    fitReason: `Strong ${category} potential based on current profile fit.`,
+    followersTrend: "up",
+    livesTrend: "up",
+    orderTrend: "flat",
+    trustBadges: entry.isVerified ? ["Verified"] : [],
+    lastActive: "Active recently",
+    supplierType: String(entry.type || "Seller").toLowerCase().includes("provider") ? "Provider" : "Seller",
+    isActivelyCollaborating: false,
+    hasActiveCampaigns: true
+  };
 };
 
 
@@ -71,7 +113,7 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
     setTimeout(() => setIsTransitioning(false), 300);
   };
 
-  const sellers = useMemo<Seller[]>(
+  const fallbackSellers = useMemo<Seller[]>(
     () => [
       {
         id: 1,
@@ -207,6 +249,34 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
     []
   );
 
+  const [sellers, setSellers] = useState<Seller[]>(fallbackSellers);
+  const [backendError, setBackendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSellers = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getSellers();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapSellerRecord);
+        if (mapped.length > 0) {
+          setSellers(mapped);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load suppliers from backend");
+          setSellers(fallbackSellers);
+        }
+      }
+    };
+
+    void loadSellers();
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackSellers]);
 
 
   const openInvite = (seller: Seller) => {
@@ -323,6 +393,12 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
 
       <main className="flex-1 flex flex-col w-full p-3 sm:p-4 md:p-6 lg:p-8 pt-8 gap-8 overflow-y-auto overflow-x-hidden">
         <div className="w-full space-y-4">
+          {backendError && (
+            <div className="text-xs text-amber-600 dark:text-amber-400">
+              Backend request failed: {backendError}. Showing fallback suppliers.
+            </div>
+          )}
+
           {/* Top Search Bar */}
           <div className="w-full max-w-full bg-white dark:bg-slate-900 rounded-3xl p-4 shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col md:flex-row gap-4 items-center">
             <div className="flex-1 relative w-full group">

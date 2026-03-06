@@ -4,13 +4,13 @@
 // left list + right detail panel. Proposals here are more structured than invites
 // and include terms like base fee, commission and deliverables.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
-import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
+import { backendApi, type ProposalRecord } from "../../lib/api";
 
 type ProposalStatus =
   | "Draft"
@@ -41,7 +41,50 @@ type Proposal = {
   notesShort: string;
 };
 
-const PROPOSALS: Proposal[] = [
+const mapProposalStatus = (status?: string): ProposalStatus => {
+  const value = String(status || "").toLowerCase();
+  if (value === "accepted") return "Accepted";
+  if (value === "declined" || value === "rejected") return "Declined";
+  if (value === "expired") return "Expired";
+  if (value === "in_negotiation" || value === "negotiating") return "In negotiation";
+  if (value === "draft") return "Draft";
+  return "New";
+};
+
+const mapProposalRecord = (entry: ProposalRecord, index: number): Proposal => {
+  const brand = entry.brand || `Supplier ${index + 1}`;
+  const initials =
+    entry.initials ||
+    brand
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() ||
+    "SP";
+
+  return {
+    id: String(entry.id || `P-${index + 1}`),
+    brand,
+    initials,
+    campaign: entry.campaign || "Campaign",
+    origin: String(entry.origin || "").toLowerCase() === "creator" ? "my-pitch" : "from-seller",
+    offerType: entry.offerType || "Creator collaboration",
+    category: entry.category || "General",
+    region: entry.region || "Global",
+    baseFeeMin: Number(entry.baseFeeMin || 0),
+    baseFeeMax: Number(entry.baseFeeMax || 0),
+    currency: entry.currency || "USD",
+    commissionPct: Number(entry.commissionPct || 0),
+    estimatedValue: Number(entry.estimatedValue || entry.baseFeeMax || 0),
+    status: mapProposalStatus(entry.status),
+    lastActivity: entry.lastActivity || "Updated recently",
+    notesShort: entry.notesShort || "Proposal details available in backend records."
+  };
+};
+
+const fallbackProposals: Proposal[] = [
   {
     id: "P-301",
     brand: "GlowUp Hub",
@@ -171,22 +214,47 @@ const currencyFormat = (value: number): string =>
 // Main page component
 export function ProposalsInboxPage(): JSX.Element {
   const navigate = useNavigate();
-  const [proposals, setProposals] = useState<Proposal[]>(PROPOSALS);
+  const [proposals, setProposals] = useState<Proposal[]>(fallbackProposals);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabId>("all");
   const [statusFilter, setStatusFilter] = useState<"All" | ProposalStatus>("All");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
   const [minBudget, setMinBudget] = useState<string>("");
   const [selectedProposalId, setSelectedProposalId] = useState<string | null>(
-    PROPOSALS[0]?.id ?? null
+    fallbackProposals[0]?.id ?? null
   );
   const [expandedProposalId, setExpandedProposalId] = useState<string | null>(null);
-  const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadProposals = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getProposals();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapProposalRecord);
+        if (mapped.length > 0) {
+          setProposals(mapped);
+          setSelectedProposalId(mapped[0]?.id ?? null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load proposals from backend");
+        }
+      }
+    };
+
+    void loadProposals();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleAcceptProposal = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
+      await backendApi.transitionProposal(id, "accepted");
       setProposals((prev) =>
         prev.map((p) => (p.id === id ? { ...p, status: "Accepted", lastActivity: "Accepted · Just now" } : p))
       );
@@ -195,8 +263,7 @@ export function ProposalsInboxPage(): JSX.Element {
 
   const handleDeclineProposal = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
+      await backendApi.transitionProposal(id, "declined");
       setProposals((prev) =>
         prev.map((p) => (p.id === id ? { ...p, status: "Declined", lastActivity: "Declined · Just now" } : p))
       );
@@ -243,6 +310,11 @@ export function ProposalsInboxPage(): JSX.Element {
 
       <main className="flex-1 flex flex-col w-full p-3 sm:p-4 md:p-6 lg:p-8 pt-8 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
+          {backendError ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
           {/* Header summary + actions */}
           <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
             <div>
@@ -762,4 +834,3 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, isPendin
     </div>
   );
 }
-

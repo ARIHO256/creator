@@ -30,5 +30,11 @@ export default defineConfig({
   plugins: [react(), spaFallback()],
   server: {
     port: 5173,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:4010",
+        changeOrigin: true,
+      },
+    },
   },
 });

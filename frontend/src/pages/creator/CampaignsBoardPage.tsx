@@ -5,11 +5,12 @@
 // into Proposals, Shoppable Adz, Live Schedule and Contracts. Also surfaces origin
 // (from invites vs creator pitches) and simple pipeline health.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
+import { backendApi, type CampaignRecord } from "../../lib/api";
 
 const STAGES = [
   "Leads",
@@ -43,7 +44,53 @@ type Campaign = {
   lastActivity: string;
 };
 
-const CAMPAIGNS: Campaign[] = [
+const mapCampaignStage = (stage?: string): StageId => {
+  const value = String(stage || "").toLowerCase();
+  if (value === "active_contracts" || value === "active") return "Active contracts";
+  if (value === "pitches_sent") return "Pitches sent";
+  if (value === "negotiating" || value === "in_negotiation") return "Negotiating";
+  if (value === "completed") return "Completed";
+  if (value === "terminated" || value === "cancelled") return "Terminated";
+  return "Leads";
+};
+
+const mapCampaignOrigin = (origin?: string): Origin => {
+  const value = String(origin || "").toLowerCase();
+  return value === "seller" || value === "seller-invite" ? "seller-invite" : "creator-pitch";
+};
+
+const mapCampaignHealth = (status?: string): PipelineHealth => {
+  const value = String(status || "").toLowerCase();
+  if (value === "at_risk") return "at-risk";
+  if (value === "stalled" || value === "terminated") return "stalled";
+  return "on-track";
+};
+
+const mapCampaignRecord = (entry: CampaignRecord, index: number): Campaign => {
+  const stage = mapCampaignStage(entry.stage || entry.status);
+  const seller = entry.seller || "Supplier";
+  const title = entry.title || `Campaign ${index + 1}`;
+  const value = Number(entry.value || 0);
+
+  return {
+    id: String(entry.id || `campaign-${index + 1}`),
+    name: title,
+    seller,
+    stage,
+    origin: mapCampaignOrigin(entry.origin),
+    estValue: value,
+    currency: entry.currency || "USD",
+    type: entry.type || "Creator campaign",
+    region: entry.region || "Global",
+    nextAction: entry.note || "Review campaign details",
+    promoCount: 0,
+    liveCount: 0,
+    health: mapCampaignHealth(entry.status),
+    lastActivity: entry.lastActivity || entry.note || "Updated recently"
+  };
+};
+
+const fallbackCampaigns: Campaign[] = [
   {
     id: "C-101",
     name: "Beauty Flash with GlowUp",
@@ -149,6 +196,8 @@ export type CampaignsBoardPageProps = {
 export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoardPageProps = {}) {
   const navigate = useNavigate();
   // const { theme } = useTheme();
+  const [campaigns, setCampaigns] = useState<Campaign[]>(fallbackCampaigns);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [activeStageFilter, setActiveStageFilter] = useState<StageId | "All">("All");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<keyof Campaign>("estValue");
@@ -156,14 +205,39 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
   const [isPitchDrawerOpen, setIsPitchDrawerOpen] = useState(false);
   const [pitchRecipient, setPitchRecipient] = useState<Campaign | null>(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCampaigns = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getCampaigns();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapCampaignRecord);
+        if (mapped.length > 0) {
+          setCampaigns(mapped);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load campaigns from backend");
+        }
+      }
+    };
+
+    void loadCampaigns();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const openPitchDrawer = (campaign?: Campaign) => {
     setPitchRecipient(campaign || null);
     setIsPitchDrawerOpen(true);
   };
 
   const totalValue = useMemo(() => {
-    return CAMPAIGNS.reduce((sum, c) => sum + c.estValue, 0);
-  }, []);
+    return campaigns.reduce((sum, c) => sum + c.estValue, 0);
+  }, [campaigns]);
 
   const stageSummaries = useMemo(() => {
     const map: Record<StageId, { count: number; value: number }> = {
@@ -174,28 +248,28 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
       Completed: { count: 0, value: 0 },
       Terminated: { count: 0, value: 0 }
     };
-    CAMPAIGNS.forEach((c) => {
+    campaigns.forEach((c) => {
       map[c.stage].count += 1;
       map[c.stage].value += c.estValue;
     });
     return map;
-  }, []);
+  }, [campaigns]);
 
   const originSummaries = useMemo(() => {
     const base = {
       "seller-invite": { count: 0, value: 0 },
       "creator-pitch": { count: 0, value: 0 }
     };
-    CAMPAIGNS.forEach((c) => {
+    campaigns.forEach((c) => {
       base[c.origin].count += 1;
       base[c.origin].value += c.estValue;
     });
     return base;
-  }, []);
+  }, [campaigns]);
 
   const filteredCampaigns = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const result = CAMPAIGNS.filter((c) => {
+    const result = campaigns.filter((c) => {
       if (activeStageFilter !== "All" && c.stage !== activeStageFilter) return false;
       if (q) {
         const inName = c.name.toLowerCase().includes(q);
@@ -215,7 +289,7 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
     });
 
     return result;
-  }, [activeStageFilter, search, sortKey, sortOrder]);
+  }, [activeStageFilter, campaigns, search, sortKey, sortOrder]);
 
   const toggleSort = (key: keyof Campaign) => {
     if (sortKey === key) {
@@ -243,6 +317,11 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
+          {backendError ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
           {/* Header + money summary */}
           <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
             <div>

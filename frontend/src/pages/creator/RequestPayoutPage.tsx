@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 // import { useTheme } from "../../contexts/ThemeContext";
 import { PayoutMethodsDialog } from "../../shell/PayoutMethodsDialog";
+import { backendApi } from "../../lib/api";
 
 type Step = "amount" | "confirm" | "success";
 
@@ -29,6 +30,9 @@ export const RequestPayoutPage: React.FC = () => {
     const [amount, setAmount] = useState<string>("500");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedMethod, setSelectedMethod] = useState(getPayoutMethodDisplay());
+    const [availableBalance, setAvailableBalance] = useState(1243.5);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     useEffect(() => {
         // Update payout method display when it changes
@@ -47,12 +51,45 @@ export const RequestPayoutPage: React.FC = () => {
         };
     }, []);
 
-    const availableBalance = 1243.50;
     const currency = "USD";
 
-    const handleNext = () => {
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadSummary = async () => {
+            try {
+                const summary = await backendApi.getEarningsSummary();
+                if (!cancelled) {
+                    setAvailableBalance(Number(summary.available || 0));
+                }
+            } catch {
+                // keep fallback balance
+            }
+        };
+
+        void loadSummary();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const handleNext = async () => {
+        setSubmitError(null);
         if (step === "amount") setStep("confirm");
-        else if (step === "confirm") setStep("success");
+        else if (step === "confirm") {
+            setIsSubmitting(true);
+            try {
+                await backendApi.requestPayout({
+                    amount: Number(amount),
+                    currency,
+                });
+                setStep("success");
+            } catch (err) {
+                setSubmitError(err instanceof Error ? err.message : "Payout request failed");
+            } finally {
+                setIsSubmitting(false);
+            }
+        }
     };
 
     const handleBack = () => {
@@ -195,11 +232,11 @@ export const RequestPayoutPage: React.FC = () => {
                         {step !== "success" && (
                             <div className="flex flex-col gap-3 mt-4">
                                 <button
-                                    onClick={handleNext}
-                                    disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableBalance}
+                                    onClick={() => void handleNext()}
+                                    disabled={isSubmitting || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableBalance}
                                     className="w-full py-5 rounded-2xl bg-[#f77f00] text-white text-lg font-bold hover:bg-[#e26f00] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/20"
                                 >
-                                    {step === "amount" ? "Continue" : "Confirm and Withdraw"}
+                                    {step === "amount" ? "Continue" : isSubmitting ? "Submitting..." : "Confirm and Withdraw"}
                                 </button>
                                 <button
                                     onClick={handleBack}
@@ -208,6 +245,9 @@ export const RequestPayoutPage: React.FC = () => {
                                     {step === "amount" ? "Cancel and Go Back" : "Go Back to Amount"}
                                 </button>
                             </div>
+                        )}
+                        {submitError && (
+                            <p className="text-xs text-red-500 dark:text-red-400">{submitError}</p>
                         )}
                     </section>
 

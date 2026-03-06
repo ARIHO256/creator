@@ -7,22 +7,130 @@
 // • Contract detail pane with summary, deliverables checklist, termination options, timeline
 // • Premium extras: Gantt strip for deliverable schedule, Contract health bar
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
 import { jsPDF } from "jspdf";
 
 import { CONTRACTS, Contract, ScheduleSegment, Deliverable, TimelineEvent } from "../../data/mockContracts";
+import { backendApi, type ContractRecord } from "../../lib/api";
 
 const CONTRACT_FILTERS = ["All", "Active", "Upcoming", "Completed", "Terminated"] as const;
 
+const toReadableDate = (value?: string) => {
+  if (!value) return "TBD";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+};
+
+const mapContractStatus = (status?: string): Contract["status"] => {
+  const value = String(status || "").toLowerCase();
+  if (value === "completed" || value === "complete") return "Completed";
+  if (value === "terminated" || value === "termination_requested") return "Terminated";
+  if (value === "upcoming" || value === "pending") return "Upcoming";
+  return "Active";
+};
+
+const mapContractHealth = (health?: string): { label: Contract["health"]; score: number } => {
+  const value = String(health || "").toLowerCase();
+  if (value === "at_risk" || value === "at risk") return { label: "At risk", score: 62 };
+  if (value === "complete" || value === "completed") return { label: "Completed", score: 95 };
+  if (value === "terminated") return { label: "Terminated", score: 20 };
+  return { label: "On track", score: 82 };
+};
+
+const buildSchedule = (deliverables: Deliverable[]): ScheduleSegment[] => {
+  if (!deliverables.length) {
+    return [{ label: "Scope", start: 0, end: 100 }];
+  }
+  const step = Math.max(10, Math.floor(100 / deliverables.length));
+  return deliverables.map((item, index) => ({
+    label: item.label,
+    start: Math.min(100, index * step),
+    end: Math.min(100, (index + 1) * step)
+  }));
+};
+
+const mapContractRecord = (entry: ContractRecord, index: number): Contract => {
+  const deliverables: Deliverable[] = Array.isArray(entry.deliverables)
+    ? entry.deliverables.map((row, rowIndex) => ({
+      id: rowIndex + 1,
+      label: row.label || `Deliverable ${rowIndex + 1}`,
+      due: row.due || "TBD",
+      done: Boolean(row.done)
+    }))
+    : [];
+
+  const timeline: TimelineEvent[] = Array.isArray(entry.timeline)
+    ? entry.timeline.map((row, rowIndex) => ({
+      date: row.date || row.when || `Step ${rowIndex + 1}`,
+      label: row.label || row.what || "Updated"
+    }))
+    : [];
+
+  const totalTasks = deliverables.length;
+  const remainingTasks = deliverables.filter((row) => !row.done).length;
+  const health = mapContractHealth(entry.health);
+  const startDate = toReadableDate(entry.startDate);
+  const endDate = toReadableDate(entry.endDate);
+  const status = mapContractStatus(entry.status);
+
+  return {
+    id: String(entry.id || `contract-${index + 1}`),
+    brand: entry.parties?.seller?.name || "Supplier",
+    campaign: entry.title || `Campaign ${index + 1}`,
+    period: `${startDate} - ${endDate}`,
+    status,
+    value: Number(entry.value || 0),
+    currency: entry.currency || "USD",
+    remainingTasks,
+    totalTasks: totalTasks || 1,
+    payoutStatus: status === "Completed" ? "100% paid" : status === "Terminated" ? "Termination in review" : "Pending by milestones",
+    health: health.label,
+    healthScore: health.score,
+    schedule: buildSchedule(deliverables),
+    deliverables,
+    timeline
+  };
+};
+
 
 function ContractsPage() {
+  const [contracts, setContracts] = useState<Contract[]>(CONTRACTS);
+  const [backendError, setBackendError] = useState<string | null>(null);
+  const [activeFilter, setActiveFilter] = useState<(typeof CONTRACT_FILTERS)[number]>("Active");
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(CONTRACTS[0]?.id ?? null);
 
-  const [activeFilter, setActiveFilter] = useState("Active");
-  const [selectedContractId, setSelectedContractId] = useState("C-101");
+  useEffect(() => {
+    let cancelled = false;
 
-  const contracts = CONTRACTS;
+    const loadContracts = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getContracts();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapContractRecord);
+        if (mapped.length > 0) {
+          setContracts(mapped);
+          setSelectedContractId(mapped[0]?.id ?? null);
+        } else {
+          setContracts([]);
+          setSelectedContractId(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load contracts from backend");
+          setContracts(CONTRACTS);
+        }
+      }
+    };
+
+    void loadContracts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const filteredContracts = useMemo(() => {
     return contracts.filter((c) => {
@@ -48,6 +156,11 @@ function ContractsPage() {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-4 items-start">
+          {backendError ? (
+            <section className="xl:col-span-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
           {/* Contracts list */}
           <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 flex flex-col gap-3 text-sm">
             <div className="flex items-center justify-between gap-2">
@@ -94,7 +207,7 @@ function ContractsPage() {
                 <ContractRow
                   key={c.id}
                   contract={c}
-                  active={selectedContract && selectedContract.id === c.id}
+                  active={selectedContract?.id === c.id}
                   onSelect={() => setSelectedContractId(c.id)}
                 />
               ))}

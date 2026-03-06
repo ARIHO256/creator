@@ -7,6 +7,7 @@ import { AppThemeProvider } from "./contexts/ThemeContext";
 import { getUserStatus, getLandingPageTarget, hasPermission } from "./utils/accessControl";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { NotificationProvider } from "./contexts/NotificationContext";
+import { useRouteBackendWarmup } from "./hooks/useRouteBackendWarmup";
 
 
 // Page Imports
@@ -60,6 +61,7 @@ import MySubscriptionPage from "./pages/creator/MySubscriptionPage";
 
 const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
   const status = getUserStatus();
+  useRouteBackendWarmup(status !== "GUEST");
 
   if (status === "GUEST") {
     return <Navigate to="/" replace />;

@@ -3,7 +3,7 @@
 // Layout: Left filter column, right results grid (list on mobile).
 // EVzone / MyLiveDealz styling with primary orange #f77f00.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 // import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
 import { Tooltip } from "../../components/Tooltip";
@@ -12,6 +12,7 @@ import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
 import { useLocation } from "react-router-dom";
+import { backendApi, type OpportunityRecord } from "../../lib/api";
 
 
 type Campaign = {
@@ -38,6 +39,63 @@ type Campaign = {
   supplierType: "Seller" | "Provider";
   collaborationStatus: "Not invited" | "Invited" | "Collaborating";
   opportunityStatus: "Open" | "Closed";
+};
+
+const parseBudgetRange = (payBand?: string | null) => {
+  const matches = String(payBand || "").match(/\d+(?:,\d+)?/g);
+  if (!matches?.length) {
+    return { min: 0, max: 0 };
+  }
+  const values = matches.map((item) => Number(item.replace(/,/g, ""))).filter((n) => Number.isFinite(n));
+  if (!values.length) {
+    return { min: 0, max: 0 };
+  }
+  if (values.length === 1) {
+    return { min: values[0], max: values[0] };
+  }
+  return { min: Math.min(values[0], values[1]), max: Math.max(values[0], values[1]) };
+};
+
+const initialsFromName = (name: string) =>
+  name
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase() || "SP";
+
+const mapOpportunityToCampaign = (entry: OpportunityRecord, index: number): Campaign => {
+  const sellerName = entry.seller?.name || "Supplier";
+  const sellerCategory = entry.seller?.category || "General";
+  const budget = parseBudgetRange(entry.payBand);
+  const commissionMatch = String(entry.payBand || "").match(/(\d+)\s*%/);
+  const commission = commissionMatch ? Number(commissionMatch[1]) : 0;
+
+  return {
+    id: index + 1,
+    seller: sellerName,
+    sellerInitials: initialsFromName(sellerName),
+    rating: Number(entry.seller?.rating || 0),
+    category: sellerCategory,
+    categories: [sellerCategory],
+    region: entry.seller?.region || "Global",
+    language: "English",
+    payBand: entry.payBand || "$0",
+    budgetMin: budget.min,
+    budgetMax: budget.max,
+    commission,
+    matchScore: entry.status === "OPEN" ? "High" : "Medium",
+    matchReason: entry.description || "Matched by category and audience fit.",
+    deliverables: ["Live", "Posts"],
+    liveWindow: "Flexible",
+    timeline: ["Briefing", "Live session", "Post-campaign recap"],
+    summary: entry.description || entry.title || "Creator collaboration opportunity",
+    tags: [sellerCategory, String(entry.status || "OPEN")],
+    supplierType: String(entry.seller?.type || "Seller").toLowerCase().includes("provider") ? "Provider" : "Seller",
+    collaborationStatus: "Collaborating",
+    opportunityStatus: entry.status === "CLOSED" ? "Closed" : "Open"
+  };
 };
 
 type OpportunitiesBoardPageProps = {
@@ -203,6 +261,32 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
       opportunityStatus: "Closed"
     }
   ]);
+  const [backendError, setBackendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadOpportunities = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getOpportunities();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapOpportunityToCampaign);
+        if (mapped.length > 0) {
+          setCampaigns(mapped);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load opportunities from backend");
+        }
+      }
+    };
+
+    void loadOpportunities();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const scopedCampaigns = useMemo(() => {
     return campaigns.filter((c) => {
@@ -586,6 +670,11 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
         {/* Right content – campaigns list/grid */}
         <section className="flex-1 overflow-y-auto overflow-x-hidden w-full p-3 sm:p-4 md:p-6 lg:p-8 pt-8">
           <div className="w-full max-w-full flex flex-col gap-3">
+            {backendError && (
+              <div className="text-xs text-amber-600 dark:text-amber-400">
+                Backend request failed: {backendError}. Showing fallback opportunities.
+              </div>
+            )}
             {scopedSupplierName && (
               <div className="rounded-xl border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
                 Showing currently available opportunities from <span className="font-bold">{scopedSupplierName}</span>.

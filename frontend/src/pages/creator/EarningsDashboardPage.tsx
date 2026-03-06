@@ -7,7 +7,7 @@
 // 4) Payout actions: Request payout, Setup / edit payout method.
 // Premium extras: Forecast card, Tax/export tools.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
@@ -15,6 +15,7 @@ import { PayoutMethodsDialog } from "../../shell/PayoutMethodsDialog";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
+import { backendApi, type PayoutRecord } from "../../lib/api";
 
 type BreakdownRow = {
   label: string;
@@ -78,7 +79,7 @@ const earningsComposition = {
   bonuses: 600
 };
 
-const payouts = [
+const fallbackPayouts = [
   {
     id: "P-2025-010",
     date: "Oct 12, 2025",
@@ -108,6 +109,23 @@ const payouts = [
   }
 ];
 
+const normalizePayoutStatus = (status?: string) => {
+  const value = String(status || "").toLowerCase();
+  if (value === "paid") return "Paid";
+  if (value === "failed") return "Failed";
+  return "Processing";
+};
+
+const normalizePayoutRow = (item: PayoutRecord, index: number): Payout => ({
+  id: String(item.id || item.reference || `payout-${index + 1}`),
+  date: item.date || item.requestedAt || "—",
+  amount: Number(item.amount || 0),
+  currency: item.currency || "USD",
+  status: normalizePayoutStatus(item.status),
+  method: item.method || "Payout",
+  reference: item.reference || String(item.id || `payout-${index + 1}`)
+});
+
 function EarningsDashboardPage() {
   const navigate = useNavigate();
   const { showSuccess, showNotification } = useNotification();
@@ -117,16 +135,50 @@ function EarningsDashboardPage() {
   const [dateRange, setDateRange] = useState("last-3-months");
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
 
-  // Summary values (demo data)
-  const summary = {
+  const [summary, setSummary] = useState<Summary>({
     available: 1243.5,
     pending: 620.75,
     lifetime: 18240.25
-  };
+  });
+  const [payoutRows, setPayoutRows] = useState<Payout[]>(fallbackPayouts);
+  const [financeError, setFinanceError] = useState<string | null>(null);
 
   const [payoutStatusFilter, setPayoutStatusFilter] = useState("All");
 
+  useEffect(() => {
+    let cancelled = false;
 
+    const loadFinanceData = async () => {
+      setFinanceError(null);
+      try {
+        const [summaryData, payoutsData] = await Promise.all([
+          backendApi.getEarningsSummary(),
+          backendApi.getPayouts()
+        ]);
+        if (cancelled) return;
+
+        setSummary({
+          available: Number(summaryData.available || 0),
+          pending: Number(summaryData.pending || 0),
+          lifetime: Number(summaryData.lifetime || 0)
+        });
+
+        const mappedPayouts = (Array.isArray(payoutsData) ? payoutsData : []).map(normalizePayoutRow);
+        if (mappedPayouts.length > 0) {
+          setPayoutRows(mappedPayouts);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setFinanceError(err instanceof Error ? err.message : "Failed to load backend finance data");
+        setPayoutRows(fallbackPayouts);
+      }
+    };
+
+    void loadFinanceData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Forecast: simple extrapolation based on monthly data
   const forecast = useMemo(() => {
@@ -143,9 +195,9 @@ function EarningsDashboardPage() {
   }, []);
 
   const filteredPayouts = useMemo(() => {
-    if (payoutStatusFilter === "All") return payouts;
-    return payouts.filter(p => p.status === payoutStatusFilter);
-  }, [payoutStatusFilter]);
+    if (payoutStatusFilter === "All") return payoutRows;
+    return payoutRows.filter((p) => p.status === payoutStatusFilter);
+  }, [payoutRows, payoutStatusFilter]);
 
   const breakdownData =
     viewMode === "campaign"
@@ -223,6 +275,11 @@ function EarningsDashboardPage() {
         <div className="w-full max-w-full flex flex-col gap-4">
           {/* Summary row */}
           <SummaryRow summary={summary} onRequestPayout={handleRequestPayout} />
+          {financeError && (
+            <div className="text-xs text-amber-600 dark:text-amber-400">
+              Backend request failed: {financeError}. Showing fallback values.
+            </div>
+          )}
 
           {/* Earnings breakdown + forecast */}
           <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start">

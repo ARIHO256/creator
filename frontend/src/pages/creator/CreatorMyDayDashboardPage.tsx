@@ -2,10 +2,11 @@
 // Operational cockpit for creators – Daily Work Hub
 // EVzone colours: Orange #f77f00, Green #03cd8c, Light Grey #f2f2f2
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import type { PageId } from "../../layouts/CreatorShellLayout";
+import { backendApi } from "../../lib/api";
 
 type Toast = { message: string } | null;
 
@@ -124,6 +125,114 @@ type ProposalsPanelProps = {
   onChangePage?: (page: PageId) => void;
 };
 
+const fallbackTasks: Task[] = [
+  {
+    id: 1,
+    title: "Upload Beauty Flash teaser clip",
+    deal: "GlowUp Hub · Beauty Flash",
+    due: "Today · 16:00",
+    status: "open",
+    type: "post",
+    campaign: "Beauty Flash"
+  },
+  {
+    id: 2,
+    title: "Draft script for Tech Friday intro",
+    deal: "GadgetMart · Tech Friday",
+    due: "Today · 18:00",
+    status: "open",
+    type: "prep",
+    campaign: "Tech Friday"
+  },
+  {
+    id: 3,
+    title: "Confirm product list with Grace Living",
+    deal: "Faith & Wellness Morning Dealz",
+    due: "Tomorrow · 10:00",
+    status: "open",
+    type: "admin",
+    campaign: "Faith & Wellness"
+  },
+  {
+    id: 4,
+    title: "Review 2 new proposals",
+    deal: "Multiple brands",
+    due: "Tomorrow · 14:00",
+    status: "open",
+    type: "proposal",
+    campaign: "Multi"
+  },
+  {
+    id: 5,
+    title: "Send performance report to GlowUp",
+    deal: "Beauty Flash recap",
+    due: "In 2 days",
+    status: "open",
+    type: "report",
+    campaign: "Beauty Flash"
+  }
+];
+
+const fallbackProposals: Proposal[] = [
+  {
+    id: "P-101",
+    brand: "GlowUp Hub",
+    title: "Autumn Beauty Flash",
+    budget: "$400 + 5% commission",
+    status: "New"
+  },
+  {
+    id: "P-102",
+    brand: "GadgetMart",
+    title: "Tech Friday Q4 series",
+    budget: "$1,200 flat",
+    status: "Awaiting reply"
+  }
+];
+
+const fallbackEarnings: Earnings = {
+  today: 120,
+  todayFlat: 80,
+  todayCommission: 40,
+  last7: 890,
+  last7Avg: 890 / 7,
+  mtd: 2430,
+  mtdGoal: 3000,
+  todaySpark: [2, 5, 3, 4, 6, 4, 7],
+  last7Spark: [3, 4, 5, 6, 5, 7, 8],
+  mtdSpark: [2, 3, 5, 7, 6, 8, 9]
+};
+
+const mapDashboardTask = (entry: any, index: number): Task => {
+  const dueAt = entry?.dueAt ? new Date(entry.dueAt) : null;
+  const dueLabel = entry?.dueLabel || (dueAt ? dueAt.toLocaleString() : "Upcoming");
+  const title = entry?.title || `Task ${index + 1}`;
+  const campaign = entry?.campaign || "Campaign";
+  const supplier = entry?.supplier || "Supplier";
+  const status = String(entry?.column || "").toLowerCase().includes("approved") ? "done" : "open";
+
+  return {
+    id: index + 1,
+    title,
+    deal: `${supplier} · ${campaign}`,
+    due: dueLabel,
+    status,
+    type: entry?.type || "task",
+    campaign
+  };
+};
+
+const mapProposal = (entry: any, index: number): Proposal => ({
+  id: entry?.id || `P-${index + 1}`,
+  brand: entry?.brand || "Supplier",
+  title: entry?.campaign || "Campaign proposal",
+  budget:
+    typeof entry?.baseFeeMin === "number" && typeof entry?.baseFeeMax === "number"
+      ? `$${entry.baseFeeMin} - $${entry.baseFeeMax}`
+      : undefined,
+  status: entry?.status ? String(entry.status).replace(/_/g, " ") : "Open"
+});
+
 export function CreatorMyDayDashboardPage() {
   const navigate = useNavigate();
   const onChangePage = (page: PageId) => {
@@ -137,74 +246,63 @@ export function CreatorMyDayDashboardPage() {
   const [hasRecentLive] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: 1,
-      title: "Upload Beauty Flash teaser clip",
-      deal: "GlowUp Hub · Beauty Flash",
-      due: "Today · 16:00",
-      status: "open",
-      type: "post",
-      campaign: "Beauty Flash"
-    },
-    {
-      id: 2,
-      title: "Draft script for Tech Friday intro",
-      deal: "GadgetMart · Tech Friday",
-      due: "Today · 18:00",
-      status: "open",
-      type: "prep",
-      campaign: "Tech Friday"
-    },
-    {
-      id: 3,
-      title: "Confirm product list with Grace Living",
-      deal: "Faith & Wellness Morning Dealz",
-      due: "Tomorrow · 10:00",
-      status: "open",
-      type: "admin",
-      campaign: "Faith & Wellness"
-    },
-    {
-      id: 4,
-      title: "Review 2 new proposals",
-      deal: "Multiple brands",
-      due: "Tomorrow · 14:00",
-      status: "open",
-      type: "proposal",
-      campaign: "Multi"
-    },
-    {
-      id: 5,
-      title: "Send performance report to GlowUp",
-      deal: "Beauty Flash recap",
-      due: "In 2 days",
-      status: "open",
-      type: "report",
-      campaign: "Beauty Flash"
-    }
-  ]);
+  const [tasks, setTasks] = useState<Task[]>(fallbackTasks);
+  const [proposals, setProposals] = useState<Proposal[]>(fallbackProposals);
+  const [earnings, setEarnings] = useState<Earnings>(fallbackEarnings);
 
   const [taskFilter, setTaskFilter] = useState("all"); // all | today | proposals | beauty
   const [proposalsPanelOpen, setProposalsPanelOpen] = useState(false);
 
-  const proposals = [
-    {
-      id: "P-101",
-      brand: "GlowUp Hub",
-      title: "Autumn Beauty Flash",
-      budget: "$400 + 5% commission",
-      status: "New"
-    },
-    {
-      id: "P-102",
-      brand: "GadgetMart",
-      title: "Tech Friday Q4 series",
-      budget: "$1,200 flat",
-      status: "Awaiting reply"
-    }
-  ];
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDashboard = async () => {
+      setBackendError(null);
+      try {
+        const [myDay, proposalsRows, summary] = await Promise.all([
+          backendApi.getDashboardMyDay(),
+          backendApi.getProposals(),
+          backendApi.getEarningsSummary()
+        ]);
+
+        if (cancelled) return;
+
+        const mappedTasks = (Array.isArray(myDay?.tasks) ? myDay.tasks : []).map(mapDashboardTask);
+        if (mappedTasks.length > 0) {
+          setTasks(mappedTasks);
+        }
+
+        const mappedProposals = (Array.isArray(proposalsRows) ? proposalsRows : []).map(mapProposal);
+        if (mappedProposals.length > 0) {
+          setProposals(mappedProposals);
+        }
+
+        const lifetime = Number(summary?.lifetime || fallbackEarnings.mtd);
+        const pending = Number(summary?.pending || fallbackEarnings.todayCommission);
+        const available = Number(summary?.available || fallbackEarnings.todayFlat);
+        setEarnings((prev) => ({
+          ...prev,
+          today: available + pending,
+          todayFlat: available,
+          todayCommission: pending,
+          last7: lifetime,
+          last7Avg: Math.max(1, lifetime / 7),
+          mtd: lifetime
+        }));
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load My Day data from backend");
+        }
+      }
+    };
+
+    void loadDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openTasks = tasks.filter((t) => t.status === "open");
   const nextTasksAll = openTasks.slice(0, 5);
@@ -228,19 +326,6 @@ export function CreatorMyDayDashboardPage() {
     }
   };
   const currentStats = getStats();
-
-  const earnings = {
-    today: 120,
-    todayFlat: 80,
-    todayCommission: 40,
-    last7: 890,
-    last7Avg: 890 / 7,
-    mtd: 2430,
-    mtdGoal: 3000,
-    todaySpark: [2, 5, 3, 4, 6, 4, 7],
-    last7Spark: [3, 4, 5, 6, 5, 7, 8],
-    mtdSpark: [2, 3, 5, 7, 6, 8, 9]
-  };
 
   const mtdProgress = Math.min(earnings.mtd / earnings.mtdGoal, 1);
 
@@ -361,6 +446,11 @@ export function CreatorMyDayDashboardPage() {
       )}
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 space-y-4 overflow-y-auto overflow-x-hidden">
+        {backendError ? (
+          <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+            Backend data fallback: {backendError}
+          </section>
+        ) : null}
         {/* Focus mode chips */}
         <section className="flex items-center justify-between gap-2 text-sm">
           <div className="flex items-center gap-2">

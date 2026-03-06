@@ -4,11 +4,11 @@
 // warm-only brands appear here – those live in the Suppliers Directory or
 // Campaigns Board.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 // import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
-import { useNavigate } from "react-router-dom";
+import { backendApi, type SellerRecord } from "../../lib/api";
 
 // Relationship reflects current state of collaboration with a seller that has
 // already accepted at least one collab in the past.
@@ -19,6 +19,7 @@ type Relationship = "Active collab" | "Past collab";
 
 type MySeller = {
   id: number;
+  backendId?: string;
   name: string;
   initials: string;
   tagline: string;
@@ -39,6 +40,45 @@ type MySeller = {
   nextAction: string;
   following: boolean;
   favourite: boolean;
+};
+
+const mapMySellerRecord = (entry: SellerRecord, index: number): MySeller => {
+  const name = entry.name || `Seller ${index + 1}`;
+  const initials = name
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  const rating = Number(entry.rating || 0);
+  const isVerified = Boolean(entry.isVerified);
+  const statusIsActive = rating >= 4.4;
+
+  return {
+    id: index + 1,
+    backendId: entry.id,
+    name,
+    initials: initials || "SP",
+    tagline: `${entry.category || "General"} supplier on MyLiveDealz.`,
+    categories: [entry.category || "General"],
+    relationship: statusIsActive ? "Active collab" : "Past collab",
+    lifetimeRevenue: Math.max(300, 600 + Math.round(rating * 600)),
+    currentValue: statusIsActive ? 300 + Math.round(rating * 120) : 0,
+    avgConversion: Math.max(2, Math.round(rating * 10) / 10),
+    campaignsCount: statusIsActive ? 2 : 1,
+    lastCampaign: "Creator collaboration",
+    lastResult: "Imported from backend collaboration records.",
+    openProposals: statusIsActive ? 1 : 0,
+    activeContracts: statusIsActive ? 1 : 0,
+    rating,
+    trustBadges: isVerified ? ["Verified"] : [],
+    primaryContact: "Brand manager",
+    nextLive: statusIsActive ? "To be scheduled" : "Not scheduled",
+    nextAction: statusIsActive ? "Review active campaign details" : "Check in for next campaign",
+    following: true,
+    favourite: false
+  };
 };
 
 const INITIAL_MY_SELLERS: MySeller[] = [
@@ -121,6 +161,7 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
   // const { theme } = useTheme();
   // const navigate = useNavigate();
   const [mySellers, setMySellers] = useState<MySeller[]>(INITIAL_MY_SELLERS);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState<"All" | Relationship>("All");
   const [viewTab, setViewTab] = useState<"all" | "active" | "past">("all");
@@ -132,12 +173,42 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
   const [pitchRecipient, setPitchRecipient] = useState<MySeller | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMySellers = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getMySellers();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapMySellerRecord);
+        if (mapped.length > 0) {
+          setMySellers(mapped);
+          setSelectedSellerId(mapped[0]?.id ?? null);
+        } else {
+          setMySellers([]);
+          setSelectedSellerId(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load My Suppliers from backend");
+          setMySellers(INITIAL_MY_SELLERS);
+        }
+      }
+    };
+
+    void loadMySellers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const openPitchDrawer = (seller?: MySeller) => {
     if (seller) {
       setPitchRecipient(seller);
     } else {
       // If global "Pitch Suppliers" is clicked, maybe pick selected or default
-      setPitchRecipient(selectedSeller || INITIAL_MY_SELLERS[0]);
+      setPitchRecipient(selectedSeller || mySellers[0] || null);
     }
     setIsPitchDrawerOpen(true);
   };
@@ -238,6 +309,11 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-4">
+          {backendError ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
           {/* Overview + stats */}
           <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-3 text-sm">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
