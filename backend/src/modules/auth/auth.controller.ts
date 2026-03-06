@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -10,7 +10,7 @@ import { SwitchRoleDto } from './dto/switch-role.dto.js';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Public()
   @Post('register')

@@ -10,10 +10,11 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     @Inject(Reflector) private readonly reflector: Reflector,
     @Inject(JwtService) private readonly jwtService: JwtService,
-    private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
+    const authDisabled = this.configService.get<boolean>('auth.disabled');
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass()
@@ -24,6 +25,16 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<{ headers: Record<string, string>; user?: RequestUser }>();
+
+    if (authDisabled) {
+      request.user = {
+        sub: this.configService.get<string>('auth.devUserId') ?? 'user_ronald',
+        role: this.configService.get<string>('auth.devUserRole') ?? 'CREATOR',
+        email: null
+      };
+      return true;
+    }
+
     const authHeader = request.headers.authorization;
 
     if (!authHeader) {

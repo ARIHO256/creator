@@ -1,12 +1,20 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator.js';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
+  constructor(
+    @Inject(Reflector) private readonly reflector: Reflector,
+    @Inject(ConfigService) private readonly configService: ConfigService
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
+    if (this.configService.get<boolean>('auth.disabled')) {
+      return true;
+    }
+
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass()

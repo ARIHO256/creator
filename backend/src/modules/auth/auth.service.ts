@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException
@@ -7,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
-import { randomUUID } from 'crypto';
+import { randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -18,9 +19,9 @@ import { SwitchRoleDto } from './dto/switch-role.dto.js';
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(JwtService) private readonly jwtService: JwtService,
+    @Inject(ConfigService) private readonly configService: ConfigService
   ) {}
 
   async register(payload: RegisterDto) {
@@ -77,9 +78,30 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const passwordOk = await compare(payload.password, user.passwordHash);
+    let passwordOk = false;
+    let shouldUpgradeLegacyHash = false;
+
+    try {
+      passwordOk = await compare(payload.password, user.passwordHash);
+    } catch {
+      passwordOk = false;
+    }
+
+    if (!passwordOk) {
+      passwordOk = this.verifyLegacyPassword(payload.password, user.passwordHash);
+      shouldUpgradeLegacyHash = passwordOk;
+    }
+
     if (!passwordOk) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (shouldUpgradeLegacyHash) {
+      const upgradedPasswordHash = await hash(payload.password, 12);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: upgradedPasswordHash }
+      });
     }
 
     return this.issueTokens(user.id, user.email, user.role);
@@ -203,5 +225,22 @@ export class AuthService {
       tokenType: 'Bearer',
       expiresIn: accessExpiresIn
     };
+  }
+
+  private verifyLegacyPassword(password: string, storedHash: string) {
+    const [salt, originalHash] = String(storedHash || '').split(':');
+    if (!salt || !originalHash) {
+      return false;
+    }
+
+    try {
+      const candidateHash = scryptSync(password, salt, 64).toString('hex');
+      if (candidateHash.length !== originalHash.length) {
+        return false;
+      }
+      return timingSafeEqual(Buffer.from(candidateHash, 'hex'), Buffer.from(originalHash, 'hex'));
+    } catch {
+      return false;
+    }
   }
 }

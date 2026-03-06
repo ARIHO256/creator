@@ -1,10 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 
 @Injectable()
 export class FinanceService {
-  constructor(private readonly records: AppRecordsService) {}
+  constructor(@Inject(AppRecordsService) private readonly records: AppRecordsService) {}
 
   earningsSummary(userId: string) {
     return this.records.getByEntityId('finance', 'earnings_summary', 'main', userId).then((r) => r.payload).catch(() => ({ available: 0, pending: 0, lifetime: 0 }));

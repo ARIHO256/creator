@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { FinanceService } from './finance.service.js';
 
 @Controller()
 export class FinanceController {
-  constructor(private readonly service: FinanceService) {}
+  constructor(@Inject(FinanceService) private readonly service: FinanceService) {}
 
   @Get('earnings/summary') earningsSummary(@CurrentUser() user: RequestUser) { return this.service.earningsSummary(user.sub); }
   @Get('earnings/payouts') payouts(@CurrentUser() user: RequestUser) { return this.service.payouts(user.sub); }
