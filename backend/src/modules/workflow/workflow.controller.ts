@@ -2,6 +2,8 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
+import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
+import { UpdateOnboardingDto } from './dto/update-onboarding.dto.js';
 import { WorkflowService } from './workflow.service.js';
 
 @Controller()
@@ -12,14 +14,15 @@ export class WorkflowController {
   @Post('uploads') createUpload(@CurrentUser() user: RequestUser, @Body() body: CreateUploadDto) { return this.service.createUpload(user.sub, body); }
 
   @Get('onboarding') onboarding(@CurrentUser() user: RequestUser) { return this.service.onboarding(user.sub); }
-  @Patch('onboarding') patchOnboarding(@CurrentUser() user: RequestUser, @Body() body: any) { return this.service.patchOnboarding(user.sub, body); }
+  @Get('onboarding/slug-availability/:slug') slugAvailability(@CurrentUser() user: RequestUser, @Param('slug') slug: string) { return this.service.slugAvailability(user.sub, slug); }
+  @Patch('onboarding') patchOnboarding(@CurrentUser() user: RequestUser, @Body() body: UpdateOnboardingDto) { return this.service.patchOnboarding(user.sub, body); }
   @Post('onboarding/reset') resetOnboarding(@CurrentUser() user: RequestUser) { return this.service.resetOnboarding(user.sub); }
-  @Post('onboarding/submit') submitOnboarding(@CurrentUser() user: RequestUser, @Body() body: any) { return this.service.submitOnboarding(user.sub, body); }
+  @Post('onboarding/submit') submitOnboarding(@CurrentUser() user: RequestUser, @Body() body: UpdateOnboardingDto) { return this.service.submitOnboarding(user.sub, body); }
 
   @Get('account-approval') accountApproval(@CurrentUser() user: RequestUser) { return this.service.accountApproval(user.sub); }
-  @Patch('account-approval') patchAccountApproval(@CurrentUser() user: RequestUser, @Body() body: any) { return this.service.patchAccountApproval(user.sub, body); }
+  @Patch('account-approval') patchAccountApproval(@CurrentUser() user: RequestUser, @Body() body: UpdateAccountApprovalDto) { return this.service.patchAccountApproval(user.sub, body); }
   @Post('account-approval/refresh') refreshAccountApproval(@CurrentUser() user: RequestUser) { return this.service.refreshAccountApproval(user.sub); }
-  @Post('account-approval/resubmit') resubmitAccountApproval(@CurrentUser() user: RequestUser, @Body() body: any) { return this.service.resubmitAccountApproval(user.sub, body); }
+  @Post('account-approval/resubmit') resubmitAccountApproval(@CurrentUser() user: RequestUser, @Body() body: UpdateAccountApprovalDto) { return this.service.resubmitAccountApproval(user.sub, body); }
   @Post('account-approval/dev-approve') devApprove(@CurrentUser() user: RequestUser) { return this.service.devApprove(user.sub); }
 
   @Get('content-approvals') contentApprovals(@CurrentUser() user: RequestUser) { return this.service.contentApprovals(user.sub); }

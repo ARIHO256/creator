@@ -155,10 +155,21 @@ Auth: JWT bearer required unless noted `Public`.
 - `PATCH /api/crew/sessions/:id`
 - `GET /api/audit-logs`
 
+## Wholesale
+- `GET /api/wholesale`
+- `GET /api/wholesale/price-lists`
+- `GET /api/wholesale/rfqs`
+- `GET /api/wholesale/quotes`
+- `GET /api/wholesale/quotes/:id`
+- `POST /api/wholesale/quotes`
+- `PATCH /api/wholesale/quotes/:id`
+- `GET /api/wholesale/incoterms`
+
 ## Workflow
 - `GET /api/uploads`
 - `POST /api/uploads`
 - `GET /api/onboarding`
+- `GET /api/onboarding/slug-availability/:slug`
 - `PATCH /api/onboarding`
 - `POST /api/onboarding/reset`
 - `POST /api/onboarding/submit`
