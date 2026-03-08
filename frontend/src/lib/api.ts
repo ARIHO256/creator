@@ -133,6 +133,7 @@ type TaskRecord = {
   column?: string;
   campaign?: string;
   supplier?: string;
+  type?: string;
   status?: string;
   priority?: string;
   dueAt?: string;
@@ -150,6 +151,108 @@ type AssetRecord = {
   status?: string;
   source?: string;
   tags?: string[];
+};
+
+type NotificationRecord = {
+  id?: string;
+  type?: string;
+  title?: string;
+  message?: string;
+  brand?: string;
+  campaign?: string;
+  createdAt?: string;
+  read?: boolean;
+  link?: string;
+};
+
+type SubscriptionRecord = {
+  plan?: string;
+  cycle?: string;
+  status?: string;
+  renewsAt?: string;
+  cancelAtPeriodEnd?: boolean;
+  billingEmail?: string;
+  billingMethod?: {
+    type?: string;
+    label?: string;
+    brand?: string;
+    last4?: string;
+    holderName?: string;
+    expMonth?: number;
+    expYear?: number;
+  };
+  support?: {
+    contactEmail?: string;
+    salesEmail?: string;
+    helpCenterUrl?: string;
+    managerName?: string;
+  };
+  notes?: string[];
+  limits?: Record<string, unknown>;
+  updatedAt?: string;
+};
+
+type LiveSessionRecord = {
+  id?: string;
+  title?: string;
+  campaign?: string;
+  seller?: string;
+  weekday?: string;
+  dateLabel?: string;
+  scheduledFor?: string;
+  time?: string;
+  location?: string;
+  simulcast?: string[] | string;
+  status?: string;
+  role?: string;
+  durationMin?: number;
+  scriptsReady?: boolean;
+  assetsReady?: boolean;
+  productsCount?: number;
+  workloadScore?: number;
+  conflict?: boolean;
+};
+
+type LiveReplayRecord = {
+  id?: string;
+  sessionId?: string;
+  title?: string;
+  date?: string;
+  views?: number;
+  sales?: number;
+  durationSec?: number;
+  published?: boolean;
+  notes?: string[];
+  status?: string;
+  replayUrl?: string;
+};
+
+type AuditLogRecord = {
+  id?: string;
+  at?: string;
+  when?: string;
+  ts?: string;
+  actor?: string;
+  action?: string;
+  detail?: string;
+  severity?: string;
+  outcome?: string;
+  module?: string;
+  entityType?: string;
+  entityId?: string;
+  entityName?: string;
+  meta?: Record<string, unknown>;
+};
+
+type AnalyticsOverviewRecord = {
+  rank?: string;
+  score?: number;
+  benchmarks?: {
+    viewersPercentile?: number;
+    ctrPercentile?: number;
+    conversionPercentile?: number;
+    salesPercentile?: number;
+  };
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -244,7 +347,36 @@ export const backendApi = {
     request<PayoutRecord>("/api/earnings/payouts/request", {
       method: "POST",
       body: JSON.stringify(body)
-    })
+    }),
+  getNotifications: () => request<NotificationRecord[]>("/api/notifications"),
+  markNotificationRead: (id: string) =>
+    request<unknown>(`/api/notifications/${id}/read`, {
+      method: "PATCH"
+    }),
+  markAllNotificationsRead: () =>
+    request<{ updated?: number }>("/api/notifications/read-all", {
+      method: "POST"
+    }),
+  getSubscription: () => request<SubscriptionRecord>("/api/subscription"),
+  updateSubscription: (body: { plan?: string; cycle?: string }) =>
+    request<SubscriptionRecord>("/api/subscription", {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }),
+  getLiveSessions: () => request<LiveSessionRecord[]>("/api/live/sessions"),
+  getLiveReplays: () => request<LiveReplayRecord[]>("/api/live/replays"),
+  publishReplay: (id: string, body?: Record<string, unknown>) =>
+    request<unknown>(`/api/live/replays/${id}/publish`, {
+      method: "POST",
+      body: JSON.stringify(body ?? {})
+    }),
+  updateReplay: (id: string, body: Record<string, unknown>) =>
+    request<unknown>(`/api/live/replays/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body)
+    }),
+  getAuditLogs: () => request<AuditLogRecord[]>("/api/audit-logs"),
+  getAnalyticsOverview: () => request<AnalyticsOverviewRecord>("/api/analytics/overview")
 };
 
 export type {
@@ -257,5 +389,11 @@ export type {
   ProposalRecord,
   ContractRecord,
   TaskRecord,
-  AssetRecord
+  AssetRecord,
+  NotificationRecord,
+  SubscriptionRecord,
+  LiveSessionRecord,
+  LiveReplayRecord,
+  AuditLogRecord,
+  AnalyticsOverviewRecord
 };

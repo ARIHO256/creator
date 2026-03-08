@@ -3,10 +3,11 @@
 // Views: Week + Agenda (simple week grid + list).
 // Premium extras: AI suggestion row, conflict warnings, side drawer for details.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { backendApi, type LiveSessionRecord } from "../../lib/api";
 import { QRCodeCanvas } from "qrcode.react";
 
 const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
@@ -112,6 +113,62 @@ const SESSIONS: Session[] = [
   }
 ];
 
+const toWeekday = (input?: string, scheduledFor?: string): WeekDay => {
+  if (input && WEEK_DAYS.includes(input as WeekDay)) return input as WeekDay;
+
+  const short = (input || "").slice(0, 3);
+  if (WEEK_DAYS.includes(short as WeekDay)) return short as WeekDay;
+
+  if (scheduledFor) {
+    const parsed = new Date(scheduledFor);
+    if (!Number.isNaN(parsed.getTime())) {
+      const map: WeekDay[] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const day = map[parsed.getDay()];
+      return day === "Sun" ? "Sun" : day;
+    }
+  }
+
+  return "Mon";
+};
+
+const mapLiveSession = (entry: LiveSessionRecord, index: number): Session => {
+  const weekday = toWeekday(entry.weekday, entry.scheduledFor);
+  const scheduledDate = entry.scheduledFor ? new Date(entry.scheduledFor) : null;
+  const hasScheduledDate = Boolean(scheduledDate && !Number.isNaN(scheduledDate.getTime()));
+  const scaledWorkload = Number(entry.workloadScore ?? 0);
+  const workloadScore = scaledWorkload > 10 ? Math.max(1, Math.round(scaledWorkload / 20)) : scaledWorkload;
+
+  return {
+    id: String(entry.id || `session_${index + 1}`),
+    title: entry.title || `Live Session ${index + 1}`,
+    campaign: entry.campaign || "General Campaign",
+    seller: entry.seller || "MyLiveDealz",
+    weekday,
+    dateLabel:
+      entry.dateLabel ||
+      (hasScheduledDate
+        ? `${weekday} ${scheduledDate!.toLocaleDateString(undefined, { day: "2-digit", month: "short" })}`
+        : `${weekday}`),
+    time:
+      entry.time ||
+      (hasScheduledDate
+        ? scheduledDate!.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : "TBD"),
+    location: entry.location || "Remote studio",
+    simulcast: Array.isArray(entry.simulcast)
+      ? entry.simulcast.join(", ")
+      : entry.simulcast || "MyLiveDealz",
+    status: entry.status || "Scheduled",
+    role: entry.role || "Host",
+    durationMin: Number(entry.durationMin ?? 60),
+    scriptsReady: Boolean(entry.scriptsReady),
+    assetsReady: Boolean(entry.assetsReady),
+    productsCount: Number(entry.productsCount ?? 0),
+    workloadScore,
+    conflict: Boolean(entry.conflict) || workloadScore >= 4
+  };
+};
+
 const AI_SLOTS = [
   {
     id: 1,
@@ -156,45 +213,72 @@ function LiveScheduleCalendarPage() {
   const [viewMode, setViewMode] = useState<"week" | "month" | "agenda">("week");
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<Session[]>(SESSIONS);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   const showToast = (msg: string) => setToast(msg);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const rows = await backendApi.getLiveSessions();
+        if (!isMounted) return;
+        if (rows.length) {
+          setSessions(rows.map(mapLiveSession));
+        } else {
+          setSessions(SESSIONS);
+        }
+        setBackendError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        setSessions(SESSIONS);
+        setBackendError(error instanceof Error ? error.message : "Unable to load live sessions.");
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const conflicts = useMemo(() => {
     const msgs: string[] = [];
-    const heavyDays = SESSIONS.filter((s) => s.workloadScore >= 4);
+    const heavyDays = sessions.filter((s) => s.workloadScore >= 4);
     if (heavyDays.length > 0) {
       msgs.push(
         "You have heavy workload on Tech Friday. Consider spacing prep and lives."
       );
     }
-    const conflictSessions = SESSIONS.filter((s) => s.conflict);
+    const conflictSessions = sessions.filter((s) => s.conflict);
     if (conflictSessions.length > 0) {
       msgs.push(
         "Some sessionz may overlap with prep windows. Check Tech Friday schedule."
       );
     }
     return msgs;
-  }, []);
+  }, [sessions]);
 
   const sessionsByDay = useMemo(() => {
     const map: Record<string, Session[]> = {};
     WEEK_DAYS.forEach((d) => {
       map[d] = [];
     });
-    SESSIONS.forEach((s) => {
+    sessions.forEach((s) => {
       if (!map[s.weekday]) map[s.weekday] = [];
       map[s.weekday].push(s);
     });
     return map;
-  }, []);
+  }, [sessions]);
 
   const agendaSessions = useMemo(() => {
-    return [...SESSIONS].sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       const order = WEEK_DAYS.indexOf(a.weekday) - WEEK_DAYS.indexOf(b.weekday);
       if (order !== 0) return order;
       return a.time.localeCompare(b.time);
     });
-  }, []);
+  }, [sessions]);
 
 
   const [rescheduleSession, setRescheduleSession] = useState<Session | null>(null);
@@ -231,6 +315,12 @@ function LiveScheduleCalendarPage() {
 
       <main className="flex-1 flex flex-col w-full p-4 sm:p-6 lg:p-8 pt-6 gap-6 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
+          {backendError ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
+
           {/* AI suggestions + view toggle */}
           <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
@@ -319,7 +409,7 @@ function LiveScheduleCalendarPage() {
           <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start text-sm">
             {/* Calendar View (Week, Month, or Agenda) */}
             {viewMode === "month" ? (
-              <MonthView sessions={SESSIONS} onSelectSession={setSelectedSession} />
+              <MonthView sessions={sessions} onSelectSession={setSelectedSession} />
             ) : viewMode === "agenda" ? (
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
                 <div className="flex items-center justify-between mb-2">

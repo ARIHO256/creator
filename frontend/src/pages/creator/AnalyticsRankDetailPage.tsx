@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { useCreator } from "../../contexts/CreatorContext";
+import { backendApi, type AnalyticsOverviewRecord } from "../../lib/api";
 
 /**
  * AnalyticsRankDetailPage (Creator View)
@@ -85,6 +86,14 @@ type TrendPoint = {
   clicks: number;
   conversions: number;
   sales: number;
+};
+
+const mapTier = (rank?: string): Rank["currentTier"] | null => {
+  const normalized = (rank || "").toLowerCase();
+  if (normalized === "bronze") return "Bronze";
+  if (normalized === "silver") return "Silver";
+  if (normalized === "gold") return "Gold";
+  return null;
 };
 
 function money(n: number, currency: "USD" | "UGX" = "USD") {
@@ -191,14 +200,41 @@ export default function AnalyticsRankDetailPage() {
   const [timeRange, setTimeRange] = useState<Range>("30");
   const [category, setCategory] = useState<Category>("All");
   const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("sales");
+  const [backendError, setBackendError] = useState<string | null>(null);
+  const [backendOverview, setBackendOverview] = useState<AnalyticsOverviewRecord | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const overview = await backendApi.getAnalyticsOverview();
+        if (!isMounted) return;
+        setBackendOverview(overview || null);
+        setBackendError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        setBackendOverview(null);
+        setBackendError(error instanceof Error ? error.message : "Unable to load analytics overview.");
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Rank / tier demo data
-  const nextTier: Rank["nextTier"] = rankTier === "Bronze" ? "Silver" : rankTier === "Silver" ? "Gold" : "Platinum";
+  const currentTier = mapTier(backendOverview?.rank) || rankTier;
+  const nextTier: Rank["nextTier"] = currentTier === "Bronze" ? "Silver" : currentTier === "Silver" ? "Gold" : "Platinum";
+  const backendScore = Number(backendOverview?.score ?? NaN);
+  const progressPercent = Number.isFinite(backendScore) ? clamp(backendScore, 0, 100) : 68;
+  const pointsCurrent = Math.round(progressPercent * 10);
   const rank: Rank = {
-    currentTier: rankTier,
+    currentTier,
     nextTier,
-    progressPercent: 68,
-    pointsCurrent: 680,
+    progressPercent,
+    pointsCurrent,
     pointsToNext: 1000,
     benefits: {
       Bronze: ["Basic access to campaigns", "Standard support"],
@@ -237,10 +273,10 @@ export default function AnalyticsRankDetailPage() {
 
   // Benchmarks vs similar creators (percentiles)
   const benchmarks: Benchmarks = {
-    viewersPercentile: 78,
-    ctrPercentile: 72,
-    conversionPercentile: 83,
-    salesPercentile: 80,
+    viewersPercentile: Number(backendOverview?.benchmarks?.viewersPercentile ?? 78),
+    ctrPercentile: Number(backendOverview?.benchmarks?.ctrPercentile ?? 72),
+    conversionPercentile: Number(backendOverview?.benchmarks?.conversionPercentile ?? 83),
+    salesPercentile: Number(backendOverview?.benchmarks?.salesPercentile ?? 80),
   };
 
 
@@ -373,6 +409,12 @@ export default function AnalyticsRankDetailPage() {
 
       <main className="flex-1 flex flex-col px-2 sm:px-3 md:px-4 lg:px-6 py-6 gap-3 md:gap-4 overflow-y-auto bg-[#f2f2f2] dark:bg-slate-950">
         <div className="w-full flex flex-col gap-3">
+          {backendError ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Backend data fallback: {backendError}
+            </div>
+          ) : null}
+
           {/* Rank banner */}
           <RankBanner rank={rank} benchmarks={benchmarks} rankMomentum={rankMomentum} />
 

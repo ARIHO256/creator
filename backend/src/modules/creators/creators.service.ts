@@ -11,7 +11,12 @@ export class CreatorsService {
     if (!profile) {
       throw new NotFoundException('Creator profile not found');
     }
-    return profile;
+    return {
+      ...profile,
+      categories: this.parseJsonArray(profile.categories),
+      regions: this.parseJsonArray(profile.regions),
+      languages: this.parseJsonArray(profile.languages)
+    };
   }
 
   async updateMyProfile(userId: string, payload: UpdateCreatorProfileDto) {

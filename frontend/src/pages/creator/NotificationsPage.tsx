@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { useNotification } from "../../contexts/NotificationContext";
+import { backendApi, type NotificationRecord } from "../../lib/api";
 
 // MyLiveDealz - Creator Notifications Panel
 // Purpose: What the top-right notifications (bell) icon should bring.
@@ -134,7 +135,7 @@ type NotificationsPanelProps = {
 
 type Tab = "all" | "proposal" | "invite" | "live" | "earnings" | "system";
 type Notification = {
-  id: number;
+  id: string;
   type: Tab;
   title: string;
   message: string;
@@ -145,15 +146,73 @@ type Notification = {
   cta: string;
 };
 
+const mapNotificationType = (type?: string): Tab => {
+  const normalized = (type || "").toLowerCase();
+  if (normalized === "proposal") return "proposal";
+  if (normalized === "invite") return "invite";
+  if (normalized === "live") return "live";
+  if (normalized === "payout" || normalized === "earnings") return "earnings";
+  return "system";
+};
+
+const toRelativeTime = (iso?: string): string => {
+  if (!iso) return "Just now";
+  const ts = new Date(iso).getTime();
+  if (Number.isNaN(ts)) return "Just now";
+  const diff = Date.now() - ts;
+  const hour = 60 * 60 * 1000;
+  const day = 24 * hour;
+  if (diff < hour) return `${Math.max(1, Math.floor(diff / (60 * 1000)))}m ago`;
+  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
+  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
+  return new Date(iso).toLocaleDateString();
+};
+
+const fallbackNotifications: Notification[] = DEMO_NOTIFICATIONS.map((entry, index) => ({
+  id: String(entry.id || index + 1),
+  type: mapNotificationType(entry.type),
+  title: String(entry.title || "Notification"),
+  message: String(entry.message || "You have a new notification."),
+  time: String(entry.time || "Just now"),
+  unread: Boolean(entry.unread),
+  priority: entry.priority === "high" ? "high" : entry.priority === "low" ? "low" : "normal",
+  meta: {
+    seller: String(entry.meta?.seller || "MyLiveDealz"),
+    campaign: String(entry.meta?.campaign || "Updates")
+  },
+  cta: String(entry.cta || "Open")
+}));
+
+const mapApiNotification = (entry: NotificationRecord, index: number): Notification => {
+  const type = mapNotificationType(entry.type);
+  const isUnread = !entry.read;
+  return {
+    id: String(entry.id || `api_${index + 1}`),
+    type,
+    title: entry.title || "Notification",
+    message: entry.message || "You have a new notification.",
+    time: toRelativeTime(entry.createdAt),
+    unread: isUnread,
+    priority: isUnread && (type === "proposal" || type === "live" || type === "earnings") ? "high" : "normal",
+    meta: {
+      seller: entry.brand || "MyLiveDealz",
+      campaign: entry.campaign || "Workspace"
+    },
+    cta: entry.message || "Open"
+  };
+};
+
 export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: externalUnreadCount, onChangePage }: NotificationsPanelProps) {
   const { showSuccess, showNotification } = useNotification();
   // const [selectedId, setSelectedId] = useState<number | null>(null);
   const [unreadOnly, setUnreadOnly] = useState(false);
   // const [dnd, setDnd] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("all");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
+  const [allNotifs, setAllNotifs] = useState<Notification[]>(fallbackNotifications);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
@@ -183,123 +242,30 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
     return () => window.removeEventListener('resize', handleResize);
   }, [open, buttonRef]);
 
-  const allNotifs: Notification[] = useMemo(() => [
-    {
-      id: 1,
-      type: "proposal",
-      title: "New proposal from GlowUp Hub",
-      message:
-        "They updated terms: $450–$600 + 5% commission. Reply to keep the slot.",
-      time: "2h ago",
-      unread: true,
-      priority: "high",
-      meta: { seller: "GlowUp Hub", campaign: "Autumn Beauty Flash" },
-      cta: "Review proposal"
-    },
-    {
-      id: 2,
-      type: "invite",
-      title: "Invite accepted",
-      message:
-        "GadgetMart Africa accepted your pitch. Confirm dates and deliverables.",
-      time: "Yesterday",
-      unread: true,
-      priority: "normal",
-      meta: { seller: "GadgetMart Africa", campaign: "Tech Fest 2025" },
-      cta: "Confirm collaboration"
-    },
-    {
-      id: 3,
-      type: "live",
-      title: "Live starts in 30 mins",
-      message:
-        "Beauty Flash Live · Make sure products & overlays are ready. Check your mic.",
-      time: "Today",
-      unread: false,
-      priority: "high",
-      meta: { seller: "GlowUp Hub", campaign: "Beauty Flash Live" },
-      cta: "Open Live Studio"
-    },
-    {
-      id: 4,
-      type: "earnings",
-      title: "Payout scheduled",
-      message:
-        "USD 260 scheduled for Nov 15 via Bank transfer. Track in Earnings.",
-      time: "2 days ago",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "GlowUp Hub", campaign: "Oct Earnings" },
-      cta: "View payout details"
-    },
-    {
-      id: 5,
-      type: "system",
-      title: "Faith desk guidelines updated",
-      message:
-        "Updated wording restrictions for Faith-compatible campaigns. Review changes.",
-      time: "Last week",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "MyLiveDealz", campaign: "Platform Updates" },
-      cta: "Read guidelines"
-    },
-    {
-      id: 6,
-      type: "proposal",
-      title: "Revised offer: Urban Kicks",
-      message: "Urban Kicks increased the base rate by 15% in response to your counter.",
-      time: "3h ago",
-      unread: true,
-      priority: "normal",
-      meta: { seller: "Urban Kicks", campaign: "Spring Streetwear" },
-      cta: "Review proposal"
-    },
-    {
-      id: 7,
-      type: "earnings",
-      title: "Bonus payment received!",
-      message: "You earned a $50 bonus for the 'Tech Friday' live engagement.",
-      time: "5h ago",
-      unread: true,
-      priority: "high",
-      meta: { seller: "GadgetMart Africa", campaign: "Tech Friday" },
-      cta: "Check earnings"
-    },
-    {
-      id: 8,
-      type: "invite",
-      title: "New partnership request",
-      message: "EcoHome Essentials wants to supplier for 'Green Living' series.",
-      time: "Today",
-      unread: true,
-      priority: "normal",
-      meta: { seller: "EcoHome Essentials", campaign: "Green Living" },
-      cta: "Review request"
-    },
-    {
-      id: 9,
-      type: "live",
-      title: "Live clips ready",
-      message: "5 highlight clips from your last session are ready to review.",
-      time: "Yesterday",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "GlowUp Hub", campaign: "Autumn Beauty" },
-      cta: "Review clips"
-    },
-    {
-      id: 10,
-      type: "system",
-      title: "New feature: AI Script Assistant",
-      message: "Draft engaging scripts for your live sessionz with our new AI.",
-      time: "3 days ago",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "MyLiveDealz", campaign: "Platform Update" },
-      cta: "Try it now"
-    }
-  ], []); // Empty dependency array to ensure allNotifs is stable
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const rows = await backendApi.getNotifications();
+        if (!isMounted) return;
+        if (rows.length) {
+          setAllNotifs(rows.map(mapApiNotification));
+        } else {
+          setAllNotifs(fallbackNotifications);
+        }
+        setBackendError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        setAllNotifs(fallbackNotifications);
+        setBackendError(error instanceof Error ? error.message : "Unable to load notifications.");
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
 
 
@@ -353,27 +319,28 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
   }, [notifications, expandedId]);
 
   const markAllRead = () => {
-    // Mark all notifications as read
-    allNotifs.forEach(n => n.unread = false);
+    setAllNotifs((prev) => prev.map((notification) => ({ ...notification, unread: false })));
     showSuccess("All notifications marked as read");
-    // Force re-render to update unread counts and filtered lists
+    backendApi.markAllNotificationsRead().catch(() => null);
     setExpandedId(null);
     setUnreadOnly(false);
     setActiveTab("all");
   };
 
-  const handleToggleExpand = (id: number) => {
+  const handleToggleExpand = (id: string) => {
     if (expandedId === id) {
       setExpandedId(null);
     } else {
       setExpandedId(id);
-      // Mark as read when expanded
-      const notif = allNotifs.find(n => n.id === id);
+      const notif = allNotifs.find((notification) => notification.id === id);
       if (notif && notif.unread) {
-        notif.unread = false;
+        setAllNotifs((prev) =>
+          prev.map((notification) =>
+            notification.id === id ? { ...notification, unread: false } : notification
+          )
+        );
         showNotification(`Marked “${notif.title}” as read`);
-        // Force re-render to update unread counts
-        setUnreadOnly(prev => prev); // Trigger state update
+        backendApi.markNotificationRead(id).catch(() => null);
       }
     }
   };
@@ -519,6 +486,12 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
               </div>
             </div>
 
+            {backendError ? (
+              <div className="mx-3 mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-800">
+                Backend data fallback: {backendError}
+              </div>
+            ) : null}
+
             {/* Body - Scrollable accordion list */}
             <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden custom-scrollbar">
               {notifications.length === 0 ? (
@@ -535,12 +508,15 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
                       onToggle={() => handleToggleExpand(n.id)}
                       onClose={onClose}
                       onToggleRead={(id) => {
-                        const notif = allNotifs.find(n => n.id === id);
+                        const notif = allNotifs.find((item) => item.id === id);
                         if (notif) {
-                          notif.unread = !notif.unread;
-                          // Force re-render
-                          setExpandedId(null);
-                          setTimeout(() => setExpandedId(id), 0);
+                          const nextUnread = !notif.unread;
+                          setAllNotifs((prev) =>
+                            prev.map((item) => (item.id === id ? { ...item, unread: nextUnread } : item))
+                          );
+                          if (!nextUnread) {
+                            backendApi.markNotificationRead(id).catch(() => null);
+                          }
                         }
                       }}
                       onChangePage={onChangePage}
@@ -585,7 +561,28 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
 export default function CreatorNotificationsPanelDemo() {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
-  const unreadCount = DEMO_NOTIFICATIONS.filter((n) => n.unread).length;
+  const [unreadCount, setUnreadCount] = useState(
+    fallbackNotifications.filter((notification) => notification.unread).length
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const rows = await backendApi.getNotifications();
+        if (!isMounted) return;
+        setUnreadCount(rows.filter((row) => !row.read).length);
+      } catch {
+        if (!isMounted) return;
+        setUnreadCount(fallbackNotifications.filter((notification) => notification.unread).length);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors">
@@ -633,7 +630,7 @@ export default function CreatorNotificationsPanelDemo() {
         </div>
       </main>
 
-      <NotificationsPanel open={open} onClose={() => setOpen(false)} buttonRef={btnRef} unreadCount={unreadCount} />
+      <NotificationsPanel open={open} onClose={() => setOpen(false)} buttonRef={btnRef} />
     </div>
   );
 }
@@ -642,7 +639,7 @@ function NotificationAccordionRow({ n, expanded, onToggle, onToggleRead, onClose
   n: Notification;
   expanded: boolean;
   onToggle: () => void;
-  onToggleRead: (id: number) => void;
+  onToggleRead: (id: string) => void;
   onClose: () => void;
   onChangePage?: (page: PageId) => void;
 }) {
@@ -742,6 +739,3 @@ function NotificationAccordionRow({ n, expanded, onToggle, onToggleRead, onClose
     </div >
   );
 }
-
-
-

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MemoryRouter, useInRouterContext, useNavigate } from "react-router-dom";
+import { backendApi } from "../../lib/api";
 import {
   BadgeCheck,
   Building2,
@@ -906,8 +907,11 @@ function MySubscriptionPageInner() {
   const [salesCompany, setSalesCompany] = useState("");
   const [salesTeamSize, setSalesTeamSize] = useState("5");
   const [salesMessage, setSalesMessage] = useState("We'd like Enterprise for our agency team.");
+  const [renewsAt, setRenewsAt] = useState<string | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     const storedPlan = safeReadLS(LS_PLAN_KEY);
     const storedCycle = safeReadLS(LS_CYCLE_KEY);
 
@@ -917,17 +921,48 @@ function MySubscriptionPageInner() {
     // seed demo billing fields
     setBillingName("Creator Admin");
     setBillingEmail("admin@creator.app");
+
+    (async () => {
+      try {
+        const subscription = await backendApi.getSubscription();
+        if (!isMounted) return;
+
+        if (subscription.plan === "basic" || subscription.plan === "pro" || subscription.plan === "enterprise") {
+          setPlan(subscription.plan);
+          safeWriteLS(LS_PLAN_KEY, subscription.plan);
+        }
+        if (subscription.cycle === "monthly" || subscription.cycle === "yearly") {
+          setCycle(subscription.cycle);
+          safeWriteLS(LS_CYCLE_KEY, subscription.cycle);
+        }
+        if (subscription.billingEmail) setBillingEmail(subscription.billingEmail);
+        if (subscription.billingMethod?.holderName) setBillingName(subscription.billingMethod.holderName);
+        if (subscription.renewsAt) setRenewsAt(subscription.renewsAt);
+        setBackendError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        setBackendError(error instanceof Error ? error.message : "Unable to load subscription.");
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const meta = PLAN_META[plan];
   const price = cycle === "monthly" ? meta.monthly : meta.yearly;
 
   const renewalDate = useMemo(() => {
+    if (renewsAt) {
+      const parsed = new Date(renewsAt);
+      if (!Number.isNaN(parsed.getTime())) return fmtDate(parsed);
+    }
     const days = plan === "basic" ? 0 : 21;
     const d = new Date();
     d.setDate(d.getDate() + (days || 21));
     return fmtDate(d);
-  }, [plan]);
+  }, [plan, renewsAt]);
 
   const seatsLabel = useMemo(() => {
     if (plan === "basic") return "1 seat";
@@ -938,6 +973,12 @@ function MySubscriptionPageInner() {
   function applyPlan(next: PlanKey) {
     setPlan(next);
     safeWriteLS(LS_PLAN_KEY, next);
+    backendApi
+      .updateSubscription({ plan: next, cycle })
+      .then(() => setBackendError(null))
+      .catch((error) => {
+        setBackendError(error instanceof Error ? error.message : "Unable to update subscription plan.");
+      });
 
     if (next === "basic") {
       showWarning("Switched to Basic (Free). Pro tools remain visible in demo but are intended to be gated.");
@@ -951,6 +992,12 @@ function MySubscriptionPageInner() {
   function applyCycle(next: BillingCycle) {
     setCycle(next);
     safeWriteLS(LS_CYCLE_KEY, next);
+    backendApi
+      .updateSubscription({ plan, cycle: next })
+      .then(() => setBackendError(null))
+      .catch((error) => {
+        setBackendError(error instanceof Error ? error.message : "Unable to update billing cycle.");
+      });
   }
 
   const topProUpsell = useMemo(
@@ -998,6 +1045,12 @@ function MySubscriptionPageInner() {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden bg-[#f2f2f2] dark:bg-slate-950">
         <div className="w-full flex flex-col gap-4">
+          {backendError ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Backend data fallback: {backendError}
+            </div>
+          ) : null}
+
           {/* Top Callout */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-5">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">

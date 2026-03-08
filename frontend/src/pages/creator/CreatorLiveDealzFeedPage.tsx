@@ -12,6 +12,7 @@ import {
 import { useCreator } from "../../contexts/CreatorContext";
 import { PageHeader } from "../../components/PageHeader";
 import type { PageId } from "../../layouts/CreatorShellLayout";
+import { backendApi, type SellerRecord } from "../../lib/api";
 
 type EntityType = "Seller" | "Provider";
 
@@ -44,6 +45,19 @@ type TypeConfig = {
   badge: string;
   badgeColor: string;
   pillColor: string;
+};
+
+type HeroKpiData = {
+  label: string;
+  value: string;
+  sub: string;
+};
+
+type AgendaItem = {
+  time: string;
+  label: string;
+  badge?: string;
+  badgeColor?: string;
 };
 
 
@@ -191,66 +205,214 @@ const allFeedItems: (FeedItemProps & { id: number; category: string })[] = [
   }
 ];
 
+const fallbackEntitiesDb: FollowedEntity[] = [
+  {
+    id: 1,
+    name: "GlowUp Hub",
+    type: "Seller",
+    category: "Beauty & Skincare",
+    status: "Live now · Beauty Flash",
+    viewers: 320
+  },
+  {
+    id: 2,
+    name: "GadgetMart Africa",
+    type: "Seller",
+    category: "Tech & Gadgets",
+    status: "Upcoming · Today 20:00",
+    viewers: null
+  },
+  {
+    id: 3,
+    name: "Grace Living Store",
+    type: "Seller",
+    category: "Faith & Wellness",
+    status: "Offline",
+    viewers: null
+  },
+  {
+    id: 4,
+    name: "EV Gadget World",
+    type: "Seller",
+    category: "EV & Tech",
+    status: "Offline",
+    viewers: null
+  },
+  {
+    id: 5,
+    name: "ShopNow Foods",
+    type: "Seller",
+    category: "Food",
+    status: "Offline",
+    viewers: null
+  }
+];
+
+const fallbackHeroKpis: HeroKpiData[] = [
+  { label: "This month", value: "$1,430", sub: "+32% vs last month" },
+  { label: "Upcoming lives", value: "3", sub: "Next: Today 8:00pm" },
+  { label: "Open proposals", value: "4", sub: "2 need reply" }
+];
+
+const fallbackAgendaItems: AgendaItem[] = [
+  { time: "14:00", label: "Prep assets for Beauty Flash", badge: "Due soon", badgeColor: "bg-emerald-500" },
+  { time: "18:30", label: "Live · Beauty Flash Deal", badge: "Live", badgeColor: "bg-red-500" },
+  { time: "21:00", label: "Submit gadget review clip" }
+];
+
+const mapSellerToEntity = (entry: SellerRecord, index: number): FollowedEntity => ({
+  id: index + 1,
+  name: entry.name || `Seller ${index + 1}`,
+  type: String(entry.type || "Seller").toLowerCase().includes("provider") ? "Provider" : "Seller",
+  category: entry.category || "General",
+  status: "Active recently",
+  viewers: null
+});
+
+const mapSessionToFeed = (entry: any, index: number): FeedItemProps & { id: number; category: string } => {
+  const status = String(entry?.status || "").toLowerCase();
+  const isLive = status.includes("live");
+  const type: FeedType = isLive ? "live" : "upcoming";
+  const dateLabel = entry?.scheduledFor ? new Date(entry.scheduledFor).toLocaleString() : "Scheduled";
+
+  return {
+    id: index + 1,
+    type,
+    title: entry?.title || "Live session",
+    brand: entry?.seller || "Supplier",
+    viewers: isLive ? String(entry?.viewers || "Live") : "Scheduled",
+    time: isLive ? "Live now" : dateLabel,
+    tag: entry?.campaign || "Live",
+    category: entry?.campaign || "Live"
+  };
+};
+
+const mapReplayToFeed = (entry: any, index: number): FeedItemProps & { id: number; category: string } => ({
+  id: 10_000 + index + 1,
+  type: "replay",
+  title: entry?.title || "Replay",
+  brand: entry?.seller || "Supplier",
+  viewers: entry?.views ? `${entry.views} views` : "Replay",
+  time: entry?.publishedAt ? `Replay · ${new Date(entry.publishedAt).toLocaleDateString()}` : "Replay",
+  tag: "Replay highlight",
+  category: entry?.campaign || "Replay"
+});
 
 export function CreatorLiveDealzFeedPage() {
-  const { showSuccess, showNotification } = useNotification();
+  const { showSuccess } = useNotification();
   const navigate = useNavigate();
   const onChangePage = (page: PageId) => {
     navigate("/" + page);
   };
   /* Shared Friend/Follow State */
   const { followedSellerIds, toggleFollowSeller } = useCreator();
-
-  // Mock "Database" of entities - in a real app this would come from an API
-  const allEntitiesDb: FollowedEntity[] = [
-    {
-      id: 1,
-      name: "GlowUp Hub",
-      type: "Seller",
-      category: "Beauty & Skincare",
-      status: "Live now · Beauty Flash",
-      viewers: 320
-    },
-    {
-      id: 2,
-      name: "GadgetMart Africa",
-      type: "Seller",
-      category: "Tech & Gadgets",
-      status: "Upcoming · Today 20:00",
-      viewers: null
-    },
-    {
-      id: 3,
-      name: "Grace Living Store",
-      type: "Seller",
-      category: "Faith & Wellness",
-      status: "Offline",
-      viewers: null
-    },
-    {
-      id: 4,
-      name: "EV Gadget World",
-      type: "Seller",
-      category: "EV & Tech",
-      status: "Offline",
-      viewers: null
-    },
-    {
-      id: 5,
-      name: "ShopNow Foods",
-      type: "Seller",
-      category: "Food",
-      status: "Offline",
-      viewers: null
-    }
-  ];
+  const [entitiesDb, setEntitiesDb] = useState<FollowedEntity[]>(fallbackEntitiesDb);
+  const [feedItems, setFeedItems] = useState<(FeedItemProps & { id: number; category: string })[]>(allFeedItems);
+  const [heroKpis, setHeroKpis] = useState<HeroKpiData[]>(fallbackHeroKpis);
+  const [agendaItems, setAgendaItems] = useState<AgendaItem[]>(fallbackAgendaItems);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   // Derive followed entities from the shared ID list
-  const followedEntities = allEntitiesDb.filter(e => followedSellerIds.includes(e.id));
+  const followedEntities = entitiesDb.filter(e => followedSellerIds.includes(e.id));
 
   const [activeTab, setActiveTab] = useState<string>("For You");
   const [reminders, setReminders] = useState<Record<string, boolean>>({});
   const [joinedStreams, setJoinedStreams] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFeed = async () => {
+      setBackendError(null);
+      let firstError: string | null = null;
+      const capture = (error: unknown) => {
+        if (!firstError) {
+          firstError = error instanceof Error ? error.message : "Failed to load feed data from backend";
+        }
+      };
+
+      const [dashboardFeed, myDay, liveSessions, liveReplays, sellers] = await Promise.all([
+        backendApi.getDashboardFeed().catch((error) => {
+          capture(error);
+          return undefined;
+        }),
+        backendApi.getDashboardMyDay().catch((error) => {
+          capture(error);
+          return undefined;
+        }),
+        backendApi.getByPath<any[]>("/api/live/sessions").catch((error) => {
+          capture(error);
+          return [];
+        }),
+        backendApi.getByPath<any[]>("/api/live/replays").catch((error) => {
+          capture(error);
+          return [];
+        }),
+        backendApi.getSellers().catch((error) => {
+          capture(error);
+          return [];
+        })
+      ]);
+
+      if (cancelled) return;
+
+      if (Array.isArray(sellers) && sellers.length > 0) {
+        setEntitiesDb(sellers.map(mapSellerToEntity));
+      }
+
+      const mappedSessions = (Array.isArray(liveSessions) ? liveSessions : []).map(mapSessionToFeed);
+      const mappedReplays = (Array.isArray(liveReplays) ? liveReplays : []).map(mapReplayToFeed);
+      const combinedFeed = [...mappedSessions, ...mappedReplays];
+      if (combinedFeed.length > 0) {
+        setFeedItems(combinedFeed);
+      }
+
+      const stats = Array.isArray(dashboardFeed?.quickStats) ? dashboardFeed.quickStats : [];
+      if (stats.length > 0) {
+        setHeroKpis([
+          {
+            label: String(stats[0]?.label || "KPI 1"),
+            value: String(stats[0]?.value ?? "-"),
+            sub: "Synced from dashboard feed"
+          },
+          {
+            label: String(stats[1]?.label || "KPI 2"),
+            value: String(stats[1]?.value ?? "-"),
+            sub: "Synced from dashboard feed"
+          },
+          {
+            label: String(stats[2]?.label || "KPI 3"),
+            value: String(stats[2]?.value ?? "-"),
+            sub: "Synced from dashboard feed"
+          }
+        ]);
+      }
+
+      const agenda = Array.isArray(myDay?.agenda) ? myDay.agenda : [];
+      if (agenda.length > 0) {
+        const mappedAgenda = agenda.slice(0, 3).map((item, index) => {
+          const startsAt = item?.startsAt ? new Date(item.startsAt) : null;
+          const status = String(item?.status || "").toLowerCase();
+          return {
+            time: startsAt ? startsAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }) : `Slot ${index + 1}`,
+            label: item?.title || "Agenda item",
+            badge: status.includes("live") ? "Live" : status.includes("scheduled") ? "Due soon" : undefined,
+            badgeColor: status.includes("live") ? "bg-red-500" : "bg-emerald-500"
+          } as AgendaItem;
+        });
+        setAgendaItems(mappedAgenda);
+      }
+
+      if (firstError) {
+        setBackendError(firstError);
+      }
+    };
+
+    void loadFeed();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Interaction State
 
@@ -269,7 +431,7 @@ export function CreatorLiveDealzFeedPage() {
   };
 
   /* Filter Logic with mocked data checks */
-  const filteredFeed = allFeedItems.filter((item) => {
+  const filteredFeed = feedItems.filter((item) => {
     if (activeTab === "For You") return true;
     if (activeTab === "My Campaigns") return ["live", "upcoming"].includes(item.type);
     if (activeTab === "Platform Highlights") return item.type === "replay";
@@ -308,10 +470,15 @@ export function CreatorLiveDealzFeedPage() {
       />
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-4">
+          {backendError ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
           {/* Top hero row: profile summary + Today at a glance */}
           <div className="flex flex-col md:flex-row gap-4 items-stretch">
-            <HeroSummaryCard onChangePage={onChangePage} />
-            <TodayAtGlanceCard />
+            <HeroSummaryCard onChangePage={onChangePage} kpis={heroKpis} />
+            <TodayAtGlanceCard agenda={agendaItems} />
           </div>
 
           {/* Workspace header */}
@@ -399,9 +566,10 @@ export function CreatorLiveDealzFeedPage() {
 
 type HeroSummaryCardProps = {
   onChangePage?: (page: PageId) => void;
+  kpis: HeroKpiData[];
 };
 
-function HeroSummaryCard({ onChangePage }: HeroSummaryCardProps) {
+function HeroSummaryCard({ onChangePage, kpis }: HeroSummaryCardProps) {
   return (
     <section className="flex-1 bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
@@ -439,9 +607,9 @@ function HeroSummaryCard({ onChangePage }: HeroSummaryCardProps) {
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2 text-sm">
-        <HeroKpi label="This month" value="$1,430" sub="+32% vs last month" />
-        <HeroKpi label="Upcoming lives" value="3" sub="Next: Today 8:00pm" />
-        <HeroKpi label="Open proposals" value="4" sub="2 need reply" />
+        {kpis.slice(0, 3).map((item) => (
+          <HeroKpi key={item.label} label={item.label} value={item.value} sub={item.sub} />
+        ))}
       </div>
       <div className="md:hidden flex items-center justify-end gap-1.5 mt-2">
         {onChangePage && (
@@ -479,28 +647,26 @@ function HeroKpi({ label, value, sub }: HeroKpiProps) {
   );
 }
 
-function TodayAtGlanceCard() {
+function TodayAtGlanceCard({ agenda }: { agenda: AgendaItem[] }) {
   return (
     <section className="w-full md:w-72 bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 flex flex-col justify-between text-sm">
       <div>
         <div className="flex items-center justify-between mb-2">
           <span className="font-semibold dark:font-bold text-xs">Today at a glance</span>
-          <span className="text-xs text-slate-500 dark:text-slate-300">Thu</span>
+          <span className="text-xs text-slate-500 dark:text-slate-300">
+            {new Date().toLocaleDateString(undefined, { weekday: "short" })}
+          </span>
         </div>
         <ul className="space-y-1.5">
-          <TimelineItem
-            time="14:00"
-            label="Prep assets for Beauty Flash"
-            badge="Due soon"
-            badgeColor="bg-emerald-500"
-          />
-          <TimelineItem
-            time="18:30"
-            label="Live · Beauty Flash Deal"
-            badge="Live"
-            badgeColor="bg-red-500"
-          />
-          <TimelineItem time="21:00" label="Submit gadget review clip" badge={undefined} badgeColor={undefined} />
+          {agenda.map((item) => (
+            <TimelineItem
+              key={`${item.time}-${item.label}`}
+              time={item.time}
+              label={item.label}
+              badge={item.badge}
+              badgeColor={item.badgeColor}
+            />
+          ))}
         </ul>
       </div>
     </section>
@@ -833,4 +999,3 @@ function ProvidersEducationCard({ onChangePage }: { onChangePage?: (page: PageId
     />
   );
 }
-

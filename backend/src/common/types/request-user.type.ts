@@ -1,5 +1,6 @@
 export type RequestUser = {
   sub: string;
-  email: string;
+  email: string | null;
   role: string;
+  roles: string[];
 };

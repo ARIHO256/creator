@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -8,6 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
+import { Prisma, UserRole } from '@prisma/client';
 import { randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
@@ -15,6 +17,14 @@ import { LoginDto } from './dto/login.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { SwitchRoleDto } from './dto/switch-role.dto.js';
+
+type AuthUserRecord = Prisma.UserGetPayload<{
+  include: {
+    creatorProfile: true;
+    sellerProfile: true;
+    roleAssignments: true;
+  };
+}>;
 
 @Injectable()
 export class AuthService {
@@ -41,6 +51,13 @@ export class AuthService {
       throw new BadRequestException('User with this email or phone already exists');
     }
 
+    const requestedRoles = this.resolveRequestedRoles(payload);
+    const creatorHandle = requestedRoles.includes('CREATOR')
+      ? await this.generateUniqueCreatorHandle(payload.handle || payload.name)
+      : null;
+    const sellerHandle = this.requiresSellerProfile(requestedRoles)
+      ? await this.generateUniqueSellerHandle(payload.sellerHandle || payload.handle || payload.name)
+      : null;
     const passwordHash = await hash(payload.password, 12);
 
     const user = await this.prisma.user.create({
@@ -48,19 +65,43 @@ export class AuthService {
         email,
         phone,
         passwordHash,
-        role: 'CREATOR',
-        creatorProfile: {
-          create: {
-            name: payload.name,
-            handle: (payload.handle || payload.name).toLowerCase().replace(/\s+/g, '.'),
-            tier: 'BRONZE'
-          }
-        }
+        role: (payload.role as UserRole | undefined) ?? requestedRoles[0],
+        roleAssignments: {
+          create: requestedRoles.map((role) => ({ role }))
+        },
+        creatorProfile: requestedRoles.includes('CREATOR')
+          ? {
+              create: {
+                name: payload.name,
+                handle: creatorHandle!,
+                tier: 'BRONZE'
+              }
+            }
+          : undefined,
+        sellerProfile: this.requiresSellerProfile(requestedRoles)
+          ? {
+              create: {
+                handle: sellerHandle!,
+                name: payload.sellerDisplayName ?? payload.name,
+                displayName: payload.sellerDisplayName ?? payload.name,
+                storefrontName: payload.sellerDisplayName ?? payload.name,
+                type: payload.sellerKind === 'PROVIDER' ? 'Provider' : 'Seller',
+                kind:
+                  (payload.sellerKind as 'SELLER' | 'PROVIDER' | 'BRAND' | undefined) ??
+                  (requestedRoles.includes(UserRole.PROVIDER) ? 'PROVIDER' : 'SELLER'),
+                category: requestedRoles.includes(UserRole.PROVIDER) ? 'Services' : 'General Merchandise'
+              }
+            }
+          : undefined
       },
-      include: { creatorProfile: true }
+      include: {
+        creatorProfile: true,
+        sellerProfile: true,
+        roleAssignments: true
+      }
     });
 
-    return this.issueTokens(user.id, user.email, user.role);
+    return this.issueTokens(user.id, user.email, user.role, this.getAssignedRoles(user));
   }
 
   async login(payload: LoginDto) {
@@ -71,7 +112,11 @@ export class AuthService {
       where: {
         OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
       },
-      include: { creatorProfile: true }
+      include: {
+        creatorProfile: true,
+        sellerProfile: true,
+        roleAssignments: true
+      }
     });
 
     if (!user) {
@@ -104,25 +149,12 @@ export class AuthService {
       });
     }
 
-    return this.issueTokens(user.id, user.email, user.role);
+    return this.issueTokens(user.id, user.email, user.role, this.getAssignedRoles(user));
   }
 
   async me(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { creatorProfile: true }
-    });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    return {
-      id: user.id,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      creatorProfile: user.creatorProfile
-    };
+    const user = await this.findUserOrThrow(userId);
+    return this.serializeUser(user);
   }
 
   async refresh(payload: RefreshTokenDto) {
@@ -137,7 +169,13 @@ export class AuthService {
 
     const tokenRecord = await this.prisma.refreshToken.findUnique({
       where: { id: decoded.tokenId },
-      include: { user: true }
+      include: {
+        user: {
+          include: {
+            roleAssignments: true
+          }
+        }
+      }
     });
 
     if (!tokenRecord || tokenRecord.revokedAt || tokenRecord.expiresAt <= new Date()) {
@@ -154,7 +192,13 @@ export class AuthService {
       data: { revokedAt: new Date() }
     });
 
-    return this.issueTokens(tokenRecord.user.id, tokenRecord.user.email, tokenRecord.user.role, tokenRecord.family);
+    return this.issueTokens(
+      tokenRecord.user.id,
+      tokenRecord.user.email,
+      tokenRecord.user.role,
+      tokenRecord.user.roleAssignments.map((assignment) => assignment.role),
+      tokenRecord.family
+    );
   }
 
   async logout(userId: string, payload: RefreshTokenDto) {
@@ -175,18 +219,32 @@ export class AuthService {
   }
 
   async switchRole(userId: string, payload: SwitchRoleDto) {
-    const user = await this.prisma.user.update({
+    const user = await this.findUserOrThrow(userId);
+    const roles = this.getAssignedRoles(user);
+
+    if (!roles.includes(payload.role as UserRole)) {
+      throw new ForbiddenException('Requested role is not assigned to this user');
+    }
+
+    const updated = await this.prisma.user.update({
       where: { id: userId },
-      data: { role: payload.role }
+        data: { role: payload.role as UserRole }
     });
 
     return {
-      id: user.id,
-      role: user.role
+      id: updated.id,
+      role: updated.role,
+      roles
     };
   }
 
-  private async issueTokens(userId: string, email: string | null, role: string, family?: string) {
+  private async issueTokens(
+    userId: string,
+    email: string | null,
+    role: UserRole,
+    roles: UserRole[],
+    family?: string
+  ) {
     const accessSecret = this.configService.get<string>('auth.accessSecret')!;
     const accessExpiresIn = this.configService.get<string>('auth.accessTtl') as SignOptions['expiresIn'];
     const refreshSecret = this.configService.get<string>('auth.refreshSecret')!;
@@ -197,7 +255,7 @@ export class AuthService {
     const refreshTokenId = randomUUID();
 
     const accessToken = await this.jwtService.signAsync(
-      { sub: userId, email, role },
+      { sub: userId, email, role, roles },
       { secret: accessSecret, expiresIn: accessExpiresIn }
     );
 
@@ -223,8 +281,114 @@ export class AuthService {
       accessToken,
       refreshToken,
       tokenType: 'Bearer',
-      expiresIn: accessExpiresIn
+      expiresIn: accessExpiresIn,
+      role,
+      roles
     };
+  }
+
+  private async findUserOrThrow(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        creatorProfile: true,
+        sellerProfile: true,
+        roleAssignments: true
+      }
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user;
+  }
+
+  private serializeUser(user: AuthUserRecord) {
+    const roles = this.getAssignedRoles(user);
+
+    return {
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      activeRole: user.role,
+      roles,
+      approvalStatus: user.approvalStatus,
+      creatorProfile: user.creatorProfile,
+      sellerProfile: user.sellerProfile
+    };
+  }
+
+  private getAssignedRoles(user: { roleAssignments: Array<{ role: UserRole }> }) {
+    const roles = user.roleAssignments.map((assignment) => assignment.role);
+    return roles.length > 0 ? roles : [UserRole.CREATOR];
+  }
+
+  private resolveRequestedRoles(payload: RegisterDto): UserRole[] {
+    const requested = new Set<UserRole>();
+
+    for (const role of payload.roles ?? []) {
+      requested.add(role as UserRole);
+    }
+
+    if (payload.role) {
+      requested.add(payload.role as UserRole);
+    }
+
+    if (payload.sellerKind === 'PROVIDER') {
+      requested.add(UserRole.PROVIDER);
+    }
+
+    if (requested.size === 0) {
+      requested.add(UserRole.CREATOR);
+    }
+
+    if (requested.has(UserRole.PROVIDER) && !requested.has(UserRole.SELLER)) {
+      requested.add(UserRole.SELLER);
+    }
+
+    return Array.from(requested);
+  }
+
+  private requiresSellerProfile(roles: UserRole[]) {
+    return roles.includes(UserRole.SELLER) || roles.includes(UserRole.PROVIDER);
+  }
+
+  private async generateUniqueCreatorHandle(source: string) {
+    return this.generateUniqueHandle(source, (handle) =>
+      this.prisma.creatorProfile.findUnique({ where: { handle } })
+    );
+  }
+
+  private async generateUniqueSellerHandle(source: string) {
+    return this.generateUniqueHandle(source, (handle) =>
+      this.prisma.seller.findUnique({ where: { handle } })
+    );
+  }
+
+  private async generateUniqueHandle(source: string, findExisting: (handle: string) => Promise<unknown>) {
+    const base = this.slugify(source);
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const candidate = attempt === 0 ? base : `${base}.${attempt + 1}`;
+      const existing = await findExisting(candidate);
+      if (!existing) {
+        return candidate;
+      }
+    }
+
+    return `${base}.${Date.now()}`;
+  }
+
+  private slugify(value: string) {
+    const normalized = String(value || 'workspace')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '.')
+      .replace(/^\.+|\.+$/g, '');
+
+    return normalized || 'workspace';
   }
 
   private verifyLegacyPassword(password: string, storedHash: string) {

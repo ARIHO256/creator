@@ -9,7 +9,10 @@ datasource db {
 
 enum UserRole {
   CREATOR
+  SELLER
+  PROVIDER
   ADMIN
+  SUPPORT
 }
 
 enum ApprovalStatus {
@@ -25,6 +28,12 @@ enum Tier {
   GOLD
 }
 
+enum SellerKind {
+  SELLER
+  PROVIDER
+  BRAND
+}
+
 enum DealStatus {
   DRAFT
   ACTIVE
@@ -34,6 +43,8 @@ enum DealStatus {
 }
 
 enum ListingStatus {
+  DRAFT
+  IN_REVIEW
   ACTIVE
   PAUSED
   ARCHIVED
@@ -45,6 +56,96 @@ enum OpportunityStatus {
   CLOSED
 }
 
+enum CampaignStatus {
+  DRAFT
+  OPEN
+  NEGOTIATION
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  ARCHIVED
+}
+
+enum ProposalStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  NEGOTIATING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ContractStatus {
+  DRAFT
+  ACTIVE
+  TERMINATION_REQUESTED
+  TERMINATED
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  APPROVED
+  BLOCKED
+  COMPLETED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum AssetStatus {
+  DRAFT
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
+enum OrderStatus {
+  NEW
+  CONFIRMED
+  PACKED
+  SHIPPED
+  DELIVERED
+  ON_HOLD
+  CANCELLED
+  RETURN_REQUESTED
+  RETURNED
+}
+
+enum TransactionType {
+  ORDER_PAYMENT
+  COMMISSION
+  PAYOUT
+  REFUND
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  PENDING
+  AVAILABLE
+  PAID
+  FAILED
+  CANCELLED
+}
+
 enum EventType {
   VIEW
   CLICK
@@ -53,36 +154,68 @@ enum EventType {
 }
 
 model User {
-  id                  String              @id @default(cuid())
-  email               String?             @unique
-  phone               String?             @unique
+  id                  String         @id @default(cuid())
+  email               String?        @unique
+  phone               String?        @unique
   passwordHash        String
-  role                UserRole            @default(CREATOR)
-  approvalStatus      ApprovalStatus      @default(NEEDS_ONBOARDING)
-  onboardingCompleted Boolean             @default(false)
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
+  role                UserRole       @default(CREATOR)
+  approvalStatus      ApprovalStatus @default(NEEDS_ONBOARDING)
+  onboardingCompleted Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
-  creatorProfile      CreatorProfile?
-  refreshTokens       RefreshToken[]
-  deals               Deal[]
-  listings            MarketplaceListing[]
-  analyticsEvents     AnalyticsEvent[]
-  mediaAssets         MediaAsset[]
-  appRecords          AppRecord[]
+  creatorProfile       CreatorProfile?
+  sellerProfile        Seller?
+  roleAssignments      UserRoleAssignment[]
+  refreshTokens        RefreshToken[]
+  deals                Deal[]
+  listings             MarketplaceListing[]
+  analyticsEvents      AnalyticsEvent[]
+  mediaAssets          MediaAsset[]
+  appRecords           AppRecord[]
+  createdCampaigns     Campaign[]            @relation("CampaignCreatedBy")
+  campaignsAsCreator   Campaign[]            @relation("CampaignCreator")
+  submittedProposals   Proposal[]            @relation("ProposalSubmittedBy")
+  proposalsAsCreator   Proposal[]            @relation("ProposalCreator")
+  proposalMessages     ProposalMessage[]
+  createdTasks         Task[]                @relation("TaskCreatedBy")
+  assignedTasks        Task[]                @relation("TaskAssignee")
+  taskComments         TaskComment[]
+  taskAttachments      TaskAttachment[]
+  ownedAssets          DeliverableAsset[]    @relation("AssetOwner")
+  reviewedAssets       DeliverableAsset[]    @relation("AssetReviewer")
+  sentInvites          CollaborationInvite[] @relation("InviteSender")
+  receivedInvites      CollaborationInvite[] @relation("InviteRecipient")
+  ordersAsBuyer        Order[]               @relation("OrderBuyer")
+  transactions         Transaction[]
+  opportunitiesCreated Opportunity[]         @relation("OpportunityCreatedBy")
+  contractsAsCreator   Contract[]
+}
+
+model UserRoleAssignment {
+  id        String   @id @default(cuid())
+  userId    String
+  role      UserRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([role])
 }
 
 model RefreshToken {
-  id        String   @id
+  id        String    @id
   userId    String
   tokenHash String
   family    String
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([family])
@@ -106,34 +239,56 @@ model CreatorProfile {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Seller {
-  id         String   @id @default(cuid())
-  name       String
-  type       String
-  category   String?
-  region     String?
-  rating     Float    @default(0)
-  isVerified Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                String     @id @default(cuid())
+  userId            String?    @unique
+  handle            String?    @unique
+  name              String
+  displayName       String
+  legalBusinessName String?
+  storefrontName    String?
+  type              String     @default("Seller")
+  kind              SellerKind @default(SELLER)
+  category          String?
+  categories        String?    @db.Text
+  region            String?
+  description       String?    @db.Text
+  languages         String?    @db.Text
+  rating            Float      @default(0)
+  isVerified        Boolean    @default(false)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
+  user          User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
   opportunities Opportunity[]
+  listings      MarketplaceListing[]
+  campaigns     Campaign[]            @relation("CampaignSellerOwner")
+  proposals     Proposal[]            @relation("ProposalSellerOwner")
+  contracts     Contract[]            @relation("ContractSellerOwner")
+  invites       CollaborationInvite[]
+  orders        Order[]
+  transactions  Transaction[]
 }
 
 model Opportunity {
-  id          String            @id @default(cuid())
-  sellerId    String
-  title       String
-  description String?           @db.Text
-  payBand     String?
-  status      OpportunityStatus @default(OPEN)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  id              String            @id @default(cuid())
+  sellerId        String
+  createdByUserId String?
+  title           String
+  description     String?           @db.Text
+  payBand         String?
+  status          OpportunityStatus @default(OPEN)
+  metadata        Json?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
-  seller      Seller            @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  seller    Seller                @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  createdBy User?                 @relation("OpportunityCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  campaigns Campaign[]
+  invites   CollaborationInvite[]
 
   @@index([sellerId])
   @@index([status])
@@ -153,31 +308,332 @@ model Deal {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  listings    MarketplaceListing[]
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listings MarketplaceListing[]
 
   @@index([userId])
   @@index([status])
 }
 
 model MarketplaceListing {
-  id          String        @id @default(cuid())
-  userId      String
-  dealId      String?
-  title       String
-  description String?       @db.Text
-  price       Float?
-  currency    String        @default("USD")
-  status      ListingStatus @default(ACTIVE)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id             String        @id @default(cuid())
+  userId         String
+  sellerId       String?
+  dealId         String?
+  title          String
+  description    String?       @db.Text
+  kind           String?
+  category       String?
+  sku            String?
+  marketplace    String?
+  price          Float?
+  currency       String        @default("USD")
+  inventoryCount Int           @default(0)
+  status         ListingStatus @default(DRAFT)
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deal        Deal?         @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seller     Seller?     @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  deal       Deal?       @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  orderItems OrderItem[]
 
   @@index([userId])
+  @@index([sellerId])
   @@index([dealId])
   @@index([status])
+}
+
+model Campaign {
+  id              String         @id @default(cuid())
+  sellerId        String
+  creatorId       String?
+  opportunityId   String?
+  createdByUserId String
+  title           String
+  description     String?        @db.Text
+  status          CampaignStatus @default(DRAFT)
+  budget          Float?
+  currency        String         @default("USD")
+  metadata        Json?
+  startAt         DateTime?
+  endAt           DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  seller      Seller                @relation("CampaignSellerOwner", fields: [sellerId], references: [id], onDelete: Cascade)
+  creator     User?                 @relation("CampaignCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  opportunity Opportunity?          @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  createdBy   User                  @relation("CampaignCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  proposals   Proposal[]
+  contracts   Contract[]
+  tasks       Task[]
+  assets      DeliverableAsset[]
+  invites     CollaborationInvite[]
+
+  @@index([sellerId])
+  @@index([creatorId])
+  @@index([opportunityId])
+  @@index([status])
+}
+
+model Proposal {
+  id                String         @id @default(cuid())
+  campaignId        String?
+  sellerId          String
+  creatorId         String
+  submittedByUserId String
+  title             String
+  summary           String?        @db.Text
+  amount            Float?
+  currency          String         @default("USD")
+  status            ProposalStatus @default(DRAFT)
+  metadata          Json?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  campaign    Campaign?         @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  seller      Seller            @relation("ProposalSellerOwner", fields: [sellerId], references: [id], onDelete: Cascade)
+  creator     User              @relation("ProposalCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  submittedBy User              @relation("ProposalSubmittedBy", fields: [submittedByUserId], references: [id], onDelete: Cascade)
+  messages    ProposalMessage[]
+  contracts   Contract[]
+
+  @@index([campaignId])
+  @@index([sellerId])
+  @@index([creatorId])
+  @@index([submittedByUserId])
+  @@index([status])
+}
+
+model ProposalMessage {
+  id           String   @id @default(cuid())
+  proposalId   String
+  authorUserId String
+  body         String   @db.Text
+  messageType  String   @default("COMMENT")
+  createdAt    DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId, createdAt])
+  @@index([authorUserId])
+}
+
+model Contract {
+  id                     String         @id @default(cuid())
+  campaignId             String?
+  proposalId             String?
+  sellerId               String
+  creatorId              String
+  title                  String
+  scope                  String?        @db.Text
+  value                  Float?
+  currency               String         @default("USD")
+  status                 ContractStatus @default(DRAFT)
+  startAt                DateTime?
+  endAt                  DateTime?
+  terminationRequestedAt DateTime?
+  terminationReason      String?        @db.Text
+  metadata               Json?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  campaign Campaign?          @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  proposal Proposal?          @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  seller   Seller             @relation("ContractSellerOwner", fields: [sellerId], references: [id], onDelete: Cascade)
+  creator  User               @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  tasks    Task[]
+  assets   DeliverableAsset[]
+
+  @@index([campaignId])
+  @@index([proposalId])
+  @@index([sellerId])
+  @@index([creatorId])
+  @@index([status])
+}
+
+model Task {
+  id              String       @id @default(cuid())
+  campaignId      String?
+  contractId      String?
+  createdByUserId String
+  assigneeUserId  String?
+  title           String
+  description     String?      @db.Text
+  status          TaskStatus   @default(TODO)
+  priority        TaskPriority @default(MEDIUM)
+  dueAt           DateTime?
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  campaign    Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  contract    Contract?        @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  createdBy   User             @relation("TaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  assignee    User?            @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  comments    TaskComment[]
+  attachments TaskAttachment[]
+
+  @@index([campaignId])
+  @@index([contractId])
+  @@index([createdByUserId])
+  @@index([assigneeUserId])
+  @@index([status])
+}
+
+model TaskComment {
+  id           String   @id @default(cuid())
+  taskId       String
+  authorUserId String
+  body         String   @db.Text
+  createdAt    DateTime @default(now())
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([authorUserId])
+}
+
+model TaskAttachment {
+  id            String   @id @default(cuid())
+  taskId        String
+  addedByUserId String
+  name          String
+  url           String?
+  kind          String
+  createdAt     DateTime @default(now())
+
+  task    Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  addedBy User @relation(fields: [addedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([addedByUserId])
+}
+
+model DeliverableAsset {
+  id             String      @id @default(cuid())
+  campaignId     String?
+  contractId     String?
+  ownerUserId    String
+  reviewerUserId String?
+  title          String
+  assetType      String
+  url            String?
+  status         AssetStatus @default(DRAFT)
+  reviewNotes    String?     @db.Text
+  metadata       Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  contract Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  owner    User      @relation("AssetOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  reviewer User?     @relation("AssetReviewer", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+
+  @@index([campaignId])
+  @@index([contractId])
+  @@index([ownerUserId])
+  @@index([reviewerUserId])
+  @@index([status])
+}
+
+model CollaborationInvite {
+  id              String       @id @default(cuid())
+  sellerId        String?
+  opportunityId   String?
+  campaignId      String?
+  senderUserId    String
+  recipientUserId String
+  title           String
+  message         String?      @db.Text
+  status          InviteStatus @default(PENDING)
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  seller      Seller?      @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  campaign    Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  sender      User         @relation("InviteSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  recipient   User         @relation("InviteRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([opportunityId])
+  @@index([campaignId])
+  @@index([senderUserId])
+  @@index([recipientUserId])
+  @@index([status])
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  sellerId    String
+  buyerUserId String?
+  channel     String
+  currency    String      @default("USD")
+  total       Float       @default(0)
+  itemCount   Int         @default(0)
+  status      OrderStatus @default(NEW)
+  warehouse   String?
+  notes       String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  seller       Seller        @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  buyer        User?         @relation("OrderBuyer", fields: [buyerUserId], references: [id], onDelete: SetNull)
+  items        OrderItem[]
+  transactions Transaction[]
+
+  @@index([sellerId])
+  @@index([buyerUserId])
+  @@index([status])
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  listingId String?
+  sku       String?
+  name      String
+  qty       Int
+  unitPrice Float
+  currency  String  @default("USD")
+
+  order   Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  listing MarketplaceListing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([listingId])
+}
+
+model Transaction {
+  id          String            @id @default(cuid())
+  userId      String
+  sellerId    String?
+  orderId     String?
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  amount      Float
+  currency    String            @default("USD")
+  note        String?           @db.Text
+  availableAt DateTime?
+  paidAt      DateTime?
+  metadata    Json?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seller Seller? @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  order  Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([sellerId])
+  @@index([orderId])
+  @@index([type, status])
 }
 
 model AnalyticsEvent {
@@ -188,7 +644,7 @@ model AnalyticsEvent {
   meta      String?   @db.Text
   createdAt DateTime  @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, eventType])
   @@index([createdAt])
@@ -203,7 +659,7 @@ model MediaAsset {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -218,7 +674,7 @@ model AppRecord {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, domain, entityType])
   @@index([domain, entityType, entityId])

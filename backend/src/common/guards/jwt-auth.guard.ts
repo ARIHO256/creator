@@ -30,6 +30,7 @@ export class JwtAuthGuard implements CanActivate {
       request.user = {
         sub: this.configService.get<string>('auth.devUserId') ?? 'user_ronald',
         role: this.configService.get<string>('auth.devUserRole') ?? 'CREATOR',
+        roles: [this.configService.get<string>('auth.devUserRole') ?? 'CREATOR'],
         email: null
       };
       return true;

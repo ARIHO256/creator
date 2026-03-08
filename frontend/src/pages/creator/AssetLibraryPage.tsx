@@ -35,6 +35,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
+import { backendApi, type AssetRecord } from "../../lib/api";
 
 /**
  * Asset Library (Independent Premium Page)
@@ -1113,6 +1114,78 @@ const smartPacks: SmartPack[] = [
   },
 ];
 
+function mapBackendAssetStatus(value?: string): ReviewStatus {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("pending_supplier") || normalized.includes("supplier_review")) return "pending_supplier";
+  if (normalized.includes("pending_admin") || normalized.includes("admin_review")) return "pending_admin";
+  if (normalized.includes("changes_requested")) return "changes_requested";
+  if (normalized.includes("rejected")) return "rejected";
+  if (normalized.includes("approved")) return "approved";
+  return "draft";
+}
+
+function mapBackendAssetMedia(value?: string): MediaType {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("video")) return "video";
+  if (normalized.includes("image")) return "image";
+  if (normalized.includes("overlay")) return "overlay";
+  if (normalized.includes("template")) return "template";
+  if (normalized.includes("script")) return "script";
+  if (normalized.includes("link")) return "link";
+  return "doc";
+}
+
+function mapBackendAssetSource(value?: string): AssetSource {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("supplier")) return "supplier";
+  if (normalized.includes("catalog") || normalized.includes("platform")) return "catalog";
+  return "creator";
+}
+
+function inferCampaignIdFromBrand(brand?: string) {
+  const key = String(brand || "").toLowerCase();
+  if (key.includes("glowup")) return "c-1";
+  if (key.includes("gadget")) return "c-2";
+  if (key.includes("grace")) return "c-3";
+  return undefined;
+}
+
+function inferSupplierIdFromBrand(brand?: string) {
+  const key = String(brand || "").toLowerCase();
+  if (key.includes("glowup")) return "p-1";
+  if (key.includes("gadget")) return "p-2";
+  if (key.includes("grace")) return "p-3";
+  return undefined;
+}
+
+function mapBackendAsset(entry: AssetRecord, index: number): Asset {
+  const mediaType = mapBackendAssetMedia(entry.mediaType);
+  const brand = entry.brand || "Creator";
+  const campaignId = inferCampaignIdFromBrand(brand);
+  const supplierId = inferSupplierIdFromBrand(brand);
+
+  return {
+    id: String(entry.id || `backend-asset-${index + 1}`),
+    creatorScope: "all",
+    title: entry.title || `Asset ${index + 1}`,
+    subtitle: entry.subtitle || `${brand} asset`,
+    campaignId,
+    supplierId,
+    brand,
+    tags: Array.isArray(entry.tags) ? entry.tags.map(String) : [],
+    mediaType,
+    source: mapBackendAssetSource(entry.source),
+    ownerLabel: `Owner: ${mapBackendAssetSource(entry.source) === "supplier" ? "Supplier" : "Creator"}`,
+    status: mapBackendAssetStatus(entry.status),
+    lastUpdatedLabel: "Last updated: Recently",
+    thumbnailUrl: undefined,
+    previewUrl: undefined,
+    previewKind: mediaType === "video" ? "video" : "image",
+    role: mediaType === "script" ? "script" : undefined,
+    usageNotes: "Synced from backend asset records."
+  };
+}
+
 
 
 export default function AssetLibraryPage() {
@@ -1124,6 +1197,7 @@ export default function AssetLibraryPage() {
 
   // ------ State ------
   const [assets, setAssets] = useState<Asset[]>(seedAssets);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [selectedCreatorId, setSelectedCreatorId] = useState(creators[0]?.id ?? "");
   const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id ?? "");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>(() => {
@@ -1179,6 +1253,32 @@ export default function AssetLibraryPage() {
 
   // When submitting an image, we can detect pixel size for validations (e.g., Hero image requirement).
   const [submitImageMeta, setSubmitImageMeta] = useState<{ width: number; height: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAssets = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getAssets();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapBackendAsset);
+        if (mapped.length > 0) {
+          setAssets(mapped);
+          setActiveAssetId(mapped[0]?.id ?? null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load assets from backend");
+        }
+      }
+    };
+
+    void loadAssets();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Keep submit draft in sync with selected campaign (sensible default)
   useEffect(() => {
@@ -1715,6 +1815,14 @@ export default function AssetLibraryPage() {
           </div>
         </div>
       </div>
+
+      {backendError ? (
+        <div className="mx-auto max-w-full px-3 sm:px-4 md:px-6 lg:px-8 pt-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+            Backend data fallback: {backendError}
+          </div>
+        </div>
+      ) : null}
 
       {/* Context banner when opened as picker */}
       {(pickerMode || dealId) && (

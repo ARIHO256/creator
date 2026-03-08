@@ -20,9 +20,7 @@ import {
   X
 } from "lucide-react";
 import { PageHeader } from "../../components/PageHeader";
-import { useNotification } from "../../contexts/NotificationContext";
-import { useAsyncAction } from "../../hooks/useAsyncAction";
-import { CircularProgress } from "@mui/material";
+import { backendApi, type AuditLogRecord } from "../../lib/api";
 
 /**
  * Creator Platform – Audit Log (Premium)
@@ -72,6 +70,60 @@ type AuditEvent = {
   ip?: string;
   location?: string;
   meta?: Record<string, any>;
+};
+
+const mapModuleName = (value?: string, action?: string): ModuleName => {
+  const raw = `${value || ""} ${action || ""}`.toLowerCase();
+  if (raw.includes("adz") || raw.includes("ad")) return "Shoppable Adz";
+  if (raw.includes("crew") || raw.includes("studio") || raw.includes("live")) return "Live Crew";
+  if (raw.includes("role") || raw.includes("permission")) return "Roles & Permissions";
+  if (raw.includes("onboard") || raw.includes("approval")) return "Onboarding";
+  if (raw.includes("partner") || raw.includes("guest")) return "Partners & Guests";
+  if (raw.includes("payout") || raw.includes("finance")) return "Payouts";
+  return "Settings & Safety";
+};
+
+const mapSeverity = (value?: string): Severity => {
+  const normalized = (value || "").toLowerCase();
+  if (normalized === "critical" || normalized === "error") return "Critical";
+  if (normalized === "warning" || normalized === "warn") return "Warning";
+  return "Info";
+};
+
+const mapOutcome = (value?: string, severity?: Severity): Outcome => {
+  const normalized = (value || "").toLowerCase();
+  if (normalized === "pending") return "Pending";
+  if (normalized === "blocked") return "Blocked";
+  if (normalized === "failed" || normalized === "error") return "Failed";
+  if (normalized === "success" || normalized === "ok") return "Success";
+  return severity === "Critical" ? "Failed" : "Success";
+};
+
+const mapAuditLog = (entry: AuditLogRecord, index: number): AuditEvent => {
+  const severity = mapSeverity(entry.severity);
+  const actorText = entry.actor || "System";
+  const actorHandle = actorText.startsWith("@") ? actorText : undefined;
+  const timestamp = entry.at || entry.when || entry.ts || new Date().toISOString();
+
+  return {
+    id: String(entry.id || `AUD-${index + 1}`),
+    ts: timestamp,
+    actor: {
+      name: actorHandle ? actorText.slice(1) : actorText,
+      handle: actorHandle,
+      role: "Owner"
+    },
+    module: mapModuleName(entry.module, entry.action),
+    action: entry.action || entry.detail || "Updated record",
+    entity: {
+      type: entry.entityType || "Record",
+      id: entry.entityId,
+      name: entry.entityName || entry.detail
+    },
+    severity,
+    outcome: mapOutcome(entry.outcome, severity),
+    meta: entry.meta || { detail: entry.detail || null }
+  };
 };
 
 function cx(...xs: Array<string | false | null | undefined>) {
@@ -424,9 +476,6 @@ function __selfTest() {
 }
 
 export default function CreatorAuditLogPage() {
-  const { showNotification } = useNotification();
-  const { run, isPending: actionPending } = useAsyncAction();
-
   useEffect(() => {
     __selfTest();
   }, []);
@@ -449,7 +498,33 @@ export default function CreatorAuditLogPage() {
   const canExport = !!viewerPerms["audit.export"];
   const canViewSensitive = !!viewerPerms["audit.view_sensitive"];
 
-  const [events] = useState<AuditEvent[]>(() => buildMockEvents());
+  const [events, setEvents] = useState<AuditEvent[]>(() => buildMockEvents());
+  const [backendError, setBackendError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const rows = await backendApi.getAuditLogs();
+        if (!isMounted) return;
+        if (rows.length) {
+          setEvents(rows.map(mapAuditLog));
+        } else {
+          setEvents(buildMockEvents());
+        }
+        setBackendError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        setEvents(buildMockEvents());
+        setBackendError(error instanceof Error ? error.message : "Unable to load audit logs.");
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Filters
   const [range, setRange] = useState<"24h" | "7d" | "30d" | "all">("7d");
@@ -629,6 +704,12 @@ export default function CreatorAuditLogPage() {
         </div>
       ) : (
         <>
+          {backendError ? (
+            <div className="mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 md:mx-6">
+              Backend data fallback: {backendError}
+            </div>
+          ) : null}
+
           <div className="sticky top-16 z-20 bg-white/90 dark:bg-slate-950/90 backdrop-blur border-b border-slate-200 dark:border-slate-800">
             <div className="w-full px-4 md:px-6 py-4 flex flex-col xl:flex-row xl:items-center gap-4">
               <div className="flex flex-wrap items-center gap-2.5">

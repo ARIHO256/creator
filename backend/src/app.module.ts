@@ -9,6 +9,7 @@ import { PrismaModule } from './platform/prisma/prisma.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { CreatorsModule } from './modules/creators/creators.module.js';
+import { SellersModule } from './modules/sellers/sellers.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { DealsModule } from './modules/deals/deals.module.js';
 import { MarketplaceModule } from './modules/marketplace/marketplace.module.js';
@@ -23,6 +24,11 @@ import { FinanceModule } from './modules/finance/finance.module.js';
 import { SettingsModule } from './modules/settings/settings.module.js';
 import { WorkflowModule } from './modules/workflow/workflow.module.js';
 import { ReviewsModule } from './modules/reviews/reviews.module.js';
+import { CommerceModule } from './modules/commerce/commerce.module.js';
+import { CommunicationsModule } from './modules/communications/communications.module.js';
+import { WholesaleModule } from './modules/wholesale/wholesale.module.js';
+import { ProviderModule } from './modules/provider/provider.module.js';
+import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
 
 @Module({
   imports: [
@@ -32,7 +38,13 @@ import { ReviewsModule } from './modules/reviews/reviews.module.js';
     AuthModule,
     UsersModule,
     CreatorsModule,
+    SellersModule,
     ProfilesModule,
+    CommerceModule,
+    CommunicationsModule,
+    WholesaleModule,
+    ProviderModule,
+    RegulatoryModule,
     DealsModule,
     MarketplaceModule,
     AnalyticsModule,

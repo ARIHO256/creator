@@ -17,6 +17,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { backendApi, type TaskRecord } from "../../lib/api";
 
 const ORANGE = "#f77f00";
 
@@ -229,6 +230,61 @@ function flattenColumns(columns: ColumnsState) {
   return Object.values(columns).flat();
 }
 
+function mapBackendColumn(value?: string): ColumnId {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("in_progress") || normalized.includes("in-progress")) return "in-progress";
+  if (normalized.includes("submitted") || normalized.includes("awaiting_review")) return "submitted";
+  if (normalized.includes("approved") || normalized.includes("done")) return "approved";
+  if (normalized.includes("needs_changes") || normalized.includes("changes")) return "needs-changes";
+  return "todo";
+}
+
+function mapBackendTaskType(value?: string): TaskType {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("live")) return "live";
+  if (normalized.includes("story")) return "story";
+  if (normalized.includes("video") || normalized.includes("vod") || normalized.includes("clip")) return "vod";
+  return "post";
+}
+
+function mapBackendPriority(value?: string): Priority {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("critical")) return "Critical";
+  if (normalized.includes("high")) return "High";
+  if (normalized.includes("low")) return "Low";
+  return "Normal";
+}
+
+function mapTaskRecord(entry: TaskRecord, index: number): { task: Task; column: ColumnId } {
+  const dueDate = entry.dueAt ? new Date(entry.dueAt) : null;
+  const msUntilDue = dueDate ? dueDate.getTime() - Date.now() : 0;
+  const dueDaysFromNow = dueDate ? Math.ceil(msUntilDue / (1000 * 60 * 60 * 24)) : 0;
+  const title = entry.title || `Task ${index + 1}`;
+  const supplier = entry.supplier || "Supplier";
+  const supplierInitials = seedInitials(supplier);
+  const column = mapBackendColumn(entry.column || entry.status);
+
+  return {
+    column,
+    task: {
+      id: String(entry.id || `backend-task-${index + 1}`),
+      title,
+      campaign: entry.campaign || "Campaign",
+      supplier,
+      supplierInitials,
+      brand: supplier,
+      type: mapBackendTaskType(entry.type || entry.status),
+      priority: mapBackendPriority(entry.priority),
+      dueLabel: entry.dueLabel || (dueDate ? dueDate.toLocaleString() : "Upcoming"),
+      dueDaysFromNow,
+      overdue: dueDaysFromNow < 0,
+      earnings: 0,
+      currency: "USD",
+      createdAtISO: new Date().toISOString()
+    }
+  };
+}
+
 /* ----------------------------- UI atoms ----------------------------- */
 
 function Btn({
@@ -326,6 +382,7 @@ function Toast({ text, onClose }: { text: string | null; onClose: () => void }) 
 export function TaskBoardPage() {
   const navigate = useNavigate();
   const [toast, setToast] = useState<string | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   // Seed tasks from contracts
   const seededColumns = useMemo<ColumnsState>(() => {
@@ -384,6 +441,41 @@ export function TaskBoardPage() {
   }, []);
 
   const [columns, setColumns] = useState<ColumnsState>(seededColumns);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadBackendTasks = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getTasks();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapTaskRecord);
+        if (mapped.length === 0) return;
+
+        const next: ColumnsState = {
+          todo: [],
+          "in-progress": [],
+          submitted: [],
+          approved: [],
+          "needs-changes": []
+        };
+        mapped.forEach((item) => {
+          next[item.column].push(item.task);
+        });
+        setColumns(next);
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load tasks from backend");
+        }
+      }
+    };
+
+    void loadBackendTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const taskToColumn = useMemo(() => {
     const map = new Map<string, ColumnId>();
@@ -580,6 +672,11 @@ export function TaskBoardPage() {
       />
 
       <main className="flex-1 flex flex-col w-full p-3 sm:p-4 md:p-6 lg:p-8 pt-8 gap-4 overflow-y-auto overflow-x-hidden">
+        {backendError ? (
+          <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+            Backend data fallback: {backendError}
+          </section>
+        ) : null}
         <div className="w-full max-w-full flex flex-col gap-3">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-sm">
             <div className="min-w-0">

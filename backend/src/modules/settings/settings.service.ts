@@ -41,4 +41,31 @@ export class SettingsService {
   crew(userId: string) { return this.records.list('settings','crew_session',userId).then((rows)=>rows.map((r)=>({id:r.entityId,...(r.payload as any)}))); }
   crewSession(userId: string, id: string, body: any) { return this.records.upsert('settings','crew_session',id,body,userId); }
   auditLogs(userId: string) { return this.records.list('settings','audit_log',userId).then((rows)=>rows.map((r)=>({id:r.entityId,...(r.payload as any)}))); }
+
+  preferences(userId: string) { return this.getWorkspaceSetting(userId, 'preferences', { locale: 'en', currency: 'USD' }); }
+  updatePreferences(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'preferences', body); }
+  payoutMethods(userId: string) { return this.getWorkspaceSetting(userId, 'payout_methods', { methods: [] }); }
+  updatePayoutMethods(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'payout_methods', body); }
+  securitySettings(userId: string) { return this.getWorkspaceSetting(userId, 'security', { twoFactor: false, sessions: [] }); }
+  updateSecuritySettings(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'security', body); }
+  integrations(userId: string) { return this.getWorkspaceSetting(userId, 'integrations', { integrations: [], webhooks: [] }); }
+  updateIntegrations(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'integrations', body); }
+  tax(userId: string) { return this.getWorkspaceSetting(userId, 'tax', { profiles: [], reports: [] }); }
+  updateTax(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'tax', body); }
+  kyc(userId: string) { return this.getWorkspaceSetting(userId, 'kyc', { status: 'pending', documents: [] }); }
+  updateKyc(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'kyc', body); }
+  savedViews(userId: string) { return this.getWorkspaceSetting(userId, 'saved_views', { views: [] }); }
+  updateSavedViews(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'saved_views', body); }
+  help(userId: string) { return this.getWorkspaceSetting(userId, 'help', { links: [] }); }
+  statusCenter(userId: string) { return this.getWorkspaceSetting(userId, 'status_center', { services: [] }); }
+  notificationPreferences(userId: string) { return this.getWorkspaceSetting(userId, 'notification_preferences', { watches: [] }); }
+  updateNotificationPreferences(userId: string, body: any) { return this.upsertWorkspaceSetting(userId, 'notification_preferences', body); }
+
+  private getWorkspaceSetting(userId: string, key: string, fallback: any) {
+    return this.records.getByEntityId('seller_workspace', key, 'main', userId).then((r)=>r.payload).catch(()=>fallback);
+  }
+
+  private upsertWorkspaceSetting(userId: string, key: string, body: any) {
+    return this.records.upsert('seller_workspace', key, 'main', body, userId);
+  }
 }

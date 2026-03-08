@@ -6,10 +6,11 @@
 // 3) Distribution panel (export to campaigns, social, asset library)
 // Premium extras: AI auto clip suggestions, performance tags per clip.
 
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 
 import { PageHeader } from "../../components/PageHeader";
+import { backendApi, type LiveReplayRecord } from "../../lib/api";
 import { QRCodeCanvas } from "qrcode.react";
 
 type Replay = {
@@ -38,10 +39,70 @@ type ExportTargets = {
   assetLibrary: boolean;
 };
 
+const FALLBACK_REPLAYS: Replay[] = [
+  {
+    id: "R-101",
+    title: "Autumn Beauty Flash – Serum launch",
+    date: "Oct 10, 2025",
+    views: 1543,
+    sales: 62,
+    duration: "01:12:45",
+    status: "Published",
+    thumbColor: "bg-rose-100",
+    performanceTags: ["Strong hook", "High retention", "Serum focus"]
+  },
+  {
+    id: "R-102",
+    title: "Tech Friday Mega Live – Gadgets Q&A",
+    date: "Oct 11, 2025",
+    views: 2310,
+    sales: 87,
+    duration: "01:28:03",
+    status: "Draft replay",
+    thumbColor: "bg-sky-100",
+    performanceTags: ["Q&A heavy", "Late peak", "Bundle upsells"]
+  },
+  {
+    id: "R-103",
+    title: "Faith & Wellness Morning Dealz",
+    date: "Oct 12, 2025",
+    views: 987,
+    sales: 29,
+    duration: "00:54:10",
+    status: "Published",
+    thumbColor: "bg-emerald-100",
+    performanceTags: ["Soft opener", "High replay", "Community chat"]
+  }
+];
+
+const colorPool = ["bg-rose-100", "bg-sky-100", "bg-emerald-100", "bg-amber-100", "bg-indigo-100"];
+
+const formatDuration = (durationSec?: number): string => {
+  if (!durationSec || Number.isNaN(durationSec)) return "00:00:00";
+  const hrs = Math.floor(durationSec / 3600).toString().padStart(2, "0");
+  const mins = Math.floor((durationSec % 3600) / 60).toString().padStart(2, "0");
+  const secs = Math.floor(durationSec % 60).toString().padStart(2, "0");
+  return `${hrs}:${mins}:${secs}`;
+};
+
+const mapBackendReplay = (entry: LiveReplayRecord, index: number): Replay => ({
+  id: String(entry.id || entry.sessionId || `replay_${index + 1}`),
+  title: entry.title || `Replay ${index + 1}`,
+  date: entry.date
+    ? new Date(entry.date).toLocaleDateString(undefined, { month: "short", day: "2-digit", year: "numeric" })
+    : "Unknown date",
+  views: Number(entry.views ?? 0),
+  sales: Number(entry.sales ?? 0),
+  duration: formatDuration(Number(entry.durationSec ?? 0)),
+  status: entry.published ? "Published" : entry.status || "Draft replay",
+  thumbColor: colorPool[index % colorPool.length],
+  performanceTags: Array.isArray(entry.notes) && entry.notes.length ? entry.notes.slice(0, 3) : ["Replay ready"]
+});
+
 
 function LiveReplaysClipsPage() {
 
-  const [selectedReplayId, setSelectedReplayId] = useState("R-101");
+  const [selectedReplayId, setSelectedReplayId] = useState(FALLBACK_REPLAYS[0]?.id || "");
   const [shareReplay, setShareReplay] = useState<Replay | null>(null); // State for sharing modal
   const [clipStart, setClipStart] = useState(30); // seconds
   const [clipEnd, setClipEnd] = useState(90); // seconds
@@ -54,42 +115,41 @@ function LiveReplaysClipsPage() {
     social: true,
     assetLibrary: true
   });
+  const [backendError, setBackendError] = useState<string | null>(null);
 
-  const [replays, setReplays] = useState<Replay[]>([
-    {
-      id: "R-101",
-      title: "Autumn Beauty Flash – Serum launch",
-      date: "Oct 10, 2025",
-      views: 1543,
-      sales: 62,
-      duration: "01:12:45",
-      status: "Published",
-      thumbColor: "bg-rose-100",
-      performanceTags: ["Strong hook", "High retention", "Serum focus"]
-    },
-    {
-      id: "R-102",
-      title: "Tech Friday Mega Live – Gadgets Q&A",
-      date: "Oct 11, 2025",
-      views: 2310,
-      sales: 87,
-      duration: "01:28:03",
-      status: "Draft replay",
-      thumbColor: "bg-sky-100",
-      performanceTags: ["Q&A heavy", "Late peak", "Bundle upsells"]
-    },
-    {
-      id: "R-103",
-      title: "Faith & Wellness Morning Dealz",
-      date: "Oct 12, 2025",
-      views: 987,
-      sales: 29,
-      duration: "00:54:10",
-      status: "Published",
-      thumbColor: "bg-emerald-100",
-      performanceTags: ["Soft opener", "High replay", "Community chat"]
+  const [replays, setReplays] = useState<Replay[]>(FALLBACK_REPLAYS);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        const rows = await backendApi.getLiveReplays();
+        if (!isMounted) return;
+        if (rows.length) {
+          setReplays(rows.map(mapBackendReplay));
+        } else {
+          setReplays(FALLBACK_REPLAYS);
+        }
+        setBackendError(null);
+      } catch (error) {
+        if (!isMounted) return;
+        setReplays(FALLBACK_REPLAYS);
+        setBackendError(error instanceof Error ? error.message : "Unable to load replays.");
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (replays.length === 0) return;
+    if (!replays.some((replay) => replay.id === selectedReplayId)) {
+      setSelectedReplayId(replays[0].id);
     }
-  ]);
+  }, [replays, selectedReplayId]);
 
   const selectedReplay =
     replays.find((r) => r.id === selectedReplayId) || replays[0] || null;
@@ -174,12 +234,18 @@ function LiveReplaysClipsPage() {
     setReplays((prev) =>
       prev.map((r) => (r.id === id ? { ...r, status: "Published" } : r))
     );
+    backendApi.publishReplay(id, {}).catch((error) => {
+      setBackendError(error instanceof Error ? error.message : "Failed to publish replay.");
+    });
   };
 
   const handleSetPrivate = (id: string): void => {
     setReplays((prev) =>
       prev.map((r) => (r.id === id ? { ...r, status: "Private" } : r))
     );
+    backendApi.updateReplay(id, { published: false, status: "private" }).catch((error) => {
+      setBackendError(error instanceof Error ? error.message : "Failed to update replay.");
+    });
   };
 
   const handleExportClip = () => {
@@ -239,6 +305,12 @@ function LiveReplaysClipsPage() {
       />
 
       <main className="flex-1 flex flex-col w-full p-4 sm:p-6 lg:p-8 pt-6 gap-6 overflow-y-auto overflow-x-hidden">
+        {backendError ? (
+          <section className="mb-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Backend data fallback: {backendError}
+          </section>
+        ) : null}
+
         <div className="w-full max-w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1.5fr)] gap-4 items-start">
           {/* Left: Replays + AI suggestions */}
           <section className="flex flex-col gap-3">
