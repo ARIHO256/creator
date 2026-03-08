@@ -52,6 +52,25 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/invites`
 - `POST /api/invites/:id/respond`
 
+## Taxonomy
+- `GET /api/taxonomy/trees` (Public)
+- `GET /api/taxonomy/trees/:id/nodes` (Public)
+- `GET /api/taxonomy/nodes/:id/children` (Public)
+- `POST /api/taxonomy/trees` (Admin/Support) - `CreateTaxonomyTreeDto`
+- `PATCH /api/taxonomy/trees/:id` (Admin/Support) - `UpdateTaxonomyTreeDto`
+- `POST /api/taxonomy/nodes` (Admin/Support) - `CreateTaxonomyNodeDto`
+- `PATCH /api/taxonomy/nodes/:id` (Admin/Support) - `UpdateTaxonomyNodeDto`
+- `GET /api/taxonomy/coverage`
+- `POST /api/taxonomy/coverage` - `CreateTaxonomyCoverageDto`
+- `PATCH /api/taxonomy/coverage/:id` - `UpdateTaxonomyCoverageDto`
+- `DELETE /api/taxonomy/coverage/:id`
+
+## Storefront
+- `GET /api/storefront/me`
+- `PATCH /api/storefront/me` - `UpdateStorefrontDto`
+- `GET /api/storefront/:handle` (Public)
+- `GET /api/storefront/:handle/listings` (Public)
+
 ## Collaboration
 - `GET /api/campaigns`
 - `GET /api/proposals`

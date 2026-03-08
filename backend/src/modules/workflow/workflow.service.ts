@@ -186,21 +186,46 @@ export class WorkflowService {
       languages: onboarding.languages.length ? onboarding.languages.join(',') : existing?.languages || null
     };
 
-    if (existing) {
-      await this.prisma.seller.update({
-        where: { id: existing.id },
-        data
-      });
-      return;
-    }
+    const seller = existing
+      ? await this.prisma.seller.update({
+          where: { id: existing.id },
+          data
+        })
+      : await this.prisma.seller.create({
+          data: {
+            user: {
+              connect: { id: userId }
+            },
+            ...data
+          }
+        });
 
-    await this.prisma.seller.create({
-      data: {
-        user: {
-          connect: { id: userId }
+    const storefrontSlug = sellerSlugToHandle(
+      onboarding.storeSlug || seller.handle || seller.storefrontName || seller.name
+    );
+
+    if (storefrontSlug) {
+      await this.prisma.storefront.upsert({
+        where: { sellerId: seller.id },
+        update: {
+          slug: storefrontSlug,
+          name: onboarding.storeName || seller.storefrontName || seller.displayName || seller.name,
+          tagline: onboarding.about || undefined,
+          description: onboarding.about || undefined,
+          logoUrl: onboarding.logoUrl || undefined,
+          coverUrl: onboarding.coverUrl || undefined
         },
-        ...data
-      }
-    });
+        create: {
+          sellerId: seller.id,
+          slug: storefrontSlug,
+          name: onboarding.storeName || seller.storefrontName || seller.displayName || seller.name,
+          tagline: onboarding.about || undefined,
+          description: onboarding.about || undefined,
+          logoUrl: onboarding.logoUrl || undefined,
+          coverUrl: onboarding.coverUrl || undefined,
+          isPublished: false
+        }
+      });
+    }
   }
 }

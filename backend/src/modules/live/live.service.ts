@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { AppRecordsService } from '../../platform/app-records.service.js';
+import { PayloadSanitizerOptions, normalizeIdentifier, sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 
 @Injectable()
 export class LiveService {
@@ -8,10 +9,21 @@ export class LiveService {
 
   // builder
   builder(id: string, userId: string) { return this.records.getByEntityId('live', 'builder', id, userId).then((r) => r.payload); }
-  saveBuilder(userId: string, payload: any) { const id = payload.sessionId || payload.id || randomUUID(); return this.records.upsert('live', 'builder', id, payload, userId); }
+  saveBuilder(userId: string, payload: any) {
+    const sanitized = this.ensureObjectPayload(payload);
+    const id = normalizeIdentifier(sanitized.sessionId ?? sanitized.id, randomUUID());
+    return this.records.upsert('live', 'builder', id, sanitized, userId);
+  }
   async publishBuilder(userId: string, id: string, payload: any) {
     const rec = await this.records.getByEntityId('live', 'builder', id, userId);
-    return this.records.update('live', 'builder', id, { ...(rec.payload as any), ...payload, published: true }, userId);
+    const sanitized = this.ensureObjectPayload(payload);
+    return this.records.update(
+      'live',
+      'builder',
+      id,
+      { ...(rec.payload as any), ...sanitized, published: true },
+      userId
+    );
   }
 
   campaignGiveaways(campaignId: string) {
@@ -20,8 +32,15 @@ export class LiveService {
 
   sessions(userId: string) { return this.records.list('live', 'session', userId).then((rows) => rows.map((r) => ({ id: r.entityId, ...(r.payload as any) }))); }
   session(userId: string, id: string) { return this.records.getByEntityId('live', 'session', id, userId).then((r) => ({ id: r.entityId, ...(r.payload as any) })); }
-  createSession(userId: string, body: any) { const id = body.id || randomUUID(); return this.records.create('live', 'session', body, id, userId); }
-  updateSession(userId: string, id: string, body: any) { return this.records.update('live', 'session', id, body, userId); }
+  createSession(userId: string, body: any) {
+    const sanitized = this.ensureObjectPayload(body);
+    const id = normalizeIdentifier(sanitized.id, randomUUID());
+    return this.records.create('live', 'session', sanitized, id, userId);
+  }
+  updateSession(userId: string, id: string, body: any) {
+    const sanitized = this.ensureObjectPayload(body);
+    return this.records.update('live', 'session', id, sanitized, userId);
+  }
 
   async studio(userId: string, id: string) {
     return this.records.getByEntityId('live', 'studio', id, userId).then((r) => r.payload).catch(() => this.records.create('live', 'studio', { mode: 'builder', sessionId: id }, id, userId).then((r)=>r.payload));
@@ -41,18 +60,33 @@ export class LiveService {
   async addMoment(userId: string, id: string, payload: any) {
     const rec = (await this.studio(userId, id)) as any;
     const moments = Array.isArray(rec.moments) ? rec.moments : [];
-    moments.push({ id: randomUUID(), ...payload, createdAt: new Date().toISOString() });
-    return this.records.upsert('live', 'studio', id, { ...rec, moments }, userId);
+    const sanitized = this.ensureObjectPayload(payload, { maxDepth: 4, maxArrayLength: 50, maxKeys: 50 });
+    const nextMoments = [...moments, { id: randomUUID(), ...sanitized, createdAt: new Date().toISOString() }];
+    const trimmed = nextMoments.length > 500 ? nextMoments.slice(nextMoments.length - 500) : nextMoments;
+    return this.records.upsert('live', 'studio', id, { ...rec, moments: trimmed }, userId);
   }
 
   replays(userId: string) { return this.records.list('live', 'replay', userId).then((rows) => rows.map((r) => ({ id: r.entityId, ...(r.payload as any) }))); }
   replay(userId: string, id: string) { return this.records.getByEntityId('live', 'replay', id, userId).then((r) => ({ id: r.entityId, ...(r.payload as any) })); }
-  replayBySession(userId: string, sessionId: string) { return this.records.upsert('live', 'replay', sessionId, { sessionId, published: false }, userId); }
-  updateReplay(userId: string, id: string, body: any) { return this.records.update('live', 'replay', id, body, userId); }
+  replayBySession(userId: string, sessionId: string) {
+    const id = normalizeIdentifier(sessionId, randomUUID());
+    return this.records.upsert('live', 'replay', id, { sessionId: id, published: false }, userId);
+  }
+  updateReplay(userId: string, id: string, body: any) {
+    const sanitized = this.ensureObjectPayload(body);
+    return this.records.update('live', 'replay', id, sanitized, userId);
+  }
 
   async publishReplay(userId: string, id: string, body: any) {
     const rec = await this.records.getByEntityId('live', 'replay', id, userId);
-    return this.records.update('live', 'replay', id, { ...(rec.payload as any), ...body, published: true, publishedAt: new Date().toISOString() }, userId);
+    const sanitized = this.ensureObjectPayload(body);
+    return this.records.update(
+      'live',
+      'replay',
+      id,
+      { ...(rec.payload as any), ...sanitized, published: true, publishedAt: new Date().toISOString() },
+      userId
+    );
   }
 
   reviews(userId: string) { return this.records.list('reviews', 'live_review', userId).then((rows) => rows.map((r) => r.payload)); }
@@ -62,6 +96,15 @@ export class LiveService {
   }
 
   toolPatch(userId: string, key: string, body: any) {
-    return this.records.upsert('live', 'tool_config', key, body, userId);
+    const sanitized = this.ensureObjectPayload(body, { maxDepth: 5, maxArrayLength: 100, maxKeys: 100 });
+    return this.records.upsert('live', 'tool_config', key, sanitized, userId);
+  }
+
+  private ensureObjectPayload(payload: unknown, overrides?: Partial<PayloadSanitizerOptions>) {
+    const sanitized = sanitizePayload(payload, { maxDepth: 7, maxArrayLength: 200, maxKeys: 200, ...overrides });
+    if (!sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
+      throw new BadRequestException('Invalid payload');
+    }
+    return sanitized as Record<string, unknown>;
   }
 }

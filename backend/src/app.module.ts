@@ -32,6 +32,8 @@ import { WholesaleModule } from './modules/wholesale/wholesale.module.js';
 import { ProviderModule } from './modules/provider/provider.module.js';
 import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
 import { JobsModule } from './modules/jobs/jobs.module.js';
+import { TaxonomyModule } from './modules/taxonomy/taxonomy.module.js';
+import { StorefrontModule } from './modules/storefront/storefront.module.js';
 
 @Module({
   imports: [
@@ -49,6 +51,8 @@ import { JobsModule } from './modules/jobs/jobs.module.js';
     WholesaleModule,
     ProviderModule,
     RegulatoryModule,
+    TaxonomyModule,
+    StorefrontModule,
     DealsModule,
     MarketplaceModule,
     AnalyticsModule,

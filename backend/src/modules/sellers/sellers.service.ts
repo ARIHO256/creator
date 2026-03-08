@@ -54,7 +54,7 @@ export class SellersService {
 
   async createListing(userId: string, payload: CreateSellerListingDto) {
     const profile = await this.ensureSellerProfile(userId);
-    return this.prisma.marketplaceListing.create({
+    const listing = await this.prisma.marketplaceListing.create({
       data: {
         userId,
         sellerId: profile.id,
@@ -72,6 +72,31 @@ export class SellersService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+
+    if (payload.taxonomyNodeId) {
+      const node = await this.prisma.taxonomyNode.findUnique({
+        where: { id: payload.taxonomyNodeId }
+      });
+      if (!node) {
+        throw new NotFoundException('Taxonomy node not found');
+      }
+
+      const pathSnapshot = payload.taxonomyPathNodes?.length
+        ? payload.taxonomyPathNodes
+        : await this.buildPathSnapshot(node.id);
+      const pathSnapshotJson = pathSnapshot as unknown as Prisma.InputJsonValue;
+
+      await this.prisma.listingTaxonomyLink.create({
+        data: {
+          listingId: listing.id,
+          taxonomyNodeId: node.id,
+          isPrimary: true,
+          pathSnapshot: pathSnapshotJson
+        }
+      });
+    }
+
+    return listing;
   }
 
   async updateListing(userId: string, id: string, payload: UpdateSellerListingDto) {
@@ -84,13 +109,46 @@ export class SellersService {
       throw new NotFoundException('Seller listing not found');
     }
 
-    return this.prisma.marketplaceListing.update({
+    const updated = await this.prisma.marketplaceListing.update({
       where: { id },
       data: {
         ...payload,
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+
+    if (payload.taxonomyNodeId) {
+      const node = await this.prisma.taxonomyNode.findUnique({
+        where: { id: payload.taxonomyNodeId }
+      });
+      if (!node) {
+        throw new NotFoundException('Taxonomy node not found');
+      }
+
+      const pathSnapshot = payload.taxonomyPathNodes?.length
+        ? payload.taxonomyPathNodes
+        : await this.buildPathSnapshot(node.id);
+      const pathSnapshotJson = pathSnapshot as unknown as Prisma.InputJsonValue;
+
+      await this.prisma.$transaction([
+        this.prisma.listingTaxonomyLink.updateMany({
+          where: { listingId: listing.id, isPrimary: true, taxonomyNodeId: { not: node.id } },
+          data: { isPrimary: false }
+        }),
+        this.prisma.listingTaxonomyLink.upsert({
+          where: { listingId_taxonomyNodeId: { listingId: listing.id, taxonomyNodeId: node.id } },
+          update: { isPrimary: true, pathSnapshot: pathSnapshotJson },
+          create: {
+            listingId: listing.id,
+            taxonomyNodeId: node.id,
+            isPrimary: true,
+            pathSnapshot: pathSnapshotJson
+          }
+        })
+      ]);
+    }
+
+    return updated;
   }
 
   async listOrders(userId: string, query?: ListQueryDto) {
@@ -150,7 +208,7 @@ export class SellersService {
     });
   }
 
-  private async ensureSellerProfile(userId: string) {
+  async ensureSellerProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -187,6 +245,44 @@ export class SellersService {
         kind: user.role === UserRole.PROVIDER ? 'PROVIDER' : 'SELLER'
       }
     });
+  }
+
+  private async buildPathSnapshot(nodeId: string) {
+    const path: Array<{ id: string; name: string; type: string }> = [];
+    let current = await this.prisma.taxonomyNode.findUnique({ where: { id: nodeId } });
+
+    while (current) {
+      path.unshift({
+        id: current.id,
+        name: current.name,
+        type: this.kindToType(current.kind)
+      });
+
+      if (!current.parentId) {
+        break;
+      }
+
+      current = await this.prisma.taxonomyNode.findUnique({ where: { id: current.parentId } });
+    }
+
+    return path;
+  }
+
+  private kindToType(kind: string) {
+    switch (kind) {
+      case 'MARKETPLACE':
+        return 'Marketplace';
+      case 'FAMILY':
+        return 'Product Family';
+      case 'CATEGORY':
+        return 'Category';
+      case 'SUBCATEGORY':
+        return 'Sub-Category';
+      case 'LINE':
+        return 'Line';
+      default:
+        return 'Category';
+    }
   }
 
   private serializeSeller(profile: {

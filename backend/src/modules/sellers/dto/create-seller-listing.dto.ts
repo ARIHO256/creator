@@ -1,4 +1,16 @@
-import { IsIn, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsIn, IsNumber, IsObject, IsOptional, IsString, ValidateNested } from 'class-validator';
+
+export class ListingTaxonomyPathNodeDto {
+  @IsString()
+  id!: string;
+
+  @IsString()
+  name!: string;
+
+  @IsString()
+  type!: string;
+}
 
 export class CreateSellerListingDto {
   @IsString()
@@ -48,4 +60,14 @@ export class CreateSellerListingDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  taxonomyNodeId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ListingTaxonomyPathNodeDto)
+  taxonomyPathNodes?: ListingTaxonomyPathNodeDto[];
 }

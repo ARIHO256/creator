@@ -2,12 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
+import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
 
 @Injectable()
 export class CommerceService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly records: AppRecordsService
+    private readonly records: AppRecordsService,
+    private readonly taxonomyService: TaxonomyService
   ) {}
 
   async dashboard(userId: string) {
@@ -83,10 +85,27 @@ export class CommerceService {
   }
 
   async listingWizard(userId: string) {
-    return this.records
+    const fallback = await this.records
       .getByEntityId('seller_workspace', 'listing_wizard', 'main', userId)
       .then((record) => record.payload)
       .catch(() => ({ taxonomy: [], baseLines: [], copy: {} }));
+
+    const taxonomy = await this.taxonomyService.listingWizardTaxonomy();
+    if (taxonomy.length === 0) {
+      return fallback;
+    }
+
+    let baseLines: unknown = (fallback as Record<string, unknown>).baseLines ?? [];
+    try {
+      baseLines = await this.taxonomyService.listingWizardLines(userId);
+    } catch {
+      baseLines = (fallback as Record<string, unknown>).baseLines ?? [];
+    }
+    return {
+      ...(fallback as Record<string, unknown>),
+      taxonomy,
+      baseLines
+    };
   }
 
   async orders(userId: string, query?: ListQueryDto) {
