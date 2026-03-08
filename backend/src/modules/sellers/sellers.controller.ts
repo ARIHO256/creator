@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
@@ -32,8 +33,8 @@ export class SellersController {
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
   @Get('me/listings')
-  listings(@CurrentUser() user: RequestUser) {
-    return this.sellersService.listMyListings(user.sub);
+  listings(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.sellersService.listMyListings(user.sub, query);
   }
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
@@ -50,8 +51,8 @@ export class SellersController {
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
   @Get('me/orders')
-  orders(@CurrentUser() user: RequestUser) {
-    return this.sellersService.listOrders(user.sub);
+  orders(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.sellersService.listOrders(user.sub, query);
   }
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
@@ -62,7 +63,7 @@ export class SellersController {
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
   @Get('me/transactions')
-  transactions(@CurrentUser() user: RequestUser) {
-    return this.sellersService.listTransactions(user.sub);
+  transactions(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.sellersService.listTransactions(user.sub, query);
   }
 }

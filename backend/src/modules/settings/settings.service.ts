@@ -13,11 +13,27 @@ export class SettingsService {
   sendPayoutCode(userId: string, body: any) { return { sent: true, channel: body?.channel || 'email', codeId: randomUUID() }; }
   verifyPayout(userId: string, body: any) { return this.records.upsert('settings', 'payout_verification', 'main', { verified: true, ...body }, userId); }
   signOutDevice(userId: string, id: string) { return this.records.remove('settings', 'device', id, userId).catch(()=>({deleted:true})); }
-  signOutAll(userId: string) { return this.records.list('settings','device',userId).then(async (rows)=>{ for (const row of rows) { await this.records.remove('settings','device',row.entityId!,userId).catch(()=>null);} return {signedOutAll:true};}); }
+  async signOutAll(userId: string) {
+    await this.records.removeMany('settings', 'device', userId);
+    return { signedOutAll: true };
+  }
 
   notifications(userId: string) { return this.records.list('settings', 'notification', userId).then((rows)=>rows.map((r)=>({id:r.entityId,...(r.payload as any)}))); }
   async notificationRead(userId: string, id: string) { const rec = await this.records.getByEntityId('settings','notification',id,userId); return this.records.update('settings','notification',id,{...(rec.payload as any),read:true},userId); }
-  async notificationReadAll(userId: string) { const rows = await this.records.list('settings','notification',userId); for (const row of rows) { await this.records.update('settings','notification',row.entityId!,{...(row.payload as any),read:true},userId);} return {updated:rows.length}; }
+  async notificationReadAll(userId: string) {
+    const rows = await this.records.list('settings', 'notification', userId);
+    return this.records.updateMany(
+      'settings',
+      'notification',
+      rows
+        .filter((row) => row.entityId)
+        .map((row) => ({
+          entityId: row.entityId!,
+          payload: { ...(row.payload as any), read: true }
+        })),
+      userId
+    );
+  }
 
   roles(userId: string) {
     return Promise.all([

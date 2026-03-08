@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ListingStatus, Prisma, UserRole } from '@prisma/client';
+import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateSellerListingDto } from './dto/create-seller-listing.dto.js';
 import { UpdateSellerProfileDto } from './dto/update-seller-profile.dto.js';
@@ -39,10 +40,13 @@ export class SellersService {
     return this.serializeSeller(profile);
   }
 
-  async listMyListings(userId: string) {
+  async listMyListings(userId: string, query?: ListQueryDto) {
     const profile = await this.ensureSellerProfile(userId);
+    const { skip, take } = normalizeListQuery(query);
     return this.prisma.marketplaceListing.findMany({
       where: { sellerId: profile.id },
+      skip,
+      take,
       include: { deal: true },
       orderBy: { createdAt: 'desc' }
     });
@@ -89,10 +93,13 @@ export class SellersService {
     });
   }
 
-  async listOrders(userId: string) {
+  async listOrders(userId: string, query?: ListQueryDto) {
     const profile = await this.ensureSellerProfile(userId);
+    const { skip, take } = normalizeListQuery(query);
     return this.prisma.order.findMany({
       where: { sellerId: profile.id },
+      skip,
+      take,
       include: {
         items: true,
         buyer: {
@@ -127,12 +134,15 @@ export class SellersService {
     return order;
   }
 
-  async listTransactions(userId: string) {
+  async listTransactions(userId: string, query?: ListQueryDto) {
     const profile = await this.ensureSellerProfile(userId);
+    const { skip, take } = normalizeListQuery(query);
     return this.prisma.transaction.findMany({
       where: {
         OR: [{ userId }, { sellerId: profile.id }]
       },
+      skip,
+      take,
       include: {
         order: true
       },

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
+import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 
 @Injectable()
 export class DiscoveryService {
@@ -9,8 +10,11 @@ export class DiscoveryService {
     private readonly records: AppRecordsService
   ) {}
 
-  async sellers() {
+  async sellers(query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
     const sellers = await this.prisma.seller.findMany({
+      skip,
+      take,
       orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
     });
 
@@ -40,8 +44,9 @@ export class DiscoveryService {
     );
   }
 
-  async mySellers(userId: string) {
-    const follows = await this.records.list('discovery', 'followed_seller', userId);
+  async mySellers(userId: string, query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
+    const follows = await this.records.list('discovery', 'followed_seller', userId, { skip, take });
     const ids = follows.map((entry) => String((entry.payload as { sellerId?: string }).sellerId)).filter(Boolean);
     const sellers = await this.prisma.seller.findMany({ where: { id: { in: ids } } });
     return sellers.map((seller) => ({
@@ -51,8 +56,11 @@ export class DiscoveryService {
     }));
   }
 
-  opportunities() {
+  opportunities(query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
     return this.prisma.opportunity.findMany({
+      skip,
+      take,
       include: { seller: true },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
     });
@@ -123,19 +131,20 @@ export class DiscoveryService {
     return this.records.list('discovery', 'campaign_board', userId).then((rows) => rows.map((row) => row.payload));
   }
 
-  async dealzMarketplace(userId: string) {
+  async dealzMarketplace(userId: string, query?: ListQueryDto) {
+    const { take } = normalizeListQuery(query);
     const [listings, opportunities] = await Promise.all([
       this.prisma.marketplaceListing.findMany({
         where: { status: 'ACTIVE' },
         include: { seller: true },
         orderBy: { createdAt: 'desc' },
-        take: 20
+        take
       }),
       this.prisma.opportunity.findMany({
         where: { status: { in: ['OPEN', 'INVITE_ONLY'] } },
         include: { seller: true },
         orderBy: { createdAt: 'desc' },
-        take: 20
+        take
       })
     ]);
 
@@ -146,13 +155,16 @@ export class DiscoveryService {
       };
     }
 
-    const rows = await this.records.list('discovery', 'dealz_marketplace', userId);
+    const rows = await this.records.list('discovery', 'dealz_marketplace', userId, { take });
     return rows.map((row) => row.payload);
   }
 
-  async invites(userId: string) {
+  async invites(userId: string, query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
     const invites = await this.prisma.collaborationInvite.findMany({
       where: { recipientUserId: userId },
+      skip,
+      take,
       include: {
         seller: true,
         sender: {
@@ -186,7 +198,7 @@ export class DiscoveryService {
       }));
     }
 
-    const legacyInvites = await this.records.list('discovery', 'invite', userId);
+    const legacyInvites = await this.records.list('discovery', 'invite', userId, { skip, take });
     return legacyInvites.map((invite) => ({ id: invite.entityId, ...(invite.payload as object) }));
   }
 

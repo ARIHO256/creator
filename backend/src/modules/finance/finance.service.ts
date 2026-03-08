@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 
@@ -11,12 +11,27 @@ export class FinanceService {
   ) {}
 
   async earningsSummary(userId: string) {
-    const transactions = await this.prisma.transaction.findMany({ where: { userId } });
-    if (transactions.length > 0) {
+    const groupedTransactions = await this.prisma.transaction.groupBy({
+      by: ['status'],
+      where: {
+        userId,
+        status: { in: ['PENDING', 'AVAILABLE', 'PAID'] }
+      },
+      _sum: { amount: true }
+    });
+
+    if (groupedTransactions.length > 0) {
+      const totalsByStatus = new Map(
+        groupedTransactions.map((transaction) => [transaction.status, Number(transaction._sum.amount ?? 0)])
+      );
+
       return {
-        available: this.sumTransactions(transactions, ['AVAILABLE']),
-        pending: this.sumTransactions(transactions, ['PENDING']),
-        lifetime: this.sumTransactions(transactions, ['PENDING', 'AVAILABLE', 'PAID'])
+        available: totalsByStatus.get('AVAILABLE') ?? 0,
+        pending: totalsByStatus.get('PENDING') ?? 0,
+        lifetime: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID].reduce(
+          (sum, status) => sum + (totalsByStatus.get(status) ?? 0),
+          0
+        )
       };
     }
 
@@ -61,8 +76,10 @@ export class FinanceService {
 
   async analyticsOverview(userId: string) {
     const [purchaseEvents, orderCount] = await Promise.all([
-      this.prisma.analyticsEvent.findMany({
-        where: { userId, eventType: 'PURCHASE' }
+      this.prisma.analyticsEvent.aggregate({
+        where: { userId, eventType: 'PURCHASE' },
+        _sum: { value: true },
+        _count: { _all: true }
       }),
       this.prisma.order.count({
         where: {
@@ -71,8 +88,8 @@ export class FinanceService {
       })
     ]);
 
-    if (purchaseEvents.length > 0 || orderCount > 0) {
-      const sales = purchaseEvents.reduce((sum, event) => sum + Number(event.value ?? 0), 0);
+    if ((purchaseEvents._count._all ?? 0) > 0 || orderCount > 0) {
+      const sales = Number(purchaseEvents._sum.value ?? 0);
       return {
         rank: sales > 500 ? 'Gold' : sales > 100 ? 'Silver' : 'Bronze',
         score: sales,
@@ -95,14 +112,5 @@ export class FinanceService {
 
   updateSubscription(userId: string, body: Record<string, unknown>) {
     return this.records.upsert('finance', 'subscription', 'main', body, userId);
-  }
-
-  private sumTransactions(
-    transactions: Array<{ amount: number; status: string }>,
-    statuses: string[]
-  ) {
-    return transactions
-      .filter((transaction) => statuses.includes(transaction.status))
-      .reduce((sum, transaction) => sum + Number(transaction.amount ?? 0), 0);
   }
 }

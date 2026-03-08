@@ -1,4 +1,5 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
+import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -10,10 +11,10 @@ export class CommerceController {
   constructor(private readonly service: CommerceService) {}
 
   @Get('dashboard') dashboard(@CurrentUser() user: RequestUser) { return this.service.dashboard(user.sub); }
-  @Get('listings') listings(@CurrentUser() user: RequestUser) { return this.service.listings(user.sub); }
+  @Get('listings') listings(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) { return this.service.listings(user.sub, query); }
   @Get('listings/:id') listing(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.listingDetail(user.sub, id); }
   @Get('listing-wizard') listingWizard(@CurrentUser() user: RequestUser) { return this.service.listingWizard(user.sub); }
-  @Get('orders') orders(@CurrentUser() user: RequestUser) { return this.service.orders(user.sub); }
+  @Get('orders') orders(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) { return this.service.orders(user.sub, query); }
   @Get('orders/:id') order(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.orderDetail(user.sub, id); }
   @Get('returns') returns(@CurrentUser() user: RequestUser) { return this.service.returns(user.sub); }
   @Get('disputes') disputes(@CurrentUser() user: RequestUser) { return this.service.disputes(user.sub); }

@@ -95,6 +95,11 @@ export class DashboardService {
     });
 
     if (user?.role === UserRole.SELLER || user?.role === UserRole.PROVIDER) {
+      const [activeListings, openOrders] = await Promise.all([
+        this.prisma.marketplaceListing.count({ where: { userId, status: 'ACTIVE' } }),
+        this.prisma.order.count({ where: { seller: { userId }, status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] } } })
+      ]);
+
       return {
         role: user.role,
         hero: {
@@ -102,11 +107,16 @@ export class DashboardService {
           subtitle: 'Listings, orders, transactions, and creator campaigns in one backend.'
         },
         quickStats: [
-          { label: 'Active listings', value: await this.prisma.marketplaceListing.count({ where: { userId, status: 'ACTIVE' } }) },
-          { label: 'Open orders', value: await this.prisma.order.count({ where: { seller: { userId }, status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] } } }) }
+          { label: 'Active listings', value: activeListings },
+          { label: 'Open orders', value: openOrders }
         ]
       };
     }
+
+    const [activeCampaigns, pendingProposals] = await Promise.all([
+      this.prisma.campaign.count({ where: { creatorId: userId } }),
+      this.prisma.proposal.count({ where: { creatorId: userId, status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] } } })
+    ]);
 
     return {
       role: user?.role ?? UserRole.CREATOR,
@@ -115,8 +125,8 @@ export class DashboardService {
         subtitle: 'Campaigns, proposals, tasks, and performance in one backend.'
       },
       quickStats: [
-        { label: 'Active campaigns', value: await this.prisma.campaign.count({ where: { creatorId: userId } }) },
-        { label: 'Pending proposals', value: await this.prisma.proposal.count({ where: { creatorId: userId, status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] } } }) }
+        { label: 'Active campaigns', value: activeCampaigns },
+        { label: 'Pending proposals', value: pendingProposals }
       ]
     };
   }

@@ -271,6 +271,9 @@ model Seller {
   invites       CollaborationInvite[]
   orders        Order[]
   transactions  Transaction[]
+
+  @@index([isVerified, rating, createdAt])
+  @@index([kind, createdAt])
 }
 
 model Opportunity {
@@ -292,6 +295,7 @@ model Opportunity {
 
   @@index([sellerId])
   @@index([status])
+  @@index([status, createdAt])
 }
 
 model Deal {
@@ -343,6 +347,9 @@ model MarketplaceListing {
   @@index([sellerId])
   @@index([dealId])
   @@index([status])
+  @@index([status, createdAt])
+  @@index([sellerId, createdAt])
+  @@index([userId, updatedAt])
 }
 
 model Campaign {
@@ -376,6 +383,8 @@ model Campaign {
   @@index([creatorId])
   @@index([opportunityId])
   @@index([status])
+  @@index([sellerId, updatedAt])
+  @@index([creatorId, updatedAt])
 }
 
 model Proposal {
@@ -405,6 +414,8 @@ model Proposal {
   @@index([creatorId])
   @@index([submittedByUserId])
   @@index([status])
+  @@index([sellerId, updatedAt])
+  @@index([creatorId, updatedAt])
 }
 
 model ProposalMessage {
@@ -567,6 +578,7 @@ model CollaborationInvite {
   @@index([senderUserId])
   @@index([recipientUserId])
   @@index([status])
+  @@index([recipientUserId, updatedAt])
 }
 
 model Order {
@@ -591,6 +603,8 @@ model Order {
   @@index([sellerId])
   @@index([buyerUserId])
   @@index([status])
+  @@index([sellerId, updatedAt])
+  @@index([buyerUserId, updatedAt])
 }
 
 model OrderItem {
@@ -634,6 +648,8 @@ model Transaction {
   @@index([sellerId])
   @@index([orderId])
   @@index([type, status])
+  @@index([userId, createdAt])
+  @@index([sellerId, createdAt])
 }
 
 model AnalyticsEvent {
@@ -648,6 +664,7 @@ model AnalyticsEvent {
 
   @@index([userId, eventType])
   @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model MediaAsset {
@@ -677,5 +694,7 @@ model AppRecord {
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, domain, entityType])
+  @@index([userId, domain, entityType, updatedAt])
   @@index([domain, entityType, entityId])
+  @@index([domain, entityType, entityId, userId])
 }

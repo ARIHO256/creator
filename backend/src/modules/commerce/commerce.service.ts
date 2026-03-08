@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 
@@ -47,9 +48,12 @@ export class CommerceService {
       });
   }
 
-  async listings(userId: string) {
+  async listings(userId: string, query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
     const listings = await this.prisma.marketplaceListing.findMany({
       where: { userId },
+      skip,
+      take,
       orderBy: { updatedAt: 'desc' }
     });
 
@@ -59,7 +63,7 @@ export class CommerceService {
 
     return this.records
       .getByEntityId('seller_workspace', 'listings', 'main', userId)
-      .then((record) => record.payload)
+      .then((record) => this.sliceRows(record.payload, skip, take))
       .catch(() => ({ rows: [] }));
   }
 
@@ -85,11 +89,14 @@ export class CommerceService {
       .catch(() => ({ taxonomy: [], baseLines: [], copy: {} }));
   }
 
-  async orders(userId: string) {
+  async orders(userId: string, query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
     const seller = await this.prisma.seller.findFirst({ where: { userId } });
     const orders = seller
       ? await this.prisma.order.findMany({
           where: { sellerId: seller.id },
+          skip,
+          take,
           include: { items: true },
           orderBy: { updatedAt: 'desc' }
         })
@@ -101,7 +108,7 @@ export class CommerceService {
 
     return this.records
       .getByEntityId('seller_workspace', 'orders', 'main', userId)
-      .then((record) => record.payload)
+      .then((record) => this.sliceRows(record.payload, skip, take, 'orders'))
       .catch(() => ({ orders: [], returns: [], disputes: [] }));
   }
 
@@ -184,5 +191,15 @@ export class CommerceService {
 
   async financeTaxReports(userId: string) {
     return this.records.getByEntityId('seller_workspace', 'finance_tax_reports', 'main', userId).then((r) => r.payload).catch(() => ({ reports: [] }));
+  }
+
+  private sliceRows(payload: unknown, skip: number, take: number, key = 'rows') {
+    const content = payload as Record<string, unknown>;
+    const rows = Array.isArray(content[key] as unknown[]) ? ([...(content[key] as unknown[])] as unknown[]) : [];
+
+    return {
+      ...content,
+      [key]: rows.slice(skip, skip + take)
+    };
   }
 }

@@ -6,23 +6,34 @@ export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getOverview(userId: string) {
-    const events = await this.prisma.analyticsEvent.findMany({ where: { userId } });
-    const totalViews = events
-      .filter((event) => event.eventType === 'VIEW')
-      .reduce((sum, event) => sum + (event.value ?? 0), 0);
-    const totalClicks = events
-      .filter((event) => event.eventType === 'CLICK')
-      .reduce((sum, event) => sum + (event.value ?? 0), 0);
-    const purchases = events
-      .filter((event) => event.eventType === 'PURCHASE')
-      .reduce((sum, event) => sum + (event.value ?? 0), 0);
+    const groupedEvents = await this.prisma.analyticsEvent.groupBy({
+      by: ['eventType'],
+      where: { userId },
+      _count: { _all: true },
+      _sum: { value: true }
+    });
+
+    const summaries = new Map(
+      groupedEvents.map((event) => [
+        event.eventType,
+        {
+          count: event._count._all,
+          total: Number(event._sum.value ?? 0)
+        }
+      ])
+    );
+
+    const totalViews = summaries.get('VIEW')?.total ?? 0;
+    const totalClicks = summaries.get('CLICK')?.total ?? 0;
+    const purchases = summaries.get('PURCHASE')?.total ?? 0;
+    const eventsCount = groupedEvents.reduce((sum, event) => sum + event._count._all, 0);
 
     return {
       totalViews,
       totalClicks,
       purchases,
       conversionRate: totalClicks > 0 ? Number(((purchases / totalClicks) * 100).toFixed(2)) : 0,
-      eventsCount: events.length
+      eventsCount
     };
   }
 }

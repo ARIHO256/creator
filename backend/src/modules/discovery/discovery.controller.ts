@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -10,8 +11,8 @@ export class DiscoveryController {
 
   @Public()
   @Get('sellers')
-  sellers() {
-    return this.discoveryService.sellers();
+  sellers(@Query() query: ListQueryDto) {
+    return this.discoveryService.sellers(query);
   }
 
   @Post('sellers/:id/follow')
@@ -20,13 +21,13 @@ export class DiscoveryController {
   }
 
   @Get('my-sellers')
-  mySellers(@CurrentUser() user: RequestUser) {
-    return this.discoveryService.mySellers(user.sub);
+  mySellers(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.discoveryService.mySellers(user.sub, query);
   }
 
   @Get('opportunities')
-  opportunities() {
-    return this.discoveryService.opportunities();
+  opportunities(@Query() query: ListQueryDto) {
+    return this.discoveryService.opportunities(query);
   }
 
   @Get('opportunities/:id')
@@ -45,13 +46,13 @@ export class DiscoveryController {
   }
 
   @Get('dealz-marketplace')
-  dealzMarketplace(@CurrentUser() user: RequestUser) {
-    return this.discoveryService.dealzMarketplace(user.sub);
+  dealzMarketplace(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.discoveryService.dealzMarketplace(user.sub, query);
   }
 
   @Get('invites')
-  invites(@CurrentUser() user: RequestUser) {
-    return this.discoveryService.invites(user.sub);
+  invites(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.discoveryService.invites(user.sub, query);
   }
 
   @Post('invites/:id/respond')

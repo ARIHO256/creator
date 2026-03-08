@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -10,24 +11,24 @@ export class MarketplaceController {
   constructor(private readonly marketplaceService: MarketplaceService) {}
 
   @Get('feed')
-  getFeed() {
-    return this.marketplaceService.getMarketplaceFeed();
+  getFeed(@Query() query: ListQueryDto) {
+    return this.marketplaceService.getMarketplaceFeed(query);
   }
 
   @Public()
   @Get('sellers')
-  sellers() {
-    return this.marketplaceService.listSellers();
+  sellers(@Query() query: ListQueryDto) {
+    return this.marketplaceService.listSellers(query);
   }
 
   @Get('opportunities')
-  opportunities() {
-    return this.marketplaceService.listOpportunities();
+  opportunities(@Query() query: ListQueryDto) {
+    return this.marketplaceService.listOpportunities(query);
   }
 
   @Get('listings')
-  listings() {
-    return this.marketplaceService.listListings();
+  listings(@Query() query: ListQueryDto) {
+    return this.marketplaceService.listListings(query);
   }
 
   @Post('listings')
