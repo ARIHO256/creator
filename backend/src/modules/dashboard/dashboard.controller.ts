@@ -15,6 +15,12 @@ export class DashboardController {
   }
 
   @Public()
+  @Get('ready')
+  ready() {
+    return this.dashboardService.ready();
+  }
+
+  @Public()
   @Get('routes')
   routes() {
     return this.dashboardService.routes();

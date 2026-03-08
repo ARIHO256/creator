@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
+import { CreateUploadDto } from './dto/create-upload.dto.js';
 import { WorkflowService } from './workflow.service.js';
 
 @Controller()
@@ -8,7 +9,7 @@ export class WorkflowController {
   constructor(private readonly service: WorkflowService) {}
 
   @Get('uploads') uploads(@CurrentUser() user: RequestUser) { return this.service.uploads(user.sub); }
-  @Post('uploads') createUpload(@CurrentUser() user: RequestUser, @Body() body: any) { return this.service.createUpload(user.sub, body); }
+  @Post('uploads') createUpload(@CurrentUser() user: RequestUser, @Body() body: CreateUploadDto) { return this.service.createUpload(user.sub, body); }
 
   @Get('onboarding') onboarding(@CurrentUser() user: RequestUser) { return this.service.onboarding(user.sub); }
   @Patch('onboarding') patchOnboarding(@CurrentUser() user: RequestUser, @Body() body: any) { return this.service.patchOnboarding(user.sub, body); }

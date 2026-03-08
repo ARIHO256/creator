@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { normalizeFileIntake } from '../../common/files/file-intake.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 import { CreateAssetDto } from './dto/create-asset.dto.js';
@@ -333,13 +334,24 @@ export class CollaborationService {
 
   async taskAttachment(userId: string, id: string, payload: CreateTaskAttachmentDto) {
     const task = await this.ensureTask(userId, id);
+    const file = normalizeFileIntake(payload);
     return this.prisma.taskAttachment.create({
       data: {
         taskId: task.id,
         addedByUserId: userId,
-        name: payload.name,
-        url: payload.url,
-        kind: payload.kind
+        name: file.name,
+        kind: file.kind,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
+        checksum: file.checksum,
+        storageProvider: file.storageProvider,
+        storageKey: file.storageKey,
+        url: file.url,
+        metadata: {
+          extension: file.extension,
+          visibility: file.visibility,
+          ...(file.metadata ?? {})
+        } as Prisma.InputJsonValue
       }
     });
   }
@@ -373,16 +385,31 @@ export class CollaborationService {
   }
 
   createAsset(userId: string, payload: CreateAssetDto) {
+    const file = normalizeFileIntake({
+      name: payload.title,
+      ...payload,
+      kind: payload.assetType
+    });
+
     return this.prisma.deliverableAsset.create({
       data: {
         campaignId: payload.campaignId,
         contractId: payload.contractId,
         ownerUserId: userId,
         title: payload.title,
-        assetType: payload.assetType,
-        url: payload.url,
+        assetType: file.kind,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
+        extension: file.extension,
+        checksum: file.checksum,
+        storageProvider: file.storageProvider,
+        storageKey: file.storageKey,
+        url: file.url,
         status: 'SUBMITTED',
-        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+        metadata: {
+          visibility: file.visibility,
+          ...(file.metadata ?? {})
+        } as Prisma.InputJsonValue
       }
     });
   }

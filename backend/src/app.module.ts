@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import appConfig from './config/app.config.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
+import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { PrismaModule } from './platform/prisma/prisma.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
@@ -60,6 +61,10 @@ import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
     ReviewsModule
   ],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: RateLimitGuard
+    },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard

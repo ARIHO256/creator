@@ -1,20 +1,13 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsObject, IsOptional, IsString, IsUrl, Max, Min } from 'class-validator';
+import { IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export class CreateAssetDto {
+export class CreateUploadSessionDto {
+  @IsString()
+  name!: string;
+
   @IsOptional()
   @IsString()
-  campaignId?: string;
-
-  @IsOptional()
-  @IsString()
-  contractId?: string;
-
-  @IsString()
-  title!: string;
-
-  @IsString()
-  assetType!: string;
+  kind?: string;
 
   @IsOptional()
   @IsString()
@@ -37,15 +30,11 @@ export class CreateAssetDto {
 
   @IsOptional()
   @IsString()
-  storageProvider?: string;
+  visibility?: string;
 
   @IsOptional()
   @IsString()
-  storageKey?: string;
-
-  @IsOptional()
-  @IsUrl()
-  url?: string;
+  purpose?: string;
 
   @IsOptional()
   @IsObject()

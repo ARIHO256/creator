@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -13,18 +14,21 @@ export class AuthController {
   constructor(@Inject(AuthService) private readonly authService: AuthService) {}
 
   @Public()
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   @Post('register')
   register(@Body() payload: RegisterDto) {
     return this.authService.register(payload);
   }
 
   @Public()
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   @Post('login')
   login(@Body() payload: LoginDto) {
     return this.authService.login(payload);
   }
 
   @Public()
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('refresh')
   refresh(@Body() payload: RefreshTokenDto) {
     return this.authService.refresh(payload);

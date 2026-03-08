@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
@@ -7,11 +8,45 @@ import { PrismaService } from '../../platform/prisma/prisma.service.js';
 export class DashboardService {
   constructor(
     private readonly records: AppRecordsService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService
   ) {}
 
   health() {
-    return { status: 'ok' };
+    return {
+      status: 'ok',
+      uptimeSeconds: Math.round(process.uptime()),
+      timestamp: new Date().toISOString(),
+      app: {
+        host: this.configService.get<string>('app.host') ?? '0.0.0.0',
+        port: this.configService.get<number>('app.port') ?? 4010
+      }
+    };
+  }
+
+  async ready() {
+    const startedAt = process.hrtime.bigint();
+    await this.prisma.$queryRaw`SELECT 1`;
+    const databaseLatencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+
+    return {
+      status: 'ready',
+      timestamp: new Date().toISOString(),
+      checks: {
+        database: {
+          status: 'up',
+          latencyMs: Number(databaseLatencyMs.toFixed(1))
+        },
+        upload: {
+          provider: this.configService.get<string>('upload.defaultProvider') ?? 'LOCAL',
+          sessionTtlMinutes: this.configService.get<number>('upload.sessionTtlMinutes') ?? 20
+        },
+        rateLimit: {
+          defaultLimit: this.configService.get<number>('rateLimit.defaultLimit') ?? 120,
+          windowMs: this.configService.get<number>('rateLimit.defaultWindowMs') ?? 60_000
+        }
+      }
+    };
   }
 
   routes() {

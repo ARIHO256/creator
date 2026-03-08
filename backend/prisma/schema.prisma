@@ -172,6 +172,7 @@ model User {
   listings             MarketplaceListing[]
   analyticsEvents      AnalyticsEvent[]
   mediaAssets          MediaAsset[]
+  uploadSessions       UploadSession[]
   appRecords           AppRecord[]
   createdCampaigns     Campaign[]            @relation("CampaignCreatedBy")
   campaignsAsCreator   Campaign[]            @relation("CampaignCreator")
@@ -510,35 +511,49 @@ model TaskComment {
 }
 
 model TaskAttachment {
-  id            String   @id @default(cuid())
-  taskId        String
-  addedByUserId String
-  name          String
-  url           String?
-  kind          String
-  createdAt     DateTime @default(now())
+  id              String   @id @default(cuid())
+  taskId          String
+  addedByUserId   String
+  name            String
+  url             String?
+  kind            String
+  mimeType        String?
+  sizeBytes       Int?
+  checksum        String?
+  storageProvider String?
+  storageKey      String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
 
   task    Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   addedBy User @relation(fields: [addedByUserId], references: [id], onDelete: Cascade)
 
   @@index([taskId])
+  @@index([taskId, createdAt])
   @@index([addedByUserId])
+  @@index([storageKey])
 }
 
 model DeliverableAsset {
-  id             String      @id @default(cuid())
-  campaignId     String?
-  contractId     String?
-  ownerUserId    String
-  reviewerUserId String?
-  title          String
-  assetType      String
-  url            String?
-  status         AssetStatus @default(DRAFT)
-  reviewNotes    String?     @db.Text
-  metadata       Json?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id              String      @id @default(cuid())
+  campaignId      String?
+  contractId      String?
+  ownerUserId     String
+  reviewerUserId  String?
+  title           String
+  assetType       String
+  url             String?
+  mimeType        String?
+  sizeBytes       Int?
+  extension       String?
+  checksum        String?
+  storageProvider String?
+  storageKey      String?
+  status          AssetStatus @default(DRAFT)
+  reviewNotes     String?     @db.Text
+  metadata        Json?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
 
   campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   contract Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
@@ -550,6 +565,7 @@ model DeliverableAsset {
   @@index([ownerUserId])
   @@index([reviewerUserId])
   @@index([status])
+  @@index([storageKey])
 }
 
 model CollaborationInvite {
@@ -668,17 +684,53 @@ model AnalyticsEvent {
 }
 
 model MediaAsset {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  kind      String
-  url       String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  kind            String
+  mimeType        String?
+  sizeBytes       Int?
+  extension       String?
+  checksum        String?
+  storageProvider String?
+  storageKey      String?
+  url             String?
+  isPublic        Boolean  @default(false)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, createdAt])
+  @@index([storageKey])
+}
+
+model UploadSession {
+  id              String    @id @default(cuid())
+  userId          String
+  purpose         String
+  fileName        String
+  kind            String
+  mimeType        String?
+  sizeBytes       Int?
+  extension       String?
+  checksum        String?
+  storageProvider String
+  storageKey      String    @unique
+  visibility      String    @default("PRIVATE")
+  status          String    @default("PENDING")
+  expiresAt       DateTime
+  completedAt     DateTime?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([expiresAt])
 }
 
 model AppRecord {

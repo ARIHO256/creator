@@ -30,10 +30,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
           };
 
     this.logger.error(
-      `${request.method} ${request.url} -> ${status}`,
+      `${request.method} ${request.url} -> ${status} (${request.id})`,
       exception instanceof Error ? exception.stack : String(exception)
     );
 
+    response.header('x-request-id', request.id);
     response.status(status).send({
       success: false,
       error: {
@@ -41,7 +42,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ...(typeof payload === 'string' ? { message: payload } : (payload as Record<string, unknown>))
       },
       timestamp: new Date().toISOString(),
-      path: request.url
+      path: request.url,
+      requestId: request.id
     });
   }
 }
