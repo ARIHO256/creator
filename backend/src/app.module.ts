@@ -6,6 +6,7 @@ import appConfig from './config/app.config.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
+import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor.js';
 import { PrismaModule } from './platform/prisma/prisma.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
@@ -30,6 +31,7 @@ import { CommunicationsModule } from './modules/communications/communications.mo
 import { WholesaleModule } from './modules/wholesale/wholesale.module.js';
 import { ProviderModule } from './modules/provider/provider.module.js';
 import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
+import { JobsModule } from './modules/jobs/jobs.module.js';
 
 @Module({
   imports: [
@@ -43,6 +45,7 @@ import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
     ProfilesModule,
     CommerceModule,
     CommunicationsModule,
+    JobsModule,
     WholesaleModule,
     ProviderModule,
     RegulatoryModule,
@@ -61,6 +64,7 @@ import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
     ReviewsModule
   ],
   providers: [
+    RequestTimeoutInterceptor,
     {
       provide: APP_GUARD,
       useClass: RateLimitGuard

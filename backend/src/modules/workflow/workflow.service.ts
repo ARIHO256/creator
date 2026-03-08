@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
 import { ONBOARDING_PROFILE_TYPES, UpdateOnboardingDto } from './dto/update-onboarding.dto.js';
@@ -20,7 +21,8 @@ import {
 export class WorkflowService {
   constructor(
     private readonly records: AppRecordsService,
-    @Inject(PrismaService) private readonly prisma: PrismaService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    private readonly jobsService: JobsService
   ) {}
 
   uploads(userId: string) { return this.records.list('workflow','upload',userId).then((rows)=>rows.map((r)=>({id:r.entityId,...(r.payload as any)}))); }
@@ -106,6 +108,19 @@ export class WorkflowService {
     await this.assertSellerSlugAvailable(userId, submitted.storeSlug);
     await this.records.upsert('workflow', 'onboarding', 'main', submitted, userId);
     await this.syncSellerProfile(userId, submitted);
+    await this.jobsService.enqueue({
+      queue: 'workflow',
+      type: 'ONBOARDING_SUBMITTED',
+      userId,
+      dedupeKey: `onboarding-submitted:${userId}:${submitted.submittedAt ?? submitted.updatedAt}`,
+      correlationId: userId,
+      payload: {
+        profileType: submitted.profileType,
+        storeSlug: submitted.storeSlug,
+        submittedAt: submitted.submittedAt,
+        status: submitted.status
+      }
+    });
     return submitted;
   }
 

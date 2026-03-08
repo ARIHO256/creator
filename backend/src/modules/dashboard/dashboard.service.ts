@@ -3,13 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 
 @Injectable()
 export class DashboardService {
   constructor(
     private readonly records: AppRecordsService,
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly jobsService: JobsService
   ) {}
 
   health() {
@@ -26,8 +28,12 @@ export class DashboardService {
 
   async ready() {
     const startedAt = process.hrtime.bigint();
-    await this.prisma.$queryRaw`SELECT 1`;
+    const [_, jobsMetrics] = await Promise.all([
+      this.prisma.$queryRaw`SELECT 1`,
+      this.jobsService.metrics()
+    ]);
     const databaseLatencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const warnings = this.securityWarnings();
 
     return {
       status: 'ready',
@@ -44,8 +50,18 @@ export class DashboardService {
         rateLimit: {
           defaultLimit: this.configService.get<number>('rateLimit.defaultLimit') ?? 120,
           windowMs: this.configService.get<number>('rateLimit.defaultWindowMs') ?? 60_000
+        },
+        jobs: {
+          status: jobsMetrics.deadLetters > 0 ? 'degraded' : 'up',
+          ...jobsMetrics
+        },
+        runtime: {
+          requestTimeoutMs: this.configService.get<number>('app.requestTimeoutMs') ?? 15_000,
+          bodyLimitBytes: this.configService.get<number>('app.bodyLimitBytes') ?? 10 * 1024 * 1024,
+          securityHeadersEnabled: this.configService.get<boolean>('security.enableHeaders') ?? true
         }
-      }
+      },
+      warnings
     };
   }
 
@@ -64,6 +80,7 @@ export class DashboardService {
         'live',
         'adz',
         'finance',
+        'jobs',
         'settings',
         'workflow',
         'reviews'
@@ -198,5 +215,28 @@ export class DashboardService {
         dueAt: task.dueAt
       }))
     };
+  }
+
+  private securityWarnings() {
+    const warnings: string[] = [];
+    const warnOnDefaultSecrets = this.configService.get<boolean>('security.warnOnDefaultSecrets') ?? true;
+    if (!warnOnDefaultSecrets) {
+      return warnings;
+    }
+
+    const secretChecks = [
+      ['auth.accessSecret', 'change-me-access-secret'],
+      ['auth.refreshSecret', 'change-me-refresh-secret'],
+      ['upload.signingSecret', 'change-me-upload-secret']
+    ] as const;
+
+    for (const [path, sentinel] of secretChecks) {
+      const current = this.configService.get<string>(path);
+      if (!current || current === sentinel) {
+        warnings.push(`${path} is using a default or empty secret`);
+      }
+    }
+
+    return warnings;
   }
 }

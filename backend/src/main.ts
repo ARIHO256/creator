@@ -1,18 +1,22 @@
 import 'reflect-metadata';
 import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor.js';
+import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor.js';
+import { buildSecurityHeaders } from './platform/security-headers.js';
 
 async function bootstrap() {
   const port = Number(process.env.PORT ?? '4010');
   const host = process.env.HOST ?? '0.0.0.0';
+  const bodyLimit = Number(process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`);
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: true })
+    new FastifyAdapter({ logger: true, bodyLimit })
   );
 
   app.enableCors({ origin: true, credentials: true });
@@ -22,6 +26,10 @@ async function bootstrap() {
   });
 
   const fastify = app.getHttpAdapter().getInstance();
+  const configService = app.get(ConfigService);
+  const securityHeaders = buildSecurityHeaders(
+    configService.get<boolean>('security.enableHeaders') ?? true
+  );
   fastify.addHook('onRequest', (request: any, reply: any, done: () => void) => {
     request.requestStartedAt = process.hrtime.bigint();
     reply.header('x-request-id', request.id);
@@ -37,6 +45,9 @@ async function bootstrap() {
     ) => {
       const startedAt = request.requestStartedAt ?? process.hrtime.bigint();
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      for (const [name, value] of Object.entries(securityHeaders)) {
+        reply.header(name, value);
+      }
       reply.header('x-request-id', request.id);
       reply.header('x-response-time', `${durationMs.toFixed(1)}ms`);
       done(null, payload);
@@ -65,7 +76,7 @@ async function bootstrap() {
       transform: true
     })
   );
-  app.useGlobalInterceptors(new ApiResponseInterceptor());
+  app.useGlobalInterceptors(new ApiResponseInterceptor(), app.get(RequestTimeoutInterceptor));
   app.useGlobalFilters(new HttpExceptionFilter());
 
   await app.listen(port, host);

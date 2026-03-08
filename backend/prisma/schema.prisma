@@ -153,6 +153,15 @@ enum EventType {
   IMPRESSION
 }
 
+enum BackgroundJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+  CANCELLED
+}
+
 model User {
   id                  String         @id @default(cuid())
   email               String?        @unique
@@ -173,6 +182,7 @@ model User {
   analyticsEvents      AnalyticsEvent[]
   mediaAssets          MediaAsset[]
   uploadSessions       UploadSession[]
+  backgroundJobs       BackgroundJob[]
   appRecords           AppRecord[]
   createdCampaigns     Campaign[]            @relation("CampaignCreatedBy")
   campaignsAsCreator   Campaign[]            @relation("CampaignCreator")
@@ -731,6 +741,34 @@ model UploadSession {
 
   @@index([userId, status, createdAt])
   @@index([expiresAt])
+}
+
+model BackgroundJob {
+  id            String              @id @default(cuid())
+  userId        String?
+  queue         String
+  type          String
+  status        BackgroundJobStatus @default(PENDING)
+  dedupeKey     String?             @unique
+  priority      Int                 @default(100)
+  attempts      Int                 @default(0)
+  maxAttempts   Int                 @default(5)
+  runAfter      DateTime            @default(now())
+  lockedAt      DateTime?
+  lockedBy      String?
+  correlationId String?
+  payload       Json
+  result        Json?
+  lastError     String?             @db.Text
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([queue, status, runAfter, priority])
+  @@index([status, runAfter])
+  @@index([userId, createdAt])
+  @@index([correlationId])
 }
 
 model AppRecord {

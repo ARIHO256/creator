@@ -165,6 +165,12 @@ Auth: JWT bearer required unless noted `Public`.
 - `PATCH /api/wholesale/quotes/:id`
 - `GET /api/wholesale/incoterms`
 
+## Jobs
+- `GET /api/jobs`
+- `GET /api/jobs/metrics`
+- `GET /api/jobs/:id`
+- `POST /api/jobs/:id/requeue`
+
 ## Workflow
 - `GET /api/uploads`
 - `POST /api/uploads`

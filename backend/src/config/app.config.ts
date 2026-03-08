@@ -1,7 +1,9 @@
 export default () => ({
   app: {
     port: Number(process.env.PORT ?? '4010'),
-    host: process.env.HOST ?? '0.0.0.0'
+    host: process.env.HOST ?? '0.0.0.0',
+    requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? '15000'),
+    bodyLimitBytes: Number(process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`)
   },
   rateLimit: {
     defaultLimit: Number(process.env.RATE_LIMIT_DEFAULT_LIMIT ?? '120'),
@@ -15,6 +17,15 @@ export default () => ({
     defaultProvider: process.env.UPLOAD_STORAGE_PROVIDER ?? 'LOCAL',
     sessionTtlMinutes: Number(process.env.UPLOAD_SESSION_TTL_MINUTES ?? '20'),
     signingSecret: process.env.UPLOAD_SIGNING_SECRET ?? process.env.JWT_ACCESS_SECRET ?? 'change-me-upload-secret'
+  },
+  jobs: {
+    defaultMaxAttempts: Number(process.env.JOBS_DEFAULT_MAX_ATTEMPTS ?? '5'),
+    retryDelayMs: Number(process.env.JOBS_RETRY_DELAY_MS ?? '60000'),
+    workerId: process.env.JOBS_WORKER_ID ?? 'api'
+  },
+  security: {
+    enableHeaders: !['0', 'false', 'no', 'off'].includes(String(process.env.SECURITY_HEADERS_ENABLED ?? 'true').toLowerCase()),
+    warnOnDefaultSecrets: !['0', 'false', 'no', 'off'].includes(String(process.env.WARN_ON_DEFAULT_SECRETS ?? 'true').toLowerCase())
   },
   auth: {
     disabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTH_DISABLED ?? '').toLowerCase()),

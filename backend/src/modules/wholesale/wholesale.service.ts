@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { AppRecordsService } from '../../platform/app-records.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { CreateWholesaleQuoteDto } from './dto/create-wholesale-quote.dto.js';
 import { UpdateWholesaleQuoteDto } from './dto/update-wholesale-quote.dto.js';
 import {
@@ -15,7 +16,10 @@ import {
 
 @Injectable()
 export class WholesaleService {
-  constructor(private readonly records: AppRecordsService) {}
+  constructor(
+    private readonly records: AppRecordsService,
+    private readonly jobsService: JobsService
+  ) {}
 
   async home(userId: string) {
     const home = await this.records
@@ -91,6 +95,21 @@ export class WholesaleService {
     const normalized = normalizeWholesaleQuotes(quoteRecord.payload);
     const quotes = [nextQuote, ...normalized.quotes.filter((entry) => entry.id !== nextQuote.id)];
     await this.records.upsert('wholesale', 'quotes', 'main', { quotes }, userId);
+    await this.jobsService.enqueue({
+      queue: 'wholesale',
+      type: 'WHOLESALE_QUOTE_CREATED',
+      userId,
+      dedupeKey: `wholesale-quote-created:${nextQuote.id}`,
+      correlationId: nextQuote.id,
+      payload: {
+        quoteId: nextQuote.id,
+        rfqId: nextQuote.rfqId,
+        buyer: nextQuote.buyer,
+        total: nextQuote.totals.total,
+        currency: nextQuote.currency,
+        status: nextQuote.status
+      }
+    });
     return nextQuote;
   }
 
@@ -106,6 +125,19 @@ export class WholesaleService {
     const updated = updateWholesaleQuote(existing, body);
     const quotes = normalized.quotes.map((entry) => (entry.id === id ? updated : entry));
     await this.records.upsert('wholesale', 'quotes', 'main', { quotes }, userId);
+    await this.jobsService.enqueue({
+      queue: 'wholesale',
+      type: 'WHOLESALE_QUOTE_UPDATED',
+      userId,
+      dedupeKey: `wholesale-quote-updated:${updated.id}:${updated.updatedAt}`,
+      correlationId: updated.id,
+      payload: {
+        quoteId: updated.id,
+        total: updated.totals.total,
+        status: updated.status,
+        approvalsRequired: updated.approvals.required
+      }
+    });
     return updated;
   }
 }

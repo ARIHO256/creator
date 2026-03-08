@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import appConfig from '../src/config/app.config.js';
+import { buildSecurityHeaders } from '../src/platform/security-headers.js';
 
 test('appConfig exposes rate-limit and upload hardening defaults', () => {
   const config = appConfig();
@@ -11,6 +12,9 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
   assert.equal(config.rateLimit.authLimit, 12);
   assert.equal(config.upload.defaultProvider, 'LOCAL');
   assert.equal(config.upload.sessionTtlMinutes, 20);
+  assert.equal(config.app.requestTimeoutMs, 15_000);
+  assert.equal(config.jobs.defaultMaxAttempts, 5);
+  assert.equal(config.security.enableHeaders, true);
 });
 
 test('world-class hardening migration creates upload session table', async () => {
@@ -21,4 +25,24 @@ test('world-class hardening migration creates upload session table', async () =>
 
   assert.match(sql, /CREATE TABLE `UploadSession`/);
   assert.match(sql, /FOREIGN KEY \(`userId`\) REFERENCES `User`/);
+});
+
+test('operational hardening migration creates background job table', async () => {
+  const sql = await readFile(
+    new URL('../prisma/migrations/202603080005_operational_hardening_jobs/migration.sql', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(sql, /CREATE TABLE `BackgroundJob`/);
+  assert.match(sql, /ENUM\('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED', 'DEAD_LETTER', 'CANCELLED'\)/);
+  assert.match(sql, /FOREIGN KEY \(`userId`\) REFERENCES `User`/);
+});
+
+test('security headers helper returns hardened defaults', () => {
+  const headers = buildSecurityHeaders(true);
+
+  assert.equal(headers['x-content-type-options'], 'nosniff');
+  assert.equal(headers['x-frame-options'], 'DENY');
+  assert.equal(headers['cross-origin-opener-policy'], 'same-origin');
+  assert.equal(buildSecurityHeaders(false)['x-frame-options'], undefined);
 });

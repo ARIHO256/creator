@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CompleteUploadSessionDto } from './dto/complete-upload-session.dto.js';
 import { CreateMediaAssetDto } from './dto/create-media-asset.dto.js';
@@ -12,7 +13,8 @@ import { CreateUploadSessionDto } from './dto/create-upload-session.dto.js';
 export class MediaService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly jobsService: JobsService
   ) {}
 
   async list(userId: string) {
@@ -135,7 +137,7 @@ export class MediaService {
     });
 
     const createAsset = payload.createAsset ?? true;
-    return this.prisma.$transaction(async (tx) => {
+    const completed = await this.prisma.$transaction(async (tx) => {
       const asset = createAsset
         ? await tx.mediaAsset.create({
             data: {
@@ -175,6 +177,23 @@ export class MediaService {
 
       return { session: updatedSession, asset };
     });
+
+    await this.jobsService.enqueue({
+      queue: 'media',
+      type: 'MEDIA_UPLOAD_COMPLETED',
+      userId,
+      dedupeKey: `media-upload-completed:${session.id}`,
+      correlationId: session.id,
+      payload: {
+        uploadSessionId: session.id,
+        mediaAssetId: completed.asset?.id ?? null,
+        storageKey: session.storageKey,
+        purpose: session.purpose,
+        createAsset
+      }
+    });
+
+    return completed;
   }
 
   async create(userId: string, payload: CreateMediaAssetDto) {
