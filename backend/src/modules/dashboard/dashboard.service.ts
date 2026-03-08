@@ -4,6 +4,7 @@ import { UserRole } from '@prisma/client';
 import { AppRecordsService } from '../../platform/app-records.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
+import { JobsWorker } from '../jobs/jobs.worker.js';
 
 @Injectable()
 export class DashboardService {
@@ -11,7 +12,8 @@ export class DashboardService {
     private readonly records: AppRecordsService,
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
-    private readonly jobsService: JobsService
+    private readonly jobsService: JobsService,
+    private readonly jobsWorker: JobsWorker
   ) {}
 
   health() {
@@ -58,9 +60,12 @@ export class DashboardService {
         runtime: {
           requestTimeoutMs: this.configService.get<number>('app.requestTimeoutMs') ?? 15_000,
           bodyLimitBytes: this.configService.get<number>('app.bodyLimitBytes') ?? 10 * 1024 * 1024,
-          securityHeadersEnabled: this.configService.get<boolean>('security.enableHeaders') ?? true
+          securityHeadersEnabled: this.configService.get<boolean>('security.enableHeaders') ?? true,
+          workerEnabled: this.configService.get<boolean>('jobs.workerEnabled') ?? true,
+          workerPollMs: this.configService.get<number>('jobs.workerPollMs') ?? 2000
         }
       },
+      worker: this.jobsWorker.getStatus(),
       warnings
     };
   }

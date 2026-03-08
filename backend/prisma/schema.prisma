@@ -50,6 +50,20 @@ enum ListingStatus {
   ARCHIVED
 }
 
+enum TaxonomyNodeKind {
+  MARKETPLACE
+  FAMILY
+  CATEGORY
+  SUBCATEGORY
+  LINE
+}
+
+enum TaxonomyCoverageStatus {
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
 enum OpportunityStatus {
   OPEN
   INVITE_ONLY
@@ -282,9 +296,95 @@ model Seller {
   invites       CollaborationInvite[]
   orders        Order[]
   transactions  Transaction[]
+  storefront    Storefront?
+  taxonomyCoverage SellerTaxonomyCoverage[]
 
   @@index([isVerified, rating, createdAt])
   @@index([kind, createdAt])
+}
+
+model Storefront {
+  id           String   @id @default(cuid())
+  sellerId     String   @unique
+  slug         String   @unique
+  name         String
+  tagline      String?
+  description  String?  @db.Text
+  heroTitle    String?
+  heroSubtitle String?
+  heroMediaUrl String?
+  logoUrl      String?
+  coverUrl     String?
+  theme        Json?
+  isPublished  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+}
+
+model TaxonomyTree {
+  id          String     @id @default(cuid())
+  slug        String     @unique
+  name        String
+  description String?    @db.Text
+  status      String     @default("ACTIVE")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  nodes TaxonomyNode[]
+}
+
+model TaxonomyNode {
+  id          String           @id @default(cuid())
+  treeId      String
+  parentId    String?
+  name        String
+  slug        String
+  kind        TaxonomyNodeKind @default(CATEGORY)
+  description String?          @db.Text
+  path        String
+  depth       Int              @default(0)
+  sortOrder   Int              @default(0)
+  isActive    Boolean          @default(true)
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tree         TaxonomyTree               @relation(fields: [treeId], references: [id], onDelete: Cascade)
+  parent       TaxonomyNode?              @relation("TaxonomyNodeParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children     TaxonomyNode[]             @relation("TaxonomyNodeParent")
+  coverage     SellerTaxonomyCoverage[]
+  listingLinks ListingTaxonomyLink[]
+
+  @@unique([treeId, slug])
+  @@unique([treeId, path])
+  @@index([treeId])
+  @@index([parentId])
+  @@index([treeId, parentId])
+  @@index([treeId, path])
+  @@index([treeId, kind])
+}
+
+model SellerTaxonomyCoverage {
+  id             String                 @id @default(cuid())
+  sellerId       String
+  taxonomyNodeId String
+  status         TaxonomyCoverageStatus @default(ACTIVE)
+  addedAt        DateTime               @default(now())
+  removedAt      DateTime?
+  notes          String?                @db.Text
+  metadata       Json?
+  pathSnapshot   Json?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  seller       Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  taxonomyNode TaxonomyNode @relation(fields: [taxonomyNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, taxonomyNodeId])
+  @@index([sellerId, status])
+  @@index([taxonomyNodeId])
 }
 
 model Opportunity {
@@ -353,6 +453,7 @@ model MarketplaceListing {
   seller     Seller?     @relation(fields: [sellerId], references: [id], onDelete: SetNull)
   deal       Deal?       @relation(fields: [dealId], references: [id], onDelete: SetNull)
   orderItems OrderItem[]
+  taxonomyLinks ListingTaxonomyLink[]
 
   @@index([userId])
   @@index([sellerId])
@@ -361,6 +462,22 @@ model MarketplaceListing {
   @@index([status, createdAt])
   @@index([sellerId, createdAt])
   @@index([userId, updatedAt])
+}
+
+model ListingTaxonomyLink {
+  id             String   @id @default(cuid())
+  listingId      String
+  taxonomyNodeId String
+  isPrimary      Boolean  @default(false)
+  pathSnapshot   Json?
+  createdAt      DateTime @default(now())
+
+  listing      MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  taxonomyNode TaxonomyNode       @relation(fields: [taxonomyNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, taxonomyNodeId])
+  @@index([listingId, isPrimary])
+  @@index([taxonomyNodeId])
 }
 
 model Campaign {

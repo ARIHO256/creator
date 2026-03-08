@@ -102,6 +102,66 @@ export class JobsService {
     };
   }
 
+  async fetchAndLockNext(workerId: string, lockTtlMs: number) {
+    const now = new Date();
+    const lockExpiry = new Date(now.getTime() - lockTtlMs);
+
+    const job = await this.prisma.$transaction(async (tx) => {
+      const nextJob = await tx.backgroundJob.findFirst({
+        where: {
+          status: BackgroundJobStatus.PENDING,
+          runAfter: { lte: now }
+        },
+        orderBy: [{ priority: 'asc' }, { runAfter: 'asc' }, { createdAt: 'asc' }]
+      });
+
+      if (!nextJob) {
+        return null;
+      }
+
+      const locked = await tx.backgroundJob.update({
+        where: { id: nextJob.id },
+        data: {
+          status: BackgroundJobStatus.PROCESSING,
+          attempts: nextJob.attempts + 1,
+          lockedAt: now,
+          lockedBy: workerId
+        }
+      });
+
+      return locked;
+    });
+
+    // Simple lock expiry: if a job was stuck as PROCESSING beyond lockTtlMs, requeue it.
+    if (!job) {
+      const stale = await this.prisma.backgroundJob.findFirst({
+        where: {
+          status: BackgroundJobStatus.PROCESSING,
+          lockedAt: { lt: lockExpiry }
+        },
+        orderBy: { lockedAt: 'asc' }
+      });
+
+      if (!stale) {
+        return null;
+      }
+
+      const requeued = await this.prisma.backgroundJob.update({
+        where: { id: stale.id },
+        data: {
+          status: BackgroundJobStatus.PENDING,
+          lockedAt: null,
+          lockedBy: null,
+          runAfter: now
+        }
+      });
+
+      return requeued;
+    }
+
+    return job;
+  }
+
   async requeue(id: string) {
     await this.get(id);
     return this.prisma.backgroundJob.update({

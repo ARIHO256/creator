@@ -15,6 +15,8 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
   assert.equal(config.app.requestTimeoutMs, 15_000);
   assert.equal(config.jobs.defaultMaxAttempts, 5);
   assert.equal(config.security.enableHeaders, true);
+  assert.equal(config.jobs.workerEnabled, true);
+  assert.equal(config.jobs.workerPollMs, 2000);
 });
 
 test('world-class hardening migration creates upload session table', async () => {

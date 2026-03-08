@@ -21,7 +21,11 @@ export default () => ({
   jobs: {
     defaultMaxAttempts: Number(process.env.JOBS_DEFAULT_MAX_ATTEMPTS ?? '5'),
     retryDelayMs: Number(process.env.JOBS_RETRY_DELAY_MS ?? '60000'),
-    workerId: process.env.JOBS_WORKER_ID ?? 'api'
+    workerId: process.env.JOBS_WORKER_ID ?? 'api',
+    workerEnabled: !['0', 'false', 'no', 'off'].includes(String(process.env.JOBS_WORKER_ENABLED ?? 'true').toLowerCase()),
+    workerPollMs: Number(process.env.JOBS_WORKER_POLL_MS ?? '2000'),
+    workerBatch: Number(process.env.JOBS_WORKER_BATCH ?? '5'),
+    lockTtlMs: Number(process.env.JOBS_WORKER_LOCK_TTL_MS ?? `${10 * 60 * 1000}`)
   },
   security: {
     enableHeaders: !['0', 'false', 'no', 'off'].includes(String(process.env.SECURITY_HEADERS_ENABLED ?? 'true').toLowerCase()),
