@@ -1,15 +1,32 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
+import { SellersService } from '../sellers/sellers.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
+import { CreateDisputeDto } from './dto/create-dispute.dto.js';
+import { CreateDocumentDto } from './dto/create-document.dto.js';
+import { CreateExportJobDto } from './dto/create-export-job.dto.js';
+import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto.js';
+import { CreateReturnDto } from './dto/create-return.dto.js';
+import { CreateShippingProfileDto } from './dto/create-shipping-profile.dto.js';
+import { CreateShippingRateDto } from './dto/create-shipping-rate.dto.js';
+import { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
+import { UpdateDisputeDto } from './dto/update-dispute.dto.js';
+import { UpdateDocumentDto } from './dto/update-document.dto.js';
+import { UpdateReturnDto } from './dto/update-return.dto.js';
+import { UpdateShippingProfileDto } from './dto/update-shipping-profile.dto.js';
+import { UpdateShippingRateDto } from './dto/update-shipping-rate.dto.js';
+import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 
 @Injectable()
 export class CommerceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly records: AppRecordsService,
-    private readonly taxonomyService: TaxonomyService
+    private readonly taxonomyService: TaxonomyService,
+    private readonly sellersService: SellersService
   ) {}
 
   async dashboard(userId: string) {
@@ -154,42 +171,129 @@ export class CommerceService {
   }
 
   async returns(userId: string) {
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (seller) {
+      const returns = await this.prisma.sellerReturn.findMany({
+        where: { sellerId: seller.id },
+        orderBy: { requestedAt: 'desc' }
+      });
+      if (returns.length > 0) {
+        return returns;
+      }
+    }
+
     const payload = await this.orders(userId);
     return (payload as any).returns ?? [];
   }
 
   async disputes(userId: string) {
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (seller) {
+      const disputes = await this.prisma.sellerDispute.findMany({
+        where: { sellerId: seller.id },
+        orderBy: { openedAt: 'desc' }
+      });
+      if (disputes.length > 0) {
+        return disputes;
+      }
+    }
+
     const payload = await this.orders(userId);
     return (payload as any).disputes ?? [];
   }
 
   async inventory(userId: string) {
+    const listings = await this.prisma.marketplaceListing.findMany({
+      where: { userId },
+      include: { inventorySlots: { include: { warehouse: true } } },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    if (listings.length > 0) {
+      return { rows: listings };
+    }
+
     return this.records
       .getByEntityId('seller_workspace', 'inventory', 'main', userId)
       .then((record) => record.payload)
-      .catch(async () => {
-        const listings = await this.prisma.marketplaceListing.findMany({
-          where: { userId },
-          select: { id: true, title: true, inventoryCount: true, sku: true, status: true }
-        });
-        return { rows: listings };
-      });
+      .catch(() => ({ rows: [] }));
   }
 
   async shippingProfiles(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'shipping_profiles', 'main', userId).then((r) => r.payload).catch(() => ({ profiles: [] }));
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    const profiles = seller
+      ? await this.prisma.shippingProfile.findMany({
+          where: { sellerId: seller.id },
+          include: { rates: true },
+          orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+        })
+      : [];
+
+    if (profiles.length > 0) {
+      return { profiles };
+    }
+
+    return this.records
+      .getByEntityId('seller_workspace', 'shipping_profiles', 'main', userId)
+      .then((r) => r.payload)
+      .catch(() => ({ profiles: [] }));
   }
 
   async warehouses(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'warehouses', 'main', userId).then((r) => r.payload).catch(() => ({ warehouses: [] }));
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    const warehouses = seller
+      ? await this.prisma.sellerWarehouse.findMany({
+          where: { sellerId: seller.id },
+          orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+        })
+      : [];
+
+    if (warehouses.length > 0) {
+      return { warehouses };
+    }
+
+    return this.records
+      .getByEntityId('seller_workspace', 'warehouses', 'main', userId)
+      .then((r) => r.payload)
+      .catch(() => ({ warehouses: [] }));
   }
 
   async exports(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'exports', 'main', userId).then((r) => r.payload).catch(() => ({ jobs: [] }));
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    const jobs = seller
+      ? await this.prisma.sellerExportJob.findMany({
+          where: { sellerId: seller.id },
+          orderBy: { requestedAt: 'desc' }
+        })
+      : [];
+
+    if (jobs.length > 0) {
+      return { jobs };
+    }
+
+    return this.records
+      .getByEntityId('seller_workspace', 'exports', 'main', userId)
+      .then((r) => r.payload)
+      .catch(() => ({ jobs: [] }));
   }
 
   async documents(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'documents', 'main', userId).then((r) => r.payload).catch(() => ({ documents: [] }));
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    const documents = seller
+      ? await this.prisma.sellerDocument.findMany({
+          where: { sellerId: seller.id },
+          orderBy: { uploadedAt: 'desc' }
+        })
+      : [];
+
+    if (documents.length > 0) {
+      return { documents };
+    }
+
+    return this.records
+      .getByEntityId('seller_workspace', 'documents', 'main', userId)
+      .then((r) => r.payload)
+      .catch(() => ({ documents: [] }));
   }
 
   async financeWallets(userId: string) {

@@ -176,6 +176,62 @@ enum BackgroundJobStatus {
   CANCELLED
 }
 
+enum WarehouseStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WarehouseType {
+  WAREHOUSE
+  OFFICE
+  PICKUP
+}
+
+enum ShippingProfileStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ShippingRateType {
+  FLAT
+  WEIGHT
+  VALUE
+  REGION
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+  MISSING
+}
+
+enum ExportJobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  RECEIVED
+  REFUNDED
+  REJECTED
+  CANCELLED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
 model User {
   id                  String         @id @default(cuid())
   email               String?        @unique
@@ -198,6 +254,7 @@ model User {
   uploadSessions       UploadSession[]
   backgroundJobs       BackgroundJob[]
   appRecords           AppRecord[]
+  inventoryAdjustments InventoryAdjustment[]
   createdCampaigns     Campaign[]            @relation("CampaignCreatedBy")
   campaignsAsCreator   Campaign[]            @relation("CampaignCreator")
   submittedProposals   Proposal[]            @relation("ProposalSubmittedBy")
@@ -298,6 +355,12 @@ model Seller {
   transactions  Transaction[]
   storefront    Storefront?
   taxonomyCoverage SellerTaxonomyCoverage[]
+  warehouses    SellerWarehouse[]
+  shippingProfiles ShippingProfile[]
+  documents     SellerDocument[]
+  exportJobs    SellerExportJob[]
+  returns       SellerReturn[]
+  disputes      SellerDispute[]
 
   @@index([isVerified, rating, createdAt])
   @@index([kind, createdAt])
@@ -321,6 +384,75 @@ model Storefront {
   updatedAt    DateTime @updatedAt
 
   seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+}
+
+model SellerWarehouse {
+  id         String         @id @default(cuid())
+  sellerId   String
+  name       String
+  code       String?
+  type       WarehouseType  @default(WAREHOUSE)
+  status     WarehouseStatus @default(ACTIVE)
+  isDefault  Boolean        @default(false)
+  address    Json?
+  contact    Json?
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  seller       Seller                 @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  inventory    ListingInventorySlot[]
+  adjustments  InventoryAdjustment[]
+
+  @@index([sellerId])
+  @@index([sellerId, status])
+  @@index([sellerId, isDefault])
+}
+
+model ShippingProfile {
+  id              String                @id @default(cuid())
+  sellerId        String
+  name            String
+  description     String?               @db.Text
+  status          ShippingProfileStatus @default(ACTIVE)
+  carrier         String?
+  serviceLevel    String?
+  handlingTimeDays Int?
+  regions         Json?
+  isDefault       Boolean               @default(false)
+  metadata        Json?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  rates  ShippingRate[]
+
+  @@index([sellerId])
+  @@index([sellerId, status])
+  @@index([sellerId, isDefault])
+}
+
+model ShippingRate {
+  id            String           @id @default(cuid())
+  profileId     String
+  name          String
+  rateType      ShippingRateType @default(FLAT)
+  minWeight     Float?
+  maxWeight     Float?
+  minOrderValue Float?
+  maxOrderValue Float?
+  price         Float
+  currency      String           @default("USD")
+  etaDays       Int?
+  regions       Json?
+  metadata      Json?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  profile ShippingProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@index([profileId, rateType])
 }
 
 model TaxonomyTree {
@@ -454,6 +586,8 @@ model MarketplaceListing {
   deal       Deal?       @relation(fields: [dealId], references: [id], onDelete: SetNull)
   orderItems OrderItem[]
   taxonomyLinks ListingTaxonomyLink[]
+  inventorySlots ListingInventorySlot[]
+  inventoryAdjustments InventoryAdjustment[]
 
   @@index([userId])
   @@index([sellerId])
@@ -742,6 +876,8 @@ model Order {
   buyer        User?         @relation("OrderBuyer", fields: [buyerUserId], references: [id], onDelete: SetNull)
   items        OrderItem[]
   transactions Transaction[]
+  returns      SellerReturn[]
+  disputes     SellerDispute[]
 
   @@index([sellerId])
   @@index([buyerUserId])
@@ -904,4 +1040,125 @@ model AppRecord {
   @@index([userId, domain, entityType, updatedAt])
   @@index([domain, entityType, entityId])
   @@index([domain, entityType, entityId, userId])
+}
+
+model ListingInventorySlot {
+  id          String   @id @default(cuid())
+  listingId   String
+  warehouseId String
+  sku         String?
+  onHand      Int      @default(0)
+  reserved    Int      @default(0)
+  safetyStock Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  listing   MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  warehouse SellerWarehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId, warehouseId])
+  @@index([warehouseId])
+  @@index([listingId])
+}
+
+model InventoryAdjustment {
+  id            String   @id @default(cuid())
+  listingId     String
+  warehouseId   String?
+  createdByUserId String?
+  delta         Int
+  reason        String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  listing   MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  warehouse SellerWarehouse?   @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  createdBy User?              @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([listingId, createdAt])
+  @@index([warehouseId])
+  @@index([createdByUserId])
+}
+
+model SellerDocument {
+  id         String         @id @default(cuid())
+  sellerId   String
+  listingId  String?
+  type       String
+  channel    String?
+  regions    Json?
+  fileName   String?
+  url        String?
+  status     DocumentStatus @default(UPLOADED)
+  uploadedAt DateTime       @default(now())
+  expiresAt  DateTime?
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  seller  Seller              @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  listing MarketplaceListing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+
+  @@index([sellerId, status])
+  @@index([listingId])
+  @@index([expiresAt])
+}
+
+model SellerExportJob {
+  id          String         @id @default(cuid())
+  sellerId    String
+  type        String
+  status      ExportJobStatus @default(QUEUED)
+  format      String         @default("CSV")
+  requestedAt DateTime       @default(now())
+  completedAt DateTime?
+  fileUrl     String?
+  filters     Json?
+  metadata    Json?
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, status])
+  @@index([requestedAt])
+}
+
+model SellerReturn {
+  id         String       @id @default(cuid())
+  sellerId   String
+  orderId    String
+  status     ReturnStatus @default(REQUESTED)
+  reason     String?
+  notes      String?      @db.Text
+  requestedAt DateTime    @default(now())
+  approvedAt DateTime?
+  receivedAt DateTime?
+  refundedAt DateTime?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, status])
+  @@index([orderId])
+}
+
+model SellerDispute {
+  id        String        @id @default(cuid())
+  sellerId  String
+  orderId   String
+  status    DisputeStatus @default(OPEN)
+  reason    String?
+  openedAt  DateTime      @default(now())
+  resolvedAt DateTime?
+  metadata  Json?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, status])
+  @@index([orderId])
 }
