@@ -316,6 +316,399 @@ export class CommerceService {
     return this.records.getByEntityId('seller_workspace', 'finance_tax_reports', 'main', userId).then((r) => r.payload).catch(() => ({ reports: [] }));
   }
 
+  async createWarehouse(userId: string, payload: CreateWarehouseDto) {
+    const seller = await this.ensureSeller(userId);
+    if (payload.isDefault) {
+      await this.prisma.sellerWarehouse.updateMany({
+        where: { sellerId: seller.id },
+        data: { isDefault: false }
+      });
+    }
+
+    return this.prisma.sellerWarehouse.create({
+      data: {
+        sellerId: seller.id,
+        name: payload.name,
+        code: payload.code,
+        type: payload.type ?? 'WAREHOUSE',
+        status: payload.status ?? 'ACTIVE',
+        isDefault: payload.isDefault ?? false,
+        address: payload.address as Prisma.InputJsonValue | undefined,
+        contact: payload.contact as Prisma.InputJsonValue | undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async updateWarehouse(userId: string, id: string, payload: UpdateWarehouseDto) {
+    const seller = await this.ensureSeller(userId);
+    const warehouse = await this.prisma.sellerWarehouse.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!warehouse) {
+      throw new NotFoundException('Warehouse not found');
+    }
+
+    if (payload.isDefault) {
+      await this.prisma.sellerWarehouse.updateMany({
+        where: { sellerId: seller.id },
+        data: { isDefault: false }
+      });
+    }
+
+    return this.prisma.sellerWarehouse.update({
+      where: { id: warehouse.id },
+      data: {
+        name: payload.name ?? undefined,
+        code: payload.code ?? undefined,
+        type: payload.type ?? undefined,
+        status: payload.status ?? undefined,
+        isDefault: payload.isDefault ?? undefined,
+        address: payload.address as Prisma.InputJsonValue | undefined,
+        contact: payload.contact as Prisma.InputJsonValue | undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async createShippingProfile(userId: string, payload: CreateShippingProfileDto) {
+    const seller = await this.ensureSeller(userId);
+    if (payload.isDefault) {
+      await this.prisma.shippingProfile.updateMany({
+        where: { sellerId: seller.id },
+        data: { isDefault: false }
+      });
+    }
+
+    return this.prisma.shippingProfile.create({
+      data: {
+        sellerId: seller.id,
+        name: payload.name,
+        description: payload.description,
+        status: payload.status ?? 'ACTIVE',
+        carrier: payload.carrier,
+        serviceLevel: payload.serviceLevel,
+        handlingTimeDays: payload.handlingTimeDays,
+        regions: payload.regions as Prisma.InputJsonValue | undefined,
+        isDefault: payload.isDefault ?? false,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async updateShippingProfile(userId: string, id: string, payload: UpdateShippingProfileDto) {
+    const seller = await this.ensureSeller(userId);
+    const profile = await this.prisma.shippingProfile.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!profile) {
+      throw new NotFoundException('Shipping profile not found');
+    }
+
+    if (payload.isDefault) {
+      await this.prisma.shippingProfile.updateMany({
+        where: { sellerId: seller.id },
+        data: { isDefault: false }
+      });
+    }
+
+    return this.prisma.shippingProfile.update({
+      where: { id: profile.id },
+      data: {
+        name: payload.name ?? undefined,
+        description: payload.description ?? undefined,
+        status: payload.status ?? undefined,
+        carrier: payload.carrier ?? undefined,
+        serviceLevel: payload.serviceLevel ?? undefined,
+        handlingTimeDays: payload.handlingTimeDays ?? undefined,
+        regions: payload.regions as Prisma.InputJsonValue | undefined,
+        isDefault: payload.isDefault ?? undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async createShippingRate(userId: string, profileId: string, payload: CreateShippingRateDto) {
+    const seller = await this.ensureSeller(userId);
+    const profile = await this.prisma.shippingProfile.findFirst({
+      where: { id: profileId, sellerId: seller.id }
+    });
+    if (!profile) {
+      throw new NotFoundException('Shipping profile not found');
+    }
+
+    return this.prisma.shippingRate.create({
+      data: {
+        profileId: profile.id,
+        name: payload.name,
+        rateType: payload.rateType ?? 'FLAT',
+        minWeight: payload.minWeight,
+        maxWeight: payload.maxWeight,
+        minOrderValue: payload.minOrderValue,
+        maxOrderValue: payload.maxOrderValue,
+        price: payload.price,
+        currency: payload.currency ?? 'USD',
+        etaDays: payload.etaDays,
+        regions: payload.regions as Prisma.InputJsonValue | undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async updateShippingRate(
+    userId: string,
+    profileId: string,
+    rateId: string,
+    payload: UpdateShippingRateDto
+  ) {
+    const seller = await this.ensureSeller(userId);
+    const profile = await this.prisma.shippingProfile.findFirst({
+      where: { id: profileId, sellerId: seller.id }
+    });
+    if (!profile) {
+      throw new NotFoundException('Shipping profile not found');
+    }
+
+    const rate = await this.prisma.shippingRate.findFirst({
+      where: { id: rateId, profileId: profile.id }
+    });
+    if (!rate) {
+      throw new NotFoundException('Shipping rate not found');
+    }
+
+    return this.prisma.shippingRate.update({
+      where: { id: rate.id },
+      data: {
+        name: payload.name ?? undefined,
+        rateType: payload.rateType ?? undefined,
+        minWeight: payload.minWeight ?? undefined,
+        maxWeight: payload.maxWeight ?? undefined,
+        minOrderValue: payload.minOrderValue ?? undefined,
+        maxOrderValue: payload.maxOrderValue ?? undefined,
+        price: payload.price ?? undefined,
+        currency: payload.currency ?? undefined,
+        etaDays: payload.etaDays ?? undefined,
+        regions: payload.regions as Prisma.InputJsonValue | undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async createInventoryAdjustment(userId: string, payload: CreateInventoryAdjustmentDto) {
+    const seller = await this.ensureSeller(userId);
+    const listing = await this.prisma.marketplaceListing.findFirst({
+      where: { id: payload.listingId, sellerId: seller.id }
+    });
+    if (!listing) {
+      throw new NotFoundException('Listing not found');
+    }
+
+    const warehouse = await this.resolveWarehouse(seller.id, payload.warehouseId);
+    if (!warehouse) {
+      throw new BadRequestException('Warehouse is required for inventory adjustments');
+    }
+
+    const slotKey = {
+      listingId_warehouseId: {
+        listingId: listing.id,
+        warehouseId: warehouse.id
+      }
+    };
+
+    const [slot, adjustment] = await this.prisma.$transaction([
+      this.prisma.listingInventorySlot.upsert({
+        where: slotKey,
+        update: {
+          onHand: { increment: payload.delta }
+        },
+        create: {
+          listingId: listing.id,
+          warehouseId: warehouse.id,
+          onHand: payload.delta,
+          reserved: 0,
+          safetyStock: 0
+        }
+      }),
+      this.prisma.inventoryAdjustment.create({
+        data: {
+          listingId: listing.id,
+          warehouseId: warehouse.id,
+          createdByUserId: userId,
+          delta: payload.delta,
+          reason: payload.reason,
+          metadata: payload.metadata as Prisma.InputJsonValue | undefined
+        }
+      }),
+      this.prisma.marketplaceListing.update({
+        where: { id: listing.id },
+        data: { inventoryCount: { increment: payload.delta } }
+      })
+    ]);
+
+    return { slot, adjustment };
+  }
+
+  async createDocument(userId: string, payload: CreateDocumentDto) {
+    const seller = await this.ensureSeller(userId);
+    if (payload.listingId) {
+      const listing = await this.prisma.marketplaceListing.findFirst({
+        where: { id: payload.listingId, sellerId: seller.id }
+      });
+      if (!listing) {
+        throw new NotFoundException('Listing not found');
+      }
+    }
+
+    return this.prisma.sellerDocument.create({
+      data: {
+        sellerId: seller.id,
+        listingId: payload.listingId,
+        type: payload.type,
+        channel: payload.channel,
+        regions: payload.regions as Prisma.InputJsonValue | undefined,
+        fileName: payload.fileName,
+        url: payload.url,
+        status: payload.status ?? 'UPLOADED',
+        uploadedAt: payload.uploadedAt ? new Date(payload.uploadedAt) : new Date(),
+        expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async updateDocument(userId: string, id: string, payload: UpdateDocumentDto) {
+    const seller = await this.ensureSeller(userId);
+    const document = await this.prisma.sellerDocument.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!document) {
+      throw new NotFoundException('Document not found');
+    }
+
+    if (payload.listingId) {
+      const listing = await this.prisma.marketplaceListing.findFirst({
+        where: { id: payload.listingId, sellerId: seller.id }
+      });
+      if (!listing) {
+        throw new NotFoundException('Listing not found');
+      }
+    }
+
+    return this.prisma.sellerDocument.update({
+      where: { id: document.id },
+      data: {
+        type: payload.type ?? undefined,
+        channel: payload.channel ?? undefined,
+        regions: payload.regions as Prisma.InputJsonValue | undefined,
+        fileName: payload.fileName ?? undefined,
+        url: payload.url ?? undefined,
+        status: payload.status ?? undefined,
+        uploadedAt: payload.uploadedAt ? new Date(payload.uploadedAt) : undefined,
+        expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : undefined,
+        listingId: payload.listingId ?? undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async createExportJob(userId: string, payload: CreateExportJobDto) {
+    const seller = await this.ensureSeller(userId);
+    return this.prisma.sellerExportJob.create({
+      data: {
+        sellerId: seller.id,
+        type: payload.type,
+        format: payload.format ?? 'CSV',
+        status: 'QUEUED',
+        filters: payload.filters as Prisma.InputJsonValue | undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async createReturn(userId: string, payload: CreateReturnDto) {
+    const seller = await this.ensureSeller(userId);
+    const order = await this.prisma.order.findFirst({
+      where: { id: payload.orderId, sellerId: seller.id }
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.prisma.sellerReturn.create({
+      data: {
+        sellerId: seller.id,
+        orderId: order.id,
+        status: payload.status ?? 'REQUESTED',
+        reason: payload.reason,
+        notes: payload.notes,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async updateReturn(userId: string, id: string, payload: UpdateReturnDto) {
+    const seller = await this.ensureSeller(userId);
+    const existing = await this.prisma.sellerReturn.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!existing) {
+      throw new NotFoundException('Return not found');
+    }
+
+    return this.prisma.sellerReturn.update({
+      where: { id: existing.id },
+      data: {
+        status: payload.status ?? undefined,
+        reason: payload.reason ?? undefined,
+        notes: payload.notes ?? undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined,
+        approvedAt: payload.status === 'APPROVED' ? new Date() : undefined,
+        receivedAt: payload.status === 'RECEIVED' ? new Date() : undefined,
+        refundedAt: payload.status === 'REFUNDED' ? new Date() : undefined
+      }
+    });
+  }
+
+  async createDispute(userId: string, payload: CreateDisputeDto) {
+    const seller = await this.ensureSeller(userId);
+    const order = await this.prisma.order.findFirst({
+      where: { id: payload.orderId, sellerId: seller.id }
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.prisma.sellerDispute.create({
+      data: {
+        sellerId: seller.id,
+        orderId: order.id,
+        status: payload.status ?? 'OPEN',
+        reason: payload.reason,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async updateDispute(userId: string, id: string, payload: UpdateDisputeDto) {
+    const seller = await this.ensureSeller(userId);
+    const existing = await this.prisma.sellerDispute.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!existing) {
+      throw new NotFoundException('Dispute not found');
+    }
+
+    return this.prisma.sellerDispute.update({
+      where: { id: existing.id },
+      data: {
+        status: payload.status ?? undefined,
+        reason: payload.reason ?? undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined,
+        resolvedAt: payload.status && ['RESOLVED', 'REJECTED'].includes(payload.status) ? new Date() : undefined
+      }
+    });
+  }
+
   private sliceRows(payload: unknown, skip: number, take: number, key = 'rows') {
     const content = payload as Record<string, unknown>;
     const rows = Array.isArray(content[key] as unknown[]) ? ([...(content[key] as unknown[])] as unknown[]) : [];
@@ -324,5 +717,21 @@ export class CommerceService {
       ...content,
       [key]: rows.slice(skip, skip + take)
     };
+  }
+
+  private async ensureSeller(userId: string) {
+    return this.sellersService.ensureSellerProfile(userId);
+  }
+
+  private async resolveWarehouse(sellerId: string, warehouseId?: string) {
+    if (warehouseId) {
+      return this.prisma.sellerWarehouse.findFirst({
+        where: { id: warehouseId, sellerId }
+      });
+    }
+
+    return this.prisma.sellerWarehouse.findFirst({
+      where: { sellerId, isDefault: true }
+    });
   }
 }

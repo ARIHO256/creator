@@ -232,6 +232,26 @@ enum DisputeStatus {
   REJECTED
 }
 
+enum ReviewSubject {
+  CREATOR
+  SELLER
+  LISTING
+  SESSION
+  ORDER
+  CAMPAIGN
+}
+
+enum ReviewStatus {
+  PUBLISHED
+  HIDDEN
+  FLAGGED
+}
+
+enum ReviewReplyVisibility {
+  PUBLIC
+  PRIVATE
+}
+
 model User {
   id                  String         @id @default(cuid())
   email               String?        @unique
@@ -255,6 +275,9 @@ model User {
   backgroundJobs       BackgroundJob[]
   appRecords           AppRecord[]
   inventoryAdjustments InventoryAdjustment[]
+  reviewsReceived      Review[]            @relation("ReviewSubject")
+  reviewsAuthored      Review[]            @relation("ReviewAuthor")
+  reviewRepliesAuthored ReviewReply[]
   createdCampaigns     Campaign[]            @relation("CampaignCreatedBy")
   campaignsAsCreator   Campaign[]            @relation("CampaignCreator")
   submittedProposals   Proposal[]            @relation("ProposalSubmittedBy")
@@ -588,6 +611,7 @@ model MarketplaceListing {
   taxonomyLinks ListingTaxonomyLink[]
   inventorySlots ListingInventorySlot[]
   inventoryAdjustments InventoryAdjustment[]
+  documents   SellerDocument[]
 
   @@index([userId])
   @@index([sellerId])
@@ -1040,6 +1064,70 @@ model AppRecord {
   @@index([userId, domain, entityType, updatedAt])
   @@index([domain, entityType, entityId])
   @@index([domain, entityType, entityId, userId])
+}
+
+model Review {
+  id                String        @id @default(cuid())
+  reviewerUserId    String?
+  subjectType       ReviewSubject @default(CREATOR)
+  subjectId         String
+  subjectUserId     String?
+  orderId           String?
+  sessionId         String?
+  campaignId        String?
+  title             String?
+  buyerName         String?
+  buyerType         String?
+  roleTarget        String?
+  itemType          String?
+  channel           String?
+  marketplace       String?
+  mldzSurface       String?
+  sentiment         String?
+  requiresResponse  Boolean       @default(false)
+  resolvedAt        DateTime?
+  flaggedAt         DateTime?
+  ratingOverall     Float
+  ratingBreakdown   Json?
+  quickTags         Json?
+  issueTags         Json?
+  reviewText        String?       @db.Text
+  wouldJoinAgain    Boolean?
+  transactionIntent String?
+  isPublic          Boolean       @default(true)
+  isAnonymous       Boolean       @default(false)
+  status            ReviewStatus  @default(PUBLISHED)
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  reviewer User? @relation("ReviewAuthor", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+  subject  User? @relation("ReviewSubject", fields: [subjectUserId], references: [id], onDelete: SetNull)
+  replies  ReviewReply[]
+
+  @@index([subjectType, subjectId])
+  @@index([subjectUserId, createdAt])
+  @@index([reviewerUserId, createdAt])
+  @@index([status, createdAt])
+  @@index([orderId])
+  @@index([sessionId])
+  @@index([campaignId])
+}
+
+model ReviewReply {
+  id           String               @id @default(cuid())
+  reviewId     String
+  authorUserId String?
+  body         String               @db.Text
+  visibility   ReviewReplyVisibility @default(PUBLIC)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  author User?  @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@index([reviewId, createdAt])
+  @@index([authorUserId])
 }
 
 model ListingInventorySlot {

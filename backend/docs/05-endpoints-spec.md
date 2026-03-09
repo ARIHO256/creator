@@ -52,6 +52,40 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/invites`
 - `POST /api/invites/:id/respond`
 
+## Seller Ops
+- `GET /api/seller/dashboard`
+- `GET /api/seller/listings`
+- `GET /api/seller/listings/:id`
+- `GET /api/seller/listing-wizard`
+- `GET /api/seller/orders`
+- `GET /api/seller/orders/:id`
+- `GET /api/seller/returns`
+- `POST /api/seller/returns` - `CreateReturnDto`
+- `PATCH /api/seller/returns/:id` - `UpdateReturnDto`
+- `GET /api/seller/disputes`
+- `POST /api/seller/disputes` - `CreateDisputeDto`
+- `PATCH /api/seller/disputes/:id` - `UpdateDisputeDto`
+- `GET /api/seller/inventory`
+- `POST /api/seller/inventory/adjustments` - `CreateInventoryAdjustmentDto`
+- `GET /api/seller/shipping-profiles`
+- `POST /api/seller/shipping-profiles` - `CreateShippingProfileDto`
+- `PATCH /api/seller/shipping-profiles/:id` - `UpdateShippingProfileDto`
+- `POST /api/seller/shipping-profiles/:id/rates` - `CreateShippingRateDto`
+- `PATCH /api/seller/shipping-profiles/:profileId/rates/:rateId` - `UpdateShippingRateDto`
+- `GET /api/seller/warehouses`
+- `POST /api/seller/warehouses` - `CreateWarehouseDto`
+- `PATCH /api/seller/warehouses/:id` - `UpdateWarehouseDto`
+- `GET /api/seller/exports`
+- `POST /api/seller/exports` - `CreateExportJobDto`
+- `GET /api/seller/documents`
+- `POST /api/seller/documents` - `CreateDocumentDto`
+- `PATCH /api/seller/documents/:id` - `UpdateDocumentDto`
+- `GET /api/seller/finance/wallets`
+- `GET /api/seller/finance/holds`
+- `GET /api/seller/finance/invoices`
+- `GET /api/seller/finance/statements`
+- `GET /api/seller/finance/tax-reports`
+
 ## Taxonomy
 - `GET /api/taxonomy/trees` (Public)
 - `GET /api/taxonomy/trees/:id/nodes` (Public)
@@ -213,6 +247,12 @@ Auth: JWT bearer required unless noted `Public`.
 
 ## Reviews
 - `GET /api/reviews/dashboard`
+- `GET /api/reviews/summary`
+- `GET /api/reviews`
+- `GET /api/reviews/insights`
+- `POST /api/reviews` - `CreateReviewDto`
+- `PATCH /api/reviews/:id` - `UpdateReviewDto`
+- `POST /api/reviews/:id/replies` - `CreateReviewReplyDto`
 
 ## Response and errors
 - Success envelope: `{ success: true, data, timestamp }`
