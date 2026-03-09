@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 const scale = Number(process.env.SEED_SCALE ?? '1');
 const sellerCount = Number(process.env.SEED_SELLERS ?? 10 * scale);
 const creatorCount = Number(process.env.SEED_CREATORS ?? 10 * scale);
+const providerCount = Number(process.env.SEED_PROVIDERS ?? Math.max(1, Math.floor(sellerCount / 4)));
 const listingsPerSeller = Number(process.env.SEED_LISTINGS_PER_SELLER ?? 5 * scale);
 const ordersPerSeller = Number(process.env.SEED_ORDERS_PER_SELLER ?? 10 * scale);
 const reviewsPerSeller = Number(process.env.SEED_REVIEWS_PER_SELLER ?? 5 * scale);
@@ -23,6 +24,10 @@ function buildId(prefix) {
 
 async function main() {
   if (reset) {
+    await prisma.userRoleAssignment.deleteMany();
+    await prisma.notification.deleteMany();
+    await prisma.sellerFollow.deleteMany();
+    await prisma.savedOpportunity.deleteMany();
     await prisma.message.deleteMany();
     await prisma.messageThread.deleteMany();
     await prisma.supportTicket.deleteMany();
@@ -49,6 +54,7 @@ async function main() {
     await prisma.providerConsultation.deleteMany();
     await prisma.providerPortfolioItem.deleteMany();
     await prisma.storefrontTaxonomyLink.deleteMany();
+    await prisma.storefront.deleteMany();
     await prisma.reviewReply.deleteMany();
     await prisma.review.deleteMany();
     await prisma.transaction.deleteMany();
@@ -82,8 +88,28 @@ async function main() {
     updatedAt: now
   }));
 
+  const providerUsers = Array.from({ length: providerCount }, (_, index) => ({
+    id: buildId(`provider_user_${index}`),
+    email: `provider${index}@load.test`,
+    passwordHash: 'seed',
+    role: 'PROVIDER',
+    approvalStatus: 'APPROVED',
+    onboardingCompleted: true,
+    createdAt: now,
+    updatedAt: now
+  }));
+
   await prisma.user.createMany({
-    data: [...sellerUsers, ...creatorUsers],
+    data: [...sellerUsers, ...creatorUsers, ...providerUsers],
+    skipDuplicates: true
+  });
+
+  await prisma.userRoleAssignment.createMany({
+    data: [
+      ...sellerUsers.map((user) => ({ userId: user.id, role: 'SELLER' })),
+      ...creatorUsers.map((user) => ({ userId: user.id, role: 'CREATOR' })),
+      ...providerUsers.map((user) => ({ userId: user.id, role: 'PROVIDER' }))
+    ],
     skipDuplicates: true
   });
 
@@ -112,7 +138,21 @@ async function main() {
     updatedAt: now
   }));
 
-  await prisma.seller.createMany({ data: sellers, skipDuplicates: true });
+  const providers = providerUsers.map((user, index) => ({
+    id: buildId(`provider_${index}`),
+    userId: user.id,
+    handle: `provider-${index}-${randomUUID().slice(0, 8)}`,
+    name: `Provider ${index}`,
+    displayName: `Provider ${index}`,
+    type: 'Provider',
+    kind: 'PROVIDER',
+    rating: 4.6,
+    isVerified: true,
+    createdAt: now,
+    updatedAt: now
+  }));
+
+  await prisma.seller.createMany({ data: [...sellers, ...providers], skipDuplicates: true });
 
   const creators = creatorUsers.map((user, index) => ({
     id: buildId(`creator_${index}`),
@@ -235,6 +275,22 @@ async function main() {
     await prisma.review.createMany({ data: reviews, skipDuplicates: true });
   }
 
+  const notifications = [...sellerUsers, ...creatorUsers, ...providerUsers]
+    .slice(0, 40)
+    .map((user, index) => ({
+      id: buildId(`notification_${user.id}_${index}`),
+      userId: user.id,
+      title: index % 2 === 0 ? 'Welcome to MyLiveDealz' : 'Action required',
+      body: 'Your workspace is ready for live operations.',
+      kind: index % 2 === 0 ? 'info' : 'action',
+      createdAt: now,
+      updatedAt: now
+    }));
+
+  if (notifications.length) {
+    await prisma.notification.createMany({ data: notifications, skipDuplicates: true });
+  }
+
   const messageThreads = [];
   const messages = [];
   for (const user of sellerUsers.slice(0, Math.min(20, sellerUsers.length))) {
@@ -278,6 +334,45 @@ async function main() {
   }));
   if (supportTickets.length) {
     await prisma.supportTicket.createMany({ data: supportTickets, skipDuplicates: true });
+  }
+
+  const regulatoryDesks = sellers.slice(0, Math.min(15, sellers.length)).map((seller, index) => ({
+    id: buildId(`desk_${seller.id}`),
+    userId: seller.userId,
+    slug: `desk-${index + 1}`,
+    title: `Compliance Desk ${index + 1}`,
+    status: index % 2 === 0 ? 'active' : 'pending',
+    createdAt: now,
+    updatedAt: now
+  }));
+  if (regulatoryDesks.length) {
+    await prisma.regulatoryDesk.createMany({ data: regulatoryDesks, skipDuplicates: true });
+  }
+
+  const regulatoryDeskItems = regulatoryDesks.map((desk, index) => ({
+    id: buildId(`desk_item_${desk.id}`),
+    deskId: desk.id,
+    title: `Desk item ${index + 1}`,
+    status: index % 2 === 0 ? 'open' : 'review',
+    severity: index % 2 === 0 ? 'high' : 'medium',
+    createdAt: now,
+    updatedAt: now
+  }));
+  if (regulatoryDeskItems.length) {
+    await prisma.regulatoryDeskItem.createMany({ data: regulatoryDeskItems, skipDuplicates: true });
+  }
+
+  const complianceItems = sellers.slice(0, Math.min(15, sellers.length)).map((seller, index) => ({
+    id: buildId(`compliance_${seller.id}`),
+    userId: seller.userId,
+    itemType: index % 3 === 0 ? 'RULE' : index % 2 === 0 ? 'DOC' : 'QUEUE',
+    title: index % 2 === 0 ? 'KYC Document' : 'Policy Check',
+    status: index % 2 === 0 ? 'pending' : 'active',
+    createdAt: now,
+    updatedAt: now
+  }));
+  if (complianceItems.length) {
+    await prisma.regulatoryComplianceItem.createMany({ data: complianceItems, skipDuplicates: true });
   }
 
   const wholesaleQuotes = [];
@@ -331,6 +426,61 @@ async function main() {
   }
   if (wholesalePriceLists.length) {
     await prisma.wholesalePriceList.createMany({ data: wholesalePriceLists, skipDuplicates: true });
+  }
+
+  const providerQuotes = [];
+  const providerBookings = [];
+  const providerConsultations = [];
+  const providerPortfolioItems = [];
+  for (const provider of providerUsers.slice(0, Math.min(20, providerUsers.length))) {
+    const quoteId = buildId(`provider_quote_${provider.id}`);
+    providerQuotes.push({
+      id: quoteId,
+      userId: provider.id,
+      status: 'sent',
+      title: `Provider quote ${provider.id}`,
+      buyer: 'Buyer Co',
+      amount: 1500,
+      currency: 'USD',
+      data: { id: quoteId, status: 'sent', amount: 1500 }
+    });
+    providerBookings.push({
+      id: buildId(`provider_booking_${provider.id}`),
+      userId: provider.id,
+      status: 'requested',
+      scheduledAt: now,
+      durationMinutes: 90,
+      amount: 500,
+      currency: 'USD',
+      data: { scheduledAt: now.toISOString() }
+    });
+    providerConsultations.push({
+      id: buildId(`provider_consult_${provider.id}`),
+      userId: provider.id,
+      status: 'open',
+      scheduledAt: now,
+      data: { topic: 'Live ops review' }
+    });
+    providerPortfolioItems.push({
+      id: buildId(`provider_portfolio_${provider.id}`),
+      userId: provider.id,
+      title: `Portfolio item ${provider.id}`,
+      description: 'Showcase of recent provider work',
+      status: 'published',
+      data: { tags: ['studio', 'live'] }
+    });
+  }
+  if (providerQuotes.length) {
+    await prisma.providerQuote.createMany({ data: providerQuotes, skipDuplicates: true });
+  }
+  if (providerBookings.length) {
+    await prisma.providerBooking.createMany({ data: providerBookings, skipDuplicates: true });
+  }
+  if (providerConsultations.length) {
+    await prisma.providerConsultation.createMany({ data: providerConsultations, skipDuplicates: true });
+  }
+  if (providerPortfolioItems.length) {
+    await prisma.providerPortfolioItem.createMany({ data: providerPortfolioItems, skipDuplicates: true });
   }
 
   const liveSessions = [];

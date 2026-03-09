@@ -25,6 +25,7 @@ Optional environment variables:
 - `SEED_SCALE` (default `1`)
 - `SEED_SELLERS` (default `10 * SEED_SCALE`)
 - `SEED_CREATORS` (default `10 * SEED_SCALE`)
+- `SEED_PROVIDERS` (default `max(1, floor(SEED_SELLERS / 4))`)
 - `SEED_LISTINGS_PER_SELLER` (default `5 * SEED_SCALE`)
 - `SEED_ORDERS_PER_SELLER` (default `10 * SEED_SCALE`)
 - `SEED_REVIEWS_PER_SELLER` (default `5 * SEED_SCALE`)
@@ -59,6 +60,8 @@ Current hotspots and mitigation:
 - `DiscoveryService` queries: relies on indexed fields and pagination; no full-table scans.
 - `CommunicationsService.messages`: thread/message fan-out is indexed by thread and user; paginate if message volume grows.
 - `WholesaleService.quotes`: indexed by user/status and uses persisted totals for fast lists.
+- `ProviderService` quote/booking/consultation lists: indexed by user and updatedAt, but still require pagination under high volume.
+- `RegulatoryService` desk/compliance queries: scoped by user and indexed by updatedAt.
 
 For million-user readiness, pair these with:
 - Read replicas and connection pooling.

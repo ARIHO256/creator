@@ -12,11 +12,11 @@ Backend modules, routes, DTOs, Prisma schema, and existing service logic were re
 - **User activity tracking**: no centralized tracking for write actions beyond request logs.
 - **ExpressMart backend**: missing ExpressMart-specific endpoints and channel filtering for seller ops flows.
 - **Order lifecycle metadata**: no place to store ExpressMart order detail fields; order status enum missing relevant states.
-- **Notifications persistence**: notifications were stored only in AppRecords, not in first-class tables.
 - **High-traffic indexes**: missing indexes for marketplace/channel filters and review insight filters.
 - **Cache stampede protection**: no coalescing/locking across instances.
 - **Queue usage**: background job worker existed but only placeholder processing; no queue-backed audit or insight refresh usage.
+- **Settings payload normalization**: broad settings payloads needed stronger validation guarantees per section.
 
 ## Notes
 - Many modules already use Prisma for primary flows (orders, listings, reviews, campaigns, proposals, tasks, transactions).
-- Some flows still fall back to `AppRecords` when domain tables are empty or unavailable; those need incremental replacement where first-class tables exist or should exist.
+- Strong domain tables are in place for communications, wholesale, provider, live, adz, and regulatory flows; remaining hardening is primarily infra-dependent.

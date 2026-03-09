@@ -3,42 +3,26 @@
 Date: 2026-03-09
 
 ## Summary
-This pass replaced remaining compatibility-style record payloads with first-class domain tables for Live, Adz, Wholesale, Provider, Regulatory, and Communications; unified taxonomy across onboarding/listings/storefront; and tightened order lifecycle enforcement, while keeping all frontends unchanged. Load-test seeding and tests were extended to cover the newly strengthened sectors.
+This pass removed remaining AppRecord fallback usage, tightened settings payload handling, extended load-test seeding for provider/regulatory/notification flows, and added tests for seller role isolation and order status enforcement. Frontends remain unchanged.
 
 ## What Was Found
-- Domain flows still persisted large JSON payloads via record tables for Live, Adz, Wholesale, Provider, Regulatory, and Communications.
-- Storefront taxonomy was not linked to canonical taxonomy nodes.
-- Onboarding taxonomy selections were not validated or persisted to seller coverage/storefront.
-- Order status updates did not enforce legal transitions.
+- Remaining settings helpers still accepted broad `any` payloads.
+- Load-test seeding under-covered provider/regulatory/support/notification flows.
+- Order transition enforcement needed direct coverage in tests.
 
 ## Implementations Completed
-### Domain Modeling + AppRecord Removal
-- Added first-class tables for:
-  - Communications: `MessageThread`, `Message`, `SupportTicket`, `SupportContent`.
-  - Live: `LiveBuilder`, `LiveSession`, `LiveStudio`, `LiveMoment`, `LiveReplay`, `LiveToolConfig`, `LiveCampaignGiveaway`.
-  - Adz: `AdzBuilder`, `AdzCampaign`, `AdzPerformance`, `AdzLink`, `PromoAd`.
-  - Wholesale: `WholesaleRfq`, `WholesaleQuote`, `WholesalePriceList`, `WholesaleIncoterm`.
-  - Provider: `ProviderQuote`, `ProviderBooking`, `ProviderConsultation`, `ProviderPortfolioItem`.
-  - Regulatory: `RegulatoryDesk`, `RegulatoryDeskItem`, `RegulatoryComplianceItem`.
-  - Storefront taxonomy: `StorefrontTaxonomyLink`.
-- Rewired services to use the new tables and return domain-shaped responses (no AppRecord-style payloads).
+### AppRecord Elimination
+- No remaining runtime AppRecord fallbacks in active domain services.
 
-### Taxonomy Unification
-- Storefront taxonomy now uses `StorefrontTaxonomyLink` with canonical `TaxonomyNode`.
-- Onboarding validates taxonomy node IDs.
-- Onboarding submission syncs selections into `SellerTaxonomyCoverage` and storefront taxonomy links.
+### Settings Hardening
+- Removed `any` payload helpers in `SettingsService` to enforce sanitized `unknown` inputs.
 
-### Security + Correctness
-- Enforced order status transitions in `CommerceService`.
-- Added `PROVIDER` to `ReviewSubject` and allowed provider review queries.
-- Added DTO validation for finance requests and communications payloads.
-
-### Performance + Load Test Readiness
-- Load-test seed script now creates messages, support tickets, wholesale quotes/RFQs, live sessions, and adz campaigns for realistic volume.
+### Load-Test Coverage
+- Load-test seed now includes provider users, regulatory desks/compliance items, and notifications to exercise support/ops flows at scale.
 
 ### Tests Added
-- `CommunicationsService` thread/message creation.
-- `TaxonomyService.assertNodesExist` missing node enforcement.
+- Seller role isolation for `SellersService.ensureSellerProfile`.
+- Order lifecycle transition enforcement for `CommerceService.updateOrder`.
 
 ## Files Changed
 ### Modules / Domain
@@ -53,6 +37,7 @@ This pass replaced remaining compatibility-style record payloads with first-clas
 - `src/modules/taxonomy/*`
 - `src/modules/finance/*`
 - `src/modules/commerce/*`
+- `src/modules/settings/*`
 - `src/modules/reviews/*`
 
 ### Prisma + Scripts
@@ -63,6 +48,8 @@ This pass replaced remaining compatibility-style record payloads with first-clas
 ### Tests
 - `test/communications.service.test.ts`
 - `test/taxonomy.service.test.ts`
+- `test/sellers.service.test.ts`
+- `test/commerce.service.test.ts`
 
 ## Migrations Added
 - `202603090010_domain_strongification` (domain tables + storefront taxonomy + review subject enum)
@@ -80,4 +67,4 @@ This pass replaced remaining compatibility-style record payloads with first-clas
 - Load testing with production-like infra to validate p95/p99.
 
 ## Honest Readiness Verdict
-The backend now has strong, normalized models for previously compatibility-only sectors, and taxonomy is unified across onboarding, listings, and storefront. It is structurally ready for scale, but cannot claim million-user readiness without Redis, queue workers, connection pooling/replicas, and real load testing. Frontends still consume mocks; integration can proceed once infrastructure is in place.
+The backend is structurally strong for domain coverage and validation, but still depends on Redis, queue workers, pooling/replicas, and real load tests before any million-user claims. Frontends still consume mocks; integration can proceed once infrastructure is in place.

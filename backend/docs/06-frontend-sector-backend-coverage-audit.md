@@ -23,24 +23,20 @@ Statement:
 - Finance/analytics baseline
 - File metadata handling and upload-session lifecycle
 - Runtime hardening: readiness, rate limiting, request tracing
-
-### Represented but not strongly enough yet
-- Seller onboarding and provider onboarding
 - Communications/messages/help-support
 - Wholesale quotes/RFQs/price lists/incoterms
 - Provider quotes/bookings/consultations/portfolio/reviews/disputes
 - Live studio/session/replay/tooling
 - Adz builder/campaigns/links/promo ads
 - Regulatory desks/compliance subdomains
-- Settings/roles/crew/help/status areas with broad `any` payloads
+- Seller/provider onboarding flows with taxonomy validation
+
+### Represented but not strongly enough yet
+- Settings/roles/crew/help/status areas still rely on broad workspace payloads
 
 ## Key finding
 
-The backend now covers nearly every visible frontend sector at the route/module level, but several sectors are still represented through compatibility-style `AppRecord` payloads instead of strongly typed, normalized domain logic.
-
-That means:
-- sector exists in backend: mostly yes
-- strongly represented in production-style backend contracts: not all of them yet
+The backend now covers nearly every visible frontend sector at the route/module level, with strong domain models for previously compatibility-only sectors. Remaining gaps are concentrated in settings/role/crew payload normalization rather than missing domain tables.
 
 ## Creator app coverage
 

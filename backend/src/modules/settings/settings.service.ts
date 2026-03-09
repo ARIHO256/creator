@@ -208,14 +208,14 @@ export class SettingsService {
     return record.payload as Record<string, unknown>;
   }
 
-  private async getWorkspaceSetting(userId: string, key: string, fallback: any) {
+  private async getWorkspaceSetting(userId: string, key: string, fallback: Record<string, unknown>) {
     const record = await this.prisma.workspaceSetting.findUnique({
       where: { userId_key: { userId, key } }
     });
     return record ? (record.payload as Record<string, unknown>) : fallback;
   }
 
-  private async upsertWorkspaceSetting(userId: string, key: string, body: any) {
+  private async upsertWorkspaceSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
     return this.prisma.workspaceSetting.upsert({
       where: { userId_key: { userId, key } },
@@ -228,14 +228,14 @@ export class SettingsService {
     });
   }
 
-  private async getUserSetting(userId: string, key: string, fallback: any) {
+  private async getUserSetting(userId: string, key: string, fallback: Record<string, unknown>) {
     const record = await this.prisma.userSetting.findUnique({
       where: { userId_key: { userId, key } }
     });
     return record ? (record.payload as Record<string, unknown>) : fallback;
   }
 
-  private async upsertUserSetting(userId: string, key: string, body: any) {
+  private async upsertUserSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
     return this.prisma.userSetting.upsert({
       where: { userId_key: { userId, key } },
@@ -268,8 +268,8 @@ export class SettingsService {
     if (Array.isArray(payload)) {
       return payload;
     }
-    if (payload && typeof payload === 'object' && Array.isArray((payload as any)[key])) {
-      return (payload as any)[key] as unknown[];
+    if (payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>)[key])) {
+      return (payload as Record<string, unknown>)[key] as unknown[];
     }
     return [];
   }
