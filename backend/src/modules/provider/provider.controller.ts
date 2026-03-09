@@ -17,6 +17,9 @@ export class ProviderController {
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('quotes') createQuote(@CurrentUser() user: RequestUser, @Body() body: CreateProviderQuoteDto) { return this.service.createQuote(user.sub, body); }
   @Get('joint-quotes') jointQuotes(@CurrentUser() user: RequestUser) { return this.service.jointQuotes(user.sub); }
+  @Get('joint-quotes/:id') jointQuote(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.jointQuote(user.sub, id); }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Post('joint-quotes') createJointQuote(@CurrentUser() user: RequestUser, @Body() body: CreateProviderQuoteDto) { return this.service.createJointQuote(user.sub, body); }
   @Get('consultations') consultations(@CurrentUser() user: RequestUser) { return this.service.consultations(user.sub); }
   @Get('bookings') bookings(@CurrentUser() user: RequestUser) { return this.service.bookings(user.sub); }
   @Get('bookings/:id') booking(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.booking(user.sub, id); }

@@ -10,6 +10,8 @@ import { CreateDocumentDto } from './dto/create-document.dto.js';
 import { CreateExportJobDto } from './dto/create-export-job.dto.js';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto.js';
 import { CreateReturnDto } from './dto/create-return.dto.js';
+import { BulkListingCommitDto } from './dto/bulk-listing-commit.dto.js';
+import { BulkListingValidateDto } from './dto/bulk-listing-validate.dto.js';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary.dto.js';
 import { SellerDisputesQueryDto } from './dto/seller-disputes-query.dto.js';
 import { SellerListingsQueryDto } from './dto/seller-listings-query.dto.js';
@@ -25,6 +27,7 @@ import { UpdateReturnDto } from './dto/update-return.dto.js';
 import { UpdateShippingProfileDto } from './dto/update-shipping-profile.dto.js';
 import { UpdateShippingRateDto } from './dto/update-shipping-rate.dto.js';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
+import { JobsService } from '../jobs/jobs.service.js';
 
 @Injectable()
 export class CommerceService {
@@ -32,7 +35,8 @@ export class CommerceService {
     private readonly prisma: PrismaService,
     private readonly taxonomyService: TaxonomyService,
     private readonly sellersService: SellersService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly jobsService: JobsService
   ) {}
 
   async dashboard(userId: string) {
@@ -308,6 +312,21 @@ export class CommerceService {
     }
 
     return order;
+  }
+
+  async printInvoice(userId: string, id: string) {
+    const payload = await this.buildPrintPayload(userId, id);
+    return { ...payload, printType: 'invoice' };
+  }
+
+  async printPackingSlip(userId: string, id: string) {
+    const payload = await this.buildPrintPayload(userId, id);
+    return { ...payload, printType: 'packing-slip' };
+  }
+
+  async printSticker(userId: string, id: string) {
+    const payload = await this.buildPrintPayload(userId, id);
+    return { ...payload, printType: 'sticker' };
   }
 
   async updateOrder(userId: string, id: string, payload: UpdateOrderDto, channel?: string) {
@@ -774,6 +793,45 @@ export class CommerceService {
     return { slot, adjustment };
   }
 
+  async validateBulkListings(userId: string, payload: BulkListingValidateDto) {
+    const session = await this.prisma.uploadSession.findFirst({
+      where: { id: payload.uploadSessionId, userId }
+    });
+    if (!session) {
+      throw new NotFoundException('Upload session not found');
+    }
+    const job = await this.jobsService.enqueue({
+      queue: 'listings',
+      type: 'BULK_VALIDATE',
+      userId,
+      payload: {
+        uploadSessionId: session.id,
+        mapping: payload.mapping ?? null,
+        mode: payload.mode ?? 'listing'
+      }
+    });
+    return { jobId: job.id, status: 'queued', uploadSessionId: session.id };
+  }
+
+  async commitBulkListings(userId: string, payload: BulkListingCommitDto) {
+    const session = await this.prisma.uploadSession.findFirst({
+      where: { id: payload.uploadSessionId, userId }
+    });
+    if (!session) {
+      throw new NotFoundException('Upload session not found');
+    }
+    const job = await this.jobsService.enqueue({
+      queue: 'listings',
+      type: 'BULK_COMMIT',
+      userId,
+      payload: {
+        uploadSessionId: session.id,
+        validateJobId: payload.validateJobId ?? null
+      }
+    });
+    return { jobId: job.id, status: 'queued', uploadSessionId: session.id };
+  }
+
   async createDocument(userId: string, payload: CreateDocumentDto) {
     const seller = await this.ensureSeller(userId);
     if (payload.listingId) {
@@ -933,6 +991,51 @@ export class CommerceService {
         resolvedAt: payload.status && ['RESOLVED', 'REJECTED'].includes(payload.status) ? new Date() : undefined
       }
     });
+  }
+
+  private async buildPrintPayload(userId: string, id: string) {
+    const seller = await this.ensureSeller(userId);
+    const order = await this.prisma.order.findFirst({
+      where: { id, sellerId: seller.id },
+      include: { items: true, seller: true, buyer: true }
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    const itemTotal = order.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+    const totals = {
+      itemTotal,
+      total: order.total,
+      currency: order.currency
+    };
+    return {
+      order: {
+        id: order.id,
+        status: order.status,
+        channel: order.channel,
+        createdAt: order.createdAt.toISOString(),
+        notes: order.notes ?? null,
+        metadata: order.metadata ?? null
+      },
+      seller: {
+        id: order.seller.id,
+        name: order.seller.displayName ?? order.seller.name,
+        storefrontName: order.seller.storefrontName ?? null,
+        handle: order.seller.handle ?? null
+      },
+      buyer: order.buyer
+        ? { id: order.buyer.id, email: order.buyer.email ?? null }
+        : null,
+      items: order.items.map((item) => ({
+        id: item.id,
+        sku: item.sku ?? null,
+        name: item.name,
+        qty: item.qty,
+        unitPrice: item.unitPrice,
+        currency: item.currency
+      })),
+      totals
+    };
   }
 
   private assertOrderTransition(current: string, next: string) {
