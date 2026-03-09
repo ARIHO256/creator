@@ -165,13 +165,14 @@ export class RegulatoryAutomationService {
         await this.prisma.regulatoryComplianceItem.update({
           where: { id: item.id },
           data: { status: nextComplianceStatus }
-    });
+        });
+      }
+    }
+
+    return { processed: items.length };
   }
 
   openEvidenceStream(storageKey: string) {
     return this.storage.createReadStream(storageKey);
-  }
-}
-    return { processed: items.length };
   }
 }

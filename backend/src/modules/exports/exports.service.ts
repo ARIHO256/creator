@@ -87,7 +87,7 @@ export class ExportsService {
     if (!job) {
       throw new NotFoundException('Export job not found');
     }
-    if (![ExportJobStatus.QUEUED, ExportJobStatus.RUNNING].includes(job.status)) {
+    if (!['QUEUED', 'RUNNING'].includes(job.status)) {
       return job;
     }
 

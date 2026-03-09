@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { Prisma } from '@prisma/client';
+import { Prisma, ProviderFulfillmentStatus } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { SellersService } from '../sellers/sellers.service.js';
@@ -376,7 +376,7 @@ export class ProviderService {
     }
   }
 
-  private async ensureFulfillment(bookingId: string, status: string) {
+  private async ensureFulfillment(bookingId: string, status: ProviderFulfillmentStatus) {
     const existing = await this.prisma.providerFulfillment.findUnique({ where: { bookingId } });
     if (existing) {
       if (existing.status !== status) {

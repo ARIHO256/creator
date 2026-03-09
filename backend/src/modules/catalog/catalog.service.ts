@@ -350,7 +350,7 @@ export class CatalogService {
     return where;
   }
 
-  private resolveTemplateAttrs(template: { attributes?: Prisma.JsonValue; payload?: Prisma.JsonValue }) {
+  private resolveTemplateAttrs(template: { attributes?: unknown; payload?: unknown }) {
     if (Array.isArray(template.attributes)) {
       return template.attributes as unknown[];
     }

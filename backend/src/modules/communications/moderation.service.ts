@@ -96,7 +96,7 @@ export class ModerationService {
       .map((value) => value.trim())
       .filter(Boolean);
     const hits = banned.filter((phrase) => text.toLowerCase().includes(phrase.toLowerCase()));
-    const verdict = hits.length ? ContentScanVerdict.FLAGGED : ContentScanVerdict.CLEAN;
+    const verdict = (hits.length ? 'FLAGGED' : 'CLEAN') as ContentScanVerdict;
     const scan = await this.prisma.contentScanResult.create({
       data: {
         targetType,
@@ -129,14 +129,14 @@ export class ModerationService {
       .filter(Boolean);
     const maxSizeMb = Number(this.configService.get('moderation.maxFileSizeMb') ?? 25);
     const ext = fileName?.includes('.') ? `.${fileName.split('.').pop()}`.toLowerCase() : '';
-    let verdict = ContentScanVerdict.CLEAN;
+    let verdict = 'CLEAN' as ContentScanVerdict;
     const reasons: string[] = [];
     if (ext && blocked.includes(ext)) {
-      verdict = ContentScanVerdict.FLAGGED;
+      verdict = 'FLAGGED' as ContentScanVerdict;
       reasons.push(`blocked_extension:${ext}`);
     }
     if (sizeBytes && sizeBytes > maxSizeMb * 1024 * 1024) {
-      verdict = ContentScanVerdict.FLAGGED;
+      verdict = 'FLAGGED' as ContentScanVerdict;
       reasons.push('file_too_large');
     }
     const scan = await this.prisma.contentScanResult.create({
