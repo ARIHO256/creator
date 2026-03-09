@@ -43,7 +43,11 @@ export default () => ({
     redisUrl: process.env.REALTIME_REDIS_URL ?? process.env.REDIS_URL ?? '',
     channelPrefix: process.env.REALTIME_CHANNEL_PREFIX ?? 'mldz:realtime:',
     maxAttempts: Number(process.env.REALTIME_MAX_ATTEMPTS ?? '3'),
-    streamPingMs: Number(process.env.REALTIME_STREAM_PING_MS ?? '25000')
+    streamPingMs: Number(process.env.REALTIME_STREAM_PING_MS ?? '25000'),
+    streamMaxClientsPerUser: Number(process.env.REALTIME_STREAM_MAX_PER_USER ?? '3'),
+    streamMaxClientsTotal: Number(process.env.REALTIME_STREAM_MAX_TOTAL ?? '5000'),
+    streamHistorySize: Number(process.env.REALTIME_STREAM_HISTORY_SIZE ?? '50'),
+    streamHistoryTtlMs: Number(process.env.REALTIME_STREAM_HISTORY_TTL_MS ?? '300000')
   },
   idempotency: {
     ttlMs: Number(process.env.IDEMPOTENCY_TTL_MS ?? `${24 * 60 * 60 * 1000}`)
