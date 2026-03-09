@@ -2,7 +2,6 @@ import React, { useEffect, useRef } from "react";
 import { useScrollLock } from "../hooks/useScrollLock";
 import type { PageId } from "../layouts/CreatorShellLayout";
 import { getNavBadge } from "./navigationBadges";
-import { useWorkspaceAccess } from "../hooks/useWorkspaceAccess";
 
 type MobileMenuProps = {
   isOpen: boolean;
@@ -29,9 +28,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
   activePage,
   onChangePage
 }) => {
-  const reviewsAccess = useWorkspaceAccess("reviews.view");
-  const subscriptionAccess = useWorkspaceAccess("subscription.view");
-  const auditAccess = useWorkspaceAccess("admin.audit");
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
 
   // Lock background scroll when open
@@ -119,21 +115,6 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
     }
   ];
 
-  const filteredSections = React.useMemo(() => {
-    return navSections
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((item) => {
-          if (item.id === "reviews") return reviewsAccess.allowed;
-          if (item.id === "subscription") return subscriptionAccess.allowed;
-          if (item.id === "audit-log") return auditAccess.allowed;
-          return true;
-        })
-      }))
-      .filter((section) => section.items.length > 0);
-  }, [auditAccess.allowed, navSections, reviewsAccess.allowed, subscriptionAccess.allowed]);
-
-
   if (!isOpen) return null;
 
   return (
@@ -155,7 +136,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
           </button>
         </div>
         <div className="py-4">
-          {filteredSections.map((section) => (
+          {navSections.map((section) => (
             <div key={section.title} className="mb-4">
               <div className="px-4 mb-1 text-xs font-semibold tracking-wide text-slate-400 dark:text-slate-500 uppercase">
                 {section.title}

@@ -7,8 +7,6 @@ import { FooterNav } from "../shell/FooterNav";
 import { CommandPalette } from "../shell/CommandPalette";
 import { EarningsPanel } from "../shell/EarningsPanel";
 import { MobileMenu } from "../shell/MobileMenu";
-import { useAuth } from "../contexts/AuthContext";
-import type { AppRole } from "../api/types";
 // import { GenericPlaceholder } from "../shell/GenericPlaceholder";
 
 // Type definition for PageId to keep type safety in navigation maps
@@ -67,7 +65,6 @@ type CreatorShellLayoutProps = {
 export const CreatorShellLayout: React.FC<CreatorShellLayoutProps> = ({ onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, switchRole } = useAuth();
 
   // Extract pure page id from path: /dashboard/home -> home, /home -> home
   const segments = location.pathname.split("/").filter(Boolean);
@@ -78,7 +75,7 @@ export const CreatorShellLayout: React.FC<CreatorShellLayoutProps> = ({ onLogout
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [earningsOpen, setEarningsOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
-  const [currentRole, setCurrentRole] = useState<AppRole>("Creator");
+  const [currentRole, setCurrentRole] = useState<"Creator" | "Seller" | "Buyer" | "Provider">("Creator");
 
   const [searchRect, setSearchRect] = useState<DOMRect | null>(null);
 
@@ -86,13 +83,6 @@ export const CreatorShellLayout: React.FC<CreatorShellLayoutProps> = ({ onLogout
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
-
-  useEffect(() => {
-    const nextRole = user?.currentRole;
-    if (nextRole === "Creator" || nextRole === "Seller" || nextRole === "Buyer" || nextRole === "Provider") {
-      setCurrentRole(nextRole);
-    }
-  }, [user?.currentRole]);
 
   // Command Palette Toggle keys
   useEffect(() => {
@@ -110,10 +100,6 @@ export const CreatorShellLayout: React.FC<CreatorShellLayoutProps> = ({ onLogout
     navigate(page);
   };
 
-  const handleRoleChange = (role: AppRole) => {
-    void switchRole(role);
-  };
-
   return (
     <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 transition-colors">
       {/* Top Bar */}
@@ -121,7 +107,7 @@ export const CreatorShellLayout: React.FC<CreatorShellLayoutProps> = ({ onLogout
         onChangePage={handleNavigate}
         onOpenCommand={() => setCmdOpen(true)}
         currentRole={currentRole}
-        onRoleChange={handleRoleChange}
+        onRoleChange={setCurrentRole}
         onOpenMobileMenu={() => setSidebarOpen(true)}
         onViewEarnings={() => setEarningsOpen(true)}
         onLogout={onLogout}

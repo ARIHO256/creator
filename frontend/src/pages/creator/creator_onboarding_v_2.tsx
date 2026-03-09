@@ -24,8 +24,6 @@ import {
   Sun
 } from "lucide-react";
 import { useTheme } from "../../contexts/ThemeContext";
-import { useAuth } from "../../contexts/AuthContext";
-import { useCreateUploadMutation, useOnboardingWorkflowQuery, useResetOnboardingMutation, useSaveOnboardingDraftMutation, useSubmitOnboardingMutation } from "../../hooks/api/useCreatorWorkflow";
 
 // Creator Onboarding v2.5 (Premium Wizard)
 // Improvements implemented from the attached requirements:
@@ -301,7 +299,7 @@ interface UploadMiniProps {
   title: string;
   helper?: string;
   value?: string;
-  onPick: (file: File) => void | Promise<void>;
+  onPick: (val: string) => void;
   accept?: string;
 }
 
@@ -309,7 +307,7 @@ interface UploadBoxProps {
   title: string;
   subtitle: string;
   fileName: string;
-  onPick: (file: File) => void | Promise<void>;
+  onPick: (name: string) => void;
   onSample?: () => void;
   required?: boolean;
   error?: string;
@@ -1230,8 +1228,7 @@ function UploadBox({ title, subtitle, fileName, onPick, onSample: _onSample, req
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (!f) return;
-            void onPick(f);
-            e.currentTarget.value = "";
+            onPick(f.name);
           }}
         />
       </div>
@@ -1317,14 +1314,6 @@ function PolicyDisclosure({ policyKey, title, subtitle, bullets, seen, onSeen, o
 export default function CreatorOnboardingWorldClassV25() {
   const { toasts, push } = useToasts();
   const navigate = useNavigate();
-  const { refresh, user } = useAuth();
-  const onboardingQuery = useOnboardingWorkflowQuery();
-  const saveDraftMutation = useSaveOnboardingDraftMutation();
-  const submitOnboardingMutation = useSubmitOnboardingMutation();
-  const resetOnboardingMutation = useResetOnboardingMutation();
-  const createUploadMutation = useCreateUploadMutation();
-  const hydratedRef = useRef(false);
-  const initialLoadNoticeRef = useRef(false);
 
   const [saved, setSaved] = useState(true);
   const [stepIndex, setStepIndex] = useState(0);
@@ -1346,38 +1335,36 @@ export default function CreatorOnboardingWorldClassV25() {
 
   const creatorType = form.profile.creatorType;
 
+  // Load (v2.4+ key, with v2.3 fallback)
   useEffect(() => {
-    if (onboardingQuery.data && !hydratedRef.current) {
-      setForm(deepMerge(defaultForm(), onboardingQuery.data.form || {}));
-      setStepIndex(Math.max(0, Number(onboardingQuery.data.stepIndex || 0)));
-      setMaxUnlocked(Math.max(0, Number(onboardingQuery.data.maxUnlocked || 0)));
-      hydratedRef.current = true;
-
-      if (!initialLoadNoticeRef.current) {
-        push("Progress restored from your workspace.", "success");
-        initialLoadNoticeRef.current = true;
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setForm(deepMerge(defaultForm(), parsed));
+        push("Progress restored.", "success");
       }
-      return;
+    } catch {
+      // ignore
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    if (!onboardingQuery.isLoading && !hydratedRef.current) {
-      hydratedRef.current = true;
-    }
-  }, [onboardingQuery.data, onboardingQuery.isLoading, push]);
-
+  // Pre-populate Email/Phone from EVzone if empty
   useEffect(() => {
-    if (!hydratedRef.current) {
-      return;
-    }
+    const mockFetchEvzoneAccount = async () => {
+      // simulate API delay
+      await new Promise(r => setTimeout(r, 800));
+      update("profile.email", "ronald.isabirye@evzone.test");
+      update("profile.phone", "+256 700 000 000");
+      update("profile.whatsapp", ""); // Empty to test fallback
+      push("Profile details pre-populated from EVzone Accounts.", "success");
+    };
 
-    if (!form.profile.email && user?.email) {
-      setForm((previous) => {
-        const next = deepClone(previous);
-        next.profile.email = user.email;
-        return next;
-      });
+    if (!form.profile.email || !form.profile.phone) {
+      mockFetchEvzoneAccount();
     }
-  }, [form.profile.email, user?.email]);
+  }, []);
 
   // Pre-populate Verification Contact Value based on method
   useEffect(() => {
@@ -1407,24 +1394,17 @@ export default function CreatorOnboardingWorldClassV25() {
 
   // Auto-save
   useEffect(() => {
-    if (!hydratedRef.current) {
-      return undefined;
-    }
-
     setSaved(false);
-    const t = window.setTimeout(() => {
-      void saveDraftMutation.mutateAsync({
-        form,
-        stepIndex,
-        maxUnlocked: Math.max(maxUnlocked, stepIndex)
-      }).then(() => {
-        setSaved(true);
-      }).catch(() => {
-        setSaved(true);
-      });
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+      } catch {
+        // ignore
+      }
+      setSaved(true);
     }, 350);
     return () => clearTimeout(t);
-  }, [form, maxUnlocked, saveDraftMutation, stepIndex]);
+  }, [form]);
 
   const stepKey = STEPS[stepIndex].key;
   const isLast = stepIndex === STEPS.length - 1;
@@ -1451,39 +1431,6 @@ export default function CreatorOnboardingWorldClassV25() {
       cur[parts[parts.length - 1]] = value;
       return next;
     });
-  };
-
-  const handleOnboardingUpload = async (
-    file: File,
-    {
-      purpose,
-      namePath,
-      uploadedPath,
-      successMessage
-    }: {
-      purpose: string;
-      namePath: string;
-      uploadedPath?: string;
-      successMessage: string;
-    }
-  ) => {
-    try {
-      await createUploadMutation.mutateAsync({
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        purpose,
-        relatedEntityType: "onboarding",
-        relatedEntityId: user?.id || onboardingQuery.data?.userId || "creator-onboarding"
-      });
-      update(namePath, file.name);
-      if (uploadedPath) {
-        update(uploadedPath, true);
-      }
-      push(successMessage, "success");
-    } catch {
-      push("Could not upload that file right now. Please try again.", "error");
-    }
   };
 
   const toggleInArray = (path: string, item: string) => {
@@ -1576,7 +1523,7 @@ export default function CreatorOnboardingWorldClassV25() {
     return unlocks;
   }, [trustScore]);
 
-  const goNext = async () => {
+  const goNext = () => {
     if (!canContinue) {
       push("Complete required fields to continue.", "error");
       return;
@@ -1585,18 +1532,11 @@ export default function CreatorOnboardingWorldClassV25() {
       setStepIndex((i) => i + 1);
       push("Step completed.", "success");
     } else {
-      try {
-        await submitOnboardingMutation.mutateAsync({
-          form,
-          stepIndex,
-          maxUnlocked: Math.max(maxUnlocked, stepIndex)
-        });
-        await refresh();
-        push("Application submitted. Review is now in progress.", "success");
-        navigate("/account-approval");
-      } catch {
-        push("Could not submit onboarding right now. Please try again.", "error");
-      }
+      push("Account created! Please sign in to continue.", "success");
+      // Clear session to force re-login
+      localStorage.removeItem("creatorPlatformEntered");
+      localStorage.removeItem("mldz_creator_approval_status");
+      setTimeout(() => navigate("/"), 1500);
     }
   };
 
@@ -1604,12 +1544,12 @@ export default function CreatorOnboardingWorldClassV25() {
 
   const exitOnboarding = () => {
     push("Progress saved. You can resume anytime.", "success");
-    navigate("/");
+    navigate("/auth");
   };
 
   const saveExit = () => {
     push("Saved. You can resume later.", "success");
-    navigate("/");
+    navigate("/auth");
   };
 
   const openHelp = () => {
@@ -1618,18 +1558,19 @@ export default function CreatorOnboardingWorldClassV25() {
 
   const reset = () => setConfirmReset(true);
 
-  const confirmResetNow = async () => {
+  const confirmResetNow = () => {
     setConfirmReset(false);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY_LEGACY);
+      localStorage.removeItem("mldz_creator_approval_status");
+    } catch {
+      // ignore
+    }
     setStepIndex(0);
     setMaxUnlocked(0);
     setForm(defaultForm());
-    try {
-      await resetOnboardingMutation.mutateAsync();
-      await refresh();
-      push("Onboarding reset.", "success");
-    } catch {
-      push("Could not reset onboarding right now.", "error");
-    }
+    push("Onboarding reset.", "success");
   };
 
   const onJump = (idx: number) => {
@@ -1863,7 +1804,10 @@ export default function CreatorOnboardingWorldClassV25() {
                     <UploadMini
                       title="Team logo (optional)"
                       value={form.profile.team.logoName}
-                      onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_team_logo", namePath: "profile.team.logoName", successMessage: "Team logo selected." })}
+                      onPick={(name) => {
+                        update("profile.team.logoName", name);
+                        push("Team logo selected.", "success");
+                      }}
                       helper="Optional. Used on shared invites and session cards."
                       accept="image/*"
                     />
@@ -1906,7 +1850,10 @@ export default function CreatorOnboardingWorldClassV25() {
                     <UploadMini
                       title="Agency logo (optional)"
                       value={form.profile.agency.logoName}
-                      onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_agency_logo", namePath: "profile.agency.logoName", successMessage: "Agency logo selected." })}
+                      onPick={(name) => {
+                        update("profile.agency.logoName", name);
+                        push("Agency logo selected.", "success");
+                      }}
                       helper="Optional. Used on shared invites and agency profile."
                       accept="image/*"
                     />
@@ -1931,13 +1878,19 @@ export default function CreatorOnboardingWorldClassV25() {
                 <UploadMini
                   title="Profile photo"
                   value={form.profile.profilePhotoName}
-                  onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_profile_photo", namePath: "profile.profilePhotoName", successMessage: "Profile photo selected." })}
+                  onPick={(name) => {
+                    update("profile.profilePhotoName", name);
+                    push("Profile photo selected.", "success");
+                  }}
                   helper="Optional, recommended for a premium profile."
                 />
                 <UploadMini
                   title="Media kit (PDF)"
                   value={form.profile.mediaKitName}
-                  onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_media_kit", namePath: "profile.mediaKitName", successMessage: "Media kit selected." })}
+                  onPick={(name) => {
+                    update("profile.mediaKitName", name);
+                    push("Media kit selected.", "success");
+                  }}
                   helper="Optional. Upload a one-page kit for high-budget suppliers."
                   accept="application/pdf"
                 />
@@ -2247,7 +2200,11 @@ export default function CreatorOnboardingWorldClassV25() {
                   fileName={form.kyc.idFileName}
                   required
                   accept="image/*,application/pdf"
-                  onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_kyc_id", namePath: "kyc.idFileName", uploadedPath: "kyc.idUploaded", successMessage: "ID uploaded." })}
+                  onPick={(name) => {
+                    update("kyc.idFileName", name);
+                    update("kyc.idUploaded", true);
+                    push("ID uploaded.", "success");
+                  }}
                   error={!form.kyc.idUploaded ? "Please upload a clear image of your government ID." : ""}
                 />
 
@@ -2257,7 +2214,11 @@ export default function CreatorOnboardingWorldClassV25() {
                   fileName={form.kyc.selfieFileName}
                   required
                   accept="image/*"
-                  onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_kyc_selfie", namePath: "kyc.selfieFileName", uploadedPath: "kyc.selfieUploaded", successMessage: "Selfie uploaded." })}
+                  onPick={(name) => {
+                    update("kyc.selfieFileName", name);
+                    update("kyc.selfieUploaded", true);
+                    push("Selfie uploaded.", "success");
+                  }}
                   error={!form.kyc.selfieUploaded ? "Please provide a selfie for verification." : ""}
                 />
               </div>
@@ -2268,7 +2229,11 @@ export default function CreatorOnboardingWorldClassV25() {
                   subtitle="Utility bill or bank statement"
                   fileName={form.kyc.addressFileName}
                   accept="image/*,application/pdf"
-                  onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_kyc_address", namePath: "kyc.addressFileName", uploadedPath: "kyc.addressUploaded", successMessage: "Address proof uploaded." })}
+                  onPick={(name) => {
+                    update("kyc.addressFileName", name);
+                    update("kyc.addressUploaded", true);
+                    push("Address proof uploaded.", "success");
+                  }}
                 />
 
                 <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 text-[10px] h-full">
@@ -2305,7 +2270,11 @@ export default function CreatorOnboardingWorldClassV25() {
                       subtitle="Registration certificate or company document"
                       fileName={form.kyc.org.registrationFileName}
                       accept="image/*,application/pdf"
-                      onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_org_registration", namePath: "kyc.org.registrationFileName", uploadedPath: "kyc.org.registrationUploaded", successMessage: "Organisation document uploaded." })}
+                      onPick={(name) => {
+                        update("kyc.org.registrationFileName", name);
+                        update("kyc.org.registrationUploaded", true);
+                        push("Organisation document uploaded.", "success");
+                      }}
                     />
 
                     <UploadBox
@@ -2313,7 +2282,11 @@ export default function CreatorOnboardingWorldClassV25() {
                       subtitle="Tax certificate / TIN letter / proof of tax"
                       fileName={form.kyc.org.taxFileName}
                       accept="image/*,application/pdf"
-                      onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_org_tax", namePath: "kyc.org.taxFileName", uploadedPath: "kyc.org.taxUploaded", successMessage: "Tax document uploaded." })}
+                      onPick={(name) => {
+                        update("kyc.org.taxFileName", name);
+                        update("kyc.org.taxUploaded", true);
+                        push("Tax document uploaded.", "success");
+                      }}
                     />
                   </div>
 
@@ -2324,7 +2297,11 @@ export default function CreatorOnboardingWorldClassV25() {
                         subtitle="If you manage creators on their behalf"
                         fileName={form.kyc.org.authorizationFileName}
                         accept="image/*,application/pdf"
-                        onPick={(file) => handleOnboardingUpload(file, { purpose: "onboarding_org_authorization", namePath: "kyc.org.authorizationFileName", uploadedPath: "kyc.org.authorizationUploaded", successMessage: "Authorisation letter uploaded." })}
+                        onPick={(name) => {
+                          update("kyc.org.authorizationFileName", name);
+                          update("kyc.org.authorizationUploaded", true);
+                          push("Authorisation letter uploaded.", "success");
+                        }}
                       />
                     </div>
                   ) : null}
@@ -3244,8 +3221,7 @@ function UploadMini({ title, value, onPick, helper, accept }: UploadMiniProps) {
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (!f) return;
-            void onPick(f);
-            e.currentTarget.value = "";
+            onPick(f.name);
           }}
         />
       </div>

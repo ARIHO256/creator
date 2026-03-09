@@ -2,7 +2,6 @@
 import React from "react";
 import type { PageId } from "../layouts/CreatorShellLayout";
 import { getNavBadge } from "./navigationBadges";
-import { useWorkspaceAccess } from "../hooks/useWorkspaceAccess";
 
 type SidebarProps = {
   activePage: PageId;
@@ -100,24 +99,7 @@ const navSections: NavSection[] = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activePage, onChangePage, onLogout: _onLogout }) => {
-  const reviewsAccess = useWorkspaceAccess("reviews.view");
-  const subscriptionAccess = useWorkspaceAccess("subscription.view");
-  const auditAccess = useWorkspaceAccess("admin.audit");
   const sidebarRef = React.useRef<HTMLDivElement>(null);
-
-  const filteredSections = React.useMemo(() => {
-    return navSections
-      .map((section) => ({
-        ...section,
-        items: section.items.filter((item) => {
-          if (item.id === "reviews") return reviewsAccess.allowed;
-          if (item.id === "subscription") return subscriptionAccess.allowed;
-          if (item.id === "audit-log") return auditAccess.allowed;
-          return true;
-        })
-      }))
-      .filter((section) => section.items.length > 0);
-  }, [auditAccess.allowed, reviewsAccess.allowed, subscriptionAccess.allowed]);
 
   React.useEffect(() => {
     // With remounting fixed in App.tsx, the sidebar naturally preserves scroll.
@@ -135,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activePage, onChangePage, onLo
       ref={sidebarRef}
       className="hidden xl:flex fixed left-0 top-[calc(3.5rem+2.5rem)] flex-col w-80 flex-shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 overflow-y-auto overflow-x-hidden py-4 text-sm transition-colors h-[calc(100vh-3.5rem-2.5rem)]"
     >
-      {filteredSections.map((section) => (
+      {navSections.map((section) => (
         <div key={section.title} className="mb-4">
           <div className="px-4 mb-1 text-xs font-semibold tracking-wide text-slate-400 dark:text-slate-500 uppercase">
             {section.title}

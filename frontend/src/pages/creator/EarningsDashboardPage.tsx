@@ -1,292 +1,832 @@
-import React, { useMemo, useState } from "react";
+// Round 6 – Page 16: Earnings Dashboard (Creator View)
+// Purpose: Full overview of revenue streams.
+// Sections:
+// 1) Summary row: balance available, pending, lifetime earnings.
+// 2) Earnings breakdown: graph-style blocks (by month / campaign / seller) + composition.
+// 3) Payouts & history: table with status, method, reference IDs.
+// 4) Payout actions: Request payout, Setup / edit payout method.
+// Premium extras: Forecast card, Tax/export tools.
+
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import { PageHeader } from "../../components/PageHeader";
 import { PayoutMethodsDialog } from "../../shell/PayoutMethodsDialog";
-import { useEarningsSummaryQuery, usePayoutsQuery } from "../../hooks/api/useFinance";
-import type { EarningsBreakdownRow, EarningsSummaryRecord, PayoutRecord } from "../../api/types";
+import { useNotification } from "../../contexts/NotificationContext";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { CircularProgress } from "@mui/material";
+import { backendApi, type PayoutRecord } from "../../lib/api";
 
-type BreakdownView = "month" | "campaign" | "seller";
-type PayoutFilter = "All" | "Paid" | "Requested" | "Scheduled" | "Failed";
+type BreakdownRow = {
+  label: string;
+  total: number;
+};
 
-function formatCurrency(amount: number, currency = "USD") {
-  return `${currency} ${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+type EarningsComposition = {
+  flatFees: number;
+  commission: number;
+  bonuses: number;
+};
 
-function exportCsv(rows: EarningsBreakdownRow[], filename: string) {
-  const headers = ["Label", "Total"];
-  const body = rows.map((row) => [row.label, String(row.total)]);
-  const csvContent = [headers.join(","), ...body.map((row) => row.join(","))].join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
-  link.href = url;
-  link.download = filename;
-  link.click();
-}
+type Summary = {
+  available: number;
+  pending: number;
+  lifetime: number;
+};
 
-function exportStatement(summary: EarningsSummaryRecord["summary"], notes: string[]) {
-  const content = [
-    "MYLIVEDEALZ CREATOR EARNINGS STATEMENT",
-    `Generated: ${new Date().toLocaleString()}`,
-    "",
-    `Available: ${summary.currency} ${summary.available}`,
-    `Pending: ${summary.currency} ${summary.pending}`,
-    `Projected: ${summary.currency} ${summary.projected}`,
-    `Lifetime: ${summary.currency} ${summary.lifetime || 0}`,
-    "",
-    "Notes:",
-    ...notes.map((note) => `- ${note}`)
-  ].join("\n");
-  const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `earnings-statement-${new Date().toISOString().slice(0, 10)}.txt`;
-  link.click();
-}
+type Forecast = {
+  month: string;
+  current: number;
+  projected: number;
+  growth: number;
+};
 
-function statusStyle(status: string) {
-  switch (status) {
-    case "Paid":
-      return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800";
-    case "Requested":
-      return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800";
-    case "Scheduled":
-      return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800";
-    default:
-      return "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800";
+type Payout = {
+  id: string;
+  date: string;
+  amount: number;
+  currency: string;
+  status: string;
+  method: string;
+  reference: string;
+};
+
+// Monthly earnings (demo)
+const monthlyEarnings = [
+  { label: "Aug 2025", total: 3400 },
+  { label: "Sep 2025", total: 4200 },
+  { label: "Oct 2025", total: 5200 }
+];
+
+// By campaign (demo)
+const campaignEarnings = [
+  { label: "Autumn Beauty Flash", total: 3200 },
+  { label: "Tech Friday Mega Live", total: 2800 },
+  { label: "Faith & Wellness Morning", total: 1600 }
+];
+
+// By seller (demo)
+const sellerEarnings = [
+  { label: "GlowUp Hub", total: 2800 },
+  { label: "GadgetMart Africa", total: 2500 },
+  { label: "Grace Living Store", total: 1500 }
+];
+
+// Composition (pie-style breakdown)
+const earningsComposition = {
+  flatFees: 4800,
+  commission: 2800,
+  bonuses: 600
+};
+
+const fallbackPayouts = [
+  {
+    id: "P-2025-010",
+    date: "Oct 12, 2025",
+    amount: 820.5,
+    currency: "USD",
+    status: "Paid",
+    method: "Bank transfer",
+    reference: "BNK-847392"
+  },
+  {
+    id: "P-2025-009",
+    date: "Oct 05, 2025",
+    amount: 420.0,
+    currency: "USD",
+    status: "Processing",
+    method: "Mobile money",
+    reference: "MOMO-239475"
+  },
+  {
+    id: "P-2025-008",
+    date: "Sep 28, 2025",
+    amount: 600.0,
+    currency: "USD",
+    status: "Failed",
+    method: "PayPal",
+    reference: "PP-998233"
   }
-}
+];
+
+const normalizePayoutStatus = (status?: string) => {
+  const value = String(status || "").toLowerCase();
+  if (value === "paid") return "Paid";
+  if (value === "failed") return "Failed";
+  return "Processing";
+};
+
+const normalizePayoutRow = (item: PayoutRecord, index: number): Payout => ({
+  id: String(item.id || item.reference || `payout-${index + 1}`),
+  date: item.date || item.requestedAt || "—",
+  amount: Number(item.amount || 0),
+  currency: item.currency || "USD",
+  status: normalizePayoutStatus(item.status),
+  method: item.method || "Payout",
+  reference: item.reference || String(item.id || `payout-${index + 1}`)
+});
 
 function EarningsDashboardPage() {
   const navigate = useNavigate();
-  const summaryQuery = useEarningsSummaryQuery();
-  const [viewMode, setViewMode] = useState<BreakdownView>("month");
-  const [payoutStatusFilter, setPayoutStatusFilter] = useState<PayoutFilter>("All");
+  const { showSuccess, showNotification } = useNotification();
+  const { run, isPending } = useAsyncAction();
+
+  const [viewMode, setViewMode] = useState("month"); // month | campaign | seller
+  const [dateRange, setDateRange] = useState("last-3-months");
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
 
-  const payoutsQuery = usePayoutsQuery({ status: payoutStatusFilter === "All" ? undefined : payoutStatusFilter });
-  const summary = summaryQuery.data?.summary || { available: 0, pending: 0, projected: 0, lifetime: 0, currency: "USD" };
-  const notes = summaryQuery.data?.notes || [];
-  const breakdownData = useMemo<EarningsBreakdownRow[]>(() => {
-    if (viewMode === "campaign") return summaryQuery.data?.byCampaign || [];
-    if (viewMode === "seller") return summaryQuery.data?.bySeller || [];
-    return summaryQuery.data?.byMonth || [];
-  }, [summaryQuery.data, viewMode]);
-  const forecast = summaryQuery.data?.forecast;
-  const composition = summaryQuery.data?.composition || { flatFees: 0, commission: 0, bonuses: 0 };
-  const payouts = payoutsQuery.data?.items || [];
-  const payoutMethod = summaryQuery.data?.payoutMethod;
-  const totalComposition = composition.flatFees + composition.commission + composition.bonuses;
-  const maxBreakdown = Math.max(1, ...breakdownData.map((row) => row.total));
+  const [summary, setSummary] = useState<Summary>({
+    available: 1243.5,
+    pending: 620.75,
+    lifetime: 18240.25
+  });
+  const [payoutRows, setPayoutRows] = useState<Payout[]>(fallbackPayouts);
+  const [financeError, setFinanceError] = useState<string | null>(null);
 
-  if (summaryQuery.isLoading && !summaryQuery.data) {
-    return (
-      <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
-        <PageHeader pageTitle="Earnings Dashboard" />
-        <main className="flex-1 flex items-center justify-center p-6">
-          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-5 text-sm text-slate-500 dark:text-slate-300 shadow-sm">Loading earnings from the backend…</div>
-        </main>
-      </div>
-    );
-  }
+  const [payoutStatusFilter, setPayoutStatusFilter] = useState("All");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFinanceData = async () => {
+      setFinanceError(null);
+      try {
+        const [summaryData, payoutsData] = await Promise.all([
+          backendApi.getEarningsSummary(),
+          backendApi.getPayouts()
+        ]);
+        if (cancelled) return;
+
+        setSummary({
+          available: Number(summaryData.available || 0),
+          pending: Number(summaryData.pending || 0),
+          lifetime: Number(summaryData.lifetime || 0)
+        });
+
+        const mappedPayouts = (Array.isArray(payoutsData) ? payoutsData : []).map(normalizePayoutRow);
+        if (mappedPayouts.length > 0) {
+          setPayoutRows(mappedPayouts);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setFinanceError(err instanceof Error ? err.message : "Failed to load backend finance data");
+        setPayoutRows(fallbackPayouts);
+      }
+    };
+
+    void loadFinanceData();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Forecast: simple extrapolation based on monthly data
+  const forecast = useMemo(() => {
+    const thisMonth = monthlyEarnings[monthlyEarnings.length - 1];
+    const lastMonth = monthlyEarnings[monthlyEarnings.length - 2];
+    const growth = thisMonth && lastMonth ? thisMonth.total - lastMonth.total : 0;
+    const projected = thisMonth.total + Math.max(0, growth * 0.5);
+    return {
+      month: thisMonth?.label || "This month",
+      current: thisMonth?.total || 0,
+      projected,
+      growth
+    };
+  }, []);
+
+  const filteredPayouts = useMemo(() => {
+    if (payoutStatusFilter === "All") return payoutRows;
+    return payoutRows.filter((p) => p.status === payoutStatusFilter);
+  }, [payoutRows, payoutStatusFilter]);
+
+  const breakdownData =
+    viewMode === "campaign"
+      ? campaignEarnings
+      : viewMode === "seller"
+        ? sellerEarnings
+        : monthlyEarnings;
+
+  const breakdownLabel =
+    viewMode === "campaign"
+      ? "By campaign"
+      : viewMode === "seller"
+        ? "By seller"
+        : "By month";
+
+  const totalComposition =
+    earningsComposition.flatFees +
+    earningsComposition.commission +
+    earningsComposition.bonuses;
+
+  const percent = (value: number): number =>
+    totalComposition > 0 ? Math.round((value / totalComposition) * 100) : 0;
+
+  const handleRequestPayout = () => {
+    navigate("/request-payout");
+  };
+
+  const handleSetupPayoutMethod = () => {
+    setIsPayoutDialogOpen(true);
+  };
+
+  const handleDownloadCsv = () => {
+    run(async () => {
+      // Simulate export delay
+      await new Promise(r => setTimeout(r, 1000));
+      const headers = ["Month", "Total Earnings"];
+      const rows = monthlyEarnings.map(m => [m.label, m.total.toString()]);
+      const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `earnings_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+    }, { successMessage: "CSV Export complete! 📊" });
+  };
+
+  const handleDownloadStatement = () => {
+    run(async () => {
+      // Simulate generation delay
+      await new Promise(r => setTimeout(r, 1500));
+      const content = `OFFICIAL EARNINGS STATEMENT\nDate: ${new Date().toLocaleDateString()}\n\nCreator: You\nLifetime Earnings: $${summary.lifetime}\nAvailable Balance: $${summary.available}\n\nThis is a generated statement for your records.`;
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `statement_${new Date().toISOString().slice(0, 10)}.txt`;
+      link.click();
+    }, { successMessage: "Statement generated! 📄" });
+  };
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <PageHeader
         pageTitle="Earnings Dashboard"
         mobileViewType="hide"
-        badge={<span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 font-medium border border-slate-200 dark:border-slate-800 transition-colors"><span>💸</span><span>API-backed finance workspace</span></span>}
+        badge={
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 font-medium border border-slate-200 dark:border-slate-800 transition-colors">
+            <span>💸</span>
+            <span>Live earnings · Payouts · Forecast</span>
+          </span>
+        }
       />
 
-      <main className="flex-1 flex flex-col w-full p-4 sm:p-6 lg:p-8 pt-6 gap-6 overflow-y-auto overflow-x-hidden">
-        <div className="w-full max-w-7xl mx-auto flex flex-col gap-4">
-          <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm p-4 md:p-5 flex flex-col gap-3">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Earnings summary</h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Overview of your available balance, pending amounts, projected month close, and lifetime earnings.</p>
-              </div>
-              <button onClick={() => navigate("/request-payout")} className="px-4 py-2 rounded-full bg-[#f77f00] text-white text-sm font-semibold hover:bg-[#e26f00] transition-colors">Request payout</button>
+      <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-6 overflow-y-auto overflow-x-hidden">
+        <div className="w-full max-w-full flex flex-col gap-4">
+          {/* Summary row */}
+          <SummaryRow summary={summary} onRequestPayout={handleRequestPayout} />
+          {financeError && (
+            <div className="text-xs text-amber-600 dark:text-amber-400">
+              Backend request failed: {financeError}. Showing fallback values.
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <SummaryCard label="Available" value={formatCurrency(summary.available, summary.currency)} accent />
-              <SummaryCard label="Pending" value={formatCurrency(summary.pending, summary.currency)} />
-              <SummaryCard label="Projected" value={formatCurrency(summary.projected, summary.currency)} />
-              <SummaryCard label="Lifetime" value={formatCurrency(Number(summary.lifetime || 0), summary.currency)} />
-            </div>
+          )}
+
+          {/* Earnings breakdown + forecast */}
+          <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start">
+            <EarningsBreakdownPanel
+              breakdownData={breakdownData}
+              breakdownLabel={breakdownLabel}
+              viewMode={viewMode}
+              onChangeViewMode={setViewMode}
+              dateRange={dateRange}
+              onChangeDateRange={setDateRange}
+              earningsComposition={earningsComposition}
+              percent={percent}
+            />
+            <ForecastAndTaxPanel
+              forecast={forecast}
+              onDownloadCsv={handleDownloadCsv}
+              onDownloadStatement={handleDownloadStatement}
+              isPending={isPending}
+            />
           </section>
 
-          <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-4 items-start">
-            <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm p-4 md:p-5 flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Earnings breakdown</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">Switch between month, campaign, and seller views using backend totals.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {(["month", "campaign", "seller"] as BreakdownView[]).map((mode) => (
-                    <button key={mode} onClick={() => setViewMode(mode)} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${viewMode === mode ? "bg-[#f77f00] border-[#f77f00] text-white" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"}`}>
-                      {mode === "month" ? "By month" : mode === "campaign" ? "By campaign" : "By seller"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {breakdownData.map((row) => (
-                  <div key={row.label} className="flex items-center gap-3">
-                    <div className="w-32 text-sm text-slate-600 dark:text-slate-300 truncate">{row.label}</div>
-                    <div className="flex-1 h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <div className="h-full rounded-full bg-[#f77f00]" style={{ width: `${(row.total / maxBreakdown) * 100}%` }} />
-                    </div>
-                    <div className="w-24 text-right text-sm font-semibold text-slate-700 dark:text-slate-100">{formatCurrency(row.total, summary.currency)}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="border-t border-slate-100 dark:border-slate-800 pt-4 grid grid-cols-1 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-4">
-                <div className="flex flex-col gap-2">
-                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">Earnings composition</span>
-                  <div className="flex items-center gap-1 h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                    <div className="h-full bg-emerald-500" style={{ width: `${totalComposition ? (composition.commission / totalComposition) * 100 : 0}%` }} />
-                    <div className="h-full bg-[#f77f00]" style={{ width: `${totalComposition ? (composition.flatFees / totalComposition) * 100 : 0}%` }} />
-                    <div className="h-full bg-sky-500" style={{ width: `${totalComposition ? (composition.bonuses / totalComposition) * 100 : 0}%` }} />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-600 dark:text-slate-300">
-                    <Legend label="Commission" value={formatCurrency(composition.commission, summary.currency)} dot="bg-emerald-500" />
-                    <Legend label="Flat fees" value={formatCurrency(composition.flatFees, summary.currency)} dot="bg-[#f77f00]" />
-                    <Legend label="Bonuses" value={formatCurrency(composition.bonuses, summary.currency)} dot="bg-sky-500" />
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 p-4">
-                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">Forecast</div>
-                  <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">{forecast?.month || "Current month"}</div>
-                  <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
-                    <MiniMetric label="Current" value={formatCurrency(forecast?.current || 0, summary.currency)} />
-                    <MiniMetric label="Projected" value={formatCurrency(forecast?.projected || 0, summary.currency)} />
-                    <MiniMetric label="Growth" value={`${forecast?.growth || 0}%`} />
-                  </div>
-                  <ul className="mt-4 space-y-2 text-xs text-slate-600 dark:text-slate-300">
-                    {notes.map((note) => <li key={note}>• {note}</li>)}
-                  </ul>
-                </div>
-              </div>
-            </section>
-
-            <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm p-4 md:p-5 flex flex-col gap-4">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Exports & payout setup</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Your payout destination is pulled from backend settings, not local-only state.</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 p-4 space-y-2">
-                <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Current payout method</div>
-                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">{payoutMethod?.method || "Bank transfer"}</div>
-                <div className="text-sm text-slate-500 dark:text-slate-400">{payoutMethod?.detail || "Primary payout account"}</div>
-              </div>
-              <div className="grid grid-cols-1 gap-3">
-                <button onClick={() => exportCsv(breakdownData, `earnings-${viewMode}-${new Date().toISOString().slice(0, 10)}.csv`)} className="px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                  <div className="font-semibold">Export CSV</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Download the current breakdown view as a backend-based export.</div>
-                </button>
-                <button onClick={() => exportStatement(summary, notes)} className="px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                  <div className="font-semibold">Generate statement</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Create a plain-text statement using the API totals above.</div>
-                </button>
-                <button onClick={() => setIsPayoutDialogOpen(true)} className="px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                  <div className="font-semibold">Edit payout method</div>
-                  <div className="text-xs text-slate-500 dark:text-slate-400">Updates the backend payout profile used by Request Payout and history pages.</div>
-                </button>
-              </div>
-            </section>
+          {/* Payouts & actions */}
+          <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start">
+            <PayoutsTable
+              payouts={filteredPayouts}
+              filter={payoutStatusFilter}
+              onFilterChange={setPayoutStatusFilter}
+            />
+            <PayoutActionsPanel
+              summary={summary}
+              onRequestPayout={handleRequestPayout}
+              onSetupPayoutMethod={handleSetupPayoutMethod}
+            />
           </section>
 
-          <section className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800/50 shadow-sm p-4 md:p-5 flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Payouts & history</h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Recent payout records from the backend ledger.</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {(["All", "Paid", "Requested", "Scheduled", "Failed"] as PayoutFilter[]).map((status) => (
-                  <button key={status} onClick={() => setPayoutStatusFilter(status)} className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${payoutStatusFilter === status ? "bg-[#f77f00] border-[#f77f00] text-white" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"}`}>
-                    {status}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Date</th>
-                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Amount</th>
-                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Method</th>
-                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Recipient</th>
-                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Status</th>
-                    <th className="px-4 py-3 text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Reference</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
-                  {payouts.map((payout) => <PayoutRow key={payout.id} payout={payout} />)}
-                  {!payoutsQuery.isLoading && payouts.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">No payout records match the current filter.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>{payouts.length} records loaded</span>
-              <button onClick={() => navigate("/payout-history")} className="font-semibold text-[#f77f00] hover:underline">Open full payout history</button>
-            </div>
-          </section>
-
-          <PayoutMethodsDialog isOpen={isPayoutDialogOpen} onClose={() => setIsPayoutDialogOpen(false)} onSave={() => summaryQuery.refetch()} />
+          {/* Payout Methods Dialog */}
+          <PayoutMethodsDialog
+            isOpen={isPayoutDialogOpen}
+            onClose={() => setIsPayoutDialogOpen(false)}
+          />
         </div>
       </main>
     </div>
   );
 }
 
-function SummaryCard({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+/* Summary row component */
+type SummaryRowProps = {
+  summary: Summary;
+  onRequestPayout: () => void;
+};
+
+function SummaryRow({ summary, onRequestPayout }: SummaryRowProps) {
   return (
-    <div className={`rounded-2xl border px-4 py-4 ${accent ? "border-[#f77f00] bg-[#f77f00]/10 dark:bg-[#f77f00]/15" : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60"}`}>
-      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100">{value}</div>
+    <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Earnings summary</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-300">
+            Overview of your available balance, pending payouts and lifetime earnings.
+          </p>
+        </div>
+        <button
+          className="hidden md:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#f77f00] text-white text-sm font-semibold dark:font-bold hover:bg-[#e26f00]"
+          onClick={onRequestPayout}
+        >
+          <span>Request payout</span>
+        </button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+        <SummaryCard
+          label="Available to withdraw"
+          value={summary.available}
+          accent
+        />
+        <SummaryCard label="Pending" value={summary.pending} accent={false} />
+        <SummaryCard label="Lifetime earnings" value={summary.lifetime} accent={false} />
+      </div>
+      <button
+        className="md:hidden mt-2 inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-full bg-[#f77f00] text-white text-sm font-semibold dark:font-bold hover:bg-[#e26f00]"
+        onClick={onRequestPayout}
+      >
+        <span>Request payout</span>
+      </button>
+    </section>
+  );
+}
+
+type SummaryCardProps = {
+  label: string;
+  value: number;
+  accent?: boolean;
+};
+
+function SummaryCard({ label, value, accent }: SummaryCardProps) {
+  return (
+    <div
+      className={`border rounded-2xl px-3 py-2 flex flex-col gap-1 transition-colors ${accent ? "bg-[#f77f00]/10 dark:bg-[#f77f00]/20 border-[#f77f00]" : "bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+        }`}
+    >
+      <span className="text-xs text-slate-500 dark:text-slate-300">{label}</span>
+      <span className="text-base font-semibold dark:font-bold text-slate-900 dark:text-slate-100">
+        ${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+      </span>
+      {accent && (
+        <span className="text-xs text-slate-600 dark:text-slate-200 font-medium">
+          You can transfer this now to your payout method.
+        </span>
+      )}
     </div>
   );
 }
 
-function Legend({ label, value, dot }: { label: string; value: string; dot: string }) {
+/* Earnings breakdown panel */
+type EarningsBreakdownPanelProps = {
+  breakdownData: BreakdownRow[];
+  breakdownLabel: string;
+  viewMode: string;
+  onChangeViewMode: (mode: string) => void;
+  dateRange: string;
+  onChangeDateRange: (range: string) => void;
+  earningsComposition: EarningsComposition;
+  percent: (value: number) => number;
+};
+
+function EarningsBreakdownPanel({
+  breakdownData,
+  breakdownLabel,
+  viewMode,
+  onChangeViewMode,
+  dateRange,
+  onChangeDateRange,
+  earningsComposition,
+  percent
+}: EarningsBreakdownPanelProps) {
+  const maxValue = Math.max(...breakdownData.map((d: BreakdownRow) => d.total), 1);
+
   return (
-    <div className="inline-flex items-center gap-2">
-      <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
+    <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-3 text-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Earnings breakdown</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-300">
+            Compare performance over time, by campaign or by seller.
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1 text-xs">
+          <select
+            className="border border-slate-200 dark:border-slate-700 rounded-full px-2 py-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 transition-colors"
+            value={dateRange}
+            onChange={(e) => onChangeDateRange(e.target.value)}
+          >
+            <option value="last-3-months">Last 3 months</option>
+            <option value="year-to-date">Year to date</option>
+            <option value="last-12-months">Last 12 months</option>
+          </select>
+          <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full transition-colors px-1 py-0.5">
+            <ToggleChip
+              label="By month"
+              active={viewMode === "month"}
+              onClick={() => onChangeViewMode("month")}
+            />
+            <ToggleChip
+              label="By campaign"
+              active={viewMode === "campaign"}
+              onClick={() => onChangeViewMode("campaign")}
+            />
+            <ToggleChip
+              label="By seller"
+              active={viewMode === "seller"}
+              onClick={() => onChangeViewMode("seller")}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* bar-style breakdown */}
+      <div className="mt-1 space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-300">
+          <span>{breakdownLabel}</span>
+          <span>Relative earnings</span>
+        </div>
+        <div className="space-y-1">
+          {breakdownData.map((row: BreakdownRow) => (
+            <div key={row.label} className="flex items-center gap-2">
+              <span className="w-28 text-xs text-slate-600 dark:text-slate-200 font-medium truncate">
+                {row.label}
+              </span>
+              <div className="flex-1 h-2.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden transition-colors">
+                <div
+                  className="h-full rounded-full bg-[#f77f00]"
+                  style={{
+                    width: `${(row.total / maxValue) * 100}%`
+                  }}
+                />
+              </div>
+              <span className="w-16 text-right text-xs text-slate-600 dark:text-slate-200 font-medium">
+                ${row.total.toLocaleString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Composition / pseudo pie */}
+      <div className="border-t border-slate-100 dark:border-slate-700 pt-2 mt-1 grid grid-cols-1 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1.1fr)] gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-slate-500 dark:text-slate-300">
+            Earnings composition
+          </span>
+          <div className="flex items-center gap-1 h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden transition-colors">
+            <div
+              className="h-full bg-emerald-500"
+              style={{ width: `${percent(earningsComposition.commission)}%` }}
+            />
+            <div
+              className="h-full bg-[#f77f00]"
+              style={{ width: `${percent(earningsComposition.flatFees)}%` }}
+            />
+            <div
+              className="h-full bg-sky-500"
+              style={{ width: `${percent(earningsComposition.bonuses)}%` }}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2 mt-1 text-xs">
+            <LegendChip
+              color="bg-emerald-500"
+              label={`Commission · ${percent(
+                earningsComposition.commission
+              )}%`}
+            />
+            <LegendChip
+              color="bg-[#f77f00]"
+              label={`Flat fees · ${percent(earningsComposition.flatFees)}%`}
+            />
+            <LegendChip
+              color="bg-sky-500"
+              label={`Bonuses · ${percent(earningsComposition.bonuses)}%`}
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-slate-500 dark:text-slate-300">Notes</span>
+          <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
+            Commission is driving most of your upside. Consider negotiating slightly higher
+            commission tiers for top-converting campaigns while keeping flat fees competitive.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type ToggleChipProps = {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+};
+
+function ToggleChip({ label, active, onClick }: ToggleChipProps) {
+  return (
+    <button
+      className={`px-2.5 py-0.5 rounded-full text-xs ${active
+        ? "bg-[#f77f00] text-white"
+        : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+        }`}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+type LegendChipProps = {
+  color: string;
+  label: string;
+};
+
+function LegendChip({ color, label }: LegendChipProps) {
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-200 font-medium">
+      <span className={`h-2 w-2 rounded-full ${color}`} />
       <span>{label}</span>
-      <span className="font-semibold text-slate-800 dark:text-slate-100">{value}</span>
+    </span>
+  );
+}
+
+/* Forecast + tax/export tools */
+type ForecastAndTaxPanelProps = {
+  forecast: Forecast;
+  onDownloadCsv: () => void;
+  onDownloadStatement: () => void;
+};
+
+function ForecastAndTaxPanel({
+  forecast,
+  onDownloadCsv,
+  onDownloadStatement,
+  isPending
+}: ForecastAndTaxPanelProps & { isPending: boolean }) {
+  const growthLabel =
+    forecast.growth > 0
+      ? `+${forecast.growth.toLocaleString()} vs last month`
+      : forecast.growth < 0
+        ? `${forecast.growth.toLocaleString()} vs last month`
+        : "Flat vs last month";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Forecast</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-300">
+              Projected earnings if your current trend holds.
+            </p>
+          </div>
+          <span className="text-xs text-slate-500 dark:text-slate-300">
+            Period: {forecast.month}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="flex flex-col">
+            <span className="text-xs text-slate-500 dark:text-slate-300">Current</span>
+            <span className="text-base font-semibold dark:font-bold text-slate-900 dark:text-slate-100">
+              ${forecast.current.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="text-xs text-slate-500 dark:text-slate-300">Projected</span>
+            <span className="text-base font-semibold dark:font-bold text-slate-900 dark:text-slate-100">
+              ${forecast.projected.toLocaleString()}
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-300 mt-0.5">
+              {growthLabel}
+            </span>
+          </div>
+        </div>
+        <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+          <span className="font-semibold dark:font-bold text-slate-700 dark:text-slate-100 font-medium mr-1">
+            Tip:
+          </span>
+          <span>
+            Lean into campaigns with strong commission rates and high conversion. Your highest
+            upside is in returning viewers who already trust your recommendations.
+          </span>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold dark:text-slate-50 dark:font-bold">Tax & export tools</h3>
+          <span className="text-xs text-slate-500 dark:text-slate-300">
+            Reporting & compliance
+          </span>
+        </div>
+        <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
+          Generate CSV exports or summarized statements to share with your accountant or for
+          self-filing.
+        </p>
+        <div className="flex items-center gap-2">
+          <button
+            className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+            onClick={onDownloadCsv}
+            disabled={isPending}
+          >
+            {isPending && <CircularProgress size={12} color="inherit" />}
+            Download CSV
+          </button>
+          <button
+            className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+            onClick={onDownloadStatement}
+            disabled={isPending}
+          >
+            {isPending && <CircularProgress size={12} color="inherit" />}
+            Download statement (PDF)
+          </button>
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-300">
+          In the full product, you’ll also be able to set your tax region, upload tax IDs and see
+          annual summaries here.
+        </p>
+      </div>
     </div>
   );
 }
 
-function MiniMetric({ label, value }: { label: string; value: string }) {
+/* Payouts table */
+type PayoutsTableProps = {
+  payouts: Payout[];
+  filter: string;
+  onFilterChange: (f: string) => void;
+};
+
+function PayoutsTable({ payouts, filter, onFilterChange }: PayoutsTableProps) {
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const handleFilterClick = (newFilter: string) => {
+    if (newFilter === filter) return;
+    setIsTransitioning(true);
+    setTimeout(() => {
+      onFilterChange(newFilter);
+      setIsTransitioning(false);
+    }, 300);
+  };
+
   return (
-    <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 p-3">
-      <div className="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-800 dark:text-slate-100">{value}</div>
+    <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold dark:text-slate-50 dark:font-bold">Payouts & history</h3>
+          <p className="text-[10px] text-slate-500 dark:text-slate-400">Total {payouts.length} records</p>
+        </div>
+        <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-full transition-colors px-1 py-0.5 text-[10px]">
+          {["All", "Paid", "Processing", "Failed"].map((f) => (
+            <button
+              key={f}
+              className={`px-2 py-0.5 rounded-full font-bold uppercase tracking-tight transition-all ${filter === f
+                ? f === "Paid" ? "bg-emerald-500 text-white" : f === "Processing" ? "bg-amber-500 text-white" : f === "Failed" ? "bg-red-500 text-white" : "bg-slate-900 dark:bg-slate-700 text-white"
+                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                }`}
+              onClick={() => handleFilterClick(f)}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 transition-colors shadow-inner">
+        <table className={`min-w-[700px] w-full text-xs transition-opacity duration-300 border-collapse ${isTransitioning ? "opacity-0" : "opacity-100"}`}>
+          <thead>
+            <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+              <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Date</th>
+              <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">ID</th>
+              <th className="text-right px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Amount</th>
+              <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Status</th>
+              <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Method</th>
+              <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Reference</th>
+            </tr>
+          </thead>
+          <tbody>
+            {payouts.map((p: Payout) => (
+              <tr
+                key={p.id}
+                className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                <td className="px-4 py-3 font-bold text-slate-900 dark:text-slate-100 whitespace-nowrap">{p.date}</td>
+                <td className="px-4 py-3 text-slate-500 dark:text-slate-400 font-medium">{p.id}</td>
+                <td className="px-4 py-3 text-right font-black text-slate-900 dark:text-slate-100">
+                  <span className="text-[10px] text-slate-400 mr-1">{p.currency}</span>
+                  {p.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </td>
+                <td className="px-4 py-3">
+                  <PayoutStatusChip status={p.status} />
+                </td>
+                <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-semibold">{p.method}</td>
+                <td className="px-4 py-3 text-slate-500 dark:text-slate-400 font-mono text-[10px]">{p.reference}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-300">
+        Filter by status, method and date range to drill into each payout for more details.
+      </p>
     </div>
   );
 }
 
-function PayoutRow({ payout }: { payout: PayoutRecord }) {
+type PayoutStatusChipProps = {
+  status: string;
+};
+
+function PayoutStatusChip({ status }: PayoutStatusChipProps) {
+  let style =
+    "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-100 font-medium border-slate-200 dark:border-slate-600";
+  if (status === "Paid")
+    style = "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700";
+  if (status === "Processing")
+    style = "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700";
+  if (status === "Failed")
+    style = "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-700";
+
+  const isProcessing = status === "Processing"
+
   return (
-    <tr className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{payout.date}</td>
-      <td className="px-4 py-3 text-sm font-semibold text-[#f77f00]">{formatCurrency(payout.amount, payout.currency)}</td>
-      <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{payout.method}</td>
-      <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">{payout.recipient || "Primary payout account"}</td>
-      <td className="px-4 py-3"><span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${statusStyle(payout.status)}`}>{payout.status}</span></td>
-      <td className="px-4 py-3 text-sm font-mono text-slate-400 dark:text-slate-500">{payout.reference}</td>
-    </tr>
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-tight transition-colors ${style}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full ${isProcessing ? "animate-pulse" : ""} ${status === "Paid" ? "bg-emerald-500" : status === "Processing" ? "bg-amber-500" : "bg-red-500"}`} />
+      <span>{status}</span>
+    </span>
+  )
+}
+
+/* Payout actions panel */
+type PayoutActionsPanelProps = {
+  summary: Summary;
+  onRequestPayout: () => void;
+  onSetupPayoutMethod: () => void;
+};
+
+function PayoutActionsPanel({
+  summary,
+  onRequestPayout,
+  onSetupPayoutMethod
+}: PayoutActionsPanelProps) {
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+      <h3 className="text-sm font-semibold dark:text-slate-50 dark:font-bold">Payout actions</h3>
+      <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
+        Manage how you get paid and request withdrawals of your available balance.
+      </p>
+      <div className="border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-2 bg-slate-50 dark:bg-slate-700/50 flex flex-col gap-1 transition-colors">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-500 dark:text-slate-300">
+            Available to withdraw
+          </span>
+          <span className="text-md font-semibold text-slate-900 dark:text-slate-100">
+            ${summary.available.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </span>
+        </div>
+        <p className="text-xs text-slate-500 dark:text-slate-300">
+          You can request a payout now or wait to accumulate more earnings.
+        </p>
+      </div>
+      <div className="flex flex-col gap-1 mt-1">
+        <button
+          className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white text-sm font-semibold hover:bg-[#e26f00]"
+          onClick={onRequestPayout}
+        >
+          Request payout
+        </button>
+        <button
+          className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm text-slate-700 dark:text-slate-100 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-900 dark:hover:bg-slate-700 transition-colors"
+          onClick={onSetupPayoutMethod}
+        >
+          Setup / edit payout method
+        </button>
+      </div>
+      <div className="mt-2 text-xs text-slate-500 dark:text-slate-300">
+        <p>
+          Make sure your payout method and tax information are correctly configured before
+          requesting large payouts.
+        </p>
+      </div>
+    </div>
   );
 }
 

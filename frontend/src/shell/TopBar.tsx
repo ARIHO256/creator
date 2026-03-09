@@ -4,8 +4,6 @@ import type { PageId } from "../layouts/CreatorShellLayout";
 import { useTheme } from "../contexts/ThemeContext";
 import { AvatarMenuDropdown } from "../components/AvatarMenuDropdown";
 import { NotificationsPanel } from "../pages/creator/NotificationsPage";
-import { useAuth } from "../contexts/AuthContext";
-import { useUnreadNotificationsCount } from "../hooks/api/useNotifications";
 import {
   Menu,
   Search,
@@ -40,14 +38,10 @@ export const TopBar: React.FC<TopBarProps> = ({
   onSearchRectUpdate
 }) => {
   const { theme, toggleTheme } = useTheme();
-  const { user, hasApiSession } = useAuth();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   const searchBtnRef = useRef<HTMLButtonElement>(null);
-  const unreadNotificationCount = useUnreadNotificationsCount();
-  const unreadCount = hasApiSession ? unreadNotificationCount : 3;
-  const userName = user?.creatorProfile?.name?.split(" ")[0] ?? "Ronald";
-  const isKycVerified = user?.creatorProfile?.isKycVerified ?? true;
+  const unreadCount = 3; // TODO: Get from actual notifications state/API
 
   useEffect(() => {
     if (!onSearchRectUpdate || !searchBtnRef.current) return;
@@ -149,7 +143,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <LanguageCurrencySelector />
         <span className="hidden sm:inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-xs sm:text-sm text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          <span className="hidden xl:inline">{isKycVerified ? "KYC Verified" : "KYC pending"}</span>
+          <span className="hidden xl:inline">KYC Verified</span>
         </span>
         <button
           ref={notificationsButtonRef}
@@ -174,7 +168,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           onChangePage={onChangePage}
         />
         <AvatarMenuDropdown
-          userName={userName}
+          userName="Ronald"
           onChangePage={onChangePage}
           onViewEarnings={onViewEarnings}
           onOpenCommand={onOpenCommand}

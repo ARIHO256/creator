@@ -1,7 +1,6 @@
 import React from "react";
 import { useScrollLock } from "../hooks/useScrollLock";
 import type { PageId } from "../layouts/CreatorShellLayout";
-import { useWorkspaceAccess } from "../hooks/useWorkspaceAccess";
 
 type CommandPaletteProps = {
   onClose: () => void;
@@ -39,9 +38,7 @@ const COMMANDS: CommandItem[] = [
   { id: "request-payout", label: "Request Payout" },
   { id: "analytics", label: "View Analytics & Rank" },
   { id: "settings", label: "Open Creator Settings" },
-  { id: "subscription", label: "Manage My Subscription" },
-  { id: "audit-log", label: "Open Audit Log" },
-  { id: "roles", label: "Open Role Switcher" }
+  { id: "subscription", label: "Manage My Subscription" }
 ];
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -49,26 +46,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onChangePage,
   triggerRect
 }) => {
-  const reviewsAccess = useWorkspaceAccess("reviews.view");
-  const subscriptionAccess = useWorkspaceAccess("subscription.view");
-  const auditAccess = useWorkspaceAccess("admin.audit");
   const [query, setQuery] = React.useState("");
 
   // Lock background scroll when open
   useScrollLock(true);
 
   const filteredCommands = React.useMemo(() => {
-    const allowedCommands = COMMANDS.filter((cmd) => {
-      if (cmd.id === "reviews") return reviewsAccess.allowed;
-      if (cmd.id === "subscription") return subscriptionAccess.allowed;
-      if (cmd.id === "audit-log") return auditAccess.allowed;
-      return true;
-    });
-
     const q = query.trim().toLowerCase();
-    if (!q) return allowedCommands;
-    return allowedCommands.filter((cmd) => cmd.label.toLowerCase().includes(q));
-  }, [auditAccess.allowed, query, reviewsAccess.allowed, subscriptionAccess.allowed]);
+    if (!q) return COMMANDS;
+    return COMMANDS.filter((cmd) => cmd.label.toLowerCase().includes(q));
+  }, [query]);
 
   const handleSelect = React.useCallback((id: PageId) => {
     onChangePage(id);

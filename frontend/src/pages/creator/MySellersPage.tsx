@@ -1,586 +1,950 @@
+// Creator My Sellers Page (Accepted Collaborations Only)
+// Business rule: Sellers listed here are brands/providers that have ALREADY
+// accepted at least one collaboration with the Creator. No pure leads or
+// warm-only brands appear here – those live in the Suppliers Directory or
+// Campaigns Board.
+
 import React, { useEffect, useMemo, useState } from "react";
-import { CircularProgress } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+// import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
-import type { PitchFormSubmission } from "../../components/PitchForm";
-import type { SellerRecord, ProposalRecord, ContractRecord } from "../../api/types";
-import { useNotification } from "../../contexts/NotificationContext";
-import { useContractsQuery } from "../../hooks/api/useContracts";
-import { useCreateProposalMutation, useProposalsQuery } from "../../hooks/api/useProposals";
-import { useMySellersQuery, useToggleSellerFollowMutation } from "../../hooks/api/useSellers";
-import {
-  formatCompactNumber,
-  formatMoney,
-  getProposalStatusLabel,
-  getSellerRelationshipBadgeClass,
-  getSellerRelationshipLabel,
-  normalizeProposalStatus,
-  normalizeSellerRelationship,
-  proposalRoomPath
-} from "../../utils/collaborationUi";
+import { backendApi, type SellerRecord } from "../../lib/api";
 
-const PINNED_STORAGE_KEY = "mldz:my-sellers:pinned:v1";
+// Relationship reflects current state of collaboration with a seller that has
+// already accepted at least one collab in the past.
+// "Active collab"  – at least one current contract / agreement.
+// "Past collab"    – no active contract now, but at least one completed.
 
-type ViewTab = "all" | "active" | "past";
+type Relationship = "Active collab" | "Past collab";
 
-type SellerDashboardRecord = SellerRecord & {
-  favourite: boolean;
+type MySeller = {
+  id: number;
+  backendId?: string;
+  name: string;
+  initials: string;
+  tagline: string;
+  categories: string[];
+  relationship: Relationship;
+  lifetimeRevenue: number;
+  currentValue: number;
+  avgConversion: number;
+  campaignsCount: number;
+  lastCampaign: string;
+  lastResult: string;
   openProposals: number;
   activeContracts: number;
-  activeValue: number;
-  lifetimeValue: number;
-  lastCampaign: string;
-  lastProposal: ProposalRecord | null;
+  rating: number;
+  trustBadges: string[];
+  primaryContact: string;
+  nextLive: string;
   nextAction: string;
-  nextActionStatus: string;
+  following: boolean;
+  favourite: boolean;
 };
 
-function readPinnedSellerIds(): string[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
-  } catch {
-    return [];
+const mapMySellerRecord = (entry: SellerRecord, index: number): MySeller => {
+  const name = entry.name || `Seller ${index + 1}`;
+  const initials = name
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  const rating = Number(entry.rating || 0);
+  const isVerified = Boolean(entry.isVerified);
+  const statusIsActive = rating >= 4.4;
+
+  return {
+    id: index + 1,
+    backendId: entry.id,
+    name,
+    initials: initials || "SP",
+    tagline: `${entry.category || "General"} supplier on MyLiveDealz.`,
+    categories: [entry.category || "General"],
+    relationship: statusIsActive ? "Active collab" : "Past collab",
+    lifetimeRevenue: Math.max(300, 600 + Math.round(rating * 600)),
+    currentValue: statusIsActive ? 300 + Math.round(rating * 120) : 0,
+    avgConversion: Math.max(2, Math.round(rating * 10) / 10),
+    campaignsCount: statusIsActive ? 2 : 1,
+    lastCampaign: "Creator collaboration",
+    lastResult: "Imported from backend collaboration records.",
+    openProposals: statusIsActive ? 1 : 0,
+    activeContracts: statusIsActive ? 1 : 0,
+    rating,
+    trustBadges: isVerified ? ["Verified"] : [],
+    primaryContact: "Brand manager",
+    nextLive: statusIsActive ? "To be scheduled" : "Not scheduled",
+    nextAction: statusIsActive ? "Review active campaign details" : "Check in for next campaign",
+    following: true,
+    favourite: false
+  };
+};
+
+const INITIAL_MY_SELLERS: MySeller[] = [
+  {
+    id: 1,
+    name: "GlowUp Hub",
+    initials: "GH",
+    tagline: "Beauty & skincare for glowing routines.",
+    categories: ["Beauty", "Skincare"],
+    relationship: "Active collab",
+    lifetimeRevenue: 4800,
+    currentValue: 1400,
+    avgConversion: 4.8,
+    campaignsCount: 4,
+    lastCampaign: "Autumn Beauty Flash",
+    lastResult: "500 units sold in 45 mins",
+    openProposals: 1,
+    activeContracts: 1,
+    rating: 4.8,
+    trustBadges: ["Top Brand", "Fast payouts"],
+    primaryContact: "Mary – Brand manager",
+    nextLive: "Today · 18:30",
+    nextAction: "Prep clip for tonight live",
+    following: true,
+    favourite: true
+  },
+  {
+    id: 2,
+    name: "GadgetMart Africa",
+    initials: "GA",
+    tagline: "Everyday gadgets with an EV twist.",
+    categories: ["Tech", "Gadgets"],
+    relationship: "Active collab",
+    lifetimeRevenue: 3900,
+    currentValue: 2100,
+    avgConversion: 4.2,
+    campaignsCount: 3,
+    lastCampaign: "Tech Friday Mega Live",
+    lastResult: "Bundle upsells performed best",
+    openProposals: 0,
+    activeContracts: 2,
+    rating: 4.6,
+    trustBadges: ["Verified"],
+    primaryContact: "Derrick – Growth lead",
+    nextLive: "Fri · 20:00",
+    nextAction: "Review Q4 series terms",
+    following: true,
+    favourite: false
+  },
+  {
+    id: 3,
+    name: "ShopNow Foods",
+    initials: "SF",
+    tagline: "Groceries & pantry delivered same day.",
+    categories: ["Food", "Groceries"],
+    relationship: "Past collab",
+    lifetimeRevenue: 900,
+    currentValue: 0,
+    avgConversion: 2.8,
+    campaignsCount: 2,
+    lastCampaign: "ShopNow Groceries – Soft Promo",
+    lastResult: "Steady orders across week",
+    openProposals: 0,
+    activeContracts: 0,
+    rating: 4,
+    trustBadges: [],
+    primaryContact: "Lena – Marketing",
+    nextLive: "Not scheduled",
+    nextAction: "Optional: check in for festive season",
+    following: false,
+    favourite: false
   }
-}
+];
 
-function writePinnedSellerIds(ids: string[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(ids));
-}
+type MySellersPageProps = {
+  onChangePage?: (page: string) => void;
+};
 
-function estimatePitchValue(seller: SellerRecord, model: PitchFormSubmission["collaborationModel"]): number {
-  if (model === "Flat fee") return Math.round(seller.avgOrderValue * 18);
-  if (model === "Commission") return Math.round(seller.avgOrderValue * 12);
-  return Math.round(seller.avgOrderValue * 22);
-}
-
-function buildSellerProposalMap(proposals: ProposalRecord[]): Map<string, ProposalRecord[]> {
-  const map = new Map<string, ProposalRecord[]>();
-  proposals.forEach((proposal) => {
-    const existing = map.get(proposal.sellerId) ?? [];
-    existing.push(proposal);
-    map.set(proposal.sellerId, existing);
-  });
-  return map;
-}
-
-function buildSellerContractMap(contracts: ContractRecord[]): Map<string, ContractRecord[]> {
-  const map = new Map<string, ContractRecord[]>();
-  contracts.forEach((contract) => {
-    const existing = map.get(contract.sellerId) ?? [];
-    existing.push(contract);
-    map.set(contract.sellerId, existing);
-  });
-  return map;
-}
-
-function isActiveContract(contract: ContractRecord): boolean {
-  return !["completed", "terminated"].includes(contract.status);
-}
-
-export function MySellersPage() {
-  const navigate = useNavigate();
-  const { showError, showInfo, showSuccess } = useNotification();
+export function MySellersPage({ onChangePage }: MySellersPageProps) {
+  // const { theme } = useTheme();
+  // const navigate = useNavigate();
+  const [mySellers, setMySellers] = useState<MySeller[]>(INITIAL_MY_SELLERS);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [viewTab, setViewTab] = useState<ViewTab>("all");
-  const [selectedSellerId, setSelectedSellerId] = useState<string | null>(null);
-  const [pinnedSellerIds, setPinnedSellerIds] = useState<string[]>(readPinnedSellerIds);
-  const [pitchTarget, setPitchTarget] = useState<SellerRecord | null>(null);
-
-  const mySellersQuery = useMySellersQuery({ q: search.trim() || undefined }, { staleTime: 30_000 });
-  const proposalsQuery = useProposalsQuery({}, { staleTime: 20_000 });
-  const contractsQuery = useContractsQuery({}, { staleTime: 20_000 });
-  const toggleFollowMutation = useToggleSellerFollowMutation();
-  const createProposalMutation = useCreateProposalMutation();
+  const [relationshipFilter, setRelationshipFilter] = useState<"All" | Relationship>("All");
+  const [viewTab, setViewTab] = useState<"all" | "active" | "past">("all");
+  const [selectedSellerId, setSelectedSellerId] = useState<number | null>(
+    INITIAL_MY_SELLERS[0]?.id ?? null
+  );
+  const [expandedSellerId, setExpandedSellerId] = useState<number | null>(null);
+  const [isPitchDrawerOpen, setIsPitchDrawerOpen] = useState(false);
+  const [pitchRecipient, setPitchRecipient] = useState<MySeller | null>(null);
+  const [isStopModalOpen, setIsStopModalOpen] = useState(false);
 
   useEffect(() => {
-    writePinnedSellerIds(pinnedSellerIds);
-  }, [pinnedSellerIds]);
+    let cancelled = false;
 
-  const sellerProposalMap = useMemo(
-    () => buildSellerProposalMap(proposalsQuery.data?.items ?? []),
-    [proposalsQuery.data?.items]
-  );
-  const sellerContractMap = useMemo(
-    () => buildSellerContractMap(contractsQuery.data?.items ?? []),
-    [contractsQuery.data?.items]
-  );
-
-  const sellers = useMemo<SellerDashboardRecord[]>(() => {
-    return (mySellersQuery.data?.items ?? []).map((seller) => {
-      const proposals = sellerProposalMap.get(seller.id) ?? [];
-      const contracts = sellerContractMap.get(seller.id) ?? [];
-      const openProposals = proposals.filter((proposal) => {
-        const status = normalizeProposalStatus(proposal.status);
-        return ["draft", "sent_to_brand", "in_negotiation"].includes(status);
-      }).length;
-      const activeContracts = contracts.filter(isActiveContract).length;
-      const activeValue = contracts.filter(isActiveContract).reduce((total, contract) => total + contract.value, 0);
-      const lifetimeValue = contracts.reduce((total, contract) => total + contract.value, 0);
-      const lastProposal = proposals[0] ?? null;
-
-      let nextAction = "Start pitch";
-      let nextActionStatus = "No active workflow";
-      if (lastProposal) {
-        nextAction = "Open proposal room";
-        nextActionStatus = getProposalStatusLabel(lastProposal.status, lastProposal.origin);
-      } else if (activeContracts > 0) {
-        nextAction = "Review contracts";
-        nextActionStatus = `${activeContracts} active contract${activeContracts === 1 ? "" : "s"}`;
-      } else if (normalizeSellerRelationship(seller.relationship) === "past") {
-        nextAction = "Re-engage seller";
-        nextActionStatus = "Past collaboration";
+    const loadMySellers = async () => {
+      setBackendError(null);
+      try {
+        const rows = await backendApi.getMySellers();
+        if (cancelled) return;
+        const mapped = (Array.isArray(rows) ? rows : []).map(mapMySellerRecord);
+        if (mapped.length > 0) {
+          setMySellers(mapped);
+          setSelectedSellerId(mapped[0]?.id ?? null);
+        } else {
+          setMySellers([]);
+          setSelectedSellerId(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBackendError(error instanceof Error ? error.message : "Failed to load My Suppliers from backend");
+          setMySellers(INITIAL_MY_SELLERS);
+        }
       }
+    };
 
-      return {
-        ...seller,
-        favourite: pinnedSellerIds.includes(seller.id),
-        openProposals,
-        activeContracts,
-        activeValue,
-        lifetimeValue,
-        lastCampaign: lastProposal?.campaign ?? contracts[0]?.title ?? "No campaign yet",
-        lastProposal,
-        nextAction,
-        nextActionStatus
-      };
-    });
-  }, [contractsQuery.data?.items, mySellersQuery.data?.items, pinnedSellerIds, sellerContractMap, sellerProposalMap]);
+    void loadMySellers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const openPitchDrawer = (seller?: MySeller) => {
+    if (seller) {
+      setPitchRecipient(seller);
+    } else {
+      // If global "Pitch Suppliers" is clicked, maybe pick selected or default
+      setPitchRecipient(selectedSeller || mySellers[0] || null);
+    }
+    setIsPitchDrawerOpen(true);
+  };
+
+  const stats = useMemo(() => {
+    const active = mySellers.filter((s) => s.relationship === "Active collab");
+    const past = mySellers.filter((s) => s.relationship === "Past collab");
+    const lifetime = mySellers.reduce((sum, s) => sum + s.lifetimeRevenue, 0);
+    const activeValue = active.reduce((sum, s) => sum + s.currentValue, 0);
+    return {
+      activeCount: active.length,
+      pastCount: past.length,
+      totalCount: mySellers.length,
+      lifetime,
+      activeValue
+    };
+  }, [mySellers]);
 
   const filteredSellers = useMemo(() => {
-    const base = [...sellers].sort((left, right) => {
-      if (left.favourite !== right.favourite) return left.favourite ? -1 : 1;
-      if (left.activeContracts !== right.activeContracts) return right.activeContracts - left.activeContracts;
-      if (left.openProposals !== right.openProposals) return right.openProposals - left.openProposals;
-      return right.followers - left.followers;
-    });
-
-    return base.filter((seller) => {
-      if (viewTab === "active") {
-        return normalizeSellerRelationship(seller.relationship) === "active" || seller.activeContracts > 0 || seller.openProposals > 0;
-      }
-      if (viewTab === "past") {
-        return normalizeSellerRelationship(seller.relationship) === "past" && seller.activeContracts === 0 && seller.openProposals === 0;
+    const q = search.trim().toLowerCase();
+    return mySellers.filter((s) => {
+      if (relationshipFilter !== "All" && s.relationship !== relationshipFilter) return false;
+      if (viewTab === "active" && s.relationship !== "Active collab") return false;
+      if (viewTab === "past" && s.relationship !== "Past collab") return false;
+      if (q) {
+        const inName = s.name.toLowerCase().includes(q);
+        const inTagline = s.tagline.toLowerCase().includes(q);
+        const inCategory = s.categories.some((c) => c.toLowerCase().includes(q));
+        if (!inName && !inTagline && !inCategory) return false;
       }
       return true;
     });
-  }, [sellers, viewTab]);
+  }, [mySellers, search, relationshipFilter, viewTab]);
 
-  useEffect(() => {
-    if (!filteredSellers.length) {
-      setSelectedSellerId(null);
-      return;
-    }
-    setSelectedSellerId((current) => {
-      if (current && filteredSellers.some((seller) => seller.id === current)) return current;
-      return filteredSellers[0]?.id ?? null;
-    });
-  }, [filteredSellers]);
+  const selectedSeller = useMemo<MySeller | null>(() => {
+    if (selectedSellerId == null) return filteredSellers[0] ?? null;
+    return filteredSellers.find((s) => s.id === selectedSellerId) ?? filteredSellers[0] ?? null;
+  }, [filteredSellers, selectedSellerId]);
 
-  const selectedSeller = useMemo(
-    () => filteredSellers.find((seller) => seller.id === selectedSellerId) ?? filteredSellers[0] ?? null,
-    [filteredSellers, selectedSellerId]
-  );
-
-  const stats = useMemo(() => {
-    const activeSellerCount = sellers.filter((seller) => seller.activeContracts > 0 || seller.openProposals > 0).length;
-    const activeValue = sellers.reduce((total, seller) => total + seller.activeValue, 0);
-    const lifetimeValue = sellers.reduce((total, seller) => total + seller.lifetimeValue, 0);
-    return {
-      total: sellers.length,
-      activeSellerCount,
-      activeValue,
-      lifetimeValue
-    };
-  }, [sellers]);
-
-  const togglePinned = (sellerId: string) => {
-    setPinnedSellerIds((current) =>
-      current.includes(sellerId) ? current.filter((id) => id !== sellerId) : [sellerId, ...current]
+  const toggleFollow = (id: number) => {
+    setMySellers((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+            ...s,
+            following: !s.following
+          }
+          : s
+      )
     );
   };
 
-  const handlePitchSubmit = async (payload: PitchFormSubmission) => {
-    if (!pitchTarget) return;
-
-    const estimatedValue = estimatePitchValue(pitchTarget, payload.collaborationModel);
-    const proposal = await createProposalMutation.mutateAsync({
-      sellerId: pitchTarget.id,
-      campaign: `${pitchTarget.brand} follow-up campaign`,
-      offerType:
-        payload.collaborationModel === "Hybrid"
-          ? "Hybrid retention pitch"
-          : payload.collaborationModel === "Commission"
-            ? "Commission-based renewal pitch"
-            : "Flat-fee renewal pitch",
-      category: pitchTarget.categories[0] ?? "General",
-      region: pitchTarget.region,
-      baseFeeMin: Math.max(0, Math.round(estimatedValue * 0.7)),
-      baseFeeMax: estimatedValue,
-      currency: "USD",
-      commissionPct: payload.collaborationModel === "Flat fee" ? 0 : 5,
-      estimatedValue,
-      origin: "creator",
-      notesShort: payload.message,
-      deliverables: "Renewal live, clips, and post-live link assets",
-      schedule: "To be aligned with the seller",
-      compensation: `${payload.collaborationModel} proposal`,
-      exclusivityWindow: "To be negotiated",
-      killFee: "To be negotiated"
-    });
-
-    showSuccess(`Draft proposal created for ${pitchTarget.name}.`);
-    setPitchTarget(null);
-    navigate(proposalRoomPath(proposal.id));
+  const toggleFavourite = (id: number) => {
+    setMySellers((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+            ...s,
+            favourite: !s.favourite
+          }
+          : s
+      )
+    );
   };
 
-  const handleToggleFollow = async (seller: SellerRecord) => {
-    try {
-      const nextFollow = !seller.isFollowing;
-      await toggleFollowMutation.mutateAsync({ sellerId: seller.id, follow: nextFollow });
-      showSuccess(nextFollow ? `You are now following ${seller.name}.` : `You unfollowed ${seller.name}.`);
-    } catch (error) {
-      showError(error instanceof Error ? error.message : "Could not update follow state.");
-    }
+  // Stop collaboration: turn Active collab into Past collab and reset active counters
+  const stopCollaboration = (id: number) => {
+    setMySellers((prev) =>
+      prev.map((s) =>
+        s.id === id
+          ? {
+            ...s,
+            relationship: "Past collab",
+            activeContracts: 0,
+            currentValue: 0,
+            nextLive: "Not scheduled",
+            nextAction: "Collaboration stopped by creator"
+          }
+          : s
+      )
+    );
   };
 
-  const isLoading =
-    mySellersQuery.isLoading || proposalsQuery.isLoading || contractsQuery.isLoading;
+  const formatMoney = (value: number) => `$${value.toLocaleString()}`;
 
   return (
-    <div className="min-h-full bg-slate-50 pb-8 dark:bg-slate-950">
+    <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <PageHeader
-        pageTitle="My Sellers"
-        rightContent={
-          <div className="hidden items-center gap-2 text-xs text-slate-500 dark:text-slate-400 xl:flex">
-            <span>{stats.total} sellers</span>
-            <span>•</span>
-            <span>{stats.activeSellerCount} active workflows</span>
-          </div>
+        pageTitle="My Suppliers"
+        badge={
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors">
+            <span>🤝</span>
+            <span>Only brands with accepted collaboration</span>
+          </span>
         }
+        mobileViewType="hide"
       />
 
-      <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4 px-3 pt-4 sm:px-4 lg:px-8">
-        <section className="grid gap-3 md:grid-cols-4">
-          <StatCard label="Tracked sellers" value={String(stats.total)} detail="Followed or already linked sellers" />
-          <StatCard label="Active workflows" value={String(stats.activeSellerCount)} detail="Open proposals or active contracts" />
-          <StatCard label="Active value" value={formatMoney(stats.activeValue, "USD")} detail="Value in live contracts now" />
-          <StatCard label="Lifetime value" value={formatMoney(stats.lifetimeValue, "USD")} detail="Total signed contract value" />
-        </section>
+      <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
+        <div className="w-full max-w-full flex flex-col gap-4">
+          {backendError ? (
+            <section className="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-xs">
+              Backend data fallback: {backendError}
+            </section>
+          ) : null}
+          {/* Overview + stats */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-3 text-sm">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-300">
+                  All brands that have accepted at least one collaboration with you – active and
+                  past.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                  onClick={() => onChangePage?.("sellers")}
+                >
+                  Discover new brands
+                </button>
+                <button
+                  className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white hover:bg-[#e26f00]"
+                  onClick={() => openPitchDrawer()}
+                >
+                  Pitch Suppliers
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-1 text-sm">
+              <StatCard
+                label="Active collaborators"
+                value={stats.activeCount}
+                sub="Current contracts or campaigns"
+              />
+              <StatCard
+                label="Past collaborators"
+                value={stats.pastCount}
+                sub="Completed campaigns"
+              />
+              <StatCard
+                label="Total My Suppliers"
+                value={stats.totalCount}
+                sub="Brands with accepted collabs"
+              />
+              <StatCard
+                label="Lifetime revenue from My Suppliers"
+                value={formatMoney(stats.lifetime)}
+                sub={`~${formatMoney(stats.activeValue)} currently active`}
+                money
+              />
+            </div>
+          </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="grid gap-3 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-              <div className="space-y-3">
-                <label className="space-y-1">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">Search sellers</span>
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search sellers, campaign, relationship..."
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                </label>
-
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { id: "all", label: "All" },
-                    { id: "active", label: "Active" },
-                    { id: "past", label: "Past" }
-                  ].map((tab) => {
-                    const active = viewTab === tab.id;
-                    return (
+          {/* Filters row */}
+          <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+            <div className="flex flex-col md:flex-row gap-2 md:gap-3 items-stretch md:items-center">
+              <div className="flex-1 flex items-center gap-2 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1.5 bg-slate-50 dark:bg-slate-800 transition-colors">
+                <span>🔍</span>
+                <input
+                  className="flex-1 bg-transparent outline-none text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400"
+                  placeholder="Search by seller, tagline or category…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                <select
+                  className="border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 transition-colors cursor-pointer outline-none"
+                  value={relationshipFilter}
+                  onChange={(e) =>
+                    setRelationshipFilter(e.target.value as "All" | Relationship)
+                  }
+                >
+                  <option value="All" className="bg-white dark:bg-slate-800">All relationships</option>
+                  <option value="Active collab" className="bg-white dark:bg-slate-800">Active collaborations</option>
+                  <option value="Past collab" className="bg-white dark:bg-slate-800">Past collaborations</option>
+                </select>
+                <div className="flex items-center gap-1">
+                  <span className="text-slate-500 dark:text-slate-300 mr-1">View:</span>
+                  <div className="inline-flex items-center gap-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-1 py-0.5 transition-colors">
+                    {[
+                      { id: "all", label: "All" },
+                      { id: "active", label: "Active" },
+                      { id: "past", label: "Past" }
+                    ].map((tab) => (
                       <button
                         key={tab.id}
-                        type="button"
-                        onClick={() => setViewTab(tab.id as ViewTab)}
-                        className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                          active
-                            ? "border-[#f77f00] bg-[#f77f00] text-white"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                        }`}
+                        className={`px-2.5 py-0.5 rounded-full transition-colors ${viewTab === tab.id
+                          ? "bg-slate-900 dark:bg-slate-700 text-white dark:text-slate-100"
+                          : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                          }`}
+                        onClick={() => setViewTab(tab.id as "all" | "active" | "past")}
                       >
                         {tab.label}
                       </button>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
               </div>
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-300">
+              <span>
+                Showing <span className="font-semibold dark:font-bold">{filteredSellers.length}</span> of{" "}
+                {mySellers.length} My Suppliers
+              </span>
+              <button
+                className="px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
+                onClick={() => {
+                  setSearch("");
+                  setRelationshipFilter("All");
+                  setViewTab("all");
+                }}
+              >
+                Reset
+              </button>
+            </div>
+          </section>
 
-              <div className="mt-4 min-h-[500px] space-y-3">
-                {isLoading ? (
-                  <div className="flex h-[360px] items-center justify-center">
-                    <CircularProgress size={28} />
+          {/* Main layout: list + detail */}
+          <section className="flex flex-col-reverse lg:grid lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)] gap-4 items-start text-sm">
+            {/* List */}
+            <div className="w-full bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-1">My Suppliers</h2>
+                <span className="text-xs text-slate-500 dark:text-slate-300 hidden sm:inline">
+                  These brands have already accepted collaboration with you.
+                </span>
+              </div>
+              <div className="space-y-2">
+                {filteredSellers.map((s) => (
+                  <SellerRow
+                    key={s.id}
+                    seller={s}
+                    selected={selectedSeller?.id === s.id}
+                    isExpanded={expandedSellerId === s.id}
+                    onSelect={() => setSelectedSellerId(s.id)}
+                    onToggle={() => setExpandedSellerId(expandedSellerId === s.id ? null : s.id)}
+                    onToggleFollow={() => toggleFollow(s.id)}
+                    onToggleFavourite={() => toggleFavourite(s.id)}
+                    onChangePage={onChangePage}
+                    onPitch={(seller) => openPitchDrawer(seller)}
+                    onStopCollaboration={() => setIsStopModalOpen(true)}
+                  />
+                ))}
+                {filteredSellers.length === 0 && (
+                  <div className="py-6 text-sm text-slate-500 dark:text-slate-400 text-center">
+                    No My Suppliers match this view yet.
                   </div>
-                ) : filteredSellers.length === 0 ? (
-                  <EmptyPanel title="No sellers here yet" body="Follow sellers from the directory or complete a collaboration to see them in this workspace." />
-                ) : (
-                  filteredSellers.map((seller) => (
-                    <SellerWorkspaceRow
-                      key={seller.id}
-                      seller={seller}
-                      selected={selectedSeller?.id === seller.id}
-                      onSelect={() => setSelectedSellerId(seller.id)}
-                      onTogglePin={() => togglePinned(seller.id)}
-                    />
-                  ))
                 )}
               </div>
             </div>
 
-            <div className="min-h-[580px] rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-              {selectedSeller ? (
-                <div className="space-y-5">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-4">
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-slate-200 text-lg font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-100">
-                        {selectedSeller.initials}
-                      </div>
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{selectedSeller.name}</h2>
-                          <span
-                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getSellerRelationshipBadgeClass(
-                              selectedSeller.relationship
-                            )}`}
-                          >
-                            {getSellerRelationshipLabel(selectedSeller.relationship)}
-                          </span>
-                          {selectedSeller.favourite && (
-                            <span className="rounded-full border border-yellow-200 bg-yellow-50 px-2.5 py-1 text-[11px] font-semibold text-yellow-700 dark:border-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200">
-                              Pinned
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{selectedSeller.tagline}</p>
-                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{selectedSeller.nextActionStatus}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => togglePinned(selectedSeller.id)}
-                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                      >
-                        {selectedSeller.favourite ? "Unpin" : "Pin"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPitchTarget(selectedSeller)}
-                        className="rounded-full bg-[#f77f00] px-4 py-2 text-sm font-semibold text-white hover:bg-[#e26f00]"
-                      >
-                        New proposal
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectedSeller.lastProposal) navigate(proposalRoomPath(selectedSeller.lastProposal.id));
-                          else showInfo("Create a proposal first to open the proposal room.");
-                        }}
-                        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-                      >
-                        Open workspace
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3 md:grid-cols-4">
-                    <MetricCard label="Followers" value={formatCompactNumber(selectedSeller.followers)} />
-                    <MetricCard label="Open proposals" value={String(selectedSeller.openProposals)} />
-                    <MetricCard label="Active contracts" value={String(selectedSeller.activeContracts)} />
-                    <MetricCard label="Active value" value={formatMoney(selectedSeller.activeValue, "USD")} />
-                  </div>
-
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-                    <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Relationship overview</h3>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <InfoBlock title="Last campaign" body={selectedSeller.lastCampaign} />
-                        <InfoBlock title="Next action" body={`${selectedSeller.nextAction} — ${selectedSeller.nextActionStatus}`} />
-                        <InfoBlock title="Lifetime value" body={formatMoney(selectedSeller.lifetimeValue, "USD")} />
-                        <InfoBlock title="Primary categories" body={selectedSeller.categories.join(", ")} />
-                      </div>
-
-                      <div className="mt-4 rounded-2xl border border-dashed border-slate-300 p-3 dark:border-slate-700">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Operational note</p>
-                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-                          Contract closure, termination requests, and formal end-of-collaboration steps should happen in the Contracts workspace so the audit trail and payout logic stay accurate.
-                        </p>
-                      </div>
-                    </section>
-
-                    <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Actions</h3>
-                      <div className="mt-4 space-y-3">
-                        <ActionRow
-                          title="Proposal room"
-                          body={
-                            selectedSeller.lastProposal
-                              ? `Open ${selectedSeller.lastProposal.campaign} to continue negotiation or messaging.`
-                              : "No proposal exists yet. Create one to start the negotiation trail."
-                          }
-                          actionLabel={selectedSeller.lastProposal ? "Open room" : "Create proposal"}
-                          onAction={() => {
-                            if (selectedSeller.lastProposal) navigate(proposalRoomPath(selectedSeller.lastProposal.id));
-                            else setPitchTarget(selectedSeller);
-                          }}
-                        />
-                        <ActionRow
-                          title="Contracts"
-                          body="Review contract timelines, deliverables, and any termination or renewal work."
-                          actionLabel="View contracts"
-                          onAction={() => navigate("/contracts", { state: { sellerId: selectedSeller.id } })}
-                        />
-                        <ActionRow
-                          title="Follow state"
-                          body={selectedSeller.isFollowing ? "You are following this seller for quick rediscovery." : "Follow this seller to keep them in your shortlist."}
-                          actionLabel={selectedSeller.isFollowing ? "Unfollow" : "Follow"}
-                          onAction={() => void handleToggleFollow(selectedSeller)}
-                        />
-                      </div>
-                    </section>
-                  </div>
-                </div>
-              ) : (
-                <EmptyPanel title="Select a seller" body="Choose a seller from the left to view active proposals, contract value, and the next workflow step." />
-              )}
+            {/* Detail panel (Desktop only) */}
+            <div id="seller-detail-panel" className="hidden lg:block w-full bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 lg:sticky lg:top-20">
+              <SellerDetailPanel
+                seller={selectedSeller}
+                onChangePage={onChangePage}
+                onPitch={(seller) => openPitchDrawer(seller)}
+                onStopCollaboration={() => setIsStopModalOpen(true)}
+              />
             </div>
-          </div>
-        </section>
-      </div>
+          </section>
+        </div>
+      </main>
 
+      <ConfirmationModal
+        isOpen={isStopModalOpen}
+        onClose={() => setIsStopModalOpen(false)}
+        onConfirm={() => {
+          if (selectedSeller) {
+            stopCollaboration(selectedSeller.id);
+            setIsStopModalOpen(false);
+          }
+        }}
+        title="Stop Collaboration?"
+        message={`Are you sure you want to end your active collaboration with ${selectedSeller?.name}? This will move them to your past collaborators and clear any active schedules.`}
+        confirmLabel="Stop Collaboration"
+        confirmClass="bg-red-500 hover:bg-red-600 shadow-red-100 dark:shadow-none"
+      />
+
+      {/* Pitch Drawer */}
       <PitchDrawer
-        isOpen={Boolean(pitchTarget)}
-        onClose={() => setPitchTarget(null)}
-        recipientName={pitchTarget?.name ?? ""}
-        recipientInitials={pitchTarget?.initials ?? ""}
-        recipientRegion={pitchTarget?.region}
-        defaultCategory={pitchTarget?.categories[0]}
-        onSubmit={handlePitchSubmit}
-        submitLabel={createProposalMutation.isPending ? "Creating draft..." : "Create proposal draft"}
+        isOpen={isPitchDrawerOpen}
+        onClose={() => setIsPitchDrawerOpen(false)}
+        recipientName={pitchRecipient?.name || ""}
+        recipientInitials={pitchRecipient?.initials || ""}
+        defaultCategory={pitchRecipient?.categories?.[0] || "General"}
       />
     </div>
   );
 }
 
-function StatCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+type StatCardProps = {
+  label: string;
+  value: string | number;
+  sub?: string;
+  money?: boolean;
+};
+
+function StatCard({ label, value, sub, money }: StatCardProps) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</p>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{detail}</p>
+    <div className="relative overflow-hidden rounded-2xl px-3 py-2.5 flex flex-col justify-between bg-white dark:bg-slate-800 shadow-sm border border-slate-100 dark:border-slate-700 transition-colors">
+      <div
+        className={`absolute inset-x-0 top-0 h-0.5 ${money ? "bg-[#f77f00]" : "bg-slate-200 dark:bg-slate-700"
+          }`}
+      />
+      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1 flex items-center justify-between">
+        <span>{label}</span>
+      </div>
+      <div
+        className={`text-sm font-semibold mb-1 ${money ? "text-[#f77f00]" : "text-slate-900 dark:text-slate-100"
+          }`}
+      >
+        {value}
+      </div>
+      {sub && <div className="text-xs text-slate-500 dark:text-slate-400">{sub}</div>}
     </div>
   );
 }
 
-function SellerWorkspaceRow({
+type SellerRowProps = {
+  seller: MySeller;
+  selected: boolean;
+  isExpanded: boolean;
+  onSelect: () => void;
+  onToggle: () => void;
+  onToggleFollow: () => void;
+  onToggleFavourite: () => void;
+  onChangePage?: (page: string) => void;
+  onPitch: (seller: MySeller) => void;
+  onStopCollaboration: () => void;
+};
+
+function SellerRow({
   seller,
   selected,
+  isExpanded,
   onSelect,
-  onTogglePin
-}: {
-  seller: SellerDashboardRecord;
-  selected: boolean;
-  onSelect: () => void;
-  onTogglePin: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full rounded-2xl border p-3 text-left transition ${
-        selected
-          ? "border-[#f77f00] bg-orange-50 dark:bg-orange-900/20"
-          : "border-slate-200 bg-white hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
-      }`}
+  onToggle,
+  onToggleFollow,
+  onToggleFavourite,
+  onChangePage,
+  onPitch,
+  onStopCollaboration
+}: SellerRowProps) {
+  const navigate = useNavigate();
+  const openNewOpportunities = () => {
+    navigate("/opportunities", {
+      state: {
+        supplierName: seller.name,
+        onlyCurrent: true,
+        source: "my-suppliers"
+      }
+    });
+  };
+
+  const relLabel = seller.relationship === "Active collab" ? "Active collab" : "Past collab";
+  const relColor =
+    seller.relationship === "Active collab"
+      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700"
+      : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700";
+
+  const actions = (
+    <div
+      className="flex flex-col items-end gap-2.5 min-w-[140px]"
+      onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-200 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-100">
+      <div className="flex gap-1.5">
+        <button
+          className={`px-3 py-1 rounded-full border text-[10px] font-bold transition-all ${seller.following
+            ? "bg-slate-900 dark:bg-slate-700 border-slate-900 dark:border-slate-700 text-white dark:text-slate-100"
+            : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+            }`}
+          onClick={onToggleFollow}
+        >
+          {seller.following ? "Following" : "Follow"}
+        </button>
+        <button
+          className={`px-3 py-1 rounded-full border text-[10px] font-bold transition-all ${seller.favourite
+            ? "bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400"
+            : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+            }`}
+          onClick={onToggleFavourite}
+        >
+          {seller.favourite ? "Pinned" : "Pin"}
+        </button>
+      </div>
+      <div className="text-[10px] text-slate-600 dark:text-slate-400 text-right leading-tight">
+        <div className="mb-0.5">
+          Next live: <span className="font-bold text-slate-900 dark:text-slate-100">{seller.nextLive || "Not scheduled"}</span>
+        </div>
+        <div>
+          Next action: <span className="font-medium">{seller.nextAction}</span>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5 justify-end mt-1">
+        <button
+          className="px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-[10px] font-bold text-emerald-700 dark:text-emerald-400 transition-colors border border-emerald-200 dark:border-emerald-700"
+          onClick={openNewOpportunities}
+          title={`View currently available opportunities from ${seller.name}`}
+        >
+          View New Opportunities
+        </button>
+        {[
+          { label: "Workspace", path: "/proposal-negotiation" },
+          { label: "Proposals", path: "/proposals" },
+          { label: "Contracts", path: "/contracts" }
+        ].map((link) => (
+          <button
+            key={link.label}
+            className="px-2 py-1 rounded-md bg-slate-100 dark:bg-slate-900/50 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-[10px] font-bold text-[#f77f00] hover:text-[#e26f00] transition-colors border border-slate-200 dark:border-slate-700 hover:border-amber-200 dark:hover:border-amber-800"
+            onClick={() => navigate(link.path)}
+          >
+            {link.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <article
+      className={`py-3.5 px-3 md:px-5 flex flex-col gap-2 cursor-pointer transition-all duration-200 rounded-2xl border ${selected
+        ? "bg-amber-50/70 dark:bg-amber-900/40 border-amber-200 dark:border-amber-600 shadow-sm"
+        : "bg-white dark:bg-slate-800 border-transparent dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:border-slate-100 dark:hover:border-slate-600"
+        }`}
+      onClick={() => {
+        onSelect();
+        if (window.innerWidth < 1024) {
+          onToggle();
+        }
+      }}
+    >
+      <div className="flex w-full items-start justify-between gap-6">
+        {/* Brand & relationship */}
+        <div className="flex gap-4 items-start min-w-0 flex-1">
+          <div className="h-11 w-11 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-sm font-bold transition-colors flex-shrink-0 border-2 border-white dark:border-slate-800 shadow-sm">
             {seller.initials}
           </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate font-semibold text-slate-900 dark:text-slate-100">{seller.name}</p>
-              <span
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getSellerRelationshipBadgeClass(
-                  seller.relationship
-                )}`}
-              >
-                {getSellerRelationshipLabel(seller.relationship)}
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-black text-slate-900 dark:text-slate-100 truncate">
+                {seller.name}
               </span>
+              {seller.favourite && (
+                <span className="text-xs text-amber-500 dark:text-amber-400">★</span>
+              )}
             </div>
-            <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{seller.lastCampaign}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-              <span>{seller.openProposals} open proposals</span>
-              <span>•</span>
-              <span>{seller.activeContracts} active contracts</span>
-              <span>•</span>
-              <span>{formatMoney(seller.activeValue, "USD")}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed max-w-md">
+              {seller.tagline}
+            </span>
+            <div className="flex flex-wrap gap-1.5 mt-1">
+              {seller.categories.map((cat) => (
+                <span
+                  key={cat}
+                  className="px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-900/50 text-[10px] font-medium text-slate-600 dark:text-slate-300 transition-colors border border-slate-100 dark:border-slate-700"
+                >
+                  {cat}
+                </span>
+              ))}
             </div>
+            <span
+              className={`mt-2 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full border text-[10px] font-bold tracking-tight transition-colors ${relColor}`}
+            >
+              <span>🤝</span>
+              <span className="uppercase">{relLabel}</span>
+            </span>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onTogglePin();
-          }}
-          className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          {seller.favourite ? "★" : "☆"}
-        </button>
+        {/* Desktop actions */}
+        <div className="hidden lg:block flex-shrink-0 pt-1">
+          {actions}
+        </div>
+
+        {/* Mobile chevron */}
+        <div className="lg:hidden text-slate-400 self-center pr-1">
+          <span className={`transition-transform duration-300 inline-block ${isExpanded ? "rotate-180 text-[#f77f00]" : ""}`}>
+            ▼
+          </span>
+        </div>
       </div>
-    </button>
+
+      {/* Expanded content for mobile (Full Detail Panel) */}
+      {isExpanded && (
+        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 lg:hidden">
+          <SellerDetailPanel
+            seller={seller}
+            onChangePage={onChangePage}
+            onPitch={onPitch}
+            onStopCollaboration={onStopCollaboration}
+            isInline
+          />
+        </div>
+      )}
+    </article>
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+type SellerDetailPanelProps = {
+  seller: MySeller | null;
+  onStopCollaboration?: () => void;
+  onPitch?: (seller: MySeller) => void;
+  onChangePage?: (page: string) => void;
+  isInline?: boolean;
+};
+
+function SellerDetailPanel({
+  seller,
+  onStopCollaboration,
+  onPitch,
+  onChangePage: _onChangePage,
+  isInline
+}: SellerDetailPanelProps) {
+  const navigate = useNavigate();
+  const openNewOpportunities = () => {
+    if (!seller) return;
+    navigate("/opportunities", {
+      state: {
+        supplierName: seller.name,
+        onlyCurrent: true,
+        source: "my-suppliers"
+      }
+    });
+  };
+  if (!seller) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400 min-h-[260px]">
+        <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 py-3 max-w-xs transition-colors">
+          <p className="text-sm font-medium mb-1 text-slate-900 dark:text-slate-100">Select a seller</p>
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            When you pick a seller on the left, you&apos;ll see relationship history, performance
+            and next steps here.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const relColor =
+    seller.relationship === "Active collab"
+      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700"
+      : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700";
+
+  const canStop = seller.relationship === "Active collab" && !!onStopCollaboration;
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="mt-2 text-lg font-bold text-slate-900 dark:text-slate-100">{value}</p>
+    <div className={`flex flex-col gap-3 text-sm ${isInline ? "p-0 bg-transparent border-none shadow-none" : ""}`}>
+      {/* Header - hide on mobile inline if redundant, but keep for clarity here */}
+      {!isInline && (
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2">
+            <div className="h-9 w-9 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-sm font-semibold dark:font-bold transition-colors">
+              {seller.initials}
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {seller.name}
+                </span>
+                <span className="text-xs text-amber-500 dark:text-amber-400">
+                  ★ {seller.rating.toFixed(1)}
+                </span>
+              </div>
+              <span className="text-xs text-slate-500 dark:text-slate-300">{seller.tagline}</span>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {seller.categories.map((cat) => (
+                  <span
+                    key={cat}
+                    className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 transition-colors"
+                  >
+                    {cat}
+                  </span>
+                ))}
+              </div>
+              <span
+                className={`mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-tiny transition-colors ${relColor}`}
+              >
+                <span>🤝</span>
+                <span>{seller.relationship}</span>
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1 text-xs text-slate-600 dark:text-slate-300">
+            <span className="text-xs text-slate-500 dark:text-slate-400">Primary contact</span>
+            <span className="font-medium text-slate-900 dark:text-slate-100">{seller.primaryContact}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Relationship details */}
+      <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-slate-800 flex flex-col gap-1 transition-colors">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-500 dark:text-slate-400">Relationship summary</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Campaigns: <span className="font-medium">{seller.campaignsCount}</span>
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs text-slate-600 dark:text-slate-300 transition-colors">
+            <div className="font-semibold text-sm mb-1 text-slate-900 dark:text-slate-100">Campaigns &amp; value</div>
+            <div>Campaigns: {seller.campaignsCount}</div>
+            <div>
+              Lifetime revenue: <span className="font-medium">${seller.lifetimeRevenue.toLocaleString()}</span>
+            </div>
+            <div>
+              Current active value: <span className="font-medium">${seller.currentValue.toLocaleString()}</span>
+            </div>
+            <div>
+              Last campaign: <span className="font-medium">{seller.lastCampaign}</span>
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-2 text-xs text-slate-600 dark:text-slate-300 transition-colors">
+            <div className="font-semibold text-sm mb-1 text-slate-900 dark:text-slate-100">Performance &amp; pipeline</div>
+            <div>
+              Avg. conversion: <span className="font-medium">{seller.avgConversion.toFixed(1)}%</span>
+            </div>
+            <div>
+              Rating: <span className="font-medium">★ {seller.rating.toFixed(1)}</span>
+            </div>
+            <div className="mt-1 text-slate-500 dark:text-slate-400">
+              Active contracts: <span className="font-medium">{seller.activeContracts}</span>
+            </div>
+            <div className="text-slate-500 dark:text-slate-400">
+              Open proposals: <span className="font-medium">{seller.openProposals}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Suggested next moves */}
+      <div className="border border-slate-100 dark:border-slate-700 rounded-xl p-3 bg-white dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 transition-colors">
+        <h3 className="text-sm font-semibold mb-1 text-slate-900 dark:text-slate-100">Suggested next moves</h3>
+        <ul className="list-disc pl-4 space-y-0.5">
+          <li>
+            Consider a follow-up live using the best-performing structure from <span className="font-medium">{seller.lastCampaign}</span>.
+          </li>
+          <li>
+            Use your conversion ({seller.avgConversion.toFixed(1)}%) and rating to negotiate
+            better terms on the next cycle.
+          </li>
+          <li>
+            Add a quick note in your CRM about what worked well (and what didn&apos;t) in the last
+            collaboration.
+          </li>
+        </ul>
+      </div>
+
+      {/* Quick links & Primary Actions */}
+      <div className="flex flex-col gap-4 mt-2 border-t border-slate-100 dark:border-slate-800 pt-4">
+        {seller.relationship === "Active collab" ? (
+          <button
+            className="w-full py-3 rounded-2xl bg-[#f77f00] text-white font-black text-sm hover:bg-[#e26f00] transition-all shadow-lg hover:shadow-orange-200 dark:hover:shadow-none hover:-translate-y-0.5"
+            onClick={() => onPitch?.(seller)}
+          >
+            Pitch {seller.name}
+          </button>
+        ) : (
+          <button
+            className="w-full py-3 rounded-2xl bg-[#f77f00] text-white font-black text-sm hover:bg-[#e26f00] transition-all shadow-lg hover:shadow-orange-200 dark:hover:shadow-none hover:-translate-y-0.5"
+            onClick={() => onPitch?.(seller)}
+          >
+            Invite to Collaborate
+          </button>
+        )}
+
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button
+            className="w-full px-3 py-1.5 rounded-full border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 font-bold transition-colors shadow-sm"
+            onClick={openNewOpportunities}
+            title={`View currently available opportunities from ${seller.name}`}
+          >
+            View New Opportunities
+          </button>
+          <button
+            className="flex-1 min-w-[120px] px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold transition-colors shadow-sm"
+            onClick={() => navigate("/proposal-negotiation")}
+          >
+            Collab workspace
+          </button>
+          <button
+            className="flex-1 min-w-[120px] px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold transition-colors shadow-sm"
+            onClick={() => navigate("/proposals")}
+          >
+            Proposals
+          </button>
+          <button
+            className="flex-1 min-w-[120px] px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold transition-colors shadow-sm"
+            onClick={() => navigate("/contracts")}
+          >
+            Contracts
+          </button>
+        </div>
+
+        {canStop && (
+          <div className="pt-2 border-t border-slate-50 dark:border-slate-800/50 mt-2">
+            <button
+              className="w-full py-2.5 rounded-2xl border border-red-100 dark:border-red-900/30 text-red-500 dark:text-red-400 font-bold text-xs hover:bg-red-50 dark:hover:bg-red-900/20 transition-all flex items-center justify-center gap-2"
+              onClick={onStopCollaboration}
+            >
+              <span>⛔</span>
+              Stop Collaboration with {seller.name}
+            </button>
+            <p className="text-[10px] text-center text-slate-400 mt-2 italic px-4">
+              Stopping collaboration will archive active contracts and move this brand to your past history.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function InfoBlock({ title, body }: { title: string; body: string }) {
+function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, confirmLabel, confirmClass }: any) {
+  if (!isOpen) return null;
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{body}</p>
-    </div>
-  );
-}
-
-function ActionRow({ title, body, actionLabel, onAction }: { title: string; body: string; actionLabel: string; onAction: () => void }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</p>
-      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{body}</p>
-      <button
-        type="button"
-        onClick={onAction}
-        className="mt-3 rounded-full bg-[#f77f00] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#e26f00]"
-      >
-        {actionLabel}
-      </button>
-    </div>
-  );
-}
-
-function EmptyPanel({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="flex h-full min-h-[320px] flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center dark:border-slate-700 dark:bg-slate-900">
-      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-      <p className="mt-2 max-w-md text-sm text-slate-600 dark:text-slate-300">{body}</p>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-300">
+        <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-white">{title}</h3>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">{message}</p>
+        <div className="flex items-center gap-3">
+          <button
+            className="flex-1 px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold transition-colors"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button
+            className={`flex-1 px-4 py-2.5 rounded-2xl text-white font-black transition-all active:scale-95 shadow-lg ${confirmClass}`}
+            onClick={onConfirm}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
