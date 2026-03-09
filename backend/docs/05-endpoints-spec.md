@@ -13,7 +13,12 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/dashboard/summary`
 - `GET /api/dashboard/my-day`
 - `GET /api/search`
+- `GET /api/search/listings`
+- `GET /api/search/storefronts`
+- `POST /api/search/reindex` (Admin)
 - `GET /api/realtime/stream`
+- `GET /api/realtime/pending`
+- `POST /api/realtime/ack`
 
 ## Auth
 - `POST /api/auth/register` (Public) - `RegisterDto`
@@ -91,6 +96,8 @@ Auth: JWT bearer required unless noted `Public`.
 - `POST /api/seller/warehouses` - `CreateWarehouseDto`
 - `PATCH /api/seller/warehouses/:id` - `UpdateWarehouseDto`
 - `GET /api/seller/exports`
+- `GET /api/seller/exports/:id`
+- `GET /api/seller/exports/:id/download`
 - `POST /api/seller/exports` - `CreateExportJobDto`
 - `GET /api/seller/documents`
 - `POST /api/seller/documents` - `CreateDocumentDto`
@@ -143,6 +150,22 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/storefront/:handle` (Public)
 - `GET /api/storefront/:handle/listings` (Public)
 
+## Catalog
+- `GET /api/catalog/templates`
+- `GET /api/catalog/templates/export`
+- `POST /api/catalog/templates/validate`
+- `POST /api/catalog/templates/import` - `ImportCatalogTemplatesDto`
+- `POST /api/catalog/templates/import/jobs` - `CatalogImportJobDto`
+- `GET /api/catalog/templates/import/jobs/:id`
+- `POST /api/catalog/templates` - `CreateCatalogTemplateDto`
+- `PATCH /api/catalog/templates/:id` - `UpdateCatalogTemplateDto`
+- `GET /api/catalog/media-library`
+- `GET /api/catalog/presets`
+- `POST /api/catalog/presets` - `CreateCatalogPresetDto`
+- `PATCH /api/catalog/presets/:id` - `UpdateCatalogPresetDto`
+- `POST /api/catalog/presets/:id/export`
+- `POST /api/catalog/presets/:id/delete`
+
 ## Communications + Support
 - `GET /api/messages`
 - `GET /api/messages/:threadId`
@@ -164,6 +187,10 @@ Auth: JWT bearer required unless noted `Public`.
 - `PATCH /api/support/tickets/:id` (Support/Admin) - `UpdateSupportTicketDto`
 - `POST /api/support/tickets/:id/assign` (Support/Admin) - `AssignSupportTicketDto`
 - `POST /api/support/tickets/:id/escalate` (Support/Admin) - `EscalateSupportTicketDto`
+- `GET /api/support/moderation/flags` (Support/Admin)
+- `GET /api/support/moderation/flags/:id` (Support/Admin)
+- `POST /api/support/moderation/flags` (Support/Admin) - `ModerationFlagDto`
+- `PATCH /api/support/moderation/flags/:id` (Support/Admin) - `ModerationActionDto`
 
 ## Market Approvals
 - `GET /api/market-approvals` (Support/Admin)
@@ -181,6 +208,10 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/regulatory/desks/:slug`
 - `POST /api/regulatory/desks/:deskId/items` - `CreateRegulatoryDeskItemDto`
 - `PATCH /api/regulatory/desks/:deskId/items/:itemId` - `UpdateRegulatoryDeskItemDto`
+- `POST /api/regulatory/auto-review/run` (Support/Admin)
+- `POST /api/regulatory/evidence`
+- `GET /api/regulatory/evidence/:id`
+- `GET /api/regulatory/evidence/:id/download`
 
 ## Collaboration
 - `GET /api/campaigns`

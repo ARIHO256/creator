@@ -43,7 +43,8 @@ test('CommunicationsService creates thread and message', async () => {
 
   const audit = { async log() {} };
   const realtime = { async publishUserEvent() {} };
-  const service = new CommunicationsService(prisma as any, audit as any, realtime as any);
+  const jobsService = { async enqueue() {} };
+  const service = new CommunicationsService(prisma as any, audit as any, realtime as any, jobsService as any);
   const response = await service.sendMessage('user-1', 'thread-1', { text: 'hello', lang: 'en' });
 
   assert.equal(response.thread.id, 'thread-1');
@@ -111,7 +112,8 @@ test('CommunicationsService marks thread as read', async () => {
 
   const audit = { async log() {} };
   const realtime = { async publishUserEvent() {} };
-  const service = new CommunicationsService(prisma as any, audit as any, realtime as any);
+  const jobsService = { async enqueue() {} };
+  const service = new CommunicationsService(prisma as any, audit as any, realtime as any, jobsService as any);
   const response = await service.markThreadRead('user-1', 'thread-1');
 
   const updated = threads.get('thread-1');

@@ -15,7 +15,12 @@ test('RealtimeService enqueues realtime events for users', async () => {
     }
   };
 
-  const service = new RealtimeService(jobsService as any, configService as any);
+  const deliveryService = {
+    async recordEvent(_userId: string, event: Record<string, unknown>) {
+      return { eventId: event.id ?? 'evt-1' };
+    }
+  };
+  const service = new RealtimeService(jobsService as any, configService as any, deliveryService as any);
   await service.publishUserEvent('user-1', { type: 'ping' });
 
   assert.equal(payload.queue, 'realtime');
