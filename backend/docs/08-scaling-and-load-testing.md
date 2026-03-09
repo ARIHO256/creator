@@ -54,11 +54,16 @@ Realtime event publishing is queued and can optionally publish to Redis:
 - `REALTIME_CHANNEL_PREFIX` (default `mldz:realtime:`)
 - `REALTIME_MAX_ATTEMPTS` (default `3`)
 - `REALTIME_STREAM_PING_MS` (default `25000`)
+- `REALTIME_STREAM_MAX_PER_USER` (default `3`)
+- `REALTIME_STREAM_MAX_TOTAL` (default `5000`)
+- `REALTIME_STREAM_HISTORY_SIZE` (default `50`)
+- `REALTIME_STREAM_HISTORY_TTL_MS` (default `300000`)
 
 Realtime streaming transport (SSE) is available at `GET /api/realtime/stream` and requires:
 - JWT auth (same as other API routes).
 - Redis pub/sub to deliver events across instances.
 - Worker processes to publish events in multi-instance deployments.
+The stream supports `Last-Event-ID` for best-effort replay using an in-memory buffer; full replay still requires persistent event storage.
 
 ## Distributed Cache
 Redis is supported via:

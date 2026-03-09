@@ -1,4 +1,4 @@
-import { Injectable, Logger, TooManyRequestsException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply } from 'fastify';
 
@@ -30,7 +30,7 @@ export class RealtimeStreamService {
     const currentUserCount = this.clients.get(userId)?.size ?? 0;
     const totalCount = this.countClients();
     if (currentUserCount >= maxPerUser || totalCount >= maxTotal) {
-      throw new TooManyRequestsException('Realtime stream limit reached');
+      throw new HttpException('Realtime stream limit reached', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     const pingMs = Number(this.configService.get('realtime.streamPingMs') ?? 25000);

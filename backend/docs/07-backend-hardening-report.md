@@ -3,20 +3,15 @@
 Date: 2026-03-09
 
 ## Summary
-This pass expanded catalog templates with export/import support and added approval reminders plus SLA breach notifications. Frontends remain unchanged.
+This pass hardened realtime SSE transport with connection limits and replay buffer support. Frontends remain unchanged.
 
 ## What Was Found
-- Catalog templates needed export/import flows for template portability.
-- Market approvals needed pre-SLA reminders and breach notifications beyond basic SLA tracking.
+- Realtime delivery needed connection guardrails and best-effort replay for resiliency.
 
 ## Implementations Completed
-### Catalog Template Export / Import
-- Added export endpoint for template portability.
-- Added import endpoint with upsert/create-only/update-only modes and attribute handling.
-
-### Approval Automation Beyond SLA
-- Scheduled reminder jobs ahead of SLA deadlines.
-- Added SLA breach notifications to requester with realtime events when available.
+### Realtime Transport Hardening
+- Added per-user and global stream connection limits.
+- Added in-memory replay buffer with `Last-Event-ID` support.
 
 ## Files Changed
 ### Modules / Domain
