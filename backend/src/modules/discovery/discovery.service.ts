@@ -97,7 +97,7 @@ export class DiscoveryService {
     return creators.map((creator) => ({
       id: creator.id,
       handle: creator.creatorProfile?.handle ?? null,
-      name: creator.creatorProfile?.displayName ?? creator.creatorProfile?.name ?? null,
+      name: creator.creatorProfile?.name ?? null,
       profile: creator.creatorProfile ?? null
     }));
   }

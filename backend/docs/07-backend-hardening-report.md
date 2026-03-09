@@ -3,69 +3,54 @@
 Date: 2026-03-09
 
 ## Summary
-This pass completed settings/roles/crew normalization, hardened finance settlement and payout workflows, finished support ticket lifecycles with assignment/escalation, and added realtime delivery hooks for messages/notifications. Jobs retry semantics and audit logging were expanded. Frontends remain unchanged.
+This pass added Trust/Status content endpoints, Market Approval workflows, Catalog templates/media library, bulk listing import job wiring, order print endpoints, global search, and creator follow support. Provider joint quotes were completed. Frontends remain unchanged.
 
 ## What Was Found
-- Settings/roles/crew still relied on broad workspace payload handling without strict DTOs.
-- Finance payouts/settlements lacked explicit transitions, idempotency safeguards, and role-safe visibility.
-- Support tickets lacked staff assignment/escalation lifecycle and role-safe staff views.
-- Realtime delivery for messages/notifications lacked backend publication hooks.
+- Seller trust/status and market approval pages lacked backend endpoints.
+- Catalog templates and bulk listing import lacked first-class backend flows.
+- Print/label endpoints were missing for orders.
+- Global search and creator follow views were missing.
+- Provider joint quote detail/create endpoints were incomplete.
 
 ## Implementations Completed
-### Settings / Roles / Crew Normalization
-- Added strict DTOs for settings, roles, invites, members, and crew sessions.
-- Enforced workspace role-manager checks and invite allowlist policy.
-- Added audit events for role, invite, and security changes.
-- Added payout verification flows with audit logging.
+### Trust + Status + Market Approvals
+- Added Trust content and incident endpoints with role-gated write access.
+- Added Market Approval workflow endpoints and models.
 
-### Finance Workflow Hardening
-- Added admin/support payout workflow endpoints and DTOs.
-- Enforced payout transitions (approve/reject/cancel) and idempotent handling.
-- Added balance checks and adjustment creation with audit events.
+### Catalog + Bulk Listings
+- Added Catalog templates endpoints with seller scoping.
+- Added media library endpoint with query filtering.
+- Added bulk listing validate/commit endpoints wired to jobs queue.
 
-### Support Workflow Completion
-- Added staff listing/view endpoints with query support.
-- Added assignment and escalation endpoints with status transition enforcement.
-- Added audit logging and realtime event hooks for ticket creation/updates.
+### Orders + Print
+- Added invoice, packing slip, and sticker print endpoints returning normalized payloads.
 
-### Realtime Delivery Hooks
-- Added realtime module with queue-based event publication and optional Redis transport.
-- Hooked message and support actions into realtime event publishing.
+### Discovery + Search + Creator Follows
+- Added global search endpoint across sellers/listings/opportunities.
+- Added creator follow and my-creators endpoints with seller scoping.
 
-### Operational Hardening
-- Jobs retry semantics now use configurable backoff and requeue safety.
-
-### Tests Added
-- Settings role creation and duplicate name protection.
-- Finance payout validation and approval transitions.
-- Support ticket transition and assignment enforcement.
-- Realtime event enqueue behavior.
-- Job retry/requeue handling.
+### Provider Completion
+- Added joint quote detail and create endpoints.
 
 ## Files Changed
 ### Modules / Domain
-- `src/modules/settings/*`
-- `src/modules/finance/*`
-- `src/modules/communications/*`
-- `src/modules/jobs/*`
-- `src/platform/realtime/*`
-- `src/platform/audit/*`
+- `src/modules/catalog/*`
+- `src/modules/trust/*`
+- `src/modules/approvals/*`
+- `src/modules/discovery/*`
+- `src/modules/commerce/*`
+- `src/modules/provider/*`
+- `src/modules/workflow/*`
+- `src/app.module.ts`
 
 ### Prisma
 - `prisma/schema.prisma`
-- `prisma/migrations/202603090012_support_workflow/migration.sql`
-
-### Tests
-- `test/settings.service.test.ts`
-- `test/finance.service.test.ts`
-- `test/support.workflow.test.ts`
-- `test/realtime.service.test.ts`
-- `test/jobs.service.test.ts`
-- `test/communications.service.test.ts`
+- `prisma/migrations/202603091300_trust_catalog_approvals/migration.sql`
+- `prisma/migrations/202603091305_creator_follow/migration.sql`
 
 ## Migrations Added
-- `202603090012_support_workflow` (support ticket assignment/escalation metadata + indexes)
-- `202603091200_support_thread_unique` (unique support ticket thread relation)
+- `202603091300_trust_catalog_approvals` (trust content/incidents + market approvals + catalog templates)
+- `202603091305_creator_follow` (seller follow for creators)
 
 ## Commands Run
 - `npm run prisma:generate`
