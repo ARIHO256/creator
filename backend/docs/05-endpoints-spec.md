@@ -150,22 +150,6 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/storefront/:handle` (Public)
 - `GET /api/storefront/:handle/listings` (Public)
 
-## Catalog
-- `GET /api/catalog/templates`
-- `GET /api/catalog/templates/export`
-- `POST /api/catalog/templates/validate`
-- `POST /api/catalog/templates/import` - `ImportCatalogTemplatesDto`
-- `POST /api/catalog/templates/import/jobs` - `CatalogImportJobDto`
-- `GET /api/catalog/templates/import/jobs/:id`
-- `POST /api/catalog/templates` - `CreateCatalogTemplateDto`
-- `PATCH /api/catalog/templates/:id` - `UpdateCatalogTemplateDto`
-- `GET /api/catalog/media-library`
-- `GET /api/catalog/presets`
-- `POST /api/catalog/presets` - `CreateCatalogPresetDto`
-- `PATCH /api/catalog/presets/:id` - `UpdateCatalogPresetDto`
-- `POST /api/catalog/presets/:id/export`
-- `POST /api/catalog/presets/:id/delete`
-
 ## Communications + Support
 - `GET /api/messages`
 - `GET /api/messages/:threadId`
@@ -291,12 +275,15 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/provider/quotes`
 - `GET /api/provider/quotes/:id`
 - `POST /api/provider/quotes` - `CreateProviderQuoteDto`
+- `POST /api/provider/quotes/:id/transition` - `ProviderTransitionDto`
 - `GET /api/provider/joint-quotes`
 - `GET /api/provider/joint-quotes/:id`
 - `POST /api/provider/joint-quotes` - `CreateProviderQuoteDto`
 - `GET /api/provider/consultations`
 - `GET /api/provider/bookings`
 - `GET /api/provider/bookings/:id`
+- `POST /api/provider/bookings/:id/transition` - `ProviderTransitionDto`
+- `POST /api/provider/fulfillments/:id/transition` - `ProviderFulfillmentTransitionDto`
 - `GET /api/provider/portfolio`
 - `GET /api/provider/reviews`
 - `GET /api/provider/disputes`
@@ -304,10 +291,18 @@ Auth: JWT bearer required unless noted `Public`.
 ## Catalog
 - `GET /api/catalog/templates`
 - `GET /api/catalog/templates/export`
+- `POST /api/catalog/templates/validate`
+- `POST /api/catalog/templates/import` - `ImportCatalogTemplatesDto`
+- `POST /api/catalog/templates/import/jobs` - `CatalogImportJobDto`
+- `GET /api/catalog/templates/import/jobs/:id`
 - `POST /api/catalog/templates` - `CreateCatalogTemplateDto`
 - `PATCH /api/catalog/templates/:id` - `UpdateCatalogTemplateDto`
-- `POST /api/catalog/templates/import` - `ImportCatalogTemplatesDto`
 - `GET /api/catalog/media-library`
+- `GET /api/catalog/presets`
+- `POST /api/catalog/presets` - `CreateCatalogPresetDto`
+- `PATCH /api/catalog/presets/:id` - `UpdateCatalogPresetDto`
+- `POST /api/catalog/presets/:id/export`
+- `POST /api/catalog/presets/:id/delete`
 
 ## Finance + Analytics + Subscription
 - `GET /api/earnings/summary`
@@ -318,6 +313,10 @@ Auth: JWT bearer required unless noted `Public`.
 - `POST /api/finance/payouts/:id/reject` (Support/Admin)
 - `POST /api/finance/payouts/:id/cancel` (Support/Admin)
 - `POST /api/finance/adjustments` (Support/Admin)
+- `GET /api/finance/settlements` (Support/Admin)
+- `GET /api/finance/settlements/:id` (Support/Admin)
+- `POST /api/finance/settlements` (Support/Admin)
+- `POST /api/finance/settlements/:id/reconcile` (Support/Admin)
 - `GET /api/analytics/overview`
 - `GET /api/analytics/summary`
 - `GET /api/subscription`
