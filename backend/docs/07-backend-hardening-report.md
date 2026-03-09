@@ -3,74 +3,69 @@
 Date: 2026-03-09
 
 ## Summary
-This pass closed remaining domain gaps for seller/provider flows by unifying taxonomy enforcement, adding ops center and favourites modules, adding regulatory write workflows, hardening provider/seller isolation, and adding message read-state tracking. Frontends remain unchanged.
+This pass completed settings/roles/crew normalization, hardened finance settlement and payout workflows, finished support ticket lifecycles with assignment/escalation, and added realtime delivery hooks for messages/notifications. Jobs retry semantics and audit logging were expanded. Frontends remain unchanged.
 
 ## What Was Found
-- Regulatory desks and compliance lacked create/update endpoints and DTO validation.
-- Ops-center views and favourites lacked first-class backend modules.
-- Provider/seller isolation still had a direct seller lookup in provider disputes.
-- Messaging lacked persisted read-state tracking for threads.
+- Settings/roles/crew still relied on broad workspace payload handling without strict DTOs.
+- Finance payouts/settlements lacked explicit transitions, idempotency safeguards, and role-safe visibility.
+- Support tickets lacked staff assignment/escalation lifecycle and role-safe staff views.
+- Realtime delivery for messages/notifications lacked backend publication hooks.
 
 ## Implementations Completed
-### Taxonomy + Storefront + Listings Alignment
-- Enforced active-tree validation and coverage sync across onboarding/storefront/listings flows.
-- Storefront updates now validate taxonomy nodes and sync coverage consistently.
+### Settings / Roles / Crew Normalization
+- Added strict DTOs for settings, roles, invites, members, and crew sessions.
+- Enforced workspace role-manager checks and invite allowlist policy.
+- Added audit events for role, invite, and security changes.
+- Added payout verification flows with audit logging.
 
-### Role Isolation
-- Provider disputes now enforce seller/provider workspace validation via `SellersService`.
-- Public seller/listing projections are used in discovery/marketplace/storefront outputs.
+### Finance Workflow Hardening
+- Added admin/support payout workflow endpoints and DTOs.
+- Enforced payout transitions (approve/reject/cancel) and idempotent handling.
+- Added balance checks and adjustment creation with audit events.
 
-### Ops Center + Favourites
-- Added Ops module endpoints with cached overview and operational views.
-- Added Favourites module with first-class listing favourites.
+### Support Workflow Completion
+- Added staff listing/view endpoints with query support.
+- Added assignment and escalation endpoints with status transition enforcement.
+- Added audit logging and realtime event hooks for ticket creation/updates.
 
-### Regulatory Write Workflows
-- Added DTOs + endpoints for desks, desk items, and compliance items.
-- Enforced status transitions for regulatory desks/items/compliance.
+### Realtime Delivery Hooks
+- Added realtime module with queue-based event publication and optional Redis transport.
+- Hooked message and support actions into realtime event publishing.
 
-### Messaging Read State
-- Added thread read markers and mark-read endpoints.
+### Operational Hardening
+- Jobs retry semantics now use configurable backoff and requeue safety.
 
 ### Tests Added
-- Taxonomy active-tree validation.
-- Storefront taxonomy sync validation.
-- Regulatory workflow transition enforcement.
-- Provider/seller isolation guard coverage.
-- Favourites add/remove validation.
-- Wholesale quote transition enforcement.
-- Message thread read-state handling.
+- Settings role creation and duplicate name protection.
+- Finance payout validation and approval transitions.
+- Support ticket transition and assignment enforcement.
+- Realtime event enqueue behavior.
+- Job retry/requeue handling.
 
 ## Files Changed
 ### Modules / Domain
+- `src/modules/settings/*`
+- `src/modules/finance/*`
 - `src/modules/communications/*`
-- `src/modules/favourites/*`
-- `src/modules/ops/*`
-- `src/modules/provider/*`
-- `src/modules/regulatory/*`
-- `src/modules/sellers/*`
-- `src/modules/storefront/*`
-- `src/modules/taxonomy/*`
-- `src/modules/workflow/*`
-- `src/modules/marketplace/*`
-- `src/modules/discovery/*`
-- `src/modules/live/*`
-- `src/modules/wholesale/*`
+- `src/modules/jobs/*`
+- `src/platform/realtime/*`
+- `src/platform/audit/*`
 
 ### Prisma
 - `prisma/schema.prisma`
-- `prisma/migrations/202603090011_favourites_and_message_reads/migration.sql`
+- `prisma/migrations/202603090012_support_workflow/migration.sql`
 
 ### Tests
+- `test/settings.service.test.ts`
+- `test/finance.service.test.ts`
+- `test/support.workflow.test.ts`
+- `test/realtime.service.test.ts`
+- `test/jobs.service.test.ts`
 - `test/communications.service.test.ts`
-- `test/favourites.service.test.ts`
-- `test/regulatory.service.test.ts`
-- `test/sellers.service.test.ts`
-- `test/storefront.service.test.ts`
-- `test/taxonomy.service.test.ts`
-- `test/wholesale.service.test.ts`
 
 ## Migrations Added
-- `202603090011_favourites_and_message_reads` (listing favourites + message thread read-state)
+- `202603090012_support_workflow` (support ticket assignment/escalation metadata + indexes)
+- `202603091200_support_thread_unique` (unique support ticket thread relation)
 
 ## Commands Run
 - `npm run prisma:generate`
@@ -78,12 +73,12 @@ This pass closed remaining domain gaps for seller/provider flows by unifying tax
 - `npm run test` (required elevated permissions for `tsx` IPC socket)
 
 ## Remaining Gaps / Infra Needed
-- Redis for distributed caching and cache locks.
-- Dedicated worker processes for jobs/insights fan-out.
+- Redis for distributed caching, locks, and realtime pub/sub transport.
+- Dedicated worker processes for jobs and realtime delivery.
 - DB connection pooling + read replicas for peak read traffic.
-- Centralized logging and metrics stack with alerting.
+- Centralized logging/metrics stack with alerting and tracing export.
 - Load testing with production-like infra to validate p95/p99.
-- Real-time delivery layer for notifications/messages (websocket/push).
+- Websocket/push transport for realtime delivery.
 
 ## Honest Readiness Verdict
-Domain coverage is now strong for the remaining seller/provider sectors and taxonomy alignment. The backend is not yet “million-user ready” without Redis, queue workers, pooling/replicas, and real load testing. Frontends still consume mocks; integration can proceed once infrastructure is provisioned.
+Settings/roles/crew, finance, and support workflows are now strongly modeled with role-safe access, DTOs, and audit coverage. Realtime delivery hooks are present but require Redis/WebSocket infrastructure to be operational. The backend is not yet “million-user ready” without Redis, queue workers, pooling/replicas, and real load testing. Frontends still consume mocks; integration can proceed once infrastructure is provisioned.

@@ -297,6 +297,7 @@ model User {
   messageThreads       MessageThread[]
   messagesSent         Message[]          @relation("MessageSender")
   supportTickets       SupportTicket[]
+  assignedSupportTickets SupportTicket[] @relation("SupportAssignee")
   listingFavorites     ListingFavorite[]
   providerQuotes       ProviderQuote[]
   providerBookings     ProviderBooking[]
@@ -1396,6 +1397,7 @@ model MessageThread {
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages Message[]
+  supportTicket SupportTicket? @relation("SupportTicketThread")
 
   @@index([userId, updatedAt])
   @@index([userId, status])
@@ -1421,19 +1423,28 @@ model Message {
 model SupportTicket {
   id          String   @id @default(cuid())
   userId      String
+  assignedToUserId String?
   status      String   @default("Open")
   marketplace String?
   category    String?
   subject     String?
   severity    String?
   ref         String?
+  threadId    String?  @unique
   metadata    Json?
+  assignedAt DateTime?
+  escalatedAt DateTime?
+  closedAt   DateTime?
+  lastResponseAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignee User?        @relation("SupportAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  thread   MessageThread? @relation("SupportTicketThread", fields: [threadId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
+  @@index([assignedToUserId, status])
   @@index([createdAt])
 }
 

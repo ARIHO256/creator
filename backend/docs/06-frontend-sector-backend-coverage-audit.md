@@ -35,10 +35,12 @@ Statement:
 - Favourites, persisted notifications, and message read-state
 - MyLiveDealz live sessions/studio/replay lifecycle enforcement
 - Wholesale quote lifecycle enforcement
+- Settings/roles/crew normalization and audit hooks
+- Support workflows with status/assignment/escalation
+- Finance payouts/settlement lifecycle enforcement
 
 ### Represented but not strongly enough yet
-- Settings/roles/crew still rely on broad workspace payloads for some sections
-- Finance reconciliation and payouts still require external infra and tighter settlement workflows
+- Finance reconciliation still requires external settlement infrastructure
 - Real-time delivery (websocket/push) for support/messages/notifications
 
 ## Key finding

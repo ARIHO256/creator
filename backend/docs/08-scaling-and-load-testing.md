@@ -38,12 +38,21 @@ Recommended worker settings:
 - `JOBS_WORKER_ENABLED=false` in API-only processes
 - `JOBS_WORKER_ID` to identify each worker instance
 - `JOBS_WORKER_BATCH` and `JOBS_WORKER_POLL_MS` tuned per queue depth
+- `JOBS_RETRY_DELAY_MS` to control retry backoff
 
 Queue candidates currently include:
 - `audit` events
 - `wholesale` notifications
 - `media` upload completion events
 - `workflow` onboarding submissions
+- `realtime` event publication hooks
+
+## Realtime Delivery Hooks
+Realtime event publishing is queued and can optionally publish to Redis:
+- `REALTIME_ENABLED=true`
+- `REALTIME_REDIS_URL` (defaults to `REDIS_URL`)
+- `REALTIME_CHANNEL_PREFIX` (default `mldz:realtime:`)
+- `REALTIME_MAX_ATTEMPTS` (default `3`)
 
 ## Distributed Cache
 Redis is supported via:

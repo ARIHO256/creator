@@ -142,7 +142,13 @@ Auth: JWT bearer required unless noted `Public`.
 - `POST /api/messages/read-all`
 - `GET /api/help-support/content`
 - `POST /api/help-support/tickets` - `CreateSupportTicketDto`
+- `GET /api/help-support/tickets/:id`
 - `GET /api/system-status`
+- `GET /api/support/tickets` (Support/Admin)
+- `GET /api/support/tickets/:id` (Support/Admin)
+- `PATCH /api/support/tickets/:id` (Support/Admin) - `UpdateSupportTicketDto`
+- `POST /api/support/tickets/:id/assign` (Support/Admin) - `AssignSupportTicketDto`
+- `POST /api/support/tickets/:id/escalate` (Support/Admin) - `EscalateSupportTicketDto`
 
 ## Regulatory + Compliance
 - `GET /api/compliance`
@@ -232,6 +238,11 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/earnings/summary`
 - `GET /api/earnings/payouts`
 - `POST /api/earnings/payouts/request`
+- `GET /api/finance/payouts` (Support/Admin)
+- `POST /api/finance/payouts/:id/approve` (Support/Admin)
+- `POST /api/finance/payouts/:id/reject` (Support/Admin)
+- `POST /api/finance/payouts/:id/cancel` (Support/Admin)
+- `POST /api/finance/adjustments` (Support/Admin)
 - `GET /api/analytics/overview`
 - `GET /api/analytics/summary`
 - `GET /api/subscription`

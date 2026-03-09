@@ -38,6 +38,12 @@ export default () => ({
     redisPrefix: process.env.CACHE_REDIS_PREFIX ?? 'mldz:cache:',
     lockTtlMs: Number(process.env.CACHE_LOCK_TTL_MS ?? '5000')
   },
+  realtime: {
+    enabled: !['0', 'false', 'no', 'off'].includes(String(process.env.REALTIME_ENABLED ?? 'true').toLowerCase()),
+    redisUrl: process.env.REALTIME_REDIS_URL ?? process.env.REDIS_URL ?? '',
+    channelPrefix: process.env.REALTIME_CHANNEL_PREFIX ?? 'mldz:realtime:',
+    maxAttempts: Number(process.env.REALTIME_MAX_ATTEMPTS ?? '3')
+  },
   idempotency: {
     ttlMs: Number(process.env.IDEMPOTENCY_TTL_MS ?? `${24 * 60 * 60 * 1000}`)
   },

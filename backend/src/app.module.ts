@@ -15,6 +15,7 @@ import { CacheModule } from './platform/cache/cache.module.js';
 import { MetricsModule } from './platform/metrics/metrics.module.js';
 import { AuditModule } from './platform/audit/audit.module.js';
 import { IdempotencyModule } from './platform/idempotency/idempotency.module.js';
+import { RealtimeModule } from './platform/realtime/realtime.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { CreatorsModule } from './modules/creators/creators.module.js';
@@ -51,6 +52,7 @@ import { OpsModule } from './modules/ops/ops.module.js';
     CacheModule,
     MetricsModule,
     AuditModule,
+    RealtimeModule,
     IdempotencyModule,
     PrismaModule,
     AuthModule,

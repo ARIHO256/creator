@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JobsService } from './jobs.service.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { MetricsService } from '../../platform/metrics/metrics.service.js';
+import { RealtimePublisher } from '../../platform/realtime/realtime.publisher.js';
 
 type WorkerStatus = {
   running: boolean;
@@ -22,7 +23,8 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
     private readonly jobsService: JobsService,
     @Inject(ConfigService) private readonly configService: ConfigService,
     @Optional() private readonly auditService?: AuditService,
-    @Optional() private readonly metrics?: MetricsService
+    @Optional() private readonly metrics?: MetricsService,
+    @Optional() private readonly realtimePublisher?: RealtimePublisher
   ) {}
 
   onModuleInit() {
@@ -110,6 +112,14 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
       case 'AUDIT_EVENT':
         if (this.auditService) {
           await this.auditService.persist(job.payload as any);
+        }
+        return;
+      case 'REALTIME_EVENT':
+        if (this.realtimePublisher) {
+          const payload = job.payload as { channel?: string; event?: Record<string, unknown> };
+          if (payload?.channel && payload?.event) {
+            await this.realtimePublisher.publish(payload.channel, payload.event);
+          }
         }
         return;
       default:
