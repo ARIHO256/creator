@@ -1,16 +1,20 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { Prisma } from '@prisma/client';
+import { Prisma, ProviderFulfillmentStatus } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { SellersService } from '../sellers/sellers.service.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
 import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
+import { ProviderTransitionDto } from './dto/provider-transition.dto.js';
+import { ProviderFulfillmentTransitionDto } from './dto/provider-fulfillment-transition.dto.js';
 
 @Injectable()
 export class ProviderService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sellersService: SellersService
+    private readonly sellersService: SellersService,
+    private readonly audit: AuditService
   ) {}
 
   async serviceCommand(userId: string) {
@@ -108,16 +112,112 @@ export class ProviderService {
   async bookings(userId: string) {
     const bookings = await this.prisma.providerBooking.findMany({
       where: { userId },
+      include: { fulfillment: true },
       orderBy: { updatedAt: 'desc' }
     });
     return { bookings: bookings.map((entry) => this.serializeBooking(entry)) };
   }
   async booking(userId: string, id: string) {
     const booking = await this.prisma.providerBooking.findFirst({
-      where: { id, userId }
+      where: { id, userId },
+      include: { fulfillment: true }
     });
     if (!booking) throw new NotFoundException('Booking not found');
     return this.serializeBooking(booking);
+  }
+
+  async transitionQuote(userId: string, id: string, body: ProviderTransitionDto) {
+    const quote = await this.prisma.providerQuote.findFirst({ where: { id, userId } });
+    if (!quote) {
+      throw new NotFoundException('Provider quote not found');
+    }
+    const nextKey = this.normalizeStatus(body.status);
+    this.assertQuoteTransition(quote.status, nextKey);
+    const next = nextKey.toLowerCase();
+    const updated = await this.prisma.providerQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: next,
+        data: body.note ? ({ ...(quote.data as Record<string, unknown>), note: body.note } as Prisma.InputJsonValue) : undefined
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'provider.quote_transition',
+      entityType: 'provider_quote',
+      entityId: updated.id,
+      route: `/api/provider/quotes/${id}/transition`,
+      method: 'POST',
+      statusCode: 200,
+      metadata: { from: quote.status, to: next }
+    });
+    return this.serializeQuote(updated);
+  }
+
+  async transitionBooking(userId: string, id: string, body: ProviderTransitionDto) {
+    const booking = await this.prisma.providerBooking.findFirst({ where: { id, userId } });
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+    const nextKey = this.normalizeStatus(body.status);
+    this.assertBookingTransition(booking.status, nextKey);
+    const next = nextKey.toLowerCase();
+    const updated = await this.prisma.providerBooking.update({
+      where: { id: booking.id },
+      data: {
+        status: next,
+        data: body.note ? ({ ...(booking.data as Record<string, unknown>), note: body.note } as Prisma.InputJsonValue) : undefined
+      },
+      include: { fulfillment: true }
+    });
+    if (['CONFIRMED', 'IN_PROGRESS'].includes(nextKey)) {
+      await this.ensureFulfillment(
+        updated.id,
+        (nextKey === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'OPEN') as ProviderFulfillmentStatus
+      );
+    }
+    await this.audit.log({
+      userId,
+      action: 'provider.booking_transition',
+      entityType: 'provider_booking',
+      entityId: updated.id,
+      route: `/api/provider/bookings/${id}/transition`,
+      method: 'POST',
+      statusCode: 200,
+      metadata: { from: booking.status, to: next }
+    });
+    return this.serializeBooking(updated);
+  }
+
+  async transitionFulfillment(userId: string, id: string, body: ProviderFulfillmentTransitionDto) {
+    const fulfillment = await this.prisma.providerFulfillment.findUnique({ where: { id }, include: { booking: true } });
+    if (!fulfillment || fulfillment.booking.userId !== userId) {
+      throw new NotFoundException('Fulfillment not found');
+    }
+    const next = this.normalizeStatus(body.status);
+    this.assertFulfillmentTransition(fulfillment.status, next);
+    const updated = await this.prisma.providerFulfillment.update({
+      where: { id: fulfillment.id },
+      data: {
+        status: next as ProviderFulfillmentStatus,
+        startedAt: next === 'IN_PROGRESS' ? new Date() : fulfillment.startedAt,
+        completedAt: next === 'COMPLETED' ? new Date() : fulfillment.completedAt,
+        metadata: body.note
+          ? ({ ...(fulfillment.metadata as Record<string, unknown>), note: body.note } as Prisma.InputJsonValue)
+          : undefined
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'provider.fulfillment_transition',
+      entityType: 'provider_fulfillment',
+      entityId: updated.id,
+      route: `/api/provider/fulfillments/${id}/transition`,
+      method: 'POST',
+      statusCode: 200,
+      metadata: { from: fulfillment.status, to: next }
+    });
+    return updated;
   }
   async portfolio(userId: string) {
     const items = await this.prisma.providerPortfolioItem.findMany({
@@ -184,6 +284,7 @@ export class ProviderService {
     data: unknown;
     createdAt: Date;
     updatedAt: Date;
+    fulfillment?: { id: string; status: string } | null;
   }) {
     return {
       id: booking.id,
@@ -194,7 +295,8 @@ export class ProviderService {
       currency: booking.currency,
       data: booking.data ?? {},
       createdAt: booking.createdAt.toISOString(),
-      updatedAt: booking.updatedAt.toISOString()
+      updatedAt: booking.updatedAt.toISOString(),
+      fulfillment: booking.fulfillment ?? null
     };
   }
 
@@ -236,5 +338,75 @@ export class ProviderService {
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString()
     };
+  }
+
+  private normalizeStatus(status: string) {
+    return String(status || '').trim().toUpperCase();
+  }
+
+  private assertQuoteTransition(current: string, next: string) {
+    const transitions: Record<string, string[]> = {
+      DRAFT: ['SENT', 'CANCELLED'],
+      SENT: ['NEGOTIATING', 'ACCEPTED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
+      NEGOTIATING: ['ACCEPTED', 'REJECTED', 'CANCELLED', 'EXPIRED'],
+      ACCEPTED: ['BOOKED', 'CANCELLED'],
+      REJECTED: [],
+      CANCELLED: [],
+      EXPIRED: [],
+      BOOKED: []
+    };
+    const currentKey = this.normalizeStatus(current);
+    const allowed = transitions[currentKey] ?? [];
+    if (!allowed.includes(next)) {
+      throw new BadRequestException(`Quote status cannot transition from ${current} to ${next}`);
+    }
+  }
+
+  private assertBookingTransition(current: string, next: string) {
+    const transitions: Record<string, string[]> = {
+      REQUESTED: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['IN_PROGRESS', 'CANCELLED', 'NO_SHOW'],
+      IN_PROGRESS: ['COMPLETED', 'CANCELLED', 'DISPUTED'],
+      COMPLETED: [],
+      CANCELLED: [],
+      NO_SHOW: [],
+      DISPUTED: []
+    };
+    const currentKey = this.normalizeStatus(current);
+    const allowed = transitions[currentKey] ?? [];
+    if (!allowed.includes(next)) {
+      throw new BadRequestException(`Booking status cannot transition from ${current} to ${next}`);
+    }
+  }
+
+  private async ensureFulfillment(bookingId: string, status: ProviderFulfillmentStatus) {
+    const existing = await this.prisma.providerFulfillment.findUnique({ where: { bookingId } });
+    if (existing) {
+      if (existing.status !== status) {
+        await this.prisma.providerFulfillment.update({
+          where: { id: existing.id },
+          data: { status }
+        });
+      }
+      return existing;
+    }
+    return this.prisma.providerFulfillment.create({
+      data: { bookingId, status }
+    });
+  }
+
+  private assertFulfillmentTransition(current: string, next: string) {
+    const transitions: Record<string, string[]> = {
+      OPEN: ['IN_PROGRESS', 'CANCELLED'],
+      IN_PROGRESS: ['COMPLETED', 'DISPUTED', 'CANCELLED'],
+      COMPLETED: [],
+      DISPUTED: [],
+      CANCELLED: []
+    };
+    const currentKey = this.normalizeStatus(current);
+    const allowed = transitions[currentKey] ?? [];
+    if (!allowed.includes(next)) {
+      throw new BadRequestException(`Fulfillment status cannot transition from ${current} to ${next}`);
+    }
   }
 }

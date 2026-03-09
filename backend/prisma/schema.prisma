@@ -235,6 +235,88 @@ enum DisputeStatus {
   REJECTED
 }
 
+enum SettlementStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  RECONCILED
+  FAILED
+}
+
+enum SettlementItemStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ReconciliationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  ACKED
+  FAILED
+}
+
+enum ModerationFlagStatus {
+  OPEN
+  RESOLVED
+  ESCALATED
+}
+
+enum ModerationSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ContentScanVerdict {
+  CLEAN
+  FLAGGED
+  BLOCKED
+}
+
+enum AutoCheckStatus {
+  PENDING
+  PASSED
+  FAILED
+  NEEDS_REVIEW
+}
+
+enum EvidenceBundleStatus {
+  QUEUED
+  GENERATING
+  READY
+  FAILED
+}
+
+enum ExportFileStatus {
+  READY
+  EXPIRED
+  DELETED
+}
+
+enum CatalogImportStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum ProviderFulfillmentStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
 enum ReviewSubject {
   CREATOR
   SELLER
@@ -280,6 +362,10 @@ model User {
   appRecords           AppRecord[]
   auditEvents          AuditEvent[]
   notifications        Notification[]
+  deliveryReceipts     DeliveryReceipt[]
+  settlementItems      SettlementItem[]
+  regulatoryAutoChecks RegulatoryAutoCheck[]
+  evidenceBundles      EvidenceBundle[]
   sellerFollows        SellerFollow[]
   creatorFollowers     CreatorFollow[]        @relation("CreatorFollowedBy")
   savedOpportunities   SavedOpportunity[]
@@ -301,6 +387,8 @@ model User {
   assignedSupportTickets SupportTicket[] @relation("SupportAssignee")
   marketApprovalRequests MarketApprovalRequest[] @relation("MarketApprovalRequestedBy")
   marketApprovalReviews  MarketApprovalRequest[] @relation("MarketApprovalReviewedBy")
+  settlementBatchesCreated SettlementBatch[] @relation("SettlementCreatedBy")
+  moderationFlagsResolved ModerationFlag[] @relation("ModerationResolvedBy")
   listingFavorites     ListingFavorite[]
   providerQuotes       ProviderQuote[]
   providerBookings     ProviderBooking[]
@@ -338,6 +426,7 @@ model User {
   receivedInvites      CollaborationInvite[] @relation("InviteRecipient")
   ordersAsBuyer        Order[]               @relation("OrderBuyer")
   transactions         Transaction[]
+  dashboardSnapshots   DashboardSnapshot[]
   opportunitiesCreated Opportunity[]         @relation("OpportunityCreatedBy")
   contractsAsCreator   Contract[]
 }
@@ -432,6 +521,9 @@ model Seller {
   returns       SellerReturn[]
   disputes      SellerDispute[]
   catalogTemplates CatalogTemplate[]
+  catalogTemplatePresets CatalogTemplatePreset[]
+  catalogImportJobs CatalogImportJob[]
+  settlementItems SettlementItem[]
 
   @@index([isVerified, rating, createdAt])
   @@index([kind, createdAt])
@@ -1022,6 +1114,7 @@ model Transaction {
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   seller Seller? @relation(fields: [sellerId], references: [id], onDelete: SetNull)
   order  Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  settlementItems SettlementItem[]
 
   @@index([userId])
   @@index([sellerId])
@@ -1029,6 +1122,259 @@ model Transaction {
   @@index([type, status])
   @@index([userId, createdAt])
   @@index([sellerId, createdAt])
+}
+
+model DashboardSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  role       String
+  payload    Json
+  computedAt DateTime @default(now())
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([userId, role])
+  @@index([computedAt])
+  @@index([expiresAt])
+}
+
+model SettlementBatch {
+  id              String          @id @default(cuid())
+  status          SettlementStatus @default(PENDING)
+  totalAmount     Float           @default(0)
+  currency        String          @default("USD")
+  itemCount       Int             @default(0)
+  createdByUserId String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  reconciledAt    DateTime?
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  createdBy User?           @relation("SettlementCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  items     SettlementItem[]
+  reconciliations ReconciliationRun[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SettlementItem {
+  id            String             @id @default(cuid())
+  batchId       String
+  transactionId String
+  sellerId      String?
+  userId        String
+  amount        Float
+  currency      String             @default("USD")
+  status        SettlementItemStatus @default(PENDING)
+  error         String?
+  metadata      Json?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  batch       SettlementBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  transaction Transaction     @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  seller      Seller?         @relation(fields: [sellerId], references: [id], onDelete: SetNull)
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([batchId, transactionId])
+  @@index([transactionId])
+  @@index([sellerId])
+  @@index([status])
+}
+
+model ReconciliationRun {
+  id          String              @id @default(cuid())
+  batchId     String
+  status      ReconciliationStatus @default(PENDING)
+  startedAt   DateTime            @default(now())
+  completedAt DateTime?
+  summary     Json?
+  createdAt   DateTime            @default(now())
+
+  batch SettlementBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@index([batchId, status])
+}
+
+model DeliveryReceipt {
+  id           String         @id @default(cuid())
+  userId       String
+  eventId      String
+  channel      String?
+  eventType    String?
+  status       DeliveryStatus @default(PENDING)
+  attempts     Int            @default(0)
+  lastAttemptAt DateTime?
+  ackedAt      DateTime?
+  payload      Json?
+  expiresAt    DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([userId, status, createdAt])
+  @@index([expiresAt])
+}
+
+model ModerationFlag {
+  id              String              @id @default(cuid())
+  targetType      String
+  targetId        String
+  status          ModerationFlagStatus @default(OPEN)
+  severity        ModerationSeverity   @default(MEDIUM)
+  reason          String?
+  metadata        Json?
+  resolvedByUserId String?
+  resolvedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  resolvedBy User? @relation("ModerationResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([targetType, targetId])
+  @@index([status, severity])
+  @@index([resolvedAt])
+}
+
+model ContentScanResult {
+  id         String             @id @default(cuid())
+  targetType String
+  targetId   String
+  scanner    String
+  verdict    ContentScanVerdict
+  score      Float?
+  metadata   Json?
+  createdAt  DateTime           @default(now())
+
+  @@index([targetType, targetId])
+  @@index([verdict, createdAt])
+}
+
+model RegulatoryAutoCheck {
+  id               String         @id @default(cuid())
+  userId           String?
+  deskId           String?
+  complianceItemId String?
+  ruleKey          String
+  status           AutoCheckStatus @default(PENDING)
+  result           Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  user      User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  desk      RegulatoryDesk?        @relation(fields: [deskId], references: [id], onDelete: SetNull)
+  complianceItem RegulatoryComplianceItem? @relation(fields: [complianceItemId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([ruleKey])
+  @@index([deskId])
+  @@index([complianceItemId])
+}
+
+model EvidenceBundle {
+  id         String              @id @default(cuid())
+  userId     String
+  status     EvidenceBundleStatus @default(QUEUED)
+  storageKey String?
+  fileUrl    String?
+  mimeType   String?
+  sizeBytes  Int?
+  expiresAt  DateTime?
+  metadata   Json?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([expiresAt])
+}
+
+model CatalogTemplatePreset {
+  id          String   @id @default(cuid())
+  sellerId    String
+  name        String
+  description String?
+  templateIds Json?
+  payload     Json?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, name])
+  @@index([sellerId, createdAt])
+}
+
+model CatalogImportJob {
+  id           String             @id @default(cuid())
+  sellerId     String
+  status       CatalogImportStatus @default(QUEUED)
+  totalCount   Int                @default(0)
+  successCount Int                @default(0)
+  errorCount   Int                @default(0)
+  errorReport  Json?
+  metadata     Json?
+  createdAt    DateTime           @default(now())
+  completedAt  DateTime?
+  updatedAt    DateTime           @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, status, createdAt])
+}
+
+model ProviderFulfillment {
+  id          String                 @id @default(cuid())
+  bookingId   String
+  status      ProviderFulfillmentStatus @default(OPEN)
+  startedAt   DateTime?
+  completedAt DateTime?
+  metadata    Json?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  booking ProviderBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId])
+  @@index([status])
+}
+
+model SearchDocument {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  title      String?
+  content    String   @db.Text
+  payload    Json?
+  locale     String?
+  updatedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@unique([entityType, entityId])
+  @@index([entityType, updatedAt])
+  @@fulltext([title, content])
+}
+
+model SearchIndexState {
+  id            String   @id @default(cuid())
+  entityType    String   @unique
+  cursor        String?
+  lastIndexedAt DateTime?
+  status        String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model AnalyticsEvent {
@@ -1606,6 +1952,7 @@ model ProviderBooking {
   updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fulfillment ProviderFulfillment?
 
   @@index([userId, status])
 }
@@ -1904,6 +2251,7 @@ model RegulatoryDesk {
 
   user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   items RegulatoryDeskItem[]
+  autoChecks RegulatoryAutoCheck[]
 
   @@unique([userId, slug])
   @@index([userId, status])
@@ -1935,6 +2283,7 @@ model RegulatoryComplianceItem {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  autoChecks RegulatoryAutoCheck[]
 
   @@index([userId, itemType])
 }
@@ -2086,9 +2435,28 @@ model SellerExportJob {
   metadata    Json?
 
   seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  exportFiles ExportFile[]
 
   @@index([sellerId, status])
   @@index([requestedAt])
+}
+
+model ExportFile {
+  id         String         @id @default(cuid())
+  jobId      String
+  status     ExportFileStatus @default(READY)
+  storageKey String
+  fileUrl    String?
+  format     String
+  mimeType   String?
+  sizeBytes  Int?
+  expiresAt  DateTime?
+  createdAt  DateTime       @default(now())
+
+  job SellerExportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([expiresAt])
 }
 
 model SellerReturn {

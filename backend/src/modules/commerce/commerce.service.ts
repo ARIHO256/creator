@@ -28,6 +28,7 @@ import { UpdateShippingProfileDto } from './dto/update-shipping-profile.dto.js';
 import { UpdateShippingRateDto } from './dto/update-shipping-rate.dto.js';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 import { JobsService } from '../jobs/jobs.service.js';
+import { ExportsService } from '../exports/exports.service.js';
 
 @Injectable()
 export class CommerceService {
@@ -36,7 +37,8 @@ export class CommerceService {
     private readonly taxonomyService: TaxonomyService,
     private readonly sellersService: SellersService,
     private readonly cache: CacheService,
-    private readonly jobsService: JobsService
+    private readonly jobsService: JobsService,
+    private readonly exportsService: ExportsService
   ) {}
 
   async dashboard(userId: string) {
@@ -348,7 +350,7 @@ export class CommerceService {
       this.assertOrderTransition(order.status, payload.status);
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: order.id },
       data: {
         status: payload.status ? (payload.status as any) : undefined,
@@ -356,6 +358,8 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return updated;
   }
 
   async returns(userId: string, query?: SellerReturnsQueryDto) {
@@ -430,10 +434,21 @@ export class CommerceService {
     const seller = await this.ensureSeller(userId);
     const jobs = await this.prisma.sellerExportJob.findMany({
       where: { sellerId: seller.id },
+      include: { exportFiles: true },
       orderBy: { requestedAt: 'desc' }
     });
 
     return { jobs };
+  }
+
+  async exportJob(userId: string, id: string) {
+    const seller = await this.ensureSeller(userId);
+    return this.exportsService.jobForSeller(seller.id, id);
+  }
+
+  async exportDownload(userId: string, id: string, fileId?: string) {
+    const seller = await this.ensureSeller(userId);
+    return this.exportsService.openFileForSeller(seller.id, id, fileId);
   }
 
   async documents(userId: string) {
@@ -843,7 +858,7 @@ export class CommerceService {
       }
     }
 
-    return this.prisma.sellerDocument.create({
+    const created = await this.prisma.sellerDocument.create({
       data: {
         sellerId: seller.id,
         listingId: payload.listingId,
@@ -858,6 +873,14 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+
+    await this.jobsService.enqueue({
+      queue: 'moderation',
+      type: 'MODERATION_SCAN',
+      payload: { targetType: 'seller_document', targetId: created.id }
+    });
+
+    return created;
   }
 
   async updateDocument(userId: string, id: string, payload: UpdateDocumentDto) {
@@ -897,15 +920,11 @@ export class CommerceService {
 
   async createExportJob(userId: string, payload: CreateExportJobDto) {
     const seller = await this.ensureSeller(userId);
-    return this.prisma.sellerExportJob.create({
-      data: {
-        sellerId: seller.id,
-        type: payload.type,
-        format: payload.format ?? 'CSV',
-        status: 'QUEUED',
-        filters: payload.filters as Prisma.InputJsonValue | undefined,
-        metadata: payload.metadata as Prisma.InputJsonValue | undefined
-      }
+    return this.exportsService.createJob(seller.id, {
+      type: payload.type,
+      format: payload.format,
+      filters: payload.filters,
+      metadata: payload.metadata
     });
   }
 
@@ -918,7 +937,7 @@ export class CommerceService {
       throw new NotFoundException('Order not found');
     }
 
-    return this.prisma.sellerReturn.create({
+    const created = await this.prisma.sellerReturn.create({
       data: {
         sellerId: seller.id,
         orderId: order.id,
@@ -928,6 +947,8 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return created;
   }
 
   async updateReturn(userId: string, id: string, payload: UpdateReturnDto) {
@@ -939,7 +960,7 @@ export class CommerceService {
       throw new NotFoundException('Return not found');
     }
 
-    return this.prisma.sellerReturn.update({
+    const updated = await this.prisma.sellerReturn.update({
       where: { id: existing.id },
       data: {
         status: payload.status ?? undefined,
@@ -951,6 +972,8 @@ export class CommerceService {
         refundedAt: payload.status === 'REFUNDED' ? new Date() : undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return updated;
   }
 
   async createDispute(userId: string, payload: CreateDisputeDto) {
@@ -962,7 +985,7 @@ export class CommerceService {
       throw new NotFoundException('Order not found');
     }
 
-    return this.prisma.sellerDispute.create({
+    const created = await this.prisma.sellerDispute.create({
       data: {
         sellerId: seller.id,
         orderId: order.id,
@@ -971,6 +994,8 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return created;
   }
 
   async updateDispute(userId: string, id: string, payload: UpdateDisputeDto) {
@@ -982,7 +1007,7 @@ export class CommerceService {
       throw new NotFoundException('Dispute not found');
     }
 
-    return this.prisma.sellerDispute.update({
+    const updated = await this.prisma.sellerDispute.update({
       where: { id: existing.id },
       data: {
         status: payload.status ?? undefined,
@@ -991,6 +1016,8 @@ export class CommerceService {
         resolvedAt: payload.status && ['RESOLVED', 'REJECTED'].includes(payload.status) ? new Date() : undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return updated;
   }
 
   private async buildPrintPayload(userId: string, id: string) {
@@ -1036,6 +1063,19 @@ export class CommerceService {
       })),
       totals
     };
+  }
+
+  private async invalidateSellerDashboards(userId: string) {
+    await Promise.all([
+      this.cache.invalidatePrefix(`seller:dashboardSummary:${userId}:`),
+      this.cache.invalidate(`dashboard:summary:${userId}`)
+    ]);
+    await this.prisma.dashboardSnapshot.deleteMany({
+      where: {
+        userId,
+        role: { in: ['SELLER', 'PROVIDER'] }
+      }
+    });
   }
 
   private assertOrderTransition(current: string, next: string) {

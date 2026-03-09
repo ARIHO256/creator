@@ -46,6 +46,12 @@ Queue candidates currently include:
 - `media` upload completion events
 - `workflow` onboarding submissions
 - `realtime` event publication hooks
+- `finance` settlement and reconciliation batches
+- `exports` CSV/PDF generation jobs
+- `regulatory` auto-review and evidence bundle generation
+- `moderation` content + attachment scanning
+- `catalog` bulk import jobs
+- `search` index updates and reindex sweeps
 
 ## Realtime Delivery Hooks
 Realtime event publishing is queued and can optionally publish to Redis:
@@ -54,11 +60,23 @@ Realtime event publishing is queued and can optionally publish to Redis:
 - `REALTIME_CHANNEL_PREFIX` (default `mldz:realtime:`)
 - `REALTIME_MAX_ATTEMPTS` (default `3`)
 - `REALTIME_STREAM_PING_MS` (default `25000`)
+- `REALTIME_STREAM_MAX_PER_USER` (default `3`)
+- `REALTIME_STREAM_MAX_TOTAL` (default `5000`)
+- `REALTIME_STREAM_HISTORY_SIZE` (default `50`)
+- `REALTIME_STREAM_HISTORY_TTL_MS` (default `300000`)
+- `REALTIME_DELIVERY_RETRY_MS` (default `15000`)
+- `REALTIME_DELIVERY_SWEEP_MS` (default `15000`)
+- `REALTIME_DELIVERY_SWEEP_ENABLED` (default `true`)
 
 Realtime streaming transport (SSE) is available at `GET /api/realtime/stream` and requires:
 - JWT auth (same as other API routes).
 - Redis pub/sub to deliver events across instances.
 - Worker processes to publish events in multi-instance deployments.
+The stream supports `Last-Event-ID` for best-effort replay using an in-memory buffer; full replay still requires persistent event storage.
+
+Delivery receipts are persisted for retry/polling:
+- `GET /api/realtime/pending`
+- `POST /api/realtime/ack`
 
 ## Distributed Cache
 Redis is supported via:
@@ -66,6 +84,28 @@ Redis is supported via:
 - `CACHE_REDIS_PREFIX`
 
 Enable Redis in production to avoid per-instance cache divergence.
+
+## Exports + Evidence Storage
+Generated exports and regulatory evidence bundles are stored on local disk by default.
+Production should use object storage (S3/GCS/etc.) with signed URLs and lifecycle rules.
+Config:
+- `STORAGE_ROOT_DIR`
+- `EXPORT_FILE_TTL_DAYS`
+- `REGULATORY_EVIDENCE_TTL_DAYS`
+
+## Search / Indexing
+Search indexing is stored in the `SearchDocument` table and updated via background jobs.
+For large-scale discovery, back the search module with OpenSearch/Meilisearch:
+- `SEARCH_ENABLED`
+- `SEARCH_INDEX_BATCH`
+- `SEARCH_QUERY_LIMIT`
+
+## Dashboard Snapshots
+Dashboard summaries can be persisted for scale:
+- `DASHBOARD_SNAPSHOT_TTL_MS` (default `60000`)
+Snapshots reduce repeated aggregation for large seller/provider accounts.
+
+Write-heavy seller operations invalidate dashboard caches and snapshots to keep KPIs fresh.
 
 ## Query Hotspot Review
 Current hotspots and mitigation:

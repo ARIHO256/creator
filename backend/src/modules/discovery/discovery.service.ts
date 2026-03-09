@@ -4,10 +4,14 @@ import { serializePublicSeller } from '../../common/serializers/seller.serialize
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { SearchQueryDto } from './dto/search-query.dto.js';
+import { SearchService } from '../search/search.service.js';
 
 @Injectable()
 export class DiscoveryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly searchService: SearchService
+  ) {}
 
   async sellers(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
@@ -263,6 +267,8 @@ export class DiscoveryService {
     if (!q) {
       return { sellers: [], listings: [], opportunities: [] };
     }
+    const searchResults = await this.searchService.searchListings({ q });
+    const listingIds = searchResults.results.map((entry: any) => entry.id).filter(Boolean);
     const [sellers, listings, opportunities] = await Promise.all([
       this.prisma.seller.findMany({
         where: {
@@ -274,12 +280,14 @@ export class DiscoveryService {
         },
         take: 20
       }),
-      this.prisma.marketplaceListing.findMany({
-        where: {
-          OR: [{ title: { contains: q } }, { description: { contains: q } }, { sku: { contains: q } }]
-        },
-        take: 20
-      }),
+      listingIds.length
+        ? this.prisma.marketplaceListing.findMany({ where: { id: { in: listingIds } } })
+        : this.prisma.marketplaceListing.findMany({
+            where: {
+              OR: [{ title: { contains: q } }, { description: { contains: q } }, { sku: { contains: q } }]
+            },
+            take: 20
+          }),
       this.prisma.opportunity.findMany({
         where: {
           OR: [{ title: { contains: q } }, { description: { contains: q } }]

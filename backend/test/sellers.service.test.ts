@@ -21,7 +21,8 @@ test('SellersService.ensureSellerProfile rejects users without seller role assig
     }
   };
 
-  const service = new SellersService(prisma as any);
+  const searchService = { async enqueueListingIndex() {} };
+  const service = new SellersService(prisma as any, searchService as any);
   await assert.rejects(
     () => service.ensureSellerProfile('user-1'),
     /Seller workspace is not enabled/
@@ -42,7 +43,8 @@ test('SellersService.ensureSellerProfile returns existing seller profile for all
     }
   };
 
-  const service = new SellersService(prisma as any);
+  const searchService = { async enqueueListingIndex() {} };
+  const service = new SellersService(prisma as any, searchService as any);
   const profile = await service.ensureSellerProfile('user-1');
   assert.equal(profile.id, 'seller-1');
 });
@@ -61,7 +63,8 @@ test('SellersService.ensureSellerProfile rejects provider role with seller-kind 
     }
   };
 
-  const service = new SellersService(prisma as any);
+  const searchService = { async enqueueListingIndex() {} };
+  const service = new SellersService(prisma as any, searchService as any);
   await assert.rejects(
     () => service.ensureSellerProfile('user-2'),
     /Provider workspace is not enabled/

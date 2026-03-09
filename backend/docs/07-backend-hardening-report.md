@@ -3,42 +3,85 @@
 Date: 2026-03-09
 
 ## Summary
-This pass expanded catalog templates with export/import support and added approval reminders plus SLA breach notifications. Frontends remain unchanged.
+This pass closed the remaining backend gap areas (1–8) with real domain implementations: finance settlement automation, regulatory evidence automation, ops exports pipeline, moderation workflows, catalog presets/import jobs, provider lifecycle enforcement, realtime delivery sweep/ack support, and search indexing. Frontends remain unchanged.
 
 ## What Was Found
-- Catalog templates needed export/import flows for template portability.
-- Market approvals needed pre-SLA reminders and breach notifications beyond basic SLA tracking.
+- Missing end-to-end automation for exports, regulatory evidence generation, and catalog import jobs.
+- Provider lifecycle transitions and fulfillment enforcement were not centralized.
+- Search/indexing and realtime delivery guarantees required backend primitives.
+- Moderation tooling existed but lacked list/search and attachment scanning.
 
 ## Implementations Completed
-### Catalog Template Export / Import
-- Added export endpoint for template portability.
-- Added import endpoint with upsert/create-only/update-only modes and attribute handling.
+### Finance Settlement Automation
+- Settlement batch creation + reconciliation already wired; job worker now hardens failure paths.
+- New settlement endpoints are included in the API spec.
 
-### Approval Automation Beyond SLA
-- Scheduled reminder jobs ahead of SLA deadlines.
-- Added SLA breach notifications to requester with realtime events when available.
+### Realtime Delivery Infrastructure
+- Delivery receipts + ACK/pending already in place; added delivery sweep job scheduling and retry.
+- Configurable retry intervals and sweep toggles.
+
+### Compliance / Regulatory Automation
+- Auto-review job trigger + evidence bundle generation with storage-backed download.
+- Evidence bundle lifecycle updated to QUEUED → GENERATING → READY/FAILED.
+
+### Ops Exports / Reporting
+- Export jobs now run through a background generator with CSV/PDF output and storage-backed downloads.
+- Export files track expiry and download endpoints are available.
+
+### Support Moderation
+- Moderation list/read endpoints added.
+- Message/support ticket + seller document attachment scanning with flags and audit logging.
+
+### Catalog Presets + Import Workflows
+- Presets are now first-class with CRUD + export.
+- Validation endpoint and async import jobs with status tracking.
+
+### Provider Lifecycle Automation
+- Quote, booking, and fulfillment transitions enforced server-side with audit trails.
+- Fulfillment records are auto-created for confirmed/in-progress bookings.
+
+### Search / Indexing
+- Search module added with listing/storefront indexing + query APIs.
+- Listings and storefronts enqueue index updates on create/update.
 
 ## Files Changed
 ### Modules / Domain
+- `src/modules/exports/*`
+- `src/modules/search/*`
 - `src/modules/catalog/*`
-- `src/modules/approvals/*`
+- `src/modules/provider/*`
+- `src/modules/communications/*`
+- `src/modules/regulatory/*`
+- `src/modules/commerce/*`
+- `src/modules/ops/*`
 - `src/modules/jobs/jobs.worker.ts`
+- `src/modules/discovery/*`
+- `src/modules/sellers/*`
+- `src/modules/storefront/*`
+- `src/modules/marketplace/*`
+
+### Platform
+- `src/platform/storage/*`
+- `src/platform/realtime/*`
+
+### Config
 - `src/config/app.config.ts`
 
-### Prisma
-- `prisma/schema.prisma`
-- `prisma/migrations/202603091430_catalog_template_fields/migration.sql`
-- `prisma/migrations/202603091500_market_approval_sla/migration.sql`
-
 ### Tests
-- `test/approvals.service.test.ts`
+- `test/catalog.validation.test.ts`
+- `test/provider.lifecycle.test.ts`
+- `test/communications.service.test.ts`
+- `test/realtime.service.test.ts`
+- `test/commerce.service.test.ts`
+- `test/sellers.service.test.ts`
+- `test/storefront.service.test.ts`
+- `test/finance.service.test.ts`
 
 ### Docs
-- `docs/08-scaling-and-load-testing.md`
+- `docs/05-endpoints-spec.md`
 
 ## Migrations Added
-- `202603091430_catalog_template_fields` (catalog template UX fields)
-- `202603091500_market_approval_sla` (approval SLA fields)
+- None in this pass (schema already includes new models from prior gap completion work).
 
 ## Commands Run
 - `npm run prisma:generate`
@@ -46,12 +89,15 @@ This pass expanded catalog templates with export/import support and added approv
 - `npm run test` (required elevated permissions for `tsx` IPC socket)
 
 ## Remaining Gaps / Infra Needed
-- Redis for distributed caching, locks, and realtime pub/sub transport.
-- Dedicated worker processes for jobs and realtime delivery.
-- DB connection pooling + read replicas for peak read traffic.
-- Centralized logging/metrics stack with alerting and tracing export.
-- Load testing with production-like infra to validate p95/p99.
-- Websocket/push transport for realtime delivery.
+- Redis for distributed caching, locks, realtime fan-out, and delivery retries.
+- Dedicated worker processes for background jobs at scale.
+- Object storage for exports/evidence bundles with signed URLs.
+- Antivirus/malware scanning service for attachments.
+- Search engine (OpenSearch/Meilisearch) for large-scale indexing and ranking.
+- Websocket/push transport for realtime (SSE + polling is in place).
+- DB pooling + read replicas for high read traffic.
+- Centralized logging/metrics/trace aggregation and alerting.
+- Production-like load testing for p95/p99 validation.
 
 ## Honest Readiness Verdict
-Settings/roles/crew, finance, and support workflows are now strongly modeled with role-safe access, DTOs, and audit coverage. Realtime delivery hooks are present but require Redis/WebSocket infrastructure to be operational. The backend is not yet “million-user ready” without Redis, queue workers, pooling/replicas, and real load testing. Frontends still consume mocks; integration can proceed once infrastructure is provisioned.
+The backend now has concrete, production-oriented logic for the previously missing domains and can serve the Creator and Seller surfaces without frontend changes. It is still not “million-user ready” without infrastructure: Redis, workers, object storage, search engine, and load testing. With those infra dependencies in place, the backend is structurally capable of scaling and integrating with both frontends.

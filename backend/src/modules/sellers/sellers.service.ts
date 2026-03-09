@@ -3,13 +3,17 @@ import { ListingStatus, Prisma, SellerKind, UserRole } from '@prisma/client';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { serializePrivateSeller, serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { SearchService } from '../search/search.service.js';
 import { CreateSellerListingDto } from './dto/create-seller-listing.dto.js';
 import { UpdateSellerProfileDto } from './dto/update-seller-profile.dto.js';
 import { UpdateSellerListingDto } from './dto/update-seller-listing.dto.js';
 
 @Injectable()
 export class SellersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly searchService: SearchService
+  ) {}
 
   async getMyProfile(userId: string) {
     const profile = await this.ensureSellerProfile(userId);
@@ -99,6 +103,7 @@ export class SellersService {
       });
     }
 
+    await this.searchService.enqueueListingIndex(listing.id);
     return listing;
   }
 
@@ -151,6 +156,7 @@ export class SellersService {
       ]);
     }
 
+    await this.searchService.enqueueListingIndex(updated.id);
     return updated;
   }
 

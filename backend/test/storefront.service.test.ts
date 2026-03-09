@@ -61,7 +61,8 @@ test('StorefrontService update validates and syncs taxonomy', async () => {
     }
   };
 
-  const service = new StorefrontService(prisma as any, sellersService as any, taxonomyService as any);
+  const searchService = { async enqueueStorefrontIndex() {} };
+  const service = new StorefrontService(prisma as any, sellersService as any, taxonomyService as any, searchService as any);
   const response = await service.updateMyStorefront('user-1', {
     name: 'New Store',
     taxonomyNodeIds: ['node-1'],

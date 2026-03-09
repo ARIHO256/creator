@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Headers } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -12,7 +12,11 @@ export class RealtimeStreamController {
 
   @Get('realtime/stream')
   @RateLimit({ limit: 10, windowMs: 60_000 })
-  stream(@CurrentUser() user: RequestUser, @Res({ passthrough: true }) reply: FastifyReply) {
-    this.streamService.open(user.sub, reply);
+  stream(
+    @CurrentUser() user: RequestUser,
+    @Headers('last-event-id') lastEventId: string | undefined,
+    @Res({ passthrough: true }) reply: FastifyReply
+  ) {
+    this.streamService.open(user.sub, reply, lastEventId);
   }
 }

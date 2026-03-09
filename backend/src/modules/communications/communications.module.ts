@@ -3,10 +3,12 @@ import { AuditModule } from '../../platform/audit/audit.module.js';
 import { RealtimeModule } from '../../platform/realtime/realtime.module.js';
 import { CommunicationsController } from './communications.controller.js';
 import { CommunicationsService } from './communications.service.js';
+import { ModerationController } from './moderation.controller.js';
+import { ModerationService } from './moderation.service.js';
 
 @Module({
   imports: [AuditModule, RealtimeModule],
-  controllers: [CommunicationsController],
-  providers: [CommunicationsService]
+  controllers: [CommunicationsController, ModerationController],
+  providers: [CommunicationsService, ModerationService]
 })
 export class CommunicationsModule {}

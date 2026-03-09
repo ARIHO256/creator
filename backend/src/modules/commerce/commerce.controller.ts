@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
@@ -81,6 +82,19 @@ export class CommerceController {
     return this.service.updateWarehouse(user.sub, id, payload);
   }
   @Get('exports') exports(@CurrentUser() user: RequestUser) { return this.service.exports(user.sub); }
+  @Get('exports/:id') exportJob(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.exportJob(user.sub, id); }
+  @Get('exports/:id/download')
+  async downloadExport(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Query('fileId') fileId: string | undefined,
+    @Res() reply: FastifyReply
+  ) {
+    const { file, stream } = await this.service.exportDownload(user.sub, id, fileId);
+    reply.header('Content-Type', file.mimeType ?? 'application/octet-stream');
+    reply.header('Content-Disposition', `attachment; filename="${file.storageKey.split('/').pop()}"`);
+    return reply.send(stream);
+  }
   @RateLimit({ limit: 15, windowMs: 60_000 })
   @Post('exports') createExport(@CurrentUser() user: RequestUser, @Body() payload: CreateExportJobDto) {
     return this.service.createExportJob(user.sub, payload);

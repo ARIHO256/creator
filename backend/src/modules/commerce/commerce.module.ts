@@ -5,9 +5,10 @@ import { CommerceController } from './commerce.controller.js';
 import { CommerceService } from './commerce.service.js';
 import { ExpressmartController } from './expressmart.controller.js';
 import { JobsModule } from '../jobs/jobs.module.js';
+import { ExportsModule } from '../exports/exports.module.js';
 
 @Module({
-  imports: [TaxonomyModule, SellersModule, JobsModule],
+  imports: [TaxonomyModule, SellersModule, JobsModule, ExportsModule],
   controllers: [CommerceController, ExpressmartController],
   providers: [CommerceService]
 })
