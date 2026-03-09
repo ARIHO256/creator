@@ -1,8 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
-import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { CreateWholesaleQuoteDto } from './dto/create-wholesale-quote.dto.js';
 import { UpdateWholesaleQuoteDto } from './dto/update-wholesale-quote.dto.js';

@@ -334,7 +334,9 @@ export class TaxonomyService {
       (await this.prisma.storefront.create({
         data: {
           sellerId: seller.id,
-          slug: this.normalizeSlug(seller.handle ?? seller.storefrontName ?? seller.displayName ?? seller.name),
+          slug: await this.ensureUniqueStorefrontSlug(
+            seller.handle ?? seller.storefrontName ?? seller.displayName ?? seller.name
+          ),
           name: seller.storefrontName ?? seller.displayName ?? seller.name,
           isPublished: false
         }
@@ -556,6 +558,18 @@ export class TaxonomyService {
       }
     }
 
+    return `${base}-${Date.now()}`;
+  }
+
+  private async ensureUniqueStorefrontSlug(value: string) {
+    const base = this.normalizeSlug(value);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
+      const existing = await this.prisma.storefront.findUnique({ where: { slug: candidate } });
+      if (!existing) {
+        return candidate;
+      }
+    }
     return `${base}-${Date.now()}`;
   }
 

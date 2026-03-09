@@ -57,6 +57,8 @@ Current hotspots and mitigation:
 - `ReviewsService.insights`: multi-filter scans of reviews. Cached with `CacheService` and indexed fields (status, subjectUserId, channel, marketplace, sentiment).
 - `Orders` and `Listings` filters: indexed by seller, channel, status; pagination is required for high volume.
 - `DiscoveryService` queries: relies on indexed fields and pagination; no full-table scans.
+- `CommunicationsService.messages`: thread/message fan-out is indexed by thread and user; paginate if message volume grows.
+- `WholesaleService.quotes`: indexed by user/status and uses persisted totals for fast lists.
 
 For million-user readiness, pair these with:
 - Read replicas and connection pooling.

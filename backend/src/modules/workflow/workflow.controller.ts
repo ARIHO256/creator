@@ -45,10 +45,10 @@ export class WorkflowController {
   @Get('content-approvals/:id') contentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.contentApproval(user.sub, id); }
   @Post('content-approvals')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  createContentApproval(@CurrentUser() user: RequestUser, @Body() body: any) { return this.service.createContentApproval(user.sub, body); }
+  createContentApproval(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.createContentApproval(user.sub, body); }
   @Patch('content-approvals/:id')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  patchContentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: any) { return this.service.patchContentApproval(user.sub, id, body); }
+  patchContentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.patchContentApproval(user.sub, id, body); }
   @Post('content-approvals/:id/nudge')
   @RateLimit({ limit: 10, windowMs: 60_000 })
   nudge(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.nudge(user.sub, id); }
@@ -57,5 +57,5 @@ export class WorkflowController {
   withdraw(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.withdraw(user.sub, id); }
   @Post('content-approvals/:id/resubmit')
   @RateLimit({ limit: 10, windowMs: 60_000 })
-  resubmit(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: any) { return this.service.resubmit(user.sub, id, body); }
+  resubmit(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.resubmit(user.sub, id, body); }
 }

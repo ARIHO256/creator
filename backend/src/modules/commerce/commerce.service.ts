@@ -336,6 +336,10 @@ export class CommerceService {
       throw new NotFoundException('Order not found');
     }
 
+    if (payload.status) {
+      this.assertOrderTransition(order.status, payload.status);
+    }
+
     return this.prisma.order.update({
       where: { id: order.id },
       data: {
@@ -977,6 +981,28 @@ export class CommerceService {
         resolvedAt: payload.status && ['RESOLVED', 'REJECTED'].includes(payload.status) ? new Date() : undefined
       }
     });
+  }
+
+  private assertOrderTransition(current: string, next: string) {
+    const transitions: Record<string, string[]> = {
+      NEW: ['CONFIRMED', 'CANCELLED', 'ON_HOLD'],
+      CONFIRMED: ['PICKING', 'CANCELLED', 'ON_HOLD'],
+      PICKING: ['PACKED', 'ON_HOLD', 'CANCELLED'],
+      PACKED: ['SHIPPED', 'OUT_FOR_DELIVERY', 'ON_HOLD'],
+      OUT_FOR_DELIVERY: ['DELIVERED', 'FAILED'],
+      SHIPPED: ['DELIVERED', 'FAILED'],
+      DELIVERED: ['RETURN_REQUESTED'],
+      RETURN_REQUESTED: ['RETURNED', 'CANCELLED'],
+      RETURNED: [],
+      FAILED: [],
+      ON_HOLD: ['CONFIRMED', 'PICKING', 'PACKED', 'CANCELLED'],
+      CANCELLED: []
+    };
+
+    const allowed = transitions[current] ?? [];
+    if (!allowed.includes(next)) {
+      throw new BadRequestException(`Order status cannot transition from ${current} to ${next}`);
+    }
   }
 
   private async ensureSeller(userId: string) {

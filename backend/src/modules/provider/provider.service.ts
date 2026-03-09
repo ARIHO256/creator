@@ -41,6 +41,7 @@ export class ProviderService {
   }
   async createQuote(userId: string, body: CreateProviderQuoteDto) {
     const sanitized = this.ensurePayload(body);
+    const data = (sanitized as any).data && typeof (sanitized as any).data === 'object' ? (sanitized as any).data : sanitized;
     const id = String((sanitized as any).id ?? randomUUID());
     const quote = await this.prisma.providerQuote.create({
       data: {
@@ -51,7 +52,7 @@ export class ProviderService {
         buyer: typeof (sanitized as any).buyer === 'string' ? (sanitized as any).buyer : null,
         amount: typeof (sanitized as any).amount === 'number' ? (sanitized as any).amount : null,
         currency: typeof (sanitized as any).currency === 'string' ? (sanitized as any).currency : 'USD',
-        data: sanitized as Prisma.InputJsonValue
+        data: data as Prisma.InputJsonValue
       }
     });
     return this.serializeQuote(quote);
@@ -94,7 +95,7 @@ export class ProviderService {
   }
   async reviews(userId: string) {
     const reviews = await this.prisma.review.findMany({
-      where: { subjectUserId: userId, subjectType: 'SELLER' },
+      where: { subjectUserId: userId, subjectType: { in: ['SELLER', 'PROVIDER'] } },
       orderBy: { createdAt: 'desc' }
     });
     return { reviews };

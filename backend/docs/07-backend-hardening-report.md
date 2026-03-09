@@ -3,106 +3,81 @@
 Date: 2026-03-09
 
 ## Summary
-This pass removed the remaining AppRecords fallback paths, added idempotency protection, expanded rate limiting, and hardened seller/creator write flows while keeping all frontends unchanged. Load-test readiness was strengthened with new configuration switches, a realistic seed script, and additional tests.
+This pass replaced remaining compatibility-style record payloads with first-class domain tables for Live, Adz, Wholesale, Provider, Regulatory, and Communications; unified taxonomy across onboarding/listings/storefront; and tightened order lifecycle enforcement, while keeping all frontends unchanged. Load-test seeding and tests were extended to cover the newly strengthened sectors.
 
 ## What Was Found
-- AppRecords fallbacks still used across Live, Adz, Workflow, Communications, Wholesale, Provider, Regulatory, Settings, and Commerce.
-- No idempotency protection on write endpoints.
-- Rate limiting was inconsistent across non-auth domains.
-- Several settings and workspace flows persisted only in AppRecords.
-- No load-test-oriented configuration or large-volume seed script.
+- Domain flows still persisted large JSON payloads via record tables for Live, Adz, Wholesale, Provider, Regulatory, and Communications.
+- Storefront taxonomy was not linked to canonical taxonomy nodes.
+- Onboarding taxonomy selections were not validated or persisted to seller coverage/storefront.
+- Order status updates did not enforce legal transitions.
 
 ## Implementations Completed
-### AppRecords Replacement
-- Replaced AppRecords usage in:
-  - Communications, Live, Adz, Workflow, Wholesale, Provider, Regulatory.
-  - Settings (profile, roles, members, crew, security, preferences).
-  - Commerce (dashboard, listings, orders, returns, disputes, inventory, shipping, exports, documents).
-- Backed these flows with new record tables: `LiveRecord`, `AdzRecord`, `WorkflowRecord`, `WholesaleRecord`, `ProviderRecord`, `RegulatoryRecord`, `CommunicationRecord`, plus `UserSetting` and `WorkspaceSetting`.
-- Finance summary endpoints now compute wallet/holds/invoices/statement/tax outputs from `Order` and `Transaction` data.
+### Domain Modeling + AppRecord Removal
+- Added first-class tables for:
+  - Communications: `MessageThread`, `Message`, `SupportTicket`, `SupportContent`.
+  - Live: `LiveBuilder`, `LiveSession`, `LiveStudio`, `LiveMoment`, `LiveReplay`, `LiveToolConfig`, `LiveCampaignGiveaway`.
+  - Adz: `AdzBuilder`, `AdzCampaign`, `AdzPerformance`, `AdzLink`, `PromoAd`.
+  - Wholesale: `WholesaleRfq`, `WholesaleQuote`, `WholesalePriceList`, `WholesaleIncoterm`.
+  - Provider: `ProviderQuote`, `ProviderBooking`, `ProviderConsultation`, `ProviderPortfolioItem`.
+  - Regulatory: `RegulatoryDesk`, `RegulatoryDeskItem`, `RegulatoryComplianceItem`.
+  - Storefront taxonomy: `StorefrontTaxonomyLink`.
+- Rewired services to use the new tables and return domain-shaped responses (no AppRecord-style payloads).
+
+### Taxonomy Unification
+- Storefront taxonomy now uses `StorefrontTaxonomyLink` with canonical `TaxonomyNode`.
+- Onboarding validates taxonomy node IDs.
+- Onboarding submission syncs selections into `SellerTaxonomyCoverage` and storefront taxonomy links.
 
 ### Security + Correctness
-- Added Idempotency key tracking via `IdempotencyKey` table and a global Idempotency interceptor.
-- Added rate limiting to all sensitive write endpoints across seller, creator, collaboration, taxonomy, jobs, finance, workflow, and discovery modules.
-- Strengthened collaboration ownership checks for proposals, tasks, and assets.
+- Enforced order status transitions in `CommerceService`.
+- Added `PROVIDER` to `ReviewSubject` and allowed provider review queries.
+- Added DTO validation for finance requests and communications payloads.
 
 ### Performance + Load Test Readiness
-- Added load-test configuration switches (`LOAD_TEST_MODE`, `FASTIFY_LOGGER`, `REQUEST_LOGS_ENABLED`).
-- Added `prisma:seed:loadtest` script for realistic volume seeding.
-- Documented query hotspots and worker deployment guidance.
+- Load-test seed script now creates messages, support tickets, wholesale quotes/RFQs, live sessions, and adz campaigns for realistic volume.
 
 ### Tests Added
-- Permissions: `RolesGuard` coverage.
-- Throttling: `RateLimitGuard` coverage.
-- Idempotency: duplicate key rejection.
-- Audit logging: `AuditInterceptor`.
-- Notifications: `SettingsService.notificationRead`.
-- ExpressMart: controller channel enforcement.
+- `CommunicationsService` thread/message creation.
+- `TaxonomyService.assertNodesExist` missing node enforcement.
 
 ## Files Changed
-### Platform / Common
-- `src/common/interceptors/idempotency.interceptor.ts`
-- `src/platform/idempotency/*`
-- `src/app.module.ts`, `src/main.ts`, `src/config/app.config.ts`
-- `src/platform/prisma/prisma.module.ts`
-
-### Modules (AppRecords removal + hardening)
+### Modules / Domain
 - `src/modules/communications/*`
 - `src/modules/live/*`
 - `src/modules/adz/*`
-- `src/modules/workflow/*`
 - `src/modules/wholesale/*`
 - `src/modules/provider/*`
 - `src/modules/regulatory/*`
-- `src/modules/settings/*`
-- `src/modules/commerce/*`
-- `src/modules/collaboration/*`
-- `src/modules/finance/*`
-- `src/modules/discovery/*`
-- `src/modules/sellers/*`
-- `src/modules/creators/*`
-- `src/modules/deals/*`
-- `src/modules/marketplace/*`
-- `src/modules/taxonomy/*`
+- `src/modules/workflow/*`
 - `src/modules/storefront/*`
-- `src/modules/jobs/*`
+- `src/modules/taxonomy/*`
+- `src/modules/finance/*`
+- `src/modules/commerce/*`
+- `src/modules/reviews/*`
 
 ### Prisma + Scripts
 - `prisma/schema.prisma`
 - `prisma/seed-loadtest.mjs`
-- `package.json`
+- `prisma/migrations/202603090010_domain_strongification/migration.sql`
 
 ### Tests
-- `test/idempotency.test.ts`
-- `test/rate-limit.guard.test.ts`
-- `test/roles.guard.test.ts`
-- `test/audit.interceptor.test.ts`
-- `test/notifications.test.ts`
-- `test/expressmart.controller.test.ts`
-
-### Docs
-- `docs/08-scaling-and-load-testing.md`
+- `test/communications.service.test.ts`
+- `test/taxonomy.service.test.ts`
 
 ## Migrations Added
-- `202603090004_expressmart_order_meta`
-- `202603090005_perf_indexes`
-- `202603090006_audit_events`
-- `202603090007_notifications`
-- `202603090008_domain_records`
-- `202603090009_idempotency_keys`
+- `202603090010_domain_strongification` (domain tables + storefront taxonomy + review subject enum)
 
 ## Commands Run
 - `npm run prisma:generate`
 - `npm run build`
-- `npm run test` (required elevated permissions due to `tsx` IPC socket)
+- `npm run test` (required elevated permissions for `tsx` IPC socket)
 
 ## Remaining Gaps / Infra Needed
 - Redis for distributed caching and cache locks.
-- Dedicated worker processes (JobsService) with queue monitoring.
+- Dedicated worker processes for jobs/insights fan-out.
 - DB connection pooling + read replicas for peak read traffic.
 - Centralized logging and metrics stack with alerting.
 - Load testing with production-like infra to validate p95/p99.
-- Frontend wiring for idempotency keys (optional but recommended).
 
 ## Honest Readiness Verdict
-The backend is materially stronger and now provides first-class storage for previously AppRecord-backed flows, consistent write throttling, and idempotency. It is architected for scale but cannot claim million-user readiness without Redis, queue workers, connection pooling, and real load tests. Frontends still consume mocks; integration can proceed once infra and load testing are in place.
+The backend now has strong, normalized models for previously compatibility-only sectors, and taxonomy is unified across onboarding, listings, and storefront. It is structurally ready for scale, but cannot claim million-user readiness without Redis, queue workers, connection pooling/replicas, and real load testing. Frontends still consume mocks; integration can proceed once infrastructure is in place.

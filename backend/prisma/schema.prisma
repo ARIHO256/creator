@@ -238,6 +238,7 @@ enum DisputeStatus {
 enum ReviewSubject {
   CREATOR
   SELLER
+  PROVIDER
   LISTING
   SESSION
   ORDER
@@ -552,6 +553,7 @@ model TaxonomyNode {
   children     TaxonomyNode[]             @relation("TaxonomyNodeParent")
   coverage     SellerTaxonomyCoverage[]
   listingLinks ListingTaxonomyLink[]
+  storefrontLinks StorefrontTaxonomyLink[]
 
   @@unique([treeId, slug])
   @@unique([treeId, path])
@@ -1616,7 +1618,7 @@ model LiveSession {
 model LiveStudio {
   id          String   @id @default(cuid())
   userId      String
-  sessionId   String
+  sessionId   String   @unique
   status      String   @default("idle")
   startedAt   DateTime?
   endedAt     DateTime?
@@ -1628,7 +1630,7 @@ model LiveStudio {
   session  LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   moments  LiveMoment[]
 
-  @@unique([userId, sessionId])
+  @@index([userId, sessionId])
   @@index([userId, status])
 }
 
@@ -1647,7 +1649,7 @@ model LiveMoment {
 model LiveReplay {
   id          String   @id @default(cuid())
   userId      String
-  sessionId   String?
+  sessionId   String?  @unique
   status      String   @default("draft")
   published   Boolean  @default(false)
   publishedAt DateTime?

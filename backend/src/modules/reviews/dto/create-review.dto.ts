@@ -10,8 +10,8 @@ export class CreateReviewDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['CREATOR', 'SELLER', 'LISTING', 'SESSION', 'ORDER', 'CAMPAIGN'])
-  subjectType?: 'CREATOR' | 'SELLER' | 'LISTING' | 'SESSION' | 'ORDER' | 'CAMPAIGN';
+  @IsIn(['CREATOR', 'SELLER', 'PROVIDER', 'LISTING', 'SESSION', 'ORDER', 'CAMPAIGN'])
+  subjectType?: 'CREATOR' | 'SELLER' | 'PROVIDER' | 'LISTING' | 'SESSION' | 'ORDER' | 'CAMPAIGN';
 
   @IsNumber()
   ratingOverall!: number;

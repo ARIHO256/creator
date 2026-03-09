@@ -190,13 +190,13 @@ export class WorkflowService {
     }
     return { id: record.recordKey, ...(record.payload as any) };
   }
-  async createContentApproval(userId: string, body: any) {
+  async createContentApproval(userId: string, body: Record<string, unknown>) {
     const payload = this.ensurePayload(body);
     const id = String((payload as any).id ?? randomUUID());
     await this.createRecord(userId, 'content_approval', id, payload);
     return { id, ...payload };
   }
-  async patchContentApproval(userId: string, id: string, body: any) {
+  async patchContentApproval(userId: string, id: string, body: Record<string, unknown>) {
     const payload = this.ensurePayload(body);
     await this.updateRecord(userId, 'content_approval', id, payload);
     return { id, ...payload };
@@ -220,7 +220,7 @@ export class WorkflowService {
     await this.updateRecord(userId, 'content_approval', id, next);
     return { id, ...next };
   }
-  async resubmit(userId: string, id: string, body: any) {
+  async resubmit(userId: string, id: string, body: Record<string, unknown>) {
     const rec = await this.getRecord(userId, 'content_approval', id);
     if (!rec) {
       throw new NotFoundException('Content approval not found');
@@ -316,6 +316,9 @@ export class WorkflowService {
   }
 
   private async validateOnboardingTaxonomy(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    if (onboarding.profileType !== 'SELLER' && onboarding.profileType !== 'PROVIDER') {
+      return;
+    }
     const nodeIds = this.extractTaxonomyNodeIds(onboarding);
     if (nodeIds.length === 0) {
       return;
@@ -324,22 +327,33 @@ export class WorkflowService {
   }
 
   private async syncTaxonomySelections(userId: string, onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    if (onboarding.profileType !== 'SELLER' && onboarding.profileType !== 'PROVIDER') {
+      return;
+    }
     const nodeIds = this.extractTaxonomyNodeIds(onboarding);
     if (nodeIds.length === 0) {
       return;
     }
-    const primaryNodeId = onboarding.taxonomySelection?.nodeId ?? nodeIds[0];
+    const selectionNodeId =
+      onboarding.taxonomySelection && typeof (onboarding.taxonomySelection as any).nodeId === 'string'
+        ? (onboarding.taxonomySelection as any).nodeId
+        : null;
+    const primaryNodeId = selectionNodeId ?? nodeIds[0];
     await this.taxonomyService.syncSellerCoverage(userId, nodeIds);
     await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId);
   }
 
   private extractTaxonomyNodeIds(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
     const nodeIds = new Set<string>();
-    if (onboarding.taxonomySelection?.nodeId) {
-      nodeIds.add(onboarding.taxonomySelection.nodeId);
+    const selectionNodeId =
+      onboarding.taxonomySelection && typeof (onboarding.taxonomySelection as any).nodeId === 'string'
+        ? (onboarding.taxonomySelection as any).nodeId
+        : null;
+    if (selectionNodeId) {
+      nodeIds.add(selectionNodeId);
     }
     if (Array.isArray(onboarding.taxonomySelections)) {
-      onboarding.taxonomySelections.forEach((selection: any) => {
+      onboarding.taxonomySelections.forEach((selection: { nodeId?: string }) => {
         if (selection?.nodeId) {
           nodeIds.add(String(selection.nodeId));
         }
@@ -401,10 +415,10 @@ export class WorkflowService {
 
   private ensurePayload(payload: unknown) {
     const sanitized = sanitizePayload(payload, { maxDepth: 6, maxArrayLength: 300, maxKeys: 300 });
-    if (sanitized === undefined) {
+    if (sanitized === undefined || !sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
       throw new BadRequestException('Invalid payload');
     }
-    return sanitized;
+    return sanitized as Record<string, unknown>;
   }
 
   private ensureObjectPayload(payload: unknown) {
@@ -452,7 +466,4 @@ export class WorkflowService {
     };
   }
 
-  private buildAuditPayload(payload: Record<string, unknown>) {
-    return { ...payload };
-  }
 }

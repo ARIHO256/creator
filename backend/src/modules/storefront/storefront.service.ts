@@ -47,6 +47,9 @@ export class StorefrontService {
       where: { sellerId: seller.id },
       include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
     });
+    if (payload.taxonomyNodeIds && payload.taxonomyNodeIds.length > 0) {
+      await this.taxonomyService.assertNodesExist(payload.taxonomyNodeIds);
+    }
     const slug = payload.slug
       ? await this.ensureUniqueSlug(payload.slug, existing?.id)
       : existing?.slug ?? (await this.ensureUniqueSlug(seller.handle ?? seller.storefrontName ?? seller.name));
@@ -80,12 +83,18 @@ export class StorefrontService {
         });
 
     if (payload.taxonomyNodeIds && payload.taxonomyNodeIds.length > 0) {
-      await this.taxonomyService.assertNodesExist(payload.taxonomyNodeIds);
       await this.taxonomyService.syncStorefrontTaxonomy(
         userId,
         payload.taxonomyNodeIds,
         payload.primaryTaxonomyNodeId
       );
+      const refreshed = await this.prisma.storefront.findUnique({
+        where: { id: updated.id },
+        include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
+      });
+      if (refreshed) {
+        return this.serializeStorefront(refreshed);
+      }
     }
 
     return this.serializeStorefront(updated);

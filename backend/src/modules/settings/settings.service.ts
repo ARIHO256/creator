@@ -11,12 +11,15 @@ export class SettingsService {
   async settings(userId: string) {
     return (await this.getUserSetting(userId, 'profile', {})) as Record<string, unknown>;
   }
-  async updateSettings(userId: string, body: any) {
+  async updateSettings(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertUserSetting(userId, 'profile', body);
     return record.payload as Record<string, unknown>;
   }
-  sendPayoutCode(userId: string, body: any) { return { sent: true, channel: body?.channel || 'email', codeId: randomUUID() }; }
-  async verifyPayout(userId: string, body: any) {
+  sendPayoutCode(userId: string, body: Record<string, unknown>) {
+    const channel = typeof body.channel === 'string' ? body.channel : 'email';
+    return { sent: true, channel, codeId: randomUUID() };
+  }
+  async verifyPayout(userId: string, body: Record<string, unknown>) {
     const payload = {
       verified: true,
       ...this.ensureObjectPayload(body),
@@ -76,11 +79,11 @@ export class SettingsService {
     };
   }
 
-  async security(userId: string, body: any) {
+  async security(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'roles_security', body);
     return record.payload as Record<string, unknown>;
   }
-  async createRole(userId: string, body: any) {
+  async createRole(userId: string, body: Record<string, unknown>) {
     const payload = this.ensureObjectPayload(body);
     const id = String((payload as any).id ?? randomUUID());
     const rolesPayload = await this.getWorkspaceSetting(userId, 'roles', { roles: [] });
@@ -90,7 +93,7 @@ export class SettingsService {
     await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
     return nextRole;
   }
-  async updateRole(userId: string, id: string, body: any) {
+  async updateRole(userId: string, id: string, body: Record<string, unknown>) {
     const payload = this.ensureObjectPayload(body);
     const rolesPayload = await this.getWorkspaceSetting(userId, 'roles', { roles: [] });
     const roles = this.extractList(rolesPayload, 'roles');
@@ -110,7 +113,7 @@ export class SettingsService {
     await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
     return { deleted: true };
   }
-  async createInvite(userId: string, body: any) {
+  async createInvite(userId: string, body: Record<string, unknown>) {
     const payload = this.ensureObjectPayload(body);
     const id = String((payload as any).id ?? randomUUID());
     const invitesPayload = await this.getWorkspaceSetting(userId, 'role_invites', { invites: [] });
@@ -120,7 +123,7 @@ export class SettingsService {
     await this.upsertWorkspaceSetting(userId, 'role_invites', { invites: nextInvites });
     return nextInvite;
   }
-  async updateMember(userId: string, id: string, body: any) {
+  async updateMember(userId: string, id: string, body: Record<string, unknown>) {
     const payload = this.ensureObjectPayload(body);
     const membersPayload = await this.getWorkspaceSetting(userId, 'members', { members: [] });
     const members = this.extractList(membersPayload, 'members');
@@ -142,7 +145,7 @@ export class SettingsService {
     const payload = await this.getUserSetting(userId, 'crew_sessions', { sessions: [] });
     return this.extractList(payload, 'sessions');
   }
-  async crewSession(userId: string, id: string, body: any) {
+  async crewSession(userId: string, id: string, body: Record<string, unknown>) {
     const payload = this.ensureObjectPayload(body);
     const sessionsPayload = await this.getUserSetting(userId, 'crew_sessions', { sessions: [] });
     const sessions = this.extractList(sessionsPayload, 'sessions');
@@ -163,44 +166,44 @@ export class SettingsService {
   }
 
   preferences(userId: string) { return this.getWorkspaceSetting(userId, 'preferences', { locale: 'en', currency: 'USD' }); }
-  async updatePreferences(userId: string, body: any) {
+  async updatePreferences(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'preferences', body);
     return record.payload as Record<string, unknown>;
   }
   payoutMethods(userId: string) { return this.getWorkspaceSetting(userId, 'payout_methods', { methods: [] }); }
-  async updatePayoutMethods(userId: string, body: any) {
+  async updatePayoutMethods(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'payout_methods', body);
     return record.payload as Record<string, unknown>;
   }
   securitySettings(userId: string) { return this.getWorkspaceSetting(userId, 'security', { twoFactor: false, sessions: [] }); }
-  async updateSecuritySettings(userId: string, body: any) {
+  async updateSecuritySettings(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'security', body);
     return record.payload as Record<string, unknown>;
   }
   integrations(userId: string) { return this.getWorkspaceSetting(userId, 'integrations', { integrations: [], webhooks: [] }); }
-  async updateIntegrations(userId: string, body: any) {
+  async updateIntegrations(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'integrations', body);
     return record.payload as Record<string, unknown>;
   }
   tax(userId: string) { return this.getWorkspaceSetting(userId, 'tax', { profiles: [], reports: [] }); }
-  async updateTax(userId: string, body: any) {
+  async updateTax(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'tax', body);
     return record.payload as Record<string, unknown>;
   }
   kyc(userId: string) { return this.getWorkspaceSetting(userId, 'kyc', { status: 'pending', documents: [] }); }
-  async updateKyc(userId: string, body: any) {
+  async updateKyc(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'kyc', body);
     return record.payload as Record<string, unknown>;
   }
   savedViews(userId: string) { return this.getWorkspaceSetting(userId, 'saved_views', { views: [] }); }
-  async updateSavedViews(userId: string, body: any) {
+  async updateSavedViews(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'saved_views', body);
     return record.payload as Record<string, unknown>;
   }
   help(userId: string) { return this.getWorkspaceSetting(userId, 'help', { links: [] }); }
   statusCenter(userId: string) { return this.getWorkspaceSetting(userId, 'status_center', { services: [] }); }
   notificationPreferences(userId: string) { return this.getWorkspaceSetting(userId, 'notification_preferences', { watches: [] }); }
-  async updateNotificationPreferences(userId: string, body: any) {
+  async updateNotificationPreferences(userId: string, body: Record<string, unknown>) {
     const record = await this.upsertWorkspaceSetting(userId, 'notification_preferences', body);
     return record.payload as Record<string, unknown>;
   }
@@ -271,7 +274,4 @@ export class SettingsService {
     return [];
   }
 
-  private buildAuditPayload(payload: Record<string, unknown>) {
-    return { ...payload };
-  }
 }

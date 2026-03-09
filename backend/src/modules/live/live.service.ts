@@ -76,8 +76,9 @@ export class LiveService {
     return sessions.map((session) => this.serializeSession(session));
   }
   async session(userId: string, id: string) {
+    const sessionId = this.resolveSessionId(userId, id);
     const session = await this.prisma.liveSession.findFirst({
-      where: { id, userId }
+      where: { id: sessionId, userId }
     });
     if (!session) {
       throw new NotFoundException('Session not found');
@@ -86,7 +87,7 @@ export class LiveService {
   }
   createSession(userId: string, body: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(body);
-    const id = normalizeIdentifier(sanitized.id, randomUUID());
+    const id = this.resolveSessionId(userId, String(sanitized.id ?? randomUUID()));
     return this.prisma.liveSession
       .create({
         data: {
@@ -102,8 +103,9 @@ export class LiveService {
   }
   updateSession(userId: string, id: string, body: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(body);
+    const sessionId = this.resolveSessionId(userId, id);
     return this.prisma.liveSession
-      .findFirst({ where: { id, userId } })
+      .findFirst({ where: { id: sessionId, userId } })
       .then((session) => {
         if (!session) {
           throw new NotFoundException('Session not found');
@@ -124,32 +126,14 @@ export class LiveService {
   }
 
   async studio(userId: string, id: string) {
-    const session =
-      (await this.prisma.liveSession.findFirst({ where: { id, userId } })) ??
-      (await this.prisma.liveSession.create({
-        data: {
-          id,
-          userId,
-          status: 'draft',
-          data: { sessionId: id } as Prisma.InputJsonValue
-        }
-      }));
-
-    const studio = await this.prisma.liveStudio.upsert({
-      where: { userId_sessionId: { userId, sessionId: session.id } },
-      update: {},
-      create: {
-        userId,
-        sessionId: session.id,
-        status: 'idle',
-        data: { mode: 'builder', sessionId: session.id } as Prisma.InputJsonValue
-      }
-    });
+    const sessionId = this.resolveSessionId(userId, id);
+    const studio = await this.ensureStudioRecord(userId, sessionId);
     return this.serializeStudio(studio);
   }
 
   async startStudio(userId: string, id: string) {
-    const studio = await this.studio(userId, id);
+    const sessionId = this.resolveSessionId(userId, id);
+    const studio = await this.ensureStudioRecord(userId, sessionId);
     const updated = await this.prisma.liveStudio.update({
       where: { id: studio.id },
       data: {
@@ -162,7 +146,8 @@ export class LiveService {
   }
 
   async endStudio(userId: string, id: string) {
-    const studio = await this.studio(userId, id);
+    const sessionId = this.resolveSessionId(userId, id);
+    const studio = await this.ensureStudioRecord(userId, sessionId);
     const updated = await this.prisma.liveStudio.update({
       where: { id: studio.id },
       data: {
@@ -187,7 +172,8 @@ export class LiveService {
   }
 
   async addMoment(userId: string, id: string, payload: Record<string, unknown>) {
-    const studio = await this.studio(userId, id);
+    const sessionId = this.resolveSessionId(userId, id);
+    const studio = await this.ensureStudioRecord(userId, sessionId);
     const sanitized = this.ensureObjectPayload(payload, { maxDepth: 4, maxArrayLength: 50, maxKeys: 50 });
     const moment = await this.prisma.liveMoment.create({
       data: {
@@ -225,7 +211,7 @@ export class LiveService {
     return this.serializeReplay(replay);
   }
   replayBySession(userId: string, sessionId: string) {
-    const id = normalizeIdentifier(sessionId, randomUUID());
+    const id = this.resolveSessionId(userId, sessionId);
     return this.prisma.liveReplay
       .upsert({
         where: { id },
@@ -326,6 +312,38 @@ export class LiveService {
     const date = new Date(String(value));
     if (Number.isNaN(date.valueOf())) return null;
     return date;
+  }
+
+  private async ensureStudioRecord(userId: string, sessionId: string) {
+    const session =
+      (await this.prisma.liveSession.findFirst({ where: { id: sessionId, userId } })) ??
+      (await this.prisma.liveSession.create({
+        data: {
+          id: sessionId,
+          userId,
+          status: 'draft',
+          data: { sessionId } as Prisma.InputJsonValue
+        }
+      }));
+
+    return this.prisma.liveStudio.upsert({
+      where: { sessionId: session.id },
+      update: {},
+      create: {
+        userId,
+        sessionId: session.id,
+        status: 'idle',
+        data: { mode: 'builder', sessionId: session.id } as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private resolveSessionId(userId: string, sessionId: string) {
+    const normalized = normalizeIdentifier(sessionId, randomUUID());
+    if (sessionId === 'default') {
+      return `default-${userId}`;
+    }
+    return normalized;
   }
 
   private serializeBuilder(builder: {

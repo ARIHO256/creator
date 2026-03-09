@@ -23,6 +23,32 @@ function buildId(prefix) {
 
 async function main() {
   if (reset) {
+    await prisma.message.deleteMany();
+    await prisma.messageThread.deleteMany();
+    await prisma.supportTicket.deleteMany();
+    await prisma.regulatoryDeskItem.deleteMany();
+    await prisma.regulatoryDesk.deleteMany();
+    await prisma.regulatoryComplianceItem.deleteMany();
+    await prisma.adzPerformance.deleteMany();
+    await prisma.adzLink.deleteMany();
+    await prisma.adzCampaign.deleteMany();
+    await prisma.adzBuilder.deleteMany();
+    await prisma.promoAd.deleteMany();
+    await prisma.liveMoment.deleteMany();
+    await prisma.liveStudio.deleteMany();
+    await prisma.liveReplay.deleteMany();
+    await prisma.liveSession.deleteMany();
+    await prisma.liveBuilder.deleteMany();
+    await prisma.liveToolConfig.deleteMany();
+    await prisma.liveCampaignGiveaway.deleteMany();
+    await prisma.wholesaleQuote.deleteMany();
+    await prisma.wholesaleRfq.deleteMany();
+    await prisma.wholesalePriceList.deleteMany();
+    await prisma.providerQuote.deleteMany();
+    await prisma.providerBooking.deleteMany();
+    await prisma.providerConsultation.deleteMany();
+    await prisma.providerPortfolioItem.deleteMany();
+    await prisma.storefrontTaxonomyLink.deleteMany();
     await prisma.reviewReply.deleteMany();
     await prisma.review.deleteMany();
     await prisma.transaction.deleteMany();
@@ -60,6 +86,18 @@ async function main() {
     data: [...sellerUsers, ...creatorUsers],
     skipDuplicates: true
   });
+
+  const supportContentCount = await prisma.supportContent.count();
+  if (supportContentCount === 0) {
+    await prisma.supportContent.createMany({
+      data: [
+        { contentType: 'KB', title: 'Getting Started', body: 'Welcome to the knowledge base.' },
+        { contentType: 'FAQ', title: 'How to publish?', body: 'Use the publish button in your dashboard.' },
+        { contentType: 'STATUS', title: 'API', status: 'operational', metadata: { uptime: '99.9%' } }
+      ],
+      skipDuplicates: true
+    });
+  }
 
   const sellers = sellerUsers.map((user, index) => ({
     id: buildId(`seller_${index}`),
@@ -195,6 +233,136 @@ async function main() {
   }
   if (reviews.length) {
     await prisma.review.createMany({ data: reviews, skipDuplicates: true });
+  }
+
+  const messageThreads = [];
+  const messages = [];
+  for (const user of sellerUsers.slice(0, Math.min(20, sellerUsers.length))) {
+    const threadId = buildId(`thread_${user.id}`);
+    messageThreads.push({
+      id: threadId,
+      userId: user.id,
+      subject: 'Welcome thread',
+      status: 'open',
+      lastMessageAt: now,
+      createdAt: now,
+      updatedAt: now
+    });
+    messages.push({
+      id: buildId(`message_${threadId}_1`),
+      threadId,
+      senderUserId: user.id,
+      senderRole: 'owner',
+      body: 'Welcome to your inbox',
+      lang: 'en',
+      createdAt: now
+    });
+  }
+  if (messageThreads.length) {
+    await prisma.messageThread.createMany({ data: messageThreads, skipDuplicates: true });
+  }
+  if (messages.length) {
+    await prisma.message.createMany({ data: messages, skipDuplicates: true });
+  }
+
+  const supportTickets = sellerUsers.slice(0, Math.min(20, sellerUsers.length)).map((user, index) => ({
+    id: buildId(`ticket_${user.id}`),
+    userId: user.id,
+    status: 'Open',
+    marketplace: 'General',
+    category: 'Support',
+    subject: `Support ticket ${index + 1}`,
+    severity: 'medium',
+    createdAt: now,
+    updatedAt: now
+  }));
+  if (supportTickets.length) {
+    await prisma.supportTicket.createMany({ data: supportTickets, skipDuplicates: true });
+  }
+
+  const wholesaleQuotes = [];
+  const wholesaleRfqs = [];
+  const wholesalePriceLists = [];
+  for (const seller of sellers.slice(0, Math.min(20, sellers.length))) {
+    const rfqId = buildId(`rfq_${seller.id}`);
+    wholesaleRfqs.push({
+      id: rfqId,
+      userId: seller.userId,
+      status: 'new',
+      title: `RFQ for ${seller.displayName}`,
+      buyerName: 'Buyer Co',
+      buyerType: 'Distributor',
+      createdAt: now,
+      updatedAt: now,
+      data: { id: rfqId, title: `RFQ for ${seller.displayName}` }
+    });
+    const quoteId = buildId(`quote_${seller.id}`);
+    wholesaleQuotes.push({
+      id: quoteId,
+      userId: seller.userId,
+      rfqId,
+      status: 'sent',
+      title: `Quote for ${seller.displayName}`,
+      buyer: 'Buyer Co',
+      buyerType: 'Distributor',
+      currency: 'USD',
+      total: 1000,
+      approvalsRequired: false,
+      createdAt: now,
+      updatedAt: now,
+      data: { id: quoteId, title: `Quote for ${seller.displayName}`, status: 'sent', totals: { total: 1000 } }
+    });
+    wholesalePriceLists.push({
+      id: buildId(`pricelist_${seller.id}`),
+      userId: seller.userId,
+      name: `Base Price List ${seller.displayName}`,
+      currency: 'USD',
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+      data: { name: `Base Price List ${seller.displayName}` }
+    });
+  }
+  if (wholesaleRfqs.length) {
+    await prisma.wholesaleRfq.createMany({ data: wholesaleRfqs, skipDuplicates: true });
+  }
+  if (wholesaleQuotes.length) {
+    await prisma.wholesaleQuote.createMany({ data: wholesaleQuotes, skipDuplicates: true });
+  }
+  if (wholesalePriceLists.length) {
+    await prisma.wholesalePriceList.createMany({ data: wholesalePriceLists, skipDuplicates: true });
+  }
+
+  const liveSessions = [];
+  const adzCampaigns = [];
+  for (const creator of creatorUsers.slice(0, Math.min(20, creatorUsers.length))) {
+    const sessionId = buildId(`live_session_${creator.id}`);
+    liveSessions.push({
+      id: sessionId,
+      userId: creator.id,
+      status: 'draft',
+      title: `Live session ${creator.id}`,
+      createdAt: now,
+      updatedAt: now,
+      data: { title: `Live session ${creator.id}` }
+    });
+    const campaignId = buildId(`adz_campaign_${creator.id}`);
+    adzCampaigns.push({
+      id: campaignId,
+      userId: creator.id,
+      status: 'draft',
+      title: `Campaign ${creator.id}`,
+      currency: 'USD',
+      createdAt: now,
+      updatedAt: now,
+      data: { title: `Campaign ${creator.id}` }
+    });
+  }
+  if (liveSessions.length) {
+    await prisma.liveSession.createMany({ data: liveSessions, skipDuplicates: true });
+  }
+  if (adzCampaigns.length) {
+    await prisma.adzCampaign.createMany({ data: adzCampaigns, skipDuplicates: true });
   }
 
   console.log('Load test seed complete', {
