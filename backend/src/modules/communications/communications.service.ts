@@ -4,6 +4,7 @@ import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { RealtimeService } from '../../platform/realtime/realtime.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { AssignSupportTicketDto } from './dto/assign-support-ticket.dto.js';
 import { CreateSupportTicketDto } from './dto/create-support-ticket.dto.js';
 import { EscalateSupportTicketDto } from './dto/escalate-support-ticket.dto.js';
@@ -26,7 +27,8 @@ export class CommunicationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly realtime: RealtimeService
+    private readonly realtime: RealtimeService,
+    private readonly jobsService: JobsService
   ) {}
 
   async messages(userId: string) {
@@ -85,6 +87,12 @@ export class CommunicationsService {
         body: body.text,
         lang: body.lang ?? 'en'
       }
+    });
+
+    await this.jobsService.enqueue({
+      queue: 'moderation',
+      type: 'MODERATION_SCAN',
+      payload: { targetType: 'message', targetId: message.id }
     });
 
     await this.prisma.messageThread.update({
@@ -194,6 +202,11 @@ export class CommunicationsService {
       ticketId: ticket.id,
       status: ticket.status,
       createdAt: ticket.createdAt.toISOString()
+    });
+    await this.jobsService.enqueue({
+      queue: 'moderation',
+      type: 'MODERATION_SCAN',
+      payload: { targetType: 'support_ticket', targetId: ticket.id }
     });
     return this.serializeSupportTicket(ticket);
   }

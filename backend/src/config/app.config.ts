@@ -47,7 +47,14 @@ export default () => ({
     streamMaxClientsPerUser: Number(process.env.REALTIME_STREAM_MAX_PER_USER ?? '3'),
     streamMaxClientsTotal: Number(process.env.REALTIME_STREAM_MAX_TOTAL ?? '5000'),
     streamHistorySize: Number(process.env.REALTIME_STREAM_HISTORY_SIZE ?? '50'),
-    streamHistoryTtlMs: Number(process.env.REALTIME_STREAM_HISTORY_TTL_MS ?? '300000')
+    streamHistoryTtlMs: Number(process.env.REALTIME_STREAM_HISTORY_TTL_MS ?? '300000'),
+    deliveryEnabled: !['0', 'false', 'no', 'off'].includes(String(process.env.REALTIME_DELIVERY_ENABLED ?? 'true').toLowerCase()),
+    deliveryTtlMs: Number(process.env.REALTIME_DELIVERY_TTL_MS ?? '600000'),
+    deliveryPollLimit: Number(process.env.REALTIME_DELIVERY_POLL_LIMIT ?? '50'),
+    deliveryMaxAttempts: Number(process.env.REALTIME_DELIVERY_MAX_ATTEMPTS ?? '5'),
+    deliveryRetryMs: Number(process.env.REALTIME_DELIVERY_RETRY_MS ?? '15000'),
+    deliverySweepMs: Number(process.env.REALTIME_DELIVERY_SWEEP_MS ?? '15000'),
+    deliverySweepEnabled: !['0', 'false', 'no', 'off'].includes(String(process.env.REALTIME_DELIVERY_SWEEP_ENABLED ?? 'true').toLowerCase())
   },
   idempotency: {
     ttlMs: Number(process.env.IDEMPOTENCY_TTL_MS ?? `${24 * 60 * 60 * 1000}`)
@@ -62,8 +69,33 @@ export default () => ({
     reminderHours: Number(process.env.APPROVAL_REMINDER_HOURS ?? '24'),
     escalateAfterHours: Number(process.env.APPROVAL_ESCALATE_HOURS ?? '72')
   },
+  finance: {
+    settlementBatchLimit: Number(process.env.FINANCE_SETTLEMENT_BATCH_LIMIT ?? '500'),
+    settlementMinAmount: Number(process.env.FINANCE_SETTLEMENT_MIN_AMOUNT ?? '0')
+  },
   dashboard: {
     snapshotTtlMs: Number(process.env.DASHBOARD_SNAPSHOT_TTL_MS ?? '60000')
+  },
+  storage: {
+    rootDir: process.env.STORAGE_ROOT_DIR ?? `${process.cwd()}/storage`
+  },
+  exports: {
+    fileTtlDays: Number(process.env.EXPORT_FILE_TTL_DAYS ?? '7'),
+    storageNamespace: process.env.EXPORT_STORAGE_NAMESPACE ?? 'exports'
+  },
+  moderation: {
+    bannedPhrases: process.env.MODERATION_BANNED_PHRASES ?? '',
+    blockedExtensions: process.env.MODERATION_BLOCKED_EXTENSIONS ?? '.exe,.bat,.cmd,.js,.vbs',
+    maxFileSizeMb: Number(process.env.MODERATION_MAX_FILE_SIZE_MB ?? '25')
+  },
+  regulatory: {
+    evidenceTtlDays: Number(process.env.REGULATORY_EVIDENCE_TTL_DAYS ?? '14'),
+    storageNamespace: process.env.REGULATORY_STORAGE_NAMESPACE ?? 'evidence'
+  },
+  search: {
+    enabled: !['0', 'false', 'no', 'off'].includes(String(process.env.SEARCH_ENABLED ?? 'true').toLowerCase()),
+    indexBatch: Number(process.env.SEARCH_INDEX_BATCH ?? '250'),
+    queryLimit: Number(process.env.SEARCH_QUERY_LIMIT ?? '50')
   },
   auth: {
     disabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTH_DISABLED ?? '').toLowerCase()),

@@ -28,6 +28,7 @@ import { UpdateShippingProfileDto } from './dto/update-shipping-profile.dto.js';
 import { UpdateShippingRateDto } from './dto/update-shipping-rate.dto.js';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 import { JobsService } from '../jobs/jobs.service.js';
+import { ExportsService } from '../exports/exports.service.js';
 
 @Injectable()
 export class CommerceService {
@@ -36,7 +37,8 @@ export class CommerceService {
     private readonly taxonomyService: TaxonomyService,
     private readonly sellersService: SellersService,
     private readonly cache: CacheService,
-    private readonly jobsService: JobsService
+    private readonly jobsService: JobsService,
+    private readonly exportsService: ExportsService
   ) {}
 
   async dashboard(userId: string) {
@@ -436,6 +438,16 @@ export class CommerceService {
     });
 
     return { jobs };
+  }
+
+  async exportJob(userId: string, id: string) {
+    const seller = await this.ensureSeller(userId);
+    return this.exportsService.jobForSeller(seller.id, id);
+  }
+
+  async exportDownload(userId: string, id: string, fileId?: string) {
+    const seller = await this.ensureSeller(userId);
+    return this.exportsService.openFileForSeller(seller.id, id, fileId);
   }
 
   async documents(userId: string) {
@@ -845,7 +857,7 @@ export class CommerceService {
       }
     }
 
-    return this.prisma.sellerDocument.create({
+    const created = await this.prisma.sellerDocument.create({
       data: {
         sellerId: seller.id,
         listingId: payload.listingId,
@@ -860,6 +872,14 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+
+    await this.jobsService.enqueue({
+      queue: 'moderation',
+      type: 'MODERATION_SCAN',
+      payload: { targetType: 'seller_document', targetId: created.id }
+    });
+
+    return created;
   }
 
   async updateDocument(userId: string, id: string, payload: UpdateDocumentDto) {
@@ -899,15 +919,11 @@ export class CommerceService {
 
   async createExportJob(userId: string, payload: CreateExportJobDto) {
     const seller = await this.ensureSeller(userId);
-    return this.prisma.sellerExportJob.create({
-      data: {
-        sellerId: seller.id,
-        type: payload.type,
-        format: payload.format ?? 'CSV',
-        status: 'QUEUED',
-        filters: payload.filters as Prisma.InputJsonValue | undefined,
-        metadata: payload.metadata as Prisma.InputJsonValue | undefined
-      }
+    return this.exportsService.createJob(seller.id, {
+      type: payload.type,
+      format: payload.format,
+      filters: payload.filters,
+      metadata: payload.metadata
     });
   }
 

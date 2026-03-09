@@ -98,6 +98,10 @@ export class RealtimeStreamService {
     }
   }
 
+  hasClient(userId: string) {
+    return (this.clients.get(userId)?.size ?? 0) > 0;
+  }
+
   private nextEventId() {
     const ts = Date.now();
     this.seq = (this.seq + 1) % 10_000_000;

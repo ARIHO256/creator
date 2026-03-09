@@ -6,7 +6,13 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { MetricsService } from '../../platform/metrics/metrics.service.js';
 import { RealtimePublisher } from '../../platform/realtime/realtime.publisher.js';
 import { RealtimeStreamService } from '../../platform/realtime/realtime.stream.service.js';
+import { RealtimeDeliveryService } from '../../platform/realtime/realtime-delivery.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { ModerationService } from '../communications/moderation.service.js';
+import { RegulatoryAutomationService } from '../regulatory/regulatory-automation.service.js';
+import { ExportsService } from '../exports/exports.service.js';
+import { CatalogService } from '../catalog/catalog.service.js';
+import { SearchService } from '../search/search.service.js';
 
 type WorkerStatus = {
   running: boolean;
@@ -29,7 +35,13 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly auditService?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
     @Optional() private readonly realtimePublisher?: RealtimePublisher,
-    @Optional() private readonly realtimeStream?: RealtimeStreamService
+    @Optional() private readonly realtimeStream?: RealtimeStreamService,
+    @Optional() private readonly realtimeDelivery?: RealtimeDeliveryService,
+    @Optional() private readonly moderation?: ModerationService,
+    @Optional() private readonly regulatoryAutomation?: RegulatoryAutomationService,
+    @Optional() private readonly exportsService?: ExportsService,
+    @Optional() private readonly catalogService?: CatalogService,
+    @Optional() private readonly searchService?: SearchService
   ) {}
 
   onModuleInit() {
@@ -129,6 +141,21 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
             if (this.realtimeStream && payload.channel.startsWith('user:')) {
               const userId = payload.channel.slice('user:'.length);
               this.realtimeStream.emitToUser(userId, payload.event);
+              if (this.realtimeDelivery && typeof payload.event.id === 'string') {
+                const receipt = await this.prisma.deliveryReceipt.findUnique({
+                  where: { userId_eventId: { userId, eventId: payload.event.id } }
+                });
+                if (receipt) {
+                  const maxAttempts = Number(this.configService.get('realtime.deliveryMaxAttempts') ?? 5);
+                  const attempts = receipt.attempts + 1;
+                  const hasClient = this.realtimeStream.hasClient(userId);
+                  const status = hasClient ? 'DELIVERED' : attempts >= maxAttempts ? 'FAILED' : receipt.status;
+                  await this.prisma.deliveryReceipt.update({
+                    where: { id: receipt.id },
+                    data: { attempts, lastAttemptAt: new Date(), status }
+                  });
+                }
+              }
             }
           }
         }
@@ -235,6 +262,187 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
             kind: notification.kind,
             createdAt: notification.createdAt.toISOString()
           });
+        }
+        return;
+      case 'FINANCE_SETTLEMENT_RUN':
+        {
+          const payload = job.payload as { batchId?: string };
+          if (!payload?.batchId) return;
+          const batch = await this.prisma.settlementBatch.findUnique({
+            where: { id: payload.batchId },
+            include: { items: true }
+          });
+          if (!batch) return;
+          if (!['PENDING', 'PROCESSING'].includes(batch.status)) return;
+          const now = new Date();
+          try {
+            await this.prisma.$transaction(async (tx) => {
+              await tx.settlementBatch.update({
+                where: { id: batch.id },
+                data: {
+                  status: 'PROCESSING',
+                  startedAt: batch.startedAt ?? now
+                }
+              });
+              const itemIds = batch.items.map((item) => item.id);
+              if (itemIds.length) {
+                await tx.settlementItem.updateMany({
+                  where: { id: { in: itemIds } },
+                  data: { status: 'PROCESSING' }
+                });
+                const transactionIds = batch.items.map((item) => item.transactionId);
+                await tx.transaction.updateMany({
+                  where: { id: { in: transactionIds } },
+                  data: { status: 'PAID', paidAt: now }
+                });
+                await tx.settlementItem.updateMany({
+                  where: { id: { in: itemIds } },
+                  data: { status: 'COMPLETED' }
+                });
+              }
+              await tx.settlementBatch.update({
+                where: { id: batch.id },
+                data: { status: 'COMPLETED', completedAt: now }
+              });
+            });
+          } catch (error: any) {
+            await this.prisma.settlementBatch.update({
+              where: { id: batch.id },
+              data: { status: 'FAILED', completedAt: now, metadata: { error: String(error?.message ?? error) } as any }
+            });
+          }
+        }
+        return;
+      case 'FINANCE_RECONCILE':
+        {
+          const payload = job.payload as { batchId?: string; runId?: string };
+          if (!payload?.batchId || !payload?.runId) return;
+          const [batch, run] = await Promise.all([
+            this.prisma.settlementBatch.findUnique({ where: { id: payload.batchId }, include: { items: true } }),
+            this.prisma.reconciliationRun.findUnique({ where: { id: payload.runId } })
+          ]);
+          if (!batch || !run) return;
+          const now = new Date();
+          const total = batch.items.reduce((sum, item) => sum + item.amount, 0);
+          const allCompleted = batch.items.every((item) => item.status === 'COMPLETED');
+          const matches = Math.abs(total - batch.totalAmount) < 0.01;
+          if (!allCompleted || !matches) {
+            await this.prisma.reconciliationRun.update({
+              where: { id: run.id },
+              data: {
+                status: 'FAILED',
+                completedAt: now,
+                summary: { total, expected: batch.totalAmount, allCompleted, matches } as any
+              }
+            });
+            return;
+          }
+          await this.prisma.$transaction(async (tx) => {
+            await tx.reconciliationRun.update({
+              where: { id: run.id },
+              data: {
+                status: 'COMPLETED',
+                completedAt: now,
+                summary: { total, expected: batch.totalAmount, matches } as any
+              }
+            });
+            await tx.settlementBatch.update({
+              where: { id: batch.id },
+              data: { status: 'RECONCILED', reconciledAt: now }
+            });
+          });
+        }
+        return;
+      case 'MODERATION_SCAN':
+        {
+          if (!this.moderation) return;
+          const payload = job.payload as { targetType?: string; targetId?: string };
+          if (!payload?.targetType || !payload?.targetId) return;
+          if (payload.targetType === 'message') {
+            const message = await this.prisma.message.findUnique({ where: { id: payload.targetId } });
+            if (!message) return;
+            await this.moderation.scanText('message', message.id, message.body);
+            return;
+          }
+          if (payload.targetType === 'support_ticket') {
+            const ticket = await this.prisma.supportTicket.findUnique({ where: { id: payload.targetId } });
+            if (!ticket) return;
+            const text = [ticket.subject, ticket.category, ticket.marketplace, ticket.ref].filter(Boolean).join(' ');
+            await this.moderation.scanText('support_ticket', ticket.id, text);
+            return;
+          }
+          if (payload.targetType === 'seller_document') {
+            const document = await this.prisma.sellerDocument.findUnique({ where: { id: payload.targetId } });
+            if (!document) return;
+            await this.moderation.scanAttachment(
+              'seller_document',
+              document.id,
+              document.fileName,
+              document.metadata && typeof document.metadata === 'object' ? (document.metadata as any).mimeType : null,
+              document.metadata && typeof document.metadata === 'object' ? (document.metadata as any).sizeBytes : null
+            );
+            return;
+          }
+        }
+        return;
+      case 'REGULATORY_AUTO_REVIEW':
+        {
+          if (!this.regulatoryAutomation) return;
+          const payload = job.payload as { userId?: string; deskId?: string };
+          await this.regulatoryAutomation.runAutoReview(payload.userId, payload.deskId);
+        }
+        return;
+      case 'REGULATORY_EVIDENCE_BUNDLE':
+        {
+          if (!this.regulatoryAutomation) return;
+          const payload = job.payload as { bundleId?: string };
+          if (!payload?.bundleId) return;
+          await this.regulatoryAutomation.generateEvidenceBundle(payload.bundleId);
+        }
+        return;
+      case 'EXPORTS_GENERATE':
+        {
+          if (!this.exportsService) return;
+          const payload = job.payload as { jobId?: string };
+          if (!payload?.jobId) return;
+          await this.exportsService.generate(payload.jobId);
+        }
+        return;
+      case 'CATALOG_IMPORT':
+        {
+          if (!this.catalogService) return;
+          const payload = job.payload as { jobId?: string };
+          if (!payload?.jobId) return;
+          await this.catalogService.processImportJob(payload.jobId);
+        }
+        return;
+      case 'SEARCH_INDEX_LISTING':
+        {
+          if (!this.searchService) return;
+          const payload = job.payload as { listingId?: string };
+          if (!payload?.listingId) return;
+          await this.searchService.indexListing(payload.listingId);
+        }
+        return;
+      case 'SEARCH_INDEX_STOREFRONT':
+        {
+          if (!this.searchService) return;
+          const payload = job.payload as { storefrontId?: string };
+          if (!payload?.storefrontId) return;
+          await this.searchService.indexStorefront(payload.storefrontId);
+        }
+        return;
+      case 'SEARCH_REINDEX':
+        {
+          if (!this.searchService) return;
+          await this.searchService.reindexAll();
+        }
+        return;
+      case 'REALTIME_DELIVERY_SWEEP':
+        {
+          if (!this.realtimeDelivery) return;
+          const payload = job.payload as { limit?: number };
+          await this.realtimeDelivery.sweepPending(payload?.limit);
         }
         return;
       default:

@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
@@ -9,13 +10,19 @@ import { PayoutActionDto } from './dto/payout-action.dto.js';
 import { PayoutsQueryDto } from './dto/payouts-query.dto.js';
 import { RequestPayoutDto } from './dto/request-payout.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
+import { CreateSettlementBatchDto } from './dto/create-settlement-batch.dto.js';
+import { SettlementQueryDto } from './dto/settlement-query.dto.js';
+import { ReconcileSettlementDto } from './dto/reconcile-settlement.dto.js';
+import { JobsService } from '../jobs/jobs.service.js';
 
 @Injectable()
 export class FinanceService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     private readonly sellersService: SellersService,
-    private readonly audit: AuditService
+    private readonly audit: AuditService,
+    private readonly jobsService: JobsService,
+    private readonly configService: ConfigService
   ) {}
 
   async earningsSummary(userId: string) {
@@ -142,6 +149,131 @@ export class FinanceService {
       statusCode: 201
     });
     return adjustment;
+  }
+
+  async settlementBatches(query?: SettlementQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
+    const status = query?.status ? (query.status as any) : undefined;
+    const batches = await this.prisma.settlementBatch.findMany({
+      where: {
+        ...(status ? { status } : {})
+      },
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
+      include: { items: true }
+    });
+    return { batches };
+  }
+
+  async settlementBatch(id: string) {
+    const batch = await this.prisma.settlementBatch.findUnique({
+      where: { id },
+      include: { items: true, reconciliations: true }
+    });
+    if (!batch) {
+      throw new NotFoundException('Settlement batch not found');
+    }
+    return batch;
+  }
+
+  async createSettlementBatch(userId: string, body: CreateSettlementBatchDto) {
+    const limitConfig = Number(this.configService.get('finance.settlementBatchLimit') ?? 500);
+    const limit = Math.max(1, Math.min(body.limit ?? limitConfig, 2000));
+    const currency = body.currency ?? 'USD';
+    const minAmount = Number(body.minAmount ?? 0);
+
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        status: TransactionStatus.AVAILABLE,
+        type: { not: TransactionType.PAYOUT },
+        ...(body.sellerId ? { sellerId: body.sellerId } : {}),
+        ...(currency ? { currency } : {}),
+        ...(minAmount ? { amount: { gte: minAmount } } : {})
+      },
+      orderBy: { createdAt: 'asc' },
+      take: limit
+    });
+
+    if (!transactions.length) {
+      throw new BadRequestException('No eligible transactions for settlement');
+    }
+
+    const totalAmount = transactions.reduce((sum, tx) => sum + tx.amount, 0);
+    const batch = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.settlementBatch.create({
+        data: {
+          status: 'PENDING',
+          totalAmount,
+          currency,
+          itemCount: transactions.length,
+          createdByUserId: userId,
+          metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
+        }
+      });
+      await tx.settlementItem.createMany({
+        data: transactions.map((transaction) => ({
+          batchId: created.id,
+          transactionId: transaction.id,
+          sellerId: transaction.sellerId ?? null,
+          userId: transaction.userId,
+          amount: transaction.amount,
+          currency: transaction.currency,
+          status: 'PENDING'
+        }))
+      });
+      return created;
+    });
+
+    await this.jobsService.enqueue({
+      queue: 'finance',
+      type: 'FINANCE_SETTLEMENT_RUN',
+      payload: { batchId: batch.id },
+      dedupeKey: `finance:settlement:${batch.id}`
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'finance.settlement_created',
+      entityType: 'settlement_batch',
+      entityId: batch.id,
+      route: '/api/finance/settlements',
+      method: 'POST',
+      statusCode: 201,
+      metadata: { totalAmount, itemCount: transactions.length }
+    });
+
+    return batch;
+  }
+
+  async reconcileSettlement(userId: string, id: string, body?: ReconcileSettlementDto) {
+    const batch = await this.prisma.settlementBatch.findUnique({ where: { id } });
+    if (!batch) {
+      throw new NotFoundException('Settlement batch not found');
+    }
+    const run = await this.prisma.reconciliationRun.create({
+      data: {
+        batchId: batch.id,
+        status: 'PENDING',
+        summary: body?.note ? ({ note: body.note } as Prisma.InputJsonValue) : Prisma.DbNull
+      }
+    });
+    await this.jobsService.enqueue({
+      queue: 'finance',
+      type: 'FINANCE_RECONCILE',
+      payload: { batchId: batch.id, runId: run.id },
+      dedupeKey: `finance:reconcile:${batch.id}:${run.id}`
+    });
+    await this.audit.log({
+      userId,
+      action: 'finance.settlement_reconcile_requested',
+      entityType: 'settlement_batch',
+      entityId: batch.id,
+      route: `/api/finance/settlements/${id}/reconcile`,
+      method: 'POST',
+      statusCode: 202
+    });
+    return { runId: run.id };
   }
 
   async analyticsOverview(userId: string) {

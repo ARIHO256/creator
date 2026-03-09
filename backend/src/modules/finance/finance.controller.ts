@@ -8,6 +8,9 @@ import { PayoutActionDto } from './dto/payout-action.dto.js';
 import { PayoutsQueryDto } from './dto/payouts-query.dto.js';
 import { RequestPayoutDto } from './dto/request-payout.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
+import { CreateSettlementBatchDto } from './dto/create-settlement-batch.dto.js';
+import { SettlementQueryDto } from './dto/settlement-query.dto.js';
+import { ReconcileSettlementDto } from './dto/reconcile-settlement.dto.js';
 import { FinanceService } from './finance.service.js';
 
 @Controller()
@@ -45,6 +48,28 @@ export class FinanceController {
   @RateLimit({ limit: 20, windowMs: 60_000 })
   createAdjustment(@CurrentUser() user: RequestUser, @Body() body: CreateAdjustmentDto) {
     return this.service.createAdjustment(user.sub, body);
+  }
+  @Roles('SUPPORT', 'ADMIN')
+  @Get('finance/settlements')
+  settlementBatches(@Query() query: SettlementQueryDto) {
+    return this.service.settlementBatches(query);
+  }
+  @Roles('SUPPORT', 'ADMIN')
+  @Get('finance/settlements/:id')
+  settlementBatch(@Param('id') id: string) {
+    return this.service.settlementBatch(id);
+  }
+  @Roles('SUPPORT', 'ADMIN')
+  @Post('finance/settlements')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  createSettlement(@CurrentUser() user: RequestUser, @Body() body: CreateSettlementBatchDto) {
+    return this.service.createSettlementBatch(user.sub, body);
+  }
+  @Roles('SUPPORT', 'ADMIN')
+  @Post('finance/settlements/:id/reconcile')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  reconcileSettlement(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: ReconcileSettlementDto) {
+    return this.service.reconcileSettlement(user.sub, id, body);
   }
   @Get('analytics/overview') analyticsOverview(@CurrentUser() user: RequestUser) { return this.service.analyticsOverview(user.sub); }
   @Get('subscription') subscription(@CurrentUser() user: RequestUser) { return this.service.subscription(user.sub); }
