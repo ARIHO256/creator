@@ -46,3 +46,24 @@ test('SellersService.ensureSellerProfile returns existing seller profile for all
   const profile = await service.ensureSellerProfile('user-1');
   assert.equal(profile.id, 'seller-1');
 });
+
+test('SellersService.ensureSellerProfile rejects provider role with seller-kind profile', async () => {
+  const prisma = {
+    user: {
+      async findUnique() {
+        return {
+          id: 'user-2',
+          role: 'PROVIDER',
+          roleAssignments: [{ role: 'PROVIDER' }],
+          sellerProfile: { id: 'seller-2', userId: 'user-2', kind: 'SELLER' }
+        };
+      }
+    }
+  };
+
+  const service = new SellersService(prisma as any);
+  await assert.rejects(
+    () => service.ensureSellerProfile('user-2'),
+    /Provider workspace is not enabled/
+  );
+});

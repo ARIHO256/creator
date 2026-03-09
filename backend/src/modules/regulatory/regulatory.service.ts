@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateComplianceItemDto } from './dto/create-compliance-item.dto.js';
 import { CreateRegulatoryDeskDto } from './dto/create-regulatory-desk.dto.js';
@@ -59,7 +60,7 @@ export class RegulatoryService {
         slug,
         title: payload.title ?? null,
         status: payload.status ?? 'pending',
-        metadata: payload.metadata ?? undefined
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
   }
@@ -77,7 +78,7 @@ export class RegulatoryService {
       data: {
         title: payload.title ?? undefined,
         status: payload.status ?? undefined,
-        metadata: payload.metadata ?? undefined
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
   }
@@ -93,7 +94,7 @@ export class RegulatoryService {
         title: payload.title ?? null,
         status: payload.status ?? 'open',
         severity: payload.severity ?? null,
-        metadata: payload.metadata ?? undefined
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
   }
@@ -114,7 +115,7 @@ export class RegulatoryService {
         title: payload.title ?? undefined,
         status: payload.status ?? undefined,
         severity: payload.severity ?? undefined,
-        metadata: payload.metadata ?? undefined
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
   }
@@ -126,7 +127,7 @@ export class RegulatoryService {
         itemType: payload.itemType,
         title: payload.title ?? null,
         status: payload.status ?? 'pending',
-        metadata: payload.metadata ?? undefined
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
   }
@@ -144,7 +145,7 @@ export class RegulatoryService {
       data: {
         title: payload.title ?? undefined,
         status: payload.status ?? undefined,
-        metadata: payload.metadata ?? undefined
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
   }

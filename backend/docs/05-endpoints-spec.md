@@ -92,6 +92,15 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/seller/finance/statements`
 - `GET /api/seller/finance/tax-reports`
 
+## Ops Center
+- `GET /api/ops/overview`
+- `GET /api/ops/inventory`
+- `GET /api/ops/shipping`
+- `GET /api/ops/warehouses`
+- `GET /api/ops/documents`
+- `GET /api/ops/exports`
+- `GET /api/ops/exceptions`
+
 ## ExpressMart
 - `GET /api/expressmart/summary`
 - `GET /api/expressmart/orders`
@@ -99,6 +108,12 @@ Auth: JWT bearer required unless noted `Public`.
 - `PATCH /api/expressmart/orders/:id` - `UpdateOrderDto`
 - `GET /api/expressmart/returns`
 - `GET /api/expressmart/disputes`
+
+## Favourites
+- `GET /api/favourites`
+- `GET /api/favourites/listings`
+- `POST /api/favourites/listings/:id`
+- `DELETE /api/favourites/listings/:id`
 
 ## Taxonomy
 - `GET /api/taxonomy/trees` (Public)
@@ -118,6 +133,27 @@ Auth: JWT bearer required unless noted `Public`.
 - `PATCH /api/storefront/me` - `UpdateStorefrontDto`
 - `GET /api/storefront/:handle` (Public)
 - `GET /api/storefront/:handle/listings` (Public)
+
+## Communications + Support
+- `GET /api/messages`
+- `GET /api/messages/:threadId`
+- `POST /api/messages/:threadId/reply` - `SendMessageDto`
+- `PATCH /api/messages/:threadId/read`
+- `POST /api/messages/read-all`
+- `GET /api/help-support/content`
+- `POST /api/help-support/tickets` - `CreateSupportTicketDto`
+- `GET /api/system-status`
+
+## Regulatory + Compliance
+- `GET /api/compliance`
+- `POST /api/compliance/items` - `CreateComplianceItemDto`
+- `PATCH /api/compliance/items/:id` - `UpdateComplianceItemDto`
+- `GET /api/regulatory/desks`
+- `POST /api/regulatory/desks` - `CreateRegulatoryDeskDto`
+- `PATCH /api/regulatory/desks/:id` - `UpdateRegulatoryDeskDto`
+- `GET /api/regulatory/desks/:slug`
+- `POST /api/regulatory/desks/:deskId/items` - `CreateRegulatoryDeskItemDto`
+- `PATCH /api/regulatory/desks/:deskId/items/:itemId` - `UpdateRegulatoryDeskItemDto`
 
 ## Collaboration
 - `GET /api/campaigns`

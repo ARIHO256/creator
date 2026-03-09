@@ -3,56 +3,74 @@
 Date: 2026-03-09
 
 ## Summary
-This pass removed remaining AppRecord fallback usage, tightened settings payload handling, extended load-test seeding for provider/regulatory/notification flows, and added tests for seller role isolation and order status enforcement. Frontends remain unchanged.
+This pass closed remaining domain gaps for seller/provider flows by unifying taxonomy enforcement, adding ops center and favourites modules, adding regulatory write workflows, hardening provider/seller isolation, and adding message read-state tracking. Frontends remain unchanged.
 
 ## What Was Found
-- Remaining settings helpers still accepted broad `any` payloads.
-- Load-test seeding under-covered provider/regulatory/support/notification flows.
-- Order transition enforcement needed direct coverage in tests.
+- Regulatory desks and compliance lacked create/update endpoints and DTO validation.
+- Ops-center views and favourites lacked first-class backend modules.
+- Provider/seller isolation still had a direct seller lookup in provider disputes.
+- Messaging lacked persisted read-state tracking for threads.
 
 ## Implementations Completed
-### AppRecord Elimination
-- No remaining runtime AppRecord fallbacks in active domain services.
+### Taxonomy + Storefront + Listings Alignment
+- Enforced active-tree validation and coverage sync across onboarding/storefront/listings flows.
+- Storefront updates now validate taxonomy nodes and sync coverage consistently.
 
-### Settings Hardening
-- Removed `any` payload helpers in `SettingsService` to enforce sanitized `unknown` inputs.
+### Role Isolation
+- Provider disputes now enforce seller/provider workspace validation via `SellersService`.
+- Public seller/listing projections are used in discovery/marketplace/storefront outputs.
 
-### Load-Test Coverage
-- Load-test seed now includes provider users, regulatory desks/compliance items, and notifications to exercise support/ops flows at scale.
+### Ops Center + Favourites
+- Added Ops module endpoints with cached overview and operational views.
+- Added Favourites module with first-class listing favourites.
+
+### Regulatory Write Workflows
+- Added DTOs + endpoints for desks, desk items, and compliance items.
+- Enforced status transitions for regulatory desks/items/compliance.
+
+### Messaging Read State
+- Added thread read markers and mark-read endpoints.
 
 ### Tests Added
-- Seller role isolation for `SellersService.ensureSellerProfile`.
-- Order lifecycle transition enforcement for `CommerceService.updateOrder`.
+- Taxonomy active-tree validation.
+- Storefront taxonomy sync validation.
+- Regulatory workflow transition enforcement.
+- Provider/seller isolation guard coverage.
+- Favourites add/remove validation.
+- Wholesale quote transition enforcement.
+- Message thread read-state handling.
 
 ## Files Changed
 ### Modules / Domain
 - `src/modules/communications/*`
-- `src/modules/live/*`
-- `src/modules/adz/*`
-- `src/modules/wholesale/*`
+- `src/modules/favourites/*`
+- `src/modules/ops/*`
 - `src/modules/provider/*`
 - `src/modules/regulatory/*`
-- `src/modules/workflow/*`
+- `src/modules/sellers/*`
 - `src/modules/storefront/*`
 - `src/modules/taxonomy/*`
-- `src/modules/finance/*`
-- `src/modules/commerce/*`
-- `src/modules/settings/*`
-- `src/modules/reviews/*`
+- `src/modules/workflow/*`
+- `src/modules/marketplace/*`
+- `src/modules/discovery/*`
+- `src/modules/live/*`
+- `src/modules/wholesale/*`
 
-### Prisma + Scripts
+### Prisma
 - `prisma/schema.prisma`
-- `prisma/seed-loadtest.mjs`
-- `prisma/migrations/202603090010_domain_strongification/migration.sql`
+- `prisma/migrations/202603090011_favourites_and_message_reads/migration.sql`
 
 ### Tests
 - `test/communications.service.test.ts`
-- `test/taxonomy.service.test.ts`
+- `test/favourites.service.test.ts`
+- `test/regulatory.service.test.ts`
 - `test/sellers.service.test.ts`
-- `test/commerce.service.test.ts`
+- `test/storefront.service.test.ts`
+- `test/taxonomy.service.test.ts`
+- `test/wholesale.service.test.ts`
 
 ## Migrations Added
-- `202603090010_domain_strongification` (domain tables + storefront taxonomy + review subject enum)
+- `202603090011_favourites_and_message_reads` (listing favourites + message thread read-state)
 
 ## Commands Run
 - `npm run prisma:generate`
@@ -65,6 +83,7 @@ This pass removed remaining AppRecord fallback usage, tightened settings payload
 - DB connection pooling + read replicas for peak read traffic.
 - Centralized logging and metrics stack with alerting.
 - Load testing with production-like infra to validate p95/p99.
+- Real-time delivery layer for notifications/messages (websocket/push).
 
 ## Honest Readiness Verdict
-The backend is structurally strong for domain coverage and validation, but still depends on Redis, queue workers, pooling/replicas, and real load tests before any million-user claims. Frontends still consume mocks; integration can proceed once infrastructure is in place.
+Domain coverage is now strong for the remaining seller/provider sectors and taxonomy alignment. The backend is not yet “million-user ready” without Redis, queue workers, pooling/replicas, and real load testing. Frontends still consume mocks; integration can proceed once infrastructure is provisioned.

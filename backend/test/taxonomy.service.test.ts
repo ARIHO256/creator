@@ -23,3 +23,29 @@ test('TaxonomyService.assertNodesExist throws for missing nodes', async () => {
     /Taxonomy node not found/
   );
 });
+
+test('TaxonomyService.assertNodesInActiveTree rejects nodes outside active tree', async () => {
+  const prisma = {
+    taxonomyTree: {
+      async findFirst() {
+        return { id: 'tree-active', status: 'ACTIVE' };
+      }
+    },
+    taxonomyNode: {
+      async findMany() {
+        return [{ id: 'node-1', isActive: true, treeId: 'tree-other' }];
+      }
+    }
+  };
+  const sellersService = {
+    async ensureSellerProfile() {
+      return { id: 'seller-1' };
+    }
+  };
+
+  const service = new TaxonomyService(prisma as any, sellersService as any);
+  await assert.rejects(
+    () => service.assertNodesInActiveTree(['node-1']),
+    /active taxonomy tree/
+  );
+});

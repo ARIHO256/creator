@@ -62,6 +62,8 @@ Current hotspots and mitigation:
 - `WholesaleService.quotes`: indexed by user/status and uses persisted totals for fast lists.
 - `ProviderService` quote/booking/consultation lists: indexed by user and updatedAt, but still require pagination under high volume.
 - `RegulatoryService` desk/compliance queries: scoped by user and indexed by updatedAt.
+- `OpsService.overview`: multi-count aggregation over listings/orders/returns/disputes/documents/exports, cached per seller.
+- `FavouritesService.listAll`: joins listings/sellers/opportunities; add pagination if user favorites exceed UI constraints.
 
 For million-user readiness, pair these with:
 - Read replicas and connection pooling.

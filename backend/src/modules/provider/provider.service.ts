@@ -3,11 +3,15 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
+import { SellersService } from '../sellers/sellers.service.js';
 import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
 
 @Injectable()
 export class ProviderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sellersService: SellersService
+  ) {}
 
   async serviceCommand(userId: string) {
     const [openQuotes, activeBookings, totalQuotes] = await Promise.all([
@@ -101,10 +105,7 @@ export class ProviderService {
     return { reviews };
   }
   async disputes(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (!seller) {
-      return { disputes: [] };
-    }
+    const seller = await this.sellersService.ensureSellerProfile(userId);
     const disputes = await this.prisma.sellerDispute.findMany({
       where: { sellerId: seller.id },
       orderBy: { openedAt: 'desc' }

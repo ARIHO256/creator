@@ -4,11 +4,6 @@ import { CommerceService } from '../src/modules/commerce/commerce.service.js';
 
 test('CommerceService.updateOrder enforces order status transitions', async () => {
   const prisma = {
-    seller: {
-      async findFirst() {
-        return { id: 'seller-1', userId: 'user-1' };
-      }
-    },
     order: {
       async findFirst() {
         return { id: 'order-1', sellerId: 'seller-1', status: 'NEW' };
@@ -18,8 +13,13 @@ test('CommerceService.updateOrder enforces order status transitions', async () =
       }
     }
   };
+  const sellersService = {
+    async ensureSellerProfile() {
+      return { id: 'seller-1', userId: 'user-1' };
+    }
+  };
 
-  const service = new CommerceService(prisma as any, {} as any, {} as any, {} as any);
+  const service = new CommerceService(prisma as any, {} as any, sellersService as any, {} as any);
 
   await assert.rejects(
     () => service.updateOrder('user-1', 'order-1', { status: 'DELIVERED' } as any),

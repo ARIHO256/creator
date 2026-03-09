@@ -1,6 +1,6 @@
 # 06 Frontend Sector Backend Coverage Audit
 
-Date: 2026-03-08
+Date: 2026-03-09
 
 Scope:
 - Creator frontend: `frontend/src/App.tsx`
@@ -28,11 +28,18 @@ Statement:
 - Provider quotes/bookings/consultations/portfolio/reviews/disputes
 - Live studio/session/replay/tooling
 - Adz builder/campaigns/links/promo ads
-- Regulatory desks/compliance subdomains
-- Seller/provider onboarding flows with taxonomy validation
+- Regulatory desks/compliance subdomains with write workflows
+- Seller/provider onboarding flows with unified taxonomy validation
+- Storefront + listings + onboarding taxonomy alignment
+- Ops center views (inventory/shipping/warehouses/exports/documents/exceptions)
+- Favourites, persisted notifications, and message read-state
+- MyLiveDealz live sessions/studio/replay lifecycle enforcement
+- Wholesale quote lifecycle enforcement
 
 ### Represented but not strongly enough yet
-- Settings/roles/crew/help/status areas still rely on broad workspace payloads
+- Settings/roles/crew still rely on broad workspace payloads for some sections
+- Finance reconciliation and payouts still require external infra and tighter settlement workflows
+- Real-time delivery (websocket/push) for support/messages/notifications
 
 ## Key finding
 
@@ -51,8 +58,6 @@ The backend now covers nearly every visible frontend sector at the route/module 
 - earnings/analytics/payout/subscription
 
 ### Partial
-- live sessionz and live tools
-- adz builder/manager/marketplace/performance
 - audit/settings/roles/crew flows still accept broad workspace payloads
 
 ## Seller app coverage
@@ -68,13 +73,10 @@ The backend now covers nearly every visible frontend sector at the route/module 
 - media/file intake baseline
 
 ### Partial
-- seller onboarding detail depth
-- provider onboarding detail depth
-- help/support/messages workflow depth
-- wholesale quote/RFQ business rules
-- provider quote/booking lifecycle rules
-- live/mylivedealz supplier feature family
-- channel-specific desk logic
+- settings/onboarding detail depth (role-specific policy rules)
+- finance settlement automation
+- realtime help/support/message delivery
+- provider quote/booking lifecycle automation
 
 ## Why partial sectors are not yet "strong"
 
@@ -85,14 +87,9 @@ Patterns found:
 - few sector-specific DTOs or relational models exist for these areas
 
 Affected backend modules:
-- `workflow`
-- `communications`
-- `wholesale`
-- `provider`
-- `live`
-- `adz`
 - parts of `settings`
-- parts of `regulatory`
+- `finance` (settlement + payout automation)
+- infra-dependent messaging delivery
 
 ## Conclusion
 
