@@ -13,17 +13,17 @@ export class SettingsService {
   }
   async updateSettings(userId: string, body: any) {
     const record = await this.upsertUserSetting(userId, 'profile', body);
-    return this.toAppRecord(record, 'settings', 'profile', 'main');
+    return record.payload as Record<string, unknown>;
   }
   sendPayoutCode(userId: string, body: any) { return { sent: true, channel: body?.channel || 'email', codeId: randomUUID() }; }
   async verifyPayout(userId: string, body: any) {
     const payload = {
       verified: true,
-      ...this.ensurePayload(body),
+      ...this.ensureObjectPayload(body),
       verifiedAt: new Date().toISOString()
     };
     const record = await this.upsertUserSetting(userId, 'payout_verification', payload);
-    return this.toAppRecord(record, 'settings', 'payout_verification', 'main');
+    return record.payload as Record<string, unknown>;
   }
   async signOutDevice(userId: string, id: string) {
     const devicesPayload = await this.getUserSetting(userId, 'devices', { devices: [] });
@@ -78,7 +78,7 @@ export class SettingsService {
 
   async security(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'roles_security', body);
-    return this.toAppRecord(record, 'settings', 'roles_security', 'main');
+    return record.payload as Record<string, unknown>;
   }
   async createRole(userId: string, body: any) {
     const payload = this.ensureObjectPayload(body);
@@ -88,7 +88,7 @@ export class SettingsService {
     const nextRole = { id, createdAt: new Date().toISOString(), ...payload };
     const nextRoles = [nextRole, ...roles.filter((entry: any) => entry?.id !== id)];
     await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
-    return this.buildAppRecord(userId, 'settings', 'role', id, nextRole);
+    return nextRole;
   }
   async updateRole(userId: string, id: string, body: any) {
     const payload = this.ensureObjectPayload(body);
@@ -101,7 +101,7 @@ export class SettingsService {
     const updated = { ...existing, ...payload, updatedAt: new Date().toISOString() };
     const nextRoles = roles.map((entry: any) => (entry?.id === id ? updated : entry));
     await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
-    return this.buildAppRecord(userId, 'settings', 'role', id, updated);
+    return updated;
   }
   async deleteRole(userId: string, id: string) {
     const rolesPayload = await this.getWorkspaceSetting(userId, 'roles', { roles: [] });
@@ -118,7 +118,7 @@ export class SettingsService {
     const nextInvite = { id, createdAt: new Date().toISOString(), ...payload };
     const nextInvites = [nextInvite, ...invites.filter((entry: any) => entry?.id !== id)];
     await this.upsertWorkspaceSetting(userId, 'role_invites', { invites: nextInvites });
-    return this.buildAppRecord(userId, 'settings', 'role_invite', id, nextInvite);
+    return nextInvite;
   }
   async updateMember(userId: string, id: string, body: any) {
     const payload = this.ensureObjectPayload(body);
@@ -135,7 +135,7 @@ export class SettingsService {
       ? members.map((entry: any) => (entry?.id === id ? updated : entry))
       : [updated, ...members];
     await this.upsertWorkspaceSetting(userId, 'members', { members: nextMembers });
-    return this.buildAppRecord(userId, 'settings', 'member', id, updated);
+    return updated;
   }
 
   async crew(userId: string) {
@@ -152,7 +152,7 @@ export class SettingsService {
       ? sessions.map((entry: any) => (entry?.id === id ? updated : entry))
       : [updated, ...sessions];
     await this.upsertUserSetting(userId, 'crew_sessions', { sessions: nextSessions });
-    return this.buildAppRecord(userId, 'settings', 'crew_session', id, updated);
+    return updated;
   }
   auditLogs(userId: string) {
     return this.prisma.auditEvent.findMany({
@@ -165,44 +165,44 @@ export class SettingsService {
   preferences(userId: string) { return this.getWorkspaceSetting(userId, 'preferences', { locale: 'en', currency: 'USD' }); }
   async updatePreferences(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'preferences', body);
-    return this.toAppRecord(record, 'seller_workspace', 'preferences', 'main');
+    return record.payload as Record<string, unknown>;
   }
   payoutMethods(userId: string) { return this.getWorkspaceSetting(userId, 'payout_methods', { methods: [] }); }
   async updatePayoutMethods(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'payout_methods', body);
-    return this.toAppRecord(record, 'seller_workspace', 'payout_methods', 'main');
+    return record.payload as Record<string, unknown>;
   }
   securitySettings(userId: string) { return this.getWorkspaceSetting(userId, 'security', { twoFactor: false, sessions: [] }); }
   async updateSecuritySettings(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'security', body);
-    return this.toAppRecord(record, 'seller_workspace', 'security', 'main');
+    return record.payload as Record<string, unknown>;
   }
   integrations(userId: string) { return this.getWorkspaceSetting(userId, 'integrations', { integrations: [], webhooks: [] }); }
   async updateIntegrations(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'integrations', body);
-    return this.toAppRecord(record, 'seller_workspace', 'integrations', 'main');
+    return record.payload as Record<string, unknown>;
   }
   tax(userId: string) { return this.getWorkspaceSetting(userId, 'tax', { profiles: [], reports: [] }); }
   async updateTax(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'tax', body);
-    return this.toAppRecord(record, 'seller_workspace', 'tax', 'main');
+    return record.payload as Record<string, unknown>;
   }
   kyc(userId: string) { return this.getWorkspaceSetting(userId, 'kyc', { status: 'pending', documents: [] }); }
   async updateKyc(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'kyc', body);
-    return this.toAppRecord(record, 'seller_workspace', 'kyc', 'main');
+    return record.payload as Record<string, unknown>;
   }
   savedViews(userId: string) { return this.getWorkspaceSetting(userId, 'saved_views', { views: [] }); }
   async updateSavedViews(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'saved_views', body);
-    return this.toAppRecord(record, 'seller_workspace', 'saved_views', 'main');
+    return record.payload as Record<string, unknown>;
   }
   help(userId: string) { return this.getWorkspaceSetting(userId, 'help', { links: [] }); }
   statusCenter(userId: string) { return this.getWorkspaceSetting(userId, 'status_center', { services: [] }); }
   notificationPreferences(userId: string) { return this.getWorkspaceSetting(userId, 'notification_preferences', { watches: [] }); }
   async updateNotificationPreferences(userId: string, body: any) {
     const record = await this.upsertWorkspaceSetting(userId, 'notification_preferences', body);
-    return this.toAppRecord(record, 'seller_workspace', 'notification_preferences', 'main');
+    return record.payload as Record<string, unknown>;
   }
 
   private async getWorkspaceSetting(userId: string, key: string, fallback: any) {
@@ -271,41 +271,7 @@ export class SettingsService {
     return [];
   }
 
-  private toAppRecord(
-    record: { id: string; userId: string; key: string; payload: unknown; createdAt: Date; updatedAt: Date },
-    domain: string,
-    entityType: string,
-    entityId: string
-  ) {
-    return {
-      id: record.id,
-      domain,
-      entityType,
-      entityId,
-      userId: record.userId,
-      payload: record.payload,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt
-    };
-  }
-
-  private buildAppRecord(
-    userId: string,
-    domain: string,
-    entityType: string,
-    entityId: string,
-    payload: unknown
-  ) {
-    const now = new Date();
-    return {
-      id: entityId,
-      domain,
-      entityType,
-      entityId,
-      userId,
-      payload,
-      createdAt: now,
-      updatedAt: now
-    };
+  private buildAuditPayload(payload: Record<string, unknown>) {
+    return { ...payload };
   }
 }

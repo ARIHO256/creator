@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreatorsService } from './creators.service.js';
@@ -18,6 +19,7 @@ export class CreatorsController {
 
   @Roles('CREATOR', 'ADMIN')
   @Patch('me/profile')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   updateMyProfile(@CurrentUser() user: RequestUser, @Body() payload: UpdateCreatorProfileDto) {
     return this.creatorsService.updateMyProfile(user.sub, payload);
   }

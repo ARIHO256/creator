@@ -10,133 +10,275 @@ export class LiveService {
 
   // builder
   async builder(id: string, userId: string) {
-    const record = await this.getRecord(userId, 'builder', id);
-    if (!record) {
+    const builder = await this.prisma.liveBuilder.findFirst({
+      where: { id, userId }
+    });
+    if (!builder) {
       throw new NotFoundException('Builder not found');
     }
-    return record.payload;
+    return this.serializeBuilder(builder);
   }
-  saveBuilder(userId: string, payload: any) {
+  saveBuilder(userId: string, payload: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(payload);
     const id = normalizeIdentifier(sanitized.sessionId ?? sanitized.id, randomUUID());
-    return this.upsertRecord(userId, 'live', 'builder', id, sanitized);
+    return this.prisma.liveBuilder
+      .upsert({
+        where: { id },
+        update: {
+          sessionId: String(sanitized.sessionId ?? sanitized.id ?? id),
+          status: String((sanitized as any).status ?? 'draft'),
+          data: sanitized as Prisma.InputJsonValue
+        },
+        create: {
+          id,
+          userId,
+          sessionId: String(sanitized.sessionId ?? sanitized.id ?? id),
+          status: String((sanitized as any).status ?? 'draft'),
+          data: sanitized as Prisma.InputJsonValue
+        }
+      })
+      .then((builder) => this.serializeBuilder(builder));
   }
-  async publishBuilder(userId: string, id: string, payload: any) {
-    const rec = await this.getRecord(userId, 'builder', id);
-    if (!rec) {
+  async publishBuilder(userId: string, id: string, payload: Record<string, unknown>) {
+    const existing = await this.prisma.liveBuilder.findFirst({
+      where: { id, userId }
+    });
+    if (!existing) {
       throw new NotFoundException('Builder not found');
     }
     const sanitized = this.ensureObjectPayload(payload);
-    return this.updateRecord(userId, 'live', 'builder', id, {
-      ...(rec.payload as any),
-      ...sanitized,
-      published: true
+    const merged = { ...(existing.data as any), ...sanitized };
+    const updated = await this.prisma.liveBuilder.update({
+      where: { id: existing.id },
+      data: {
+        data: merged as Prisma.InputJsonValue,
+        published: true,
+        publishedAt: new Date(),
+        status: String((merged as any).status ?? existing.status ?? 'published')
+      }
     });
+    return this.serializeBuilder(updated);
   }
 
   async campaignGiveaways(campaignId: string) {
-    const records = await this.prisma.liveRecord.findMany({
-      where: { recordType: 'campaign_giveaway', recordKey: campaignId },
+    const giveaways = await this.prisma.liveCampaignGiveaway.findMany({
+      where: { campaignId },
       orderBy: { updatedAt: 'desc' }
     });
-    return records.map((record) => record.payload);
+    return giveaways.map((giveaway) => this.serializeGiveaway(giveaway));
   }
 
   async sessions(userId: string) {
-    const records = await this.listRecords(userId, 'session');
-    return records.map((record) => ({ id: record.recordKey, ...(record.payload as any) }));
+    const sessions = await this.prisma.liveSession.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return sessions.map((session) => this.serializeSession(session));
   }
   async session(userId: string, id: string) {
-    const record = await this.getRecord(userId, 'session', id);
-    if (!record) {
+    const session = await this.prisma.liveSession.findFirst({
+      where: { id, userId }
+    });
+    if (!session) {
       throw new NotFoundException('Session not found');
     }
-    return { id: record.recordKey, ...(record.payload as any) };
+    return this.serializeSession(session);
   }
-  createSession(userId: string, body: any) {
+  createSession(userId: string, body: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(body);
     const id = normalizeIdentifier(sanitized.id, randomUUID());
-    return this.createRecord(userId, 'live', 'session', id, sanitized);
+    return this.prisma.liveSession
+      .create({
+        data: {
+          id,
+          userId,
+          status: String((sanitized as any).status ?? 'draft'),
+          title: typeof (sanitized as any).title === 'string' ? (sanitized as any).title : null,
+          scheduledAt: this.parseDate((sanitized as any).scheduledAt),
+          data: sanitized as Prisma.InputJsonValue
+        }
+      })
+      .then((session) => this.serializeSession(session));
   }
-  updateSession(userId: string, id: string, body: any) {
+  updateSession(userId: string, id: string, body: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(body);
-    return this.updateRecord(userId, 'live', 'session', id, sanitized);
+    return this.prisma.liveSession
+      .findFirst({ where: { id, userId } })
+      .then((session) => {
+        if (!session) {
+          throw new NotFoundException('Session not found');
+        }
+        return this.prisma.liveSession.update({
+          where: { id: session.id },
+          data: {
+            status: String((sanitized as any).status ?? session.status),
+            title: typeof (sanitized as any).title === 'string' ? (sanitized as any).title : session.title,
+            scheduledAt: this.parseDate((sanitized as any).scheduledAt) ?? session.scheduledAt,
+            startedAt: this.parseDate((sanitized as any).startedAt) ?? session.startedAt,
+            endedAt: this.parseDate((sanitized as any).endedAt) ?? session.endedAt,
+            data: sanitized as Prisma.InputJsonValue
+          }
+        });
+      })
+      .then((session) => this.serializeSession(session));
   }
 
   async studio(userId: string, id: string) {
-    const record = await this.prisma.liveRecord.upsert({
-      where: { userId_recordType_recordKey: { userId, recordType: 'studio', recordKey: id } },
+    const session =
+      (await this.prisma.liveSession.findFirst({ where: { id, userId } })) ??
+      (await this.prisma.liveSession.create({
+        data: {
+          id,
+          userId,
+          status: 'draft',
+          data: { sessionId: id } as Prisma.InputJsonValue
+        }
+      }));
+
+    const studio = await this.prisma.liveStudio.upsert({
+      where: { userId_sessionId: { userId, sessionId: session.id } },
       update: {},
       create: {
         userId,
-        recordType: 'studio',
-        recordKey: id,
-        payload: { mode: 'builder', sessionId: id } as Prisma.InputJsonValue
+        sessionId: session.id,
+        status: 'idle',
+        data: { mode: 'builder', sessionId: session.id } as Prisma.InputJsonValue
       }
     });
-    return record.payload;
+    return this.serializeStudio(studio);
   }
 
   async startStudio(userId: string, id: string) {
-    const rec = await this.studio(userId, id);
-    return this.upsertRecord(userId, 'live', 'studio', id, {
-      ...(rec as any),
-      status: 'live',
-      startedAt: new Date().toISOString()
+    const studio = await this.studio(userId, id);
+    const updated = await this.prisma.liveStudio.update({
+      where: { id: studio.id },
+      data: {
+        status: 'live',
+        startedAt: new Date(),
+        data: { ...(studio.data as any), status: 'live', startedAt: new Date().toISOString() } as Prisma.InputJsonValue
+      }
     });
+    return this.serializeStudio(updated);
   }
 
   async endStudio(userId: string, id: string) {
-    const rec = await this.studio(userId, id);
-    await this.upsertRecord(userId, 'live', 'studio', id, {
-      ...(rec as any),
-      status: 'ended',
-      endedAt: new Date().toISOString()
+    const studio = await this.studio(userId, id);
+    const updated = await this.prisma.liveStudio.update({
+      where: { id: studio.id },
+      data: {
+        status: 'ended',
+        endedAt: new Date(),
+        data: { ...(studio.data as any), status: 'ended', endedAt: new Date().toISOString() } as Prisma.InputJsonValue
+      }
     });
-    return this.upsertRecord(userId, 'live', 'replay', id, { sessionId: id, published: false });
+    const replay = await this.prisma.liveReplay.upsert({
+      where: { id },
+      update: {},
+      create: {
+        id,
+        userId,
+        sessionId: studio.sessionId,
+        status: 'draft',
+        published: false,
+        data: { sessionId: studio.sessionId } as Prisma.InputJsonValue
+      }
+    });
+    return { studio: this.serializeStudio(updated), replay: this.serializeReplay(replay) };
   }
 
-  async addMoment(userId: string, id: string, payload: any) {
-    const rec = (await this.studio(userId, id)) as any;
-    const moments = Array.isArray(rec.moments) ? rec.moments : [];
+  async addMoment(userId: string, id: string, payload: Record<string, unknown>) {
+    const studio = await this.studio(userId, id);
     const sanitized = this.ensureObjectPayload(payload, { maxDepth: 4, maxArrayLength: 50, maxKeys: 50 });
-    const nextMoments = [...moments, { id: randomUUID(), ...sanitized, createdAt: new Date().toISOString() }];
-    const trimmed = nextMoments.length > 500 ? nextMoments.slice(nextMoments.length - 500) : nextMoments;
-    return this.upsertRecord(userId, 'live', 'studio', id, { ...rec, moments: trimmed });
+    const moment = await this.prisma.liveMoment.create({
+      data: {
+        studioId: studio.id,
+        kind: typeof (sanitized as any).kind === 'string' ? (sanitized as any).kind : null,
+        data: sanitized as Prisma.InputJsonValue
+      }
+    });
+    const moments = await this.prisma.liveMoment.findMany({
+      where: { studioId: studio.id },
+      orderBy: { createdAt: 'desc' },
+      take: 500
+    });
+    return {
+      studio: this.serializeStudio(studio),
+      moment: this.serializeMoment(moment),
+      moments: moments.map((entry) => this.serializeMoment(entry))
+    };
   }
 
   async replays(userId: string) {
-    const records = await this.listRecords(userId, 'replay');
-    return records.map((record) => ({ id: record.recordKey, ...(record.payload as any) }));
+    const replays = await this.prisma.liveReplay.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return replays.map((replay) => this.serializeReplay(replay));
   }
   async replay(userId: string, id: string) {
-    const record = await this.getRecord(userId, 'replay', id);
-    if (!record) {
+    const replay = await this.prisma.liveReplay.findFirst({
+      where: { id, userId }
+    });
+    if (!replay) {
       throw new NotFoundException('Replay not found');
     }
-    return { id: record.recordKey, ...(record.payload as any) };
+    return this.serializeReplay(replay);
   }
   replayBySession(userId: string, sessionId: string) {
     const id = normalizeIdentifier(sessionId, randomUUID());
-    return this.upsertRecord(userId, 'live', 'replay', id, { sessionId: id, published: false });
+    return this.prisma.liveReplay
+      .upsert({
+        where: { id },
+        update: {},
+        create: {
+          id,
+          userId,
+          sessionId: id,
+          status: 'draft',
+          published: false,
+          data: { sessionId: id } as Prisma.InputJsonValue
+        }
+      })
+      .then((replay) => this.serializeReplay(replay));
   }
-  updateReplay(userId: string, id: string, body: any) {
+  updateReplay(userId: string, id: string, body: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(body);
-    return this.updateRecord(userId, 'live', 'replay', id, sanitized);
+    return this.prisma.liveReplay
+      .findFirst({ where: { id, userId } })
+      .then((replay) => {
+        if (!replay) {
+          throw new NotFoundException('Replay not found');
+        }
+        return this.prisma.liveReplay.update({
+          where: { id: replay.id },
+          data: {
+            status: String((sanitized as any).status ?? replay.status),
+            data: sanitized as Prisma.InputJsonValue
+          }
+        });
+      })
+      .then((replay) => this.serializeReplay(replay));
   }
 
-  async publishReplay(userId: string, id: string, body: any) {
-    const rec = await this.getRecord(userId, 'replay', id);
-    if (!rec) {
+  async publishReplay(userId: string, id: string, body: Record<string, unknown>) {
+    const replay = await this.prisma.liveReplay.findFirst({
+      where: { id, userId }
+    });
+    if (!replay) {
       throw new NotFoundException('Replay not found');
     }
     const sanitized = this.ensureObjectPayload(body);
-    return this.updateRecord(userId, 'live', 'replay', id, {
-      ...(rec.payload as any),
-      ...sanitized,
-      published: true,
-      publishedAt: new Date().toISOString()
+    const merged = { ...(replay.data as any), ...sanitized };
+    const updated = await this.prisma.liveReplay.update({
+      where: { id: replay.id },
+      data: {
+        data: merged as Prisma.InputJsonValue,
+        published: true,
+        publishedAt: new Date(),
+        status: String((merged as any).status ?? replay.status ?? 'published')
+      }
     });
+    return this.serializeReplay(updated);
   }
 
   reviews(userId: string) {
@@ -147,23 +289,28 @@ export class LiveService {
   }
 
   toolGet(userId: string, key: string) {
-    return this.prisma.liveRecord
+    return this.prisma.liveToolConfig
       .upsert({
-        where: { userId_recordType_recordKey: { userId, recordType: 'tool_config', recordKey: key } },
+        where: { userId_key: { userId, key } },
         update: {},
         create: {
           userId,
-          recordType: 'tool_config',
-          recordKey: key,
-          payload: {} as Prisma.InputJsonValue
+          key,
+          data: {} as Prisma.InputJsonValue
         }
       })
-      .then((record) => record.payload);
+      .then((record) => record.data ?? {});
   }
 
-  toolPatch(userId: string, key: string, body: any) {
+  toolPatch(userId: string, key: string, body: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(body, { maxDepth: 5, maxArrayLength: 100, maxKeys: 100 });
-    return this.upsertRecord(userId, 'live', 'tool_config', key, sanitized);
+    return this.prisma.liveToolConfig
+      .upsert({
+        where: { userId_key: { userId, key } },
+        update: { data: sanitized as Prisma.InputJsonValue },
+        create: { userId, key, data: sanitized as Prisma.InputJsonValue }
+      })
+      .then((record) => record.data ?? {});
   }
 
   private ensureObjectPayload(payload: unknown, overrides?: Partial<PayloadSanitizerOptions>) {
@@ -174,70 +321,136 @@ export class LiveService {
     return sanitized as Record<string, unknown>;
   }
 
-  private async getRecord(userId: string, recordType: string, recordKey: string) {
-    return this.prisma.liveRecord.findUnique({
-      where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
-    });
+  private parseDate(value?: unknown) {
+    if (!value) return null;
+    const date = new Date(String(value));
+    if (Number.isNaN(date.valueOf())) return null;
+    return date;
   }
 
-  private async listRecords(userId: string, recordType: string) {
-    return this.prisma.liveRecord.findMany({
-      where: { userId, recordType },
-      orderBy: { updatedAt: 'desc' }
-    });
-  }
-
-  private async createRecord(userId: string, domain: string, recordType: string, recordKey: string, payload: unknown) {
-    const record = await this.prisma.liveRecord.create({
-      data: {
-        userId,
-        recordType,
-        recordKey,
-        payload: payload as Prisma.InputJsonValue
-      }
-    });
-    return this.toAppRecord(record, domain);
-  }
-
-  private async updateRecord(userId: string, domain: string, recordType: string, recordKey: string, payload: unknown) {
-    const existing = await this.getRecord(userId, recordType, recordKey);
-    if (!existing) {
-      throw new NotFoundException('Record not found');
-    }
-    const record = await this.prisma.liveRecord.update({
-      where: { id: existing.id },
-      data: { payload: payload as Prisma.InputJsonValue }
-    });
-    return this.toAppRecord(record, domain);
-  }
-
-  private async upsertRecord(userId: string, domain: string, recordType: string, recordKey: string, payload: unknown) {
-    const record = await this.prisma.liveRecord.upsert({
-      where: { userId_recordType_recordKey: { userId, recordType, recordKey } },
-      update: { payload: payload as Prisma.InputJsonValue },
-      create: {
-        userId,
-        recordType,
-        recordKey,
-        payload: payload as Prisma.InputJsonValue
-      }
-    });
-    return this.toAppRecord(record, domain);
-  }
-
-  private toAppRecord(
-    record: { id: string; userId: string | null; recordType: string; recordKey: string; payload: unknown; createdAt: Date; updatedAt: Date },
-    domain: string
-  ) {
+  private serializeBuilder(builder: {
+    id: string;
+    sessionId: string | null;
+    status: string;
+    published: boolean;
+    publishedAt: Date | null;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
     return {
-      id: record.id,
-      domain,
-      entityType: record.recordType,
-      entityId: record.recordKey,
-      userId: record.userId,
-      payload: record.payload,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt
+      id: builder.id,
+      sessionId: builder.sessionId,
+      status: builder.status,
+      published: builder.published,
+      publishedAt: builder.publishedAt?.toISOString() ?? null,
+      data: builder.data ?? {},
+      createdAt: builder.createdAt.toISOString(),
+      updatedAt: builder.updatedAt.toISOString()
+    };
+  }
+
+  private serializeSession(session: {
+    id: string;
+    status: string;
+    title: string | null;
+    scheduledAt: Date | null;
+    startedAt: Date | null;
+    endedAt: Date | null;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: session.id,
+      status: session.status,
+      title: session.title,
+      scheduledAt: session.scheduledAt?.toISOString() ?? null,
+      startedAt: session.startedAt?.toISOString() ?? null,
+      endedAt: session.endedAt?.toISOString() ?? null,
+      data: session.data ?? {},
+      createdAt: session.createdAt.toISOString(),
+      updatedAt: session.updatedAt.toISOString()
+    };
+  }
+
+  private serializeStudio(studio: {
+    id: string;
+    sessionId: string;
+    status: string;
+    startedAt: Date | null;
+    endedAt: Date | null;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: studio.id,
+      sessionId: studio.sessionId,
+      status: studio.status,
+      startedAt: studio.startedAt?.toISOString() ?? null,
+      endedAt: studio.endedAt?.toISOString() ?? null,
+      data: studio.data ?? {},
+      createdAt: studio.createdAt.toISOString(),
+      updatedAt: studio.updatedAt.toISOString()
+    };
+  }
+
+  private serializeMoment(moment: {
+    id: string;
+    studioId: string;
+    kind: string | null;
+    data: unknown;
+    createdAt: Date;
+  }) {
+    return {
+      id: moment.id,
+      studioId: moment.studioId,
+      kind: moment.kind,
+      data: moment.data ?? {},
+      createdAt: moment.createdAt.toISOString()
+    };
+  }
+
+  private serializeReplay(replay: {
+    id: string;
+    sessionId: string | null;
+    status: string;
+    published: boolean;
+    publishedAt: Date | null;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: replay.id,
+      sessionId: replay.sessionId,
+      status: replay.status,
+      published: replay.published,
+      publishedAt: replay.publishedAt?.toISOString() ?? null,
+      data: replay.data ?? {},
+      createdAt: replay.createdAt.toISOString(),
+      updatedAt: replay.updatedAt.toISOString()
+    };
+  }
+
+  private serializeGiveaway(giveaway: {
+    id: string;
+    campaignId: string;
+    status: string;
+    title: string | null;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: giveaway.id,
+      campaignId: giveaway.campaignId,
+      status: giveaway.status,
+      title: giveaway.title,
+      data: giveaway.data ?? {},
+      createdAt: giveaway.createdAt.toISOString(),
+      updatedAt: giveaway.updatedAt.toISOString()
     };
   }
 }

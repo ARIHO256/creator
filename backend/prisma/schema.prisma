@@ -281,11 +281,39 @@ model User {
   notifications        Notification[]
   sellerFollows        SellerFollow[]
   savedOpportunities   SavedOpportunity[]
+  liveRecords          LiveRecord[]
+  adzRecords           AdzRecord[]
+  wholesaleRecords     WholesaleRecord[]
+  providerRecords      ProviderRecord[]
+  regulatoryRecords    RegulatoryRecord[]
+  communicationRecords CommunicationRecord[]
+  workflowRecords      WorkflowRecord[]
   userSettings         UserSetting[]
   workspaceSettings    WorkspaceSetting[]
   subscriptions        UserSubscription[]
   idempotencyKeys      IdempotencyKey[]
   inventoryAdjustments InventoryAdjustment[]
+  messageThreads       MessageThread[]
+  messagesSent         Message[]          @relation("MessageSender")
+  supportTickets       SupportTicket[]
+  providerQuotes       ProviderQuote[]
+  providerBookings     ProviderBooking[]
+  providerConsultations ProviderConsultation[]
+  providerPortfolioItems ProviderPortfolioItem[]
+  wholesaleQuotes      WholesaleQuote[]
+  wholesaleRfqs        WholesaleRfq[]
+  wholesalePriceLists  WholesalePriceList[]
+  liveBuilders         LiveBuilder[]
+  liveSessions         LiveSession[]
+  liveStudios          LiveStudio[]
+  liveReplays          LiveReplay[]
+  liveToolConfigs      LiveToolConfig[]
+  adzBuilders          AdzBuilder[]
+  adzCampaigns         AdzCampaign[]
+  adzLinks             AdzLink[]
+  promoAds             PromoAd[]
+  regulatoryDesks      RegulatoryDesk[]
+  regulatoryComplianceItems RegulatoryComplianceItem[]
   reviewsReceived      Review[]            @relation("ReviewSubject")
   reviewsAuthored      Review[]            @relation("ReviewAuthor")
   reviewRepliesAuthored ReviewReply[]
@@ -387,6 +415,7 @@ model Seller {
   invites       CollaborationInvite[]
   orders        Order[]
   transactions  Transaction[]
+  followers     SellerFollow[]
   storefront    Storefront?
   taxonomyCoverage SellerTaxonomyCoverage[]
   warehouses    SellerWarehouse[]
@@ -417,7 +446,8 @@ model Storefront {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  seller         Seller                  @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  taxonomyLinks  StorefrontTaxonomyLink[]
 }
 
 model SellerWarehouse {
@@ -569,6 +599,7 @@ model Opportunity {
   createdBy User?                 @relation("OpportunityCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   campaigns Campaign[]
   invites   CollaborationInvite[]
+  savedBy   SavedOpportunity[]
 
   @@index([sellerId])
   @@index([status])
@@ -648,6 +679,24 @@ model ListingTaxonomyLink {
 
   @@unique([listingId, taxonomyNodeId])
   @@index([listingId, isPrimary])
+  @@index([taxonomyNodeId])
+}
+
+model StorefrontTaxonomyLink {
+  id             String   @id @default(cuid())
+  storefrontId   String
+  taxonomyNodeId String
+  isPrimary      Boolean  @default(false)
+  sortOrder      Int      @default(0)
+  pathSnapshot   Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  storefront   Storefront  @relation(fields: [storefrontId], references: [id], onDelete: Cascade)
+  taxonomyNode TaxonomyNode @relation(fields: [taxonomyNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([storefrontId, taxonomyNodeId])
+  @@index([storefrontId, isPrimary])
   @@index([taxonomyNodeId])
 }
 
@@ -1325,6 +1374,437 @@ model WorkflowRecord {
 
   @@unique([userId, recordType, recordKey])
   @@index([recordType, updatedAt])
+}
+
+model MessageThread {
+  id            String   @id @default(cuid())
+  userId        String
+  subject       String?
+  status        String   @default("open")
+  channel       String?
+  priority      String?
+  lastMessageAt DateTime?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@index([userId, updatedAt])
+  @@index([userId, status])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  threadId     String
+  senderUserId String?
+  senderRole   String?
+  body         String   @db.Text
+  lang         String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  thread MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  sender User?         @relation("MessageSender", fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([threadId, createdAt])
+  @@index([senderUserId])
+}
+
+model SupportTicket {
+  id          String   @id @default(cuid())
+  userId      String
+  status      String   @default("Open")
+  marketplace String?
+  category    String?
+  subject     String?
+  severity    String?
+  ref         String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([createdAt])
+}
+
+model SupportContent {
+  id          String   @id @default(cuid())
+  contentType String
+  title       String
+  body        String?  @db.Text
+  status      String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([contentType, updatedAt])
+}
+
+model ProviderQuote {
+  id        String   @id @default(cuid())
+  userId    String
+  status    String   @default("draft")
+  title     String?
+  buyer     String?
+  amount    Float?
+  currency  String   @default("USD")
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model ProviderBooking {
+  id              String   @id @default(cuid())
+  userId          String
+  status          String   @default("requested")
+  scheduledAt     DateTime?
+  durationMinutes Int?
+  amount          Float?
+  currency        String   @default("USD")
+  data            Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model ProviderConsultation {
+  id          String   @id @default(cuid())
+  userId      String
+  status      String   @default("open")
+  scheduledAt DateTime?
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model ProviderPortfolioItem {
+  id          String   @id @default(cuid())
+  userId      String
+  title       String
+  description String?  @db.Text
+  mediaUrl    String?
+  status      String   @default("active")
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model WholesaleRfq {
+  id        String   @id @default(cuid())
+  userId    String
+  status    String   @default("new")
+  title     String?
+  buyerName String?
+  buyerType String?
+  urgency   String?
+  origin    String?
+  destination String?
+  paymentRail String?
+  approvalRequired Boolean @default(false)
+  dueAt     DateTime?
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model WholesaleQuote {
+  id        String   @id @default(cuid())
+  userId    String
+  rfqId     String?
+  status    String   @default("draft")
+  title     String?
+  buyer     String?
+  buyerType String?
+  currency  String   @default("USD")
+  total     Float?
+  approvalsRequired Boolean @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([rfqId])
+}
+
+model WholesalePriceList {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  currency  String   @default("USD")
+  status    String   @default("draft")
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model WholesaleIncoterm {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  description        String?
+  riskTransferPoint  String?
+  sellerObligation   String?
+  buyerObligation    String?
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model LiveBuilder {
+  id          String   @id @default(cuid())
+  userId      String
+  sessionId   String?
+  status      String   @default("draft")
+  published   Boolean  @default(false)
+  publishedAt DateTime?
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model LiveSession {
+  id          String   @id @default(cuid())
+  userId      String
+  status      String   @default("draft")
+  title       String?
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  endedAt     DateTime?
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studio  LiveStudio?
+  replay  LiveReplay?
+
+  @@index([userId, status])
+}
+
+model LiveStudio {
+  id          String   @id @default(cuid())
+  userId      String
+  sessionId   String
+  status      String   @default("idle")
+  startedAt   DateTime?
+  endedAt     DateTime?
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session  LiveSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  moments  LiveMoment[]
+
+  @@unique([userId, sessionId])
+  @@index([userId, status])
+}
+
+model LiveMoment {
+  id        String   @id @default(cuid())
+  studioId  String
+  kind      String?
+  data      Json?
+  createdAt DateTime @default(now())
+
+  studio LiveStudio @relation(fields: [studioId], references: [id], onDelete: Cascade)
+
+  @@index([studioId, createdAt])
+}
+
+model LiveReplay {
+  id          String   @id @default(cuid())
+  userId      String
+  sessionId   String?
+  status      String   @default("draft")
+  published   Boolean  @default(false)
+  publishedAt DateTime?
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session LiveSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([sessionId])
+}
+
+model LiveToolConfig {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, key])
+}
+
+model LiveCampaignGiveaway {
+  id         String   @id @default(cuid())
+  campaignId String
+  status     String   @default("active")
+  title      String?
+  data       Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([campaignId, createdAt])
+}
+
+model AdzBuilder {
+  id          String   @id @default(cuid())
+  userId      String
+  status      String   @default("draft")
+  published   Boolean  @default(false)
+  publishedAt DateTime?
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model AdzCampaign {
+  id        String   @id @default(cuid())
+  userId    String
+  status    String   @default("draft")
+  title     String?
+  budget    Float?
+  currency  String   @default("USD")
+  isMarketplace Boolean @default(false)
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  performance AdzPerformance?
+
+  @@index([userId, status])
+}
+
+model AdzPerformance {
+  id         String   @id @default(cuid())
+  campaignId String   @unique
+  clicks     Int      @default(0)
+  purchases  Int      @default(0)
+  earnings   Float    @default(0)
+  data       Json?
+  updatedAt  DateTime @updatedAt
+
+  campaign AdzCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model AdzLink {
+  id        String   @id @default(cuid())
+  userId    String
+  status    String   @default("active")
+  url       String?
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model PromoAd {
+  id        String   @id @default(cuid())
+  userId    String
+  status    String   @default("draft")
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model RegulatoryDesk {
+  id        String   @id @default(cuid())
+  userId    String
+  slug      String
+  title     String?
+  status    String   @default("active")
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items RegulatoryDeskItem[]
+
+  @@unique([userId, slug])
+  @@index([userId, status])
+}
+
+model RegulatoryDeskItem {
+  id        String   @id @default(cuid())
+  deskId    String
+  title     String?
+  status    String   @default("open")
+  severity  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  desk RegulatoryDesk @relation(fields: [deskId], references: [id], onDelete: Cascade)
+
+  @@index([deskId, status])
+}
+
+model RegulatoryComplianceItem {
+  id        String   @id @default(cuid())
+  userId    String
+  itemType  String
+  title     String?
+  status    String   @default("open")
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, itemType])
 }
 
 model Review {

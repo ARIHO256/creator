@@ -7,6 +7,7 @@ import { Prisma } from '@prisma/client';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
+import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
 import { ONBOARDING_PROFILE_TYPES, UpdateOnboardingDto } from './dto/update-onboarding.dto.js';
@@ -24,7 +25,8 @@ export class WorkflowService {
   constructor(
     private readonly configService: ConfigService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    private readonly jobsService: JobsService
+    private readonly jobsService: JobsService,
+    private readonly taxonomyService: TaxonomyService
   ) {}
 
   async uploads(userId: string) {
@@ -70,7 +72,7 @@ export class WorkflowService {
         } as Prisma.InputJsonValue
       }
     });
-    return this.buildAppRecord(userId, 'workflow', 'upload', id, this.toUploadPayload(session));
+    return { id: session.id, ...this.toUploadPayload(session) };
   }
 
   async onboarding(userId: string) {
@@ -107,6 +109,7 @@ export class WorkflowService {
   async patchOnboarding(userId: string, body: UpdateOnboardingDto) {
     const current = await this.onboarding(userId);
     const merged = mergeOnboardingState(current, body);
+    await this.validateOnboardingTaxonomy(merged);
     await this.upsertRecord(userId, 'onboarding', 'main', merged);
     return merged;
   }
@@ -121,10 +124,12 @@ export class WorkflowService {
   async submitOnboarding(userId: string, body: UpdateOnboardingDto) {
     const current = await this.onboarding(userId);
     const merged = mergeOnboardingState(current, body);
+    await this.validateOnboardingTaxonomy(merged);
     const submitted = prepareSubmittedOnboarding(merged);
     await this.assertSellerSlugAvailable(userId, submitted.storeSlug);
     await this.upsertRecord(userId, 'onboarding', 'main', submitted);
     await this.syncSellerProfile(userId, submitted);
+    await this.syncTaxonomySelections(userId, submitted);
     await this.jobsService.enqueue({
       queue: 'workflow',
       type: 'ONBOARDING_SUBMITTED',
@@ -152,7 +157,7 @@ export class WorkflowService {
       ...body,
       updatedAt: new Date().toISOString()
     });
-    return this.toAppRecord(record, 'workflow', 'account_approval', 'main');
+    return record.payload as Record<string, unknown>;
   }
   refreshAccountApproval(userId: string) { return this.accountApproval(userId); }
   async resubmitAccountApproval(userId: string, body: UpdateAccountApprovalDto) {
@@ -161,14 +166,14 @@ export class WorkflowService {
       status: 'resubmitted',
       reviewedAt: new Date().toISOString()
     });
-    return this.toAppRecord(record, 'workflow', 'account_approval', 'main');
+    return record.payload as Record<string, unknown>;
   }
   async devApprove(userId: string) {
     const record = await this.upsertRecord(userId, 'account_approval', 'main', {
       status: 'approved',
       approvedAt: new Date().toISOString()
     });
-    return this.toAppRecord(record, 'workflow', 'account_approval', 'main');
+    return record.payload as Record<string, unknown>;
   }
 
   async contentApprovals(userId: string) {
@@ -189,12 +194,12 @@ export class WorkflowService {
     const payload = this.ensurePayload(body);
     const id = String((payload as any).id ?? randomUUID());
     await this.createRecord(userId, 'content_approval', id, payload);
-    return this.buildAppRecord(userId, 'workflow', 'content_approval', id, payload);
+    return { id, ...payload };
   }
   async patchContentApproval(userId: string, id: string, body: any) {
     const payload = this.ensurePayload(body);
     await this.updateRecord(userId, 'content_approval', id, payload);
-    return this.buildAppRecord(userId, 'workflow', 'content_approval', id, payload);
+    return { id, ...payload };
   }
 
   async nudge(userId: string, id: string) {
@@ -204,7 +209,7 @@ export class WorkflowService {
     }
     const next = { ...(rec.payload as any), lastNudgedAt: new Date().toISOString() };
     await this.updateRecord(userId, 'content_approval', id, next);
-    return this.buildAppRecord(userId, 'workflow', 'content_approval', id, next);
+    return { id, ...next };
   }
   async withdraw(userId: string, id: string) {
     const rec = await this.getRecord(userId, 'content_approval', id);
@@ -213,16 +218,16 @@ export class WorkflowService {
     }
     const next = { ...(rec.payload as any), status: 'withdrawn' };
     await this.updateRecord(userId, 'content_approval', id, next);
-    return this.buildAppRecord(userId, 'workflow', 'content_approval', id, next);
+    return { id, ...next };
   }
   async resubmit(userId: string, id: string, body: any) {
     const rec = await this.getRecord(userId, 'content_approval', id);
     if (!rec) {
       throw new NotFoundException('Content approval not found');
     }
-    const next = { ...(rec.payload as any), ...this.ensurePayload(body), status: 'resubmitted' };
+    const next = { ...(rec.payload as any), ...this.ensureObjectPayload(body), status: 'resubmitted' };
     await this.updateRecord(userId, 'content_approval', id, next);
-    return this.buildAppRecord(userId, 'workflow', 'content_approval', id, next);
+    return { id, ...next };
   }
 
   private async resolveOnboardingProfileType(userId: string) {
@@ -310,6 +315,39 @@ export class WorkflowService {
     }
   }
 
+  private async validateOnboardingTaxonomy(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    const nodeIds = this.extractTaxonomyNodeIds(onboarding);
+    if (nodeIds.length === 0) {
+      return;
+    }
+    await this.taxonomyService.assertNodesExist(nodeIds);
+  }
+
+  private async syncTaxonomySelections(userId: string, onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    const nodeIds = this.extractTaxonomyNodeIds(onboarding);
+    if (nodeIds.length === 0) {
+      return;
+    }
+    const primaryNodeId = onboarding.taxonomySelection?.nodeId ?? nodeIds[0];
+    await this.taxonomyService.syncSellerCoverage(userId, nodeIds);
+    await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId);
+  }
+
+  private extractTaxonomyNodeIds(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    const nodeIds = new Set<string>();
+    if (onboarding.taxonomySelection?.nodeId) {
+      nodeIds.add(onboarding.taxonomySelection.nodeId);
+    }
+    if (Array.isArray(onboarding.taxonomySelections)) {
+      onboarding.taxonomySelections.forEach((selection: any) => {
+        if (selection?.nodeId) {
+          nodeIds.add(String(selection.nodeId));
+        }
+      });
+    }
+    return Array.from(nodeIds);
+  }
+
   private async getRecordPayload(userId: string, recordType: string, recordKey: string) {
     const record = await this.prisma.workflowRecord.findUnique({
       where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
@@ -369,6 +407,14 @@ export class WorkflowService {
     return sanitized;
   }
 
+  private ensureObjectPayload(payload: unknown) {
+    const sanitized = this.ensurePayload(payload);
+    if (!sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
+      throw new BadRequestException('Invalid payload');
+    }
+    return sanitized as Record<string, unknown>;
+  }
+
   private toUploadPayload(session: {
     fileName: string;
     kind: string;
@@ -406,41 +452,7 @@ export class WorkflowService {
     };
   }
 
-  private buildAppRecord(
-    userId: string,
-    domain: string,
-    entityType: string,
-    entityId: string,
-    payload: unknown
-  ) {
-    const now = new Date();
-    return {
-      id: entityId,
-      domain,
-      entityType,
-      entityId,
-      userId,
-      payload,
-      createdAt: now,
-      updatedAt: now
-    };
-  }
-
-  private toAppRecord(
-    record: { id: string; userId: string; recordType: string; recordKey: string; payload: unknown; createdAt: Date; updatedAt: Date },
-    domain: string,
-    entityType: string,
-    entityId: string
-  ) {
-    return {
-      id: record.id,
-      domain,
-      entityType,
-      entityId,
-      userId: record.userId,
-      payload: record.payload,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt
-    };
+  private buildAuditPayload(payload: Record<string, unknown>) {
+    return { ...payload };
   }
 }

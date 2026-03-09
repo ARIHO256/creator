@@ -3,106 +3,207 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
+import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
 
 @Injectable()
 export class ProviderService {
   constructor(private readonly prisma: PrismaService) {}
 
   async serviceCommand(userId: string) {
-    return (await this.getPayload(userId, 'service_command', 'main')) ?? { queues: [], kpis: [] };
+    const [openQuotes, activeBookings, totalQuotes] = await Promise.all([
+      this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
+      this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } }),
+      this.prisma.providerQuote.count({ where: { userId } })
+    ]);
+    return {
+      queues: [
+        { key: 'quotes', label: 'Quotes', count: openQuotes },
+        { key: 'bookings', label: 'Bookings', count: activeBookings }
+      ],
+      kpis: [
+        { key: 'quotes_total', label: 'Total Quotes', value: totalQuotes }
+      ]
+    };
   }
   async quotes(userId: string) {
-    return (await this.getPayload(userId, 'quotes', 'main')) ?? { quotes: [] };
+    const quotes = await this.prisma.providerQuote.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return { quotes: quotes.map((quote) => this.serializeQuote(quote)) };
   }
   async quote(userId: string, id: string) {
-    const payload = (await this.quotes(userId)) as any;
-    const quote = (payload.quotes ?? []).find((entry: any) => entry.id === id);
-    if (!quote) throw new NotFoundException('Provider quote not found');
-    return quote;
-  }
-  async createQuote(userId: string, body: any) {
-    const payload = (await this.getPayload(userId, 'quotes', 'main')) ?? { quotes: [] };
-    const quotes = Array.isArray((payload as any).quotes) ? (payload as any).quotes : [];
-    const sanitized = this.ensurePayload(body);
-    const nextQuote = {
-      id: (sanitized as any).id ?? randomUUID(),
-      createdAt: new Date().toISOString(),
-      ...sanitized
-    };
-    const nextQuotes = [nextQuote, ...quotes.filter((entry: any) => entry.id !== nextQuote.id)];
-    const record = await this.upsertPayload(userId, 'quotes', 'main', { ...payload, quotes: nextQuotes });
-    return this.toAppRecord(record, 'provider');
-  }
-  async jointQuotes(userId: string) {
-    return (await this.getPayload(userId, 'joint_quotes', 'main')) ?? { jointQuotes: [] };
-  }
-  async consultations(userId: string) {
-    return (await this.getPayload(userId, 'consultations', 'main')) ?? { consultations: [] };
-  }
-  async bookings(userId: string) {
-    return (await this.getPayload(userId, 'bookings', 'main')) ?? { bookings: [] };
-  }
-  async booking(userId: string, id: string) {
-    const payload = (await this.bookings(userId)) as any;
-    const booking = (payload.bookings ?? []).find((entry: any) => entry.id === id);
-    if (!booking) throw new NotFoundException('Booking not found');
-    return booking;
-  }
-  async portfolio(userId: string) {
-    return (await this.getPayload(userId, 'portfolio', 'main')) ?? { items: [] };
-  }
-  async reviews(userId: string) {
-    return (await this.getPayload(userId, 'reviews', 'main')) ?? { reviews: [] };
-  }
-  async disputes(userId: string) {
-    return (await this.getPayload(userId, 'disputes', 'main')) ?? { disputes: [] };
-  }
-
-  private async getPayload(userId: string, recordType: string, recordKey: string) {
-    const record = await this.prisma.providerRecord.findUnique({
-      where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
+    const quote = await this.prisma.providerQuote.findFirst({
+      where: { id, userId }
     });
-    return record?.payload as Record<string, unknown> | null;
+    if (!quote) throw new NotFoundException('Provider quote not found');
+    return this.serializeQuote(quote);
   }
-
-  private async upsertPayload(userId: string, recordType: string, recordKey: string, payload: unknown) {
-    const sanitized = sanitizePayload(payload, { maxDepth: 6, maxArrayLength: 300, maxKeys: 300 });
-    if (sanitized === undefined) {
-      throw new BadRequestException('Invalid payload');
-    }
-    return this.prisma.providerRecord.upsert({
-      where: { userId_recordType_recordKey: { userId, recordType, recordKey } },
-      update: { payload: sanitized as Prisma.InputJsonValue },
-      create: {
+  async createQuote(userId: string, body: CreateProviderQuoteDto) {
+    const sanitized = this.ensurePayload(body);
+    const id = String((sanitized as any).id ?? randomUUID());
+    const quote = await this.prisma.providerQuote.create({
+      data: {
+        id,
         userId,
-        recordType,
-        recordKey,
-        payload: sanitized as Prisma.InputJsonValue
+        status: String((sanitized as any).status ?? 'draft'),
+        title: typeof (sanitized as any).title === 'string' ? (sanitized as any).title : null,
+        buyer: typeof (sanitized as any).buyer === 'string' ? (sanitized as any).buyer : null,
+        amount: typeof (sanitized as any).amount === 'number' ? (sanitized as any).amount : null,
+        currency: typeof (sanitized as any).currency === 'string' ? (sanitized as any).currency : 'USD',
+        data: sanitized as Prisma.InputJsonValue
       }
     });
+    return this.serializeQuote(quote);
+  }
+  async jointQuotes(userId: string) {
+    const quotes = await this.prisma.providerQuote.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    const jointQuotes = quotes.filter((quote) => Boolean((quote.data as any)?.isJoint));
+    return { jointQuotes: jointQuotes.map((quote) => this.serializeQuote(quote)) };
+  }
+  async consultations(userId: string) {
+    const consultations = await this.prisma.providerConsultation.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return { consultations: consultations.map((entry) => this.serializeConsultation(entry)) };
+  }
+  async bookings(userId: string) {
+    const bookings = await this.prisma.providerBooking.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return { bookings: bookings.map((entry) => this.serializeBooking(entry)) };
+  }
+  async booking(userId: string, id: string) {
+    const booking = await this.prisma.providerBooking.findFirst({
+      where: { id, userId }
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+    return this.serializeBooking(booking);
+  }
+  async portfolio(userId: string) {
+    const items = await this.prisma.providerPortfolioItem.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return { items: items.map((entry) => this.serializePortfolio(entry)) };
+  }
+  async reviews(userId: string) {
+    const reviews = await this.prisma.review.findMany({
+      where: { subjectUserId: userId, subjectType: 'SELLER' },
+      orderBy: { createdAt: 'desc' }
+    });
+    return { reviews };
+  }
+  async disputes(userId: string) {
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (!seller) {
+      return { disputes: [] };
+    }
+    const disputes = await this.prisma.sellerDispute.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { openedAt: 'desc' }
+    });
+    return { disputes };
   }
 
   private ensurePayload(payload: unknown) {
     const sanitized = sanitizePayload(payload, { maxDepth: 6, maxArrayLength: 200, maxKeys: 200 });
-    if (sanitized === undefined) {
+    if (sanitized === undefined || !sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
   }
 
-  private toAppRecord(
-    record: { id: string; userId: string; recordType: string; recordKey: string; payload: unknown; createdAt: Date; updatedAt: Date },
-    domain: string
-  ) {
+  private serializeQuote(quote: {
+    id: string;
+    status: string;
+    title: string | null;
+    buyer: string | null;
+    amount: number | null;
+    currency: string;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
     return {
-      id: record.id,
-      domain,
-      entityType: record.recordType,
-      entityId: record.recordKey,
-      userId: record.userId,
-      payload: record.payload,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt
+      id: quote.id,
+      status: quote.status,
+      title: quote.title,
+      buyer: quote.buyer,
+      amount: quote.amount,
+      currency: quote.currency,
+      data: quote.data ?? {},
+      createdAt: quote.createdAt.toISOString(),
+      updatedAt: quote.updatedAt.toISOString()
+    };
+  }
+
+  private serializeBooking(booking: {
+    id: string;
+    status: string;
+    scheduledAt: Date | null;
+    durationMinutes: number | null;
+    amount: number | null;
+    currency: string;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: booking.id,
+      status: booking.status,
+      scheduledAt: booking.scheduledAt?.toISOString() ?? null,
+      durationMinutes: booking.durationMinutes,
+      amount: booking.amount,
+      currency: booking.currency,
+      data: booking.data ?? {},
+      createdAt: booking.createdAt.toISOString(),
+      updatedAt: booking.updatedAt.toISOString()
+    };
+  }
+
+  private serializeConsultation(consultation: {
+    id: string;
+    status: string;
+    scheduledAt: Date | null;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: consultation.id,
+      status: consultation.status,
+      scheduledAt: consultation.scheduledAt?.toISOString() ?? null,
+      data: consultation.data ?? {},
+      createdAt: consultation.createdAt.toISOString(),
+      updatedAt: consultation.updatedAt.toISOString()
+    };
+  }
+
+  private serializePortfolio(item: {
+    id: string;
+    title: string;
+    description: string | null;
+    mediaUrl: string | null;
+    status: string;
+    data: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      mediaUrl: item.mediaUrl,
+      status: item.status,
+      data: item.data ?? {},
+      createdAt: item.createdAt.toISOString(),
+      updatedAt: item.updatedAt.toISOString()
     };
   }
 }

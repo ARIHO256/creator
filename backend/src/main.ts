@@ -9,16 +9,21 @@ import { ApiResponseInterceptor } from './common/interceptors/api-response.inter
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor.js';
 import { MetricsInterceptor } from './common/interceptors/metrics.interceptor.js';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor.js';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor.js';
 import { buildSecurityHeaders } from './platform/security-headers.js';
 
 async function bootstrap() {
   const port = Number(process.env.PORT ?? '4010');
   const host = process.env.HOST ?? '0.0.0.0';
   const bodyLimit = Number(process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`);
+  const loadTestEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.LOAD_TEST_MODE ?? '').toLowerCase());
+  const fastifyLogger =
+    !loadTestEnabled &&
+    !['0', 'false', 'no', 'off'].includes(String(process.env.FASTIFY_LOGGER ?? 'true').toLowerCase());
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: true, bodyLimit })
+    new FastifyAdapter({ logger: fastifyLogger, bodyLimit })
   );
 
   app.enableCors({ origin: true, credentials: true });
@@ -55,21 +60,25 @@ async function bootstrap() {
       done(null, payload);
     }
   );
-  fastify.addHook('onResponse', (request: any, reply: any, done: () => void) => {
-    const startedAt = request.requestStartedAt ?? process.hrtime.bigint();
-    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-    request.log.info(
-      {
-        requestId: request.id,
-        method: request.method,
-        url: request.url,
-        statusCode: reply.statusCode,
-        durationMs: Number(durationMs.toFixed(1))
-      },
-      'request completed'
-    );
-    done();
-  });
+  const requestLogsEnabled =
+    (configService.get<boolean>('logging.requestLogs') ?? true) && !loadTestEnabled;
+  if (requestLogsEnabled) {
+    fastify.addHook('onResponse', (request: any, reply: any, done: () => void) => {
+      const startedAt = request.requestStartedAt ?? process.hrtime.bigint();
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      request.log.info(
+        {
+          requestId: request.id,
+          method: request.method,
+          url: request.url,
+          statusCode: reply.statusCode,
+          durationMs: Number(durationMs.toFixed(1))
+        },
+        'request completed'
+      );
+      done();
+    });
+  }
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -82,7 +91,8 @@ async function bootstrap() {
     new ApiResponseInterceptor(),
     app.get(RequestTimeoutInterceptor),
     app.get(MetricsInterceptor),
-    app.get(AuditInterceptor)
+    app.get(AuditInterceptor),
+    app.get(IdempotencyInterceptor)
   );
   app.useGlobalFilters(new HttpExceptionFilter());
 

@@ -1,4 +1,4 @@
-import { IsBoolean, IsObject, IsOptional, IsString, IsUrl } from 'class-validator';
+import { IsArray, IsBoolean, IsObject, IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class UpdateStorefrontDto {
   @IsOptional()
@@ -40,6 +40,15 @@ export class UpdateStorefrontDto {
   @IsOptional()
   @IsObject()
   theme?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  taxonomyNodeIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  primaryTaxonomyNodeId?: string;
 
   @IsOptional()
   @IsBoolean()

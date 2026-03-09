@@ -3,67 +3,106 @@
 Date: 2026-03-09
 
 ## Summary
-This pass hardened the backend for scale and completeness without touching any frontend code. Work focused on distributed caching readiness, observability, auditability, ExpressMart backend coverage, stronger order lifecycle support, and database/index tuning.
+This pass removed the remaining AppRecords fallback paths, added idempotency protection, expanded rate limiting, and hardened seller/creator write flows while keeping all frontends unchanged. Load-test readiness was strengthened with new configuration switches, a realistic seed script, and additional tests.
 
 ## What Was Found
-- In-memory caching only; no Redis/distributed cache support.
-- No metrics endpoint or structured performance metrics for requests, DB queries, caches, or jobs.
-- No audit table or admin-visible audit trail.
-- ExpressMart flows existed in frontend mocks only; backend had no channel-specific endpoints.
-- Order model lacked metadata for ExpressMart detail fields and missing status states.
-- Notifications were stored only as AppRecords, not as first-class records.
-- Several high-traffic indexes for marketplace/channel and review insights were missing.
-- Background job worker had only placeholder processing.
+- AppRecords fallbacks still used across Live, Adz, Workflow, Communications, Wholesale, Provider, Regulatory, Settings, and Commerce.
+- No idempotency protection on write endpoints.
+- Rate limiting was inconsistent across non-auth domains.
+- Several settings and workspace flows persisted only in AppRecords.
+- No load-test-oriented configuration or large-volume seed script.
 
 ## Implementations Completed
-### API Coverage + Completeness
-- ExpressMart endpoints: `/api/expressmart/summary`, `/api/expressmart/orders`, `/api/expressmart/orders/:id`, `/api/expressmart/orders/:id (PATCH)`, `/api/expressmart/returns`, `/api/expressmart/disputes`.
-- Seller ops filtering: `channel` filters for orders/returns/disputes, `marketplace` filters for listings.
-- Order update endpoint for ExpressMart (status + metadata).
-- Notifications moved to a first-class `Notification` table and now served via Prisma.
+### AppRecords Replacement
+- Replaced AppRecords usage in:
+  - Communications, Live, Adz, Workflow, Wholesale, Provider, Regulatory.
+  - Settings (profile, roles, members, crew, security, preferences).
+  - Commerce (dashboard, listings, orders, returns, disputes, inventory, shipping, exports, documents).
+- Backed these flows with new record tables: `LiveRecord`, `AdzRecord`, `WorkflowRecord`, `WholesaleRecord`, `ProviderRecord`, `RegulatoryRecord`, `CommunicationRecord`, plus `UserSetting` and `WorkspaceSetting`.
+- Finance summary endpoints now compute wallet/holds/invoices/statement/tax outputs from `Order` and `Transaction` data.
 
-### Scale & Performance
-- Added Redis-ready cache layer with lock-based stampede protection and TTLs.
-- Added high-traffic indexes for orders, listings, and review insight filters.
-- Added order metadata JSON and expanded order status enum for lifecycle realism.
+### Security + Correctness
+- Added Idempotency key tracking via `IdempotencyKey` table and a global Idempotency interceptor.
+- Added rate limiting to all sensitive write endpoints across seller, creator, collaboration, taxonomy, jobs, finance, workflow, and discovery modules.
+- Strengthened collaboration ownership checks for proposals, tasks, and assets.
 
-### Observability & Monitoring
-- Prometheus-compatible `/api/metrics` endpoint.
-- HTTP request metrics, DB query latency metrics, cache hit/miss metrics.
-- Job processing metrics integrated into worker.
- - Added `prom-client` and Redis-ready cache dependency (`ioredis`) for production observability and distributed caching.
+### Performance + Load Test Readiness
+- Added load-test configuration switches (`LOAD_TEST_MODE`, `FASTIFY_LOGGER`, `REQUEST_LOGS_ENABLED`).
+- Added `prisma:seed:loadtest` script for realistic volume seeding.
+- Documented query hotspots and worker deployment guidance.
 
-### Auditability & Activity Tracking
-- New `AuditEvent` table with admin endpoint `/api/audit/events`.
-- Global audit interceptor for write operations (POST/PUT/PATCH/DELETE).
-- Async audit ingestion via background job queue.
+### Tests Added
+- Permissions: `RolesGuard` coverage.
+- Throttling: `RateLimitGuard` coverage.
+- Idempotency: duplicate key rejection.
+- Audit logging: `AuditInterceptor`.
+- Notifications: `SettingsService.notificationRead`.
+- ExpressMart: controller channel enforcement.
 
-### Notifications
-- First-class `Notification` table and Prisma-backed notification reads/mark-as-read.
+## Files Changed
+### Platform / Common
+- `src/common/interceptors/idempotency.interceptor.ts`
+- `src/platform/idempotency/*`
+- `src/app.module.ts`, `src/main.ts`, `src/config/app.config.ts`
+- `src/platform/prisma/prisma.module.ts`
+
+### Modules (AppRecords removal + hardening)
+- `src/modules/communications/*`
+- `src/modules/live/*`
+- `src/modules/adz/*`
+- `src/modules/workflow/*`
+- `src/modules/wholesale/*`
+- `src/modules/provider/*`
+- `src/modules/regulatory/*`
+- `src/modules/settings/*`
+- `src/modules/commerce/*`
+- `src/modules/collaboration/*`
+- `src/modules/finance/*`
+- `src/modules/discovery/*`
+- `src/modules/sellers/*`
+- `src/modules/creators/*`
+- `src/modules/deals/*`
+- `src/modules/marketplace/*`
+- `src/modules/taxonomy/*`
+- `src/modules/storefront/*`
+- `src/modules/jobs/*`
+
+### Prisma + Scripts
+- `prisma/schema.prisma`
+- `prisma/seed-loadtest.mjs`
+- `package.json`
+
+### Tests
+- `test/idempotency.test.ts`
+- `test/rate-limit.guard.test.ts`
+- `test/roles.guard.test.ts`
+- `test/audit.interceptor.test.ts`
+- `test/notifications.test.ts`
+- `test/expressmart.controller.test.ts`
+
+### Docs
+- `docs/08-scaling-and-load-testing.md`
 
 ## Migrations Added
 - `202603090004_expressmart_order_meta`
 - `202603090005_perf_indexes`
 - `202603090006_audit_events`
 - `202603090007_notifications`
+- `202603090008_domain_records`
+- `202603090009_idempotency_keys`
 
 ## Commands Run
-- `npm install` (required elevated permissions; completed with 4 reported vulnerabilities)
 - `npm run prisma:generate`
 - `npm run build`
-- `npm run test` (required elevated permissions)
+- `npm run test` (required elevated permissions due to `tsx` IPC socket)
 
-## Infra Dependencies / Open Items
-- Redis (required to activate distributed caching and locking).
-- Queue worker deployment (separate process or dedicated worker pod).
-- Database connection pooling (e.g., ProxySQL or managed DB pooling).
-- Read replicas for heavy read traffic.
-- Load balancer + autoscaling.
-- Centralized logging/metrics stack (Prometheus/Grafana, ELK, or Datadog).
-- Alerting and SLOs for p95/p99 latency, error rates, and job failures.
+## Remaining Gaps / Infra Needed
+- Redis for distributed caching and cache locks.
+- Dedicated worker processes (JobsService) with queue monitoring.
+- DB connection pooling + read replicas for peak read traffic.
+- Centralized logging and metrics stack with alerting.
+- Load testing with production-like infra to validate p95/p99.
+- Frontend wiring for idempotency keys (optional but recommended).
 
-## Risks & Next Steps
-- Some modules still fall back to `AppRecords`; these should be migrated to real tables as domain requirements are confirmed.
-- Notifications need producer endpoints to create real notifications (currently read-only).
-- Replace in-memory cache with Redis in production; current cache is per-instance only.
-- Add integration/e2e tests for new audit and ExpressMart flows.
+## Honest Readiness Verdict
+The backend is materially stronger and now provides first-class storage for previously AppRecord-backed flows, consistent write throttling, and idempotency. It is architected for scale but cannot claim million-user readiness without Redis, queue workers, connection pooling, and real load tests. Frontends still consume mocks; integration can proceed once infra and load testing are in place.

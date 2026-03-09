@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { JobsService } from './jobs.service.js';
 import { ListBackgroundJobsDto } from './dto/list-background-jobs.dto.js';
@@ -24,6 +25,7 @@ export class JobsController {
   }
 
   @Post(':id/requeue')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   requeue(@Param('id') id: string) {
     return this.jobsService.requeue(id);
   }

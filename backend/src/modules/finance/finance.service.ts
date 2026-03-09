@@ -1,6 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { RequestPayoutDto } from './dto/request-payout.dto.js';
+import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 
 @Injectable()
 export class FinanceService {
@@ -44,7 +46,7 @@ export class FinanceService {
     return payouts;
   }
 
-  requestPayout(userId: string, body: Record<string, unknown>) {
+  requestPayout(userId: string, body: RequestPayoutDto) {
     return this.prisma.transaction.create({
       data: {
         userId,
@@ -54,7 +56,7 @@ export class FinanceService {
         currency: String(body.currency ?? 'USD'),
         note: String(body.note ?? 'Payout request'),
         availableAt: null,
-        metadata: body as Prisma.InputJsonValue
+        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       }
     });
   }
@@ -96,7 +98,7 @@ export class FinanceService {
     };
   }
 
-  updateSubscription(userId: string, body: Record<string, unknown>) {
+  updateSubscription(userId: string, body: UpdateSubscriptionDto) {
     const plan = String(body.plan ?? 'basic');
     const cycle = String(body.cycle ?? 'monthly');
     const status = String(body.status ?? 'active');
@@ -106,14 +108,14 @@ export class FinanceService {
         plan,
         cycle,
         status,
-        metadata: body as Prisma.InputJsonValue
+        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       },
       create: {
         userId,
         plan,
         cycle,
         status,
-        metadata: body as Prisma.InputJsonValue
+        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       }
     });
   }

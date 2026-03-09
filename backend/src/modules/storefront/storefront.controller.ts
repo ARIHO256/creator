@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { UpdateStorefrontDto } from './dto/update-storefront.dto.js';
@@ -19,6 +20,7 @@ export class StorefrontController {
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
   @Patch('me')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   updateMe(@CurrentUser() user: RequestUser, @Body() payload: UpdateStorefrontDto) {
     return this.storefrontService.updateMyStorefront(user.sub, payload);
   }

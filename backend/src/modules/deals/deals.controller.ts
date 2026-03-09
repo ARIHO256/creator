@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateDealDto } from './dto/create-deal.dto.js';
 import { UpdateDealDto } from './dto/update-deal.dto.js';
@@ -20,16 +21,19 @@ export class DealsController {
   }
 
   @Post()
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   create(@CurrentUser() user: RequestUser, @Body() payload: CreateDealDto) {
     return this.dealsService.create(user.sub, payload);
   }
 
   @Patch(':id')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   update(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateDealDto) {
     return this.dealsService.update(user.sub, id, payload);
   }
 
   @Delete(':id')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.dealsService.remove(user.sub, id);
   }

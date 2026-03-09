@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateTaxonomyCoverageDto } from './dto/create-taxonomy-coverage.dto.js';
@@ -44,24 +45,28 @@ export class TaxonomyController {
 
   @Roles('ADMIN', 'SUPPORT')
   @Post('trees')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   createTree(@Body() payload: CreateTaxonomyTreeDto) {
     return this.taxonomyService.createTree(payload);
   }
 
   @Roles('ADMIN', 'SUPPORT')
   @Patch('trees/:id')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
   updateTree(@Param('id') id: string, @Body() payload: UpdateTaxonomyTreeDto) {
     return this.taxonomyService.updateTree(id, payload);
   }
 
   @Roles('ADMIN', 'SUPPORT')
   @Post('nodes')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   createNode(@Body() payload: CreateTaxonomyNodeDto) {
     return this.taxonomyService.createNode(payload);
   }
 
   @Roles('ADMIN', 'SUPPORT')
   @Patch('nodes/:id')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   updateNode(@Param('id') id: string, @Body() payload: UpdateTaxonomyNodeDto) {
     return this.taxonomyService.updateNode(id, payload);
   }
@@ -74,18 +79,21 @@ export class TaxonomyController {
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
   @Post('coverage')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   addCoverage(@CurrentUser() user: RequestUser, @Body() payload: CreateTaxonomyCoverageDto) {
     return this.taxonomyService.addCoverage(user.sub, payload);
   }
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
   @Patch('coverage/:id')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   updateCoverage(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateTaxonomyCoverageDto) {
     return this.taxonomyService.updateCoverage(user.sub, id, payload);
   }
 
   @Roles('SELLER', 'PROVIDER', 'ADMIN')
   @Delete('coverage/:id')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   removeCoverage(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.taxonomyService.removeCoverage(user.sub, id);
   }

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateWholesaleQuoteDto } from './dto/create-wholesale-quote.dto.js';
@@ -16,7 +17,9 @@ export class WholesaleController {
   @Get('rfqs') rfqs(@CurrentUser() user: RequestUser) { return this.service.rfqs(user.sub); }
   @Get('quotes') quotes(@CurrentUser() user: RequestUser) { return this.service.quotes(user.sub); }
   @Get('quotes/:id') quote(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.quote(user.sub, id); }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('quotes') createQuote(@CurrentUser() user: RequestUser, @Body() body: CreateWholesaleQuoteDto) { return this.service.createQuote(user.sub, body); }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   @Patch('quotes/:id') updateQuote(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: UpdateWholesaleQuoteDto) { return this.service.updateQuote(user.sub, id, body); }
   @Get('incoterms') incoterms(@CurrentUser() user: RequestUser) { return this.service.incoterms(user.sub); }
 }

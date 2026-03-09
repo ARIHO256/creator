@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary.dto.js';
@@ -28,6 +29,7 @@ export class ExpressmartController {
   }
 
   @Patch('orders/:id')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   updateOrder(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,

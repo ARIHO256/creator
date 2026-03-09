@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateDisputeDto } from './dto/create-dispute.dto.js';
@@ -44,15 +45,19 @@ export class CommerceController {
   @Get('disputes') disputes(@CurrentUser() user: RequestUser, @Query() query: SellerDisputesQueryDto) { return this.service.disputes(user.sub, query); }
   @Get('inventory') inventory(@CurrentUser() user: RequestUser) { return this.service.inventory(user.sub); }
   @Get('shipping-profiles') shippingProfiles(@CurrentUser() user: RequestUser) { return this.service.shippingProfiles(user.sub); }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('shipping-profiles') createShippingProfile(@CurrentUser() user: RequestUser, @Body() payload: CreateShippingProfileDto) {
     return this.service.createShippingProfile(user.sub, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Patch('shipping-profiles/:id') updateShippingProfile(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateShippingProfileDto) {
     return this.service.updateShippingProfile(user.sub, id, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('shipping-profiles/:id/rates') createShippingRate(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: CreateShippingRateDto) {
     return this.service.createShippingRate(user.sub, id, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Patch('shipping-profiles/:profileId/rates/:rateId') updateShippingRate(
     @CurrentUser() user: RequestUser,
     @Param('profileId') profileId: string,
@@ -62,35 +67,45 @@ export class CommerceController {
     return this.service.updateShippingRate(user.sub, profileId, rateId, payload);
   }
   @Get('warehouses') warehouses(@CurrentUser() user: RequestUser) { return this.service.warehouses(user.sub); }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('warehouses') createWarehouse(@CurrentUser() user: RequestUser, @Body() payload: CreateWarehouseDto) {
     return this.service.createWarehouse(user.sub, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Patch('warehouses/:id') updateWarehouse(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateWarehouseDto) {
     return this.service.updateWarehouse(user.sub, id, payload);
   }
   @Get('exports') exports(@CurrentUser() user: RequestUser) { return this.service.exports(user.sub); }
+  @RateLimit({ limit: 15, windowMs: 60_000 })
   @Post('exports') createExport(@CurrentUser() user: RequestUser, @Body() payload: CreateExportJobDto) {
     return this.service.createExportJob(user.sub, payload);
   }
   @Get('documents') documents(@CurrentUser() user: RequestUser) { return this.service.documents(user.sub); }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('documents') createDocument(@CurrentUser() user: RequestUser, @Body() payload: CreateDocumentDto) {
     return this.service.createDocument(user.sub, payload);
   }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   @Patch('documents/:id') updateDocument(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateDocumentDto) {
     return this.service.updateDocument(user.sub, id, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('returns') createReturn(@CurrentUser() user: RequestUser, @Body() payload: CreateReturnDto) {
     return this.service.createReturn(user.sub, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Patch('returns/:id') updateReturn(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateReturnDto) {
     return this.service.updateReturn(user.sub, id, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('disputes') createDispute(@CurrentUser() user: RequestUser, @Body() payload: CreateDisputeDto) {
     return this.service.createDispute(user.sub, payload);
   }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   @Patch('disputes/:id') updateDispute(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateDisputeDto) {
     return this.service.updateDispute(user.sub, id, payload);
   }
+  @RateLimit({ limit: 40, windowMs: 60_000 })
   @Post('inventory/adjustments') adjustInventory(@CurrentUser() user: RequestUser, @Body() payload: CreateInventoryAdjustmentDto) {
     return this.service.createInventoryAdjustment(user.sub, payload);
   }

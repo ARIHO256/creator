@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { DiscoveryService } from './discovery.service.js';
 
@@ -16,6 +17,7 @@ export class DiscoveryController {
   }
 
   @Post('sellers/:id/follow')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   followSeller(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: { follow?: boolean }) {
     return this.discoveryService.followSeller(user.sub, id, body.follow ?? true);
   }
@@ -36,6 +38,7 @@ export class DiscoveryController {
   }
 
   @Post('opportunities/:id/save')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
   saveOpportunity(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: { save?: boolean }) {
     return this.discoveryService.saveOpportunity(user.sub, id, body.save ?? true);
   }
@@ -56,6 +59,7 @@ export class DiscoveryController {
   }
 
   @Post('invites/:id/respond')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
   respondInvite(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: { status: string }) {
     return this.discoveryService.respondInvite(user.sub, id, body.status);
   }

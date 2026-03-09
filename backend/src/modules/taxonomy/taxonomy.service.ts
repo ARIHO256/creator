@@ -254,6 +254,143 @@ export class TaxonomyService {
     }));
   }
 
+  async assertNodesExist(nodeIds: string[]) {
+    if (nodeIds.length === 0) {
+      return;
+    }
+    const nodes = await this.prisma.taxonomyNode.findMany({
+      where: { id: { in: nodeIds }, isActive: true }
+    });
+    if (nodes.length !== nodeIds.length) {
+      const found = new Set(nodes.map((node) => node.id));
+      const missing = nodeIds.filter((id) => !found.has(id));
+      throw new NotFoundException(`Taxonomy node not found: ${missing.join(', ')}`);
+    }
+  }
+
+  async syncSellerCoverage(userId: string, nodeIds: string[]) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const existing = await this.prisma.sellerTaxonomyCoverage.findMany({
+      where: { sellerId: seller.id }
+    });
+    const existingMap = new Map(existing.map((entry) => [entry.taxonomyNodeId, entry]));
+    const desired = new Set(nodeIds);
+
+    const toRemove = existing.filter((entry) => !desired.has(entry.taxonomyNodeId));
+    const toUpsert = nodeIds;
+    const now = new Date();
+
+    await this.prisma.$transaction([
+      ...toUpsert.map((nodeId, index) => {
+        const existingEntry = existingMap.get(nodeId);
+        return this.prisma.sellerTaxonomyCoverage.upsert({
+          where: {
+            sellerId_taxonomyNodeId: {
+              sellerId: seller.id,
+              taxonomyNodeId: nodeId
+            }
+          },
+          update: {
+            status: 'ACTIVE',
+            removedAt: null,
+            pathSnapshot: existingEntry?.pathSnapshot ?? undefined
+          },
+          create: {
+            sellerId: seller.id,
+            taxonomyNodeId: nodeId,
+            status: 'ACTIVE',
+            pathSnapshot: undefined
+          }
+        });
+      }),
+      ...toRemove.map((entry) =>
+        this.prisma.sellerTaxonomyCoverage.update({
+          where: { id: entry.id },
+          data: { status: 'REMOVED', removedAt: now }
+        })
+      )
+    ]);
+
+    const newlyCreated = await this.prisma.sellerTaxonomyCoverage.findMany({
+      where: { sellerId: seller.id, pathSnapshot: null }
+    });
+    if (newlyCreated.length > 0) {
+      await Promise.all(
+        newlyCreated.map(async (entry) => {
+          const pathSnapshot = await this.buildPathSnapshot(entry.taxonomyNodeId);
+          await this.prisma.sellerTaxonomyCoverage.update({
+            where: { id: entry.id },
+            data: { pathSnapshot }
+          });
+        })
+      );
+    }
+  }
+
+  async syncStorefrontTaxonomy(userId: string, nodeIds: string[], primaryNodeId?: string) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const storefront =
+      (await this.prisma.storefront.findUnique({ where: { sellerId: seller.id } })) ??
+      (await this.prisma.storefront.create({
+        data: {
+          sellerId: seller.id,
+          slug: this.normalizeSlug(seller.handle ?? seller.storefrontName ?? seller.displayName ?? seller.name),
+          name: seller.storefrontName ?? seller.displayName ?? seller.name,
+          isPublished: false
+        }
+      }));
+
+    const existing = await this.prisma.storefrontTaxonomyLink.findMany({
+      where: { storefrontId: storefront.id }
+    });
+    const existingMap = new Map(existing.map((entry) => [entry.taxonomyNodeId, entry]));
+    const desired = new Set(nodeIds);
+    const deletions = existing.filter((entry) => !desired.has(entry.taxonomyNodeId));
+
+    await this.prisma.$transaction([
+      ...nodeIds.map((nodeId, index) => {
+        const isPrimary = primaryNodeId ? nodeId === primaryNodeId : index === 0;
+        return this.prisma.storefrontTaxonomyLink.upsert({
+          where: {
+            storefrontId_taxonomyNodeId: {
+              storefrontId: storefront.id,
+              taxonomyNodeId: nodeId
+            }
+          },
+          update: {
+            isPrimary,
+            sortOrder: index
+          },
+          create: {
+            storefrontId: storefront.id,
+            taxonomyNodeId: nodeId,
+            isPrimary,
+            sortOrder: index
+          }
+        });
+      }),
+      ...deletions.map((entry) =>
+        this.prisma.storefrontTaxonomyLink.delete({ where: { id: entry.id } })
+      )
+    ]);
+
+    const links = await this.prisma.storefrontTaxonomyLink.findMany({
+      where: { storefrontId: storefront.id }
+    });
+    await Promise.all(
+      links.map(async (link) => {
+        if (link.pathSnapshot) {
+          return;
+        }
+        const pathSnapshot = await this.buildPathSnapshot(link.taxonomyNodeId);
+        await this.prisma.storefrontTaxonomyLink.update({
+          where: { id: link.id },
+          data: { pathSnapshot }
+        });
+      })
+    );
+  }
+
   private async resolveTree(identifier: string) {
     const tree = await this.prisma.taxonomyTree.findFirst({
       where: { OR: [{ id: identifier }, { slug: identifier }] }
