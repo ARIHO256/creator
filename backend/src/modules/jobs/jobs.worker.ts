@@ -157,10 +157,97 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
               escalatedAt: shouldEscalate ? (approval.escalatedAt ?? now) : approval.escalatedAt
             }
           });
+          if (approval.requestedByUserId) {
+            const meta = (approval.metadata ?? {}) as Record<string, any>;
+            if (!meta.slaBreachedNotifiedAt) {
+              const notification = await this.prisma.notification.create({
+                data: {
+                  userId: approval.requestedByUserId,
+                  title: 'Approval SLA breached',
+                  body: `Your ${approval.entityType} approval is past the SLA window.`,
+                  kind: 'approval_sla_breached',
+                  metadata: {
+                    approvalId: approval.id,
+                    entityType: approval.entityType,
+                    status: approval.status
+                  } as Prisma.InputJsonValue
+                }
+              });
+              await this.prisma.marketApprovalRequest.update({
+                where: { id: approval.id },
+                data: {
+                  metadata: {
+                    ...meta,
+                    slaBreachedNotifiedAt: now.toISOString(),
+                    slaBreachedNotificationId: notification.id
+                  } as Prisma.InputJsonValue
+                }
+              });
+              await this.publishUserEvent(approval.requestedByUserId, {
+                type: 'notification.created',
+                notificationId: notification.id,
+                kind: notification.kind,
+                createdAt: notification.createdAt.toISOString()
+              });
+            }
+          }
+        }
+        return;
+      case 'MARKET_APPROVAL_REMINDER':
+        {
+          const payload = job.payload as { approvalId?: string };
+          if (!payload?.approvalId) return;
+          const approval = await this.prisma.marketApprovalRequest.findUnique({
+            where: { id: payload.approvalId }
+          });
+          if (!approval || !approval.requestedByUserId) return;
+          if (!['PENDING', 'NEEDS_CHANGES'].includes(approval.status)) return;
+          const meta = (approval.metadata ?? {}) as Record<string, any>;
+          if (meta.reminderSentAt) return;
+          const now = new Date();
+          const notification = await this.prisma.notification.create({
+            data: {
+              userId: approval.requestedByUserId,
+              title: 'Approval still pending',
+              body: `Your ${approval.entityType} approval is still pending review.`,
+              kind: 'approval_reminder',
+              metadata: {
+                approvalId: approval.id,
+                entityType: approval.entityType,
+                status: approval.status
+              } as Prisma.InputJsonValue
+            }
+          });
+          await this.prisma.marketApprovalRequest.update({
+            where: { id: approval.id },
+            data: {
+              metadata: {
+                ...meta,
+                reminderSentAt: now.toISOString(),
+                reminderNotificationId: notification.id
+              } as Prisma.InputJsonValue
+            }
+          });
+          await this.publishUserEvent(approval.requestedByUserId, {
+            type: 'notification.created',
+            notificationId: notification.id,
+            kind: notification.kind,
+            createdAt: notification.createdAt.toISOString()
+          });
         }
         return;
       default:
         return;
+    }
+  }
+
+  private async publishUserEvent(userId: string, event: Record<string, unknown>) {
+    const channel = `user:${userId}`;
+    if (this.realtimePublisher) {
+      await this.realtimePublisher.publish(channel, event);
+    }
+    if (this.realtimeStream) {
+      this.realtimeStream.emitToUser(userId, event);
     }
   }
 }

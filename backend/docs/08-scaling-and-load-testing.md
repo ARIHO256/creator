@@ -88,4 +88,5 @@ For million-user readiness, pair these with:
 ## Approval SLA Automation
 Market approval SLA tracking uses background jobs:
 - `APPROVAL_SLA_HOURS` (default `48`)
+- `APPROVAL_REMINDER_HOURS` (default `24`)
 - `APPROVAL_ESCALATE_HOURS` (default `72`, reserved for future auto-escalation policy)

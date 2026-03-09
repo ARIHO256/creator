@@ -4,7 +4,7 @@ import { ApprovalsService } from '../src/modules/approvals/approvals.service.js'
 
 test('ApprovalsService.create schedules SLA check', async () => {
   let createdPayload: any = null;
-  let enqueuedJob: any = null;
+  const enqueuedJobs: any[] = [];
   const prisma = {
     marketApprovalRequest: {
       async create({ data }: any) {
@@ -16,12 +16,13 @@ test('ApprovalsService.create schedules SLA check', async () => {
   const configService = {
     get(key: string) {
       if (key === 'approvals.slaHours') return 1;
+      if (key === 'approvals.reminderHours') return 0.5;
       return undefined;
     }
   };
   const jobsService = {
     async enqueue(input: any) {
-      enqueuedJob = input;
+      enqueuedJobs.push(input);
       return { id: 'job-1' };
     }
   };
@@ -32,5 +33,7 @@ test('ApprovalsService.create schedules SLA check', async () => {
   assert.ok(createdPayload.slaDueAt instanceof Date);
   assert.equal(createdPayload.slaStatus, 'ON_TIME');
   assert.equal(result.id, 'approval-1');
-  assert.equal(enqueuedJob.type, 'MARKET_APPROVAL_SLA_CHECK');
+  const types = enqueuedJobs.map((job) => job.type);
+  assert.ok(types.includes('MARKET_APPROVAL_SLA_CHECK'));
+  assert.ok(types.includes('MARKET_APPROVAL_REMINDER'));
 });

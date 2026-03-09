@@ -272,8 +272,10 @@ Auth: JWT bearer required unless noted `Public`.
 
 ## Catalog
 - `GET /api/catalog/templates`
+- `GET /api/catalog/templates/export`
 - `POST /api/catalog/templates` - `CreateCatalogTemplateDto`
 - `PATCH /api/catalog/templates/:id` - `UpdateCatalogTemplateDto`
+- `POST /api/catalog/templates/import` - `ImportCatalogTemplatesDto`
 - `GET /api/catalog/media-library`
 
 ## Finance + Analytics + Subscription

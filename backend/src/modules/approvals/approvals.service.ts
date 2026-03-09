@@ -65,6 +65,10 @@ export class ApprovalsService {
       }
     });
     await this.scheduleSlaCheck(approval.id, slaDueAt);
+    const reminderAt = this.computeReminderAt(slaDueAt);
+    if (reminderAt) {
+      await this.scheduleReminder(approval.id, reminderAt);
+    }
     return approval;
   }
 
@@ -89,6 +93,10 @@ export class ApprovalsService {
     if (nextStatus === 'PENDING' || nextStatus === 'NEEDS_CHANGES') {
       const slaDueAt = approval.slaDueAt ?? this.computeSlaDueAt();
       await this.scheduleSlaCheck(approval.id, slaDueAt);
+      const reminderAt = this.computeReminderAt(slaDueAt);
+      if (reminderAt) {
+        await this.scheduleReminder(approval.id, reminderAt);
+      }
     }
     return updated;
   }
@@ -128,6 +136,16 @@ export class ApprovalsService {
     return new Date(Date.now() + hours * 60 * 60 * 1000);
   }
 
+  private computeReminderAt(slaDueAt: Date) {
+    const reminderHours = this.configService.get<number>('approvals.reminderHours') ?? 24;
+    if (!reminderHours || reminderHours <= 0) {
+      return null;
+    }
+    const reminderAt = new Date(slaDueAt.getTime() - reminderHours * 60 * 60 * 1000);
+    const now = new Date();
+    return reminderAt < now ? now : reminderAt;
+  }
+
   private async scheduleSlaCheck(approvalId: string, slaDueAt: Date) {
     await this.jobsService.enqueue({
       queue: 'approvals',
@@ -135,6 +153,16 @@ export class ApprovalsService {
       payload: { approvalId },
       dedupeKey: `approval-sla:${approvalId}:${slaDueAt.toISOString()}`,
       runAfter: slaDueAt
+    });
+  }
+
+  private async scheduleReminder(approvalId: string, reminderAt: Date) {
+    await this.jobsService.enqueue({
+      queue: 'approvals',
+      type: 'MARKET_APPROVAL_REMINDER',
+      payload: { approvalId },
+      dedupeKey: `approval-reminder:${approvalId}:${reminderAt.toISOString()}`,
+      runAfter: reminderAt
     });
   }
 }

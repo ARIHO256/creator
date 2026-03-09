@@ -3,20 +3,20 @@
 Date: 2026-03-09
 
 ## Summary
-This pass expanded catalog templates with UX fields and added approval SLA automation with scheduled checks. Frontends remain unchanged.
+This pass expanded catalog templates with export/import support and added approval reminders plus SLA breach notifications. Frontends remain unchanged.
 
 ## What Was Found
-- Catalog templates needed explicit UX fields (category, notes, language, attributes).
-- Market approvals needed SLA tracking and automated breach handling.
+- Catalog templates needed export/import flows for template portability.
+- Market approvals needed pre-SLA reminders and breach notifications beyond basic SLA tracking.
 
 ## Implementations Completed
-### Catalog Template UX Fields
-- Added category, notes, language, attributes, and attribute count fields.
-- Extended DTOs and service logic to map template attributes.
+### Catalog Template Export / Import
+- Added export endpoint for template portability.
+- Added import endpoint with upsert/create-only/update-only modes and attribute handling.
 
-### Approval SLA Automation
-- Added SLA due/status/escalation fields to market approvals.
-- Scheduled SLA check jobs and added worker handling for SLA breach.
+### Approval Automation Beyond SLA
+- Scheduled reminder jobs ahead of SLA deadlines.
+- Added SLA breach notifications to requester with realtime events when available.
 
 ## Files Changed
 ### Modules / Domain

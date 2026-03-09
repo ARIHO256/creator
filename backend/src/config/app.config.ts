@@ -55,6 +55,7 @@ export default () => ({
   },
   approvals: {
     slaHours: Number(process.env.APPROVAL_SLA_HOURS ?? '48'),
+    reminderHours: Number(process.env.APPROVAL_REMINDER_HOURS ?? '24'),
     escalateAfterHours: Number(process.env.APPROVAL_ESCALATE_HOURS ?? '72')
   },
   auth: {
