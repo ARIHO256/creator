@@ -139,6 +139,38 @@ export class CacheService {
     return promise;
   }
 
+  async invalidate(key: string) {
+    this.store.delete(key);
+    if (!this.redis) return;
+    try {
+      await this.redis.del(this.redisPrefix + key);
+    } catch (error: any) {
+      this.logger.warn(`Redis invalidate failed: ${error?.message ?? 'unknown error'}`);
+    }
+  }
+
+  async invalidatePrefix(prefix: string) {
+    for (const key of this.store.keys()) {
+      if (key.startsWith(prefix)) {
+        this.store.delete(key);
+      }
+    }
+    if (!this.redis) return;
+    const match = `${this.redisPrefix}${prefix}*`;
+    try {
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', match, 'COUNT', 200);
+        cursor = nextCursor;
+        if (keys.length) {
+          await this.redis.del(...keys);
+        }
+      } while (cursor !== '0');
+    } catch (error: any) {
+      this.logger.warn(`Redis prefix invalidate failed: ${error?.message ?? 'unknown error'}`);
+    }
+  }
+
   private sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }

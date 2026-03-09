@@ -11,6 +11,11 @@ test('CommerceService.updateOrder enforces order status transitions', async () =
       async update() {
         return { id: 'order-1', status: 'CONFIRMED' };
       }
+    },
+    dashboardSnapshot: {
+      async deleteMany() {
+        return { count: 1 };
+      }
     }
   };
   const sellersService = {
@@ -19,7 +24,16 @@ test('CommerceService.updateOrder enforces order status transitions', async () =
     }
   };
 
-  const service = new CommerceService(prisma as any, {} as any, sellersService as any, {} as any);
+  const cache = {
+    async invalidatePrefix() {
+      return;
+    },
+    async invalidate() {
+      return;
+    }
+  };
+
+  const service = new CommerceService(prisma as any, {} as any, sellersService as any, cache as any, {} as any);
 
   await assert.rejects(
     () => service.updateOrder('user-1', 'order-1', { status: 'DELIVERED' } as any),

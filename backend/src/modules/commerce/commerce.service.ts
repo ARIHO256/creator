@@ -348,7 +348,7 @@ export class CommerceService {
       this.assertOrderTransition(order.status, payload.status);
     }
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: order.id },
       data: {
         status: payload.status ? (payload.status as any) : undefined,
@@ -356,6 +356,8 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return updated;
   }
 
   async returns(userId: string, query?: SellerReturnsQueryDto) {
@@ -918,7 +920,7 @@ export class CommerceService {
       throw new NotFoundException('Order not found');
     }
 
-    return this.prisma.sellerReturn.create({
+    const created = await this.prisma.sellerReturn.create({
       data: {
         sellerId: seller.id,
         orderId: order.id,
@@ -928,6 +930,8 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return created;
   }
 
   async updateReturn(userId: string, id: string, payload: UpdateReturnDto) {
@@ -939,7 +943,7 @@ export class CommerceService {
       throw new NotFoundException('Return not found');
     }
 
-    return this.prisma.sellerReturn.update({
+    const updated = await this.prisma.sellerReturn.update({
       where: { id: existing.id },
       data: {
         status: payload.status ?? undefined,
@@ -951,6 +955,8 @@ export class CommerceService {
         refundedAt: payload.status === 'REFUNDED' ? new Date() : undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return updated;
   }
 
   async createDispute(userId: string, payload: CreateDisputeDto) {
@@ -962,7 +968,7 @@ export class CommerceService {
       throw new NotFoundException('Order not found');
     }
 
-    return this.prisma.sellerDispute.create({
+    const created = await this.prisma.sellerDispute.create({
       data: {
         sellerId: seller.id,
         orderId: order.id,
@@ -971,6 +977,8 @@ export class CommerceService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return created;
   }
 
   async updateDispute(userId: string, id: string, payload: UpdateDisputeDto) {
@@ -982,7 +990,7 @@ export class CommerceService {
       throw new NotFoundException('Dispute not found');
     }
 
-    return this.prisma.sellerDispute.update({
+    const updated = await this.prisma.sellerDispute.update({
       where: { id: existing.id },
       data: {
         status: payload.status ?? undefined,
@@ -991,6 +999,8 @@ export class CommerceService {
         resolvedAt: payload.status && ['RESOLVED', 'REJECTED'].includes(payload.status) ? new Date() : undefined
       }
     });
+    await this.invalidateSellerDashboards(userId);
+    return updated;
   }
 
   private async buildPrintPayload(userId: string, id: string) {
@@ -1036,6 +1046,19 @@ export class CommerceService {
       })),
       totals
     };
+  }
+
+  private async invalidateSellerDashboards(userId: string) {
+    await Promise.all([
+      this.cache.invalidatePrefix(`seller:dashboardSummary:${userId}:`),
+      this.cache.invalidate(`dashboard:summary:${userId}`)
+    ]);
+    await this.prisma.dashboardSnapshot.deleteMany({
+      where: {
+        userId,
+        role: { in: ['SELLER', 'PROVIDER'] }
+      }
+    });
   }
 
   private assertOrderTransition(current: string, next: string) {

@@ -77,6 +77,8 @@ Dashboard summaries can be persisted for scale:
 - `DASHBOARD_SNAPSHOT_TTL_MS` (default `60000`)
 Snapshots reduce repeated aggregation for large seller/provider accounts.
 
+Write-heavy seller operations invalidate dashboard caches and snapshots to keep KPIs fresh.
+
 ## Query Hotspot Review
 Current hotspots and mitigation:
 - `CommerceService.dashboardSummary`: multi-aggregate on orders, reviews, transactions. Cached with `CacheService` and indexed filters.

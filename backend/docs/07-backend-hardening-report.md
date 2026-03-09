@@ -3,15 +3,15 @@
 Date: 2026-03-09
 
 ## Summary
-This pass added persisted dashboard snapshots for large-scale summary reads and retained seller/provider KPIs. Frontends remain unchanged.
+This pass added cache invalidation for seller dashboard KPIs and retained persisted snapshots for scale. Frontends remain unchanged.
 
 ## What Was Found
-- Dashboard summary aggregation needed persistence to reduce repeat computation under scale.
+- High-frequency seller operations needed cache invalidation to keep dashboards consistent under load.
 
 ## Implementations Completed
-### Dashboard Snapshot Persistence
-- Added a dashboard snapshot table with TTL support for heavy summaries.
-- Summary now reads from snapshots when fresh and refreshes on demand.
+### Dashboard Cache Invalidation
+- Invalidated seller dashboard summary caches on order, return, and dispute writes.
+- Cleared seller/provider dashboard snapshots on those writes to keep KPIs current.
 
 ## Files Changed
 ### Modules / Domain
