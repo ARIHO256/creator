@@ -33,7 +33,15 @@ export default () => ({
   },
   cache: {
     defaultTtlMs: Number(process.env.CACHE_DEFAULT_TTL_MS ?? '15000'),
-    maxEntries: Number(process.env.CACHE_MAX_ENTRIES ?? '5000')
+    maxEntries: Number(process.env.CACHE_MAX_ENTRIES ?? '5000'),
+    redisUrl: process.env.REDIS_URL ?? '',
+    redisPrefix: process.env.CACHE_REDIS_PREFIX ?? 'mldz:cache:',
+    lockTtlMs: Number(process.env.CACHE_LOCK_TTL_MS ?? '5000')
+  },
+  audit: {
+    enabled: !['0', 'false', 'no', 'off'].includes(String(process.env.AUDIT_ENABLED ?? 'true').toLowerCase()),
+    async: !['0', 'false', 'no', 'off'].includes(String(process.env.AUDIT_ASYNC ?? 'true').toLowerCase()),
+    sampleRate: Number(process.env.AUDIT_SAMPLE_RATE ?? '1')
   },
   auth: {
     disabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTH_DISABLED ?? '').toLowerCase()),

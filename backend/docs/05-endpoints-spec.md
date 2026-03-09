@@ -5,6 +5,7 @@ Auth: JWT bearer required unless noted `Public`.
 
 ## System + Dashboard
 - `GET /health` (Public)
+- `GET /api/metrics` (Public)
 - `GET /api/routes` (Public)
 - `GET /api/landing/content` (Public)
 - `GET /api/app/bootstrap`
@@ -20,6 +21,9 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/auth/me`
 - `POST /api/auth/switch-role` - `SwitchRoleDto`
 - `GET /api/me` (compat)
+
+## Audit + Monitoring
+- `GET /api/audit/events` (Admin/Support)
 
 ## Users / Creators / Profiles
 - `GET /api/users/me`

@@ -7,6 +7,8 @@ import { AppModule } from './app.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor.js';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor.js';
+import { MetricsInterceptor } from './common/interceptors/metrics.interceptor.js';
+import { AuditInterceptor } from './common/interceptors/audit.interceptor.js';
 import { buildSecurityHeaders } from './platform/security-headers.js';
 
 async function bootstrap() {
@@ -76,7 +78,12 @@ async function bootstrap() {
       transform: true
     })
   );
-  app.useGlobalInterceptors(new ApiResponseInterceptor(), app.get(RequestTimeoutInterceptor));
+  app.useGlobalInterceptors(
+    new ApiResponseInterceptor(),
+    app.get(RequestTimeoutInterceptor),
+    app.get(MetricsInterceptor),
+    app.get(AuditInterceptor)
+  );
   app.useGlobalFilters(new HttpExceptionFilter());
 
   await app.listen(port, host);

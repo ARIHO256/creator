@@ -1,6 +1,8 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JobsService } from './jobs.service.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
+import { MetricsService } from '../../platform/metrics/metrics.service.js';
 
 type WorkerStatus = {
   running: boolean;
@@ -18,7 +20,9 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly jobsService: JobsService,
-    @Inject(ConfigService) private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService,
+    @Optional() private readonly auditService?: AuditService,
+    @Optional() private readonly metrics?: MetricsService
   ) {}
 
   onModuleInit() {
@@ -78,11 +82,13 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
       try {
         await this.process(job);
         await this.jobsService.markCompleted(job.id, { processedBy: workerId });
+        this.metrics?.recordJobProcessed(job.type, 'success');
       } catch (error: any) {
         this.status.errors += 1;
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`Job ${job.id} failed: ${message}`);
         await this.jobsService.markFailed(job.id, message);
+        this.metrics?.recordJobProcessed(job.type, 'failed');
       }
     }
 
@@ -100,6 +106,11 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
       case 'WHOLESALE_QUOTE_CREATED':
       case 'WHOLESALE_QUOTE_UPDATED':
         // Placeholder for actual processing (e.g., notify buyer/seller, analytics)
+        return;
+      case 'AUDIT_EVENT':
+        if (this.auditService) {
+          await this.auditService.persist(job.payload as any);
+        }
         return;
       default:
         return;

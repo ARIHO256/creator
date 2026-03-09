@@ -7,8 +7,12 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RateLimitGuard } from './common/guards/rate-limit.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor.js';
+import { MetricsInterceptor } from './common/interceptors/metrics.interceptor.js';
+import { AuditInterceptor } from './common/interceptors/audit.interceptor.js';
 import { PrismaModule } from './platform/prisma/prisma.module.js';
 import { CacheModule } from './platform/cache/cache.module.js';
+import { MetricsModule } from './platform/metrics/metrics.module.js';
+import { AuditModule } from './platform/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { CreatorsModule } from './modules/creators/creators.module.js';
@@ -41,6 +45,8 @@ import { StorefrontModule } from './modules/storefront/storefront.module.js';
     ConfigModule.forRoot({ isGlobal: true, load: [appConfig] }),
     JwtModule.register({}),
     CacheModule,
+    MetricsModule,
+    AuditModule,
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -71,6 +77,8 @@ import { StorefrontModule } from './modules/storefront/storefront.module.js';
   ],
   providers: [
     RequestTimeoutInterceptor,
+    MetricsInterceptor,
+    AuditInterceptor,
     {
       provide: APP_GUARD,
       useClass: RateLimitGuard

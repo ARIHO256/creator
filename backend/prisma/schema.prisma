@@ -1075,6 +1075,30 @@ model AppRecord {
   @@index([domain, entityType, entityId, userId])
 }
 
+model AuditEvent {
+  id         String   @id @default(cuid())
+  userId     String?
+  role       String?
+  action     String
+  entityType String?
+  entityId   String?
+  route      String
+  method     String
+  statusCode Int
+  requestId  String?
+  ip         String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@index([entityType, entityId])
+  @@index([route, createdAt])
+}
+
 model Review {
   id                String        @id @default(cuid())
   reviewerUserId    String?
