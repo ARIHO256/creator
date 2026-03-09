@@ -171,7 +171,10 @@ export class ProviderService {
       include: { fulfillment: true }
     });
     if (['CONFIRMED', 'IN_PROGRESS'].includes(nextKey)) {
-      await this.ensureFulfillment(updated.id, nextKey === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'OPEN');
+      await this.ensureFulfillment(
+        updated.id,
+        (nextKey === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'OPEN') as ProviderFulfillmentStatus
+      );
     }
     await this.audit.log({
       userId,
@@ -196,7 +199,7 @@ export class ProviderService {
     const updated = await this.prisma.providerFulfillment.update({
       where: { id: fulfillment.id },
       data: {
-        status: next,
+        status: next as ProviderFulfillmentStatus,
         startedAt: next === 'IN_PROGRESS' ? new Date() : fulfillment.startedAt,
         completedAt: next === 'COMPLETED' ? new Date() : fulfillment.completedAt,
         metadata: body.note

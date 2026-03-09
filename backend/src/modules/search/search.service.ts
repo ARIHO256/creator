@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
+import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { SearchListingsQueryDto } from './dto/search-listings-query.dto.js';
 import { SearchStorefrontQueryDto } from './dto/search-storefront-query.dto.js';
 
@@ -135,8 +136,7 @@ export class SearchService {
   }
 
   async searchListings(query?: SearchListingsQueryDto) {
-    const take = this.limit(query?.take);
-    const skip = query?.skip ?? 0;
+    const { take, skip } = normalizeListQuery(query, { maxLimit: this.limit(query?.limit) });
     const q = String(query?.q ?? '').trim();
     const docs = await this.findDocuments('LISTING', q, skip, take);
     const results = docs
@@ -149,8 +149,7 @@ export class SearchService {
   }
 
   async searchStorefronts(query?: SearchStorefrontQueryDto) {
-    const take = this.limit(query?.take);
-    const skip = query?.skip ?? 0;
+    const { take, skip } = normalizeListQuery(query, { maxLimit: this.limit(query?.limit) });
     const q = String(query?.q ?? '').trim();
     const docs = await this.findDocuments('STOREFRONT', q, skip, take);
     const results = docs
