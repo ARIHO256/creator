@@ -44,6 +44,9 @@ import { TaxonomyModule } from './modules/taxonomy/taxonomy.module.js';
 import { StorefrontModule } from './modules/storefront/storefront.module.js';
 import { FavouritesModule } from './modules/favourites/favourites.module.js';
 import { OpsModule } from './modules/ops/ops.module.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
+import { TrustModule } from './modules/trust/trust.module.js';
+import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 
 @Module({
   imports: [
@@ -70,6 +73,9 @@ import { OpsModule } from './modules/ops/ops.module.js';
     StorefrontModule,
     FavouritesModule,
     OpsModule,
+    CatalogModule,
+    TrustModule,
+    ApprovalsModule,
     DealsModule,
     MarketplaceModule,
     AnalyticsModule,

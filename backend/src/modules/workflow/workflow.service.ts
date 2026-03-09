@@ -10,6 +10,7 @@ import { JobsService } from '../jobs/jobs.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
+import { UpdateAccountApprovalDecisionDto } from './dto/update-account-approval-decision.dto.js';
 import { ONBOARDING_PROFILE_TYPES, UpdateOnboardingDto } from './dto/update-onboarding.dto.js';
 import {
   createDefaultOnboardingState,
@@ -173,6 +174,31 @@ export class WorkflowService {
       status: 'approved',
       approvedAt: new Date().toISOString()
     });
+    return record.payload as Record<string, unknown>;
+  }
+
+  async recordAccountApprovalDecision(deciderUserId: string, body: UpdateAccountApprovalDecisionDto) {
+    const current = await this.getRecordPayload(body.userId, 'account_approval', 'main');
+    const history = Array.isArray((current as any)?.history) ? (current as any).history : [];
+    const decidedAt = new Date().toISOString();
+    const next = {
+      ...(current ?? {}),
+      status: body.status,
+      decisionReason: body.reason ?? (current as any)?.decisionReason ?? null,
+      decidedAt,
+      history: [
+        {
+          status: body.status,
+          reason: body.reason ?? null,
+          decidedBy: deciderUserId,
+          decidedAt
+        },
+        ...history
+      ],
+      approvedAt: body.status === 'approved' ? decidedAt : (current as any)?.approvedAt ?? null,
+      rejectedAt: body.status === 'rejected' ? decidedAt : (current as any)?.rejectedAt ?? null
+    };
+    const record = await this.upsertRecord(body.userId, 'account_approval', 'main', next);
     return record.payload as Record<string, unknown>;
   }
 
