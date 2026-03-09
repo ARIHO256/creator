@@ -16,6 +16,7 @@ import { MetricsModule } from './platform/metrics/metrics.module.js';
 import { AuditModule } from './platform/audit/audit.module.js';
 import { IdempotencyModule } from './platform/idempotency/idempotency.module.js';
 import { RealtimeModule } from './platform/realtime/realtime.module.js';
+import { StorageModule } from './platform/storage/storage.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { CreatorsModule } from './modules/creators/creators.module.js';
@@ -47,6 +48,8 @@ import { OpsModule } from './modules/ops/ops.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { TrustModule } from './modules/trust/trust.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
+import { ExportsModule } from './modules/exports/exports.module.js';
+import { SearchModule } from './modules/search/search.module.js';
 
 @Module({
   imports: [
@@ -57,6 +60,7 @@ import { ApprovalsModule } from './modules/approvals/approvals.module.js';
     AuditModule,
     RealtimeModule,
     IdempotencyModule,
+    StorageModule,
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -74,6 +78,8 @@ import { ApprovalsModule } from './modules/approvals/approvals.module.js';
     FavouritesModule,
     OpsModule,
     CatalogModule,
+    ExportsModule,
+    SearchModule,
     TrustModule,
     ApprovalsModule,
     DealsModule,

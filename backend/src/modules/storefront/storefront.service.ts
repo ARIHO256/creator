@@ -5,6 +5,7 @@ import { serializeListingPublic } from '../../common/serializers/listing.seriali
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
+import { SearchService } from '../search/search.service.js';
 import { UpdateStorefrontDto } from './dto/update-storefront.dto.js';
 
 @Injectable()
@@ -12,7 +13,8 @@ export class StorefrontService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sellersService: SellersService,
-    private readonly taxonomyService: TaxonomyService
+    private readonly taxonomyService: TaxonomyService,
+    private readonly searchService: SearchService
   ) {}
 
   async getMyStorefront(userId: string) {
@@ -93,10 +95,11 @@ export class StorefrontService {
         include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
       });
       if (refreshed) {
+        await this.searchService.enqueueStorefrontIndex(refreshed.id);
         return this.serializeStorefront(refreshed);
       }
     }
-
+    await this.searchService.enqueueStorefrontIndex(updated.id);
     return this.serializeStorefront(updated);
   }
 

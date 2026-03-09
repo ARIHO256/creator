@@ -16,7 +16,7 @@ import { RegulatoryService } from './regulatory.service.js';
 import { RegulatoryAutomationService } from './regulatory-automation.service.js';
 
 @Controller()
-@Roles('SELLER', 'PROVIDER', 'ADMIN')
+@Roles('SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
 export class RegulatoryController {
   constructor(
     private readonly service: RegulatoryService,

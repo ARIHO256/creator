@@ -60,54 +60,70 @@ export class RegulatoryAutomationService {
     if (!bundle) {
       throw new NotFoundException('Evidence bundle not found');
     }
-    if (bundle.status === EvidenceBundleStatus.COMPLETED) {
+    if (bundle.status === EvidenceBundleStatus.READY) {
       return bundle;
     }
 
-    const metadata = (bundle.metadata ?? {}) as Record<string, any>;
-    const complianceItemIds = Array.isArray(metadata.complianceItemIds) ? metadata.complianceItemIds : [];
-    const items = await this.prisma.regulatoryComplianceItem.findMany({
-      where: {
-        userId: bundle.userId,
-        ...(complianceItemIds.length ? { id: { in: complianceItemIds } } : {})
-      }
-    });
-
-    const payload = {
-      userId: bundle.userId,
-      deskId: metadata.deskId ?? null,
-      generatedAt: new Date().toISOString(),
-      items: items.map((item) => ({
-        id: item.id,
-        itemType: item.itemType,
-        title: item.title,
-        status: item.status,
-        metadata: item.metadata ?? {}
-      }))
-    };
-
-    const fileBuffer = Buffer.from(JSON.stringify(payload, null, 2), 'utf-8');
-    const ttlDays = Number(this.configService.get('regulatory.evidenceTtlDays') ?? 14);
-    const namespace = String(this.configService.get('regulatory.storageNamespace') ?? 'evidence');
-    const stored = await this.storage.writeBuffer(
-      namespace,
-      `evidence-${bundle.id}.json`,
-      fileBuffer,
-      'application/json',
-      ttlDays
-    );
-
-    return this.prisma.evidenceBundle.update({
+    await this.prisma.evidenceBundle.update({
       where: { id: bundle.id },
-      data: {
-        status: EvidenceBundleStatus.COMPLETED,
-        storageKey: stored.storageKey,
-        fileUrl: `/api/regulatory/evidence/${bundle.id}/download`,
-        mimeType: stored.mimeType,
-        sizeBytes: stored.sizeBytes,
-        expiresAt: stored.expiresAt ?? undefined
-      }
+      data: { status: EvidenceBundleStatus.GENERATING }
     });
+
+    try {
+      const metadata = (bundle.metadata ?? {}) as Record<string, any>;
+      const complianceItemIds = Array.isArray(metadata.complianceItemIds) ? metadata.complianceItemIds : [];
+      const items = await this.prisma.regulatoryComplianceItem.findMany({
+        where: {
+          userId: bundle.userId,
+          ...(complianceItemIds.length ? { id: { in: complianceItemIds } } : {})
+        }
+      });
+
+      const payload = {
+        userId: bundle.userId,
+        deskId: metadata.deskId ?? null,
+        generatedAt: new Date().toISOString(),
+        items: items.map((item) => ({
+          id: item.id,
+          itemType: item.itemType,
+          title: item.title,
+          status: item.status,
+          metadata: item.metadata ?? {}
+        }))
+      };
+
+      const fileBuffer = Buffer.from(JSON.stringify(payload, null, 2), 'utf-8');
+      const ttlDays = Number(this.configService.get('regulatory.evidenceTtlDays') ?? 14);
+      const namespace = String(this.configService.get('regulatory.storageNamespace') ?? 'evidence');
+      const stored = await this.storage.writeBuffer(
+        namespace,
+        `evidence-${bundle.id}.json`,
+        fileBuffer,
+        'application/json',
+        ttlDays
+      );
+
+      return this.prisma.evidenceBundle.update({
+        where: { id: bundle.id },
+        data: {
+          status: EvidenceBundleStatus.READY,
+          storageKey: stored.storageKey,
+          fileUrl: `/api/regulatory/evidence/${bundle.id}/download`,
+          mimeType: stored.mimeType,
+          sizeBytes: stored.sizeBytes,
+          expiresAt: stored.expiresAt ?? undefined
+        }
+      });
+    } catch (error: any) {
+      await this.prisma.evidenceBundle.update({
+        where: { id: bundle.id },
+        data: {
+          status: EvidenceBundleStatus.FAILED,
+          metadata: { ...(bundle.metadata as any), error: String(error?.message ?? error) } as Prisma.InputJsonValue
+        }
+      });
+      throw error;
+    }
   }
 
   async runAutoReview(userId?: string, deskId?: string) {

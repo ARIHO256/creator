@@ -434,6 +434,7 @@ export class CommerceService {
     const seller = await this.ensureSeller(userId);
     const jobs = await this.prisma.sellerExportJob.findMany({
       where: { sellerId: seller.id },
+      include: { exportFiles: true },
       orderBy: { requestedAt: 'desc' }
     });
 

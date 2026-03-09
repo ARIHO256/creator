@@ -33,7 +33,8 @@ test('CommerceService.updateOrder enforces order status transitions', async () =
     }
   };
 
-  const service = new CommerceService(prisma as any, {} as any, sellersService as any, cache as any, {} as any);
+  const exportsService = { async createJob() { return {}; } };
+  const service = new CommerceService(prisma as any, {} as any, sellersService as any, cache as any, {} as any, exportsService as any);
 
   await assert.rejects(
     () => service.updateOrder('user-1', 'order-1', { status: 'DELIVERED' } as any),

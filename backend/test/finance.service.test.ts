@@ -12,7 +12,9 @@ test('FinanceService.requestPayout blocks insufficient balance', async () => {
   };
   const sellersService = { async ensureSellerProfile() { return { id: 'seller-1' }; } };
   const audit = { async log() {} };
-  const service = new FinanceService(prisma as any, sellersService as any, audit as any);
+  const jobsService = { async enqueue() {} };
+  const configService = { get() { return undefined; } };
+  const service = new FinanceService(prisma as any, sellersService as any, audit as any, jobsService as any, configService as any);
 
   await assert.rejects(
     () => service.requestPayout('user-1', { amount: 100 } as any),
@@ -34,7 +36,9 @@ test('FinanceService approves payout with valid transition', async () => {
   };
   const sellersService = { async ensureSellerProfile() { return { id: 'seller-1' }; } };
   const audit = { async log() {} };
-  const service = new FinanceService(prisma as any, sellersService as any, audit as any);
+  const jobsService = { async enqueue() {} };
+  const configService = { get() { return undefined; } };
+  const service = new FinanceService(prisma as any, sellersService as any, audit as any, jobsService as any, configService as any);
 
   const updated = await service.approvePayout('admin-1', 'payout-1', { note: 'ok' } as any);
   assert.equal(updated.status, 'PAID');

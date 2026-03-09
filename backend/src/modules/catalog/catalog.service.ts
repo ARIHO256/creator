@@ -1,19 +1,26 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CatalogImportStatus, Prisma } from '@prisma/client';
 import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { CatalogMediaQueryDto } from './dto/catalog-media-query.dto.js';
+import { CatalogImportJobDto } from './dto/catalog-import-job.dto.js';
+import { CatalogPresetQueryDto } from './dto/catalog-preset-query.dto.js';
+import { CatalogTemplateValidateDto } from './dto/catalog-template-validate.dto.js';
 import { ImportCatalogTemplatesDto } from './dto/catalog-templates-import.dto.js';
 import { CatalogTemplatesQueryDto } from './dto/catalog-templates-query.dto.js';
+import { CreateCatalogPresetDto } from './dto/create-catalog-preset.dto.js';
 import { CreateCatalogTemplateDto } from './dto/create-catalog-template.dto.js';
+import { UpdateCatalogPresetDto } from './dto/update-catalog-preset.dto.js';
 import { UpdateCatalogTemplateDto } from './dto/update-catalog-template.dto.js';
 
 @Injectable()
 export class CatalogService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sellersService: SellersService
+    private readonly sellersService: SellersService,
+    private readonly jobsService: JobsService
   ) {}
 
   async templates(userId: string, query?: CatalogTemplatesQueryDto) {
@@ -122,89 +129,176 @@ export class CatalogService {
     if (!items.length) {
       throw new BadRequestException('Templates are required');
     }
-    const normalized = items.map((item) => ({
-      name: item.name.trim(),
-      kind: item.kind.trim(),
-      category: item.category?.trim() ?? null,
-      notes: item.notes ?? null,
-      language: item.language ?? null,
-      attrs: Array.isArray(item.attrs) ? item.attrs : [],
-      payload: item.payload ?? {},
-      status: item.status ?? 'ACTIVE',
-      metadata: item.metadata ?? {}
-    }));
-    const lookupPairs = normalized.map((item) => ({ name: item.name, kind: item.kind }));
-    const existing = await this.prisma.catalogTemplate.findMany({
+    const { normalized, errors } = this.normalizeTemplates(items);
+    if (errors.length) {
+      throw new BadRequestException('Templates contain validation errors');
+    }
+    return this.applyImport(seller.id, normalized, mode);
+  }
+
+  async presets(userId: string, query?: CatalogPresetQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const presets = await this.prisma.catalogTemplatePreset.findMany({
       where: {
         sellerId: seller.id,
-        OR: lookupPairs
+        ...(query?.q ? { name: { contains: query.q } } : {})
+      },
+      skip,
+      take,
+      orderBy: { updatedAt: 'desc' }
+    });
+    return { presets };
+  }
+
+  async createPreset(userId: string, body: CreateCatalogPresetDto) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    if (!body.name.trim()) {
+      throw new BadRequestException('Preset name is required');
+    }
+    const templateIds = Array.isArray(body.templateIds) ? body.templateIds : [];
+    const templates = templateIds.length
+      ? await this.prisma.catalogTemplate.findMany({ where: { sellerId: seller.id, id: { in: templateIds } } })
+      : [];
+    const payload = body.payload ?? (templates.length ? { templates: templates.map((t) => this.serializeTemplate(t)) } : {});
+    return this.prisma.catalogTemplatePreset.create({
+      data: {
+        sellerId: seller.id,
+        name: body.name.trim(),
+        description: body.description ?? null,
+        templateIds: templateIds.length ? (templateIds as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+        payload: payload as Prisma.InputJsonValue,
+        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       }
     });
-    const existingMap = new Map(existing.map((template) => [`${template.name}::${template.kind}`, template]));
-    const result = { created: 0, updated: 0, skipped: 0, templates: [] as any[] };
+  }
 
-    await this.prisma.$transaction(async (tx) => {
-      for (const item of normalized) {
-        if (!item.name || !item.kind) {
-          result.skipped += 1;
-          continue;
-        }
-        const key = `${item.name}::${item.kind}`;
-        const current = existingMap.get(key);
-        const attrs = item.attrs;
-        const payload = {
-          ...(item.payload ?? {}),
-          ...(attrs.length ? { attrs } : {})
-        };
-        if (current) {
-          if (mode === 'CREATE_ONLY') {
-            result.skipped += 1;
-            continue;
-          }
-          const updated = await tx.catalogTemplate.update({
-            where: { id: current.id },
-            data: {
-              name: item.name,
-              kind: item.kind,
-              category: item.category,
-              notes: item.notes,
-              language: item.language,
-              attrCount: attrs.length,
-              attributes: attrs.length ? (attrs as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-              status: item.status,
-              payload: payload as Prisma.InputJsonValue,
-              metadata: item.metadata as Prisma.InputJsonValue
-            }
-          });
-          result.updated += 1;
-          result.templates.push(updated);
-          continue;
-        }
-        if (mode === 'UPDATE_ONLY') {
-          result.skipped += 1;
-          continue;
-        }
-        const created = await tx.catalogTemplate.create({
-          data: {
-            sellerId: seller.id,
-            name: item.name,
-            kind: item.kind,
-            category: item.category,
-            notes: item.notes,
-            language: item.language,
-            attrCount: attrs.length,
-            attributes: attrs.length ? (attrs as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-            status: item.status,
-            payload: payload as Prisma.InputJsonValue,
-            metadata: item.metadata as Prisma.InputJsonValue
-          }
-        });
-        result.created += 1;
-        result.templates.push(created);
+  async updatePreset(userId: string, id: string, body: UpdateCatalogPresetDto) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const preset = await this.prisma.catalogTemplatePreset.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!preset) {
+      throw new NotFoundException('Preset not found');
+    }
+    const templateIds = Array.isArray(body.templateIds) ? body.templateIds : undefined;
+    const templates = templateIds && templateIds.length
+      ? await this.prisma.catalogTemplate.findMany({ where: { sellerId: seller.id, id: { in: templateIds } } })
+      : undefined;
+    const payload = body.payload ?? (templates ? { templates: templates.map((t) => this.serializeTemplate(t)) } : undefined);
+    return this.prisma.catalogTemplatePreset.update({
+      where: { id: preset.id },
+      data: {
+        name: body.name ? body.name.trim() : undefined,
+        description: body.description ?? undefined,
+        templateIds: templateIds ? (templateIds as unknown as Prisma.InputJsonValue) : undefined,
+        payload: payload ? (payload as Prisma.InputJsonValue) : undefined,
+        metadata: body.metadata ? (body.metadata as Prisma.InputJsonValue) : undefined
+      }
+    });
+  }
+
+  async deletePreset(userId: string, id: string) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const preset = await this.prisma.catalogTemplatePreset.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!preset) {
+      throw new NotFoundException('Preset not found');
+    }
+    await this.prisma.catalogTemplatePreset.delete({ where: { id: preset.id } });
+    return { deleted: true };
+  }
+
+  async exportPreset(userId: string, id: string) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const preset = await this.prisma.catalogTemplatePreset.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!preset) {
+      throw new NotFoundException('Preset not found');
+    }
+    return { preset };
+  }
+
+  async validateTemplates(userId: string, body: CatalogTemplateValidateDto) {
+    await this.sellersService.ensureSellerProfile(userId);
+    const { normalized, errors } = this.normalizeTemplates(body.templates);
+    return { valid: errors.length === 0, errors, templates: normalized };
+  }
+
+  async createImportJob(userId: string, body: CatalogImportJobDto) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const { normalized, errors } = this.normalizeTemplates(body.templates);
+    const job = await this.prisma.catalogImportJob.create({
+      data: {
+        sellerId: seller.id,
+        status: CatalogImportStatus.QUEUED,
+        totalCount: normalized.length,
+        errorCount: errors.length,
+        errorReport: errors.length ? (errors as Prisma.InputJsonValue) : Prisma.DbNull,
+        metadata: {
+          mode: body.mode ?? 'UPSERT',
+          source: body.source ?? 'manual',
+          templates: normalized
+        } as Prisma.InputJsonValue
+      }
+    });
+    await this.jobsService.enqueue({
+      queue: 'catalog',
+      type: 'CATALOG_IMPORT',
+      payload: { jobId: job.id },
+      dedupeKey: `catalog:import:${job.id}`
+    });
+    return { jobId: job.id, status: job.status, errors };
+  }
+
+  async importJob(userId: string, id: string) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const job = await this.prisma.catalogImportJob.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!job) {
+      throw new NotFoundException('Import job not found');
+    }
+    return job;
+  }
+
+  async processImportJob(jobId: string) {
+    const job = await this.prisma.catalogImportJob.findUnique({ where: { id: jobId } });
+    if (!job) {
+      throw new NotFoundException('Import job not found');
+    }
+    if (job.status === CatalogImportStatus.COMPLETED) {
+      return job;
+    }
+
+    await this.prisma.catalogImportJob.update({
+      where: { id: job.id },
+      data: { status: CatalogImportStatus.RUNNING }
+    });
+
+    const metadata = (job.metadata ?? {}) as Record<string, any>;
+    const templates = Array.isArray(metadata.templates) ? metadata.templates : [];
+    const mode = metadata.mode ?? 'UPSERT';
+
+    const { normalized, errors } = this.normalizeTemplates(templates);
+    const result = await this.applyImport(job.sellerId, normalized, mode);
+    const errorReport = errors.length ? errors : [];
+
+    await this.prisma.catalogImportJob.update({
+      where: { id: job.id },
+      data: {
+        status: CatalogImportStatus.COMPLETED,
+        totalCount: normalized.length,
+        successCount: result.created + result.updated,
+        errorCount: errorReport.length,
+        errorReport: errorReport.length ? (errorReport as Prisma.InputJsonValue) : Prisma.DbNull,
+        completedAt: new Date()
       }
     });
 
-    return result;
+    return { ...result, jobId: job.id };
   }
 
   async mediaLibrary(userId: string, query?: CatalogMediaQueryDto) {
@@ -265,5 +359,130 @@ export class CatalogService {
       return payloadAttrs;
     }
     return [];
+  }
+
+  private normalizeTemplates(items: any[]) {
+    const errors: Array<{ index: number; message: string }> = [];
+    const normalized = items.map((item, index) => {
+      const name = String(item?.name ?? '').trim();
+      const kind = String(item?.kind ?? '').trim();
+      if (!name || !kind) {
+        errors.push({ index, message: 'name and kind are required' });
+      }
+      const attrs = Array.isArray(item?.attrs) ? item.attrs : [];
+      return {
+        name,
+        kind,
+        category: item?.category ? String(item.category).trim() : null,
+        notes: item?.notes ?? null,
+        language: item?.language ?? null,
+        attrs,
+        payload: item?.payload ?? {},
+        status: item?.status ?? 'ACTIVE',
+        metadata: item?.metadata ?? {}
+      };
+    });
+    return { normalized, errors };
+  }
+
+  private async applyImport(sellerId: string, normalized: any[], mode: string) {
+    const lookupPairs = normalized.map((item) => ({ name: item.name, kind: item.kind }));
+    const existing = await this.prisma.catalogTemplate.findMany({
+      where: {
+        sellerId,
+        OR: lookupPairs
+      }
+    });
+    const existingMap = new Map(existing.map((template) => [`${template.name}::${template.kind}`, template]));
+    const result = { created: 0, updated: 0, skipped: 0, templates: [] as any[] };
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const item of normalized) {
+        if (!item.name || !item.kind) {
+          result.skipped += 1;
+          continue;
+        }
+        const key = `${item.name}::${item.kind}`;
+        const current = existingMap.get(key);
+        const attrs = item.attrs;
+        const payload = {
+          ...(item.payload ?? {}),
+          ...(attrs.length ? { attrs } : {})
+        };
+        if (current) {
+          if (mode === 'CREATE_ONLY') {
+            result.skipped += 1;
+            continue;
+          }
+          const updated = await tx.catalogTemplate.update({
+            where: { id: current.id },
+            data: {
+              name: item.name,
+              kind: item.kind,
+              category: item.category,
+              notes: item.notes,
+              language: item.language,
+              attrCount: attrs.length,
+              attributes: attrs.length ? (attrs as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+              status: item.status,
+              payload: payload as Prisma.InputJsonValue,
+              metadata: item.metadata as Prisma.InputJsonValue
+            }
+          });
+          result.updated += 1;
+          result.templates.push(updated);
+          continue;
+        }
+        if (mode === 'UPDATE_ONLY') {
+          result.skipped += 1;
+          continue;
+        }
+        const created = await tx.catalogTemplate.create({
+          data: {
+            sellerId,
+            name: item.name,
+            kind: item.kind,
+            category: item.category,
+            notes: item.notes,
+            language: item.language,
+            attrCount: attrs.length,
+            attributes: attrs.length ? (attrs as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+            status: item.status,
+            payload: payload as Prisma.InputJsonValue,
+            metadata: item.metadata as Prisma.InputJsonValue
+          }
+        });
+        result.created += 1;
+        result.templates.push(created);
+      }
+    });
+
+    return result;
+  }
+
+  private serializeTemplate(template: {
+    id: string;
+    name: string;
+    kind: string;
+    category: string | null;
+    notes: string | null;
+    language: string | null;
+    attributes: unknown;
+    status: string;
+    payload: unknown;
+    metadata: unknown;
+  }) {
+    return {
+      id: template.id,
+      name: template.name,
+      kind: template.kind,
+      category: template.category ?? undefined,
+      notes: template.notes ?? undefined,
+      language: template.language ?? undefined,
+      attrs: this.resolveTemplateAttrs(template),
+      status: template.status,
+      payload: template.payload ?? {},
+      metadata: template.metadata ?? {}
+    };
   }
 }

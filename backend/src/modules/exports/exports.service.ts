@@ -80,13 +80,13 @@ export class ExportsService {
     if (!job) {
       throw new NotFoundException('Export job not found');
     }
-    if (![ExportJobStatus.QUEUED, ExportJobStatus.PROCESSING].includes(job.status)) {
+    if (![ExportJobStatus.QUEUED, ExportJobStatus.RUNNING].includes(job.status)) {
       return job;
     }
 
     await this.prisma.sellerExportJob.update({
       where: { id: job.id },
-      data: { status: ExportJobStatus.PROCESSING }
+      data: { status: ExportJobStatus.RUNNING }
     });
 
     const format = String(job.format ?? 'CSV').toUpperCase();
@@ -95,7 +95,13 @@ export class ExportsService {
       return job;
     }
 
-    const rows = await this.resolveRows(job);
+    let rows: ExportDataRow[] = [];
+    try {
+      rows = await this.resolveRows(job);
+    } catch (error: any) {
+      await this.failJob(job, error?.message ?? 'Export generation failed');
+      return job;
+    }
     if (!rows.length) {
       await this.failJob(job, 'No exportable data found');
       return job;

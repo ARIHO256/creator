@@ -3,11 +3,15 @@ import { serializeListingPublic } from '../../common/serializers/listing.seriali
 import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { SearchService } from '../search/search.service.js';
 import { CreateMarketplaceListingDto } from './dto/create-marketplace-listing.dto.js';
 
 @Injectable()
 export class MarketplaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly searchService: SearchService
+  ) {}
 
   async getMarketplaceFeed(query?: ListQueryDto) {
     const { take } = normalizeListQuery(query, { limit: 24 });
@@ -83,7 +87,7 @@ export class MarketplaceService {
       throw new NotFoundException('User not found');
     }
 
-    return this.prisma.marketplaceListing.create({
+    const listing = await this.prisma.marketplaceListing.create({
       data: {
         userId,
         sellerId: user.sellerProfile?.id,
@@ -95,5 +99,7 @@ export class MarketplaceService {
         status: 'ACTIVE'
       }
     });
+    await this.searchService.enqueueListingIndex(listing.id);
+    return listing;
   }
 }

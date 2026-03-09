@@ -306,9 +306,15 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
               });
             });
           } catch (error: any) {
-            await this.prisma.settlementBatch.update({
-              where: { id: batch.id },
-              data: { status: 'FAILED', completedAt: now, metadata: { error: String(error?.message ?? error) } as any }
+            await this.prisma.$transaction(async (tx) => {
+              await tx.settlementBatch.update({
+                where: { id: batch.id },
+                data: { status: 'FAILED', completedAt: now, metadata: { error: String(error?.message ?? error) } as any }
+              });
+              await tx.settlementItem.updateMany({
+                where: { batchId: batch.id, status: { notIn: ['COMPLETED'] } },
+                data: { status: 'FAILED' }
+              });
             });
           }
         }
