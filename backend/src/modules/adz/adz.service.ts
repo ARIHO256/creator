@@ -1,53 +1,95 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { AppRecordsService } from '../../platform/app-records.service.js';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { PayloadSanitizerOptions, normalizeIdentifier, sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 
 @Injectable()
 export class AdzService {
-  constructor(private readonly records: AppRecordsService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  builder(id: string, userId: string) { return this.records.getByEntityId('adz', 'builder', id, userId).then((r) => r.payload); }
+  async builder(id: string, userId: string) {
+    const record = await this.getRecord(userId, 'builder', id);
+    if (!record) {
+      throw new NotFoundException('Builder not found');
+    }
+    return record.payload;
+  }
   saveBuilder(userId: string, payload: any) {
     const sanitized = this.ensureObjectPayload(payload);
     const id = normalizeIdentifier(sanitized.adId ?? sanitized.id, randomUUID());
-    return this.records.upsert('adz', 'builder', id, sanitized, userId);
+    return this.upsertRecord(userId, 'adz', 'builder', id, sanitized);
   }
 
   async publishBuilder(userId: string, id: string, payload: any) {
-    const rec = await this.records.getByEntityId('adz', 'builder', id, userId);
+    const rec = await this.getRecord(userId, 'builder', id);
+    if (!rec) {
+      throw new NotFoundException('Builder not found');
+    }
     const sanitized = this.ensureObjectPayload(payload);
-    const merged = { ...(rec.payload as any), ...sanitized, published: true, publishedAt: new Date().toISOString() };
-    await this.records.update('adz', 'builder', id, merged, userId);
-    return this.records.upsert('adz', 'campaign', id, merged, userId);
+    const merged = {
+      ...(rec.payload as any),
+      ...sanitized,
+      published: true,
+      publishedAt: new Date().toISOString()
+    };
+    await this.upsertRecord(userId, 'adz', 'builder', id, merged);
+    return this.upsertRecord(userId, 'adz', 'campaign', id, merged);
   }
 
-  campaigns(userId: string) { return this.records.list('adz', 'campaign', userId).then((rows) => rows.map((r) => ({ id: r.entityId, ...(r.payload as any) }))); }
-  campaign(userId: string, id: string) { return this.records.getByEntityId('adz', 'campaign', id, userId).then((r) => ({ id: r.entityId, ...(r.payload as any) })); }
-  marketplace(userId: string) { return this.records.list('adz', 'marketplace', userId).then((rows) => rows.map((r) => r.payload)); }
+  async campaigns(userId: string) {
+    const records = await this.listRecords(userId, 'campaign');
+    return records.map((record) => ({ id: record.recordKey, ...(record.payload as any) }));
+  }
+  async campaign(userId: string, id: string) {
+    const record = await this.getRecord(userId, 'campaign', id);
+    if (!record) {
+      throw new NotFoundException('Campaign not found');
+    }
+    return { id: record.recordKey, ...(record.payload as any) };
+  }
+  async marketplace(userId: string) {
+    const records = await this.listRecords(userId, 'marketplace');
+    return records.map((record) => record.payload);
+  }
   createCampaign(userId: string, body: any) {
     const sanitized = this.ensureObjectPayload(body);
     const id = normalizeIdentifier(sanitized.id, randomUUID());
-    return this.records.create('adz', 'campaign', sanitized, id, userId);
+    return this.createRecord(userId, 'adz', 'campaign', id, sanitized);
   }
   updateCampaign(userId: string, id: string, body: any) {
     const sanitized = this.ensureObjectPayload(body);
-    return this.records.update('adz', 'campaign', id, sanitized, userId);
+    return this.updateRecord(userId, 'adz', 'campaign', id, sanitized);
   }
-  performance(userId: string, id: string) { return this.records.getByEntityId('adz', 'performance', id, userId).then((r)=>r.payload).catch(() => ({ clicks: 0, purchases: 0, earnings: 0 })); }
+  async performance(userId: string, id: string) {
+    const record = await this.getRecord(userId, 'performance', id);
+    return record?.payload ?? { clicks: 0, purchases: 0, earnings: 0 };
+  }
 
-  promoAd(userId: string, id: string) { return this.records.getByEntityId('adz', 'promo_ad', id, userId).then((r)=>r.payload).catch(()=>({ id, status: 'draft' })); }
+  async promoAd(userId: string, id: string) {
+    const record = await this.getRecord(userId, 'promo_ad', id);
+    return record?.payload ?? { id, status: 'draft' };
+  }
 
-  links(userId: string) { return this.records.list('adz', 'link', userId).then((rows) => rows.map((r) => ({ id: r.entityId, ...(r.payload as any) }))); }
-  link(userId: string, id: string) { return this.records.getByEntityId('adz', 'link', id, userId).then((r) => ({ id: r.entityId, ...(r.payload as any) })); }
+  async links(userId: string) {
+    const records = await this.listRecords(userId, 'link');
+    return records.map((record) => ({ id: record.recordKey, ...(record.payload as any) }));
+  }
+  async link(userId: string, id: string) {
+    const record = await this.getRecord(userId, 'link', id);
+    if (!record) {
+      throw new NotFoundException('Link not found');
+    }
+    return { id: record.recordKey, ...(record.payload as any) };
+  }
   createLink(userId: string, body: any) {
     const sanitized = this.ensureObjectPayload(body, { maxDepth: 6, maxArrayLength: 100, maxKeys: 150 });
     const id = normalizeIdentifier(sanitized.id, randomUUID());
-    return this.records.create('adz', 'link', sanitized, id, userId);
+    return this.createRecord(userId, 'adz', 'link', id, sanitized);
   }
   updateLink(userId: string, id: string, body: any) {
     const sanitized = this.ensureObjectPayload(body, { maxDepth: 6, maxArrayLength: 100, maxKeys: 150 });
-    return this.records.update('adz', 'link', id, sanitized, userId);
+    return this.updateRecord(userId, 'adz', 'link', id, sanitized);
   }
 
   private ensureObjectPayload(payload: unknown, overrides?: Partial<PayloadSanitizerOptions>) {
@@ -56,5 +98,72 @@ export class AdzService {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
+  }
+
+  private async getRecord(userId: string, recordType: string, recordKey: string) {
+    return this.prisma.adzRecord.findUnique({
+      where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
+    });
+  }
+
+  private async listRecords(userId: string, recordType: string) {
+    return this.prisma.adzRecord.findMany({
+      where: { userId, recordType },
+      orderBy: { updatedAt: 'desc' }
+    });
+  }
+
+  private async createRecord(userId: string, domain: string, recordType: string, recordKey: string, payload: unknown) {
+    const record = await this.prisma.adzRecord.create({
+      data: {
+        userId,
+        recordType,
+        recordKey,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+    return this.toAppRecord(record, domain);
+  }
+
+  private async updateRecord(userId: string, domain: string, recordType: string, recordKey: string, payload: unknown) {
+    const existing = await this.getRecord(userId, recordType, recordKey);
+    if (!existing) {
+      throw new NotFoundException('Record not found');
+    }
+    const record = await this.prisma.adzRecord.update({
+      where: { id: existing.id },
+      data: { payload: payload as Prisma.InputJsonValue }
+    });
+    return this.toAppRecord(record, domain);
+  }
+
+  private async upsertRecord(userId: string, domain: string, recordType: string, recordKey: string, payload: unknown) {
+    const record = await this.prisma.adzRecord.upsert({
+      where: { userId_recordType_recordKey: { userId, recordType, recordKey } },
+      update: { payload: payload as Prisma.InputJsonValue },
+      create: {
+        userId,
+        recordType,
+        recordKey,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+    return this.toAppRecord(record, domain);
+  }
+
+  private toAppRecord(
+    record: { id: string; userId: string; recordType: string; recordKey: string; payload: unknown; createdAt: Date; updatedAt: Date },
+    domain: string
+  ) {
+    return {
+      id: record.id,
+      domain,
+      entityType: record.recordType,
+      entityId: record.recordKey,
+      userId: record.userId,
+      payload: record.payload,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    };
   }
 }

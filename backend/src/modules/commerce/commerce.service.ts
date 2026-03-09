@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma, TransactionStatus } from '@prisma/client';
 import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
-import { AppRecordsService } from '../../platform/app-records.service.js';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
@@ -31,48 +30,42 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 export class CommerceService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly records: AppRecordsService,
     private readonly taxonomyService: TaxonomyService,
     private readonly sellersService: SellersService,
     private readonly cache: CacheService
   ) {}
 
   async dashboard(userId: string) {
-    return this.records
-      .getByEntityId('seller_workspace', 'dashboard', 'main', userId)
-      .then((record) => record.payload)
-      .catch(async () => {
-        const [listingCount, orderCount] = await Promise.all([
-          this.prisma.marketplaceListing.count({ where: { userId } }),
-          this.prisma.order.count({ where: { seller: { userId } } })
-        ]);
+    const [listingCount, orderCount] = await Promise.all([
+      this.prisma.marketplaceListing.count({ where: { userId } }),
+      this.prisma.order.count({ where: { seller: { userId } } })
+    ]);
 
-        return {
-          quickActions: [
-            { key: 'new-listing', label: 'New Listing', to: '/listings/new' },
-            { key: 'orders', label: 'Orders', to: '/orders' }
-          ],
-          hero: {
-            name: 'Seller Workspace',
-            sub: 'Unified seller operations and growth command center.',
-            ctaLabel: 'Open Listings',
-            ctaTo: '/listings',
-            chipWhenMLDZ: 'LiveDealz enabled',
-            chipWhenNoMLDZ: 'Core commerce'
-          },
-          featured: {
-            title: 'Operations Snapshot',
-            sub: `${listingCount} listings and ${orderCount} tracked orders`,
-            ctaLabel: 'Open Ops',
-            ctaTo: '/ops'
-          },
-          bases: {
-            revenueBase: 100,
-            ordersBase: 100,
-            trustBase: 100
-          }
-        };
-      });
+    return {
+      quickActions: [
+        { key: 'new-listing', label: 'New Listing', to: '/listings/new' },
+        { key: 'orders', label: 'Orders', to: '/orders' }
+      ],
+      hero: {
+        name: 'Seller Workspace',
+        sub: 'Unified seller operations and growth command center.',
+        ctaLabel: 'Open Listings',
+        ctaTo: '/listings',
+        chipWhenMLDZ: 'LiveDealz enabled',
+        chipWhenNoMLDZ: 'Core commerce'
+      },
+      featured: {
+        title: 'Operations Snapshot',
+        sub: `${listingCount} listings and ${orderCount} tracked orders`,
+        ctaLabel: 'Open Ops',
+        ctaTo: '/ops'
+      },
+      bases: {
+        revenueBase: 100,
+        ordersBase: 100,
+        trustBase: 100
+      }
+    };
   }
 
   async dashboardSummary(userId: string, query?: DashboardSummaryQueryDto) {
@@ -155,10 +148,14 @@ export class CommerceService {
         revenueBase === 0 &&
         reviewTotal === 0
       ) {
-        return this.records
-          .getByEntityId('seller_workspace', 'dashboard_summary', 'main', userId)
-          .then((record) => record.payload)
-          .catch(() => this.emptyDashboardSummary());
+        return {
+          ...this.emptyDashboardSummary(),
+          range: {
+            range: query?.range ?? null,
+            from: query?.from ?? null,
+            to: query?.to ?? null
+          }
+        };
       }
 
       return {
@@ -205,10 +202,7 @@ export class CommerceService {
       return listings;
     }
 
-    return this.records
-      .getByEntityId('seller_workspace', 'listings', 'main', userId)
-      .then((record) => this.sliceRows(record.payload, skip, take))
-      .catch(() => ({ rows: [] }));
+    return { rows: [] };
   }
 
   async listingDetail(userId: string, id: string) {
@@ -217,36 +211,21 @@ export class CommerceService {
       return listing;
     }
 
-    const content = await this.listings(userId);
-    const rows = Array.isArray((content as any).rows) ? (content as any).rows : [];
-    const found = rows.find((row: any) => row.id === id);
-    if (!found) {
-      throw new NotFoundException('Listing not found');
-    }
-    return found;
+    throw new NotFoundException('Listing not found');
   }
 
   async listingWizard(userId: string) {
-    const fallback = await this.records
-      .getByEntityId('seller_workspace', 'listing_wizard', 'main', userId)
-      .then((record) => record.payload)
-      .catch(() => ({ taxonomy: [], baseLines: [], copy: {} }));
-
     const taxonomy = await this.taxonomyService.listingWizardTaxonomy();
-    if (taxonomy.length === 0) {
-      return fallback;
-    }
-
-    let baseLines: unknown = (fallback as Record<string, unknown>).baseLines ?? [];
+    let baseLines: unknown = [];
     try {
       baseLines = await this.taxonomyService.listingWizardLines(userId);
     } catch {
-      baseLines = (fallback as Record<string, unknown>).baseLines ?? [];
+      baseLines = [];
     }
     return {
-      ...(fallback as Record<string, unknown>),
       taxonomy,
-      baseLines
+      baseLines,
+      copy: {}
     };
   }
 
@@ -316,10 +295,7 @@ export class CommerceService {
       return { orders };
     }
 
-    return this.records
-      .getByEntityId('seller_workspace', 'orders', 'main', userId)
-      .then((record) => this.sliceRows(record.payload, skip, take, 'orders'))
-      .catch(() => ({ orders: [], returns: [], disputes: [] }));
+    return { orders: [], returns: [], disputes: [] };
   }
 
   async orderDetail(userId: string, id: string, channel?: string) {
@@ -339,13 +315,7 @@ export class CommerceService {
       return order;
     }
 
-    const ordersPayload = await this.orders(userId);
-    const rows = Array.isArray((ordersPayload as any).orders) ? (ordersPayload as any).orders : [];
-    const found = rows.find((row: any) => row.id === id);
-    if (!found) {
-      throw new NotFoundException('Order not found');
-    }
-    return found;
+    throw new NotFoundException('Order not found');
   }
 
   async updateOrder(userId: string, id: string, payload: UpdateOrderDto, channel?: string) {
@@ -392,8 +362,7 @@ export class CommerceService {
       }
     }
 
-    const payload = await this.orders(userId);
-    return (payload as any).returns ?? [];
+    return [];
   }
 
   async disputes(userId: string, query?: SellerDisputesQueryDto) {
@@ -412,8 +381,7 @@ export class CommerceService {
       }
     }
 
-    const payload = await this.orders(userId);
-    return (payload as any).disputes ?? [];
+    return [];
   }
 
   async inventory(userId: string) {
@@ -427,10 +395,7 @@ export class CommerceService {
       return { rows: listings };
     }
 
-    return this.records
-      .getByEntityId('seller_workspace', 'inventory', 'main', userId)
-      .then((record) => record.payload)
-      .catch(() => ({ rows: [] }));
+    return { rows: [] };
   }
 
   private parseCsv(value?: string) {
@@ -455,10 +420,7 @@ export class CommerceService {
       return { profiles };
     }
 
-    return this.records
-      .getByEntityId('seller_workspace', 'shipping_profiles', 'main', userId)
-      .then((r) => r.payload)
-      .catch(() => ({ profiles: [] }));
+    return { profiles: [] };
   }
 
   async warehouses(userId: string) {
@@ -474,10 +436,7 @@ export class CommerceService {
       return { warehouses };
     }
 
-    return this.records
-      .getByEntityId('seller_workspace', 'warehouses', 'main', userId)
-      .then((r) => r.payload)
-      .catch(() => ({ warehouses: [] }));
+    return { warehouses: [] };
   }
 
   async exports(userId: string) {
@@ -493,10 +452,7 @@ export class CommerceService {
       return { jobs };
     }
 
-    return this.records
-      .getByEntityId('seller_workspace', 'exports', 'main', userId)
-      .then((r) => r.payload)
-      .catch(() => ({ jobs: [] }));
+    return { jobs: [] };
   }
 
   async documents(userId: string) {
@@ -512,30 +468,122 @@ export class CommerceService {
       return { documents };
     }
 
-    return this.records
-      .getByEntityId('seller_workspace', 'documents', 'main', userId)
-      .then((r) => r.payload)
-      .catch(() => ({ documents: [] }));
+    return { documents: [] };
   }
 
   async financeWallets(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'finance_wallets', 'main', userId).then((r) => r.payload).catch(() => ({ wallets: [] }));
+    const seller = await this.ensureSeller(userId);
+    const totals = await this.prisma.transaction.groupBy({
+      by: ['currency', 'status'],
+      where: { sellerId: seller.id },
+      _sum: { amount: true }
+    });
+
+    const wallets = new Map<
+      string,
+      { currency: string; available: number; pending: number; paid: number; total: number }
+    >();
+    for (const row of totals) {
+      const currency = row.currency ?? 'USD';
+      const entry =
+        wallets.get(currency) ?? { currency, available: 0, pending: 0, paid: 0, total: 0 };
+      const amount = Number(row._sum.amount ?? 0);
+      if (row.status === TransactionStatus.AVAILABLE) entry.available += amount;
+      if (row.status === TransactionStatus.PENDING) entry.pending += amount;
+      if (row.status === TransactionStatus.PAID) entry.paid += amount;
+      entry.total = entry.available + entry.pending + entry.paid;
+      wallets.set(currency, entry);
+    }
+
+    return { wallets: Array.from(wallets.values()) };
   }
 
   async financeHolds(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'finance_holds', 'main', userId).then((r) => r.payload).catch(() => ({ holds: [] }));
+    const seller = await this.ensureSeller(userId);
+    const holds = await this.prisma.transaction.findMany({
+      where: { sellerId: seller.id, status: TransactionStatus.PENDING },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+
+    return {
+      holds: holds.map((hold) => ({
+        id: hold.id,
+        amount: hold.amount,
+        currency: hold.currency,
+        orderId: hold.orderId,
+        status: hold.status,
+        availableAt: hold.availableAt,
+        createdAt: hold.createdAt,
+        note: hold.note
+      }))
+    };
   }
 
   async financeInvoices(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'finance_invoices', 'main', userId).then((r) => r.payload).catch(() => ({ invoices: [] }));
+    const seller = await this.ensureSeller(userId);
+    const orders = await this.prisma.order.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+
+    return {
+      invoices: orders.map((order) => ({
+        id: order.id,
+        orderId: order.id,
+        total: order.total,
+        currency: order.currency,
+        status: order.status,
+        issuedAt: order.createdAt,
+        channel: order.channel,
+        itemCount: order.itemCount
+      }))
+    };
   }
 
   async financeStatements(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'finance_statements', 'main', userId).then((r) => r.payload).catch(() => ({ statements: [] }));
+    const seller = await this.ensureSeller(userId);
+    const transactions = await this.prisma.transaction.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { createdAt: 'desc' },
+      take: 500
+    });
+
+    const statements = new Map<string, { period: string; currency: string; total: number; count: number }>();
+    for (const transaction of transactions) {
+      const period = transaction.createdAt.toISOString().slice(0, 7);
+      const key = `${period}:${transaction.currency}`;
+      const entry =
+        statements.get(key) ?? { period, currency: transaction.currency, total: 0, count: 0 };
+      entry.total += transaction.amount;
+      entry.count += 1;
+      statements.set(key, entry);
+    }
+
+    return { statements: Array.from(statements.values()).sort((a, b) => (a.period < b.period ? 1 : -1)) };
   }
 
   async financeTaxReports(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'finance_tax_reports', 'main', userId).then((r) => r.payload).catch(() => ({ reports: [] }));
+    const seller = await this.ensureSeller(userId);
+    const transactions = await this.prisma.transaction.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { createdAt: 'desc' },
+      take: 1000
+    });
+
+    const reports = new Map<string, { year: string; currency: string; total: number; count: number }>();
+    for (const transaction of transactions) {
+      const year = String(transaction.createdAt.getUTCFullYear());
+      const key = `${year}:${transaction.currency}`;
+      const entry =
+        reports.get(key) ?? { year, currency: transaction.currency, total: 0, count: 0 };
+      entry.total += transaction.amount;
+      entry.count += 1;
+      reports.set(key, entry);
+    }
+
+    return { reports: Array.from(reports.values()).sort((a, b) => (a.year < b.year ? 1 : -1)) };
   }
 
   async createWarehouse(userId: string, payload: CreateWarehouseDto) {
@@ -929,16 +977,6 @@ export class CommerceService {
         resolvedAt: payload.status && ['RESOLVED', 'REJECTED'].includes(payload.status) ? new Date() : undefined
       }
     });
-  }
-
-  private sliceRows(payload: unknown, skip: number, take: number, key = 'rows') {
-    const content = payload as Record<string, unknown>;
-    const rows = Array.isArray(content[key] as unknown[]) ? ([...(content[key] as unknown[])] as unknown[]) : [];
-
-    return {
-      ...content,
-      [key]: rows.slice(skip, skip + take)
-    };
   }
 
   private async ensureSeller(userId: string) {

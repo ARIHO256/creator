@@ -1,6 +1,6 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import { MetricsService } from '../metrics/metrics.service.js';
 
 type CacheEntry = {
@@ -67,19 +67,19 @@ export class CacheService {
   async get<T>(key: string): Promise<T | null> {
     const local = this.getLocal<T>(key);
     if (local !== null) {
-      this.metrics?.recordCacheHit('summary', 'memory');
+      this.metrics?.recordCacheHit(this.cacheName(key), 'memory');
       return local;
     }
 
     const remote = await this.getRemote<T>(key);
     if (remote !== null) {
-      this.metrics?.recordCacheHit('summary', 'redis');
+      this.metrics?.recordCacheHit(this.cacheName(key), 'redis');
       this.setLocal(key, remote, this.defaultTtlMs);
       return remote;
     }
 
-    this.metrics?.recordCacheMiss('summary', 'memory');
-    this.metrics?.recordCacheMiss('summary', 'redis');
+    this.metrics?.recordCacheMiss(this.cacheName(key), 'memory');
+    this.metrics?.recordCacheMiss(this.cacheName(key), 'redis');
     return null;
   }
 
@@ -141,6 +141,10 @@ export class CacheService {
 
   private sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private cacheName(key: string) {
+    return key.split(':')[0] || 'cache';
   }
 
   private prune() {

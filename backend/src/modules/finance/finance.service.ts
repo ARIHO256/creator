@@ -1,12 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma, TransactionStatus } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
-import { AppRecordsService } from '../../platform/app-records.service.js';
 
 @Injectable()
 export class FinanceService {
   constructor(
-    @Inject(AppRecordsService) private readonly records: AppRecordsService,
     @Inject(PrismaService) private readonly prisma: PrismaService
   ) {}
 
@@ -20,25 +18,18 @@ export class FinanceService {
       _sum: { amount: true }
     });
 
-    if (groupedTransactions.length > 0) {
-      const totalsByStatus = new Map(
-        groupedTransactions.map((transaction) => [transaction.status, Number(transaction._sum.amount ?? 0)])
-      );
+    const totalsByStatus = new Map(
+      groupedTransactions.map((transaction) => [transaction.status, Number(transaction._sum.amount ?? 0)])
+    );
 
-      return {
-        available: totalsByStatus.get('AVAILABLE') ?? 0,
-        pending: totalsByStatus.get('PENDING') ?? 0,
-        lifetime: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID].reduce(
-          (sum, status) => sum + (totalsByStatus.get(status) ?? 0),
-          0
-        )
-      };
-    }
-
-    return this.records
-      .getByEntityId('finance', 'earnings_summary', 'main', userId)
-      .then((record) => record.payload)
-      .catch(() => ({ available: 0, pending: 0, lifetime: 0 }));
+    return {
+      available: totalsByStatus.get('AVAILABLE') ?? 0,
+      pending: totalsByStatus.get('PENDING') ?? 0,
+      lifetime: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID].reduce(
+        (sum, status) => sum + (totalsByStatus.get(status) ?? 0),
+        0
+      )
+    };
   }
 
   async payouts(userId: string) {
@@ -50,13 +41,7 @@ export class FinanceService {
       orderBy: { createdAt: 'desc' }
     });
 
-    if (payouts.length > 0) {
-      return payouts;
-    }
-
-    return this.records
-      .list('finance', 'payout', userId)
-      .then((rows) => rows.map((row) => ({ id: row.entityId, ...(row.payload as object) })));
+    return payouts;
   }
 
   requestPayout(userId: string, body: Record<string, unknown>) {
@@ -88,29 +73,48 @@ export class FinanceService {
       })
     ]);
 
-    if ((purchaseEvents._count._all ?? 0) > 0 || orderCount > 0) {
-      const sales = Number(purchaseEvents._sum.value ?? 0);
-      return {
-        rank: sales > 500 ? 'Gold' : sales > 100 ? 'Silver' : 'Bronze',
-        score: sales,
-        orderCount
-      };
-    }
-
-    return this.records
-      .getByEntityId('finance', 'analytics_overview', 'main', userId)
-      .then((record) => record.payload)
-      .catch(() => ({ rank: 'Bronze', score: 0 }));
+    const sales = Number(purchaseEvents._sum.value ?? 0);
+    return {
+      rank: sales > 500 ? 'Gold' : sales > 100 ? 'Silver' : 'Bronze',
+      score: sales,
+      orderCount
+    };
   }
 
-  subscription(userId: string) {
-    return this.records
-      .getByEntityId('finance', 'subscription', 'main', userId)
-      .then((record) => record.payload)
-      .catch(() => ({ plan: 'basic', cycle: 'monthly' }));
+  async subscription(userId: string) {
+    const existing = await this.prisma.userSubscription.findUnique({
+      where: { userId }
+    });
+    if (!existing) {
+      return { plan: 'basic', cycle: 'monthly', status: 'inactive' };
+    }
+    return {
+      plan: existing.plan,
+      cycle: existing.cycle,
+      status: existing.status,
+      metadata: existing.metadata
+    };
   }
 
   updateSubscription(userId: string, body: Record<string, unknown>) {
-    return this.records.upsert('finance', 'subscription', 'main', body, userId);
+    const plan = String(body.plan ?? 'basic');
+    const cycle = String(body.cycle ?? 'monthly');
+    const status = String(body.status ?? 'active');
+    return this.prisma.userSubscription.upsert({
+      where: { userId },
+      update: {
+        plan,
+        cycle,
+        status,
+        metadata: body as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        plan,
+        cycle,
+        status,
+        metadata: body as Prisma.InputJsonValue
+      }
+    });
   }
 }

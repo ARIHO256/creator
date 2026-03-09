@@ -38,6 +38,9 @@ export default () => ({
     redisPrefix: process.env.CACHE_REDIS_PREFIX ?? 'mldz:cache:',
     lockTtlMs: Number(process.env.CACHE_LOCK_TTL_MS ?? '5000')
   },
+  idempotency: {
+    ttlMs: Number(process.env.IDEMPOTENCY_TTL_MS ?? `${24 * 60 * 60 * 1000}`)
+  },
   audit: {
     enabled: !['0', 'false', 'no', 'off'].includes(String(process.env.AUDIT_ENABLED ?? 'true').toLowerCase()),
     async: !['0', 'false', 'no', 'off'].includes(String(process.env.AUDIT_ASYNC ?? 'true').toLowerCase()),
@@ -51,5 +54,12 @@ export default () => ({
     accessTtl: process.env.JWT_ACCESS_TTL ?? '15m',
     refreshSecret: process.env.JWT_REFRESH_SECRET ?? 'change-me-refresh-secret',
     refreshTtlDays: Number(process.env.JWT_REFRESH_TTL_DAYS ?? '30')
+  },
+  logging: {
+    fastifyLogger: !['0', 'false', 'no', 'off'].includes(String(process.env.FASTIFY_LOGGER ?? 'true').toLowerCase()),
+    requestLogs: !['0', 'false', 'no', 'off'].includes(String(process.env.REQUEST_LOGS_ENABLED ?? 'true').toLowerCase())
+  },
+  loadTest: {
+    enabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.LOAD_TEST_MODE ?? '').toLowerCase())
   }
 });

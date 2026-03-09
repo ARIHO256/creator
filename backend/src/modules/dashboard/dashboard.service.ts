@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TransactionStatus, UserRole } from '@prisma/client';
-import { AppRecordsService } from '../../platform/app-records.service.js';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
@@ -10,7 +9,6 @@ import { JobsWorker } from '../jobs/jobs.worker.js';
 @Injectable()
 export class DashboardService {
   constructor(
-    private readonly records: AppRecordsService,
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly jobsService: JobsService,
@@ -96,20 +94,23 @@ export class DashboardService {
   }
 
   async landingContent() {
-    const record = await this.records
-      .getByEntityId('dashboard', 'landing', 'public')
-      .catch(() =>
-        this.records.create(
-          'dashboard',
-          'landing',
-          {
-            title: 'Unified seller and creator backend',
-            subtitle: 'One API surface with role-aware workspaces'
-          },
-          'public'
-        )
-      );
-    return record.payload;
+    const existing = await this.prisma.systemContent.findUnique({
+      where: { key: 'landing' }
+    });
+    if (existing) {
+      return existing.payload;
+    }
+
+    const created = await this.prisma.systemContent.create({
+      data: {
+        key: 'landing',
+        payload: {
+          title: 'Unified seller and creator backend',
+          subtitle: 'One API surface with role-aware workspaces'
+        }
+      }
+    });
+    return created.payload;
   }
 
   async appBootstrap(userId: string) {
@@ -120,31 +121,32 @@ export class DashboardService {
       }
     });
 
-    const record = await this.records
-      .getByEntityId('dashboard', 'bootstrap', 'default', userId)
-      .catch(() =>
-        this.records.create(
-          'dashboard',
-          'bootstrap',
-          {
-            featureFlags: { unifiedBackend: true },
-            navBadges: {},
-            activeRole: user?.role ?? UserRole.CREATOR,
-            roles: user?.roleAssignments.map((assignment) => assignment.role) ?? [UserRole.CREATOR]
-          },
-          'default',
-          userId
-        )
-      );
-    return record.payload;
-  }
+    const existing = await this.prisma.userSetting.findUnique({
+      where: { userId_key: { userId, key: 'bootstrap' } }
+    });
 
-  async feed(userId: string) {
-    const existing = await this.records.getByEntityId('dashboard', 'feed', 'home', userId).catch(() => null);
     if (existing) {
       return existing.payload;
     }
 
+    const payload = {
+      featureFlags: { unifiedBackend: true },
+      navBadges: {},
+      activeRole: user?.role ?? UserRole.CREATOR,
+      roles: user?.roleAssignments.map((assignment) => assignment.role) ?? [UserRole.CREATOR]
+    };
+
+    const created = await this.prisma.userSetting.create({
+      data: {
+        userId,
+        key: 'bootstrap',
+        payload
+      }
+    });
+    return created.payload;
+  }
+
+  async feed(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -264,19 +266,6 @@ export class DashboardService {
       const negativePct = reviewTotal ? (negativeCount / reviewTotal) * 100 : 0;
       const trustScore = this.computeTrustScore(averageRating, responseRate, negativePct);
 
-      if (
-        campaignCount === 0 &&
-        pendingProposals === 0 &&
-        openTasks === 0 &&
-        earnings.lifetime === 0 &&
-        reviewTotal === 0
-      ) {
-        return this.records
-          .getByEntityId('dashboard', 'summary', 'main', userId)
-          .then((record) => record.payload)
-          .catch(() => this.emptySummary());
-      }
-
       return {
         role: user?.role ?? UserRole.CREATOR,
         roles: user?.roleAssignments.map((assignment) => assignment.role) ?? [UserRole.CREATOR],
@@ -296,11 +285,6 @@ export class DashboardService {
   }
 
   async myDay(userId: string) {
-    const existing = await this.records.getByEntityId('dashboard', 'my_day', 'today', userId).catch(() => null);
-    if (existing) {
-      return existing.payload;
-    }
-
     const [tasks, campaigns] = await Promise.all([
       this.prisma.task.findMany({
         where: {

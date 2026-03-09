@@ -1,13 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { AppRecordsService } from '../../platform/app-records.service.js';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 
 @Injectable()
 export class CommunicationsService {
-  constructor(private readonly records: AppRecordsService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  messages(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'messages', 'main', userId).then((r) => r.payload).catch(() => ({ tagOptions: [], threads: [], messages: [], templates: [] }));
+  async messages(userId: string) {
+    return (
+      (await this.getPayload(userId, 'messages', 'main')) ?? {
+        tagOptions: [],
+        threads: [],
+        messages: [],
+        templates: []
+      }
+    );
   }
 
   async messageThread(userId: string, threadId: string) {
@@ -23,8 +32,8 @@ export class CommunicationsService {
   }
 
   async sendMessage(userId: string, threadId: string, body: { text: string; lang?: string }) {
-    const payload = (await this.messages(userId)) as any;
-    const messages = Array.isArray(payload.messages) ? payload.messages : [];
+    const payload = (await this.messages(userId)) as Record<string, unknown>;
+    const messages = Array.isArray((payload as any).messages) ? (payload as any).messages : [];
     messages.push({
       id: randomUUID(),
       threadId,
@@ -33,20 +42,28 @@ export class CommunicationsService {
       lang: body.lang ?? 'en',
       at: new Date().toISOString()
     });
-    return this.records.upsert('seller_workspace', 'messages', 'main', { ...payload, messages }, userId);
+    const record = await this.upsertPayload(userId, 'messages', 'main', { ...payload, messages });
+    return this.toAppRecord(record, 'seller_workspace');
   }
 
-  notifications(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'notifications_preferences', 'main', userId).then((r) => r.payload).catch(() => ({ watches: [] }));
+  async notifications(userId: string) {
+    return (await this.getPayload(userId, 'notifications_preferences', 'main')) ?? { watches: [] };
   }
 
-  helpSupport(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'help_support', 'main', userId).then((r) => r.payload).catch(() => ({ kb: [], faq: [], status: [], tickets: [] }));
+  async helpSupport(userId: string) {
+    return (
+      (await this.getPayload(userId, 'help_support', 'main')) ?? {
+        kb: [],
+        faq: [],
+        status: [],
+        tickets: []
+      }
+    );
   }
 
   async createTicket(userId: string, body: any) {
-    const payload = (await this.helpSupport(userId)) as any;
-    const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+    const payload = (await this.helpSupport(userId)) as Record<string, unknown>;
+    const tickets = Array.isArray((payload as any).tickets) ? (payload as any).tickets : [];
     tickets.unshift({
       id: body.id ?? randomUUID(),
       createdAt: new Date().toISOString(),
@@ -57,10 +74,51 @@ export class CommunicationsService {
       severity: body.severity ?? 'medium',
       ref: body.ref
     });
-    return this.records.upsert('seller_workspace', 'help_support', 'main', { ...payload, tickets }, userId);
+    const record = await this.upsertPayload(userId, 'help_support', 'main', { ...payload, tickets });
+    return this.toAppRecord(record, 'seller_workspace');
   }
 
-  systemStatus(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'system_status', 'main', userId).then((r) => r.payload).catch(() => ({ services: [] }));
+  async systemStatus(userId: string) {
+    return (await this.getPayload(userId, 'system_status', 'main')) ?? { services: [] };
+  }
+
+  private async getPayload(userId: string, recordType: string, recordKey: string) {
+    const record = await this.prisma.communicationRecord.findUnique({
+      where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
+    });
+    return record?.payload as Record<string, unknown> | null;
+  }
+
+  private async upsertPayload(userId: string, recordType: string, recordKey: string, payload: unknown) {
+    const sanitized = sanitizePayload(payload, { maxDepth: 6, maxArrayLength: 500, maxKeys: 400 });
+    if (sanitized === undefined) {
+      throw new BadRequestException('Invalid payload');
+    }
+    return this.prisma.communicationRecord.upsert({
+      where: { userId_recordType_recordKey: { userId, recordType, recordKey } },
+      update: { payload: sanitized as Prisma.InputJsonValue },
+      create: {
+        userId,
+        recordType,
+        recordKey,
+        payload: sanitized as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private toAppRecord(
+    record: { id: string; userId: string; recordType: string; recordKey: string; payload: unknown; createdAt: Date; updatedAt: Date },
+    domain: string
+  ) {
+    return {
+      id: record.id,
+      domain,
+      entityType: record.recordType,
+      entityId: record.recordKey,
+      userId: record.userId,
+      payload: record.payload,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    };
   }
 }

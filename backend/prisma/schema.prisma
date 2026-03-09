@@ -277,6 +277,14 @@ model User {
   uploadSessions       UploadSession[]
   backgroundJobs       BackgroundJob[]
   appRecords           AppRecord[]
+  auditEvents          AuditEvent[]
+  notifications        Notification[]
+  sellerFollows        SellerFollow[]
+  savedOpportunities   SavedOpportunity[]
+  userSettings         UserSetting[]
+  workspaceSettings    WorkspaceSetting[]
+  subscriptions        UserSubscription[]
+  idempotencyKeys      IdempotencyKey[]
   inventoryAdjustments InventoryAdjustment[]
   reviewsReceived      Review[]            @relation("ReviewSubject")
   reviewsAuthored      Review[]            @relation("ReviewAuthor")
@@ -1097,6 +1105,226 @@ model AuditEvent {
   @@index([action, createdAt])
   @@index([entityType, entityId])
   @@index([route, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String?  @db.Text
+  kind      String?
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+model SellerFollow {
+  id        String   @id @default(cuid())
+  userId    String
+  sellerId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sellerId])
+  @@index([sellerId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model SavedOpportunity {
+  id            String   @id @default(cuid())
+  userId        String
+  opportunityId String
+  createdAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, opportunityId])
+  @@index([opportunityId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model UserSetting {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([key])
+}
+
+model WorkspaceSetting {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([key])
+}
+
+model SystemContent {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  plan      String
+  cycle     String
+  status    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@index([status])
+}
+
+model IdempotencyKey {
+  id          String   @id @default(cuid())
+  userId      String
+  key         String
+  method      String
+  route       String
+  requestHash String?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([expiresAt])
+}
+
+model LiveRecord {
+  id         String   @id @default(cuid())
+  userId     String?
+  recordType String
+  recordKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recordType, recordKey])
+  @@index([recordType, updatedAt])
+  @@index([userId, recordType, updatedAt])
+}
+
+model AdzRecord {
+  id         String   @id @default(cuid())
+  userId     String?
+  recordType String
+  recordKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recordType, recordKey])
+  @@index([recordType, updatedAt])
+  @@index([userId, recordType, updatedAt])
+}
+
+model WholesaleRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  recordType String
+  recordKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recordType, recordKey])
+  @@index([recordType, updatedAt])
+}
+
+model ProviderRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  recordType String
+  recordKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recordType, recordKey])
+  @@index([recordType, updatedAt])
+}
+
+model RegulatoryRecord {
+  id         String   @id @default(cuid())
+  userId     String?
+  recordType String
+  recordKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recordType, recordKey])
+  @@index([recordType, updatedAt])
+}
+
+model CommunicationRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  recordType String
+  recordKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recordType, recordKey])
+  @@index([recordType, updatedAt])
+}
+
+model WorkflowRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  recordType String
+  recordKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, recordType, recordKey])
+  @@index([recordType, updatedAt])
 }
 
 model Review {

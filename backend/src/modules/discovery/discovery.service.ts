@@ -1,14 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
-import { AppRecordsService } from '../../platform/app-records.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 
 @Injectable()
 export class DiscoveryService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly records: AppRecordsService
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async sellers(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
@@ -32,22 +28,29 @@ export class DiscoveryService {
     }
 
     if (!follow) {
-      return this.records.remove('discovery', 'followed_seller', sellerId, userId).catch(() => ({ deleted: true }));
+      await this.prisma.sellerFollow.deleteMany({ where: { userId, sellerId } });
+      return { deleted: true };
     }
 
-    return this.records.upsert(
-      'discovery',
-      'followed_seller',
-      sellerId,
-      { sellerId, followedAt: new Date().toISOString() },
-      userId
-    );
+    return this.prisma.sellerFollow.upsert({
+      where: { userId_sellerId: { userId, sellerId } },
+      update: {},
+      create: {
+        userId,
+        sellerId
+      }
+    });
   }
 
   async mySellers(userId: string, query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
-    const follows = await this.records.list('discovery', 'followed_seller', userId, { skip, take });
-    const ids = follows.map((entry) => String((entry.payload as { sellerId?: string }).sellerId)).filter(Boolean);
+    const follows = await this.prisma.sellerFollow.findMany({
+      where: { userId },
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' }
+    });
+    const ids = follows.map((entry) => entry.sellerId);
     const sellers = await this.prisma.seller.findMany({ where: { id: { in: ids } } });
     return sellers.map((seller) => ({
       ...seller,
@@ -86,16 +89,15 @@ export class DiscoveryService {
     }
 
     if (!save) {
-      return this.records.remove('discovery', 'saved_opportunity', opportunityId, userId).catch(() => ({ deleted: true }));
+      await this.prisma.savedOpportunity.deleteMany({ where: { userId, opportunityId } });
+      return { deleted: true };
     }
 
-    return this.records.upsert(
-      'discovery',
-      'saved_opportunity',
-      opportunityId,
-      { opportunityId, savedAt: new Date().toISOString() },
-      userId
-    );
+    return this.prisma.savedOpportunity.upsert({
+      where: { userId_opportunityId: { userId, opportunityId } },
+      update: {},
+      create: { userId, opportunityId }
+    });
   }
 
   async campaignBoard(userId: string) {
@@ -114,21 +116,17 @@ export class DiscoveryService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    if (campaigns.length > 0) {
-      return campaigns.map((campaign) => ({
-        id: campaign.id,
-        title: campaign.title,
-        status: campaign.status,
-        seller: campaign.seller.displayName,
-        creator: campaign.creator?.creatorProfile?.name ?? null,
-        budget: campaign.budget,
-        currency: campaign.currency,
-        startAt: campaign.startAt,
-        endAt: campaign.endAt
-      }));
-    }
-
-    return this.records.list('discovery', 'campaign_board', userId).then((rows) => rows.map((row) => row.payload));
+    return campaigns.map((campaign) => ({
+      id: campaign.id,
+      title: campaign.title,
+      status: campaign.status,
+      seller: campaign.seller.displayName,
+      creator: campaign.creator?.creatorProfile?.name ?? null,
+      budget: campaign.budget,
+      currency: campaign.currency,
+      startAt: campaign.startAt,
+      endAt: campaign.endAt
+    }));
   }
 
   async dealzMarketplace(userId: string, query?: ListQueryDto) {
@@ -148,15 +146,10 @@ export class DiscoveryService {
       })
     ]);
 
-    if (listings.length > 0 || opportunities.length > 0) {
-      return {
-        listings,
-        opportunities
-      };
-    }
-
-    const rows = await this.records.list('discovery', 'dealz_marketplace', userId, { take });
-    return rows.map((row) => row.payload);
+    return {
+      listings,
+      opportunities
+    };
   }
 
   async invites(userId: string, query?: ListQueryDto) {
@@ -179,27 +172,22 @@ export class DiscoveryService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    if (invites.length > 0) {
-      return invites.map((invite) => ({
-        id: invite.id,
-        title: invite.title,
-        message: invite.message,
-        status: invite.status,
-        seller: invite.seller?.displayName ?? null,
-        sender:
-          invite.sender.creatorProfile?.name ??
-          invite.sender.sellerProfile?.displayName ??
-          invite.sender.email,
-        opportunityId: invite.opportunityId,
-        campaignId: invite.campaignId,
-        metadata: invite.metadata,
-        createdAt: invite.createdAt,
-        updatedAt: invite.updatedAt
-      }));
-    }
-
-    const legacyInvites = await this.records.list('discovery', 'invite', userId, { skip, take });
-    return legacyInvites.map((invite) => ({ id: invite.entityId, ...(invite.payload as object) }));
+    return invites.map((invite) => ({
+      id: invite.id,
+      title: invite.title,
+      message: invite.message,
+      status: invite.status,
+      seller: invite.seller?.displayName ?? null,
+      sender:
+        invite.sender.creatorProfile?.name ??
+        invite.sender.sellerProfile?.displayName ??
+        invite.sender.email,
+      opportunityId: invite.opportunityId,
+      campaignId: invite.campaignId,
+      metadata: invite.metadata,
+      createdAt: invite.createdAt,
+      updatedAt: invite.updatedAt
+    }));
   }
 
   async respondInvite(userId: string, inviteId: string, status: string) {
@@ -207,21 +195,14 @@ export class DiscoveryService {
       where: { id: inviteId, recipientUserId: userId }
     });
 
-    if (invite) {
-      return this.prisma.collaborationInvite.update({
-        where: { id: inviteId },
-        data: { status: this.normalizeInviteStatus(status) }
-      });
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
     }
 
-    const legacyInvite = await this.records.getByEntityId('discovery', 'invite', inviteId, userId);
-    return this.records.update(
-      'discovery',
-      'invite',
-      inviteId,
-      { ...(legacyInvite.payload as object), status, lastActivity: `Responded: ${status}` },
-      userId
-    );
+    return this.prisma.collaborationInvite.update({
+      where: { id: inviteId },
+      data: { status: this.normalizeInviteStatus(status) }
+    });
   }
 
   private parseArray(value: string | null) {

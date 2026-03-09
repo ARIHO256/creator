@@ -1,19 +1,28 @@
 import { Injectable } from '@nestjs/common';
-import { AppRecordsService } from '../../platform/app-records.service.js';
+import { PrismaService } from '../../platform/prisma/prisma.service.js';
 
 @Injectable()
 export class RegulatoryService {
-  constructor(private readonly records: AppRecordsService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  compliance(userId: string) {
-    return this.records.getByEntityId('seller_workspace', 'compliance', 'main', userId).then((r) => r.payload).catch(() => ({ docs: [], queue: [], autoRules: [] }));
+  async compliance(userId: string) {
+    return (
+      (await this.getPayload(userId, 'compliance', 'main')) ?? { docs: [], queue: [], autoRules: [] }
+    );
   }
 
-  desks(userId: string) {
-    return this.records.getByEntityId('regulatory', 'desks', 'main', userId).then((r) => r.payload).catch(() => ({ desks: [] }));
+  async desks(userId: string) {
+    return (await this.getPayload(userId, 'desks', 'main')) ?? { desks: [] };
   }
 
-  desk(userId: string, slug: string) {
-    return this.records.getByEntityId('regulatory', 'desk', slug, userId).then((r) => r.payload).catch(() => ({ slug, items: [] }));
+  async desk(userId: string, slug: string) {
+    return (await this.getPayload(userId, 'desk', slug)) ?? { slug, items: [] };
+  }
+
+  private async getPayload(userId: string, recordType: string, recordKey: string) {
+    const record = await this.prisma.regulatoryRecord.findUnique({
+      where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
+    });
+    return record?.payload as Record<string, unknown> | null;
   }
 }

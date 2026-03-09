@@ -1,8 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
-import { AppRecordsService } from '../../platform/app-records.service.js';
 import { CreateAssetDto } from './dto/create-asset.dto.js';
 import { CreateProposalMessageDto } from './dto/create-proposal-message.dto.js';
 import { CreateProposalDto } from './dto/create-proposal.dto.js';
@@ -17,8 +16,7 @@ import { UpdateTaskDto } from './dto/update-task.dto.js';
 @Injectable()
 export class CollaborationService {
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly records: AppRecordsService
+    private readonly prisma: PrismaService
   ) {}
 
   async campaigns(userId: string) {
@@ -35,27 +33,21 @@ export class CollaborationService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    if (campaigns.length > 0) {
-      return campaigns.map((campaign: any) => ({
-        id: campaign.id,
-        title: campaign.title,
-        description: campaign.description,
-        status: campaign.status,
-        budget: campaign.budget,
-        currency: campaign.currency,
-        seller: campaign.seller.displayName,
-        creator: campaign.creator?.creatorProfile?.name ?? null,
-        metadata: campaign.metadata,
-        startAt: campaign.startAt,
-        endAt: campaign.endAt,
-        createdAt: campaign.createdAt,
-        updatedAt: campaign.updatedAt
-      }));
-    }
-
-    return this.records
-      .list('collaboration', 'campaign', userId)
-      .then((rows) => rows.map((row) => ({ id: row.entityId, ...(row.payload as object) })));
+    return campaigns.map((campaign: any) => ({
+      id: campaign.id,
+      title: campaign.title,
+      description: campaign.description,
+      status: campaign.status,
+      budget: campaign.budget,
+      currency: campaign.currency,
+      seller: campaign.seller.displayName,
+      creator: campaign.creator?.creatorProfile?.name ?? null,
+      metadata: campaign.metadata,
+      startAt: campaign.startAt,
+      endAt: campaign.endAt,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt
+    }));
   }
 
   async proposals(userId: string) {
@@ -75,19 +67,13 @@ export class CollaborationService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    if (proposals.length > 0) {
-      return proposals.map((proposal: any) => this.serializeProposal(proposal));
-    }
-
-    return this.records
-      .list('collaboration', 'proposal', userId)
-      .then((rows) => rows.map((row) => ({ id: row.entityId, ...(row.payload as object) })));
+    return proposals.map((proposal: any) => this.serializeProposal(proposal));
   }
 
   async createProposal(userId: string, payload: CreateProposalDto) {
     const actor = await this.loadActor(userId);
     const campaign = payload.campaignId
-      ? await this.prisma.campaign.findUnique({ where: { id: payload.campaignId } })
+      ? await this.ensureCampaignAccess(userId, payload.campaignId)
       : null;
 
     const sellerId = payload.sellerId || campaign?.sellerId || actor.sellerProfile?.id;
@@ -95,6 +81,14 @@ export class CollaborationService {
 
     if (!sellerId || !creatorId) {
       throw new BadRequestException('Proposal requires both sellerId and creatorId');
+    }
+
+    const privileged = ['ADMIN', 'SUPPORT'].includes(actor.role ?? '');
+    if (!privileged && actor.sellerProfile && sellerId !== actor.sellerProfile.id) {
+      throw new ForbiddenException('Cannot submit proposal for another seller');
+    }
+    if (!privileged && actor.creatorProfile && creatorId !== actor.id) {
+      throw new ForbiddenException('Cannot submit proposal for another creator');
     }
 
     return this.prisma.proposal.create({
@@ -146,12 +140,11 @@ export class CollaborationService {
       }
     });
 
-    if (proposal) {
-      return this.serializeProposal(proposal);
+    if (!proposal) {
+      throw new NotFoundException('Proposal not found');
     }
 
-    const legacy = await this.records.getByEntityId('collaboration', 'proposal', id, userId);
-    return { id: legacy.entityId, ...(legacy.payload as object) };
+    return this.serializeProposal(proposal);
   }
 
   async updateProposal(userId: string, id: string, payload: UpdateProposalDto) {
@@ -200,17 +193,11 @@ export class CollaborationService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    if (contracts.length > 0) {
-      return contracts.map((contract: any) => ({
-        ...contract,
-        seller: contract.seller.displayName,
-        creator: contract.creator.creatorProfile?.name ?? contract.creator.email
-      }));
-    }
-
-    return this.records
-      .list('collaboration', 'contract', userId)
-      .then((rows) => rows.map((row) => ({ id: row.entityId, ...(row.payload as object) })));
+    return contracts.map((contract: any) => ({
+      ...contract,
+      seller: contract.seller.displayName,
+      creator: contract.creator.creatorProfile?.name ?? contract.creator.email
+    }));
   }
 
   async contract(userId: string, id: string) {
@@ -228,16 +215,15 @@ export class CollaborationService {
       }
     });
 
-    if (contract) {
-      return {
-        ...contract,
-        seller: contract.seller.displayName,
-        creator: contract.creator.creatorProfile?.name ?? contract.creator.email
-      };
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
     }
 
-    const legacy = await this.records.getByEntityId('collaboration', 'contract', id, userId);
-    return { id: legacy.entityId, ...(legacy.payload as object) };
+    return {
+      ...contract,
+      seller: contract.seller.displayName,
+      creator: contract.creator.creatorProfile?.name ?? contract.creator.email
+    };
   }
 
   async terminateContract(userId: string, id: string, payload: { reason?: string }) {
@@ -262,13 +248,7 @@ export class CollaborationService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    if (tasks.length > 0) {
-      return tasks;
-    }
-
-    return this.records
-      .list('collaboration', 'task', userId)
-      .then((rows) => rows.map((row) => ({ id: row.entityId, ...(row.payload as object) })));
+    return tasks;
   }
 
   async task(userId: string, id: string) {
@@ -284,15 +264,15 @@ export class CollaborationService {
       }
     });
 
-    if (task) {
-      return task;
+    if (!task) {
+      throw new NotFoundException('Task not found');
     }
 
-    const legacy = await this.records.getByEntityId('collaboration', 'task', id, userId);
-    return { id: legacy.entityId, ...(legacy.payload as object) };
+    return task;
   }
 
-  createTask(userId: string, payload: CreateTaskDto) {
+  async createTask(userId: string, payload: CreateTaskDto) {
+    await this.assertTaskScope(userId, payload);
     return this.prisma.task.create({
       data: {
         campaignId: payload.campaignId,
@@ -362,13 +342,7 @@ export class CollaborationService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    if (assets.length > 0) {
-      return assets;
-    }
-
-    return this.records
-      .list('collaboration', 'asset', userId)
-      .then((rows) => rows.map((row) => ({ id: row.entityId, ...(row.payload as object) })));
+    return assets;
   }
 
   async asset(userId: string, id: string) {
@@ -376,15 +350,15 @@ export class CollaborationService {
       where: { id, ...this.assetAccessClause(userId) }
     });
 
-    if (asset) {
-      return asset;
+    if (!asset) {
+      throw new NotFoundException('Asset not found');
     }
 
-    const legacy = await this.records.getByEntityId('collaboration', 'asset', id, userId);
-    return { id: legacy.entityId, ...(legacy.payload as object) };
+    return asset;
   }
 
-  createAsset(userId: string, payload: CreateAssetDto) {
+  async createAsset(userId: string, payload: CreateAssetDto) {
+    await this.assertAssetScope(userId, payload);
     const file = normalizeFileIntake({
       name: payload.title,
       ...payload,
@@ -516,6 +490,48 @@ export class CollaborationService {
     }
 
     return asset;
+  }
+
+  private async ensureCampaignAccess(userId: string, id: string) {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id, ...this.workspaceAccessClause(userId) }
+    });
+
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    return campaign;
+  }
+
+  private async ensureContractAccess(userId: string, id: string) {
+    const contract = await this.prisma.contract.findFirst({
+      where: { id, ...this.contractAccessClause(userId) }
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    return contract;
+  }
+
+  private async assertTaskScope(userId: string, payload: CreateTaskDto) {
+    if (payload.campaignId) {
+      await this.ensureCampaignAccess(userId, payload.campaignId);
+    }
+    if (payload.contractId) {
+      await this.ensureContractAccess(userId, payload.contractId);
+    }
+  }
+
+  private async assertAssetScope(userId: string, payload: CreateAssetDto) {
+    if (payload.campaignId) {
+      await this.ensureCampaignAccess(userId, payload.campaignId);
+    }
+    if (payload.contractId) {
+      await this.ensureContractAccess(userId, payload.contractId);
+    }
   }
 
   private async loadActor(userId: string) {

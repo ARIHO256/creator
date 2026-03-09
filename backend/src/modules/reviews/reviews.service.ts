@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { AppRecordsService } from '../../platform/app-records.service.js';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateReviewDto } from './dto/create-review.dto.js';
@@ -9,7 +8,6 @@ import { UpdateReviewDto } from './dto/update-review.dto.js';
 @Injectable()
 export class ReviewsService {
   constructor(
-    private readonly records: AppRecordsService,
     private readonly prisma: PrismaService,
     private readonly cache: CacheService
   ) {}
@@ -23,16 +21,9 @@ export class ReviewsService {
       orderBy: { createdAt: 'desc' }
     });
 
-    if (reviews.length > 0) {
-      const score = this.computeAverage(reviews);
-      const trends = this.bucketTrends(reviews);
-      return { score, trends, total: reviews.length };
-    }
-
-    return this.records
-      .getByEntityId('reviews', 'dashboard', 'main', userId)
-      .then((r) => r.payload)
-      .catch(() => ({ score: 0, trends: [], total: 0 }));
+    const score = this.computeAverage(reviews);
+    const trends = this.bucketTrends(reviews);
+    return { score, trends, total: reviews.length };
   }
 
   async summary(userId: string) {
@@ -41,17 +32,10 @@ export class ReviewsService {
       select: { ratingOverall: true, isPublic: true }
     });
 
-    if (received.length > 0) {
-      const average = this.computeAverage(received);
-      const total = received.length;
-      const publicCount = received.filter((review) => review.isPublic).length;
-      return { total, publicCount, average };
-    }
-
-    return this.records
-      .getByEntityId('reviews', 'summary', 'main', userId)
-      .then((r) => r.payload)
-      .catch(() => ({ total: 0, publicCount: 0, average: 0 }));
+    const average = this.computeAverage(received);
+    const total = received.length;
+    const publicCount = received.filter((review) => review.isPublic).length;
+    return { total, publicCount, average };
   }
 
   async list(userId: string, scope?: 'received' | 'authored') {
@@ -68,14 +52,7 @@ export class ReviewsService {
       orderBy: { createdAt: 'desc' }
     });
 
-    if (reviews.length > 0) {
-      return reviews;
-    }
-
-    return this.records
-      .list('reviews', 'entry', userId)
-      .then((rows) => rows.map((row) => ({ id: row.entityId, ...(row.payload as any) })))
-      .catch(() => []);
+    return reviews;
   }
 
   async create(userId: string, payload: CreateReviewDto) {
@@ -220,10 +197,7 @@ export class ReviewsService {
       });
 
       if (reviews.length === 0) {
-        return this.records
-          .getByEntityId('reviews', 'insights', 'main', userId)
-          .then((r) => r.payload)
-          .catch(() => this.emptyInsights());
+        return this.emptyInsights();
       }
 
       const total = reviews.length;
