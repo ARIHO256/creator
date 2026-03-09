@@ -22,10 +22,13 @@ export class CatalogService {
       sellerId: seller.id,
       ...(query?.status ? { status: query.status } : {}),
       ...(query?.kind ? { kind: query.kind } : {}),
+      ...(query?.category ? { category: query.category } : {}),
+      ...(query?.language ? { language: query.language } : {}),
       ...(query?.q
         ? {
             OR: [
               { name: { contains: query.q } },
+              { category: { contains: query.q } },
               { kind: { contains: query.q } }
             ]
           }
@@ -45,13 +48,23 @@ export class CatalogService {
     if (!body.name.trim() || !body.kind.trim()) {
       throw new BadRequestException('Template name and kind are required');
     }
+    const attrs = Array.isArray(body.attrs) ? body.attrs : [];
+    const payload = {
+      ...(body.payload ?? {}),
+      ...(attrs.length ? { attrs } : {})
+    };
     const template = await this.prisma.catalogTemplate.create({
       data: {
         sellerId: seller.id,
         name: body.name.trim(),
         kind: body.kind.trim(),
+        category: body.category?.trim() ?? null,
+        notes: body.notes ?? null,
+        language: body.language ?? null,
+        attrCount: attrs.length,
+        attributes: attrs.length ? (attrs as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
         status: body.status ?? 'ACTIVE',
-        payload: body.payload as Prisma.InputJsonValue,
+        payload: payload as Prisma.InputJsonValue,
         metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       }
     });
@@ -66,13 +79,25 @@ export class CatalogService {
     if (!existing) {
       throw new NotFoundException('Catalog template not found');
     }
+    const attrs = Array.isArray(body.attrs) ? body.attrs : undefined;
+    const payload = body.payload
+      ? {
+          ...(body.payload ?? {}),
+          ...(attrs ? { attrs } : {})
+        }
+      : undefined;
     return this.prisma.catalogTemplate.update({
       where: { id: existing.id },
       data: {
         name: body.name ? body.name.trim() : undefined,
         kind: body.kind ? body.kind.trim() : undefined,
+        category: body.category ? body.category.trim() : undefined,
+        notes: body.notes ?? undefined,
+        language: body.language ?? undefined,
+        attrCount: attrs ? attrs.length : undefined,
+        attributes: attrs ? (attrs as unknown as Prisma.InputJsonValue) : undefined,
         status: body.status ?? undefined,
-        payload: body.payload ? (body.payload as Prisma.InputJsonValue) : undefined,
+        payload: payload ? (payload as Prisma.InputJsonValue) : undefined,
         metadata: body.metadata ? (body.metadata as Prisma.InputJsonValue) : undefined
       }
     });

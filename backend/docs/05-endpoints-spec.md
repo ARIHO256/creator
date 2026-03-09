@@ -13,6 +13,7 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/dashboard/summary`
 - `GET /api/dashboard/my-day`
 - `GET /api/search`
+- `GET /api/realtime/stream`
 
 ## Auth
 - `POST /api/auth/register` (Public) - `RegisterDto`

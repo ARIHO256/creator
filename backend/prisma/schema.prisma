@@ -1101,7 +1101,12 @@ model CatalogTemplate {
   sellerId    String
   name        String
   kind        String
+  category    String?
+  notes       String?  @db.Text
+  language    String?
+  attrCount   Int      @default(0)
   status      String   @default("ACTIVE")
+  attributes  Json?
   payload     Json
   metadata    Json?
   createdAt   DateTime @default(now())
@@ -1152,6 +1157,9 @@ model MarketApprovalRequest {
   entityId         String
   marketplace      String?
   status           String   @default("PENDING")
+  slaDueAt         DateTime?
+  slaStatus        String   @default("ON_TIME")
+  escalatedAt      DateTime?
   requestedByUserId String?
   reviewedByUserId String?
   submittedAt      DateTime @default(now())
@@ -1166,6 +1174,7 @@ model MarketApprovalRequest {
 
   @@index([status])
   @@index([marketplace, status])
+  @@index([slaDueAt])
   @@index([requestedByUserId])
 }
 

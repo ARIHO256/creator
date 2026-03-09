@@ -1,14 +1,20 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { CreateMarketApprovalDto } from './dto/create-market-approval.dto.js';
 import { MarketApprovalsQueryDto } from './dto/market-approvals-query.dto.js';
 import { UpdateMarketApprovalDto } from './dto/update-market-approval.dto.js';
 
 @Injectable()
 export class ApprovalsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+    private readonly jobsService: JobsService
+  ) {}
 
   async list(query?: MarketApprovalsQueryDto) {
     const { skip, take } = normalizeListQuery(query);
@@ -45,16 +51,21 @@ export class ApprovalsService {
     if (!body.entityType.trim() || !body.entityId.trim()) {
       throw new BadRequestException('entityType and entityId are required');
     }
-    return this.prisma.marketApprovalRequest.create({
+    const slaDueAt = this.computeSlaDueAt();
+    const approval = await this.prisma.marketApprovalRequest.create({
       data: {
         entityType: body.entityType.trim(),
         entityId: body.entityId.trim(),
         marketplace: body.marketplace ?? null,
         status: 'PENDING',
+        slaDueAt,
+        slaStatus: 'ON_TIME',
         requestedByUserId: userId,
         metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       }
     });
+    await this.scheduleSlaCheck(approval.id, slaDueAt);
+    return approval;
   }
 
   async update(userId: string, id: string, body: UpdateMarketApprovalDto) {
@@ -66,7 +77,7 @@ export class ApprovalsService {
     if (!nextStatus) {
       throw new BadRequestException('Status is required');
     }
-    return this.prisma.marketApprovalRequest.update({
+    const updated = await this.prisma.marketApprovalRequest.update({
       where: { id },
       data: {
         status: nextStatus,
@@ -74,6 +85,56 @@ export class ApprovalsService {
         reviewedAt: new Date(),
         decisionReason: body.decisionReason ?? approval.decisionReason ?? null
       }
+    });
+    if (nextStatus === 'PENDING' || nextStatus === 'NEEDS_CHANGES') {
+      const slaDueAt = approval.slaDueAt ?? this.computeSlaDueAt();
+      await this.scheduleSlaCheck(approval.id, slaDueAt);
+    }
+    return updated;
+  }
+
+  async handleSlaCheck(approvalId: string) {
+    const approval = await this.prisma.marketApprovalRequest.findUnique({
+      where: { id: approvalId }
+    });
+    if (!approval) {
+      return { skipped: true };
+    }
+    if (!approval.slaDueAt) {
+      return { skipped: true };
+    }
+    const now = new Date();
+    if (approval.slaDueAt > now) {
+      return { skipped: true };
+    }
+    if (approval.slaStatus === 'BREACHED') {
+      return { skipped: true };
+    }
+    if (!['PENDING', 'NEEDS_CHANGES'].includes(approval.status)) {
+      return { skipped: true };
+    }
+    const updated = await this.prisma.marketApprovalRequest.update({
+      where: { id: approvalId },
+      data: {
+        slaStatus: 'BREACHED',
+        escalatedAt: approval.escalatedAt ?? now
+      }
+    });
+    return { updated };
+  }
+
+  private computeSlaDueAt() {
+    const hours = this.configService.get<number>('approvals.slaHours') ?? 48;
+    return new Date(Date.now() + hours * 60 * 60 * 1000);
+  }
+
+  private async scheduleSlaCheck(approvalId: string, slaDueAt: Date) {
+    await this.jobsService.enqueue({
+      queue: 'approvals',
+      type: 'MARKET_APPROVAL_SLA_CHECK',
+      payload: { approvalId },
+      dedupeKey: `approval-sla:${approvalId}:${slaDueAt.toISOString()}`,
+      runAfter: slaDueAt
     });
   }
 }

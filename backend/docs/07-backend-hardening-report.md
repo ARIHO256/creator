@@ -3,54 +3,42 @@
 Date: 2026-03-09
 
 ## Summary
-This pass added Trust/Status content endpoints, Market Approval workflows, Catalog templates/media library, bulk listing import job wiring, order print endpoints, global search, and creator follow support. Provider joint quotes were completed. Frontends remain unchanged.
+This pass expanded catalog templates with UX fields and added approval SLA automation with scheduled checks. Frontends remain unchanged.
 
 ## What Was Found
-- Seller trust/status and market approval pages lacked backend endpoints.
-- Catalog templates and bulk listing import lacked first-class backend flows.
-- Print/label endpoints were missing for orders.
-- Global search and creator follow views were missing.
-- Provider joint quote detail/create endpoints were incomplete.
+- Catalog templates needed explicit UX fields (category, notes, language, attributes).
+- Market approvals needed SLA tracking and automated breach handling.
 
 ## Implementations Completed
-### Trust + Status + Market Approvals
-- Added Trust content and incident endpoints with role-gated write access.
-- Added Market Approval workflow endpoints and models.
+### Catalog Template UX Fields
+- Added category, notes, language, attributes, and attribute count fields.
+- Extended DTOs and service logic to map template attributes.
 
-### Catalog + Bulk Listings
-- Added Catalog templates endpoints with seller scoping.
-- Added media library endpoint with query filtering.
-- Added bulk listing validate/commit endpoints wired to jobs queue.
-
-### Orders + Print
-- Added invoice, packing slip, and sticker print endpoints returning normalized payloads.
-
-### Discovery + Search + Creator Follows
-- Added global search endpoint across sellers/listings/opportunities.
-- Added creator follow and my-creators endpoints with seller scoping.
-
-### Provider Completion
-- Added joint quote detail and create endpoints.
+### Approval SLA Automation
+- Added SLA due/status/escalation fields to market approvals.
+- Scheduled SLA check jobs and added worker handling for SLA breach.
 
 ## Files Changed
 ### Modules / Domain
 - `src/modules/catalog/*`
-- `src/modules/trust/*`
 - `src/modules/approvals/*`
-- `src/modules/discovery/*`
-- `src/modules/commerce/*`
-- `src/modules/provider/*`
-- `src/modules/workflow/*`
-- `src/app.module.ts`
+- `src/modules/jobs/jobs.worker.ts`
+- `src/config/app.config.ts`
 
 ### Prisma
 - `prisma/schema.prisma`
-- `prisma/migrations/202603091300_trust_catalog_approvals/migration.sql`
-- `prisma/migrations/202603091305_creator_follow/migration.sql`
+- `prisma/migrations/202603091430_catalog_template_fields/migration.sql`
+- `prisma/migrations/202603091500_market_approval_sla/migration.sql`
+
+### Tests
+- `test/approvals.service.test.ts`
+
+### Docs
+- `docs/08-scaling-and-load-testing.md`
 
 ## Migrations Added
-- `202603091300_trust_catalog_approvals` (trust content/incidents + market approvals + catalog templates)
-- `202603091305_creator_follow` (seller follow for creators)
+- `202603091430_catalog_template_fields` (catalog template UX fields)
+- `202603091500_market_approval_sla` (approval SLA fields)
 
 ## Commands Run
 - `npm run prisma:generate`

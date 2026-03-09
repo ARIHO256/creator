@@ -4,6 +4,8 @@ import { JobsService } from './jobs.service.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { MetricsService } from '../../platform/metrics/metrics.service.js';
 import { RealtimePublisher } from '../../platform/realtime/realtime.publisher.js';
+import { RealtimeStreamService } from '../../platform/realtime/realtime.stream.service.js';
+import { PrismaService } from '../../platform/prisma/prisma.service.js';
 
 type WorkerStatus = {
   running: boolean;
@@ -22,9 +24,11 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly jobsService: JobsService,
     @Inject(ConfigService) private readonly configService: ConfigService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() private readonly auditService?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
-    @Optional() private readonly realtimePublisher?: RealtimePublisher
+    @Optional() private readonly realtimePublisher?: RealtimePublisher,
+    @Optional() private readonly realtimeStream?: RealtimeStreamService
   ) {}
 
   onModuleInit() {
@@ -115,11 +119,44 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
         }
         return;
       case 'REALTIME_EVENT':
-        if (this.realtimePublisher) {
+        {
           const payload = job.payload as { channel?: string; event?: Record<string, unknown> };
           if (payload?.channel && payload?.event) {
-            await this.realtimePublisher.publish(payload.channel, payload.event);
+            if (this.realtimePublisher) {
+              await this.realtimePublisher.publish(payload.channel, payload.event);
+            }
+            if (this.realtimeStream && payload.channel.startsWith('user:')) {
+              const userId = payload.channel.slice('user:'.length);
+              this.realtimeStream.emitToUser(userId, payload.event);
+            }
           }
+        }
+        return;
+      case 'MARKET_APPROVAL_SLA_CHECK':
+        {
+          const payload = job.payload as { approvalId?: string };
+          if (!payload?.approvalId) return;
+          const approval = await this.prisma.marketApprovalRequest.findUnique({
+            where: { id: payload.approvalId }
+          });
+          if (!approval || !approval.slaDueAt) return;
+          const now = new Date();
+          if (approval.slaDueAt > now) return;
+          if (approval.slaStatus === 'BREACHED') return;
+          if (!['PENDING', 'NEEDS_CHANGES'].includes(approval.status)) return;
+          const slaHours = this.configService.get<number>('approvals.slaHours') ?? 48;
+          const escalateAfterHours = this.configService.get<number>('approvals.escalateAfterHours') ?? 72;
+          const breachAt = approval.slaDueAt;
+          const extraHours = Math.max(0, escalateAfterHours - slaHours);
+          const escalateAt = new Date(breachAt.getTime() + extraHours * 60 * 60 * 1000);
+          const shouldEscalate = now >= escalateAt;
+          await this.prisma.marketApprovalRequest.update({
+            where: { id: approval.id },
+            data: {
+              slaStatus: 'BREACHED',
+              escalatedAt: shouldEscalate ? (approval.escalatedAt ?? now) : approval.escalatedAt
+            }
+          });
         }
         return;
       default:

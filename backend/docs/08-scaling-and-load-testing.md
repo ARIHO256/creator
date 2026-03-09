@@ -53,6 +53,12 @@ Realtime event publishing is queued and can optionally publish to Redis:
 - `REALTIME_REDIS_URL` (defaults to `REDIS_URL`)
 - `REALTIME_CHANNEL_PREFIX` (default `mldz:realtime:`)
 - `REALTIME_MAX_ATTEMPTS` (default `3`)
+- `REALTIME_STREAM_PING_MS` (default `25000`)
+
+Realtime streaming transport (SSE) is available at `GET /api/realtime/stream` and requires:
+- JWT auth (same as other API routes).
+- Redis pub/sub to deliver events across instances.
+- Worker processes to publish events in multi-instance deployments.
 
 ## Distributed Cache
 Redis is supported via:
@@ -78,3 +84,8 @@ For million-user readiness, pair these with:
 - Read replicas and connection pooling.
 - Query profiling in production (slow query logs).
 - Redis-backed caches for heavy summary endpoints.
+
+## Approval SLA Automation
+Market approval SLA tracking uses background jobs:
+- `APPROVAL_SLA_HOURS` (default `48`)
+- `APPROVAL_ESCALATE_HOURS` (default `72`, reserved for future auto-escalation policy)

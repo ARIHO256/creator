@@ -13,4 +13,12 @@ export class CatalogTemplatesQueryDto extends ListQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
 }
