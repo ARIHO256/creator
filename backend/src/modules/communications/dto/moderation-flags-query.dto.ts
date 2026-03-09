@@ -8,7 +8,7 @@ export class ModerationFlagsQueryDto extends ListQueryDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['OPEN', 'RESOLVED', 'DISMISSED'])
+  @IsIn(['OPEN', 'RESOLVED', 'ESCALATED'])
   status?: string;
 
   @IsOptional()

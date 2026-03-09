@@ -72,6 +72,13 @@ export class ExportsService {
 
   async openFileForSeller(sellerId: string, jobId: string, fileId?: string) {
     const file = await this.downloadFile(sellerId, jobId, fileId);
+    if (file.expiresAt && file.expiresAt <= new Date()) {
+      await this.prisma.exportFile.update({
+        where: { id: file.id },
+        data: { status: ExportFileStatus.EXPIRED }
+      });
+      throw new NotFoundException('Export file expired');
+    }
     return { file, stream: this.storage.createReadStream(file.storageKey) };
   }
 

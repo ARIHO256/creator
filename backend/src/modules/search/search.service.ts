@@ -156,6 +156,7 @@ export class SearchService {
     const results = docs
       .map((doc) => (doc.payload as any)?.storefront)
       .filter(Boolean)
+      .filter((storefront) => storefront.isPublished !== false)
       .filter((storefront) =>
         query?.taxonomyNodeId ? storefront.taxonomyNodeIds?.includes(query.taxonomyNodeId) : true
       );
@@ -185,26 +186,14 @@ export class SearchService {
   private async findDocuments(entityType: string, q: string, skip: number, take: number) {
     const where: Prisma.SearchDocumentWhereInput = {
       entityType,
-      ...(q ? { content: { search: q } } : {})
+      ...(q ? { content: { contains: q } } : {})
     };
-    try {
-      return await this.prisma.searchDocument.findMany({
-        where,
-        skip,
-        take,
-        orderBy: { updatedAt: 'desc' }
-      });
-    } catch {
-      return this.prisma.searchDocument.findMany({
-        where: {
-          entityType,
-          ...(q ? { content: { contains: q } } : {})
-        },
-        skip,
-        take,
-        orderBy: { updatedAt: 'desc' }
-      });
-    }
+    return this.prisma.searchDocument.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { updatedAt: 'desc' }
+    });
   }
 
   private enabled() {
