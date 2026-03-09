@@ -281,6 +281,7 @@ model User {
   auditEvents          AuditEvent[]
   notifications        Notification[]
   sellerFollows        SellerFollow[]
+  creatorFollowers     CreatorFollow[]        @relation("CreatorFollowedBy")
   savedOpportunities   SavedOpportunity[]
   liveRecords          LiveRecord[]
   adzRecords           AdzRecord[]
@@ -298,6 +299,8 @@ model User {
   messagesSent         Message[]          @relation("MessageSender")
   supportTickets       SupportTicket[]
   assignedSupportTickets SupportTicket[] @relation("SupportAssignee")
+  marketApprovalRequests MarketApprovalRequest[] @relation("MarketApprovalRequestedBy")
+  marketApprovalReviews  MarketApprovalRequest[] @relation("MarketApprovalReviewedBy")
   listingFavorites     ListingFavorite[]
   providerQuotes       ProviderQuote[]
   providerBookings     ProviderBooking[]
@@ -419,6 +422,7 @@ model Seller {
   orders        Order[]
   transactions  Transaction[]
   followers     SellerFollow[]
+  creatorFollows CreatorFollow[]
   storefront    Storefront?
   taxonomyCoverage SellerTaxonomyCoverage[]
   warehouses    SellerWarehouse[]
@@ -427,6 +431,7 @@ model Seller {
   exportJobs    SellerExportJob[]
   returns       SellerReturn[]
   disputes      SellerDispute[]
+  catalogTemplates CatalogTemplate[]
 
   @@index([isVerified, rating, createdAt])
   @@index([kind, createdAt])
@@ -1091,6 +1096,79 @@ model UploadSession {
   @@index([expiresAt])
 }
 
+model CatalogTemplate {
+  id          String   @id @default(cuid())
+  sellerId    String
+  name        String
+  kind        String
+  status      String   @default("ACTIVE")
+  payload     Json
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId])
+  @@index([sellerId, status])
+  @@index([kind])
+}
+
+model TrustContent {
+  id        String   @id @default(cuid())
+  title     String
+  body      String?  @db.Text
+  category  String?
+  status    String   @default("ACTIVE")
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([status])
+  @@index([updatedAt])
+}
+
+model TrustIncident {
+  id          String   @id @default(cuid())
+  title       String
+  status      String   @default("INVESTIGATING")
+  severity    String   @default("minor")
+  summary     String?  @db.Text
+  impact      String?  @db.Text
+  startedAt   DateTime @default(now())
+  resolvedAt  DateTime?
+  updates     Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([startedAt])
+}
+
+model MarketApprovalRequest {
+  id               String   @id @default(cuid())
+  entityType       String
+  entityId         String
+  marketplace      String?
+  status           String   @default("PENDING")
+  requestedByUserId String?
+  reviewedByUserId String?
+  submittedAt      DateTime @default(now())
+  reviewedAt       DateTime?
+  decisionReason   String?  @db.Text
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  requestedBy User? @relation("MarketApprovalRequestedBy", fields: [requestedByUserId], references: [id], onDelete: SetNull)
+  reviewedBy  User? @relation("MarketApprovalReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([marketplace, status])
+  @@index([requestedByUserId])
+}
+
 model BackgroundJob {
   id            String              @id @default(cuid())
   userId        String?
@@ -1190,6 +1268,20 @@ model SellerFollow {
   @@unique([userId, sellerId])
   @@index([sellerId, createdAt])
   @@index([userId, createdAt])
+}
+
+model CreatorFollow {
+  id            String   @id @default(cuid())
+  sellerId      String
+  creatorUserId String
+  createdAt     DateTime @default(now())
+
+  seller  Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  creator User   @relation("CreatorFollowedBy", fields: [creatorUserId], references: [id], onDelete: Cascade)
+
+  @@unique([sellerId, creatorUserId])
+  @@index([creatorUserId, createdAt])
+  @@index([sellerId, createdAt])
 }
 
 model SavedOpportunity {

@@ -1,0 +1,21 @@
+import { IsIn, IsObject, IsOptional, IsString } from 'class-validator';
+
+export class CreateCatalogTemplateDto {
+  @IsString()
+  name!: string;
+
+  @IsString()
+  kind!: string;
+
+  @IsObject()
+  payload!: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['ACTIVE', 'ARCHIVED'])
+  status?: 'ACTIVE' | 'ARCHIVED';
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
+}
