@@ -3,6 +3,7 @@ import { serializeListingPublic } from '../../common/serializers/listing.seriali
 import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { SearchQueryDto } from './dto/search-query.dto.js';
 
 @Injectable()
 export class DiscoveryService {
@@ -51,6 +52,54 @@ export class DiscoveryService {
     const ids = follows.map((entry) => entry.sellerId);
     const sellers = await this.prisma.seller.findMany({ where: { id: { in: ids } } });
     return sellers.map((seller) => serializePublicSeller(seller));
+  }
+
+  async followCreator(userId: string, creatorUserId: string, follow: boolean) {
+    const creator = await this.prisma.user.findUnique({ where: { id: creatorUserId } });
+    if (!creator) {
+      throw new NotFoundException('Creator not found');
+    }
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (!seller) {
+      throw new NotFoundException('Seller profile not found');
+    }
+    if (!follow) {
+      await this.prisma.creatorFollow.deleteMany({ where: { sellerId: seller.id, creatorUserId } });
+      return { deleted: true };
+    }
+    return this.prisma.creatorFollow.upsert({
+      where: { sellerId_creatorUserId: { sellerId: seller.id, creatorUserId } },
+      update: {},
+      create: {
+        sellerId: seller.id,
+        creatorUserId
+      }
+    });
+  }
+
+  async myCreators(userId: string, query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (!seller) {
+      return [];
+    }
+    const follows = await this.prisma.creatorFollow.findMany({
+      where: { sellerId: seller.id },
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' }
+    });
+    const ids = follows.map((entry) => entry.creatorUserId);
+    const creators = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      include: { creatorProfile: true }
+    });
+    return creators.map((creator) => ({
+      id: creator.id,
+      handle: creator.creatorProfile?.handle ?? null,
+      name: creator.creatorProfile?.displayName ?? creator.creatorProfile?.name ?? null,
+      profile: creator.creatorProfile ?? null
+    }));
   }
 
   async opportunities(query?: ListQueryDto) {
@@ -207,6 +256,46 @@ export class DiscoveryService {
       where: { id: inviteId },
       data: { status: this.normalizeInviteStatus(status) }
     });
+  }
+
+  async search(userId: string, query?: SearchQueryDto) {
+    const q = String(query?.q ?? '').trim();
+    if (!q) {
+      return { sellers: [], listings: [], opportunities: [] };
+    }
+    const [sellers, listings, opportunities] = await Promise.all([
+      this.prisma.seller.findMany({
+        where: {
+          OR: [
+            { name: { contains: q } },
+            { displayName: { contains: q } },
+            { handle: { contains: q } }
+          ]
+        },
+        take: 20
+      }),
+      this.prisma.marketplaceListing.findMany({
+        where: {
+          OR: [{ title: { contains: q } }, { description: { contains: q } }, { sku: { contains: q } }]
+        },
+        take: 20
+      }),
+      this.prisma.opportunity.findMany({
+        where: {
+          OR: [{ title: { contains: q } }, { description: { contains: q } }]
+        },
+        include: { seller: true },
+        take: 20
+      })
+    ]);
+    return {
+      sellers: sellers.map((seller) => serializePublicSeller(seller)),
+      listings: listings.map((listing) => serializeListingPublic(listing)),
+      opportunities: opportunities.map((opportunity) => ({
+        ...opportunity,
+        seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+      }))
+    };
   }
 
   private normalizeInviteStatus(status: string) {
