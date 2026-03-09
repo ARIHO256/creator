@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ListingStatus, Prisma, UserRole } from '@prisma/client';
+import { ListingStatus, Prisma, SellerKind, UserRole } from '@prisma/client';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { serializePrivateSeller, serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateSellerListingDto } from './dto/create-seller-listing.dto.js';
 import { UpdateSellerProfileDto } from './dto/update-seller-profile.dto.js';
@@ -12,7 +13,7 @@ export class SellersService {
 
   async getMyProfile(userId: string) {
     const profile = await this.ensureSellerProfile(userId);
-    return this.serializeSeller(profile);
+    return serializePrivateSeller(profile);
   }
 
   async updateMyProfile(userId: string, payload: UpdateSellerProfileDto) {
@@ -29,7 +30,7 @@ export class SellersService {
       }
     });
 
-    return this.serializeSeller(updated);
+    return serializePrivateSeller(updated);
   }
 
   async getPublicProfile(handle: string) {
@@ -37,7 +38,7 @@ export class SellersService {
     if (!profile) {
       throw new NotFoundException('Seller profile not found');
     }
-    return this.serializeSeller(profile);
+    return serializePublicSeller(profile);
   }
 
   async listMyListings(userId: string, query?: ListQueryDto) {
@@ -54,6 +55,10 @@ export class SellersService {
 
   async createListing(userId: string, payload: CreateSellerListingDto) {
     const profile = await this.ensureSellerProfile(userId);
+    if (payload.taxonomyNodeId) {
+      await this.assertTaxonomyNodeAllowed(payload.taxonomyNodeId);
+      await this.ensureCoverageForListing(profile.id, payload.taxonomyNodeId);
+    }
     const listing = await this.prisma.marketplaceListing.create({
       data: {
         userId,
@@ -81,9 +86,7 @@ export class SellersService {
         throw new NotFoundException('Taxonomy node not found');
       }
 
-      const pathSnapshot = payload.taxonomyPathNodes?.length
-        ? payload.taxonomyPathNodes
-        : await this.buildPathSnapshot(node.id);
+      const pathSnapshot = await this.buildPathSnapshot(node.id);
       const pathSnapshotJson = pathSnapshot as unknown as Prisma.InputJsonValue;
 
       await this.prisma.listingTaxonomyLink.create({
@@ -118,6 +121,8 @@ export class SellersService {
     });
 
     if (payload.taxonomyNodeId) {
+      await this.assertTaxonomyNodeAllowed(payload.taxonomyNodeId);
+      await this.ensureCoverageForListing(listing.sellerId ?? listing.seller?.id ?? '', payload.taxonomyNodeId);
       const node = await this.prisma.taxonomyNode.findUnique({
         where: { id: payload.taxonomyNodeId }
       });
@@ -125,9 +130,7 @@ export class SellersService {
         throw new NotFoundException('Taxonomy node not found');
       }
 
-      const pathSnapshot = payload.taxonomyPathNodes?.length
-        ? payload.taxonomyPathNodes
-        : await this.buildPathSnapshot(node.id);
+      const pathSnapshot = await this.buildPathSnapshot(node.id);
       const pathSnapshotJson = pathSnapshot as unknown as Prisma.InputJsonValue;
 
       await this.prisma.$transaction([
@@ -221,19 +224,27 @@ export class SellersService {
       throw new NotFoundException('User not found');
     }
 
-    const hasSellerAccess = user.roleAssignments.some((assignment) =>
-      ['SELLER', 'PROVIDER', 'ADMIN'].includes(assignment.role)
-    );
+    const activeRole = user.role;
+    const assignedRoles = new Set(user.roleAssignments.map((assignment) => assignment.role));
+    const isPrivileged = activeRole === UserRole.ADMIN || activeRole === UserRole.SUPPORT;
+    const requiresSellerWorkspace = activeRole === UserRole.SELLER || activeRole === UserRole.PROVIDER;
 
-    if (!hasSellerAccess) {
-      throw new ForbiddenException('Seller workspace is not enabled for this user');
+    if (!isPrivileged && (!requiresSellerWorkspace || !assignedRoles.has(activeRole))) {
+      throw new ForbiddenException('Seller workspace is not enabled for the active role');
     }
 
     if (user.sellerProfile) {
+      if (activeRole === UserRole.PROVIDER && user.sellerProfile.kind !== SellerKind.PROVIDER) {
+        throw new ForbiddenException('Provider workspace is not enabled for this user');
+      }
+      if (activeRole === UserRole.SELLER && user.sellerProfile.kind === SellerKind.PROVIDER) {
+        throw new ForbiddenException('Seller workspace is not enabled for this user');
+      }
       return user.sellerProfile;
     }
 
     const handle = await this.ensureUniqueHandle(user.email?.split('@')[0] || `seller-${user.id}`);
+    const kind = activeRole === UserRole.PROVIDER ? SellerKind.PROVIDER : SellerKind.SELLER;
     return this.prisma.seller.create({
       data: {
         userId,
@@ -241,8 +252,8 @@ export class SellersService {
         name: user.email ?? `Seller ${user.id}`,
         displayName: user.email ?? `Seller ${user.id}`,
         storefrontName: user.email ?? `Seller ${user.id}`,
-        type: user.role === UserRole.PROVIDER ? 'Provider' : 'Seller',
-        kind: user.role === UserRole.PROVIDER ? 'PROVIDER' : 'SELLER'
+        type: kind === SellerKind.PROVIDER ? 'Provider' : 'Seller',
+        kind
       }
     });
   }
@@ -285,44 +296,31 @@ export class SellersService {
     }
   }
 
-  private serializeSeller(profile: {
-    id: string;
-    userId: string | null;
-    handle: string | null;
-    name: string;
-    displayName: string;
-    legalBusinessName: string | null;
-    storefrontName: string | null;
-    type: string;
-    kind: string;
-    category: string | null;
-    categories: string | null;
-    region: string | null;
-    description: string | null;
-    languages: string | null;
-    rating: number;
-    isVerified: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-  }) {
-    return {
-      ...profile,
-      categories: this.parseArray(profile.categories),
-      languages: this.parseArray(profile.languages)
-    };
+  private async assertTaxonomyNodeAllowed(nodeId: string) {
+    const activeTree = await this.prisma.taxonomyTree.findFirst({
+      where: { status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' }
+    });
+    if (!activeTree) {
+      throw new NotFoundException('Active taxonomy tree not found');
+    }
+    const node = await this.prisma.taxonomyNode.findFirst({
+      where: { id: nodeId, isActive: true }
+    });
+    if (!node || node.treeId !== activeTree.id) {
+      throw new NotFoundException('Taxonomy node not found');
+    }
   }
 
-  private parseArray(value: string | null) {
-    if (!value) {
-      return [];
+  private async ensureCoverageForListing(sellerId: string, nodeId: string) {
+    if (!sellerId) {
+      return;
     }
-
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    await this.prisma.sellerTaxonomyCoverage.upsert({
+      where: { sellerId_taxonomyNodeId: { sellerId, taxonomyNodeId: nodeId } },
+      update: { status: 'ACTIVE', removedAt: null },
+      create: { sellerId, taxonomyNodeId: nodeId, status: 'ACTIVE' }
+    });
   }
 
   private async ensureUniqueHandle(value: string, currentId?: string) {

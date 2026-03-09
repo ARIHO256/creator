@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
+import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { CreateMarketplaceListingDto } from './dto/create-marketplace-listing.dto.js';
@@ -12,7 +14,7 @@ export class MarketplaceService {
     const [listings, sellers, opportunities] = await Promise.all([
       this.prisma.marketplaceListing.findMany({
         where: { status: 'ACTIVE' },
-        include: { deal: true, seller: true },
+        include: { deal: true, seller: true, taxonomyLinks: true },
         orderBy: { createdAt: 'desc' },
         take
       }),
@@ -28,37 +30,47 @@ export class MarketplaceService {
       })
     ]);
 
-    return { listings, sellers, opportunities };
+    return {
+      listings: listings.map((listing) => serializeListingPublic(listing as any)),
+      sellers: sellers.map((seller) => serializePublicSeller(seller)),
+      opportunities
+    };
   }
 
   async listSellers(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
-    return this.prisma.seller.findMany({
+    const sellers = await this.prisma.seller.findMany({
       skip,
       take,
       orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
     });
+    return sellers.map((seller) => serializePublicSeller(seller));
   }
 
   async listOpportunities(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
-    return this.prisma.opportunity.findMany({
+    const opportunities = await this.prisma.opportunity.findMany({
       skip,
       take,
       include: { seller: true },
       orderBy: { createdAt: 'desc' }
     });
+    return opportunities.map((opportunity) => ({
+      ...opportunity,
+      seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+    }));
   }
 
   async listListings(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
-    return this.prisma.marketplaceListing.findMany({
+    const listings = await this.prisma.marketplaceListing.findMany({
       where: { status: 'ACTIVE' },
       skip,
       take,
-      include: { deal: true, seller: true },
+      include: { deal: true, seller: true, taxonomyLinks: true },
       orderBy: { createdAt: 'desc' }
     });
+    return listings.map((listing) => serializeListingPublic(listing as any));
   }
 
   async createListing(userId: string, payload: CreateMarketplaceListingDto) {

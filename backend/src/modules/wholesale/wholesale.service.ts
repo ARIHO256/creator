@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
@@ -164,6 +164,7 @@ export class WholesaleService {
     }
 
     const updated = updateWholesaleQuote((existingRecord.data ?? {}) as any, body);
+    this.assertQuoteTransition(existingRecord.status, updated.status);
     await this.prisma.wholesaleQuote.update({
       where: { id: existingRecord.id },
       data: {
@@ -261,5 +262,26 @@ export class WholesaleService {
       createdAt: priceList.createdAt.toISOString(),
       updatedAt: priceList.updatedAt.toISOString()
     };
+  }
+
+  private assertQuoteTransition(current: string, next: string) {
+    const currentStatus = String(current ?? '').toLowerCase();
+    const nextStatus = String(next ?? '').toLowerCase();
+    if (currentStatus === nextStatus) {
+      return;
+    }
+    const transitions: Record<string, string[]> = {
+      draft: ['ready_for_review', 'sent', 'expired'],
+      ready_for_review: ['sent', 'negotiating', 'declined', 'expired'],
+      sent: ['negotiating', 'accepted', 'declined', 'expired'],
+      negotiating: ['accepted', 'declined', 'expired'],
+      accepted: [],
+      declined: [],
+      expired: []
+    };
+    const allowed = transitions[currentStatus] ?? [];
+    if (!allowed.includes(nextStatus)) {
+      throw new BadRequestException('Invalid quote status transition');
+    }
   }
 }

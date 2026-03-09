@@ -277,52 +277,41 @@ export class CommerceService {
   async orders(userId: string, query?: SellerOrdersQueryDto) {
     const { skip, take } = normalizeListQuery(query);
     const channel = (query as SellerOrdersQueryDto | undefined)?.channel;
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const orders = seller
-      ? await this.prisma.order.findMany({
-          where: {
-            sellerId: seller.id,
-            ...(channel ? { channel } : {})
-          },
-          skip,
-          take,
-          include: { items: true },
-          orderBy: { updatedAt: 'desc' }
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        sellerId: seller.id,
+        ...(channel ? { channel } : {})
+      },
+      skip,
+      take,
+      include: { items: true },
+      orderBy: { updatedAt: 'desc' }
+    });
 
-    if (orders.length > 0) {
-      return { orders };
-    }
-
-    return { orders: [], returns: [], disputes: [] };
+    return { orders, returns: [], disputes: [] };
   }
 
   async orderDetail(userId: string, id: string, channel?: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const order = seller
-      ? await this.prisma.order.findFirst({
-          where: {
-            id,
-            sellerId: seller.id,
-            ...(channel ? { channel } : {})
-          },
-          include: { items: true, transactions: true }
-        })
-      : null;
+    const seller = await this.ensureSeller(userId);
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        sellerId: seller.id,
+        ...(channel ? { channel } : {})
+      },
+      include: { items: true, transactions: true }
+    });
 
-    if (order) {
-      return order;
+    if (!order) {
+      throw new NotFoundException('Order not found');
     }
 
-    throw new NotFoundException('Order not found');
+    return order;
   }
 
   async updateOrder(userId: string, id: string, payload: UpdateOrderDto, channel?: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (!seller) {
-      throw new NotFoundException('Seller not found');
-    }
+    const seller = await this.ensureSeller(userId);
 
     const order = await this.prisma.order.findFirst({
       where: {
@@ -352,45 +341,32 @@ export class CommerceService {
 
   async returns(userId: string, query?: SellerReturnsQueryDto) {
     const channel = query?.channel;
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (seller) {
-      const returns = await this.prisma.sellerReturn.findMany({
-        where: {
-          sellerId: seller.id,
-          ...(channel ? { order: { channel } } : {})
-        },
-        orderBy: { requestedAt: 'desc' }
-      });
-      if (returns.length > 0) {
-        return returns;
-      }
-    }
-
-    return [];
+    const seller = await this.ensureSeller(userId);
+    return this.prisma.sellerReturn.findMany({
+      where: {
+        sellerId: seller.id,
+        ...(channel ? { order: { channel } } : {})
+      },
+      orderBy: { requestedAt: 'desc' }
+    });
   }
 
   async disputes(userId: string, query?: SellerDisputesQueryDto) {
     const channel = query?.channel;
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (seller) {
-      const disputes = await this.prisma.sellerDispute.findMany({
-        where: {
-          sellerId: seller.id,
-          ...(channel ? { order: { channel } } : {})
-        },
-        orderBy: { openedAt: 'desc' }
-      });
-      if (disputes.length > 0) {
-        return disputes;
-      }
-    }
-
-    return [];
+    const seller = await this.ensureSeller(userId);
+    return this.prisma.sellerDispute.findMany({
+      where: {
+        sellerId: seller.id,
+        ...(channel ? { order: { channel } } : {})
+      },
+      orderBy: { openedAt: 'desc' }
+    });
   }
 
   async inventory(userId: string) {
+    const seller = await this.ensureSeller(userId);
     const listings = await this.prisma.marketplaceListing.findMany({
-      where: { userId },
+      where: { sellerId: seller.id },
       include: { inventorySlots: { include: { warehouse: true } } },
       orderBy: { updatedAt: 'desc' }
     });
@@ -411,68 +387,44 @@ export class CommerceService {
   }
 
   async shippingProfiles(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const profiles = seller
-      ? await this.prisma.shippingProfile.findMany({
-          where: { sellerId: seller.id },
-          include: { rates: true },
-          orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const profiles = await this.prisma.shippingProfile.findMany({
+      where: { sellerId: seller.id },
+      include: { rates: true },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+    });
 
-    if (profiles.length > 0) {
-      return { profiles };
-    }
-
-    return { profiles: [] };
+    return { profiles };
   }
 
   async warehouses(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const warehouses = seller
-      ? await this.prisma.sellerWarehouse.findMany({
-          where: { sellerId: seller.id },
-          orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const warehouses = await this.prisma.sellerWarehouse.findMany({
+      where: { sellerId: seller.id },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+    });
 
-    if (warehouses.length > 0) {
-      return { warehouses };
-    }
-
-    return { warehouses: [] };
+    return { warehouses };
   }
 
   async exports(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const jobs = seller
-      ? await this.prisma.sellerExportJob.findMany({
-          where: { sellerId: seller.id },
-          orderBy: { requestedAt: 'desc' }
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const jobs = await this.prisma.sellerExportJob.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { requestedAt: 'desc' }
+    });
 
-    if (jobs.length > 0) {
-      return { jobs };
-    }
-
-    return { jobs: [] };
+    return { jobs };
   }
 
   async documents(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const documents = seller
-      ? await this.prisma.sellerDocument.findMany({
-          where: { sellerId: seller.id },
-          orderBy: { uploadedAt: 'desc' }
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const documents = await this.prisma.sellerDocument.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { uploadedAt: 'desc' }
+    });
 
-    if (documents.length > 0) {
-      return { documents };
-    }
-
-    return { documents: [] };
+    return { documents };
   }
 
   async financeWallets(userId: string) {

@@ -297,6 +297,7 @@ model User {
   messageThreads       MessageThread[]
   messagesSent         Message[]          @relation("MessageSender")
   supportTickets       SupportTicket[]
+  listingFavorites     ListingFavorite[]
   providerQuotes       ProviderQuote[]
   providerBookings     ProviderBooking[]
   providerConsultations ProviderConsultation[]
@@ -656,6 +657,7 @@ model MarketplaceListing {
   inventorySlots ListingInventorySlot[]
   inventoryAdjustments InventoryAdjustment[]
   documents   SellerDocument[]
+  favorites   ListingFavorite[]
 
   @@index([userId])
   @@index([sellerId])
@@ -1386,6 +1388,8 @@ model MessageThread {
   channel       String?
   priority      String?
   lastMessageAt DateTime?
+  lastMessageFromRole String?
+  lastReadAt    DateTime?
   metadata      Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -1444,6 +1448,20 @@ model SupportContent {
   updatedAt   DateTime @updatedAt
 
   @@index([contentType, updatedAt])
+}
+
+model ListingFavorite {
+  id        String   @id @default(cuid())
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listing MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listingId])
+  @@index([userId, createdAt])
+  @@index([listingId, createdAt])
 }
 
 model ProviderQuote {

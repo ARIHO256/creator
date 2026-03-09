@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
+import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 
@@ -14,11 +16,7 @@ export class DiscoveryService {
       orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
     });
 
-    return sellers.map((seller) => ({
-      ...seller,
-      categories: this.parseArray(seller.categories),
-      languages: this.parseArray(seller.languages)
-    }));
+    return sellers.map((seller) => serializePublicSeller(seller));
   }
 
   async followSeller(userId: string, sellerId: string, follow: boolean) {
@@ -52,21 +50,21 @@ export class DiscoveryService {
     });
     const ids = follows.map((entry) => entry.sellerId);
     const sellers = await this.prisma.seller.findMany({ where: { id: { in: ids } } });
-    return sellers.map((seller) => ({
-      ...seller,
-      categories: this.parseArray(seller.categories),
-      languages: this.parseArray(seller.languages)
-    }));
+    return sellers.map((seller) => serializePublicSeller(seller));
   }
 
-  opportunities(query?: ListQueryDto) {
+  async opportunities(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
-    return this.prisma.opportunity.findMany({
+    const opportunities = await this.prisma.opportunity.findMany({
       skip,
       take,
       include: { seller: true },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
     });
+    return opportunities.map((opportunity) => ({
+      ...opportunity,
+      seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+    }));
   }
 
   async opportunity(id: string) {
@@ -79,7 +77,10 @@ export class DiscoveryService {
       throw new NotFoundException('Opportunity not found');
     }
 
-    return opportunity;
+    return {
+      ...opportunity,
+      seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+    };
   }
 
   async saveOpportunity(userId: string, opportunityId: string, save: boolean) {
@@ -134,7 +135,7 @@ export class DiscoveryService {
     const [listings, opportunities] = await Promise.all([
       this.prisma.marketplaceListing.findMany({
         where: { status: 'ACTIVE' },
-        include: { seller: true },
+        include: { seller: true, taxonomyLinks: true },
         orderBy: { createdAt: 'desc' },
         take
       }),
@@ -147,8 +148,11 @@ export class DiscoveryService {
     ]);
 
     return {
-      listings,
-      opportunities
+      listings: listings.map((listing) => serializeListingPublic(listing as any)),
+      opportunities: opportunities.map((opportunity) => ({
+        ...opportunity,
+        seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+      }))
     };
   }
 
@@ -203,19 +207,6 @@ export class DiscoveryService {
       where: { id: inviteId },
       data: { status: this.normalizeInviteStatus(status) }
     });
-  }
-
-  private parseArray(value: string | null) {
-    if (!value) {
-      return [];
-    }
-
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
   }
 
   private normalizeInviteStatus(status: string) {

@@ -41,6 +41,8 @@ import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
 import { JobsModule } from './modules/jobs/jobs.module.js';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module.js';
 import { StorefrontModule } from './modules/storefront/storefront.module.js';
+import { FavouritesModule } from './modules/favourites/favourites.module.js';
+import { OpsModule } from './modules/ops/ops.module.js';
 
 @Module({
   imports: [
@@ -64,6 +66,8 @@ import { StorefrontModule } from './modules/storefront/storefront.module.js';
     RegulatoryModule,
     TaxonomyModule,
     StorefrontModule,
+    FavouritesModule,
+    OpsModule,
     DealsModule,
     MarketplaceModule,
     AnalyticsModule,

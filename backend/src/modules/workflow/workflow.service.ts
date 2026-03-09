@@ -323,7 +323,7 @@ export class WorkflowService {
     if (nodeIds.length === 0) {
       return;
     }
-    await this.taxonomyService.assertNodesExist(nodeIds);
+    await this.taxonomyService.assertNodesInActiveTree(nodeIds);
   }
 
   private async syncTaxonomySelections(userId: string, onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {

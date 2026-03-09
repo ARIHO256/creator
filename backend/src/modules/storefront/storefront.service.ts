@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
@@ -47,8 +48,11 @@ export class StorefrontService {
       where: { sellerId: seller.id },
       include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
     });
-    if (payload.taxonomyNodeIds && payload.taxonomyNodeIds.length > 0) {
-      await this.taxonomyService.assertNodesExist(payload.taxonomyNodeIds);
+    if (payload.taxonomyNodeIds) {
+      if (payload.taxonomyNodeIds.length > 0) {
+        await this.taxonomyService.assertNodesInActiveTree(payload.taxonomyNodeIds);
+        await this.taxonomyService.ensureCoverageForNodes(userId, payload.taxonomyNodeIds);
+      }
     }
     const slug = payload.slug
       ? await this.ensureUniqueSlug(payload.slug, existing?.id)
@@ -82,12 +86,8 @@ export class StorefrontService {
           include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
         });
 
-    if (payload.taxonomyNodeIds && payload.taxonomyNodeIds.length > 0) {
-      await this.taxonomyService.syncStorefrontTaxonomy(
-        userId,
-        payload.taxonomyNodeIds,
-        payload.primaryTaxonomyNodeId
-      );
+    if (payload.taxonomyNodeIds) {
+      await this.taxonomyService.syncStorefrontTaxonomy(userId, payload.taxonomyNodeIds, payload.primaryTaxonomyNodeId);
       const refreshed = await this.prisma.storefront.findUnique({
         where: { id: updated.id },
         include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
@@ -116,16 +116,17 @@ export class StorefrontService {
     }
 
     const { skip, take } = normalizeListQuery(query);
-    return this.prisma.marketplaceListing.findMany({
+    const listings = await this.prisma.marketplaceListing.findMany({
       where: {
         sellerId: storefront.sellerId,
         status: 'ACTIVE'
       },
       skip,
       take,
-      include: { taxonomyLinks: true },
+      include: { taxonomyLinks: true, seller: true },
       orderBy: { createdAt: 'desc' }
     });
+    return listings.map((listing) => serializeListingPublic(listing as any));
   }
 
   private async resolveStorefront(handle: string) {

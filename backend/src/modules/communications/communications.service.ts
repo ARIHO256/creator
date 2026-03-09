@@ -54,6 +54,7 @@ export class CommunicationsService {
         }
       }));
 
+    const now = new Date();
     await this.prisma.message.create({
       data: {
         threadId: thread.id,
@@ -66,10 +67,38 @@ export class CommunicationsService {
 
     await this.prisma.messageThread.update({
       where: { id: thread.id },
-      data: { lastMessageAt: new Date() }
+      data: {
+        lastMessageAt: now,
+        lastMessageFromRole: 'owner',
+        lastReadAt: now
+      }
     });
 
     return this.messageThread(userId, thread.id);
+  }
+
+  async markThreadRead(userId: string, threadId: string) {
+    const thread = await this.prisma.messageThread.findFirst({
+      where: { id: threadId, userId }
+    });
+    if (!thread) {
+      throw new NotFoundException('Thread not found');
+    }
+
+    await this.prisma.messageThread.update({
+      where: { id: thread.id },
+      data: { lastReadAt: new Date() }
+    });
+
+    return this.messageThread(userId, thread.id);
+  }
+
+  async markAllRead(userId: string) {
+    await this.prisma.messageThread.updateMany({
+      where: { userId },
+      data: { lastReadAt: new Date() }
+    });
+    return { updated: true };
   }
 
   async notifications(userId: string) {
@@ -126,10 +155,16 @@ export class CommunicationsService {
     channel: string | null;
     priority: string | null;
     lastMessageAt: Date | null;
+    lastMessageFromRole: string | null;
+    lastReadAt: Date | null;
     metadata: unknown;
     createdAt: Date;
     updatedAt: Date;
   }) {
+    const hasUnread =
+      Boolean(thread.lastMessageAt) &&
+      (!thread.lastReadAt || thread.lastMessageAt > thread.lastReadAt) &&
+      (thread.lastMessageFromRole ?? 'owner') !== 'owner';
     return {
       id: thread.id,
       subject: thread.subject,
@@ -137,6 +172,9 @@ export class CommunicationsService {
       channel: thread.channel,
       priority: thread.priority,
       lastMessageAt: thread.lastMessageAt?.toISOString() ?? null,
+      lastMessageFromRole: thread.lastMessageFromRole ?? null,
+      lastReadAt: thread.lastReadAt?.toISOString() ?? null,
+      hasUnread,
       metadata: thread.metadata ?? null,
       createdAt: thread.createdAt.toISOString(),
       updatedAt: thread.updatedAt.toISOString()
