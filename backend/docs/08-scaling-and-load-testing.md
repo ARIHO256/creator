@@ -72,6 +72,11 @@ Redis is supported via:
 
 Enable Redis in production to avoid per-instance cache divergence.
 
+## Dashboard Snapshots
+Dashboard summaries can be persisted for scale:
+- `DASHBOARD_SNAPSHOT_TTL_MS` (default `60000`)
+Snapshots reduce repeated aggregation for large seller/provider accounts.
+
 ## Query Hotspot Review
 Current hotspots and mitigation:
 - `CommerceService.dashboardSummary`: multi-aggregate on orders, reviews, transactions. Cached with `CacheService` and indexed filters.

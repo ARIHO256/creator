@@ -338,6 +338,7 @@ model User {
   receivedInvites      CollaborationInvite[] @relation("InviteRecipient")
   ordersAsBuyer        Order[]               @relation("OrderBuyer")
   transactions         Transaction[]
+  dashboardSnapshots   DashboardSnapshot[]
   opportunitiesCreated Opportunity[]         @relation("OpportunityCreatedBy")
   contractsAsCreator   Contract[]
 }
@@ -1029,6 +1030,24 @@ model Transaction {
   @@index([type, status])
   @@index([userId, createdAt])
   @@index([sellerId, createdAt])
+}
+
+model DashboardSnapshot {
+  id         String   @id @default(cuid())
+  userId     String
+  role       String
+  payload    Json
+  computedAt DateTime @default(now())
+  expiresAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@index([userId, role])
+  @@index([computedAt])
+  @@index([expiresAt])
 }
 
 model AnalyticsEvent {

@@ -3,15 +3,15 @@
 Date: 2026-03-09
 
 ## Summary
-This pass hardened realtime SSE transport with connection limits and replay buffer support. Frontends remain unchanged.
+This pass added persisted dashboard snapshots for large-scale summary reads and retained seller/provider KPIs. Frontends remain unchanged.
 
 ## What Was Found
-- Realtime delivery needed connection guardrails and best-effort replay for resiliency.
+- Dashboard summary aggregation needed persistence to reduce repeat computation under scale.
 
 ## Implementations Completed
-### Realtime Transport Hardening
-- Added per-user and global stream connection limits.
-- Added in-memory replay buffer with `Last-Event-ID` support.
+### Dashboard Snapshot Persistence
+- Added a dashboard snapshot table with TTL support for heavy summaries.
+- Summary now reads from snapshots when fresh and refreshes on demand.
 
 ## Files Changed
 ### Modules / Domain

@@ -62,6 +62,9 @@ export default () => ({
     reminderHours: Number(process.env.APPROVAL_REMINDER_HOURS ?? '24'),
     escalateAfterHours: Number(process.env.APPROVAL_ESCALATE_HOURS ?? '72')
   },
+  dashboard: {
+    snapshotTtlMs: Number(process.env.DASHBOARD_SNAPSHOT_TTL_MS ?? '60000')
+  },
   auth: {
     disabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTH_DISABLED ?? '').toLowerCase()),
     devUserId: process.env.AUTH_DEV_USER_ID ?? 'user_ronald',
