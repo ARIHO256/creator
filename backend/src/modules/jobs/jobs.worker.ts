@@ -3,6 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { JobsService } from './jobs.service.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { MetricsService } from '../../platform/metrics/metrics.service.js';
+import { RealtimePublisher } from '../../platform/realtime/realtime.publisher.js';
+import { RealtimeStreamService } from '../../platform/realtime/realtime.stream.service.js';
+import { PrismaService } from '../../platform/prisma/prisma.service.js';
 
 type WorkerStatus = {
   running: boolean;
@@ -21,8 +24,11 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly jobsService: JobsService,
     @Inject(ConfigService) private readonly configService: ConfigService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     @Optional() private readonly auditService?: AuditService,
-    @Optional() private readonly metrics?: MetricsService
+    @Optional() private readonly metrics?: MetricsService,
+    @Optional() private readonly realtimePublisher?: RealtimePublisher,
+    @Optional() private readonly realtimeStream?: RealtimeStreamService
   ) {}
 
   onModuleInit() {
@@ -112,8 +118,136 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
           await this.auditService.persist(job.payload as any);
         }
         return;
+      case 'REALTIME_EVENT':
+        {
+          const payload = job.payload as { channel?: string; event?: Record<string, unknown> };
+          if (payload?.channel && payload?.event) {
+            if (this.realtimePublisher) {
+              await this.realtimePublisher.publish(payload.channel, payload.event);
+            }
+            if (this.realtimeStream && payload.channel.startsWith('user:')) {
+              const userId = payload.channel.slice('user:'.length);
+              this.realtimeStream.emitToUser(userId, payload.event);
+            }
+          }
+        }
+        return;
+      case 'MARKET_APPROVAL_SLA_CHECK':
+        {
+          const payload = job.payload as { approvalId?: string };
+          if (!payload?.approvalId) return;
+          const approval = await this.prisma.marketApprovalRequest.findUnique({
+            where: { id: payload.approvalId }
+          });
+          if (!approval || !approval.slaDueAt) return;
+          const now = new Date();
+          if (approval.slaDueAt > now) return;
+          if (approval.slaStatus === 'BREACHED') return;
+          if (!['PENDING', 'NEEDS_CHANGES'].includes(approval.status)) return;
+          const slaHours = this.configService.get<number>('approvals.slaHours') ?? 48;
+          const escalateAfterHours = this.configService.get<number>('approvals.escalateAfterHours') ?? 72;
+          const breachAt = approval.slaDueAt;
+          const extraHours = Math.max(0, escalateAfterHours - slaHours);
+          const escalateAt = new Date(breachAt.getTime() + extraHours * 60 * 60 * 1000);
+          const shouldEscalate = now >= escalateAt;
+          await this.prisma.marketApprovalRequest.update({
+            where: { id: approval.id },
+            data: {
+              slaStatus: 'BREACHED',
+              escalatedAt: shouldEscalate ? (approval.escalatedAt ?? now) : approval.escalatedAt
+            }
+          });
+          if (approval.requestedByUserId) {
+            const meta = (approval.metadata ?? {}) as Record<string, any>;
+            if (!meta.slaBreachedNotifiedAt) {
+              const notification = await this.prisma.notification.create({
+                data: {
+                  userId: approval.requestedByUserId,
+                  title: 'Approval SLA breached',
+                  body: `Your ${approval.entityType} approval is past the SLA window.`,
+                  kind: 'approval_sla_breached',
+                  metadata: {
+                    approvalId: approval.id,
+                    entityType: approval.entityType,
+                    status: approval.status
+                  } as Prisma.InputJsonValue
+                }
+              });
+              await this.prisma.marketApprovalRequest.update({
+                where: { id: approval.id },
+                data: {
+                  metadata: {
+                    ...meta,
+                    slaBreachedNotifiedAt: now.toISOString(),
+                    slaBreachedNotificationId: notification.id
+                  } as Prisma.InputJsonValue
+                }
+              });
+              await this.publishUserEvent(approval.requestedByUserId, {
+                type: 'notification.created',
+                notificationId: notification.id,
+                kind: notification.kind,
+                createdAt: notification.createdAt.toISOString()
+              });
+            }
+          }
+        }
+        return;
+      case 'MARKET_APPROVAL_REMINDER':
+        {
+          const payload = job.payload as { approvalId?: string };
+          if (!payload?.approvalId) return;
+          const approval = await this.prisma.marketApprovalRequest.findUnique({
+            where: { id: payload.approvalId }
+          });
+          if (!approval || !approval.requestedByUserId) return;
+          if (!['PENDING', 'NEEDS_CHANGES'].includes(approval.status)) return;
+          const meta = (approval.metadata ?? {}) as Record<string, any>;
+          if (meta.reminderSentAt) return;
+          const now = new Date();
+          const notification = await this.prisma.notification.create({
+            data: {
+              userId: approval.requestedByUserId,
+              title: 'Approval still pending',
+              body: `Your ${approval.entityType} approval is still pending review.`,
+              kind: 'approval_reminder',
+              metadata: {
+                approvalId: approval.id,
+                entityType: approval.entityType,
+                status: approval.status
+              } as Prisma.InputJsonValue
+            }
+          });
+          await this.prisma.marketApprovalRequest.update({
+            where: { id: approval.id },
+            data: {
+              metadata: {
+                ...meta,
+                reminderSentAt: now.toISOString(),
+                reminderNotificationId: notification.id
+              } as Prisma.InputJsonValue
+            }
+          });
+          await this.publishUserEvent(approval.requestedByUserId, {
+            type: 'notification.created',
+            notificationId: notification.id,
+            kind: notification.kind,
+            createdAt: notification.createdAt.toISOString()
+          });
+        }
+        return;
       default:
         return;
+    }
+  }
+
+  private async publishUserEvent(userId: string, event: Record<string, unknown>) {
+    const channel = `user:${userId}`;
+    if (this.realtimePublisher) {
+      await this.realtimePublisher.publish(channel, event);
+    }
+    if (this.realtimeStream) {
+      this.realtimeStream.emitToUser(userId, event);
     }
   }
 }

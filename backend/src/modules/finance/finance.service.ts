@@ -1,20 +1,29 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { Prisma, TransactionStatus } from '@prisma/client';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { AuditService } from '../../platform/audit/audit.service.js';
+import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { SellersService } from '../sellers/sellers.service.js';
+import { CreateAdjustmentDto } from './dto/create-adjustment.dto.js';
+import { PayoutActionDto } from './dto/payout-action.dto.js';
+import { PayoutsQueryDto } from './dto/payouts-query.dto.js';
 import { RequestPayoutDto } from './dto/request-payout.dto.js';
 import { UpdateSubscriptionDto } from './dto/update-subscription.dto.js';
 
 @Injectable()
 export class FinanceService {
   constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    private readonly sellersService: SellersService,
+    private readonly audit: AuditService
   ) {}
 
   async earningsSummary(userId: string) {
+    const scope = await this.resolveFinanceScope(userId);
     const groupedTransactions = await this.prisma.transaction.groupBy({
       by: ['status'],
       where: {
-        userId,
+        ...(scope.sellerId ? { sellerId: scope.sellerId } : { userId }),
         status: { in: ['PENDING', 'AVAILABLE', 'PAID'] }
       },
       _sum: { amount: true }
@@ -35,9 +44,10 @@ export class FinanceService {
   }
 
   async payouts(userId: string) {
+    const scope = await this.resolveFinanceScope(userId);
     const payouts = await this.prisma.transaction.findMany({
       where: {
-        userId,
+        ...(scope.sellerId ? { sellerId: scope.sellerId } : { userId }),
         type: 'PAYOUT'
       },
       orderBy: { createdAt: 'desc' }
@@ -46,10 +56,16 @@ export class FinanceService {
     return payouts;
   }
 
-  requestPayout(userId: string, body: RequestPayoutDto) {
-    return this.prisma.transaction.create({
+  async requestPayout(userId: string, body: RequestPayoutDto) {
+    const scope = await this.resolveFinanceScope(userId);
+    const available = await this.availableBalance(scope);
+    if (Number(body.amount ?? 0) > available) {
+      throw new BadRequestException('Insufficient available balance for payout');
+    }
+    const payout = await this.prisma.transaction.create({
       data: {
         userId,
+        sellerId: scope.sellerId ?? null,
         type: 'PAYOUT',
         status: 'PENDING',
         amount: Number(body.amount ?? 0),
@@ -59,6 +75,73 @@ export class FinanceService {
         metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       }
     });
+    await this.audit.log({
+      userId,
+      action: 'finance.payout_requested',
+      entityType: 'transaction',
+      entityId: payout.id,
+      route: '/api/earnings/payouts/request',
+      method: 'POST',
+      statusCode: 201,
+      metadata: { amount: payout.amount, currency: payout.currency }
+    });
+    return payout;
+  }
+
+  async payoutRequests(query?: PayoutsQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
+    const status = query?.status ? this.normalizeStatus(query.status) : undefined;
+    const payouts = await this.prisma.transaction.findMany({
+      where: {
+        type: TransactionType.PAYOUT,
+        ...(status ? { status } : {})
+      },
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' }
+    });
+    return { payouts };
+  }
+
+  async approvePayout(userId: string, id: string, body: PayoutActionDto) {
+    return this.updatePayoutStatus(userId, id, 'PAID', body.note);
+  }
+
+  async rejectPayout(userId: string, id: string, body: PayoutActionDto) {
+    return this.updatePayoutStatus(userId, id, 'FAILED', body.note);
+  }
+
+  async cancelPayout(userId: string, id: string, body: PayoutActionDto) {
+    return this.updatePayoutStatus(userId, id, 'CANCELLED', body.note);
+  }
+
+  async createAdjustment(userId: string, body: CreateAdjustmentDto) {
+    if (!body.userId && !body.sellerId) {
+      throw new BadRequestException('Adjustment requires userId or sellerId');
+    }
+    const adjustment = await this.prisma.transaction.create({
+      data: {
+        userId: body.userId ?? userId,
+        sellerId: body.sellerId ?? null,
+        type: TransactionType.ADJUSTMENT,
+        status: body.amount >= 0 ? TransactionStatus.AVAILABLE : TransactionStatus.PAID,
+        amount: Number(body.amount),
+        currency: String(body.currency ?? 'USD'),
+        note: body.note ?? 'Adjustment',
+        availableAt: new Date(),
+        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'finance.adjustment_created',
+      entityType: 'transaction',
+      entityId: adjustment.id,
+      route: '/api/finance/adjustments',
+      method: 'POST',
+      statusCode: 201
+    });
+    return adjustment;
   }
 
   async analyticsOverview(userId: string) {
@@ -118,5 +201,76 @@ export class FinanceService {
         metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
       }
     });
+  }
+
+  private normalizeStatus(status: string) {
+    const normalized = String(status || '').trim().toUpperCase();
+    if (!Object.values(TransactionStatus).includes(normalized as TransactionStatus)) {
+      throw new BadRequestException('Invalid payout status');
+    }
+    return normalized as TransactionStatus;
+  }
+
+  private async resolveFinanceScope(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+    if (user?.role === 'SELLER' || user?.role === 'PROVIDER') {
+      const seller = await this.sellersService.ensureSellerProfile(userId);
+      return { userId, sellerId: seller.id };
+    }
+    return { userId, sellerId: null };
+  }
+
+  private async availableBalance(scope: { userId: string; sellerId: string | null }) {
+    const totals = await this.prisma.transaction.aggregate({
+      where: {
+        ...(scope.sellerId ? { sellerId: scope.sellerId } : { userId: scope.userId }),
+        status: TransactionStatus.AVAILABLE
+      },
+      _sum: { amount: true }
+    });
+    return Number(totals._sum.amount ?? 0);
+  }
+
+  private async updatePayoutStatus(userId: string, id: string, nextStatus: TransactionStatus, note?: string) {
+    const payout = await this.prisma.transaction.findUnique({ where: { id } });
+    if (!payout || payout.type !== TransactionType.PAYOUT) {
+      throw new NotFoundException('Payout not found');
+    }
+    this.assertPayoutTransition(payout.status, nextStatus);
+    const updated = await this.prisma.transaction.update({
+      where: { id },
+      data: {
+        status: nextStatus,
+        note: note ?? payout.note ?? undefined,
+        paidAt: nextStatus === TransactionStatus.PAID ? new Date() : payout.paidAt
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'finance.payout_status_updated',
+      entityType: 'transaction',
+      entityId: updated.id,
+      route: `/api/finance/payouts/${id}`,
+      method: 'POST',
+      statusCode: 200,
+      metadata: { status: updated.status }
+    });
+    return updated;
+  }
+
+  private assertPayoutTransition(current: TransactionStatus, next: TransactionStatus) {
+    const transitions: Record<TransactionStatus, TransactionStatus[]> = {
+      PENDING: [TransactionStatus.PAID, TransactionStatus.FAILED, TransactionStatus.CANCELLED],
+      AVAILABLE: [TransactionStatus.PAID, TransactionStatus.CANCELLED],
+      PAID: [],
+      FAILED: [],
+      CANCELLED: []
+    };
+    if (!transitions[current]?.includes(next)) {
+      throw new BadRequestException(`Payout status cannot transition from ${current} to ${next}`);
+    }
   }
 }

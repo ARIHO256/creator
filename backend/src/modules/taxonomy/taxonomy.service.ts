@@ -268,6 +268,43 @@ export class TaxonomyService {
     }
   }
 
+  async assertNodesInActiveTree(nodeIds: string[]) {
+    if (nodeIds.length === 0) {
+      return;
+    }
+    const tree = await this.getActiveTree();
+    const nodes = await this.prisma.taxonomyNode.findMany({
+      where: { id: { in: nodeIds }, isActive: true },
+      select: { id: true, treeId: true }
+    });
+    if (nodes.length !== nodeIds.length) {
+      const found = new Set(nodes.map((node) => node.id));
+      const missing = nodeIds.filter((id) => !found.has(id));
+      throw new NotFoundException(`Taxonomy node not found: ${missing.join(', ')}`);
+    }
+    const mismatched = nodes.filter((node) => node.treeId !== tree.id);
+    if (mismatched.length > 0) {
+      throw new BadRequestException('Taxonomy node does not belong to the active taxonomy tree');
+    }
+  }
+
+  async ensureCoverageForNodes(userId: string, nodeIds: string[]) {
+    if (nodeIds.length === 0) {
+      return;
+    }
+    await this.assertNodesInActiveTree(nodeIds);
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    await this.prisma.$transaction(
+      nodeIds.map((nodeId) =>
+        this.prisma.sellerTaxonomyCoverage.upsert({
+          where: { sellerId_taxonomyNodeId: { sellerId: seller.id, taxonomyNodeId: nodeId } },
+          update: { status: 'ACTIVE', removedAt: null },
+          create: { sellerId: seller.id, taxonomyNodeId: nodeId, status: 'ACTIVE' }
+        })
+      )
+    );
+  }
+
   async syncSellerCoverage(userId: string, nodeIds: string[]) {
     const seller = await this.sellersService.ensureSellerProfile(userId);
     const existing = await this.prisma.sellerTaxonomyCoverage.findMany({
@@ -328,6 +365,9 @@ export class TaxonomyService {
   }
 
   async syncStorefrontTaxonomy(userId: string, nodeIds: string[], primaryNodeId?: string) {
+    if (primaryNodeId && !nodeIds.includes(primaryNodeId)) {
+      throw new BadRequestException('Primary taxonomy node must be included in taxonomyNodeIds');
+    }
     const seller = await this.sellersService.ensureSellerProfile(userId);
     const storefront =
       (await this.prisma.storefront.findUnique({ where: { sellerId: seller.id } })) ??
@@ -391,6 +431,17 @@ export class TaxonomyService {
         });
       })
     );
+  }
+
+  private async getActiveTree() {
+    const tree = await this.prisma.taxonomyTree.findFirst({
+      where: { status: 'ACTIVE' },
+      orderBy: { createdAt: 'asc' }
+    });
+    if (!tree) {
+      throw new NotFoundException('Active taxonomy tree not found');
+    }
+    return tree;
   }
 
   private async resolveTree(identifier: string) {

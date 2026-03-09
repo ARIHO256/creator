@@ -3,56 +3,42 @@
 Date: 2026-03-09
 
 ## Summary
-This pass removed remaining AppRecord fallback usage, tightened settings payload handling, extended load-test seeding for provider/regulatory/notification flows, and added tests for seller role isolation and order status enforcement. Frontends remain unchanged.
+This pass expanded catalog templates with export/import support and added approval reminders plus SLA breach notifications. Frontends remain unchanged.
 
 ## What Was Found
-- Remaining settings helpers still accepted broad `any` payloads.
-- Load-test seeding under-covered provider/regulatory/support/notification flows.
-- Order transition enforcement needed direct coverage in tests.
+- Catalog templates needed export/import flows for template portability.
+- Market approvals needed pre-SLA reminders and breach notifications beyond basic SLA tracking.
 
 ## Implementations Completed
-### AppRecord Elimination
-- No remaining runtime AppRecord fallbacks in active domain services.
+### Catalog Template Export / Import
+- Added export endpoint for template portability.
+- Added import endpoint with upsert/create-only/update-only modes and attribute handling.
 
-### Settings Hardening
-- Removed `any` payload helpers in `SettingsService` to enforce sanitized `unknown` inputs.
-
-### Load-Test Coverage
-- Load-test seed now includes provider users, regulatory desks/compliance items, and notifications to exercise support/ops flows at scale.
-
-### Tests Added
-- Seller role isolation for `SellersService.ensureSellerProfile`.
-- Order lifecycle transition enforcement for `CommerceService.updateOrder`.
+### Approval Automation Beyond SLA
+- Scheduled reminder jobs ahead of SLA deadlines.
+- Added SLA breach notifications to requester with realtime events when available.
 
 ## Files Changed
 ### Modules / Domain
-- `src/modules/communications/*`
-- `src/modules/live/*`
-- `src/modules/adz/*`
-- `src/modules/wholesale/*`
-- `src/modules/provider/*`
-- `src/modules/regulatory/*`
-- `src/modules/workflow/*`
-- `src/modules/storefront/*`
-- `src/modules/taxonomy/*`
-- `src/modules/finance/*`
-- `src/modules/commerce/*`
-- `src/modules/settings/*`
-- `src/modules/reviews/*`
+- `src/modules/catalog/*`
+- `src/modules/approvals/*`
+- `src/modules/jobs/jobs.worker.ts`
+- `src/config/app.config.ts`
 
-### Prisma + Scripts
+### Prisma
 - `prisma/schema.prisma`
-- `prisma/seed-loadtest.mjs`
-- `prisma/migrations/202603090010_domain_strongification/migration.sql`
+- `prisma/migrations/202603091430_catalog_template_fields/migration.sql`
+- `prisma/migrations/202603091500_market_approval_sla/migration.sql`
 
 ### Tests
-- `test/communications.service.test.ts`
-- `test/taxonomy.service.test.ts`
-- `test/sellers.service.test.ts`
-- `test/commerce.service.test.ts`
+- `test/approvals.service.test.ts`
+
+### Docs
+- `docs/08-scaling-and-load-testing.md`
 
 ## Migrations Added
-- `202603090010_domain_strongification` (domain tables + storefront taxonomy + review subject enum)
+- `202603091430_catalog_template_fields` (catalog template UX fields)
+- `202603091500_market_approval_sla` (approval SLA fields)
 
 ## Commands Run
 - `npm run prisma:generate`
@@ -60,11 +46,12 @@ This pass removed remaining AppRecord fallback usage, tightened settings payload
 - `npm run test` (required elevated permissions for `tsx` IPC socket)
 
 ## Remaining Gaps / Infra Needed
-- Redis for distributed caching and cache locks.
-- Dedicated worker processes for jobs/insights fan-out.
+- Redis for distributed caching, locks, and realtime pub/sub transport.
+- Dedicated worker processes for jobs and realtime delivery.
 - DB connection pooling + read replicas for peak read traffic.
-- Centralized logging and metrics stack with alerting.
+- Centralized logging/metrics stack with alerting and tracing export.
 - Load testing with production-like infra to validate p95/p99.
+- Websocket/push transport for realtime delivery.
 
 ## Honest Readiness Verdict
-The backend is structurally strong for domain coverage and validation, but still depends on Redis, queue workers, pooling/replicas, and real load tests before any million-user claims. Frontends still consume mocks; integration can proceed once infrastructure is in place.
+Settings/roles/crew, finance, and support workflows are now strongly modeled with role-safe access, DTOs, and audit coverage. Realtime delivery hooks are present but require Redis/WebSocket infrastructure to be operational. The backend is not yet “million-user ready” without Redis, queue workers, pooling/replicas, and real load testing. Frontends still consume mocks; integration can proceed once infrastructure is provisioned.

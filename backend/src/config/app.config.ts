@@ -38,6 +38,13 @@ export default () => ({
     redisPrefix: process.env.CACHE_REDIS_PREFIX ?? 'mldz:cache:',
     lockTtlMs: Number(process.env.CACHE_LOCK_TTL_MS ?? '5000')
   },
+  realtime: {
+    enabled: !['0', 'false', 'no', 'off'].includes(String(process.env.REALTIME_ENABLED ?? 'true').toLowerCase()),
+    redisUrl: process.env.REALTIME_REDIS_URL ?? process.env.REDIS_URL ?? '',
+    channelPrefix: process.env.REALTIME_CHANNEL_PREFIX ?? 'mldz:realtime:',
+    maxAttempts: Number(process.env.REALTIME_MAX_ATTEMPTS ?? '3'),
+    streamPingMs: Number(process.env.REALTIME_STREAM_PING_MS ?? '25000')
+  },
   idempotency: {
     ttlMs: Number(process.env.IDEMPOTENCY_TTL_MS ?? `${24 * 60 * 60 * 1000}`)
   },
@@ -45,6 +52,11 @@ export default () => ({
     enabled: !['0', 'false', 'no', 'off'].includes(String(process.env.AUDIT_ENABLED ?? 'true').toLowerCase()),
     async: !['0', 'false', 'no', 'off'].includes(String(process.env.AUDIT_ASYNC ?? 'true').toLowerCase()),
     sampleRate: Number(process.env.AUDIT_SAMPLE_RATE ?? '1')
+  },
+  approvals: {
+    slaHours: Number(process.env.APPROVAL_SLA_HOURS ?? '48'),
+    reminderHours: Number(process.env.APPROVAL_REMINDER_HOURS ?? '24'),
+    escalateAfterHours: Number(process.env.APPROVAL_ESCALATE_HOURS ?? '72')
   },
   auth: {
     disabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTH_DISABLED ?? '').toLowerCase()),

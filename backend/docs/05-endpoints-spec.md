@@ -12,6 +12,8 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/dashboard/feed`
 - `GET /api/dashboard/summary`
 - `GET /api/dashboard/my-day`
+- `GET /api/search`
+- `GET /api/realtime/stream`
 
 ## Auth
 - `POST /api/auth/register` (Public) - `RegisterDto`
@@ -49,6 +51,8 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/sellers` (Public)
 - `POST /api/sellers/:id/follow`
 - `GET /api/my-sellers`
+- `POST /api/creators/:id/follow`
+- `GET /api/my-creators`
 - `GET /api/opportunities`
 - `GET /api/opportunities/:id`
 - `POST /api/opportunities/:id/save`
@@ -62,9 +66,14 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/seller/dashboard/summary`
 - `GET /api/seller/listings` (query: `marketplace`)
 - `GET /api/seller/listings/:id`
+- `POST /api/seller/listings/bulk/validate` - `BulkListingValidateDto`
+- `POST /api/seller/listings/bulk/commit` - `BulkListingCommitDto`
 - `GET /api/seller/listing-wizard`
 - `GET /api/seller/orders` (query: `channel`)
 - `GET /api/seller/orders/:id`
+- `GET /api/seller/orders/:id/print/invoice`
+- `GET /api/seller/orders/:id/print/packing-slip`
+- `GET /api/seller/orders/:id/print/sticker`
 - `GET /api/seller/returns` (query: `channel`)
 - `POST /api/seller/returns` - `CreateReturnDto`
 - `PATCH /api/seller/returns/:id` - `UpdateReturnDto`
@@ -92,6 +101,15 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/seller/finance/statements`
 - `GET /api/seller/finance/tax-reports`
 
+## Ops Center
+- `GET /api/ops/overview`
+- `GET /api/ops/inventory`
+- `GET /api/ops/shipping`
+- `GET /api/ops/warehouses`
+- `GET /api/ops/documents`
+- `GET /api/ops/exports`
+- `GET /api/ops/exceptions`
+
 ## ExpressMart
 - `GET /api/expressmart/summary`
 - `GET /api/expressmart/orders`
@@ -99,6 +117,12 @@ Auth: JWT bearer required unless noted `Public`.
 - `PATCH /api/expressmart/orders/:id` - `UpdateOrderDto`
 - `GET /api/expressmart/returns`
 - `GET /api/expressmart/disputes`
+
+## Favourites
+- `GET /api/favourites`
+- `GET /api/favourites/listings`
+- `POST /api/favourites/listings/:id`
+- `DELETE /api/favourites/listings/:id`
 
 ## Taxonomy
 - `GET /api/taxonomy/trees` (Public)
@@ -118,6 +142,45 @@ Auth: JWT bearer required unless noted `Public`.
 - `PATCH /api/storefront/me` - `UpdateStorefrontDto`
 - `GET /api/storefront/:handle` (Public)
 - `GET /api/storefront/:handle/listings` (Public)
+
+## Communications + Support
+- `GET /api/messages`
+- `GET /api/messages/:threadId`
+- `POST /api/messages/:threadId/reply` - `SendMessageDto`
+- `PATCH /api/messages/:threadId/read`
+- `POST /api/messages/read-all`
+- `GET /api/help-support/content`
+- `POST /api/help-support/tickets` - `CreateSupportTicketDto`
+- `GET /api/help-support/tickets/:id`
+- `GET /api/system-status`
+- `GET /api/trust/content` (Public)
+- `GET /api/trust/incidents` (Public)
+- `POST /api/trust/content` (Support/Admin)
+- `PATCH /api/trust/content/:id` (Support/Admin)
+- `POST /api/trust/incidents` (Support/Admin)
+- `PATCH /api/trust/incidents/:id` (Support/Admin)
+- `GET /api/support/tickets` (Support/Admin)
+- `GET /api/support/tickets/:id` (Support/Admin)
+- `PATCH /api/support/tickets/:id` (Support/Admin) - `UpdateSupportTicketDto`
+- `POST /api/support/tickets/:id/assign` (Support/Admin) - `AssignSupportTicketDto`
+- `POST /api/support/tickets/:id/escalate` (Support/Admin) - `EscalateSupportTicketDto`
+
+## Market Approvals
+- `GET /api/market-approvals` (Support/Admin)
+- `GET /api/market-approvals/:id` (Support/Admin)
+- `POST /api/market-approvals` (Seller/Provider/Admin)
+- `PATCH /api/market-approvals/:id` (Support/Admin)
+
+## Regulatory + Compliance
+- `GET /api/compliance`
+- `POST /api/compliance/items` - `CreateComplianceItemDto`
+- `PATCH /api/compliance/items/:id` - `UpdateComplianceItemDto`
+- `GET /api/regulatory/desks`
+- `POST /api/regulatory/desks` - `CreateRegulatoryDeskDto`
+- `PATCH /api/regulatory/desks/:id` - `UpdateRegulatoryDeskDto`
+- `GET /api/regulatory/desks/:slug`
+- `POST /api/regulatory/desks/:deskId/items` - `CreateRegulatoryDeskItemDto`
+- `PATCH /api/regulatory/desks/:deskId/items/:itemId` - `UpdateRegulatoryDeskItemDto`
 
 ## Collaboration
 - `GET /api/campaigns`
@@ -192,10 +255,38 @@ Auth: JWT bearer required unless noted `Public`.
 - `POST /api/links`
 - `PATCH /api/links/:id`
 
+## Provider
+- `GET /api/provider/service-command`
+- `GET /api/provider/quotes`
+- `GET /api/provider/quotes/:id`
+- `POST /api/provider/quotes` - `CreateProviderQuoteDto`
+- `GET /api/provider/joint-quotes`
+- `GET /api/provider/joint-quotes/:id`
+- `POST /api/provider/joint-quotes` - `CreateProviderQuoteDto`
+- `GET /api/provider/consultations`
+- `GET /api/provider/bookings`
+- `GET /api/provider/bookings/:id`
+- `GET /api/provider/portfolio`
+- `GET /api/provider/reviews`
+- `GET /api/provider/disputes`
+
+## Catalog
+- `GET /api/catalog/templates`
+- `GET /api/catalog/templates/export`
+- `POST /api/catalog/templates` - `CreateCatalogTemplateDto`
+- `PATCH /api/catalog/templates/:id` - `UpdateCatalogTemplateDto`
+- `POST /api/catalog/templates/import` - `ImportCatalogTemplatesDto`
+- `GET /api/catalog/media-library`
+
 ## Finance + Analytics + Subscription
 - `GET /api/earnings/summary`
 - `GET /api/earnings/payouts`
 - `POST /api/earnings/payouts/request`
+- `GET /api/finance/payouts` (Support/Admin)
+- `POST /api/finance/payouts/:id/approve` (Support/Admin)
+- `POST /api/finance/payouts/:id/reject` (Support/Admin)
+- `POST /api/finance/payouts/:id/cancel` (Support/Admin)
+- `POST /api/finance/adjustments` (Support/Admin)
 - `GET /api/analytics/overview`
 - `GET /api/analytics/summary`
 - `GET /api/subscription`
@@ -251,6 +342,7 @@ Auth: JWT bearer required unless noted `Public`.
 - `POST /api/account-approval/refresh`
 - `POST /api/account-approval/resubmit`
 - `POST /api/account-approval/dev-approve`
+- `POST /api/account-approval/decision` (Support/Admin) - `UpdateAccountApprovalDecisionDto`
 - `GET /api/content-approvals`
 - `GET /api/content-approvals/:id`
 - `POST /api/content-approvals`

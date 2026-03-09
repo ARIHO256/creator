@@ -10,6 +10,8 @@ import { CreateDocumentDto } from './dto/create-document.dto.js';
 import { CreateExportJobDto } from './dto/create-export-job.dto.js';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto.js';
 import { CreateReturnDto } from './dto/create-return.dto.js';
+import { BulkListingCommitDto } from './dto/bulk-listing-commit.dto.js';
+import { BulkListingValidateDto } from './dto/bulk-listing-validate.dto.js';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary.dto.js';
 import { SellerDisputesQueryDto } from './dto/seller-disputes-query.dto.js';
 import { SellerListingsQueryDto } from './dto/seller-listings-query.dto.js';
@@ -25,6 +27,7 @@ import { UpdateReturnDto } from './dto/update-return.dto.js';
 import { UpdateShippingProfileDto } from './dto/update-shipping-profile.dto.js';
 import { UpdateShippingRateDto } from './dto/update-shipping-rate.dto.js';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
+import { JobsService } from '../jobs/jobs.service.js';
 
 @Injectable()
 export class CommerceService {
@@ -32,7 +35,8 @@ export class CommerceService {
     private readonly prisma: PrismaService,
     private readonly taxonomyService: TaxonomyService,
     private readonly sellersService: SellersService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly jobsService: JobsService
   ) {}
 
   async dashboard(userId: string) {
@@ -277,52 +281,56 @@ export class CommerceService {
   async orders(userId: string, query?: SellerOrdersQueryDto) {
     const { skip, take } = normalizeListQuery(query);
     const channel = (query as SellerOrdersQueryDto | undefined)?.channel;
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const orders = seller
-      ? await this.prisma.order.findMany({
-          where: {
-            sellerId: seller.id,
-            ...(channel ? { channel } : {})
-          },
-          skip,
-          take,
-          include: { items: true },
-          orderBy: { updatedAt: 'desc' }
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const orders = await this.prisma.order.findMany({
+      where: {
+        sellerId: seller.id,
+        ...(channel ? { channel } : {})
+      },
+      skip,
+      take,
+      include: { items: true },
+      orderBy: { updatedAt: 'desc' }
+    });
 
-    if (orders.length > 0) {
-      return { orders };
-    }
-
-    return { orders: [], returns: [], disputes: [] };
+    return { orders, returns: [], disputes: [] };
   }
 
   async orderDetail(userId: string, id: string, channel?: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const order = seller
-      ? await this.prisma.order.findFirst({
-          where: {
-            id,
-            sellerId: seller.id,
-            ...(channel ? { channel } : {})
-          },
-          include: { items: true, transactions: true }
-        })
-      : null;
+    const seller = await this.ensureSeller(userId);
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        sellerId: seller.id,
+        ...(channel ? { channel } : {})
+      },
+      include: { items: true, transactions: true }
+    });
 
-    if (order) {
-      return order;
+    if (!order) {
+      throw new NotFoundException('Order not found');
     }
 
-    throw new NotFoundException('Order not found');
+    return order;
+  }
+
+  async printInvoice(userId: string, id: string) {
+    const payload = await this.buildPrintPayload(userId, id);
+    return { ...payload, printType: 'invoice' };
+  }
+
+  async printPackingSlip(userId: string, id: string) {
+    const payload = await this.buildPrintPayload(userId, id);
+    return { ...payload, printType: 'packing-slip' };
+  }
+
+  async printSticker(userId: string, id: string) {
+    const payload = await this.buildPrintPayload(userId, id);
+    return { ...payload, printType: 'sticker' };
   }
 
   async updateOrder(userId: string, id: string, payload: UpdateOrderDto, channel?: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (!seller) {
-      throw new NotFoundException('Seller not found');
-    }
+    const seller = await this.ensureSeller(userId);
 
     const order = await this.prisma.order.findFirst({
       where: {
@@ -352,45 +360,32 @@ export class CommerceService {
 
   async returns(userId: string, query?: SellerReturnsQueryDto) {
     const channel = query?.channel;
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (seller) {
-      const returns = await this.prisma.sellerReturn.findMany({
-        where: {
-          sellerId: seller.id,
-          ...(channel ? { order: { channel } } : {})
-        },
-        orderBy: { requestedAt: 'desc' }
-      });
-      if (returns.length > 0) {
-        return returns;
-      }
-    }
-
-    return [];
+    const seller = await this.ensureSeller(userId);
+    return this.prisma.sellerReturn.findMany({
+      where: {
+        sellerId: seller.id,
+        ...(channel ? { order: { channel } } : {})
+      },
+      orderBy: { requestedAt: 'desc' }
+    });
   }
 
   async disputes(userId: string, query?: SellerDisputesQueryDto) {
     const channel = query?.channel;
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (seller) {
-      const disputes = await this.prisma.sellerDispute.findMany({
-        where: {
-          sellerId: seller.id,
-          ...(channel ? { order: { channel } } : {})
-        },
-        orderBy: { openedAt: 'desc' }
-      });
-      if (disputes.length > 0) {
-        return disputes;
-      }
-    }
-
-    return [];
+    const seller = await this.ensureSeller(userId);
+    return this.prisma.sellerDispute.findMany({
+      where: {
+        sellerId: seller.id,
+        ...(channel ? { order: { channel } } : {})
+      },
+      orderBy: { openedAt: 'desc' }
+    });
   }
 
   async inventory(userId: string) {
+    const seller = await this.ensureSeller(userId);
     const listings = await this.prisma.marketplaceListing.findMany({
-      where: { userId },
+      where: { sellerId: seller.id },
       include: { inventorySlots: { include: { warehouse: true } } },
       orderBy: { updatedAt: 'desc' }
     });
@@ -411,68 +406,44 @@ export class CommerceService {
   }
 
   async shippingProfiles(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const profiles = seller
-      ? await this.prisma.shippingProfile.findMany({
-          where: { sellerId: seller.id },
-          include: { rates: true },
-          orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const profiles = await this.prisma.shippingProfile.findMany({
+      where: { sellerId: seller.id },
+      include: { rates: true },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+    });
 
-    if (profiles.length > 0) {
-      return { profiles };
-    }
-
-    return { profiles: [] };
+    return { profiles };
   }
 
   async warehouses(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const warehouses = seller
-      ? await this.prisma.sellerWarehouse.findMany({
-          where: { sellerId: seller.id },
-          orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const warehouses = await this.prisma.sellerWarehouse.findMany({
+      where: { sellerId: seller.id },
+      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+    });
 
-    if (warehouses.length > 0) {
-      return { warehouses };
-    }
-
-    return { warehouses: [] };
+    return { warehouses };
   }
 
   async exports(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const jobs = seller
-      ? await this.prisma.sellerExportJob.findMany({
-          where: { sellerId: seller.id },
-          orderBy: { requestedAt: 'desc' }
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const jobs = await this.prisma.sellerExportJob.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { requestedAt: 'desc' }
+    });
 
-    if (jobs.length > 0) {
-      return { jobs };
-    }
-
-    return { jobs: [] };
+    return { jobs };
   }
 
   async documents(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    const documents = seller
-      ? await this.prisma.sellerDocument.findMany({
-          where: { sellerId: seller.id },
-          orderBy: { uploadedAt: 'desc' }
-        })
-      : [];
+    const seller = await this.ensureSeller(userId);
+    const documents = await this.prisma.sellerDocument.findMany({
+      where: { sellerId: seller.id },
+      orderBy: { uploadedAt: 'desc' }
+    });
 
-    if (documents.length > 0) {
-      return { documents };
-    }
-
-    return { documents: [] };
+    return { documents };
   }
 
   async financeWallets(userId: string) {
@@ -822,6 +793,45 @@ export class CommerceService {
     return { slot, adjustment };
   }
 
+  async validateBulkListings(userId: string, payload: BulkListingValidateDto) {
+    const session = await this.prisma.uploadSession.findFirst({
+      where: { id: payload.uploadSessionId, userId }
+    });
+    if (!session) {
+      throw new NotFoundException('Upload session not found');
+    }
+    const job = await this.jobsService.enqueue({
+      queue: 'listings',
+      type: 'BULK_VALIDATE',
+      userId,
+      payload: {
+        uploadSessionId: session.id,
+        mapping: payload.mapping ?? null,
+        mode: payload.mode ?? 'listing'
+      }
+    });
+    return { jobId: job.id, status: 'queued', uploadSessionId: session.id };
+  }
+
+  async commitBulkListings(userId: string, payload: BulkListingCommitDto) {
+    const session = await this.prisma.uploadSession.findFirst({
+      where: { id: payload.uploadSessionId, userId }
+    });
+    if (!session) {
+      throw new NotFoundException('Upload session not found');
+    }
+    const job = await this.jobsService.enqueue({
+      queue: 'listings',
+      type: 'BULK_COMMIT',
+      userId,
+      payload: {
+        uploadSessionId: session.id,
+        validateJobId: payload.validateJobId ?? null
+      }
+    });
+    return { jobId: job.id, status: 'queued', uploadSessionId: session.id };
+  }
+
   async createDocument(userId: string, payload: CreateDocumentDto) {
     const seller = await this.ensureSeller(userId);
     if (payload.listingId) {
@@ -981,6 +991,51 @@ export class CommerceService {
         resolvedAt: payload.status && ['RESOLVED', 'REJECTED'].includes(payload.status) ? new Date() : undefined
       }
     });
+  }
+
+  private async buildPrintPayload(userId: string, id: string) {
+    const seller = await this.ensureSeller(userId);
+    const order = await this.prisma.order.findFirst({
+      where: { id, sellerId: seller.id },
+      include: { items: true, seller: true, buyer: true }
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    const itemTotal = order.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
+    const totals = {
+      itemTotal,
+      total: order.total,
+      currency: order.currency
+    };
+    return {
+      order: {
+        id: order.id,
+        status: order.status,
+        channel: order.channel,
+        createdAt: order.createdAt.toISOString(),
+        notes: order.notes ?? null,
+        metadata: order.metadata ?? null
+      },
+      seller: {
+        id: order.seller.id,
+        name: order.seller.displayName ?? order.seller.name,
+        storefrontName: order.seller.storefrontName ?? null,
+        handle: order.seller.handle ?? null
+      },
+      buyer: order.buyer
+        ? { id: order.buyer.id, email: order.buyer.email ?? null }
+        : null,
+      items: order.items.map((item) => ({
+        id: item.id,
+        sku: item.sku ?? null,
+        name: item.name,
+        qty: item.qty,
+        unitPrice: item.unitPrice,
+        currency: item.currency
+      })),
+      totals
+    };
   }
 
   private assertOrderTransition(current: string, next: string) {

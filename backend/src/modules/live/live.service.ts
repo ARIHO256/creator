@@ -21,19 +21,20 @@ export class LiveService {
   saveBuilder(userId: string, payload: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(payload);
     const id = normalizeIdentifier(sanitized.sessionId ?? sanitized.id, randomUUID());
+    const status = this.normalizeStatus((sanitized as any).status ?? 'draft', this.builderStatuses(), 'builder');
     return this.prisma.liveBuilder
       .upsert({
         where: { id },
         update: {
           sessionId: String(sanitized.sessionId ?? sanitized.id ?? id),
-          status: String((sanitized as any).status ?? 'draft'),
+          status,
           data: sanitized as Prisma.InputJsonValue
         },
         create: {
           id,
           userId,
           sessionId: String(sanitized.sessionId ?? sanitized.id ?? id),
-          status: String((sanitized as any).status ?? 'draft'),
+          status,
           data: sanitized as Prisma.InputJsonValue
         }
       })
@@ -48,19 +49,29 @@ export class LiveService {
     }
     const sanitized = this.ensureObjectPayload(payload);
     const merged = { ...(existing.data as any), ...sanitized };
+    const status = this.normalizeStatus((merged as any).status ?? existing.status ?? 'published', this.builderStatuses(), 'builder');
     const updated = await this.prisma.liveBuilder.update({
       where: { id: existing.id },
       data: {
         data: merged as Prisma.InputJsonValue,
         published: true,
         publishedAt: new Date(),
-        status: String((merged as any).status ?? existing.status ?? 'published')
+        status
       }
     });
     return this.serializeBuilder(updated);
   }
 
-  async campaignGiveaways(campaignId: string) {
+  async campaignGiveaways(userId: string, campaignId: string) {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: {
+        id: campaignId,
+        OR: [{ createdByUserId: userId }, { creatorId: userId }, { seller: { userId } }]
+      }
+    });
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
     const giveaways = await this.prisma.liveCampaignGiveaway.findMany({
       where: { campaignId },
       orderBy: { updatedAt: 'desc' }
@@ -87,13 +98,15 @@ export class LiveService {
   }
   createSession(userId: string, body: Record<string, unknown>) {
     const sanitized = this.ensureObjectPayload(body);
+    const statusInput = (sanitized as any).status ?? (sanitized as any).scheduledAt ? 'scheduled' : 'draft';
+    const status = this.normalizeStatus(statusInput, this.sessionStatuses(), 'session');
     const id = this.resolveSessionId(userId, String(sanitized.id ?? randomUUID()));
     return this.prisma.liveSession
       .create({
         data: {
           id,
           userId,
-          status: String((sanitized as any).status ?? 'draft'),
+          status,
           title: typeof (sanitized as any).title === 'string' ? (sanitized as any).title : null,
           scheduledAt: this.parseDate((sanitized as any).scheduledAt),
           data: sanitized as Prisma.InputJsonValue
@@ -110,14 +123,24 @@ export class LiveService {
         if (!session) {
           throw new NotFoundException('Session not found');
         }
+        const nextStatus = sanitized.status
+          ? this.normalizeStatus((sanitized as any).status, this.sessionStatuses(), 'session')
+          : session.status;
+        this.assertTransition(session.status, nextStatus, this.sessionTransitions(), 'session');
         return this.prisma.liveSession.update({
           where: { id: session.id },
           data: {
-            status: String((sanitized as any).status ?? session.status),
+            status: nextStatus,
             title: typeof (sanitized as any).title === 'string' ? (sanitized as any).title : session.title,
             scheduledAt: this.parseDate((sanitized as any).scheduledAt) ?? session.scheduledAt,
-            startedAt: this.parseDate((sanitized as any).startedAt) ?? session.startedAt,
-            endedAt: this.parseDate((sanitized as any).endedAt) ?? session.endedAt,
+            startedAt:
+              nextStatus === 'live'
+                ? this.parseDate((sanitized as any).startedAt) ?? session.startedAt ?? new Date()
+                : this.parseDate((sanitized as any).startedAt) ?? session.startedAt,
+            endedAt:
+              nextStatus === 'ended'
+                ? this.parseDate((sanitized as any).endedAt) ?? session.endedAt ?? new Date()
+                : this.parseDate((sanitized as any).endedAt) ?? session.endedAt,
             data: sanitized as Prisma.InputJsonValue
           }
         });
@@ -134,6 +157,7 @@ export class LiveService {
   async startStudio(userId: string, id: string) {
     const sessionId = this.resolveSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
+    this.assertTransition(studio.status, 'live', this.studioTransitions(), 'studio');
     const updated = await this.prisma.liveStudio.update({
       where: { id: studio.id },
       data: {
@@ -142,18 +166,33 @@ export class LiveService {
         data: { ...(studio.data as any), status: 'live', startedAt: new Date().toISOString() } as Prisma.InputJsonValue
       }
     });
+    await this.prisma.liveSession.update({
+      where: { id: studio.sessionId },
+      data: {
+        status: 'live',
+        startedAt: new Date()
+      }
+    });
     return this.serializeStudio(updated);
   }
 
   async endStudio(userId: string, id: string) {
     const sessionId = this.resolveSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
+    this.assertTransition(studio.status, 'ended', this.studioTransitions(), 'studio');
     const updated = await this.prisma.liveStudio.update({
       where: { id: studio.id },
       data: {
         status: 'ended',
         endedAt: new Date(),
         data: { ...(studio.data as any), status: 'ended', endedAt: new Date().toISOString() } as Prisma.InputJsonValue
+      }
+    });
+    await this.prisma.liveSession.update({
+      where: { id: studio.sessionId },
+      data: {
+        status: 'ended',
+        endedAt: new Date()
       }
     });
     const replay = await this.prisma.liveReplay.upsert({
@@ -212,18 +251,24 @@ export class LiveService {
   }
   replayBySession(userId: string, sessionId: string) {
     const id = this.resolveSessionId(userId, sessionId);
-    return this.prisma.liveReplay
-      .upsert({
-        where: { id },
-        update: {},
-        create: {
-          id,
-          userId,
-          sessionId: id,
-          status: 'draft',
-          published: false,
-          data: { sessionId: id } as Prisma.InputJsonValue
+    return this.prisma.liveSession
+      .findFirst({ where: { id, userId } })
+      .then((session) => {
+        if (!session) {
+          throw new NotFoundException('Session not found');
         }
+        return this.prisma.liveReplay.upsert({
+          where: { id },
+          update: {},
+          create: {
+            id,
+            userId,
+            sessionId: id,
+            status: 'draft',
+            published: false,
+            data: { sessionId: id } as Prisma.InputJsonValue
+          }
+        });
       })
       .then((replay) => this.serializeReplay(replay));
   }
@@ -235,10 +280,14 @@ export class LiveService {
         if (!replay) {
           throw new NotFoundException('Replay not found');
         }
+        const nextStatus = sanitized.status
+          ? this.normalizeStatus((sanitized as any).status, this.replayStatuses(), 'replay')
+          : replay.status;
+        this.assertTransition(replay.status, nextStatus, this.replayTransitions(), 'replay');
         return this.prisma.liveReplay.update({
           where: { id: replay.id },
           data: {
-            status: String((sanitized as any).status ?? replay.status),
+            status: nextStatus,
             data: sanitized as Prisma.InputJsonValue
           }
         });
@@ -253,15 +302,17 @@ export class LiveService {
     if (!replay) {
       throw new NotFoundException('Replay not found');
     }
+    this.assertTransition(replay.status, 'published', this.replayTransitions(), 'replay');
     const sanitized = this.ensureObjectPayload(body);
     const merged = { ...(replay.data as any), ...sanitized };
+    const status = this.normalizeStatus((merged as any).status ?? 'published', this.replayStatuses(), 'replay');
     const updated = await this.prisma.liveReplay.update({
       where: { id: replay.id },
       data: {
         data: merged as Prisma.InputJsonValue,
         published: true,
         publishedAt: new Date(),
-        status: String((merged as any).status ?? replay.status ?? 'published')
+        status
       }
     });
     return this.serializeReplay(updated);
@@ -305,6 +356,65 @@ export class LiveService {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
+  }
+
+  private normalizeStatus(value: unknown, allowed: readonly string[], label: string) {
+    const status = String(value ?? '').trim().toLowerCase();
+    if (!allowed.includes(status)) {
+      throw new BadRequestException(`Invalid ${label} status`);
+    }
+    return status;
+  }
+
+  private assertTransition(current: string, next: string, transitions: Record<string, string[]>, label: string) {
+    const currentStatus = String(current ?? '').toLowerCase();
+    const nextStatus = String(next ?? '').toLowerCase();
+    if (currentStatus === nextStatus) {
+      return;
+    }
+    const allowed = transitions[currentStatus] ?? [];
+    if (!allowed.includes(nextStatus)) {
+      throw new BadRequestException(`Invalid ${label} status transition`);
+    }
+  }
+
+  private sessionStatuses() {
+    return ['draft', 'scheduled', 'live', 'ended', 'archived'] as const;
+  }
+
+  private sessionTransitions() {
+    return {
+      draft: ['scheduled', 'live', 'archived'],
+      scheduled: ['live', 'archived'],
+      live: ['ended'],
+      ended: ['archived'],
+      archived: []
+    };
+  }
+
+  private studioTransitions() {
+    return {
+      idle: ['live'],
+      live: ['ended'],
+      ended: []
+    };
+  }
+
+  private replayStatuses() {
+    return ['draft', 'processing', 'published', 'archived'] as const;
+  }
+
+  private replayTransitions() {
+    return {
+      draft: ['processing', 'published', 'archived'],
+      processing: ['published', 'archived'],
+      published: ['archived'],
+      archived: []
+    };
+  }
+
+  private builderStatuses() {
+    return ['draft', 'published'] as const;
   }
 
   private parseDate(value?: unknown) {

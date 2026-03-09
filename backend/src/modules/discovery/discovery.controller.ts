@@ -5,6 +5,7 @@ import { Public } from '../../common/decorators/public.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { DiscoveryService } from './discovery.service.js';
+import { SearchQueryDto } from './dto/search-query.dto.js';
 
 @Controller()
 export class DiscoveryController {
@@ -25,6 +26,17 @@ export class DiscoveryController {
   @Get('my-sellers')
   mySellers(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
     return this.discoveryService.mySellers(user.sub, query);
+  }
+
+  @Post('creators/:id/follow')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  followCreator(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: { follow?: boolean }) {
+    return this.discoveryService.followCreator(user.sub, id, body.follow ?? true);
+  }
+
+  @Get('my-creators')
+  myCreators(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.discoveryService.myCreators(user.sub, query);
   }
 
   @Get('opportunities')
@@ -62,5 +74,10 @@ export class DiscoveryController {
   @RateLimit({ limit: 20, windowMs: 60_000 })
   respondInvite(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: { status: string }) {
     return this.discoveryService.respondInvite(user.sub, id, body.status);
+  }
+
+  @Get('search')
+  search(@CurrentUser() user: RequestUser, @Query() query: SearchQueryDto) {
+    return this.discoveryService.search(user.sub, query);
   }
 }

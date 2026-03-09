@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { BackgroundJobStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListBackgroundJobsDto } from './dto/list-background-jobs.dto.js';
@@ -17,7 +18,10 @@ export type EnqueueBackgroundJobInput = {
 
 @Injectable()
 export class JobsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(ConfigService) private readonly configService: ConfigService
+  ) {}
 
   async enqueue(input: EnqueueBackgroundJobInput) {
     if (input.dedupeKey) {
@@ -37,7 +41,7 @@ export class JobsService {
         type: input.type,
         dedupeKey: input.dedupeKey ?? null,
         priority: input.priority ?? 100,
-        maxAttempts: input.maxAttempts ?? 5,
+        maxAttempts: input.maxAttempts ?? (this.configService.get<number>('jobs.defaultMaxAttempts') ?? 5),
         runAfter: input.runAfter ?? new Date(),
         correlationId: input.correlationId ?? null,
         payload: input.payload as Prisma.InputJsonValue
@@ -192,9 +196,10 @@ export class JobsService {
 
   async markFailed(id: string, error: string) {
     const job = await this.get(id);
-    const attempts = job.attempts + 1;
+    const attempts = job.attempts;
+    const retryDelayMs = this.configService.get<number>('jobs.retryDelayMs') ?? 60_000;
     const terminalStatus =
-      attempts >= job.maxAttempts ? BackgroundJobStatus.DEAD_LETTER : BackgroundJobStatus.FAILED;
+      attempts >= job.maxAttempts ? BackgroundJobStatus.DEAD_LETTER : BackgroundJobStatus.PENDING;
 
     return this.prisma.backgroundJob.update({
       where: { id },
@@ -204,7 +209,7 @@ export class JobsService {
         lockedAt: null,
         lockedBy: null,
         lastError: error,
-        runAfter: terminalStatus === BackgroundJobStatus.FAILED ? new Date(Date.now() + 60_000) : job.runAfter
+        runAfter: terminalStatus === BackgroundJobStatus.PENDING ? new Date(Date.now() + retryDelayMs) : job.runAfter
       }
     });
   }

@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
+import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
+import { UpdateAccountApprovalDecisionDto } from './dto/update-account-approval-decision.dto.js';
 import { UpdateOnboardingDto } from './dto/update-onboarding.dto.js';
 import { WorkflowService } from './workflow.service.js';
 
@@ -40,6 +42,12 @@ export class WorkflowController {
   @Post('account-approval/dev-approve')
   @RateLimit({ limit: 4, windowMs: 60_000 })
   devApprove(@CurrentUser() user: RequestUser) { return this.service.devApprove(user.sub); }
+  @Post('account-approval/decision')
+  @Roles('SUPPORT', 'ADMIN')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  decide(@CurrentUser() user: RequestUser, @Body() body: UpdateAccountApprovalDecisionDto) {
+    return this.service.recordAccountApprovalDecision(user.sub, body);
+  }
 
   @Get('content-approvals') contentApprovals(@CurrentUser() user: RequestUser) { return this.service.contentApprovals(user.sub); }
   @Get('content-approvals/:id') contentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.contentApproval(user.sub, id); }

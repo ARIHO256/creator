@@ -15,6 +15,7 @@ import { CacheModule } from './platform/cache/cache.module.js';
 import { MetricsModule } from './platform/metrics/metrics.module.js';
 import { AuditModule } from './platform/audit/audit.module.js';
 import { IdempotencyModule } from './platform/idempotency/idempotency.module.js';
+import { RealtimeModule } from './platform/realtime/realtime.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { CreatorsModule } from './modules/creators/creators.module.js';
@@ -41,6 +42,11 @@ import { RegulatoryModule } from './modules/regulatory/regulatory.module.js';
 import { JobsModule } from './modules/jobs/jobs.module.js';
 import { TaxonomyModule } from './modules/taxonomy/taxonomy.module.js';
 import { StorefrontModule } from './modules/storefront/storefront.module.js';
+import { FavouritesModule } from './modules/favourites/favourites.module.js';
+import { OpsModule } from './modules/ops/ops.module.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
+import { TrustModule } from './modules/trust/trust.module.js';
+import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 
 @Module({
   imports: [
@@ -49,6 +55,7 @@ import { StorefrontModule } from './modules/storefront/storefront.module.js';
     CacheModule,
     MetricsModule,
     AuditModule,
+    RealtimeModule,
     IdempotencyModule,
     PrismaModule,
     AuthModule,
@@ -64,6 +71,11 @@ import { StorefrontModule } from './modules/storefront/storefront.module.js';
     RegulatoryModule,
     TaxonomyModule,
     StorefrontModule,
+    FavouritesModule,
+    OpsModule,
+    CatalogModule,
+    TrustModule,
+    ApprovalsModule,
     DealsModule,
     MarketplaceModule,
     AnalyticsModule,

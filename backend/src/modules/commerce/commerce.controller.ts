@@ -8,6 +8,8 @@ import { CreateDocumentDto } from './dto/create-document.dto.js';
 import { CreateExportJobDto } from './dto/create-export-job.dto.js';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto.js';
 import { CreateReturnDto } from './dto/create-return.dto.js';
+import { BulkListingCommitDto } from './dto/bulk-listing-commit.dto.js';
+import { BulkListingValidateDto } from './dto/bulk-listing-validate.dto.js';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary.dto.js';
 import { SellerDisputesQueryDto } from './dto/seller-disputes-query.dto.js';
 import { SellerListingsQueryDto } from './dto/seller-listings-query.dto.js';
@@ -41,6 +43,9 @@ export class CommerceController {
   @Get('listing-wizard') listingWizard(@CurrentUser() user: RequestUser) { return this.service.listingWizard(user.sub); }
   @Get('orders') orders(@CurrentUser() user: RequestUser, @Query() query: SellerOrdersQueryDto) { return this.service.orders(user.sub, query); }
   @Get('orders/:id') order(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.orderDetail(user.sub, id); }
+  @Get('orders/:id/print/invoice') printInvoice(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printInvoice(user.sub, id); }
+  @Get('orders/:id/print/packing-slip') printPackingSlip(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printPackingSlip(user.sub, id); }
+  @Get('orders/:id/print/sticker') printSticker(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printSticker(user.sub, id); }
   @Get('returns') returns(@CurrentUser() user: RequestUser, @Query() query: SellerReturnsQueryDto) { return this.service.returns(user.sub, query); }
   @Get('disputes') disputes(@CurrentUser() user: RequestUser, @Query() query: SellerDisputesQueryDto) { return this.service.disputes(user.sub, query); }
   @Get('inventory') inventory(@CurrentUser() user: RequestUser) { return this.service.inventory(user.sub); }
@@ -108,6 +113,14 @@ export class CommerceController {
   @RateLimit({ limit: 40, windowMs: 60_000 })
   @Post('inventory/adjustments') adjustInventory(@CurrentUser() user: RequestUser, @Body() payload: CreateInventoryAdjustmentDto) {
     return this.service.createInventoryAdjustment(user.sub, payload);
+  }
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  @Post('listings/bulk/validate') validateListings(@CurrentUser() user: RequestUser, @Body() payload: BulkListingValidateDto) {
+    return this.service.validateBulkListings(user.sub, payload);
+  }
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  @Post('listings/bulk/commit') commitListings(@CurrentUser() user: RequestUser, @Body() payload: BulkListingCommitDto) {
+    return this.service.commitBulkListings(user.sub, payload);
   }
   @Get('finance/wallets') wallets(@CurrentUser() user: RequestUser) { return this.service.financeWallets(user.sub); }
   @Get('finance/holds') holds(@CurrentUser() user: RequestUser) { return this.service.financeHolds(user.sub); }

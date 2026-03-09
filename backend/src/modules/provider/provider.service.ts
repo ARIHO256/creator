@@ -3,11 +3,15 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
+import { SellersService } from '../sellers/sellers.service.js';
 import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
 
 @Injectable()
 export class ProviderService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sellersService: SellersService
+  ) {}
 
   async serviceCommand(userId: string) {
     const [openQuotes, activeBookings, totalQuotes] = await Promise.all([
@@ -65,6 +69,35 @@ export class ProviderService {
     const jointQuotes = quotes.filter((quote) => Boolean((quote.data as any)?.isJoint));
     return { jointQuotes: jointQuotes.map((quote) => this.serializeQuote(quote)) };
   }
+
+  async jointQuote(userId: string, id: string) {
+    const quote = await this.prisma.providerQuote.findFirst({
+      where: { id, userId }
+    });
+    if (!quote || !(quote.data as any)?.isJoint) {
+      throw new NotFoundException('Joint quote not found');
+    }
+    return this.serializeQuote(quote);
+  }
+
+  async createJointQuote(userId: string, body: CreateProviderQuoteDto) {
+    const sanitized = this.ensurePayload(body);
+    const data = (sanitized as any).data && typeof (sanitized as any).data === 'object' ? (sanitized as any).data : sanitized;
+    const id = String((sanitized as any).id ?? randomUUID());
+    const quote = await this.prisma.providerQuote.create({
+      data: {
+        id,
+        userId,
+        status: String((sanitized as any).status ?? 'draft'),
+        title: typeof (sanitized as any).title === 'string' ? (sanitized as any).title : null,
+        buyer: typeof (sanitized as any).buyer === 'string' ? (sanitized as any).buyer : null,
+        amount: typeof (sanitized as any).amount === 'number' ? (sanitized as any).amount : null,
+        currency: typeof (sanitized as any).currency === 'string' ? (sanitized as any).currency : 'USD',
+        data: { ...(data as Record<string, unknown>), isJoint: true } as Prisma.InputJsonValue
+      }
+    });
+    return this.serializeQuote(quote);
+  }
   async consultations(userId: string) {
     const consultations = await this.prisma.providerConsultation.findMany({
       where: { userId },
@@ -101,10 +134,7 @@ export class ProviderService {
     return { reviews };
   }
   async disputes(userId: string) {
-    const seller = await this.prisma.seller.findFirst({ where: { userId } });
-    if (!seller) {
-      return { disputes: [] };
-    }
+    const seller = await this.sellersService.ensureSellerProfile(userId);
     const disputes = await this.prisma.sellerDispute.findMany({
       where: { sellerId: seller.id },
       orderBy: { openedAt: 'desc' }

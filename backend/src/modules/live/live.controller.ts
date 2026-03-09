@@ -15,7 +15,7 @@ export class LiveController {
   @Post('live/builder/save') saveBuilder(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.saveBuilder(user.sub, body); }
   @RateLimit({ limit: 10, windowMs: 60_000 })
   @Post('live/builder/:id/publish') publishBuilder(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.publishBuilder(user.sub, id, body); }
-  @Get('live/campaigns/:campaignId/giveaways') campaignGiveaways(@Param('campaignId') campaignId: string) { return this.service.campaignGiveaways(campaignId); }
+  @Get('live/campaigns/:campaignId/giveaways') campaignGiveaways(@CurrentUser() user: RequestUser, @Param('campaignId') campaignId: string) { return this.service.campaignGiveaways(user.sub, campaignId); }
 
   @Get('live/sessions') sessions(@CurrentUser() user: RequestUser) { return this.service.sessions(user.sub); }
   @Get('live/sessions/:id') session(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.session(user.sub, id); }

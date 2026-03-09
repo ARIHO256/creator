@@ -38,12 +38,27 @@ Recommended worker settings:
 - `JOBS_WORKER_ENABLED=false` in API-only processes
 - `JOBS_WORKER_ID` to identify each worker instance
 - `JOBS_WORKER_BATCH` and `JOBS_WORKER_POLL_MS` tuned per queue depth
+- `JOBS_RETRY_DELAY_MS` to control retry backoff
 
 Queue candidates currently include:
 - `audit` events
 - `wholesale` notifications
 - `media` upload completion events
 - `workflow` onboarding submissions
+- `realtime` event publication hooks
+
+## Realtime Delivery Hooks
+Realtime event publishing is queued and can optionally publish to Redis:
+- `REALTIME_ENABLED=true`
+- `REALTIME_REDIS_URL` (defaults to `REDIS_URL`)
+- `REALTIME_CHANNEL_PREFIX` (default `mldz:realtime:`)
+- `REALTIME_MAX_ATTEMPTS` (default `3`)
+- `REALTIME_STREAM_PING_MS` (default `25000`)
+
+Realtime streaming transport (SSE) is available at `GET /api/realtime/stream` and requires:
+- JWT auth (same as other API routes).
+- Redis pub/sub to deliver events across instances.
+- Worker processes to publish events in multi-instance deployments.
 
 ## Distributed Cache
 Redis is supported via:
@@ -62,8 +77,16 @@ Current hotspots and mitigation:
 - `WholesaleService.quotes`: indexed by user/status and uses persisted totals for fast lists.
 - `ProviderService` quote/booking/consultation lists: indexed by user and updatedAt, but still require pagination under high volume.
 - `RegulatoryService` desk/compliance queries: scoped by user and indexed by updatedAt.
+- `OpsService.overview`: multi-count aggregation over listings/orders/returns/disputes/documents/exports, cached per seller.
+- `FavouritesService.listAll`: joins listings/sellers/opportunities; add pagination if user favorites exceed UI constraints.
 
 For million-user readiness, pair these with:
 - Read replicas and connection pooling.
 - Query profiling in production (slow query logs).
 - Redis-backed caches for heavy summary endpoints.
+
+## Approval SLA Automation
+Market approval SLA tracking uses background jobs:
+- `APPROVAL_SLA_HOURS` (default `48`)
+- `APPROVAL_REMINDER_HOURS` (default `24`)
+- `APPROVAL_ESCALATE_HOURS` (default `72`, reserved for future auto-escalation policy)

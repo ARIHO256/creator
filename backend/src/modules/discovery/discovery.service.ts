@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
+import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { SearchQueryDto } from './dto/search-query.dto.js';
 
 @Injectable()
 export class DiscoveryService {
@@ -14,11 +17,7 @@ export class DiscoveryService {
       orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
     });
 
-    return sellers.map((seller) => ({
-      ...seller,
-      categories: this.parseArray(seller.categories),
-      languages: this.parseArray(seller.languages)
-    }));
+    return sellers.map((seller) => serializePublicSeller(seller));
   }
 
   async followSeller(userId: string, sellerId: string, follow: boolean) {
@@ -52,21 +51,69 @@ export class DiscoveryService {
     });
     const ids = follows.map((entry) => entry.sellerId);
     const sellers = await this.prisma.seller.findMany({ where: { id: { in: ids } } });
-    return sellers.map((seller) => ({
-      ...seller,
-      categories: this.parseArray(seller.categories),
-      languages: this.parseArray(seller.languages)
+    return sellers.map((seller) => serializePublicSeller(seller));
+  }
+
+  async followCreator(userId: string, creatorUserId: string, follow: boolean) {
+    const creator = await this.prisma.user.findUnique({ where: { id: creatorUserId } });
+    if (!creator) {
+      throw new NotFoundException('Creator not found');
+    }
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (!seller) {
+      throw new NotFoundException('Seller profile not found');
+    }
+    if (!follow) {
+      await this.prisma.creatorFollow.deleteMany({ where: { sellerId: seller.id, creatorUserId } });
+      return { deleted: true };
+    }
+    return this.prisma.creatorFollow.upsert({
+      where: { sellerId_creatorUserId: { sellerId: seller.id, creatorUserId } },
+      update: {},
+      create: {
+        sellerId: seller.id,
+        creatorUserId
+      }
+    });
+  }
+
+  async myCreators(userId: string, query?: ListQueryDto) {
+    const { skip, take } = normalizeListQuery(query);
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (!seller) {
+      return [];
+    }
+    const follows = await this.prisma.creatorFollow.findMany({
+      where: { sellerId: seller.id },
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' }
+    });
+    const ids = follows.map((entry) => entry.creatorUserId);
+    const creators = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      include: { creatorProfile: true }
+    });
+    return creators.map((creator) => ({
+      id: creator.id,
+      handle: creator.creatorProfile?.handle ?? null,
+      name: creator.creatorProfile?.name ?? null,
+      profile: creator.creatorProfile ?? null
     }));
   }
 
-  opportunities(query?: ListQueryDto) {
+  async opportunities(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
-    return this.prisma.opportunity.findMany({
+    const opportunities = await this.prisma.opportunity.findMany({
       skip,
       take,
       include: { seller: true },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
     });
+    return opportunities.map((opportunity) => ({
+      ...opportunity,
+      seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+    }));
   }
 
   async opportunity(id: string) {
@@ -79,7 +126,10 @@ export class DiscoveryService {
       throw new NotFoundException('Opportunity not found');
     }
 
-    return opportunity;
+    return {
+      ...opportunity,
+      seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+    };
   }
 
   async saveOpportunity(userId: string, opportunityId: string, save: boolean) {
@@ -134,7 +184,7 @@ export class DiscoveryService {
     const [listings, opportunities] = await Promise.all([
       this.prisma.marketplaceListing.findMany({
         where: { status: 'ACTIVE' },
-        include: { seller: true },
+        include: { seller: true, taxonomyLinks: true },
         orderBy: { createdAt: 'desc' },
         take
       }),
@@ -147,8 +197,11 @@ export class DiscoveryService {
     ]);
 
     return {
-      listings,
-      opportunities
+      listings: listings.map((listing) => serializeListingPublic(listing as any)),
+      opportunities: opportunities.map((opportunity) => ({
+        ...opportunity,
+        seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+      }))
     };
   }
 
@@ -205,17 +258,44 @@ export class DiscoveryService {
     });
   }
 
-  private parseArray(value: string | null) {
-    if (!value) {
-      return [];
+  async search(userId: string, query?: SearchQueryDto) {
+    const q = String(query?.q ?? '').trim();
+    if (!q) {
+      return { sellers: [], listings: [], opportunities: [] };
     }
-
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    const [sellers, listings, opportunities] = await Promise.all([
+      this.prisma.seller.findMany({
+        where: {
+          OR: [
+            { name: { contains: q } },
+            { displayName: { contains: q } },
+            { handle: { contains: q } }
+          ]
+        },
+        take: 20
+      }),
+      this.prisma.marketplaceListing.findMany({
+        where: {
+          OR: [{ title: { contains: q } }, { description: { contains: q } }, { sku: { contains: q } }]
+        },
+        take: 20
+      }),
+      this.prisma.opportunity.findMany({
+        where: {
+          OR: [{ title: { contains: q } }, { description: { contains: q } }]
+        },
+        include: { seller: true },
+        take: 20
+      })
+    ]);
+    return {
+      sellers: sellers.map((seller) => serializePublicSeller(seller)),
+      listings: listings.map((listing) => serializeListingPublic(listing)),
+      opportunities: opportunities.map((opportunity) => ({
+        ...opportunity,
+        seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+      }))
+    };
   }
 
   private normalizeInviteStatus(status: string) {
