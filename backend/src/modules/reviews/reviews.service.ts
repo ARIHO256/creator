@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AppRecordsService } from '../../platform/app-records.service.js';
+import { CacheService } from '../../platform/cache/cache.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateReviewDto } from './dto/create-review.dto.js';
 import { UpdateReviewDto } from './dto/update-review.dto.js';
@@ -9,7 +10,8 @@ import { UpdateReviewDto } from './dto/update-review.dto.js';
 export class ReviewsService {
   constructor(
     private readonly records: AppRecordsService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly cache: CacheService
   ) {}
 
   async dashboard(userId: string) {
@@ -186,57 +188,70 @@ export class ReviewsService {
     status?: 'PUBLISHED' | 'HIDDEN' | 'FLAGGED';
     since?: string;
   }) {
-    const since = filters?.since ? this.parseDate(filters.since, 'since') : undefined;
-    const where: Prisma.ReviewWhereInput = {
-      subjectUserId: userId,
-      status: filters?.status,
-      channel: filters?.channel,
-      marketplace: filters?.marketplace,
-      mldzSurface: filters?.mldzSurface,
-      roleTarget: filters?.roleTarget,
-      itemType: filters?.itemType,
-      ratingOverall: typeof filters?.minRating === 'number' ? { gte: filters.minRating } : undefined,
-      createdAt: since ? { gte: since } : undefined
-    };
+    const cacheKey = `reviews:insights:${userId}:${JSON.stringify({
+      channel: filters?.channel ?? null,
+      marketplace: filters?.marketplace ?? null,
+      mldzSurface: filters?.mldzSurface ?? null,
+      roleTarget: filters?.roleTarget ?? null,
+      itemType: filters?.itemType ?? null,
+      minRating: typeof filters?.minRating === 'number' ? filters.minRating : null,
+      status: filters?.status ?? null,
+      since: filters?.since ?? null
+    })}`;
 
-    const reviews = await this.prisma.review.findMany({
-      where,
-      include: { replies: true },
-      orderBy: { createdAt: 'desc' }
+    return this.cache.getOrSet(cacheKey, 15_000, async () => {
+      const since = filters?.since ? this.parseDate(filters.since, 'since') : undefined;
+      const where: Prisma.ReviewWhereInput = {
+        subjectUserId: userId,
+        status: filters?.status,
+        channel: filters?.channel,
+        marketplace: filters?.marketplace,
+        mldzSurface: filters?.mldzSurface,
+        roleTarget: filters?.roleTarget,
+        itemType: filters?.itemType,
+        ratingOverall: typeof filters?.minRating === 'number' ? { gte: filters.minRating } : undefined,
+        createdAt: since ? { gte: since } : undefined
+      };
+
+      const reviews = await this.prisma.review.findMany({
+        where,
+        include: { replies: true },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (reviews.length === 0) {
+        return this.records
+          .getByEntityId('reviews', 'insights', 'main', userId)
+          .then((r) => r.payload)
+          .catch(() => this.emptyInsights());
+      }
+
+      const total = reviews.length;
+      const average = this.computeAverage(reviews);
+      const replied = reviews.filter((review) => review.replies.length > 0).length;
+      const responseRate = total ? Math.round((replied / total) * 100) : 0;
+      const needsReply = reviews.filter((review) => review.requiresResponse && review.replies.length === 0).length;
+      const flagged = reviews.filter((review) => review.status === 'FLAGGED').length;
+      const negativePct = total
+        ? (reviews.filter((review) => (review.sentiment ?? '').toLowerCase() === 'negative').length / total) * 100
+        : 0;
+      const trustScore = this.computeTrustScore(average, responseRate, negativePct);
+
+      return {
+        kpis: {
+          averageRating: average,
+          total,
+          needsReply,
+          flagged,
+          responseRate,
+          trustScore
+        },
+        distribution: this.ratingDistribution(reviews),
+        trend: this.bucketTrends(reviews),
+        themes: this.topThemes(reviews),
+        mldz: this.mldzBreakdown(reviews)
+      };
     });
-
-    if (reviews.length === 0) {
-      return this.records
-        .getByEntityId('reviews', 'insights', 'main', userId)
-        .then((r) => r.payload)
-        .catch(() => this.emptyInsights());
-    }
-
-    const total = reviews.length;
-    const average = this.computeAverage(reviews);
-    const replied = reviews.filter((review) => review.replies.length > 0).length;
-    const responseRate = total ? Math.round((replied / total) * 100) : 0;
-    const needsReply = reviews.filter((review) => review.requiresResponse && review.replies.length === 0).length;
-    const flagged = reviews.filter((review) => review.status === 'FLAGGED').length;
-    const negativePct = total
-      ? (reviews.filter((review) => (review.sentiment ?? '').toLowerCase() === 'negative').length / total) * 100
-      : 0;
-    const trustScore = this.computeTrustScore(average, responseRate, negativePct);
-
-    return {
-      kpis: {
-        averageRating: average,
-        total,
-        needsReply,
-        flagged,
-        responseRate,
-        trustScore
-      },
-      distribution: this.ratingDistribution(reviews),
-      trend: this.bucketTrends(reviews),
-      themes: this.topThemes(reviews),
-      mldz: this.mldzBreakdown(reviews)
-    };
   }
 
   private computeAverage(reviews: Array<{ ratingOverall: number }>) {

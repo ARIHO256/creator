@@ -1,5 +1,4 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -8,6 +7,11 @@ import { CreateDocumentDto } from './dto/create-document.dto.js';
 import { CreateExportJobDto } from './dto/create-export-job.dto.js';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto.js';
 import { CreateReturnDto } from './dto/create-return.dto.js';
+import { DashboardSummaryQueryDto } from './dto/dashboard-summary.dto.js';
+import { SellerDisputesQueryDto } from './dto/seller-disputes-query.dto.js';
+import { SellerListingsQueryDto } from './dto/seller-listings-query.dto.js';
+import { SellerOrdersQueryDto } from './dto/seller-orders-query.dto.js';
+import { SellerReturnsQueryDto } from './dto/seller-returns-query.dto.js';
 import { CreateShippingProfileDto } from './dto/create-shipping-profile.dto.js';
 import { CreateShippingRateDto } from './dto/create-shipping-rate.dto.js';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
@@ -25,13 +29,19 @@ export class CommerceController {
   constructor(private readonly service: CommerceService) {}
 
   @Get('dashboard') dashboard(@CurrentUser() user: RequestUser) { return this.service.dashboard(user.sub); }
-  @Get('listings') listings(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) { return this.service.listings(user.sub, query); }
+  @Get('dashboard/summary') dashboardSummary(
+    @CurrentUser() user: RequestUser,
+    @Query() query: DashboardSummaryQueryDto
+  ) {
+    return this.service.dashboardSummary(user.sub, query);
+  }
+  @Get('listings') listings(@CurrentUser() user: RequestUser, @Query() query: SellerListingsQueryDto) { return this.service.listings(user.sub, query); }
   @Get('listings/:id') listing(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.listingDetail(user.sub, id); }
   @Get('listing-wizard') listingWizard(@CurrentUser() user: RequestUser) { return this.service.listingWizard(user.sub); }
-  @Get('orders') orders(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) { return this.service.orders(user.sub, query); }
+  @Get('orders') orders(@CurrentUser() user: RequestUser, @Query() query: SellerOrdersQueryDto) { return this.service.orders(user.sub, query); }
   @Get('orders/:id') order(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.orderDetail(user.sub, id); }
-  @Get('returns') returns(@CurrentUser() user: RequestUser) { return this.service.returns(user.sub); }
-  @Get('disputes') disputes(@CurrentUser() user: RequestUser) { return this.service.disputes(user.sub); }
+  @Get('returns') returns(@CurrentUser() user: RequestUser, @Query() query: SellerReturnsQueryDto) { return this.service.returns(user.sub, query); }
+  @Get('disputes') disputes(@CurrentUser() user: RequestUser, @Query() query: SellerDisputesQueryDto) { return this.service.disputes(user.sub, query); }
   @Get('inventory') inventory(@CurrentUser() user: RequestUser) { return this.service.inventory(user.sub); }
   @Get('shipping-profiles') shippingProfiles(@CurrentUser() user: RequestUser) { return this.service.shippingProfiles(user.sub); }
   @Post('shipping-profiles') createShippingProfile(@CurrentUser() user: RequestUser, @Body() payload: CreateShippingProfileDto) {

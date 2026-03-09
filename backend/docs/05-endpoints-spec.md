@@ -9,6 +9,7 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/landing/content` (Public)
 - `GET /api/app/bootstrap`
 - `GET /api/dashboard/feed`
+- `GET /api/dashboard/summary`
 - `GET /api/dashboard/my-day`
 
 ## Auth
@@ -54,15 +55,16 @@ Auth: JWT bearer required unless noted `Public`.
 
 ## Seller Ops
 - `GET /api/seller/dashboard`
-- `GET /api/seller/listings`
+- `GET /api/seller/dashboard/summary`
+- `GET /api/seller/listings` (query: `marketplace`)
 - `GET /api/seller/listings/:id`
 - `GET /api/seller/listing-wizard`
-- `GET /api/seller/orders`
+- `GET /api/seller/orders` (query: `channel`)
 - `GET /api/seller/orders/:id`
-- `GET /api/seller/returns`
+- `GET /api/seller/returns` (query: `channel`)
 - `POST /api/seller/returns` - `CreateReturnDto`
 - `PATCH /api/seller/returns/:id` - `UpdateReturnDto`
-- `GET /api/seller/disputes`
+- `GET /api/seller/disputes` (query: `channel`)
 - `POST /api/seller/disputes` - `CreateDisputeDto`
 - `PATCH /api/seller/disputes/:id` - `UpdateDisputeDto`
 - `GET /api/seller/inventory`
@@ -85,6 +87,14 @@ Auth: JWT bearer required unless noted `Public`.
 - `GET /api/seller/finance/invoices`
 - `GET /api/seller/finance/statements`
 - `GET /api/seller/finance/tax-reports`
+
+## ExpressMart
+- `GET /api/expressmart/summary`
+- `GET /api/expressmart/orders`
+- `GET /api/expressmart/orders/:id`
+- `PATCH /api/expressmart/orders/:id` - `UpdateOrderDto`
+- `GET /api/expressmart/returns`
+- `GET /api/expressmart/disputes`
 
 ## Taxonomy
 - `GET /api/taxonomy/trees` (Public)

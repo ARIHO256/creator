@@ -42,6 +42,11 @@ export class DashboardController {
     return this.dashboardService.feed(user.sub);
   }
 
+  @Get('dashboard/summary')
+  summary(@CurrentUser() user: RequestUser) {
+    return this.dashboardService.summary(user.sub);
+  }
+
   @Get('dashboard/my-day')
   myDay(@CurrentUser() user: RequestUser) {
     return this.dashboardService.myDay(user.sub);

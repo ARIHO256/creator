@@ -31,6 +31,10 @@ export default () => ({
     enableHeaders: !['0', 'false', 'no', 'off'].includes(String(process.env.SECURITY_HEADERS_ENABLED ?? 'true').toLowerCase()),
     warnOnDefaultSecrets: !['0', 'false', 'no', 'off'].includes(String(process.env.WARN_ON_DEFAULT_SECRETS ?? 'true').toLowerCase())
   },
+  cache: {
+    defaultTtlMs: Number(process.env.CACHE_DEFAULT_TTL_MS ?? '15000'),
+    maxEntries: Number(process.env.CACHE_MAX_ENTRIES ?? '5000')
+  },
   auth: {
     disabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.AUTH_DISABLED ?? '').toLowerCase()),
     devUserId: process.env.AUTH_DEV_USER_ID ?? 'user_ronald',

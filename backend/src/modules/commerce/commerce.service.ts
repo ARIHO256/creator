@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
+import { Prisma, TransactionStatus } from '@prisma/client';
+import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { AppRecordsService } from '../../platform/app-records.service.js';
+import { CacheService } from '../../platform/cache/cache.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
 import { CreateDisputeDto } from './dto/create-dispute.dto.js';
@@ -10,6 +11,12 @@ import { CreateDocumentDto } from './dto/create-document.dto.js';
 import { CreateExportJobDto } from './dto/create-export-job.dto.js';
 import { CreateInventoryAdjustmentDto } from './dto/create-inventory-adjustment.dto.js';
 import { CreateReturnDto } from './dto/create-return.dto.js';
+import { DashboardSummaryQueryDto } from './dto/dashboard-summary.dto.js';
+import { SellerDisputesQueryDto } from './dto/seller-disputes-query.dto.js';
+import { SellerListingsQueryDto } from './dto/seller-listings-query.dto.js';
+import { SellerOrdersQueryDto } from './dto/seller-orders-query.dto.js';
+import { SellerReturnsQueryDto } from './dto/seller-returns-query.dto.js';
+import { UpdateOrderDto } from './dto/update-order.dto.js';
 import { CreateShippingProfileDto } from './dto/create-shipping-profile.dto.js';
 import { CreateShippingRateDto } from './dto/create-shipping-rate.dto.js';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
@@ -26,7 +33,8 @@ export class CommerceService {
     private readonly prisma: PrismaService,
     private readonly records: AppRecordsService,
     private readonly taxonomyService: TaxonomyService,
-    private readonly sellersService: SellersService
+    private readonly sellersService: SellersService,
+    private readonly cache: CacheService
   ) {}
 
   async dashboard(userId: string) {
@@ -67,10 +75,127 @@ export class CommerceService {
       });
   }
 
-  async listings(userId: string, query?: ListQueryDto) {
+  async dashboardSummary(userId: string, query?: DashboardSummaryQueryDto) {
+    const channels = this.parseCsv(query?.channels);
+    const marketplaces = this.parseCsv(query?.marketplaces);
+    const cacheKey = `seller:dashboardSummary:${userId}:${query?.range ?? ''}:${query?.from ?? ''}:${query?.to ?? ''}:${channels.join('|')}:${marketplaces.join('|')}`;
+    return this.cache.getOrSet(cacheKey, 15_000, async () => {
+      const seller = await this.sellersService.ensureSellerProfile(userId);
+      const dateRange = this.parseDateRange(query?.from, query?.to);
+      const transactionWhere: Prisma.TransactionWhereInput = {
+        sellerId: seller.id,
+        status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] },
+        createdAt: dateRange ?? undefined,
+        ...(channels.length > 0 ? { order: { channel: { in: channels } } } : {})
+      };
+
+      const orderWhere: Prisma.OrderWhereInput = {
+        sellerId: seller.id,
+        createdAt: dateRange ?? undefined,
+        ...(channels.length > 0 ? { channel: { in: channels } } : {})
+      };
+
+      const reviewWhere: Prisma.ReviewWhereInput = {
+        subjectUserId: userId,
+        status: 'PUBLISHED',
+        createdAt: dateRange ?? undefined,
+        ...(channels.length > 0 ? { channel: { in: channels } } : {})
+      };
+
+      const [
+        listingCount,
+        orderCount,
+        openOrders,
+        transactionTotals,
+        reviewAverage,
+        reviewTotal,
+        repliedCount,
+        needsReply,
+        flaggedCount,
+        negativeCount
+      ] = await Promise.all([
+        this.prisma.marketplaceListing.count({
+          where: {
+            userId,
+            ...(marketplaces.length > 0 ? { marketplace: { in: marketplaces } } : {})
+          }
+        }),
+        this.prisma.order.count({ where: orderWhere }),
+        this.prisma.order.count({
+          where: { ...orderWhere, status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] } }
+        }),
+        this.prisma.transaction.aggregate({
+          where: transactionWhere,
+          _sum: { amount: true }
+        }),
+        this.prisma.review.aggregate({
+          where: reviewWhere,
+          _avg: { ratingOverall: true }
+        }),
+        this.prisma.review.count({ where: reviewWhere }),
+        this.prisma.review.count({ where: { ...reviewWhere, replies: { some: {} } } }),
+        this.prisma.review.count({
+          where: { ...reviewWhere, requiresResponse: true, replies: { none: {} } }
+        }),
+        this.prisma.review.count({ where: { ...reviewWhere, status: 'FLAGGED' } }),
+        this.prisma.review.count({
+          where: { ...reviewWhere, sentiment: { in: ['negative', 'NEGATIVE'] } }
+        })
+      ]);
+
+      const revenueBase = Number(transactionTotals._sum.amount ?? 0);
+      const averageRating = Number(reviewAverage._avg.ratingOverall ?? 0);
+      const responseRate = reviewTotal ? Math.round((repliedCount / reviewTotal) * 100) : 0;
+      const negativePct = reviewTotal ? (negativeCount / reviewTotal) * 100 : 0;
+      const trustBase = this.computeTrustScore(averageRating, responseRate, negativePct);
+
+      if (
+        listingCount === 0 &&
+        orderCount === 0 &&
+        revenueBase === 0 &&
+        reviewTotal === 0
+      ) {
+        return this.records
+          .getByEntityId('seller_workspace', 'dashboard_summary', 'main', userId)
+          .then((record) => record.payload)
+          .catch(() => this.emptyDashboardSummary());
+      }
+
+      return {
+        range: {
+          range: query?.range ?? null,
+          from: query?.from ?? null,
+          to: query?.to ?? null
+        },
+        bases: {
+          revenueBase,
+          ordersBase: orderCount,
+          trustBase
+        },
+        counts: {
+          listings: listingCount,
+          orders: orderCount,
+          openOrders,
+          reviews: {
+            total: reviewTotal,
+            averageRating,
+            needsReply,
+            flagged: flaggedCount,
+            responseRate
+          }
+        }
+      };
+    });
+  }
+
+  async listings(userId: string, query?: SellerListingsQueryDto) {
     const { skip, take } = normalizeListQuery(query);
+    const marketplace = (query as SellerListingsQueryDto | undefined)?.marketplace;
     const listings = await this.prisma.marketplaceListing.findMany({
-      where: { userId },
+      where: {
+        userId,
+        ...(marketplace ? { marketplace } : {})
+      },
       skip,
       take,
       orderBy: { updatedAt: 'desc' }
@@ -125,12 +250,61 @@ export class CommerceService {
     };
   }
 
-  async orders(userId: string, query?: ListQueryDto) {
+  private parseDateRange(from?: string, to?: string) {
+    if (!from && !to) return null;
+    const start = from ? this.parseDate(from, 'from') : undefined;
+    const end = to ? this.parseDate(to, 'to') : undefined;
+    return {
+      gte: start ?? undefined,
+      lte: end ?? undefined
+    };
+  }
+
+  private parseDate(value: string, field: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.valueOf())) {
+      throw new BadRequestException(`Invalid ${field} date`);
+    }
+    return date;
+  }
+
+  private computeTrustScore(avg: number, responseRate: number, negativePct: number) {
+    return this.clamp(Math.round(avg * 16 + responseRate * 0.35 - negativePct * 0.45), 0, 100);
+  }
+
+  private clamp(value: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  private emptyDashboardSummary() {
+    return {
+      range: { range: null, from: null, to: null },
+      bases: { revenueBase: 0, ordersBase: 0, trustBase: 0 },
+      counts: {
+        listings: 0,
+        orders: 0,
+        openOrders: 0,
+        reviews: {
+          total: 0,
+          averageRating: 0,
+          needsReply: 0,
+          flagged: 0,
+          responseRate: 0
+        }
+      }
+    };
+  }
+
+  async orders(userId: string, query?: SellerOrdersQueryDto) {
     const { skip, take } = normalizeListQuery(query);
+    const channel = (query as SellerOrdersQueryDto | undefined)?.channel;
     const seller = await this.prisma.seller.findFirst({ where: { userId } });
     const orders = seller
       ? await this.prisma.order.findMany({
-          where: { sellerId: seller.id },
+          where: {
+            sellerId: seller.id,
+            ...(channel ? { channel } : {})
+          },
           skip,
           take,
           include: { items: true },
@@ -148,11 +322,15 @@ export class CommerceService {
       .catch(() => ({ orders: [], returns: [], disputes: [] }));
   }
 
-  async orderDetail(userId: string, id: string) {
+  async orderDetail(userId: string, id: string, channel?: string) {
     const seller = await this.prisma.seller.findFirst({ where: { userId } });
     const order = seller
       ? await this.prisma.order.findFirst({
-          where: { id, sellerId: seller.id },
+          where: {
+            id,
+            sellerId: seller.id,
+            ...(channel ? { channel } : {})
+          },
           include: { items: true, transactions: true }
         })
       : null;
@@ -170,11 +348,43 @@ export class CommerceService {
     return found;
   }
 
-  async returns(userId: string) {
+  async updateOrder(userId: string, id: string, payload: UpdateOrderDto, channel?: string) {
+    const seller = await this.prisma.seller.findFirst({ where: { userId } });
+    if (!seller) {
+      throw new NotFoundException('Seller not found');
+    }
+
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id,
+        sellerId: seller.id,
+        ...(channel ? { channel } : {})
+      }
+    });
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: payload.status ? (payload.status as any) : undefined,
+        notes: payload.notes ?? undefined,
+        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      }
+    });
+  }
+
+  async returns(userId: string, query?: SellerReturnsQueryDto) {
+    const channel = query?.channel;
     const seller = await this.prisma.seller.findFirst({ where: { userId } });
     if (seller) {
       const returns = await this.prisma.sellerReturn.findMany({
-        where: { sellerId: seller.id },
+        where: {
+          sellerId: seller.id,
+          ...(channel ? { order: { channel } } : {})
+        },
         orderBy: { requestedAt: 'desc' }
       });
       if (returns.length > 0) {
@@ -186,11 +396,15 @@ export class CommerceService {
     return (payload as any).returns ?? [];
   }
 
-  async disputes(userId: string) {
+  async disputes(userId: string, query?: SellerDisputesQueryDto) {
+    const channel = query?.channel;
     const seller = await this.prisma.seller.findFirst({ where: { userId } });
     if (seller) {
       const disputes = await this.prisma.sellerDispute.findMany({
-        where: { sellerId: seller.id },
+        where: {
+          sellerId: seller.id,
+          ...(channel ? { order: { channel } } : {})
+        },
         orderBy: { openedAt: 'desc' }
       });
       if (disputes.length > 0) {
@@ -217,6 +431,14 @@ export class CommerceService {
       .getByEntityId('seller_workspace', 'inventory', 'main', userId)
       .then((record) => record.payload)
       .catch(() => ({ rows: [] }));
+  }
+
+  private parseCsv(value?: string) {
+    if (!value) return [];
+    return value
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
   }
 
   async shippingProfiles(userId: string) {

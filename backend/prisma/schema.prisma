@@ -135,9 +135,12 @@ enum InviteStatus {
 enum OrderStatus {
   NEW
   CONFIRMED
+  PICKING
   PACKED
+  OUT_FOR_DELIVERY
   SHIPPED
   DELIVERED
+  FAILED
   ON_HOLD
   CANCELLED
   RETURN_REQUESTED
@@ -616,7 +619,9 @@ model MarketplaceListing {
   @@index([userId])
   @@index([sellerId])
   @@index([dealId])
+  @@index([marketplace])
   @@index([status])
+  @@index([marketplace, status])
   @@index([status, createdAt])
   @@index([sellerId, createdAt])
   @@index([userId, updatedAt])
@@ -893,6 +898,7 @@ model Order {
   status      OrderStatus @default(NEW)
   warehouse   String?
   notes       String?     @db.Text
+  metadata    Json?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
@@ -904,8 +910,11 @@ model Order {
   disputes     SellerDispute[]
 
   @@index([sellerId])
+  @@index([channel])
   @@index([buyerUserId])
   @@index([status])
+  @@index([sellerId, channel])
+  @@index([channel, updatedAt])
   @@index([sellerId, updatedAt])
   @@index([buyerUserId, updatedAt])
 }
@@ -1109,6 +1118,14 @@ model Review {
   @@index([subjectUserId, createdAt])
   @@index([reviewerUserId, createdAt])
   @@index([status, createdAt])
+  @@index([subjectUserId, status, createdAt])
+  @@index([channel])
+  @@index([marketplace])
+  @@index([sentiment])
+  @@index([requiresResponse])
+  @@index([roleTarget])
+  @@index([itemType])
+  @@index([mldzSurface])
   @@index([orderId])
   @@index([sessionId])
   @@index([campaignId])

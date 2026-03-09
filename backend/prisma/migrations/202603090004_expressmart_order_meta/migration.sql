@@ -1,0 +1,16 @@
+ALTER TABLE `Order`
+  ADD COLUMN `metadata` JSON NULL,
+  MODIFY `status` ENUM(
+    'NEW',
+    'CONFIRMED',
+    'PICKING',
+    'PACKED',
+    'OUT_FOR_DELIVERY',
+    'SHIPPED',
+    'DELIVERED',
+    'FAILED',
+    'ON_HOLD',
+    'CANCELLED',
+    'RETURN_REQUESTED',
+    'RETURNED'
+  ) NOT NULL DEFAULT 'NEW';
