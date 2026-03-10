@@ -146,10 +146,11 @@ export class CommunicationsService {
   }
 
   async helpSupport(userId: string) {
-    const [kb, faq, status, tickets] = await Promise.all([
+    const [kb, faq, status, updates, tickets] = await Promise.all([
       this.prisma.supportContent.findMany({ where: { contentType: 'KB' }, orderBy: { updatedAt: 'desc' } }),
       this.prisma.supportContent.findMany({ where: { contentType: 'FAQ' }, orderBy: { updatedAt: 'desc' } }),
       this.prisma.supportContent.findMany({ where: { contentType: 'STATUS' }, orderBy: { updatedAt: 'desc' } }),
+      this.prisma.supportContent.findMany({ where: { contentType: 'CHANGELOG' }, orderBy: { updatedAt: 'desc' } }),
       this.prisma.supportTicket.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } })
     ]);
 
@@ -157,6 +158,7 @@ export class CommunicationsService {
       kb: kb.map((entry) => this.serializeSupportContent(entry)),
       faq: faq.map((entry) => this.serializeSupportContent(entry)),
       status: status.map((entry) => this.serializeSupportContent(entry)),
+      updates: updates.map((entry) => this.serializeSupportContent(entry)),
       tickets: tickets.map((ticket) => this.serializeSupportTicket(ticket))
     };
   }

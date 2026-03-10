@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   Check,
@@ -891,8 +891,59 @@ export default function ProviderPortfolioPage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [tab, setTab] = useState("Media");
-  const [media, setMedia] = useMockState<MediaItem[]>("provider.portfolio.media", seedMedia());
-  const [caseStudies, setCaseStudies] = useMockState<CaseStudy[]>("provider.portfolio.caseStudies", seedCaseStudies());
+  const [media, setMedia] = useState<MediaItem[]>([]);
+  const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getProviderPortfolio().then((payload) => {
+      if (!active) return;
+      const items = Array.isArray((payload as { items?: unknown[] }).items)
+        ? ((payload as { items?: Array<Record<string, unknown>> }).items ?? [])
+        : [];
+      const studies = Array.isArray((payload as { caseStudies?: unknown[] }).caseStudies)
+        ? ((payload as { caseStudies?: Array<Record<string, unknown>> }).caseStudies ?? [])
+        : [];
+      setMedia(
+        items.map((entry) => {
+          const data = ((entry.data ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? data.id ?? ""),
+            type: String(data.type ?? "image") as MediaType,
+            title: String(entry.title ?? data.title ?? "Portfolio item"),
+            tags: Array.isArray(data.tags) ? data.tags.map((item) => String(item)) : [],
+            featured: Boolean(data.featured),
+            usedAsCover: Boolean(data.usedAsCover),
+            description: String(entry.description ?? data.description ?? ""),
+            thumb: String(entry.mediaUrl ?? data.thumb ?? ""),
+            createdAt: String(data.createdAt ?? entry.createdAt ?? new Date().toISOString()),
+          } satisfies MediaItem;
+        })
+      );
+      setCaseStudies(
+        studies.map((entry) => ({
+          id: String(entry.id ?? ""),
+          title: String(entry.title ?? "Case study"),
+          client: String(entry.client ?? "Client"),
+          scope: String(entry.scope ?? ""),
+          tags: Array.isArray(entry.tags) ? entry.tags.map((item) => String(item)) : [],
+          featured: Boolean(entry.featured),
+          createdAt: String(entry.createdAt ?? new Date().toISOString()),
+          summary: String(entry.summary ?? ""),
+          highlights: Array.isArray(entry.highlights)
+            ? entry.highlights.map((item) => ({
+                k: String((item as { k?: unknown }).k ?? ""),
+                v: String((item as { v?: unknown }).v ?? ""),
+              }))
+            : [],
+        }))
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Tags
   const [customTags, setCustomTags] = useState(["reel", "installation", "maintenance"]);

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   Calendar as CalendarIcon,
@@ -2114,8 +2114,60 @@ export default function ProviderBookingsPreviewable() {
     return () => window.clearInterval(t);
   }, []);
 
-  const [templates, setTemplates] = useMockState<ChecklistTemplate[]>("provider.bookings.templates", seedTemplates());
-  const [bookings, setBookings] = useMockState<Booking[]>("provider.bookings.items", seedBookings(Date.now()));
+  const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getProviderBookings().then((payload) => {
+      if (!active) return;
+      const rows = Array.isArray((payload as { bookings?: unknown[] }).bookings)
+        ? ((payload as { bookings?: Array<Record<string, unknown>> }).bookings ?? [])
+        : [];
+      const nextTemplates = Array.isArray((payload as { templates?: unknown[] }).templates)
+        ? ((payload as { templates?: Array<Record<string, unknown>> }).templates ?? []).map((entry) => ({
+            id: String(entry.id ?? ""),
+            name: String(entry.name ?? "Checklist"),
+            note: String(entry.note ?? ""),
+            tasks: Array.isArray(entry.tasks) ? entry.tasks.map((item) => String(item)) : [],
+          }))
+        : [];
+      setTemplates(nextTemplates);
+      setBookings(
+        rows.map((entry) => {
+          const data = ((entry.data ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? data.id ?? ""),
+            customerName: String(data.customerName ?? "Customer"),
+            customerEmail: String(data.customerEmail ?? ""),
+            customerPhone: String(data.customerPhone ?? ""),
+            serviceName: String(data.serviceName ?? "Service"),
+            status: String(data.status ?? entry.status ?? "Requested"),
+            scheduledAt: String(data.scheduledAt ?? entry.scheduledAt ?? new Date().toISOString()),
+            durationMins: Number(data.durationMins ?? entry.durationMinutes ?? 0),
+            location: String(data.location ?? ""),
+            currency: String(data.currency ?? entry.currency ?? "USD"),
+            price: Number(data.price ?? entry.amount ?? 0),
+            createdAt: String(data.createdAt ?? entry.createdAt ?? new Date().toISOString()),
+            updatedAt: String(data.updatedAt ?? entry.updatedAt ?? new Date().toISOString()),
+            responseDueAt: data.responseDueAt ? String(data.responseDueAt) : null,
+            startDueAt: data.startDueAt ? String(data.startDueAt) : null,
+            deliverables: Array.isArray(data.deliverables) ? data.deliverables as Deliverable[] : [],
+            payment: (data.payment as { milestones: PaymentMilestone[] } | undefined) ?? { milestones: [] },
+            checklistTemplateId: data.checklistTemplateId ? String(data.checklistTemplateId) : null,
+            checklist: Array.isArray(data.checklist) ? data.checklist as ChecklistItem[] : null,
+            proofs: Array.isArray(data.proofs) ? data.proofs as Proof[] : [],
+            audit: Array.isArray(data.audit) ? data.audit as AuditEntry[] : [],
+            notes: String(data.notes ?? ""),
+          } satisfies Booking;
+        })
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Materialize checklist when opening the app (demo)
   useEffect(() => {

@@ -48,7 +48,8 @@ export class RegulatoryService {
     }
     return {
       ...this.serializeDesk(desk),
-      items: desk.items.map((item) => this.serializeDeskItem(item))
+      items: desk.items.map((item) => this.serializeDeskItem(item)),
+      pageData: ((desk.metadata as Record<string, unknown> | null)?.pageData as Record<string, unknown> | undefined) ?? null
     };
   }
 

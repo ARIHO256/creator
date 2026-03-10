@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   Calendar,
@@ -839,13 +839,71 @@ export default function WholesaleQuotesHubCanvas() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [templates, setTemplates] = useMockState<QuoteTemplate[]>("wholesale.quotes.templates", seedTemplates());
-  const [quotes, setQuotes] = useMockState<Quote[]>("wholesale.quotes.items", seedQuotes());
+  const [templates, setTemplates] = useState<QuoteTemplate[]>([]);
+  const [quotes, setQuotes] = useState<Quote[]>([]);
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
 
-  const [activeId, setActiveId] = useMockState<string | undefined>("wholesale.quotes.activeId", seedQuotes()[0]?.id);
+  const [activeId, setActiveId] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getWholesaleQuotes().then((payload) => {
+      if (!active) return;
+      const quoteRows = Array.isArray((payload as { quotes?: unknown[] }).quotes)
+        ? ((payload as { quotes?: Array<Record<string, unknown>> }).quotes ?? [])
+        : [];
+      const templateRows = Array.isArray((payload as { templates?: unknown[] }).templates)
+        ? ((payload as { templates?: Array<Record<string, unknown>> }).templates ?? [])
+        : [];
+      setTemplates(
+        templateRows.map((entry) => ({
+          id: String(entry.id ?? ""),
+          name: String(entry.name ?? "Template"),
+          description: entry.description ? String(entry.description) : undefined,
+          currency: String(entry.currency ?? "USD"),
+          discount: Number(entry.discount ?? 0),
+          shipping: Number(entry.shipping ?? 0),
+          taxRate: Number(entry.taxRate ?? 0),
+          terms: String(entry.terms ?? ""),
+          lines: Array.isArray(entry.lines) ? entry.lines as LineItem[] : [],
+        }))
+      );
+      setQuotes(
+        quoteRows.map((entry) => {
+          const data = entry as Record<string, unknown>;
+          return {
+            id: String(data.id ?? ""),
+            title: String(data.title ?? "Quote"),
+            client: String(data.client ?? data.buyer ?? ""),
+            contact: String(data.contact ?? ""),
+            currency: String(data.currency ?? "USD"),
+            status: String(data.status ?? "Draft"),
+            winChance: Number(data.winChance ?? 0),
+            discount: Number(data.discount ?? 0),
+            shipping: Number(data.shipping ?? 0),
+            taxRate: Number(data.taxRate ?? 0),
+            terms: String(data.terms ?? ""),
+            notes: String(data.notes ?? ""),
+            createdAt: String(data.createdAt ?? new Date().toISOString()),
+            updatedAt: String(data.updatedAt ?? new Date().toISOString()),
+            nextFollowUpAt: data.nextFollowUpAt ? String(data.nextFollowUpAt) : null,
+            approvals: (data.approvals as Approvals | undefined) ?? { thresholdPct: 0.1, required: false, requests: [] },
+            activity: Array.isArray(data.activity) ? data.activity as Activity[] : [],
+            lines: Array.isArray(data.lines) ? data.lines as LineItem[] : [],
+            totals: (data.totals as QuoteTotals | undefined) ?? undefined,
+            versions: Array.isArray(data.versions) ? data.versions as QuoteVersion[] : [],
+            convertedOrderId: data.convertedOrderId ? String(data.convertedOrderId) : null,
+          } satisfies Quote;
+        })
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     if (!quotes.find((q) => q.id === activeId)) setActiveId(quotes[0]?.id);
   }, [quotes]);
@@ -910,7 +968,7 @@ export default function WholesaleQuotesHubCanvas() {
   // Template state
   const [tplTab, setTplTab] = useState("Picker");
   const [tplQuery, setTplQuery] = useState("");
-  const [tplActiveId, setTplActiveId] = useMockState<string | undefined>("wholesale.quotes.templateActiveId", seedTemplates()[0]?.id);
+  const [tplActiveId, setTplActiveId] = useState<string | undefined>(undefined);
   const tplActive = useMemo(() => templates.find((t) => t.id === tplActiveId) || null, [templates, tplActiveId]);
 
   // Template editor draft

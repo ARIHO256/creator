@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { CampaignStatus, Prisma } from '@prisma/client';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
+import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateAssetDto } from './dto/create-asset.dto.js';
 import { CreateProposalMessageDto } from './dto/create-proposal-message.dto.js';
@@ -78,6 +80,19 @@ export class CollaborationService {
       campaigns: campaigns.map((campaign: any) => this.serializeWorkspaceCampaign(campaign)),
       catalogItems: this.extractCatalogItems(catalog?.payload)
     };
+  }
+
+  async legacyMarketplace(userId: string) {
+    const record = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key: 'seller_dealz_marketplace_legacy'
+        }
+      }
+    });
+
+    return (record?.payload as Record<string, unknown>) ?? { deals: [], selectedId: '', cart: {}, liveCart: {} };
   }
 
   async createCampaign(userId: string, payload: Record<string, unknown>) {

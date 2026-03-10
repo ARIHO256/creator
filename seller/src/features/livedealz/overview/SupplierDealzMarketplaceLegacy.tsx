@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { useMockState } from "../../../mocks";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "../adz/SupplierAdBuilderPage";
 import { LiveBuilderDrawer } from "../live/SupplierLiveDashboardPage";
@@ -2372,14 +2372,8 @@ export default function SupplierDealzMarketplace() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const [dealz, setDealz] = useMockState<Deal[]>(
-    "supplier.dealzMarketplaceLegacy.deals",
-    seedSupplierDealzMarketplaceDealsValue
-  );
-  const [selectedId, setSelectedId] = useMockState<string>(
-    "supplier.dealzMarketplaceLegacy.selectedId",
-    seedSupplierDealzMarketplaceSelectedIdValue
-  );
+  const [dealz, setDealz] = useState<Deal[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 
@@ -2405,16 +2399,26 @@ export default function SupplierDealzMarketplace() {
   const selected = useMemo(() => dealz.find((d) => d.id === selectedId), [selectedId, dealz]);
 
   // Cart state for the Shoppable Ad preview (per selected deal)
-  const [cart, setCart] = useMockState<Record<string, number>>(
-    "supplier.dealzMarketplaceLegacy.cart",
-    seedSupplierDealzMarketplaceCartValue
-  );
+  const [cart, setCart] = useState<Record<string, number>>({});
   // Cart state for the Live Session invite preview (per selected deal)
-  const [liveCart, setLiveCart] = useMockState<Record<string, number>>(
-    "supplier.dealzMarketplaceLegacy.liveCart",
-    seedSupplierDealzMarketplaceCartValue
-  );
+  const [liveCart, setLiveCart] = useState<Record<string, number>>({});
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getLegacyDealzMarketplace().then((payload) => {
+      if (!active) return;
+      setDealz(Array.isArray((payload as { deals?: unknown[] }).deals) ? ((payload as { deals?: Deal[] }).deals ?? []) : []);
+      setSelectedId(String((payload as { selectedId?: unknown }).selectedId ?? ""));
+      setCart((((payload as { cart?: unknown }).cart ?? {}) as Record<string, number>));
+      setLiveCart((((payload as { liveCart?: unknown }).liveCart ?? {}) as Record<string, number>));
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   function safeNav(url: string) {
     navigate(url);

@@ -83,30 +83,59 @@ export class OpsService {
 
   async warehouses(userId: string) {
     const seller = await this.sellersService.ensureSellerProfile(userId);
-    const warehouses = await this.prisma.sellerWarehouse.findMany({
-      where: { sellerId: seller.id },
-      orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
-    });
-    return { warehouses };
+    const [warehouses, extras] = await Promise.all([
+      this.prisma.sellerWarehouse.findMany({
+        where: { sellerId: seller.id },
+        orderBy: [{ isDefault: 'desc' }, { updatedAt: 'desc' }]
+      }),
+      this.loadSetting(userId, 'ops_warehouses_page')
+    ]);
+    return {
+      warehouses,
+      rules: Array.isArray((extras as Record<string, unknown> | null)?.rules)
+        ? ((extras as Record<string, unknown>).rules as unknown[])
+        : [],
+      buyerPrefs: Array.isArray((extras as Record<string, unknown> | null)?.buyerPrefs)
+        ? ((extras as Record<string, unknown>).buyerPrefs as unknown[])
+        : []
+    };
   }
 
   async documents(userId: string) {
     const seller = await this.sellersService.ensureSellerProfile(userId);
-    const documents = await this.prisma.sellerDocument.findMany({
-      where: { sellerId: seller.id },
-      orderBy: { uploadedAt: 'desc' }
-    });
-    return { documents };
+    const [documents, extras] = await Promise.all([
+      this.prisma.sellerDocument.findMany({
+        where: { sellerId: seller.id },
+        orderBy: { uploadedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'ops_documents_page')
+    ]);
+    return {
+      documents,
+      templates: Array.isArray((extras as Record<string, unknown> | null)?.templates)
+        ? ((extras as Record<string, unknown>).templates as unknown[])
+        : []
+    };
   }
 
   async exports(userId: string) {
     const seller = await this.sellersService.ensureSellerProfile(userId);
-    const jobs = await this.prisma.sellerExportJob.findMany({
-      where: { sellerId: seller.id },
-      include: { exportFiles: true },
-      orderBy: { requestedAt: 'desc' }
-    });
-    return { jobs };
+    const [jobs, extras] = await Promise.all([
+      this.prisma.sellerExportJob.findMany({
+        where: { sellerId: seller.id },
+        orderBy: { requestedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'ops_exports_page')
+    ]);
+    return {
+      jobs,
+      templates: Array.isArray((extras as Record<string, unknown> | null)?.templates)
+        ? ((extras as Record<string, unknown>).templates as unknown[])
+        : [],
+      schedules: Array.isArray((extras as Record<string, unknown> | null)?.schedules)
+        ? ((extras as Record<string, unknown>).schedules as unknown[])
+        : []
+    };
   }
 
   async exceptions(userId: string) {
@@ -142,5 +171,17 @@ export class OpsService {
       throw new BadRequestException(`Invalid ${field} date`);
     }
     return date;
+  }
+
+  private async loadSetting(userId: string, key: string) {
+    const setting = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    return (setting?.payload as Record<string, unknown> | null) ?? null;
   }
 }

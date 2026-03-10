@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { useRolePageContent } from "../../data/pageContent";
 import type { ComplianceDoc, ComplianceDocStatus, ComplianceQueueItem } from "../../data/pageTypes";
-import { useMockState } from "../../mocks";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 // Seller — Compliance Center (EVzone) v2 — JS only
 // Route: /compliance
@@ -37,44 +37,54 @@ export default function SellerComplianceCenterEVzoneV2() {
   const isDocStatus = (value: string): value is DocStatus =>
     DOC_STATUSES.includes(value as DocStatus);
 
-  // ---- Seeds & persistence ----
-  const DOCS_KEY = isProvider ? "provider_compliance_docs_v2" : "seller_compliance_docs_v2";
-  const Q_KEY = isProvider ? "provider_compliance_missing_v2" : "seller_compliance_missing_v2";
-  const loadDocs = (): ComplianceDoc[] => {
-    try {
-      const s = localStorage.getItem(DOCS_KEY);
-      if (s) return JSON.parse(s) as ComplianceDoc[];
-    } catch {
-      // ignore
-    }
-    return content.docs;
-  };
-  const loadQueue = (): ComplianceQueueItem[] => {
-    try {
-      const s = localStorage.getItem(Q_KEY);
-      if (s) return JSON.parse(s) as ComplianceQueueItem[];
-    } catch {
-      // ignore
-    }
-    return content.queue;
-  };
+  const [docs, setDocs] = useState<ComplianceDoc[]>([]);
+  const [queue, setQueue] = useState<ComplianceQueueItem[]>([]);
+  useEffect(() => {
+    let active = true;
 
-  const [docs, setDocs] = useMockState<ComplianceDoc[]>(`${role}.compliance.docs`, loadDocs());
-  const [queue, setQueue] = useMockState<ComplianceQueueItem[]>(`${role}.compliance.queue`, loadQueue());
-  useEffect(() => {
-    try {
-      localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
-    } catch {
-      // ignore
-    }
-  }, [DOCS_KEY, docs]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(Q_KEY, JSON.stringify(queue));
-    } catch {
-      // ignore
-    }
-  }, [Q_KEY, queue]);
+    void sellerBackendApi.getCompliance().then((payload) => {
+      if (!active) return;
+      const docRows = Array.isArray((payload as { docs?: unknown[] }).docs)
+        ? ((payload as { docs?: Array<Record<string, unknown>> }).docs ?? [])
+        : [];
+      const queueRows = Array.isArray((payload as { queue?: unknown[] }).queue)
+        ? ((payload as { queue?: Array<Record<string, unknown>> }).queue ?? [])
+        : [];
+      setDocs(
+        docRows.map((entry) => {
+          const meta = ((entry.metadata ?? {}) as Record<string, unknown>);
+          return {
+            id: String(meta.id ?? entry.id ?? ""),
+            type: String(meta.type ?? entry.title ?? ""),
+            channel: String(meta.channel ?? primaryChannel),
+            regions: Array.isArray(meta.regions) ? meta.regions.map((item) => String(item)) : [],
+            fileName: meta.fileName ? String(meta.fileName) : undefined,
+            uploadedAt: meta.uploadedAt ? String(meta.uploadedAt) : undefined,
+            expiresAt: meta.expiresAt ? String(meta.expiresAt) : undefined,
+            status: String(meta.status ?? "Submitted") as ComplianceDocStatus,
+            notes: meta.notes ? String(meta.notes) : undefined,
+          } satisfies ComplianceDoc;
+        })
+      );
+      setQueue(
+        queueRows.map((entry) => {
+          const meta = ((entry.metadata ?? {}) as Record<string, unknown>);
+          return {
+            listingId: String(meta.listingId ?? entry.id ?? ""),
+            channel: String(meta.channel ?? primaryChannel),
+            title: String(meta.title ?? entry.title ?? ""),
+            path: String(meta.path ?? ""),
+            required: Array.isArray(meta.required) ? meta.required.map((item) => String(item)) : [],
+            missing: Array.isArray(meta.missing) ? meta.missing.map((item) => String(item)) : [],
+          } satisfies ComplianceQueueItem;
+        })
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [primaryChannel]);
 
   // ---- Helpers ----
   const today = () => new Date().toISOString().slice(0, 10);
@@ -129,6 +139,21 @@ export default function SellerComplianceCenterEVzoneV2() {
     if (!openDoc) return;
     const d = openDoc;
     if (!d.type || !d.channel) return alert(t("Type & channel required"));
+    const meta = {
+      id: d.id,
+      type: d.type,
+      channel: d.channel,
+      regions: d.regions,
+      fileName: d.fileName,
+      uploadedAt: d.uploadedAt,
+      expiresAt: d.expiresAt,
+      status: d.status,
+      notes: d.notes,
+    };
+    const persist = docs.some((item) => item.id === d.id)
+      ? sellerBackendApi.patchComplianceItem(d.id, { title: d.type, status: "active", metadata: meta })
+      : sellerBackendApi.createComplianceItem({ itemType: "DOC", title: d.type, status: "active", metadata: meta });
+    void persist.catch(() => undefined);
     setDocs(list => {
       const idx = list.findIndex(x => x.id === d.id);
       if (idx >= 0) {

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   AlertTriangle,
   Boxes,
@@ -598,8 +598,22 @@ export default function HealthMartComplianceHubPreviewable() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [subs, setSubs] = useMockState<Submission[]>("desks.healthmart.submissions", seedSubmissions());
-  const [docLib, setDocLib] = useMockState<DocLibraryItem[]>("desks.healthmart.docLibrary", seedDocLibrary());
+  const [subs, setSubs] = useState<Submission[]>([]);
+  const [docLib, setDocLib] = useState<DocLibraryItem[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getRegulatoryDesk("healthmart").then((payload) => {
+      if (!active) return;
+      const pageData = ((payload as { pageData?: Record<string, unknown> }).pageData ?? {}) as Record<string, unknown>;
+      setSubs(Array.isArray(pageData.submissions) ? pageData.submissions as Submission[] : []);
+      setDocLib(Array.isArray(pageData.docLibrary) ? pageData.docLibrary as DocLibraryItem[] : []);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Filters
   const [q, setQ] = useState("");

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { backendApi } from "../../../lib/backendApi";
+import { sellerBackendApi as backendApi } from "../../../lib/backendApi";
 import {
   buildAdzBuilderPayload,
   buildDefaultAdzBuilder,

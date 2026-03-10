@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   AlertTriangle,
   BookOpen,
@@ -1261,7 +1261,20 @@ export default function EduMartDeskSellerComplianceCenter() {
   const [kind, setKind] = useState("All");
   const [risk, setRisk] = useState("All");
 
-  const [rows, setRows] = useMockState<EduListing[]>("desks.edumart.listings", seedEduListings());
+  const [rows, setRows] = useState<EduListing[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getRegulatoryDesk("edumart").then((payload) => {
+      if (!active) return;
+      const pageData = ((payload as { pageData?: Record<string, unknown> }).pageData ?? {}) as Record<string, unknown>;
+      setRows(Array.isArray(pageData.rows) ? pageData.rows as EduListing[] : []);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const counts = useMemo(() => {
     const map: Record<string, number> = { All: rows.length };

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -543,17 +543,49 @@ export default function ProviderReviewsPage() {
   const dismissToast = (id: string) =>
     setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [reviews, setReviews] = useMockState<Review[]>("provider.reviews", seedReviews());
+  const [reviews, setReviews] = useState<Review[]>([]);
 
   const [cluster, setCluster] = useState<string>("All");
   const [sentiment, setSentiment] = useState<string>("All");
   const [sort, setSort] = useState<string>("Newest");
   const [query, setQuery] = useState("");
 
-  const [activeId, setActiveId] = useMockState<string | null>(
-    "provider.reviews.activeId",
-    seedReviews()[0]?.id ?? null
-  );
+  const [activeId, setActiveId] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getProviderReviews().then((payload) => {
+      if (!active) return;
+      const rows = Array.isArray((payload as { reviews?: unknown[] }).reviews)
+        ? ((payload as { reviews?: Array<Record<string, unknown>> }).reviews ?? [])
+        : [];
+      setReviews(
+        rows.map((row) => {
+          const tags = Array.isArray(row.quickTags) ? row.quickTags.map((item) => String(item)) : [];
+          return {
+            id: String(row.id ?? ""),
+            buyer: String(row.buyerName ?? "Customer"),
+            rating: Number(row.ratingOverall ?? 0),
+            createdAt: String(row.createdAt ?? new Date().toISOString()),
+            source: String(row.channel ?? row.marketplace ?? "Seller"),
+            topics: tags.length ? tags : ["Support"],
+            text: String(row.reviewText ?? ""),
+            sentiment:
+              String(row.sentiment ?? "").toLowerCase() === "positive"
+                ? 0.8
+                : String(row.sentiment ?? "").toLowerCase() === "negative"
+                  ? -0.8
+                  : 0.1,
+            reply: null,
+          } satisfies Review;
+        })
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     if (!reviews.find((r) => r.id === activeId)) setActiveId(reviews[0]?.id ?? null);
   }, [reviews, activeId]);

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useMockState } from "../../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   AlertTriangle,
   Check,
@@ -554,10 +554,26 @@ export default function HealthMartPharmacyDeskPreviewable() {
 
   const [tab, setTab] = useState<TabKey>("Licensing");
 
-  const [licenses, setLicenses] = useMockState<License[]>("desks.healthmart.pharmacy.licenses", seedLicenses());
-  const [items, setItems] = useMockState<RestrictedItem[]>("desks.healthmart.pharmacy.restrictedItems", seedRestrictedItems());
-  const [rules, setRules] = useMockState<PolicyRule[]>("desks.healthmart.pharmacy.rules", seedRules());
-  const [cases, setCases] = useMockState<EscalationCase[]>("desks.healthmart.pharmacy.cases", seedCases());
+  const [licenses, setLicenses] = useState<License[]>([]);
+  const [items, setItems] = useState<RestrictedItem[]>([]);
+  const [rules, setRules] = useState<PolicyRule[]>([]);
+  const [cases, setCases] = useState<EscalationCase[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getRegulatoryDesk("healthmart-pharmacy").then((payload) => {
+      if (!active) return;
+      const pageData = ((payload as { pageData?: Record<string, unknown> }).pageData ?? {}) as Record<string, unknown>;
+      setLicenses(Array.isArray(pageData.licenses) ? pageData.licenses as License[] : []);
+      setItems(Array.isArray(pageData.items) ? pageData.items as RestrictedItem[] : []);
+      setRules(Array.isArray(pageData.rules) ? pageData.rules as PolicyRule[] : []);
+      setCases(Array.isArray(pageData.cases) ? pageData.cases as EscalationCase[] : []);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const pendingLicenses = useMemo(() => licenses.filter((l) => l.status === "Pending").length, [licenses]);
   const flaggedItems = useMemo(() => items.filter((i) => i.status !== "Approved").length, [items]);

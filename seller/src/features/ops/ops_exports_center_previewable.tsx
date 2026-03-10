@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -491,9 +491,55 @@ export default function OpsExportsCenterPreviewable() {
 
   const [tab, setTab] = useState("Jobs");
 
-  const [jobs, setJobs] = useMockState<ExportJob[]>("ops.exports.jobs", seedJobs());
-  const [templates, setTemplates] = useMockState<ExportTemplate[]>("ops.exports.templates", seedTemplates());
-  const [schedules, setSchedules] = useMockState<ExportSchedule[]>("ops.exports.schedules", seedSchedules());
+  const [jobs, setJobs] = useState<ExportJob[]>([]);
+  const [templates, setTemplates] = useState<ExportTemplate[]>([]);
+  const [schedules, setSchedules] = useState<ExportSchedule[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getOpsExports().then((payload) => {
+      if (!active) return;
+      const rows = Array.isArray((payload as { jobs?: unknown[] }).jobs)
+        ? ((payload as { jobs?: Array<Record<string, unknown>> }).jobs ?? [])
+        : [];
+      setJobs(
+        rows.map((entry) => {
+          const meta = ((entry.metadata ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? ""),
+            name: String(meta.name ?? entry.type ?? "Export job"),
+            dataset: String(meta.dataset ?? entry.type ?? "Dataset"),
+            format: String(entry.format ?? meta.format ?? "CSV"),
+            destination: String(meta.destination ?? "Download"),
+            status: String(entry.status ?? "Queued").charAt(0) + String(entry.status ?? "Queued").slice(1).toLowerCase(),
+            progress: Number(meta.progress ?? 0),
+            createdAt: String(entry.requestedAt ?? new Date().toISOString()),
+            requestedBy: String(meta.requestedBy ?? "Seller"),
+            rows: Number(meta.rows ?? 0),
+            size: String(meta.size ?? "-"),
+            expiresAt: meta.expiresAt ? String(meta.expiresAt) : null,
+            params: (meta.params as Record<string, string> | undefined) ?? {},
+            logs: Array.isArray(meta.logs) ? meta.logs.map((item) => String(item)) : [],
+            error: meta.error ? String(meta.error) : null,
+          } satisfies ExportJob;
+        })
+      );
+      setTemplates(
+        Array.isArray((payload as { templates?: unknown[] }).templates)
+          ? ((payload as { templates?: Array<ExportTemplate> }).templates ?? [])
+          : []
+      );
+      setSchedules(
+        Array.isArray((payload as { schedules?: unknown[] }).schedules)
+          ? ((payload as { schedules?: Array<ExportSchedule> }).schedules ?? [])
+          : []
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Filters
   const [q, setQ] = useState("");

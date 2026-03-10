@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   BadgePercent,
   Calculator,
@@ -464,7 +464,7 @@ export default function WholesalePriceListsPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [rows, setRows] = useMockState<PriceList[]>("wholesale.priceLists", seedPriceLists());
+  const [rows, setRows] = useState<PriceList[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
 
@@ -492,18 +492,7 @@ export default function WholesalePriceListsPage() {
   }, [rows, activeId]);
 
   // Versioning
-  const [versions, setVersions] = useMockState<PriceListVersion[]>("wholesale.priceLists.versions", (() => {
-    const at = new Date().toISOString();
-    return [
-      {
-        id: makeId("ver"),
-        at,
-        actor: "Supplier",
-        note: "Initial version",
-        snapshot: JSON.parse(JSON.stringify(seedPriceLists())) as PriceList[],
-      },
-    ];
-  })());
+  const [versions, setVersions] = useState<PriceListVersion[]>([]);
 
   const saveVersion = (note?: string) => {
     const v = {
@@ -651,7 +640,47 @@ export default function WholesalePriceListsPage() {
 
   // Editor drawer
   const [editOpen, setEditOpen] = useState(false);
-  const [draft, setDraft] = useMockState<PriceList | null>("wholesale.priceLists.draft", null);
+  const [draft, setDraft] = useState<PriceList | null>(null);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getWholesalePriceLists().then((payload) => {
+      if (!active) return;
+      const items = Array.isArray((payload as { priceLists?: unknown[] }).priceLists)
+        ? ((payload as { priceLists?: Array<Record<string, unknown>> }).priceLists ?? [])
+        : [];
+      const nextVersions = Array.isArray((payload as { versions?: unknown[] }).versions)
+        ? ((payload as { versions?: Array<Record<string, unknown>> }).versions ?? []).map((entry) => ({
+            id: String(entry.id ?? makeId("ver")),
+            at: String(entry.at ?? new Date().toISOString()),
+            actor: String(entry.actor ?? "Supplier"),
+            note: String(entry.note ?? "Saved version"),
+            snapshot: Array.isArray(entry.snapshot) ? entry.snapshot as PriceList[] : [],
+          }))
+        : [];
+      setRows(
+        items.map((entry) => {
+          const data = ((entry.data ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? data.id ?? ""),
+            sku: String(data.sku ?? entry.id ?? ""),
+            name: String(entry.name ?? data.name ?? "Price list"),
+            currency: String(entry.currency ?? data.currency ?? "USD"),
+            baseCost: Number(data.baseCost ?? 0),
+            status: String(data.status ?? entry.status ?? "Draft"),
+            updatedAt: String(data.updatedAt ?? entry.updatedAt ?? new Date().toISOString()),
+            tiers: Array.isArray(data.tiers) ? data.tiers as PriceTier[] : [],
+            segments: Array.isArray(data.segments) ? data.segments.map((item) => String(item)) : [],
+          } satisfies PriceList;
+        })
+      );
+      setVersions(nextVersions);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   const updateDraft = (updater: (current: PriceList) => PriceList) =>
     setDraft((current) => (current ? updater(current) : current));
 

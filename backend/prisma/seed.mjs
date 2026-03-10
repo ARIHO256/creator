@@ -5667,6 +5667,1176 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
   });
 }
 
+async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
+  const sellerUserId = users.sellerUser.id;
+  const sellerId = sellerProfiles.seller.id;
+  const now = Date.now();
+  const ago = (mins) => new Date(now - mins * 60_000).toISOString();
+  const soon = (mins) => new Date(now + mins * 60_000).toISOString();
+
+  await prisma.wholesaleRfq.createMany({
+    data: [
+      {
+        id: 'RFQ-4101',
+        userId: sellerUserId,
+        status: 'open',
+        title: 'Office EV chargers + installation',
+        buyerName: 'Kampala City Fleet',
+        buyerType: 'Organization',
+        urgency: 'Urgent',
+        origin: 'Retail',
+        destination: 'Kampala, UG',
+        paymentRail: 'CorporatePay',
+        approvalRequired: true,
+        dueAt: new Date(soon(480)),
+        data: {
+          id: 'RFQ-4101',
+          title: 'Office EV chargers + installation',
+          status: 'Open',
+          urgency: 'Urgent',
+          createdAt: ago(126),
+          dueAt: soon(480),
+          buyerType: 'Organization',
+          origin: 'Retail',
+          paymentRail: 'CorporatePay',
+          approvalRequired: true,
+          attachments: 2,
+          destination: 'Kampala, UG',
+          category: 'EV chargers',
+          notes: 'Include OCPP and commissioning.',
+          score: 73,
+          buyerName: 'Kampala City Fleet',
+          competitorPressure: 'High',
+          paymentRisk: 'Low',
+          marginPotential: 24
+        }
+      },
+      {
+        id: 'RFQ-4100',
+        userId: sellerUserId,
+        status: 'open',
+        title: 'Bulk e-bike batteries 48V 20Ah',
+        buyerName: 'Nairobi Importers Ltd',
+        buyerType: 'Organization',
+        urgency: 'Normal',
+        origin: 'Wholesale',
+        destination: 'Nairobi, KE',
+        paymentRail: 'CorporatePay',
+        approvalRequired: false,
+        dueAt: new Date(soon(1440)),
+        data: {
+          id: 'RFQ-4100',
+          title: 'Bulk e-bike batteries 48V 20Ah',
+          status: 'Open',
+          urgency: 'Normal',
+          createdAt: ago(372),
+          dueAt: soon(1440),
+          buyerType: 'Organization',
+          origin: 'Wholesale',
+          paymentRail: 'CorporatePay',
+          approvalRequired: false,
+          attachments: 1,
+          destination: 'Nairobi, KE',
+          category: 'Batteries',
+          notes: 'Prefer Grade A cells and BMS.',
+          score: 67,
+          buyerName: 'Nairobi Importers Ltd',
+          competitorPressure: 'Medium',
+          paymentRisk: 'Low',
+          marginPotential: 18
+        }
+      },
+      {
+        id: 'RFQ-4099',
+        userId: sellerUserId,
+        status: 'open',
+        title: 'Type 2 cables MOQ inquiry',
+        buyerName: 'Airport Mobility UG',
+        buyerType: 'Personal',
+        urgency: 'Normal',
+        origin: 'Wholesale',
+        destination: 'Entebbe, UG',
+        paymentRail: 'Standard Checkout',
+        approvalRequired: false,
+        dueAt: new Date(soon(2880)),
+        data: {
+          id: 'RFQ-4099',
+          title: 'Type 2 cables MOQ inquiry',
+          status: 'Open',
+          urgency: 'Normal',
+          createdAt: ago(960),
+          dueAt: soon(2880),
+          buyerType: 'Personal',
+          origin: 'Wholesale',
+          paymentRail: 'Standard Checkout',
+          approvalRequired: false,
+          attachments: 0,
+          destination: 'Entebbe, UG',
+          category: 'Accessories',
+          notes: 'Need best tier pricing.',
+          score: 61,
+          buyerName: 'Airport Mobility UG',
+          competitorPressure: 'Low',
+          paymentRisk: 'Medium',
+          marginPotential: 13
+        }
+      }
+    ]
+  });
+
+  await prisma.wholesaleQuote.createMany({
+    data: [
+      {
+        id: 'QT-24018',
+        userId: sellerUserId,
+        rfqId: 'RFQ-4101',
+        status: 'negotiating',
+        title: 'Bulk EV Charger Supply (Phase 1)',
+        buyer: 'Kampala City Fleet',
+        buyerType: 'Organization',
+        currency: 'USD',
+        total: 18905.4,
+        approvalsRequired: false,
+        data: {
+          id: 'QT-24018',
+          title: 'Bulk EV Charger Supply (Phase 1)',
+          client: 'Kampala City Fleet',
+          contact: 'procurement@kcf.example',
+          currency: 'USD',
+          status: 'Negotiating',
+          winChance: 72,
+          discount: 150,
+          shipping: 260,
+          taxRate: 0.02,
+          terms: 'Payment: 40% deposit, 60% before shipment. Warranty: 12 months. Delivery: 25 days.',
+          notes: 'Client asked to improve warranty language and reduce delivery risk.',
+          createdAt: ago(4320),
+          updatedAt: ago(42),
+          nextFollowUpAt: soon(90),
+          approvals: { thresholdPct: 0.1, required: false, requests: [] },
+          activity: [
+            { id: 'act_q1_1', at: ago(46), actor: 'Sales', text: 'Updated quote after negotiation call.' },
+            { id: 'act_q1_2', at: ago(120), actor: 'System', text: 'Quote sent to client.' }
+          ],
+          lines: [
+            { id: 'ln_q1_1', name: '7kW Wallbox Charger', qty: 30, unit: 560 },
+            { id: 'ln_q1_2', name: 'Type 2 Cable 5m', qty: 60, unit: 28 },
+            { id: 'ln_q1_3', name: 'Installation guidance (remote)', qty: 1, unit: 120 }
+          ],
+          totals: { subtotal: 18275, tax: 365.5, total: 18900.5 },
+          versions: [
+            {
+              id: 'ver_q1_1',
+              at: ago(120),
+              actor: 'Sales',
+              note: 'Initial send',
+              snapshot: {
+                title: 'Bulk EV Charger Supply (Phase 1)',
+                client: 'Kampala City Fleet',
+                currency: 'USD',
+                status: 'Sent',
+                winChance: 68,
+                discount: 120,
+                shipping: 260,
+                taxRate: 0.02,
+                terms: 'Payment: 40% deposit, 60% before shipment.',
+                notes: 'Initial send',
+                lines: [
+                  { id: 'ln_q1_1', name: '7kW Wallbox Charger', qty: 30, unit: 575 },
+                  { id: 'ln_q1_2', name: 'Type 2 Cable 5m', qty: 60, unit: 28 }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        id: 'QT-24019',
+        userId: sellerUserId,
+        rfqId: 'RFQ-4100',
+        status: 'sent',
+        title: 'Logistics Setup and Documentation',
+        buyer: 'Nairobi Importers Ltd',
+        buyerType: 'Organization',
+        currency: 'USD',
+        total: 580,
+        approvalsRequired: false,
+        data: {
+          id: 'QT-24019',
+          title: 'Logistics Setup and Documentation',
+          client: 'Nairobi Importers Ltd',
+          contact: 'ops@nairobiimporters.example',
+          currency: 'USD',
+          status: 'Sent',
+          winChance: 55,
+          discount: 0,
+          shipping: 0,
+          taxRate: 0,
+          terms: 'Includes documentation checklist, coordination, and export readiness review.',
+          notes: 'Waiting for client route confirmation.',
+          createdAt: ago(2520),
+          updatedAt: ago(95),
+          nextFollowUpAt: soon(240),
+          approvals: { thresholdPct: 0.1, required: false, requests: [] },
+          activity: [{ id: 'act_q2_1', at: ago(95), actor: 'System', text: 'Quote sent to client.' }],
+          lines: [
+            { id: 'ln_q2_1', name: 'Logistics planning package', qty: 1, unit: 420 },
+            { id: 'ln_q2_2', name: 'Documentation support', qty: 1, unit: 160 }
+          ],
+          totals: { subtotal: 580, tax: 0, total: 580 },
+          versions: []
+        }
+      }
+    ]
+  });
+
+  await prisma.wholesalePriceList.createMany({
+    data: [
+      {
+        id: 'SKU-1001',
+        userId: sellerUserId,
+        name: 'EV Fast Charger 7kW Wallbox',
+        currency: 'USD',
+        status: 'active',
+        data: {
+          id: 'SKU-1001',
+          sku: 'EV-CHG-7KW',
+          name: 'EV Fast Charger 7kW Wallbox',
+          currency: 'USD',
+          baseCost: 420,
+          status: 'Active',
+          updatedAt: ago(35),
+          tiers: [
+            { id: 't1', minQty: 1, price: 620 },
+            { id: 't2', minQty: 10, price: 590 },
+            { id: 't3', minQty: 50, price: 560 }
+          ],
+          segments: ['Standard', 'Distributor', 'Africa']
+        }
+      },
+      {
+        id: 'SKU-1002',
+        userId: sellerUserId,
+        name: 'E-Bike Battery Pack 48V 20Ah',
+        currency: 'USD',
+        status: 'draft',
+        data: {
+          id: 'SKU-1002',
+          sku: 'EBK-BAT-48V-20AH',
+          name: 'E-Bike Battery Pack 48V 20Ah',
+          currency: 'USD',
+          baseCost: 190,
+          status: 'Draft',
+          updatedAt: ago(92),
+          tiers: [
+            { id: 't1', minQty: 5, price: 280 },
+            { id: 't2', minQty: 20, price: 258 },
+            { id: 't3', minQty: 50, price: 242 }
+          ],
+          segments: ['Standard', 'Reseller']
+        }
+      },
+      {
+        id: 'SKU-1003',
+        userId: sellerUserId,
+        name: 'Type 2 Charging Cable 5m',
+        currency: 'USD',
+        status: 'active',
+        data: {
+          id: 'SKU-1003',
+          sku: 'CAB-T2-5M',
+          name: 'Type 2 Charging Cable 5m',
+          currency: 'USD',
+          baseCost: 14,
+          status: 'Active',
+          updatedAt: ago(210),
+          tiers: [
+            { id: 't1', minQty: 10, price: 36 },
+            { id: 't2', minQty: 100, price: 29 }
+          ],
+          segments: ['Standard', 'Distributor']
+        }
+      }
+    ]
+  });
+
+  await prisma.providerConsultation.createMany({
+    data: [
+      {
+        id: 'CNS-4012',
+        userId: sellerUserId,
+        status: 'new',
+        data: {
+          id: 'CNS-4012',
+          client: 'Amina K.',
+          channel: 'EVzone',
+          topic: 'Website integration for WhatsApp Business API',
+          status: 'New',
+          priority: 'High',
+          createdAt: ago(55),
+          lastMessageAt: ago(12),
+          scheduledAt: null,
+          tags: ['integration', 'whatsapp'],
+          transcript: 'Client wants to integrate WhatsApp Business API into their marketplace. Needs guidance on provider selection, template approvals, webhook reliability, and agent inbox routing.',
+          notes: '',
+          summary: null,
+          summaryAt: null,
+          lastConverted: null
+        }
+      },
+      {
+        id: 'CNS-4011',
+        userId: sellerUserId,
+        status: 'scheduled',
+        scheduledAt: new Date(soon(180)),
+        data: {
+          id: 'CNS-4011',
+          client: 'Kato S.',
+          channel: 'WhatsApp',
+          topic: 'Service pricing and quote structure',
+          status: 'Scheduled',
+          priority: 'Medium',
+          createdAt: ago(210),
+          lastMessageAt: ago(45),
+          scheduledAt: soon(180),
+          tags: ['pricing', 'quote'],
+          transcript: 'Discussed pricing tiers and how to present quotes. Client prefers clear packages and optional add-ons, plus taxes handling where applicable.',
+          notes: 'Share a quote template with 3 packages and 2 add-ons.\nConfirm VAT applicability by client country.',
+          summary: null,
+          summaryAt: null,
+          lastConverted: { type: 'Quote', at: ago(40) }
+        }
+      }
+    ]
+  });
+
+  await prisma.providerBooking.createMany({
+    data: [
+      {
+        id: 'BK-7001',
+        userId: sellerUserId,
+        status: 'requested',
+        scheduledAt: new Date(soon(1440)),
+        durationMinutes: 120,
+        amount: 640,
+        currency: 'USD',
+        data: {
+          id: 'BK-7001',
+          customerName: 'Amina K.',
+          customerEmail: 'amina@example.com',
+          customerPhone: '+256700111111',
+          serviceName: 'EV Charger Installation',
+          status: 'Requested',
+          scheduledAt: soon(1440),
+          durationMins: 120,
+          location: 'Kampala',
+          currency: 'USD',
+          price: 640,
+          createdAt: ago(180),
+          updatedAt: ago(32),
+          responseDueAt: soon(60),
+          startDueAt: soon(1440),
+          deliverables: [{ id: 'del_b1_1', title: 'Site survey', status: 'Pending' }],
+          payment: { milestones: [{ id: 'pm_b1_1', label: 'Deposit', amount: 320, status: 'Pending', dueAt: soon(120) }] },
+          checklistTemplateId: 'tmpl_booking_install',
+          checklist: [{ id: 'chk_b1_1', text: 'Confirm power load', done: false }],
+          proofs: [],
+          audit: [{ id: 'aud_b1_1', at: ago(180), actor: 'System', action: 'Created', detail: 'Booking received' }],
+          notes: 'Customer requested a morning slot.'
+        }
+      },
+      {
+        id: 'BK-7002',
+        userId: sellerUserId,
+        status: 'confirmed',
+        scheduledAt: new Date(soon(2880)),
+        durationMinutes: 240,
+        amount: 1200,
+        currency: 'USD',
+        data: {
+          id: 'BK-7002',
+          customerName: 'Moses N.',
+          customerEmail: 'moses@example.com',
+          customerPhone: '+256700222222',
+          serviceName: 'Fleet Energy Audit',
+          status: 'Confirmed',
+          scheduledAt: soon(2880),
+          durationMins: 240,
+          location: 'Nairobi',
+          currency: 'USD',
+          price: 1200,
+          createdAt: ago(1440),
+          updatedAt: ago(70),
+          responseDueAt: null,
+          startDueAt: soon(2880),
+          deliverables: [{ id: 'del_b2_1', title: 'Usage report', status: 'Ready' }],
+          payment: { milestones: [{ id: 'pm_b2_1', label: 'Full payment', amount: 1200, status: 'Paid', dueAt: ago(300) }] },
+          checklistTemplateId: 'tmpl_booking_audit',
+          checklist: [{ id: 'chk_b2_1', text: 'Collect site photos', done: true }],
+          proofs: [{ id: 'proof_b2_1', name: 'audit-report.pdf', uploadedAt: ago(60), visibility: 'private' }],
+          audit: [{ id: 'aud_b2_1', at: ago(1440), actor: 'Ops', action: 'Confirmed', detail: 'Client approved schedule' }],
+          notes: 'Bring assessment worksheet.'
+        }
+      }
+    ]
+  });
+
+  await prisma.providerPortfolioItem.createMany({
+    data: [
+      {
+        id: 'PORT-M-1',
+        userId: sellerUserId,
+        title: 'Kampala charger install hero shot',
+        description: 'On-site installation highlight.',
+        mediaUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70',
+        status: 'active',
+        data: {
+          id: 'PORT-M-1',
+          type: 'image',
+          title: 'Kampala charger install hero shot',
+          tags: ['install', 'ev'],
+          featured: true,
+          usedAsCover: true,
+          description: 'On-site installation highlight.',
+          thumb: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70',
+          createdAt: ago(600)
+        }
+      },
+      {
+        id: 'PORT-M-2',
+        userId: sellerUserId,
+        title: 'Fleet audit recap reel',
+        description: 'Quick recap video.',
+        mediaUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        status: 'active',
+        data: {
+          id: 'PORT-M-2',
+          type: 'video',
+          title: 'Fleet audit recap reel',
+          tags: ['audit', 'reel'],
+          featured: false,
+          usedAsCover: false,
+          description: 'Quick recap video.',
+          thumb: 'https://images.unsplash.com/photo-1557682250-33bd709cbe85?auto=format&fit=crop&w=1200&q=60',
+          createdAt: ago(420)
+        }
+      }
+    ]
+  });
+
+  await prisma.sellerWarehouse.createMany({
+    data: [
+      {
+        id: 'wh_kla_main',
+        sellerId,
+        name: 'Main Warehouse',
+        code: 'KLA-MAIN',
+        type: 'WAREHOUSE',
+        status: 'ACTIVE',
+        isDefault: true,
+        address: { country: 'UG', city: 'Kampala' },
+        contact: { name: 'Asha', phone: '+256700333333' },
+        metadata: {
+          cutOffLocal: '17:00',
+          processingDays: 1,
+          capabilities: { ship: true, pickup: true, returns: true },
+          constraints: { hazmat: false, batteries: true },
+          serviceCountries: ['UG', 'KE', 'RW'],
+          blockedCountries: ['CN']
+        }
+      },
+      {
+        id: 'wh_nbo_hub',
+        sellerId,
+        name: 'Nairobi Hub',
+        code: 'NBO-HUB',
+        type: 'WAREHOUSE',
+        status: 'ACTIVE',
+        isDefault: false,
+        address: { country: 'KE', city: 'Nairobi' },
+        contact: { name: 'Kato', phone: '+254700111111' },
+        metadata: {
+          cutOffLocal: '16:30',
+          processingDays: 2,
+          capabilities: { ship: true, pickup: false, returns: true },
+          constraints: { hazmat: true, batteries: true },
+          serviceCountries: ['KE', 'TZ'],
+          blockedCountries: []
+        }
+      }
+    ]
+  });
+
+  await prisma.sellerDocument.createMany({
+    data: [
+      {
+        id: 'doc_invoice_template_seed',
+        sellerId,
+        type: 'Invoice Template',
+        channel: 'Ops',
+        regions: ['UG'],
+        fileName: 'invoice-standard-v3.pdf',
+        url: 'https://example.com/invoice-standard-v3.pdf',
+        status: 'APPROVED',
+        uploadedAt: new Date(ago(720)),
+        metadata: {
+          kind: 'invoice',
+          scope: 'Team',
+          locale: 'en-UG',
+          owner: 'Ops',
+          fields: ['Invoice #', 'Buyer VAT', 'Line items'],
+          versions: [{ v: 3, at: ago(720), by: 'Ops', note: 'Added buyer VAT field' }]
+        }
+      },
+      {
+        id: 'doc_packing_template_seed',
+        sellerId,
+        type: 'Packing List Template',
+        channel: 'Ops',
+        regions: ['UG', 'KE'],
+        fileName: 'packing-list-africa.pdf',
+        url: 'https://example.com/packing-list-africa.pdf',
+        status: 'APPROVED',
+        uploadedAt: new Date(ago(540)),
+        metadata: {
+          kind: 'packing',
+          scope: 'Africa',
+          locale: 'en',
+          owner: 'Ops',
+          fields: ['SKU', 'Qty', 'Gross weight'],
+          versions: [{ v: 2, at: ago(540), by: 'Ops', note: 'Updated HS code footer' }]
+        }
+      }
+    ]
+  });
+
+  await prisma.sellerExportJob.createMany({
+    data: [
+      {
+        id: 'exp_job_1',
+        sellerId,
+        type: 'Orders',
+        status: 'COMPLETED',
+        format: 'CSV',
+        requestedAt: new Date(ago(220)),
+        completedAt: new Date(ago(210)),
+        fileUrl: 'https://example.com/exports/orders-q1.csv',
+        filters: { range: 'Last 30 days' },
+        metadata: {
+          name: 'Orders Q1 Snapshot',
+          dataset: 'Orders',
+          destination: 'Email',
+          progress: 100,
+          requestedBy: 'Ops Lead',
+          rows: 214,
+          size: '1.4 MB',
+          expiresAt: soon(14400),
+          params: { range: 'Last 30 days' },
+          logs: ['Job queued', 'Rows collected', 'Delivered to email']
+        }
+      },
+      {
+        id: 'exp_job_2',
+        sellerId,
+        type: 'Listings',
+        status: 'RUNNING',
+        format: 'XLSX',
+        requestedAt: new Date(ago(15)),
+        filters: { marketplace: 'EVmart' },
+        metadata: {
+          name: 'Listings audit workbook',
+          dataset: 'Listings',
+          destination: 'Drive',
+          progress: 64,
+          requestedBy: 'Compliance Desk',
+          rows: 98,
+          size: 'Generating',
+          expiresAt: null,
+          params: { marketplace: 'EVmart' },
+          logs: ['Job queued', 'Workbook generation started']
+        }
+      }
+    ]
+  });
+
+  await prisma.supportContent.createMany({
+    data: [
+      {
+        id: 'chg_1',
+        contentType: 'CHANGELOG',
+        title: 'Seller workspace summaries now load from backend',
+        body: 'App shell counts, notifications, messages, and orders now come from authenticated backend endpoints.',
+        status: 'published',
+        metadata: {
+          version: '2026.03.11',
+          type: 'Improvement',
+          product: 'Seller App',
+          roles: ['Seller', 'Ops'],
+          tags: ['backend', 'seller-shell'],
+          impact: 'High',
+          details: ['Backend counts now match live seller data.', 'Local mock counts removed from shell runtime.']
+        }
+      },
+      {
+        id: 'chg_2',
+        contentType: 'CHANGELOG',
+        title: 'Listings and express detail persistence added',
+        body: 'Seller listings and express order detail mutations are now backed by MySQL.',
+        status: 'published',
+        metadata: {
+          version: '2026.03.10',
+          type: 'Feature',
+          product: 'Seller App',
+          roles: ['Seller'],
+          tags: ['listings', 'express'],
+          impact: 'High',
+          details: ['Listing detail now reads from backend listings.', 'Express order status and rider data persist through API calls.']
+        }
+      }
+    ]
+  });
+
+  await prisma.regulatoryDesk.createMany({
+    data: [
+      {
+        id: 'desk_edumart',
+        userId: sellerUserId,
+        slug: 'edumart',
+        title: 'EduMart Desk',
+        status: 'active',
+        metadata: {
+          pageData: {
+            rows: [
+              {
+                id: 'EDU-201',
+                title: 'STEM Classroom Kit',
+                kind: 'Physical Product',
+                category: 'Education kits',
+                ageBand: '9-12',
+                risk: 'Medium',
+                status: 'In Review',
+                updatedAt: ago(95),
+                media: { images: 6 },
+                docs: { safetyCert: true, policyAcknowledged: true, copyrightProof: true, providerKyc: true },
+                safety: { ageLabel: true, noAdultContent: true, parentControls: true },
+                privacy: { basic: true },
+                safeguarding: { basic: true },
+                deskNotes: [{ id: 'edu_note_1', at: ago(90), from: 'Edu Desk', text: 'Please attach the updated teacher guide.' }],
+                timeline: [{ id: 'edu_tl_1', at: ago(110), label: 'Submitted for review' }],
+                compliance: { state: 'warn', issues: ['Teacher guide missing'], lastScanAt: ago(88) },
+                readiness: 82
+              }
+            ]
+          }
+        }
+      },
+      {
+        id: 'desk_healthmart',
+        userId: sellerUserId,
+        slug: 'healthmart',
+        title: 'HealthMart Desk',
+        status: 'active',
+        metadata: {
+          pageData: {
+            submissions: [
+              {
+                id: 'HM-101',
+                desk: 'HealthMart',
+                category: 'Diagnostics',
+                subject: 'Portable ECG Monitor',
+                status: 'Under Review',
+                createdAt: ago(420),
+                updatedAt: ago(40),
+                slaDueAt: soon(360),
+                riskScore: 61,
+                docs: { required: [{ key: 'invoice', label: 'Commercial invoice', state: 'Uploaded' }, { key: 'reg', label: 'Product registration', state: 'Needs review' }] },
+                decision: { state: 'Pending', reviewerNote: 'Checking destination registration scope.' },
+                flags: ['Registration scope mismatch'],
+                audit: [{ at: ago(420), who: 'Seller', action: 'Submitted' }]
+              }
+            ],
+            docLibrary: [
+              { key: 'invoice', label: 'Commercial invoice', appliesTo: 'All health imports', state: 'Ready' },
+              { key: 'reg', label: 'Product registration', appliesTo: 'Diagnostics', state: 'Needs review' }
+            ]
+          }
+        }
+      },
+      {
+        id: 'desk_healthmart_equipment',
+        userId: sellerUserId,
+        slug: 'healthmart-equipment',
+        title: 'HealthMart Equipment Desk',
+        status: 'active',
+        metadata: {
+          pageData: {
+            submissions: [
+              {
+                id: 'EQ-301',
+                name: 'Portable Ultrasound Mini',
+                category: 'Imaging',
+                deviceClass: 'II',
+                origin: 'CN',
+                destination: 'UG',
+                hsCode: '9018.12',
+                manufacturer: 'Shenzhen MedTech',
+                model: 'US-Mini-3',
+                status: 'Under Review',
+                createdAt: ago(560),
+                updatedAt: ago(70),
+                certifications: ['CE', 'ISO 13485'],
+                docs: {
+                  commercialInvoice: true,
+                  certificateOfConformity: true,
+                  productRegistration: true,
+                  warranty: true,
+                  userManual: true,
+                  calibrationCertificate: false,
+                  msds: false
+                },
+                notes: 'Awaiting destination-side calibration certificate confirmation.',
+                flags: ['Calibration evidence missing']
+              }
+            ]
+          }
+        }
+      },
+      {
+        id: 'desk_healthmart_logistics',
+        userId: sellerUserId,
+        slug: 'healthmart-logistics',
+        title: 'HealthMart Logistics Desk',
+        status: 'active',
+        metadata: {
+          pageData: {
+            licenses: [
+              {
+                id: 'LIC-HL-1',
+                name: 'Cold-chain transport permit',
+                issuer: 'UNBS',
+                number: 'UG-COLD-882',
+                issuedAt: ago(43200),
+                expiresAt: soon(525600),
+                required: true,
+                scope: 'Vaccine and diagnostics transport',
+                verifiedAt: ago(2880),
+                docs: [{ id: 'evdoc_1', name: 'cold-chain-permit.pdf', type: 'PDF', uploadedAt: ago(2885) }],
+                tags: ['cold-chain']
+              }
+            ],
+            checklist: [
+              {
+                id: 'sec_1',
+                title: 'Transport setup',
+                items: [
+                  {
+                    id: 'chk_hl_1',
+                    title: 'Temperature logger in active use',
+                    requirement: 'Every shipment must have a logger record.',
+                    status: 'pass',
+                    required: true,
+                    owner: 'Ops',
+                    updatedAt: ago(50),
+                    evidence: [{ id: 'e1', name: 'logger-run.csv', type: 'CSV', uploadedAt: ago(52) }]
+                  }
+                ]
+              }
+            ],
+            rules: [
+              { id: 'rule_hl_1', name: 'Block expired license dispatch', enabled: true, severity: 'High', when: 'License expired', then: 'Stop dispatch', evidence: 'Permit metadata' }
+            ],
+            audit: [{ id: 'aud_hl_1', at: ago(55), actor: 'System', action: 'Validation passed', detail: 'Cold-chain docs available' }]
+          }
+        }
+      },
+      {
+        id: 'desk_healthmart_pharmacy',
+        userId: sellerUserId,
+        slug: 'healthmart-pharmacy',
+        title: 'HealthMart Pharmacy Desk',
+        status: 'active',
+        metadata: {
+          pageData: {
+            licenses: [
+              {
+                id: 'PH-LIC-1',
+                seller: 'EV Hub Supplier',
+                country: 'UG',
+                authority: 'National Drug Authority',
+                licenseNo: 'NDA-88213',
+                issuedAt: ago(86400),
+                expiresAt: soon(432000),
+                status: 'Verified',
+                scope: ['OTC', 'Storage'],
+                docs: ['license-scan.pdf'],
+                riskScore: 24,
+                notes: 'Verified for current OTC catalog.'
+              }
+            ],
+            items: [
+              {
+                id: 'PH-ITEM-1',
+                title: 'Antiseptic Spray',
+                seller: 'EV Hub Supplier',
+                category: 'OTC',
+                restriction: 'License',
+                policy: 'Requires active pharmacy storage license.',
+                status: 'Approved',
+                createdAt: ago(320),
+                evidence: ['license-scan.pdf']
+              }
+            ],
+            rules: [
+              { id: 'PH-RULE-1', name: 'Block expired pharmacy license', enabled: true, when: ['License expired'], then: ['Block listing publication'], lastEditedAt: ago(500) }
+            ],
+            cases: [
+              {
+                id: 'PH-CASE-1',
+                severity: 'Medium',
+                status: 'In Review',
+                title: 'Restricted item scope validation',
+                related: 'Antiseptic Spray',
+                createdAt: ago(280),
+                assignee: 'NDA Desk',
+                timeline: [{ at: ago(280), who: 'System', what: 'Case opened after catalog scan' }]
+              }
+            ]
+          }
+        }
+      }
+    ]
+  });
+
+  await prisma.regulatoryDeskItem.createMany({
+    data: [
+      { id: 'deskitem_edumart_1', deskId: 'desk_edumart', title: 'Teacher guide follow-up', status: 'review', severity: 'medium', metadata: { listingId: 'EDU-201' } },
+      { id: 'deskitem_healthmart_1', deskId: 'desk_healthmart', title: 'Registration scope check', status: 'review', severity: 'high', metadata: { submissionId: 'HM-101' } },
+      { id: 'deskitem_health_eq_1', deskId: 'desk_healthmart_equipment', title: 'Calibration certificate required', status: 'open', severity: 'high', metadata: { submissionId: 'EQ-301' } },
+      { id: 'deskitem_health_log_1', deskId: 'desk_healthmart_logistics', title: 'Cold-chain permit verified', status: 'resolved', severity: 'low', metadata: { licenseId: 'LIC-HL-1' } },
+      { id: 'deskitem_health_ph_1', deskId: 'desk_healthmart_pharmacy', title: 'Restricted item scope validation', status: 'review', severity: 'medium', metadata: { itemId: 'PH-ITEM-1' } }
+    ]
+  });
+
+  await prisma.regulatoryComplianceItem.createMany({
+    data: [
+      {
+        id: 'comp_doc_1',
+        userId: sellerUserId,
+        itemType: 'DOC',
+        title: 'Business License',
+        status: 'active',
+        metadata: { id: 'DOC-1001', type: 'Business License', channel: 'EVmart', regions: ['UG'], fileName: 'license.pdf', uploadedAt: ago(1200), expiresAt: soon(525600), status: 'Approved', notes: 'Annual renewal complete.' }
+      },
+      {
+        id: 'comp_doc_2',
+        userId: sellerUserId,
+        itemType: 'DOC',
+        title: 'MSDS',
+        status: 'active',
+        metadata: { id: 'DOC-1002', type: 'MSDS', channel: 'EVmart', regions: ['UG', 'KE'], fileName: 'battery-msds.pdf', uploadedAt: ago(680), expiresAt: soon(262800), status: 'Submitted', notes: 'Battery listing support file.' }
+      },
+      {
+        id: 'comp_queue_1',
+        userId: sellerUserId,
+        itemType: 'QUEUE',
+        title: 'Portable battery listing',
+        status: 'active',
+        metadata: { listingId: 'listing_ev_battery', channel: 'EVmart', title: 'Portable Battery Pack 48V', path: '/listings/listing_ev_battery', required: ['Business License', 'MSDS'], missing: [] }
+      },
+      {
+        id: 'comp_rule_1',
+        userId: sellerUserId,
+        itemType: 'RULE',
+        title: 'Battery listings require MSDS',
+        status: 'active',
+        metadata: { match: 'battery', required: ['MSDS'] }
+      }
+    ]
+  });
+
+  await prisma.workspaceSetting.createMany({
+    data: [
+      {
+        userId: sellerUserId,
+        key: 'wholesale_rfq_drafts',
+        payload: {
+          drafts: {
+            'RFQ-4101': {
+              id: 'Q-RFQ-4101',
+              rfqId: 'RFQ-4101',
+              currency: 'USD',
+              status: 'Draft',
+              createdAt: ago(20),
+              sentAt: null,
+              lines: [
+                { id: 'drf_ln_1', sku: 'ITEM-001', name: '7kW Wallbox Charger', qty: 10, unitCost: 420, unitPrice: 620, leadDays: 14 },
+                { id: 'drf_ln_2', sku: 'ITEM-002', name: 'Installation + commissioning', qty: 10, unitCost: 160, unitPrice: 260, leadDays: 5 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'wholesale_quote_templates',
+        payload: {
+          templates: [
+            {
+              id: 'TPL-CHARGERS-STD',
+              name: 'Standard EV Charger Bulk Quote',
+              description: 'Default for bulk charger purchases.',
+              currency: 'USD',
+              discount: 120,
+              shipping: 180,
+              taxRate: 0.02,
+              terms: 'Payment: 50% deposit, 50% before shipment. Warranty: 12 months.',
+              lines: [
+                { id: 'tpl_q_1', name: '7kW Wallbox Charger', qty: 20, unit: 560 },
+                { id: 'tpl_q_2', name: 'Type 2 Cable 5m', qty: 50, unit: 28 }
+              ]
+            },
+            {
+              id: 'TPL-LOG-PORT',
+              name: 'Warehouse to Port Logistics',
+              description: 'Export and documentation support.',
+              currency: 'USD',
+              discount: 0,
+              shipping: 0,
+              taxRate: 0,
+              terms: 'Includes documentation checklist and coordination.',
+              lines: [{ id: 'tpl_q_3', name: 'Logistics planning package', qty: 1, unit: 420 }]
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'wholesale_price_list_versions',
+        payload: {
+          versions: [
+            {
+              id: 'pl_ver_1',
+              at: ago(35),
+              actor: 'Pricing Ops',
+              note: 'Updated distributor tier for EV-CHG-7KW',
+              snapshot: [
+                {
+                  id: 'SKU-1001',
+                  sku: 'EV-CHG-7KW',
+                  name: 'EV Fast Charger 7kW Wallbox',
+                  currency: 'USD',
+                  baseCost: 420,
+                  status: 'Active',
+                  updatedAt: ago(35),
+                  tiers: [{ id: 'vt1', minQty: 1, price: 620 }, { id: 'vt2', minQty: 10, price: 590 }],
+                  segments: ['Standard', 'Distributor']
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'provider_booking_templates',
+        payload: {
+          templates: [
+            { id: 'tmpl_booking_install', name: 'Installation checklist', note: 'Field install readiness', tasks: ['Confirm load capacity', 'Confirm mounting wall', 'Capture pre-install photo'] },
+            { id: 'tmpl_booking_audit', name: 'Audit checklist', note: 'Fleet energy audit readiness', tasks: ['Collect site photos', 'Confirm meter access', 'Prepare report template'] }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'provider_portfolio_case_studies',
+        payload: {
+          caseStudies: [
+            {
+              id: 'case_1',
+              title: 'City fleet charging rollout',
+              client: 'Kampala City Fleet',
+              scope: '20 charger deployment',
+              tags: ['ev', 'install'],
+              featured: true,
+              createdAt: ago(1440),
+              summary: 'Rolled out 20 charging points with phased commissioning and operator training.',
+              highlights: [{ k: 'Sites', v: '5' }, { k: 'Install time', v: '12 days' }]
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'ops_warehouses_page',
+        payload: {
+          rules: [
+            { id: 'route_1', enabled: true, priority: 1, name: 'UG retail to Kampala', match: { country: 'UG', category: 'Chargers' }, action: { warehouseId: 'wh_kla_main' }, note: 'Default East Africa charger routing' }
+          ],
+          buyerPrefs: [
+            { id: 'pref_1', name: 'Kampala City Fleet', preferredWarehouseId: 'wh_kla_main', lastOrderAt: ago(520), note: 'Prefers Kampala dispatch for same-day paperwork' }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'ops_exports_page',
+        payload: {
+          templates: [
+            { id: 'exp_tpl_1', name: 'Orders by marketplace', dataset: 'Orders', format: 'CSV', destination: 'Email', note: 'Weekly finance handoff', lastRunAt: ago(210) }
+          ],
+          schedules: [
+            { id: 'exp_sch_1', templateId: 'exp_tpl_1', name: 'Weekly orders export', frequency: 'Weekly', nextRunAt: soon(2880), enabled: true }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'ops_documents_page',
+        payload: {
+          templates: [
+            {
+              id: 'doc_tpl_1',
+              kind: 'Invoice',
+              name: 'Invoice Standard v3',
+              scope: 'Team',
+              locale: 'en-UG',
+              updatedAt: ago(720),
+              owner: 'Ops',
+              status: 'Active',
+              fields: ['Invoice #', 'Buyer VAT', 'Line items'],
+              defaults: { currency: 'USD', taxes: 'VAT', units: 'Metric', print: 'A4' },
+              versions: [{ v: 3, at: ago(720), by: 'Ops', note: 'Added buyer VAT field' }],
+              teamDefault: true
+            },
+            {
+              id: 'doc_tpl_2',
+              kind: 'Packing List',
+              name: 'Packing List Africa',
+              scope: 'Africa',
+              locale: 'en',
+              updatedAt: ago(540),
+              owner: 'Ops',
+              status: 'Active',
+              fields: ['SKU', 'Qty', 'Gross weight'],
+              defaults: { units: 'Metric', format: 'Compact' },
+              versions: [{ v: 2, at: ago(540), by: 'Ops', note: 'Updated HS code footer' }],
+              teamDefault: false
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'seller_dealz_marketplace_legacy',
+        payload: {
+          deals: [
+            {
+              id: 'deal_legacy_1',
+              type: 'Shoppable Adz',
+              title: 'Weekend Charger Bundle',
+              tagline: 'Bundle pricing for home installs',
+              supplier: { name: 'EV Hub Supplier', category: 'Retail', logoUrl: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop' },
+              creator: { name: 'Asha K', handle: '@asha', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop', verified: true },
+              startISO: ago(30),
+              endISO: soon(1440),
+              notes: 'Backend-backed legacy deal payload',
+              shoppable: {
+                id: 'ad_legacy_1',
+                status: 'Generated',
+                campaignName: 'Weekend Charger Bundle',
+                campaignSubtitle: 'Bundle pricing for home installs',
+                supplier: { name: 'EV Hub Supplier', category: 'Retail', logoUrl: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop' },
+                creator: { name: 'Asha K', handle: '@asha', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop', verified: true },
+                platforms: ['Instagram', 'WhatsApp'],
+                startISO: ago(30),
+                endISO: soon(1440),
+                heroImageUrl: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?q=80&w=1200&auto=format&fit=crop',
+                offers: [
+                  { id: 'offer_legacy_1', type: 'PRODUCT', name: '7kW Wallbox Charger', price: 540, basePrice: 620, currency: 'USD', stockLeft: 18, sold: 12, posterUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=500&h=500&q=70' }
+                ],
+                ctaPrimaryLabel: 'Shop now',
+                ctaSecondaryLabel: 'View details',
+                kpis: [{ label: 'Clicks', value: '980' }, { label: 'Purchases', value: '41' }]
+              }
+            }
+          ],
+          selectedId: 'deal_legacy_1',
+          cart: {},
+          liveCart: {}
+        }
+      }
+    ]
+  });
+
+  await prisma.review.createMany({
+    data: [
+      {
+        id: 'seller_provider_review_1',
+        reviewerUserId: users.creator.id,
+        subjectType: 'SELLER',
+        subjectId: sellerId,
+        subjectUserId: sellerUserId,
+        title: 'EV installation support',
+        buyerName: 'Amina K.',
+        buyerType: 'Buyer',
+        roleTarget: 'provider',
+        itemType: 'service',
+        channel: 'EVzone',
+        marketplace: 'Seller',
+        mldzSurface: 'service',
+        sentiment: 'positive',
+        requiresResponse: true,
+        ratingOverall: 5,
+        quickTags: ['Communication', 'Quality'],
+        issueTags: [],
+        reviewText: 'Very professional and fast. Communication was clear and the work quality exceeded expectations.',
+        wouldJoinAgain: true,
+        transactionIntent: 'bought',
+        status: 'PUBLISHED',
+        createdAt: new Date(ago(65))
+      },
+      {
+        id: 'seller_provider_review_2',
+        reviewerUserId: users.creator.id,
+        subjectType: 'SELLER',
+        subjectId: sellerId,
+        subjectUserId: sellerUserId,
+        title: 'Fleet audit follow-up',
+        buyerName: 'Moses N.',
+        buyerType: 'Buyer',
+        roleTarget: 'provider',
+        itemType: 'service',
+        channel: 'EVzone',
+        marketplace: 'Seller',
+        mldzSurface: 'service',
+        sentiment: 'negative',
+        requiresResponse: true,
+        ratingOverall: 2,
+        quickTags: ['Pricing'],
+        issueTags: ['Support'],
+        reviewText: 'Pricing was higher than expected and I did not get quick support after payment.',
+        wouldJoinAgain: false,
+        transactionIntent: 'none',
+        status: 'PUBLISHED',
+        createdAt: new Date(ago(420))
+      }
+    ]
+  });
+
+  await prisma.reviewReply.createMany({
+    data: [
+      {
+        id: 'seller_provider_review_reply_1',
+        reviewId: 'seller_provider_review_1',
+        authorUserId: sellerUserId,
+        body: 'Thank you, Amina. We appreciate the trust and we are always here to support you.',
+        visibility: 'PUBLIC',
+        createdAt: new Date(ago(22))
+      }
+    ]
+  });
+}
+
 async function clearDatabase() {
   await prisma.liveMoment.deleteMany();
   await prisma.liveToolConfig.deleteMany();
@@ -5678,6 +6848,7 @@ async function clearDatabase() {
   await prisma.adzLink.deleteMany();
   await prisma.adzCampaign.deleteMany();
   await prisma.adzBuilder.deleteMany();
+  await prisma.liveCampaignGiveaway.deleteMany();
   await prisma.promoAd.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.auditEvent.deleteMany();
@@ -5730,6 +6901,7 @@ async function main() {
   await seedCommerce(users, sellerProfiles);
   await seedDashboardAndCompatibility(users, sellerProfiles);
   await seedFrontendReplacementData(users, sellerProfiles);
+  await seedSellerRuntimeMockReplacements(users, sellerProfiles);
   await seedAnalytics(users);
 
   console.log('Seeded unified creator/seller backend data.');

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -932,7 +932,7 @@ export default function WholesaleRFQsSignalsAndDraftTotalsPreviewable() {
       })),
     []
   );
-  const [rfqs] = useMockState<Rfq[]>("wholesale.rfqs", seededRfqs);
+  const [rfqs, setRfqs] = useState<Rfq[]>([]);
 
   const [search, setSearch] = useState("");
   const [scoreMin, setScoreMin] = useState(0);
@@ -961,11 +961,55 @@ export default function WholesaleRFQsSignalsAndDraftTotalsPreviewable() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeRfq = useMemo(() => rfqs.find((r) => r.id === activeId) || null, [rfqs, activeId]);
 
-  const [drafts, setDrafts] = useMockState<DraftsByRfqId>("wholesale.rfqs.drafts", {});
+  const [drafts, setDrafts] = useState<DraftsByRfqId>({});
 
   useEffect(() => {
     // run basic unit tests once
     runSelfTests();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getWholesaleRfqs().then((payload) => {
+      if (!active) return;
+      const rows = Array.isArray((payload as { rfqs?: unknown[] }).rfqs)
+        ? ((payload as { rfqs?: Array<Record<string, unknown>> }).rfqs ?? [])
+        : [];
+      setRfqs(
+        rows.map((entry) => {
+          const data = ((entry.data ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? data.id ?? ""),
+            title: String(entry.title ?? data.title ?? "RFQ"),
+            status: String(data.status ?? entry.status ?? "Open"),
+            urgency: String(entry.urgency ?? data.urgency ?? "Normal"),
+            createdAt: String(data.createdAt ?? entry.createdAt ?? new Date().toISOString()),
+            dueAt: String(entry.dueAt ?? data.dueAt ?? new Date().toISOString()),
+            buyerType: String(entry.buyerType ?? data.buyerType ?? ""),
+            origin: String(entry.origin ?? data.origin ?? ""),
+            paymentRail: String(entry.paymentRail ?? data.paymentRail ?? ""),
+            approvalRequired: Boolean(entry.approvalRequired ?? data.approvalRequired),
+            attachments: Number(data.attachments ?? 0),
+            destination: String(entry.destination ?? data.destination ?? ""),
+            category: String(data.category ?? ""),
+            notes: String(data.notes ?? ""),
+            score: Number(data.score ?? 0),
+            buyerName: data.buyerName ? String(data.buyerName) : undefined,
+            competitorPressure: data.competitorPressure ? String(data.competitorPressure) : undefined,
+            paymentRisk: data.paymentRisk ? String(data.paymentRisk) : undefined,
+            marginPotential: data.marginPotential ? Number(data.marginPotential) : undefined,
+          } satisfies Rfq;
+        })
+      );
+      setDrafts(
+        (((payload as { drafts?: unknown }).drafts ?? {}) as DraftsByRfqId)
+      );
+    });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const openDetails = (id: string) => {

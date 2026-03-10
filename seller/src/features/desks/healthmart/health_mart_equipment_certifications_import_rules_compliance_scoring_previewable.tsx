@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -495,8 +495,21 @@ export default function HealthMartEquipmentPage() {
 
   const [tab, setTab] = useState<"Submissions" | "Certifications" | "Import rules">("Submissions");
 
-  const [submissions, setSubmissions] = useMockState<EquipmentSubmission[]>("desks.healthmart.equipment.submissions", seedSubmissions());
-  const [activeId, setActiveId] = useMockState<string>("desks.healthmart.equipment.activeId", seedSubmissions()[0]?.id || "");
+  const [submissions, setSubmissions] = useState<EquipmentSubmission[]>([]);
+  const [activeId, setActiveId] = useState<string>("");
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getRegulatoryDesk("healthmart-equipment").then((payload) => {
+      if (!active) return;
+      const pageData = ((payload as { pageData?: Record<string, unknown> }).pageData ?? {}) as Record<string, unknown>;
+      setSubmissions(Array.isArray(pageData.submissions) ? pageData.submissions as EquipmentSubmission[] : []);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!submissions.find((s) => s.id === activeId)) setActiveId(submissions[0]?.id || "");

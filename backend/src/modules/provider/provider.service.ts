@@ -110,12 +110,20 @@ export class ProviderService {
     return { consultations: consultations.map((entry) => this.serializeConsultation(entry)) };
   }
   async bookings(userId: string) {
-    const bookings = await this.prisma.providerBooking.findMany({
-      where: { userId },
-      include: { fulfillment: true },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return { bookings: bookings.map((entry) => this.serializeBooking(entry)) };
+    const [bookings, templates] = await Promise.all([
+      this.prisma.providerBooking.findMany({
+        where: { userId },
+        include: { fulfillment: true },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'provider_booking_templates')
+    ]);
+    return {
+      bookings: bookings.map((entry) => this.serializeBooking(entry)),
+      templates: Array.isArray((templates as Record<string, unknown> | null)?.templates)
+        ? ((templates as Record<string, unknown>).templates as unknown[])
+        : []
+    };
   }
   async booking(userId: string, id: string) {
     const booking = await this.prisma.providerBooking.findFirst({
@@ -220,11 +228,19 @@ export class ProviderService {
     return updated;
   }
   async portfolio(userId: string) {
-    const items = await this.prisma.providerPortfolioItem.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return { items: items.map((entry) => this.serializePortfolio(entry)) };
+    const [items, caseStudies] = await Promise.all([
+      this.prisma.providerPortfolioItem.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'provider_portfolio_case_studies')
+    ]);
+    return {
+      items: items.map((entry) => this.serializePortfolio(entry)),
+      caseStudies: Array.isArray((caseStudies as Record<string, unknown> | null)?.caseStudies)
+        ? ((caseStudies as Record<string, unknown>).caseStudies as unknown[])
+        : []
+    };
   }
   async reviews(userId: string) {
     const reviews = await this.prisma.review.findMany({
@@ -338,6 +354,18 @@ export class ProviderService {
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString()
     };
+  }
+
+  private async loadSetting(userId: string, key: string) {
+    const setting = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    return (setting?.payload as Record<string, unknown> | null) ?? null;
   }
 
   private normalizeStatus(status: string) {

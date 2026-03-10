@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { backendApi } from '../../../lib/backendApi';
+import { sellerBackendApi as backendApi } from '../../../lib/backendApi';
 import {
   buildCampaignBuilderPayload,
   buildCampaignPayload,

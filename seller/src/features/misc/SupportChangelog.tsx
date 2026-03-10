@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   Bell,
   Calendar,
@@ -380,7 +380,48 @@ export default function SupportChangelogPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [items, setItems] = useMockState<ChangelogItem[]>("support.changelog.items", seedChangelog());
+  const [items, setItems] = useState<ChangelogItem[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi
+      .getHelpSupportContent()
+      .then((payload) => {
+        if (!active) return;
+        const updates = Array.isArray((payload as { updates?: unknown[] }).updates)
+          ? ((payload as { updates?: Array<Record<string, unknown>> }).updates ?? [])
+          : [];
+        const mapped = updates.map((entry) => {
+          const meta = ((entry.metadata ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? meta.id ?? Math.random().toString(16).slice(2)),
+            at: String(entry.updatedAt ?? entry.createdAt ?? new Date().toISOString()),
+            version: String(meta.version ?? "Latest"),
+            product: String(meta.product ?? "Seller App"),
+            type: String(meta.type ?? "Improvement") as UpdateType,
+            title: String(entry.title ?? "Product update"),
+            summary: String(entry.body ?? meta.summary ?? ""),
+            details: Array.isArray(meta.details) ? meta.details.map((item) => String(item)) : [],
+            roles: Array.isArray(meta.roles) ? meta.roles.map((item) => String(item) as Role) : ["Seller"],
+            tags: Array.isArray(meta.tags) ? meta.tags.map((item) => String(item)) : [],
+            impact: String(meta.impact ?? "Medium") as "Low" | "Medium" | "High",
+            breaking: Boolean(meta.breaking),
+            actionsRequired: Array.isArray(meta.actionsRequired)
+              ? meta.actionsRequired.map((item) => String(item))
+              : [],
+          } satisfies ChangelogItem;
+        });
+        setItems(mapped);
+      })
+      .finally(() => {
+        if (active) setLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [read, setRead] = useState<Record<string, boolean>>({});
 
@@ -447,6 +488,11 @@ export default function SupportChangelogPage() {
       actions,
     };
   }, [role, items]);
+
+  useEffect(() => {
+    if (!loaded || items.length > 0) return;
+    setItems([]);
+  }, [items.length, loaded]);
 
   const shareBase = useMemo(() => {
     // demo base link

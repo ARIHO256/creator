@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -476,9 +476,54 @@ export default function OpsWarehousesPremium() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [warehouses, setWarehouses] = useMockState<Warehouse[]>("ops.warehouses.list", seedWarehouses());
-  const [rules, setRules] = useMockState<RoutingRule[]>("ops.warehouses.rules", seedRules());
-  const [buyerPrefs, setBuyerPrefs] = useMockState<BuyerPref[]>("ops.warehouses.buyerPrefs", seedBuyerPrefs());
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [rules, setRules] = useState<RoutingRule[]>([]);
+  const [buyerPrefs, setBuyerPrefs] = useState<BuyerPref[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getOpsWarehouses().then((payload) => {
+      if (!active) return;
+      const rows = Array.isArray((payload as { warehouses?: unknown[] }).warehouses)
+        ? ((payload as { warehouses?: Array<Record<string, unknown>> }).warehouses ?? [])
+        : [];
+      setWarehouses(
+        rows.map((entry) => {
+          const address = ((entry.address ?? {}) as Record<string, unknown>);
+          const meta = ((entry.metadata ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? ""),
+            code: String(entry.code ?? ""),
+            name: String(entry.name ?? "Warehouse"),
+            country: String(address.country ?? ""),
+            city: String(address.city ?? ""),
+            active: String(entry.status ?? "ACTIVE").toUpperCase() === "ACTIVE",
+            cutOffLocal: String(meta.cutOffLocal ?? "17:00"),
+            processingDays: Number(meta.processingDays ?? 1),
+            capabilities: (meta.capabilities as Warehouse["capabilities"] | undefined) ?? { ship: true, pickup: false, returns: false },
+            constraints: (meta.constraints as Warehouse["constraints"] | undefined) ?? { hazmat: false, batteries: false },
+            serviceCountries: Array.isArray(meta.serviceCountries) ? meta.serviceCountries.map((item) => String(item)) : [],
+            blockedCountries: Array.isArray(meta.blockedCountries) ? meta.blockedCountries.map((item) => String(item)) : [],
+            updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
+          } satisfies Warehouse;
+        })
+      );
+      setRules(
+        Array.isArray((payload as { rules?: unknown[] }).rules)
+          ? ((payload as { rules?: Array<RoutingRule> }).rules ?? [])
+          : []
+      );
+      setBuyerPrefs(
+        Array.isArray((payload as { buyerPrefs?: unknown[] }).buyerPrefs)
+          ? ((payload as { buyerPrefs?: Array<BuyerPref> }).buyerPrefs ?? [])
+          : []
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [q, setQ] = useState("");
   const [onlyActive, setOnlyActive] = useState(false);

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   AlertTriangle,
   Calendar,
@@ -629,11 +629,26 @@ export default function HealthMartLogisticsPage() {
 
   const [tab, setTab] = useState<TabKey>("Checklist");
 
-  const [licenses, setLicenses] = useMockState<License[]>("desks.healthmart.logistics.licenses", seed.licenses);
-  const [checklist, setChecklist] = useMockState<ChecklistSection[]>("desks.healthmart.logistics.checklist", seed.checklist);
-  const [rules, setRules] = useMockState<Rule[]>("desks.healthmart.logistics.rules", seed.rules);
+  const [licenses, setLicenses] = useState<License[]>([]);
+  const [checklist, setChecklist] = useState<ChecklistSection[]>([]);
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
+  useEffect(() => {
+    let active = true;
 
-  const [audit, setAudit] = useMockState<AuditEntry[]>("desks.healthmart.logistics.audit", seed.audit);
+    void sellerBackendApi.getRegulatoryDesk("healthmart-logistics").then((payload) => {
+      if (!active) return;
+      const pageData = ((payload as { pageData?: Record<string, unknown> }).pageData ?? {}) as Record<string, unknown>;
+      setLicenses(Array.isArray(pageData.licenses) ? pageData.licenses as License[] : []);
+      setChecklist(Array.isArray(pageData.checklist) ? pageData.checklist as ChecklistSection[] : []);
+      setRules(Array.isArray(pageData.rules) ? pageData.rules as Rule[] : []);
+      setAudit(Array.isArray(pageData.audit) ? pageData.audit as AuditEntry[] : []);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   const logAudit = (actor: string, action: string, detail: string) => {
     setAudit((s) => [{ id: makeId("A"), at: new Date().toISOString(), actor, action, detail }, ...s].slice(0, 120));
   };

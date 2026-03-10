@@ -21,6 +21,7 @@ export class CollaborationController {
   constructor(private readonly service: CollaborationService) {}
 
   @Get('campaigns/workspace') campaignWorkspace(@CurrentUser() user: RequestUser) { return this.service.campaignWorkspace(user.sub); }
+  @Get('campaigns/legacy-marketplace') legacyMarketplace(@CurrentUser() user: RequestUser) { return this.service.legacyMarketplace(user.sub); }
   @Get('campaigns') campaigns(@CurrentUser() user: RequestUser) { return this.service.campaigns(user.sub); }
   @Post('campaigns')
   @RateLimit({ limit: 20, windowMs: 60_000 })
