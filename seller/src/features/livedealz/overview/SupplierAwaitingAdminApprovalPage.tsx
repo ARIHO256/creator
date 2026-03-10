@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMockState } from "../../../mocks";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierAwaitingAdminApprovalPremium.tsx (Previewable Canvas)
@@ -12,7 +12,7 @@ import { useMockState } from "../../../mocks";
  * - Premium hero header with status-based title/desc + pill strip (ETA, submitted, flags)
  * - ToastStack + Modal system
  * - Step timeline: Submitted → Under review → Action required → Back in review → Approved
- * - Submission snapshot modal (pulled from localStorage when available)
+ * - Submission snapshot modal
  * - Notification preferences card + refresh status simulation
  * - “What we check” card + “While you wait” coaching card
  * - Action Required section: admin feedback, reference docs, checklist, message, uploads, resubmit gating
@@ -32,9 +32,6 @@ import { useMockState } from "../../../mocks";
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
-
-const STORAGE_STATUS_KEY = "mldz_supplier_admin_approval_status";
-const STORAGE_DRAFT_KEY = "mldz_supplier_admin_approval_draft";
 
 const SUBMISSION_KEYS_TO_TRY = [
   "mldz_supplier_campaign_submission_v1",
@@ -141,17 +138,6 @@ function readApprovalQueryParams(): Record<string, string> {
 
 export function seedSupplierAwaitingAdminApprovalSubmission(): CampaignSubmission {
   const qp = readApprovalQueryParams();
-  if (typeof window !== "undefined") {
-    for (const key of SUBMISSION_KEYS_TO_TRY) {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) continue;
-      const parsed = safeJsonParse<CampaignSubmission | null>(raw, null);
-      if (parsed && typeof parsed === "object") {
-        return parsed;
-      }
-    }
-  }
-
   return {
     campaignId: qp.campaignId || "S-203",
     campaignTitle: qp.title || "Supplier-only Promo Sprint",
@@ -165,9 +151,7 @@ export function seedSupplierAwaitingAdminApprovalSubmission(): CampaignSubmissio
     collabMode: (qp.collabMode as CampaignSubmission["collabMode"]) || "—",
     contentApprovalMode: (qp.approvalMode as CampaignSubmission["contentApprovalMode"]) || "Auto",
     supplierApprovalComplete: qp.supplierApprovalComplete === "1" ? true : true,
-    submittedAt:
-      (typeof window !== "undefined" && localStorage.getItem("mldz_supplier_admin_approval_submittedAt")) ||
-      nowIso(),
+    submittedAt: nowIso(),
     itemsCount: Number(qp.itemsCount || 2),
     landingLinks: [
       { label: "Campaign page", url: `https://mylivedealz.com/a/${encodeURIComponent(qp.slug || "supplier-only-promo-sprint")}` },
@@ -178,35 +162,26 @@ export function seedSupplierAwaitingAdminApprovalSubmission(): CampaignSubmissio
 
 export function seedSupplierAwaitingAdminApprovalStatus(): ApprovalStatus {
   const qp = readApprovalQueryParams();
-  if (typeof window === "undefined") return "UnderReview";
-  return (qp.status as ApprovalStatus) || (localStorage.getItem(STORAGE_STATUS_KEY) as ApprovalStatus) || "UnderReview";
+  return (qp.status as ApprovalStatus) || "UnderReview";
 }
 
 export function seedSupplierAwaitingAdminApprovalEtaMin() {
   const qp = readApprovalQueryParams();
-  if (typeof window === "undefined") return 90;
-  const value = Number(qp.etaMin || localStorage.getItem("mldz_supplier_admin_approval_etaMin") || 90);
+  const value = Number(qp.etaMin || 90);
   return Number.isFinite(value) ? value : 90;
 }
 
 export function seedSupplierAwaitingAdminApprovalReason() {
   const qp = readApprovalQueryParams();
-  if (typeof window === "undefined") return "";
-  return qp.reason || localStorage.getItem("mldz_supplier_admin_approval_reason") || "";
+  return qp.reason || "";
 }
 
 export function seedSupplierAwaitingAdminApprovalDocs(): AdminDoc[] {
-  if (typeof window === "undefined") return [];
-  return safeJsonParse<AdminDoc[]>(localStorage.getItem("mldz_supplier_admin_approval_docs") || "[]", []);
+  return [];
 }
 
 export function seedSupplierAwaitingAdminApprovalItems(): ChecklistItem[] {
   const qp = readApprovalQueryParams();
-  if (typeof window !== "undefined") {
-    const cached = safeJsonParse<ChecklistItem[]>(localStorage.getItem("mldz_supplier_admin_approval_items") || "[]", []);
-    if (Array.isArray(cached) && cached.length) return cached;
-  }
-
   return (qp.items || "")
     .split(",")
     .map((value) => value.trim())
@@ -215,8 +190,7 @@ export function seedSupplierAwaitingAdminApprovalItems(): ChecklistItem[] {
 }
 
 export function seedSupplierAwaitingAdminApprovalNote() {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem("mldz_supplier_admin_approval_note") || seedSupplierAwaitingAdminApprovalSubmission().notes || "";
+  return seedSupplierAwaitingAdminApprovalSubmission().notes || "";
 }
 
 function formatEta(mins: number): string {
@@ -770,8 +744,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const { toasts, push } = useToasts();
 
   const qp = useMemo<Record<string, string>>(() => readApprovalQueryParams(), []);
-  const [submission] = useMockState<CampaignSubmission>(
-    "supplier.awaitingAdminApproval.submission",
+  const [submission, setSubmission] = useState<CampaignSubmission>(
     seedSupplierAwaitingAdminApprovalSubmission()
   );
 
@@ -780,34 +753,17 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const submittedAt = submission?.submittedAt || nowIso();
 
   // status
-  const [status, setStatus] = useMockState<ApprovalStatus>(
-    "supplier.awaitingAdminApproval.status",
-    seedSupplierAwaitingAdminApprovalStatus()
-  );
-  const [etaMin, setEtaMin] = useMockState<number>(
-    "supplier.awaitingAdminApproval.etaMin",
-    seedSupplierAwaitingAdminApprovalEtaMin()
-  );
-  const [adminReason, setAdminReason] = useMockState<string>(
-    "supplier.awaitingAdminApproval.adminReason",
-    seedSupplierAwaitingAdminApprovalReason()
-  );
-  const [adminDocs, setAdminDocs] = useMockState<AdminDoc[]>(
-    "supplier.awaitingAdminApproval.adminDocs",
-    seedSupplierAwaitingAdminApprovalDocs()
-  );
-  const [items, setItems] = useMockState<ChecklistItem[]>(
-    "supplier.awaitingAdminApproval.items",
-    seedSupplierAwaitingAdminApprovalItems()
-  );
+  const [status, setStatus] = useState<ApprovalStatus>(seedSupplierAwaitingAdminApprovalStatus());
+  const [etaMin, setEtaMin] = useState<number>(seedSupplierAwaitingAdminApprovalEtaMin());
+  const [adminReason, setAdminReason] = useState<string>(seedSupplierAwaitingAdminApprovalReason());
+  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(seedSupplierAwaitingAdminApprovalDocs());
+  const [items, setItems] = useState<ChecklistItem[]>(seedSupplierAwaitingAdminApprovalItems());
 
   const [newItem, setNewItem] = useState("");
-  const [note, setNote] = useMockState<string>(
-    "supplier.awaitingAdminApproval.note",
-    seedSupplierAwaitingAdminApprovalNote()
-  );
+  const [note, setNote] = useState<string>(seedSupplierAwaitingAdminApprovalNote());
   const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
+  const [hydrated, setHydrated] = useState(false);
 
   const [prefEmail, setPrefEmail] = useState(true);
   const [prefInApp, setPrefInApp] = useState(true);
@@ -815,6 +771,53 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const [showSubmission, setShowSubmission] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const payload = await sellerBackendApi.getWorkflowScreenState(
+          "supplier-awaiting-admin-approval"
+        );
+        if (cancelled || !payload || typeof payload !== "object") return;
+
+        const nextSubmission =
+          payload.submission && typeof payload.submission === "object"
+            ? (payload.submission as CampaignSubmission)
+            : null;
+        const nextReview =
+          payload.review && typeof payload.review === "object"
+            ? (payload.review as Record<string, unknown>)
+            : {};
+
+        if (nextSubmission) {
+          setSubmission((prev) => ({ ...prev, ...nextSubmission }));
+        }
+        setStatus(String(nextReview.status || "UnderReview") as ApprovalStatus);
+        setEtaMin(Number(nextReview.etaMin || 90));
+        setAdminReason(String(nextReview.adminReason || ""));
+        setAdminDocs(Array.isArray(nextReview.adminDocs) ? (nextReview.adminDocs as AdminDoc[]) : []);
+        setItems(Array.isArray(nextReview.items) ? (nextReview.items as ChecklistItem[]) : []);
+        setNote(String(nextReview.note || ""));
+        setPrefEmail(nextReview.prefEmail !== false);
+        setPrefInApp(nextReview.prefInApp !== false);
+      } catch {
+        if (!cancelled) {
+          push("Could not load approval state from the backend.", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
+        }
+      }
+    };
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [push]);
 
   const currentIndex = useMemo(() => {
     const map: Record<ApprovalStatus, number> = {
@@ -857,22 +860,29 @@ export default function SupplierAwaitingAdminApprovalPremium() {
     }
   }, [status, adminReason, items.length, adminDocs.length]);
 
-  // Persist legacy storage keys as a compatibility mirror while backend-backed state becomes the source of truth.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(STORAGE_STATUS_KEY, status);
-      localStorage.setItem("mldz_supplier_admin_approval_etaMin", String(etaMin));
-      localStorage.setItem("mldz_supplier_admin_approval_submittedAt", submittedAt);
-      localStorage.setItem("mldz_supplier_admin_approval_reason", adminReason || "");
-      localStorage.setItem("mldz_supplier_admin_approval_docs", JSON.stringify(adminDocs || []));
-      localStorage.setItem("mldz_supplier_admin_approval_items", JSON.stringify(items || []));
-      localStorage.setItem("mldz_supplier_admin_approval_note", note || "");
-      localStorage.setItem(STORAGE_DRAFT_KEY, JSON.stringify({ adminReason, adminDocs, items, note }));
-    } catch {
-      // ignore
-    }
-  }, [status, etaMin, submittedAt, adminReason, adminDocs, items, note]);
+    if (!hydrated) return;
+    const timeoutId = window.setTimeout(() => {
+      void sellerBackendApi.patchWorkflowScreenState("supplier-awaiting-admin-approval", {
+        submission: {
+          ...submission,
+          submittedAt,
+        },
+        review: {
+          status,
+          etaMin,
+          adminReason,
+          adminDocs,
+          items,
+          note,
+          prefEmail,
+          prefInApp,
+        },
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [adminDocs, adminReason, etaMin, hydrated, items, note, prefEmail, prefInApp, status, submission, submittedAt]);
 
   function toggleItem(id: string) {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, done: !it.done } : it)));
@@ -1017,7 +1027,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
 
         <Modal open={showSubmission} title="Submitted payload snapshot" onClose={() => setShowSubmission(false)}>
           <div className="text-[12px] text-slate-600 dark:text-slate-400">
-            This preview is pulled from localStorage when available. In production, this is fetched from your API.
+            This preview is loaded from the backend approval workflow state.
           </div>
           <pre className="mt-3 text-[11px] bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 overflow-auto max-h-[420px] text-slate-700 dark:text-slate-300">
             {JSON.stringify(submission || { note: "No submission data found" }, null, 2)}

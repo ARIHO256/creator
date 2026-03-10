@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../../lib/frontendState";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierSettingsSafetyPage.jsx
@@ -12,7 +12,7 @@ import { useSellerCompatState } from "../../../lib/frontendState";
  * - Sticky header with status badges + completeness progress
  * - Left anchor sidebar navigation with identical section depth
  * - Scroll-to-bottom policy review gating inside a modal (compliance-friendly)
- * - Autosave to localStorage + export data (JSON)
+ * - Autosave to backend settings + export data (JSON)
  * - Devices management + sign-out
  *
  * Supplier adaptations (minimal + required):
@@ -35,9 +35,6 @@ import { useSellerCompatState } from "../../../lib/frontendState";
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
-
-const STORAGE_KEY = "mldz_supplier_settings_v2_4";
-const STORAGE_KEY_LEGACY = "mldz_supplier_onboarding_v2_3";
 
 /* ------------------------- Icon stubs (replace with your icon system in-app) ------------------------- */
 
@@ -709,17 +706,7 @@ export function seedSupplierSettingsForm() {
     }
   };
 
-  if (typeof window === "undefined") {
-    return base;
-  }
-
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-    if (!raw) return base;
-    return deepMerge(base, JSON.parse(raw));
-  } catch {
-    return base;
-  }
+  return base;
 }
 
 /* ------------------------- Main page ------------------------- */
@@ -727,8 +714,9 @@ export function seedSupplierSettingsForm() {
 export default function SupplierSettingsSafetyPage() {
   const { toasts, push } = useToasts();
 
-  const [form, setForm] = useSellerCompatState("supplier.settings.form", seedSupplierSettingsForm());
+  const [form, setForm] = useState(seedSupplierSettingsForm());
   const [saved, setSaved] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
 
   const [openPolicy, setOpenPolicy] = useState(null); // platform | content | payout | full | null
   const [policyScrollPct, setPolicyScrollPct] = useState(0);
@@ -759,19 +747,57 @@ export default function SupplierSettingsSafetyPage() {
     return { done, total, pct: Math.round((done / total) * 100) };
   }, [form, primarySocial]);
 
-  // Autosave + legacy mirror for older pages that still read this key directly.
   useEffect(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const payload = await sellerBackendApi.getSettings();
+        if (cancelled) return;
+        const nextForm =
+          payload &&
+          typeof payload === "object" &&
+          payload.profile &&
+          typeof payload.profile === "object" &&
+          (payload.profile as { supplierSettings?: unknown }).supplierSettings &&
+          typeof (payload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
+            ? deepMerge(seedSupplierSettingsForm(), (payload.profile as { supplierSettings: unknown }).supplierSettings)
+            : seedSupplierSettingsForm();
+        setForm(nextForm);
+      } catch {
+        if (!cancelled) {
+          push("Could not load supplier settings from the backend.", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
+        }
+      }
+    };
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [push]);
+
+  useEffect(() => {
+    if (!hydrated) return;
     setSaved(false);
     const t = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
-      } catch {
-        // ignore
-      }
-      setSaved(true);
+      void sellerBackendApi
+        .patchSettings({
+          profile: {
+            supplierSettings: form,
+          },
+        })
+        .then(() => setSaved(true))
+        .catch(() => {
+          push("Supplier settings could not be saved to the backend.", "error");
+        });
     }, 450);
     return () => clearTimeout(t);
-  }, [form]);
+  }, [form, hydrated, push]);
 
   function update(path, value) {
     setForm((prev) => setDeep(prev, path, value));
@@ -908,11 +934,6 @@ export default function SupplierSettingsSafetyPage() {
   }
 
   function resetAll() {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
     setForm(seedSupplierSettingsForm());
     addAudit("Settings reset", "Restored defaults");
     push("Settings reset to defaults.", "success");
@@ -920,12 +941,6 @@ export default function SupplierSettingsSafetyPage() {
   }
 
   function deleteWorkspace() {
-    // UI preview: simulate the action + wipe local storage
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
     addAudit("Workspace delete requested", "Support ticket created");
     push("Delete request submitted to Support (demo).", "success");
     setConfirmDelete(false);

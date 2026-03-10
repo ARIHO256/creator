@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useSession } from '../../auth/session';
 import { recordOnboardingStatus } from '../misc/onboardingStatus';
+import { sellerBackendApi } from '../../lib/backendApi';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { useThemeMode } from '../../theme/themeMode';
 import { useProviderServiceTaxonomy } from '../../data/taxonomy';
@@ -2678,42 +2680,17 @@ function PayoutTaxStep({
 }
 
 export default function ProviderOnboardingProV4_JS() {
-  const { t } = useLocalization();
+  const { t, language, setLanguage } = useLocalization();
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
   const serviceTaxonomy = useProviderServiceTaxonomy();
-
-  const [lang, setLang] = useState('en');
-  useEffect(() => {
-    setLang(localStorage.getItem('ev_lang') || 'en');
-  }, []);
-  useEffect(() => {
-    localStorage.setItem('ev_lang', lang);
-  }, [lang]);
+  const sessionUser = useSession();
 
   const [ui, setUi] = useState<{ step: number }>(() => {
-    const saved = safeJsonParse<{ step?: number }>(localStorage.getItem(STORAGE.ui));
     return {
-      step: Number(saved?.step || 1) || 1,
+      step: 1,
     };
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.ui, JSON.stringify(ui));
-    } catch {
-      // ignore
-    }
-  }, [ui]);
-
-  const [sessionUser] = useState<Session | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const s = localStorage.getItem('session');
-      return s ? JSON.parse(s) : null;
-    } catch {
-      return null;
-    }
   });
 
   const activeUserId = useMemo(() => {
@@ -2857,56 +2834,12 @@ export default function ProviderOnboardingProV4_JS() {
     [activeUserId]
   );
 
-  const load = useCallback((): ProviderProfile => {
-    const s4 = safeJsonParse<Partial<ProviderProfile>>(localStorage.getItem(STORAGE.form));
-    const s3 = safeJsonParse<Partial<ProviderProfile>>(localStorage.getItem(STORAGE.legacy));
-    const parsed = s4 || s3;
-    const base = createEmptyProfile();
-
-    if (!parsed) return base;
-
-    const owner = String(parsed.owner || parsed.email || '').toLowerCase();
-    const isOtherUser = activeUserId && owner && owner !== activeUserId;
-    const legacyMismatch =
-      activeUserId &&
-      !owner &&
-      parsed.status &&
-      parsed.status !== 'DRAFT' &&
-      parsed.email &&
-      String(parsed.email).toLowerCase() !== activeUserId;
-
-    if (isOtherUser || legacyMismatch) return base;
-
-    const merged = {
-      ...base,
-      ...parsed,
-      support: { ...base.support, ...(parsed.support || {}) },
-      hq: { ...base.hq, ...(parsed.hq || {}) },
-      team: { ...base.team, ...(parsed.team || {}) },
-      servicePolicies: { ...base.servicePolicies, ...(parsed.servicePolicies || {}) },
-      coverage: { ...base.coverage, ...(parsed.coverage || {}) },
-      availability: { ...base.availability, ...(parsed.availability || {}) },
-      docs: { list: Array.isArray(parsed?.docs?.list) ? parsed.docs.list : base.docs.list },
-      payout: hydratePayoutData(base.payout, parsed.payout || {}),
-      tax: { ...base.tax, ...(parsed.tax || {}) },
-      acceptance: { ...base.acceptance, ...(parsed.acceptance || {}) },
-    };
-
-    merged.owner = activeUserId || owner || merged.owner;
-
-    if (!Array.isArray(merged.languages) || !merged.languages.length) merged.languages = ['en'];
-    if (!Array.isArray(merged.regions) || !merged.regions.length) merged.regions = ['UG'];
-
-    if (!Array.isArray(merged.categories)) merged.categories = [];
-    if (!Array.isArray(merged.serviceLines)) merged.serviceLines = [];
-
-    return merged;
-  }, [activeUserId, createEmptyProfile]);
-
-  const [profile, setProfile] = useState<ProviderProfile>(load);
+  const [profile, setProfile] = useState<ProviderProfile>(() => createEmptyProfile());
   const [lastSaved, setLastSaved] = useState('');
   const [toast, setToast] = useState<ToastState | null>(null);
   const [stepErrors, setStepErrors] = useState<Record<string, boolean>>({});
+  const [hydrated, setHydrated] = useState(false);
+  const saveReadyRef = useRef(false);
 
   const setF = (
     patch:
@@ -2920,33 +2853,110 @@ export default function ProviderOnboardingProV4_JS() {
       return next;
     });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.form, JSON.stringify(profile));
-      localStorage.setItem(STORAGE.legacy, JSON.stringify(profile));
-      setLastSaved(ts());
-    } catch {
-      // ignore
-    }
-  }, [profile]);
-
   const [review, setReview] = useState(() => {
-    const s = safeJsonParse(localStorage.getItem(STORAGE.review));
-    return s || { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 };
+    return { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 };
   });
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.review, JSON.stringify(review));
-    } catch {
-      // ignore
-    }
-  }, [review]);
 
   useEffect(() => {
     if (profile.status === 'SUBMITTED' && location.pathname === '/provider/onboarding') {
       navigate('/provider/onboarding', { replace: true });
     }
   }, [profile.status, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (hydrated) return;
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const payload = await sellerBackendApi.getWorkflowScreenState('provider-onboarding');
+        if (cancelled || !payload || typeof payload !== 'object') return;
+
+        const nextProfile =
+          payload.form && typeof payload.form === 'object'
+            ? (payload.form as Partial<ProviderProfile>)
+            : null;
+        const nextUi =
+          payload.ui && typeof payload.ui === 'object'
+            ? (payload.ui as { step?: number })
+            : null;
+        const nextReview =
+          payload.review && typeof payload.review === 'object'
+            ? payload.review
+            : null;
+
+        if (nextProfile) {
+          const base = createEmptyProfile();
+          const owner = String(nextProfile.owner || nextProfile.email || '').toLowerCase();
+          if (!activeUserId || !owner || owner === activeUserId) {
+            setProfile({
+              ...base,
+              ...nextProfile,
+              owner: activeUserId || owner || base.owner,
+              support: { ...base.support, ...(nextProfile.support || {}) },
+              hq: { ...base.hq, ...(nextProfile.hq || {}) },
+              team: { ...base.team, ...(nextProfile.team || {}) },
+              servicePolicies: { ...base.servicePolicies, ...(nextProfile.servicePolicies || {}) },
+              coverage: { ...base.coverage, ...(nextProfile.coverage || {}) },
+              availability: { ...base.availability, ...(nextProfile.availability || {}) },
+              docs: { list: Array.isArray(nextProfile?.docs?.list) ? nextProfile.docs.list : base.docs.list },
+              payout: hydratePayoutData(base.payout, nextProfile.payout || {}),
+              tax: { ...base.tax, ...(nextProfile.tax || {}) },
+              acceptance: { ...base.acceptance, ...(nextProfile.acceptance || {}) },
+            });
+          }
+        }
+        if (nextUi) {
+          setUi({ step: Number(nextUi.step || 1) || 1 });
+        }
+        if (nextReview && typeof nextReview === 'object') {
+          setReview((prev) => ({ ...prev, ...(nextReview as object) }));
+        }
+      } catch {
+        if (!cancelled) {
+          setToast({
+            tone: 'error',
+            title: t('Backend sync failed'),
+            message: t('We could not load your provider onboarding draft from the backend.'),
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
+          window.setTimeout(() => {
+            saveReadyRef.current = true;
+          }, 0);
+        }
+      }
+    };
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUserId, createEmptyProfile, hydrated, t]);
+
+  useEffect(() => {
+    if (!hydrated || !saveReadyRef.current) return;
+    const timeoutId = window.setTimeout(() => {
+      void sellerBackendApi
+        .patchWorkflowScreenState('provider-onboarding', {
+          form: profile,
+          ui,
+          review,
+        })
+        .then(() => setLastSaved(ts()))
+        .catch(() => {
+          setToast({
+            tone: 'error',
+            title: t('Autosave failed'),
+            message: t('Changes are not syncing to the backend right now.'),
+          });
+        });
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [hydrated, profile, review, t, ui]);
 
   const step = clamp(ui.step || 1, 1, 6);
   const setStep = (n) => setUi((p) => ({ ...p, step: clamp(Number(n) || 1, 1, 6) }));
@@ -3077,24 +3087,31 @@ export default function ProviderOnboardingProV4_JS() {
     r.readAsText(f);
   };
 
-  const resetDraft = () => {
+  const resetDraft = async () => {
     if (
       !window.confirm(
-        t('Reset this onboarding draft? This clears your local draft on this device.')
+        t('Reset this onboarding draft? This clears your backend draft for this workspace.')
       )
     )
       return;
-    try {
-      localStorage.removeItem(STORAGE.form);
-      localStorage.removeItem(STORAGE.legacy);
-      localStorage.removeItem(STORAGE.review);
-    } catch {
-      // ignore
-    }
     const fresh = createEmptyProfile();
     setProfile(fresh);
     setReview({ submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 });
     setStep(1);
+    try {
+      await sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
+        form: fresh,
+        ui: { step: 1 },
+        review: { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 },
+      });
+    } catch {
+      setToast({
+        tone: 'error',
+        title: t('Reset failed'),
+        message: t('We could not reset the provider onboarding draft from the backend.'),
+      });
+      return;
+    }
     recordOnboardingStatus(
       'provider',
       sessionUser || { userId: activeUserId || '', email: activeUserId || '' },
@@ -3107,9 +3124,21 @@ export default function ProviderOnboardingProV4_JS() {
     });
   };
 
-  const withdraw = () => {
+  const withdraw = async () => {
     setF({ status: 'DRAFT' });
     setReview((r) => ({ ...r, submittedAt: null, inReviewAt: null, approvedAt: null }));
+    try {
+      await sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
+        review: { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 },
+      });
+    } catch {
+      setToast({
+        tone: 'error',
+        title: t('Withdraw failed'),
+        message: t('We could not reopen the provider onboarding draft from the backend.'),
+      });
+      return;
+    }
     recordOnboardingStatus(
       'provider',
       sessionUser || {
@@ -3608,7 +3637,7 @@ export default function ProviderOnboardingProV4_JS() {
     return missingFields;
   }, [profile, requiredOk, t]);
 
-  const submit = () => {
+  const submit = async () => {
     const blockers = {
       profile: requiredOk.profile,
       services: requiredOk.services,
@@ -3644,19 +3673,80 @@ export default function ProviderOnboardingProV4_JS() {
       return;
     }
 
+    const submittedDocs = (profile.docs.list || []).map((d) => ({ ...d, status: 'Submitted' }));
+    const submittedAt = new Date().toISOString();
+
     try {
-      setF({
-        docs: { list: (profile.docs.list || []).map((d) => ({ ...d, status: 'Submitted' })) },
-      });
+      await Promise.all([
+        sellerBackendApi.submitOnboarding({
+          profileType: 'PROVIDER',
+          status: 'submitted',
+          owner: profile.owner,
+          storeName: profile.displayName,
+          email: profile.email,
+          phone: profile.phone,
+          website: profile.website,
+          about: profile.about,
+          brandColor: profile.brandColor,
+          logoUrl: profile.logoUrl,
+          coverUrl: profile.coverUrl,
+          support: profile.support,
+          languages: profile.languages,
+          docs: { list: submittedDocs },
+          payout: profile.payout,
+          tax: profile.tax,
+          acceptance: {
+            sellerTerms: profile.acceptance.providerTerms,
+            contentPolicy: profile.acceptance.servicePolicy,
+            dataProcessing: profile.acceptance.dataProcessing,
+          },
+          providerServices: profile.categories,
+          metadata: {
+            providerProfile: {
+              ...profile,
+              docs: { list: submittedDocs },
+            },
+            qualityStandards: profile.acceptance.qualityStandards,
+            regions: profile.regions,
+            coverage: profile.coverage,
+            availability: profile.availability,
+            team: profile.team,
+            servicePolicies: profile.servicePolicies,
+            serviceLines: profile.serviceLines,
+          },
+        }),
+        sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
+          form: {
+            ...profile,
+            status: 'SUBMITTED',
+            docs: { list: submittedDocs },
+          },
+          ui,
+          review: {
+            ...review,
+            submittedAt,
+            inReviewAt: submittedAt,
+            approvedAt: null,
+          },
+        }),
+      ]);
     } catch {
-      // ignore
+      setToast({
+        tone: 'error',
+        title: t('Submit failed'),
+        message: t('Your onboarding could not be submitted to the backend.'),
+      });
+      return;
     }
 
-    setF({ status: 'SUBMITTED' });
+    setF({
+      status: 'SUBMITTED',
+      docs: { list: submittedDocs },
+    });
     setReview((r) => ({
       ...r,
-      submittedAt: new Date().toISOString(),
-      inReviewAt: null,
+      submittedAt,
+      inReviewAt: submittedAt,
       approvedAt: null,
     }));
     recordOnboardingStatus(
@@ -3948,8 +4038,8 @@ export default function ProviderOnboardingProV4_JS() {
                 </div>
               </div>
               <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value)}
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
                 className="btn-ghost"
                 aria-label="Language"
               >
