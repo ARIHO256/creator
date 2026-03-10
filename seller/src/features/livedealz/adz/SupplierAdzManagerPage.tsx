@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useMockState } from "../../../mocks";
 
 /**
  * SupplierAdzManagerPage.jsx
@@ -520,8 +521,14 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useState(DEMO_ADS);
-  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
+  const [ads, setAds] = useMockState("supplier.adzManager.ads", DEMO_ADS);
+  const [selectedId, setSelectedId] = useState("");
+  useEffect(() => {
+    if (!ads.length) return;
+    if (!ads.find((ad) => ad.id === selectedId)) {
+      setSelectedId(ads[0]?.id || "");
+    }
+  }, [ads, selectedId]);
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0] || null, [ads, selectedId]);
 
   // Filters

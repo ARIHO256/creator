@@ -421,6 +421,7 @@ export type ListingTaxonomyNode = {
   type: string;
   name: string;
   description?: string;
+  metadata?: Record<string, unknown> | null;
   children?: ListingTaxonomyNode[];
 };
 

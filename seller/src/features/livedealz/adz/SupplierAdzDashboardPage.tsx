@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useMockState } from "../../../mocks";
 
 /**
  * SupplierAdzDashboardPage.jsx
@@ -1276,8 +1277,14 @@ export default function SupplierAdzDashboardPage() {
   const [drawer, setDrawer] = useState(null); // null | calendar | quickLinks | performance | builder
   const [drawerData, setDrawerData] = useState(undefined); // adId
 
-  const [ads, setAds] = useState(DEMO_ADS);
-  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
+  const [ads, setAds] = useMockState("supplier.adzDashboard.ads", DEMO_ADS);
+  const [selectedId, setSelectedId] = useState("");
+  useEffect(() => {
+    if (!ads.length) return;
+    if (!ads.find((ad) => ad.id === selectedId)) {
+      setSelectedId(ads[0]?.id || "");
+    }
+  }, [ads, selectedId]);
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0] || null, [ads, selectedId]);
 
   const [q, setQ] = useState("");

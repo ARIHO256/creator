@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { recordOnboardingStatus } from '../misc/onboardingStatus';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { useThemeMode } from '../../theme/themeMode';
+import { useProviderServiceTaxonomy } from '../../data/taxonomy';
 import type { Session } from '../../types/session';
 import SellerOnboardingTaxonomyNavigator from '../misc/SellerOnboardingTaxonomyNavigator';
 import {
@@ -562,130 +563,51 @@ const REGION_OPTIONS = [
   { code: 'US', label: 'United States' },
 ];
 
-const SERVICE_CATEGORIES = [
-  {
-    id: 'charger_install',
-    label: 'Charger Installation',
-    desc: 'Site survey, mounting, wiring, commissioning and testing.',
-    flags: { fieldWork: true, electrical: true },
-  },
-  {
-    id: 'charger_maintenance',
-    label: 'Charger Maintenance',
-    desc: 'Preventive maintenance, troubleshooting, parts replacement.',
-    flags: { fieldWork: true, electrical: true },
-  },
-  {
-    id: 'ev_diagnostics',
-    label: 'EV Diagnostics',
-    desc: 'Diagnostics, calibration, firmware checks, inspections.',
-    flags: { fieldWork: true },
-  },
-  {
-    id: 'battery_service',
-    label: 'Battery Service',
-    desc: 'Battery health assessment, BMS checks, safe handling guidance.',
-    flags: { fieldWork: true, regulated: true },
-  },
-  {
-    id: 'software_integration',
-    label: 'Software and CPMS Integration',
-    desc: 'OCPP setup, backend integration, dashboards, monitoring.',
-    flags: { remoteOk: true },
-  },
-  {
-    id: 'training',
-    label: 'Training',
-    desc: 'EV, charger, maintenance, safety and operations training.',
-    flags: { training: true },
-  },
-  {
-    id: 'consulting',
-    label: 'Consulting',
-    desc: 'Feasibility, procurement guidance, rollout planning.',
-    flags: { remoteOk: true },
-  },
-  {
-    id: 'other',
-    label: 'Other',
-    desc: 'Any service that does not fit the categories above.',
-    flags: {},
-  },
-];
-const SERVICE_CATEGORY_MAP = Object.fromEntries(
-  SERVICE_CATEGORIES.map((entry) => [entry.id, entry])
-);
-const buildServiceNode = (id) => ({
-  id,
-  type: 'Service',
-  name: SERVICE_CATEGORY_MAP[id]?.label || id,
-  description: SERVICE_CATEGORY_MAP[id]?.desc || '',
-  children: [],
-});
-const SERVICE_TAXONOMY = [
-  {
-    id: 'service-marketplace-evzone',
-    type: 'Service Marketplace',
-    name: 'EVzone Services',
-    description: 'Services for EVzone buyers.',
-    children: [
-      {
-        id: 'service-family-field',
-        type: 'Service Family',
-        name: 'Field & Installation',
-        description: 'On-site delivery, maintenance, and diagnostics.',
-        children: [
-          {
-            id: 'service-category-chargers',
-            type: 'Service Category',
-            name: 'Charger Operations',
-            description: 'Installation and maintenance services.',
-            children: [
-              buildServiceNode('charger_install'),
-              buildServiceNode('charger_maintenance'),
-            ],
-          },
-          {
-            id: 'service-category-diagnostics',
-            type: 'Service Category',
-            name: 'Diagnostics & Health',
-            description: 'Diagnostics and battery services.',
-            children: [buildServiceNode('ev_diagnostics'), buildServiceNode('battery_service')],
-          },
-        ],
-      },
-      {
-        id: 'service-family-digital',
-        type: 'Service Family',
-        name: 'Digital & Advisory',
-        description: 'Remote, training, and advisory services.',
-        children: [
-          {
-            id: 'service-category-software',
-            type: 'Service Category',
-            name: 'Software & Integrations',
-            description: 'Software integration and monitoring.',
-            children: [buildServiceNode('software_integration')],
-          },
-          {
-            id: 'service-category-advisory',
-            type: 'Service Category',
-            name: 'Training & Consulting',
-            description: 'Training and advisory services.',
-            children: [buildServiceNode('training'), buildServiceNode('consulting')],
-          },
-          {
-            id: 'service-category-other',
-            type: 'Service Category',
-            name: 'Other Services',
-            description: 'Specialized or custom services.',
-            children: [buildServiceNode('other')],
-          },
-        ],
-      },
-    ],
-  },
-];
+type ServiceCategoryOption = {
+  id: string;
+  label: string;
+  desc: string;
+  flags: {
+    fieldWork?: boolean;
+    electrical?: boolean;
+    regulated?: boolean;
+    training?: boolean;
+    remoteOk?: boolean;
+  };
+};
+
+function collectServiceCategories(nodes: Array<{ id: string; name: string; description?: string; metadata?: Record<string, unknown> | null; children?: any[] }>) {
+  const items: ServiceCategoryOption[] = [];
+  const seen = new Set<string>();
+
+  const visit = (node) => {
+    const children = Array.isArray(node?.children) ? node.children : [];
+    const metadata =
+      node?.metadata && typeof node.metadata === 'object'
+        ? (node.metadata as Record<string, unknown>)
+        : null;
+    const categoryId = typeof metadata?.categoryId === 'string' ? metadata.categoryId : null;
+    const flags =
+      metadata?.flags && typeof metadata.flags === 'object'
+        ? (metadata.flags as ServiceCategoryOption['flags'])
+        : {};
+
+    if (categoryId && !seen.has(categoryId)) {
+      seen.add(categoryId);
+      items.push({
+        id: categoryId,
+        label: String(node?.name || categoryId),
+        desc: String(node?.description || ''),
+        flags,
+      });
+    }
+
+    children.forEach(visit);
+  };
+
+  nodes.forEach(visit);
+  return items;
+}
 
 const PRICING_MODELS = [
   { id: 'quote', label: 'Quote required' },
@@ -895,10 +817,12 @@ function buildRequiredProviderDocTypes({
   taxpayerType,
   categories = [],
   serviceLines = [],
+  categoryMap = {},
 }: {
   taxpayerType?: string;
   categories?: string[];
   serviceLines?: ServiceLine[];
+  categoryMap?: Record<string, ServiceCategoryOption>;
 }) {
   const required = new Set<string>();
 
@@ -912,7 +836,7 @@ function buildRequiredProviderDocTypes({
   const catFlags = new Set();
   const cats = Array.isArray(categories) ? categories : [];
   cats.forEach((id) => {
-    const c = SERVICE_CATEGORIES.find((x) => x.id === id);
+    const c = categoryMap[id];
     if (c?.flags?.fieldWork) catFlags.add('fieldWork');
     if (c?.flags?.electrical) catFlags.add('electrical');
     if (c?.flags?.regulated) catFlags.add('regulated');
@@ -951,8 +875,8 @@ function buildRequiredProviderDocTypes({
   return Array.from(required);
 }
 
-function formatCategoryLabel(id: string) {
-  const c = SERVICE_CATEGORIES.find((x) => x.id === id);
+function formatCategoryLabel(id: string, categoryMap: Record<string, ServiceCategoryOption>) {
+  const c = categoryMap[id];
   return c ? c.label : id;
 }
 
@@ -1188,7 +1112,23 @@ function AvailabilityPresetBar({
   );
 }
 
-function ServiceLinesEditor({ value, onChange, disabled, defaultCurrency, showErrors }) {
+function ServiceLinesEditor({
+  value,
+  onChange,
+  disabled,
+  defaultCurrency,
+  showErrors,
+  categoryOptions,
+  categoryMap,
+}: {
+  value: ServiceLine[];
+  onChange: (next: ServiceLine[]) => void;
+  disabled?: boolean;
+  defaultCurrency?: string;
+  showErrors?: boolean;
+  categoryOptions: ServiceCategoryOption[];
+  categoryMap: Record<string, ServiceCategoryOption>;
+}) {
   const { t } = useLocalization();
   const lines = Array.isArray(value) ? value : [];
 
@@ -1267,7 +1207,7 @@ function ServiceLinesEditor({ value, onChange, disabled, defaultCurrency, showEr
                   <div className="min-w-0">
                     <div className="text-sm font-black truncate">{l.title || t('New service')}</div>
                     <div className="text-xs text-[var(--ev-subtle)]">
-                      {l.category ? t(formatCategoryLabel(l.category)) : t('Pick a category')}
+                      {l.category ? t(formatCategoryLabel(l.category, categoryMap)) : t('Pick a category')}
                     </div>
                   </div>
                   <button
@@ -1307,7 +1247,7 @@ function ServiceLinesEditor({ value, onChange, disabled, defaultCurrency, showEr
                       disabled={disabled}
                     >
                       <option value="">{t('Select')}</option>
-                      {SERVICE_CATEGORIES.map((c) => (
+                      {categoryOptions.map((c) => (
                         <option key={c.id} value={c.id}>
                           {t(c.label)}
                         </option>
@@ -2742,6 +2682,7 @@ export default function ProviderOnboardingProV4_JS() {
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
+  const serviceTaxonomy = useProviderServiceTaxonomy();
 
   const [lang, setLang] = useState('en');
   useEffect(() => {
@@ -2779,6 +2720,15 @@ export default function ProviderOnboardingProV4_JS() {
     const val = sessionUser?.userId || sessionUser?.email || sessionUser?.phone || '';
     return String(val || '').toLowerCase();
   }, [sessionUser]);
+
+  const serviceCategories = useMemo<ServiceCategoryOption[]>(
+    () => collectServiceCategories(serviceTaxonomy),
+    [serviceTaxonomy]
+  );
+  const serviceCategoryMap = useMemo<Record<string, ServiceCategoryOption>>(
+    () => Object.fromEntries(serviceCategories.map((entry) => [entry.id, entry])),
+    [serviceCategories]
+  );
 
   const createEmptyProfile = useCallback(
     (): ProviderProfile => ({
@@ -3209,8 +3159,9 @@ export default function ProviderOnboardingProV4_JS() {
         taxpayerType: profile.tax?.taxpayerType,
         categories: profile.categories,
         serviceLines: profile.serviceLines,
+        categoryMap: serviceCategoryMap,
       }),
-    [profile.tax?.taxpayerType, profile.categories, profile.serviceLines]
+    [profile.tax?.taxpayerType, profile.categories, profile.serviceLines, serviceCategoryMap]
   );
 
   const docsStats = useMemo(() => {
@@ -4527,7 +4478,7 @@ export default function ProviderOnboardingProV4_JS() {
                         selections={taxonomySelections}
                         onChange={(next) => setF({ categories: next.map((entry) => entry.nodeId) })}
                         disabled={isLocked}
-                        taxonomyData={SERVICE_TAXONOMY}
+                        taxonomyData={serviceTaxonomy}
                         types={{
                           marketplace: 'Service Marketplace',
                           family: 'Service Family',
@@ -4680,6 +4631,8 @@ export default function ProviderOnboardingProV4_JS() {
                     disabled={isLocked}
                     defaultCurrency={profile.serviceCurrency}
                     showErrors={showServicesErrors}
+                    categoryOptions={serviceCategories}
+                    categoryMap={serviceCategoryMap}
                   />
 
                   <div className="card-mini">

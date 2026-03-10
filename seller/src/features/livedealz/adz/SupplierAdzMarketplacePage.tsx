@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useMockState } from "../../../mocks";
 
 /**
  * SupplierAdzMarketplacePage.jsx
@@ -1348,8 +1349,14 @@ export default function SupplierAdzMarketplacePage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useState(DEMO_ADS);
-  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
+  const [ads, setAds] = useMockState("supplier.adzMarketplace.ads", DEMO_ADS);
+  const [selectedId, setSelectedId] = useState("");
+  useEffect(() => {
+    if (!ads.length) return;
+    if (!ads.find((ad) => ad.id === selectedId)) {
+      setSelectedId(ads[0]?.id || "");
+    }
+  }, [ads, selectedId]);
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
 
   const [modeByOffer, setModeByOffer] = useState({});
