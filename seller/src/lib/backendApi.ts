@@ -28,6 +28,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
 
+  if (payload && typeof payload === "object" && "data" in payload && "success" in payload) {
+    return (payload as { data: T }).data;
+  }
+
   return payload as T;
 }
 
@@ -296,6 +300,20 @@ export const sellerBackendApi = {
     }),
   getAdzPerformance: (id: string) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}/performance`),
+  getLiveStudioDefault: () => request<Record<string, unknown>>("/api/live/studio/default"),
+  startLiveStudio: (id: string) =>
+    request<Record<string, unknown>>(`/api/live/studio/${encodeURIComponent(id)}/start`, {
+      method: "POST",
+    }),
+  endLiveStudio: (id: string) =>
+    request<Record<string, unknown>>(`/api/live/studio/${encodeURIComponent(id)}/end`, {
+      method: "POST",
+    }),
+  addLiveStudioMoment: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/live/studio/${encodeURIComponent(id)}/moments`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getSubscription: () => request<Record<string, unknown>>("/api/subscription"),
   patchSubscription: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/subscription", {

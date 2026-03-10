@@ -17,6 +17,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierMyLiveDealzSubscriptionPage.tsx (Premium)
@@ -35,22 +36,6 @@ const THEME = {
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
-}
-
-function safeReadLS(key: string) {
-  try {
-    return typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
-  } catch {
-    return null;
-  }
-}
-
-function safeWriteLS(key: string, value: string) {
-  try {
-    if (typeof window !== "undefined") window.localStorage.setItem(key, value);
-  } catch {
-    // ignore
-  }
 }
 
 function fmtMoney(amount: number) {
@@ -497,9 +482,6 @@ type ComparisonRow = {
   enterprise: PlanCell;
 };
 
-const LS_PLAN_KEY = "mldz_supplier_subscription_plan_v1";
-const LS_CYCLE_KEY = "mldz_supplier_subscription_cycle_v1";
-
 function valueBadge(v: PlanValue) {
   if (v === "included")
     return {
@@ -896,6 +878,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
 
   const [plan, setPlan] = useState<PlanKey>("basic");
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  const [subscriptionHydrated, setSubscriptionHydrated] = useState(false);
 
   // Side drawers
   const [drawerBilling, setDrawerBilling] = useState(false);
@@ -917,15 +900,33 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
   const [salesMessage, setSalesMessage] = useState("We'd like Enterprise for our supplier team.");
 
   useEffect(() => {
-    const storedPlan = safeReadLS(LS_PLAN_KEY);
-    const storedCycle = safeReadLS(LS_CYCLE_KEY);
+    let cancelled = false;
 
-    if (storedPlan === "basic" || storedPlan === "pro" || storedPlan === "enterprise") setPlan(storedPlan);
-    if (storedCycle === "monthly" || storedCycle === "yearly") setCycle(storedCycle);
+    void sellerBackendApi
+      .getSubscription()
+      .then((subscription) => {
+        if (cancelled) return;
+        if (subscription.plan === "basic" || subscription.plan === "pro" || subscription.plan === "enterprise") {
+          setPlan(subscription.plan);
+        }
+        if (subscription.cycle === "monthly" || subscription.cycle === "yearly") {
+          setCycle(subscription.cycle);
+        }
+        setBillingName(typeof subscription.billingName === "string" ? subscription.billingName : "Supplier Admin");
+        setBillingEmail(typeof subscription.billingEmail === "string" ? subscription.billingEmail : "billing@supplier.com");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBillingName("Supplier Admin");
+        setBillingEmail("billing@supplier.com");
+      })
+      .finally(() => {
+        if (!cancelled) setSubscriptionHydrated(true);
+      });
 
-    // seed demo billing fields
-    setBillingName("Supplier Admin");
-    setBillingEmail("billing@supplier.com");
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const meta = PLAN_META[plan];
@@ -946,7 +947,12 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
 
   function applyPlan(next: PlanKey) {
     setPlan(next);
-    safeWriteLS(LS_PLAN_KEY, next);
+    void sellerBackendApi.patchSubscription({
+      plan: next,
+      cycle,
+      status: next === "basic" ? "inactive" : "active",
+      metadata: { billingName, billingEmail },
+    });
 
     if (next === "basic") {
       showWarning("Switched to Basic (Free). Pro tools remain visible in demo but are intended to be gated.");
@@ -959,8 +965,23 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
 
   function applyCycle(next: BillingCycle) {
     setCycle(next);
-    safeWriteLS(LS_CYCLE_KEY, next);
+    void sellerBackendApi.patchSubscription({
+      plan,
+      cycle: next,
+      status: plan === "basic" ? "inactive" : "active",
+      metadata: { billingName, billingEmail },
+    });
   }
+
+  useEffect(() => {
+    if (!subscriptionHydrated) return;
+    void sellerBackendApi.patchSubscription({
+      plan,
+      cycle,
+      status: plan === "basic" ? "inactive" : "active",
+      metadata: { billingName, billingEmail },
+    });
+  }, [billingEmail, billingName, cycle, plan, subscriptionHydrated]);
 
   const topProUpsell = useMemo(
     () => [

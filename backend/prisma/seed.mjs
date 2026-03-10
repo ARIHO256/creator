@@ -2371,6 +2371,40 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
     }
   });
 
+  await prisma.userSubscription.create({
+    data: {
+      userId: users.sellerUser.id,
+      plan: 'pro',
+      cycle: 'monthly',
+      status: 'active',
+      metadata: {
+        renewsAt: daysFromNow(21).toISOString(),
+        billingName: 'Supplier Admin',
+        billingEmail: 'billing@supplier.com',
+        billingMethod: {
+          type: 'card',
+          label: 'Visa ending in 4242',
+          brand: 'Visa',
+          last4: '4242',
+          holderName: 'Supplier Admin',
+          expMonth: 12,
+          expYear: 2029
+        },
+        support: {
+          contactEmail: 'support@mylivedealz.com',
+          salesEmail: 'sales@mylivedealz.com',
+          helpCenterUrl: 'https://mylivedealz.com/help',
+          managerName: 'Growth Ops'
+        },
+        notes: ['Unlimited supplier Dealz enabled', 'Priority seller support'],
+        limits: {
+          livesPerMonth: 'unlimited',
+          collaborators: 10
+        }
+      }
+    }
+  });
+
   await prisma.auditEvent.createMany({
     data: [
       {

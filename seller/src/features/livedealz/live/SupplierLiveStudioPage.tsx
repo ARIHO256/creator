@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 const EV_ORANGE = "#f77f00";
 
@@ -121,13 +122,12 @@ type StoredLiveDraft = {
   products: StoredFeaturedItem[];
 };
 
-function safeJsonParse<T = unknown>(raw: string | null): T | null {
-  if (!raw || typeof raw !== "string") return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
 }
 
 function coercePositiveInt(value: unknown, fallback = 1): number {
@@ -164,64 +164,6 @@ function coerceItemImageUrl(item?: StoredFeaturedItem | null): string {
   const first = candidates.find((v) => typeof v === "string" && v.trim().length > 0);
   return typeof first === "string" ? first : "";
 }
-
-function extractLiveDraftFromStoragePayload(payload: unknown): StoredLiveDraft | null {
-  if (!payload || typeof payload !== "object") return null;
-  const root: any = payload as any;
-  const draftLike = root?.draft && typeof root.draft === "object" ? root.draft : root;
-  if (!draftLike || typeof draftLike !== "object") return null;
-
-  const giveawaysRaw = (draftLike as any).giveaways;
-  const productsRaw = (draftLike as any).products || (draftLike as any).items;
-
-  const giveawaysArr = Array.isArray(giveawaysRaw) ? giveawaysRaw : [];
-  const productsArr = Array.isArray(productsRaw) ? productsRaw : [];
-
-  if (!giveawaysArr.length && !productsArr.length) return null;
-
-  const normalizedGiveaways: StoredGiveaway[] = giveawaysArr.map((g: any, idx: number) => ({
-    id: typeof g?.id === "string" && g.id ? g.id : `giveaway_${idx}`,
-    linkedItemId: typeof g?.linkedItemId === "string" ? g.linkedItemId : undefined,
-    title: typeof g?.title === "string" ? g.title : undefined,
-    imageUrl: typeof g?.imageUrl === "string" ? g.imageUrl : undefined,
-    notes: typeof g?.notes === "string" ? g.notes : undefined,
-    showOnPromo: typeof g?.showOnPromo === "boolean" ? g.showOnPromo : undefined,
-    quantity: coercePositiveInt((g as any)?.quantity, 1),
-  }));
-
-  return {
-    giveaways: normalizedGiveaways,
-    products: productsArr as StoredFeaturedItem[],
-  };
-}
-
-function readStoredLiveDraft(): StoredLiveDraft | null {
-  if (typeof window === "undefined") return null;
-
-  // Try a few reasonable keys without requiring backend changes.
-  // Note: LiveBuilder2 uses sessionStorage for draft handoff in some flows.
-  const candidateKeys = [
-    { storage: "local" as const, key: "mldz:liveBuilder:draft:v1" },
-    { storage: "session" as const, key: "mldz:liveBuilder:draft:v1" },
-    { storage: "local" as const, key: "creator_live_draft" },
-    { storage: "session" as const, key: "creator_live_draft" },
-  ];
-
-  for (const c of candidateKeys) {
-    let raw: string | null = null;
-    try {
-      raw = c.storage === "local" ? window.localStorage.getItem(c.key) : window.sessionStorage.getItem(c.key);
-    } catch {
-      raw = null;
-    }
-    const parsed = safeJsonParse<any>(raw);
-    const extracted = extractLiveDraftFromStoragePayload(parsed);
-    if (extracted) return extracted;
-  }
-
-  return null;
-}
-
 
 function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule" | "home") => void }) {
   // const { theme, toggleTheme } = useTheme();
@@ -276,18 +218,23 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  // Products mock
-  const products: Product[] = [
-    { id: "P-101", name: "Glow Serum", price: "$24.99", stock: "150 left", tag: "Best Seller" },
-    { id: "P-102", name: "Matte Lipstick", price: "$18.50", stock: "85 left", tag: "Low Stock" },
-    { id: "P-103", name: "Setting Spray", price: "$22.00", stock: "200 left", tag: "New" },
-  ];
-
-  // Co-hosts with proper state management
-  const [coHosts, setCoHosts] = useState<CoHost[]>([
-    { id: 1, name: "Jessica M.", status: "Ready" },
-    { id: 2, name: "David K.", status: "Off-air" },
-  ]);
+  const [studioSessionId, setStudioSessionId] = useState("default");
+  const [products, setProducts] = useState<Product[]>([]);
+  const [coHosts, setCoHosts] = useState<CoHost[]>([]);
+  const [storedLiveDraft, setStoredLiveDraft] = useState<StoredLiveDraft | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [commerceGoal, setCommerceGoal] = useState<CommerceGoal>({
+    soldUnits: 0,
+    targetUnits: 0,
+    cartCount: 0,
+    last5MinSales: 0,
+  });
+  const [salesEvents, setSalesEvents] = useState<SalesEvent[]>([]);
+  const [momentMarkers, setMomentMarkers] = useState<MomentMarker[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [qaItems, setQaItems] = useState<QAItem[]>([]);
+  const [viewersList, setViewersList] = useState<Viewer[]>([]);
+  const [aiPrompts, setAiPrompts] = useState<string[]>([]);
 
   // Recording state for voice messages
   const [isRecording, setIsRecording] = useState(false);
@@ -310,21 +257,53 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const [giveawayActive, setGiveawayActive] = useState(false);
   const [giveawayEntries, setGiveawayEntries] = useState(0);
 
-  // Giveaways configured in Live Builder (loaded from persisted draft when available)
-  const [storedLiveDraft, setStoredLiveDraft] = useState<StoredLiveDraft | null>(null);
   const [selectedGiveawayId, setSelectedGiveawayId] = useState<string>("");
   // Remaining quantities per giveaway (live session UI state)
   const [giveawayRemainingById, setGiveawayRemainingById] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    const stored = readStoredLiveDraft();
-    if (stored) {
-      setStoredLiveDraft(stored);
-      // Default to the first configured giveaway (if any)
-      if (stored.giveaways.length) {
-        setSelectedGiveawayId((prev) => (prev ? prev : stored.giveaways[0].id));
-      }
-    }
+    let cancelled = false;
+
+    void sellerBackendApi
+      .getLiveStudioDefault()
+      .then((studio) => {
+        if (cancelled) return;
+        const payload = asObject(studio.data);
+        const nextProducts = asArray<Product & StoredFeaturedItem>(payload.products);
+        const nextGiveaways = asArray<StoredGiveaway>(payload.giveaways);
+        setStudioSessionId(typeof studio.sessionId === "string" ? studio.sessionId : "default");
+        setMode(studio.status === "live" ? "live" : "lobby");
+        setProducts(nextProducts);
+        setCoHosts(asArray<CoHost>(payload.coHosts));
+        setStoredLiveDraft({ giveaways: nextGiveaways, products: nextProducts });
+        setAttachments(asArray<Attachment>(payload.attachments));
+        setCommerceGoal({
+          soldUnits: Number(asObject(payload.commerceGoal).soldUnits || 0),
+          targetUnits: Number(asObject(payload.commerceGoal).targetUnits || 0),
+          cartCount: Number(asObject(payload.commerceGoal).cartCount || 0),
+          last5MinSales: Number(asObject(payload.commerceGoal).last5MinSales || 0),
+        });
+        setSalesEvents(asArray<SalesEvent>(payload.salesEvents));
+        setMomentMarkers(asArray<MomentMarker>(payload.moments));
+        setChatMessages(asArray<ChatMessage>(payload.chatMessages));
+        setQaItems(asArray<QAItem>(payload.qaItems));
+        setViewersList(asArray<Viewer>(payload.viewers));
+        setAiPrompts(asArray<string>(payload.aiPrompts));
+        if (nextGiveaways.length) {
+          setSelectedGiveawayId((prev) => (prev ? prev : nextGiveaways[0].id));
+        }
+        if (nextProducts.length) {
+          setHighlightedProductId((prev) => (prev ? prev : String(nextProducts[0].id)));
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setStoredLiveDraft({ giveaways: [], products: [] });
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const configuredGiveaways = storedLiveDraft?.giveaways || [];
@@ -418,12 +397,6 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   // File attachment dialog
   const [attachDialogOpen, setAttachDialogOpen] = useState(false);
 
-  // Attachments mock
-  const [attachments, setAttachments] = useState<Attachment[]>([
-    { id: 1, from: "@Sarah99", type: "image", label: "Viewer Look", status: "Pending" },
-    { id: 2, from: "@MikeD", type: "question", label: "Product Q", status: "Pending" },
-  ]);
-
   // Scenes mock
   const scenes: Scene[] = [
     { id: "intro", label: "Intro Card", desc: "Title + Music" },
@@ -447,53 +420,23 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     "Let's bring in our special guest.",
   ];
 
-  // Commerce HUD data
-  const commerceGoal: CommerceGoal = {
-    soldUnits: 42,
-    targetUnits: 100,
-    cartCount: 15,
-    last5MinSales: 8,
-  };
-
-  const salesEvents: SalesEvent[] = [
-    { id: 1, label: "@Sarah purchased Glow Serum", time: "2s ago" },
-    { id: 2, label: "@Mike purchased Lipstick", time: "12s ago" },
-    { id: 3, label: "@Jen purchased Bundle", time: "45s ago" },
-  ];
-
-  const momentMarkers: MomentMarker[] = [];
-
-  // Chat/QA mock
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { id: 1, from: "System", body: "Welcome to the stream!", time: "10:00", system: true },
-    { id: 2, from: "Sarah_99", body: "Can't wait to see the new products!", time: "10:01" },
-    { id: 3, from: "MikeDe", body: "Is audio working?", time: "10:02" },
-  ]);
+  // Chat/QA state
   const [chatDraft, setChatDraft] = useState("");
   const [audienceTab, setAudienceTab] = useState<AudienceTab>("chat");
-
-  const qaItems: QAItem[] = [
-    { id: 1, question: "Is this vegan?", from: "@VeganGal", status: "pinned" },
-    { id: 2, question: "Shipping to CA?", from: "@MapleLeaf", status: "waiting" },
-  ];
-
-  const viewersList: Viewer[] = [
-    { id: 1, name: "Sarah_99", tag: "Super Fan" },
-    { id: 2, name: "MikeDe", tag: "New" },
-  ];
-
-  const aiPrompts = [
-    "Mention the flash deal (ending soon)",
-    "Greet new huge donor @TechGiant",
-    "Ask viewers to share the stream",
-  ];
 
   // Mobile state
   const [mobilePanel, setMobilePanel] = useState<"products" | "chat">("chat");
 
   // Handlers
   const toggleLive = () => {
-    setMode((prev) => (prev === "lobby" ? "live" : "lobby"));
+    const nextMode = mode === "live" ? "lobby" : "live";
+    const action =
+      nextMode === "live"
+        ? sellerBackendApi.startLiveStudio(studioSessionId)
+        : sellerBackendApi.endLiveStudio(studioSessionId);
+    void action
+      .then(() => setMode(nextMode))
+      .catch(() => showToast("Unable to update live studio status."));
   };
 
   const handleOpenFlashConfig = () => setFlashConfigOpen(true);
@@ -512,7 +455,24 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   };
 
   const handleMarkMoment = () => {
-    showToast("Moment marked for replay highlight 📌");
+    void sellerBackendApi
+      .addLiveStudioMoment(studioSessionId, {
+        kind: "highlight",
+        label: `Marked at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        time: formatTime(elapsedSeconds),
+      })
+      .then((payload) => {
+        const nextMoments = asArray<MomentMarker>(
+          asObject(payload).moments
+        ).map((moment, index) => ({
+          id: Number(moment.id || index + 1),
+          label: String(asObject(moment.data).label || moment.kind || `Moment ${index + 1}`),
+          time: String(asObject(moment.data).time || formatTime(elapsedSeconds)),
+        }));
+        setMomentMarkers(nextMoments);
+        showToast("Moment marked for replay highlight 📌");
+      })
+      .catch(() => showToast("Unable to save replay marker."));
   };
 
   const handleInviteCoHost = () => {
