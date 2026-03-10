@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BadgeCheck,
@@ -603,7 +603,7 @@ export default function TeamsRolesSupplierPage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const seededRoles = useMemo(() => seedRoles(), []);
-  const [roles, setRoles] = useMockState<Role[]>("settings.teams.roles", seededRoles);
+  const [roles, setRoles] = useSellerCompatState<Role[]>("settings.teams.roles", seededRoles);
 
   const roleIdMap = useMemo(() => {
     const byName: Record<string, string> = {};
@@ -618,9 +618,9 @@ export default function TeamsRolesSupplierPage() {
     };
   }, [roles]);
 
-  const [members, setMembers] = useMockState<Member[]>("settings.teams.members", seedMembers(roleIdMap));
+  const [members, setMembers] = useSellerCompatState<Member[]>("settings.teams.members", seedMembers(roleIdMap));
 
-  const [audit, setAudit] = useMockState<AuditEvent[]>("settings.teams.audit", []);
+  const [audit, setAudit] = useSellerCompatState<AuditEvent[]>("settings.teams.audit", []);
   const logAudit = (action: string, detail?: string) => {
     const ev: AuditEvent = {
       id: makeId("audit"),
@@ -632,7 +632,7 @@ export default function TeamsRolesSupplierPage() {
     setAudit((s) => [ev, ...s].slice(0, 200));
   };
 
-  const [policies, setPolicies] = useMockState<PolicyState>("settings.teams.policies", seedPolicies());
+  const [policies, setPolicies] = useSellerCompatState<PolicyState>("settings.teams.policies", seedPolicies());
 
   // Tabs
   const [tab, setTab] = useState<"Members" | "Roles" | "Policies" | "Audit">("Roles");

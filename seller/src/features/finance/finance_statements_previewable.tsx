@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { useThemeMode } from "../../theme/themeMode";
 import {
@@ -709,7 +709,7 @@ export default function FinanceStatementsPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [rows] = useMockState("finance.statements", seedStatements());
+  const [rows] = useSellerCompatState("finance.statements", seedStatements());
 
   const [q, setQ] = useState("");
   const [currency, setCurrency] = useState("All");

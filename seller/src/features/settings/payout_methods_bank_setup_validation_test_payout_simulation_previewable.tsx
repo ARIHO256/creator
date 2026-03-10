@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -456,7 +456,7 @@ export default function PayoutMethodsPreviewable() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [methods, setMethods] = useMockState<PayoutMethod[]>("settings.payout.methods", seedMethods());
+  const [methods, setMethods] = useSellerCompatState<PayoutMethod[]>("settings.payout.methods", seedMethods());
   const defaultMethod = useMemo(() => methods.find((m) => m.isDefault) || null, [methods]);
 
   const [kycState, setKycState] = useState<KycState>("Pending");

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -571,7 +571,7 @@ export default function AuditLogExplorerPage() {
   const dismissToast = (id: string) =>
     setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [events, setEvents] = useMockState<AuditEvent[]>("settings.audit.events", seedAudit());
+  const [events, setEvents] = useSellerCompatState<AuditEvent[]>("settings.audit.events", seedAudit());
 
   const [range, setRange] = useState<RangeKey>("24h");
   const [module, setModule] = useState<AuditModule | "All">("All");
@@ -639,7 +639,7 @@ export default function AuditLogExplorerPage() {
     setSelected(next);
   };
 
-  const [activeId, setActiveId] = useMockState<string | null>(
+  const [activeId, setActiveId] = useSellerCompatState<string | null>(
     "settings.audit.activeId",
     seedAudit()[0]?.id ?? null
   );

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -356,7 +356,7 @@ export default function TaxHubPreviewable() {
   const [tab, setTab] = useState("VAT Profiles");
   const [region, setRegion] = useState("All");
 
-  const [profiles, setProfiles] = useMockState("settings.tax.vatProfiles", seedVatProfiles());
+  const [profiles, setProfiles] = useSellerCompatState("settings.tax.vatProfiles", seedVatProfiles());
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
 
@@ -552,7 +552,7 @@ export default function TaxHubPreviewable() {
   };
 
   // Compliance pack
-  const [packHistory, setPackHistory] = useMockState("settings.tax.packHistory", seedPackHistory());
+  const [packHistory, setPackHistory] = useSellerCompatState("settings.tax.packHistory", seedPackHistory());
   const [packBusy, setPackBusy] = useState(false);
 
   const packItems = useMemo(

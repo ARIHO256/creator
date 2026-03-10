@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -2187,8 +2187,8 @@ export default function ExpressMartPagesPreviewable() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [orders, setOrders] = useMockState<Order[]>("express.orders", seedExpressOrders());
-  const [riders] = useMockState<Rider[]>("express.riders", seedRiders());
+  const [orders, setOrders] = useSellerCompatState<Order[]>("express.orders", seedExpressOrders());
+  const [riders] = useSellerCompatState<Rider[]>("express.riders", seedRiders());
 
   const [selectedOrderId, setSelectedOrderId] = useState<string>(() => orders[0]?.id || "");
 

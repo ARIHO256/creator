@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { useThemeMode } from "../../theme/themeMode";
 import {
@@ -630,7 +630,7 @@ export default function FinancePayoutHoldsPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [holds, setHolds] = useMockState<ReturnType<typeof seedHolds>>("finance.payoutHolds", seedHolds());
+  const [holds, setHolds] = useSellerCompatState<ReturnType<typeof seedHolds>>("finance.payoutHolds", seedHolds());
 
   const [q, setQ] = useState("");
   const [sev, setSev] = useState("All");

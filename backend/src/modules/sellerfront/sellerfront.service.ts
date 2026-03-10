@@ -5,6 +5,7 @@ import { PrismaService } from '../../platform/prisma/prisma.service.js';
 const SELLERFRONT_LIVE_RECORD_ID = 'sellerfront_mockdb_live';
 const SELLERFRONT_SEED_RECORD_ID = 'sellerfront_mockdb_seed';
 const asJson = (value: Record<string, unknown>) => value as unknown as Prisma.InputJsonValue;
+const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9:_-]+/g, '_');
 
 @Injectable()
 export class SellerfrontService {
@@ -75,6 +76,48 @@ export class SellerfrontService {
     return payload;
   }
 
+  async getModule(key: string) {
+    const userRecord = await this.prisma.appRecord.findFirst({
+      where: {
+        domain: 'frontend_state_module',
+        entityType: 'sellerfront',
+        entityId: key,
+        userId: { not: null }
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    if (userRecord?.payload !== undefined) {
+      return userRecord.payload;
+    }
+
+    const record = await this.prisma.appRecord.findUnique({
+      where: { id: this.moduleRecordId(key) }
+    });
+
+    return record?.payload ?? null;
+  }
+
+  async upsertModule(userId: string | null, key: string, payload: unknown) {
+    const record = await this.prisma.appRecord.upsert({
+      where: { id: this.moduleRecordId(key, userId ?? undefined) },
+      update: {
+        ...(userId ? { userId } : {}),
+        payload: payload as Prisma.InputJsonValue
+      },
+      create: {
+        id: this.moduleRecordId(key, userId ?? undefined),
+        ...(userId ? { userId } : {}),
+        domain: 'frontend_state_module',
+        entityType: 'sellerfront',
+        entityId: key,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+
+    return record.payload;
+  }
+
   async updateMockDb(userId: string | null, payload: Record<string, unknown>) {
     const jsonPayload = asJson(payload);
     const record = await this.prisma.appRecord.upsert({
@@ -122,5 +165,11 @@ export class SellerfrontService {
     });
 
     return record.payload;
+  }
+
+  private moduleRecordId(key: string, userId?: string) {
+    return userId
+      ? `frontend_state_module_sellerfront_${sanitize(key)}_${sanitize(userId)}`
+      : `frontend_state_module_sellerfront_${sanitize(key)}_global`;
   }
 }

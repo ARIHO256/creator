@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -579,7 +579,7 @@ export default function DeviceSessionsPage() {
   const dismissToast = (id: string) =>
     setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [sessions, setSessions] = useMockState<Session[]>("settings.security.sessions", seedSessions());
+  const [sessions, setSessions] = useSellerCompatState<Session[]>("settings.security.sessions", seedSessions());
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("All"); // All | Current | Trusted | Untrusted | Flagged

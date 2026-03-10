@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -491,7 +491,7 @@ export default function SavedViewsManagerPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [views, setViews] = useMockState(`settings.savedViews.${storageKey}`, seedViews());
+  const [views, setViews] = useSellerCompatState(`settings.savedViews.${storageKey}`, seedViews());
 
   // Filters
   const [query, setQuery] = useState("");

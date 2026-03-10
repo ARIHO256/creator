@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { useThemeMode } from "../../theme/themeMode";
 import {
@@ -520,7 +520,7 @@ function exportCsv(rows: Array<Record<string, unknown>>) {
 
 export default function FinanceHomeOverview() {
   const { resolvedMode } = useThemeMode();
-  const [data] = useMockState("finance.home", seedFinance());
+  const [data] = useSellerCompatState("finance.home", seedFinance());
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {

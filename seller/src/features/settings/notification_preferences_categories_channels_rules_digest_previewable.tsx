@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -533,7 +533,7 @@ export default function NotificationPreferencesPage() {
 
   const [dirty, setDirty] = useState(false);
 
-  const [prefs, setAll] = useMockState<PrefsState>("settings.notificationPrefs", seedDefaults());
+  const [prefs, setAll] = useSellerCompatState<PrefsState>("settings.notificationPrefs", seedDefaults());
   const { globalChannels, categories, channelProfiles, quietHours, digest, rules } = prefs;
 
   const snapshotRef = useRef<string | null>(null);

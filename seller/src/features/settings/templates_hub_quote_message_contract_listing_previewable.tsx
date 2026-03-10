@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -513,7 +513,7 @@ export default function TemplatesHubPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [templates, setTemplates] = useMockState<Template[]>("settings.templates.items", seedTemplates());
+  const [templates, setTemplates] = useSellerCompatState<Template[]>("settings.templates.items", seedTemplates());
 
   const [tab, setTab] = useState("All");
   const [q, setQ] = useState("");

@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -390,8 +390,8 @@ export default function HelpSupportPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [kb] = useMockState("settings.help.kb", seedKb());
-  const [incidents] = useMockState("settings.help.incidents", seedIncidents());
+  const [kb] = useSellerCompatState("settings.help.kb", seedKb());
+  const [incidents] = useSellerCompatState("settings.help.incidents", seedIncidents());
 
   const tabs = useMemo(
     () => [

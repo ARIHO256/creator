@@ -19,7 +19,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { loadCatalogLines, persistCatalogLines } from '../listings/catalogEntryStore';
 import { readSellerTaxonomy, useSellerTaxonomy } from '../../data/taxonomy';
-import { useMockState } from '../../mocks';
+import { useSellerCompatState } from '../../lib/frontendState';
 import type { ListingTaxonomyNode } from '../../data/pageTypes';
 import {
   AlertTriangle,
@@ -1352,15 +1352,15 @@ export default function SupplierHubProfileStorefrontPage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const seeded = useMemo(() => seed(), []);
-  const [identity, setIdentity] = useMockState("settings.profile.identity", seeded.identity);
-  const [branding, setBranding] = useMockState("settings.profile.branding", seeded.branding);
-  const [addresses, setAddresses] = useMockState("settings.profile.addresses", seeded.addresses);
-  const [stores, setStores] = useMockState("settings.profile.stores", seeded.stores);
-  const [productLines, setProductLines] = useMockState("settings.profile.productLines", seeded.productLines);
-  const [regions, setRegions] = useMockState("settings.profile.regions", seeded.regions);
-  const [supportHours, setSupportHours] = useMockState("settings.profile.supportHours", seeded.supportHours);
-  const [socials, setSocials] = useMockState("settings.profile.socials", seeded.socials);
-  const [customSocials, setCustomSocials] = useMockState<CustomSocial[]>(
+  const [identity, setIdentity] = useSellerCompatState("settings.profile.identity", seeded.identity);
+  const [branding, setBranding] = useSellerCompatState("settings.profile.branding", seeded.branding);
+  const [addresses, setAddresses] = useSellerCompatState("settings.profile.addresses", seeded.addresses);
+  const [stores, setStores] = useSellerCompatState("settings.profile.stores", seeded.stores);
+  const [productLines, setProductLines] = useSellerCompatState("settings.profile.productLines", seeded.productLines);
+  const [regions, setRegions] = useSellerCompatState("settings.profile.regions", seeded.regions);
+  const [supportHours, setSupportHours] = useSellerCompatState("settings.profile.supportHours", seeded.supportHours);
+  const [socials, setSocials] = useSellerCompatState("settings.profile.socials", seeded.socials);
+  const [customSocials, setCustomSocials] = useSellerCompatState<CustomSocial[]>(
     "settings.profile.customSocials",
     seeded.customSocials || []
   );

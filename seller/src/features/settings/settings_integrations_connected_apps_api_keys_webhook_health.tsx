@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -479,10 +479,10 @@ export default function SettingsIntegrationsPage() {
 
   const [tab, setTab] = useState<"Apps" | "API keys" | "Webhooks">("Apps");
 
-  const [apps, setApps] = useMockState<AppIntegration[]>("settings.integrations.apps", seedApps());
-  const [keys, setKeys] = useMockState<ApiKey[]>("settings.integrations.keys", seedApiKeys());
-  const [endpoints, setEndpoints] = useMockState<WebhookEndpoint[]>("settings.integrations.endpoints", seedWebhooks());
-  const [logs, setLogs] = useMockState<WebhookLog[]>("settings.integrations.logs", seedWebhookLogs(seedWebhooks()));
+  const [apps, setApps] = useSellerCompatState<AppIntegration[]>("settings.integrations.apps", seedApps());
+  const [keys, setKeys] = useSellerCompatState<ApiKey[]>("settings.integrations.keys", seedApiKeys());
+  const [endpoints, setEndpoints] = useSellerCompatState<WebhookEndpoint[]>("settings.integrations.endpoints", seedWebhooks());
+  const [logs, setLogs] = useSellerCompatState<WebhookLog[]>("settings.integrations.logs", seedWebhookLogs(seedWebhooks()));
 
   // ---------------- KPIs ----------------
   const kpis = useMemo(() => {

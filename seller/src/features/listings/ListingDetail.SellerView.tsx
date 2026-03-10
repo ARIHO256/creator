@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { mockCart, useMockState } from "../../mocks";
+import { mockCart } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   AlertTriangle,
@@ -2692,9 +2693,9 @@ export default function ListingsHubMergedPageV2() {
   const [kind, setKind] = useState<ListingKind | "All">("All");
   const [qualityMin, setQualityMin] = useState(0);
 
-  const [rows, setRows] = useMockState<Listing[]>("listings.detail.rows", seedListings());
+  const [rows, setRows] = useSellerCompatState<Listing[]>("listings.detail.rows", seedListings());
 
-  const [versionsById, setVersionsById] = useMockState<Record<string, ListingVersion[]>>("listings.detail.versions", (() => {
+  const [versionsById, setVersionsById] = useSellerCompatState<Record<string, ListingVersion[]>>("listings.detail.versions", (() => {
     const initial: Record<string, ListingVersion[]> = {};
     const now = new Date().toISOString();
     seedListings().forEach((l) => {

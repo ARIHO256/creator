@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -1994,9 +1994,9 @@ function Disputes({ disputesList, pushToast }) {
 export default function OrdersOpsPreviewableV4() {
   const [screen, setScreen] = useState("orders");
 
-  const [orders] = useMockState("orders.detail.orders", seedOrders());
-  const [returnsList] = useMockState("orders.detail.returns", seedReturns());
-  const [disputesList] = useMockState("orders.detail.disputes", seedDisputes());
+  const [orders] = useSellerCompatState("orders.detail.orders", seedOrders());
+  const [returnsList] = useSellerCompatState("orders.detail.returns", seedReturns());
+  const [disputesList] = useSellerCompatState("orders.detail.disputes", seedDisputes());
 
   const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id || "ORD-10512");
 

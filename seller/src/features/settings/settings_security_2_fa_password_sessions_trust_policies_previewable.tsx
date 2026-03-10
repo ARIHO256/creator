@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -354,9 +354,9 @@ export default function SettingsSecurityPage() {
   const [twoFAEnabled, setTwoFAEnabled] = useState(false);
   const [twoFAMethod, setTwoFAMethod] = useState("authenticator"); // authenticator | sms | email
 
-  const [sessions, setSessions] = useMockState("settings.security.sessionsSummary", seedSessions());
-  const [devices, setDevices] = useMockState("settings.security.devices", seedDevices());
-  const [alerts, setAlerts] = useMockState("settings.security.alerts", seedAlerts());
+  const [sessions, setSessions] = useSellerCompatState("settings.security.sessionsSummary", seedSessions());
+  const [devices, setDevices] = useSellerCompatState("settings.security.devices", seedDevices());
+  const [alerts, setAlerts] = useSellerCompatState("settings.security.alerts", seedAlerts());
 
   // Password
   const [pwOpen, setPwOpen] = useState(false);

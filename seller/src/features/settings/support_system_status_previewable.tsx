@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -431,8 +431,8 @@ export default function SupportSystemStatusPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [providers, setProviders] = useMockState<ReturnType<typeof seedProviders>>("settings.systemStatus.providers", seedProviders());
-  const [incidents, setIncidents] = useMockState<ReturnType<typeof seedIncidents>>("settings.systemStatus.incidents", seedIncidents());
+  const [providers, setProviders] = useSellerCompatState<ReturnType<typeof seedProviders>>("settings.systemStatus.providers", seedProviders());
+  const [incidents, setIncidents] = useSellerCompatState<ReturnType<typeof seedIncidents>>("settings.systemStatus.incidents", seedIncidents());
 
   // Filters
   const [query, setQuery] = useState("");

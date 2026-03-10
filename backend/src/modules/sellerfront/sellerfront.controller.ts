@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
@@ -15,6 +15,22 @@ export class SellerfrontController {
   @Public()
   mockDb() {
     return this.sellerfrontService.getMockDb();
+  }
+
+  @Get('module')
+  @Public()
+  module(@Query('key') key: string) {
+    return this.sellerfrontService.getModule(key);
+  }
+
+  @Put('module')
+  @Public()
+  @RateLimit({ limit: 240, windowMs: 60_000 })
+  putModule(
+    @CurrentUser() user: RequestUser | undefined,
+    @Body() body: { key: string; payload: unknown }
+  ) {
+    return this.sellerfrontService.upsertModule(user?.sub ?? null, body.key, body.payload);
   }
 
   @Put('mock-db')

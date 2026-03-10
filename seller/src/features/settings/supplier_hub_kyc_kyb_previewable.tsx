@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -313,7 +313,7 @@ export default function SupplierHubKycKybPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [docs, setDocs] = useMockState<KycDoc[]>("settings.kyc.docs", seedDocs());
+  const [docs, setDocs] = useSellerCompatState<KycDoc[]>("settings.kyc.docs", seedDocs());
   const tier = useMemo(() => deriveTier(docs), [docs]);
 
   const [q, setQ] = useState("");
