@@ -2,14 +2,26 @@ import bcrypt from 'bcrypt';
 import { PrismaClient, type Prisma, type UserRole } from '@prisma/client';
 import sellerfrontSeedModule from '../../sellerfront/src/mocks/seed.ts';
 import type { MockDB } from '../../sellerfront/src/mocks/types.ts';
+import catalogTaxonomyModule from '../../sellerfront/src/mocks/catalogTaxonomy.ts';
+import providerListingWizardModule from '../../sellerfront/src/mock/provider/listingWizard.ts';
 
 const prisma = new PrismaClient();
 const { seedMockDb } = sellerfrontSeedModule as {
   seedMockDb: () => MockDB;
 };
+const { CATALOG_TAXONOMY } = catalogTaxonomyModule as {
+  CATALOG_TAXONOMY: FrontendTaxonomyNode[];
+};
+const { providerListingWizardContent } = providerListingWizardModule as {
+  providerListingWizardContent: {
+    baseLines: Array<{ nodeId: string; status: string }>;
+  };
+};
 
 const SELLERFRONT_LIVE_RECORD_ID = 'sellerfront_mockdb_live';
 const SELLERFRONT_SEED_RECORD_ID = 'sellerfront_mockdb_seed';
+const SELLERFRONT_TAXONOMY_TREE_SLUG = 'sellerfront-catalog-taxonomy';
+const SELLERFRONT_TAXONOMY_TREE_ID = 'taxonomy_tree_sellerfront_catalog';
 
 type Snapshot = MockDB;
 
@@ -76,6 +88,27 @@ const orderStatusFor = (status?: string) => {
 
 const sanitizeId = (value: string) => value.replace(/[^a-zA-Z0-9:_-]+/g, '_');
 
+type FrontendTaxonomyNode = {
+  id: string;
+  type: string;
+  name: string;
+  description?: string;
+  children?: FrontendTaxonomyNode[];
+};
+
+type ImportedTaxonomyNode = {
+  id: string;
+  parentId: string | null;
+  name: string;
+  slug: string;
+  kind: 'MARKETPLACE' | 'FAMILY' | 'CATEGORY' | 'SUBCATEGORY' | 'LINE';
+  description: string | null;
+  path: string;
+  depth: number;
+  sortOrder: number;
+  metadata: Prisma.InputJsonValue;
+};
+
 const resolveUserId = (userIdMap: Map<string, string>, userId?: string | null) =>
   userId ? (userIdMap.get(userId) ?? userId) : null;
 const requireResolvedUserId = (
@@ -89,6 +122,118 @@ const requireResolvedUserId = (
   }
 
   return resolved;
+};
+
+const taxonomyKindFor = (type?: string): ImportedTaxonomyNode['kind'] => {
+  const normalized = String(type || '')
+    .trim()
+    .toLowerCase();
+  if (normalized === 'marketplace') return 'MARKETPLACE';
+  if (normalized === 'product family' || normalized === 'service family' || normalized === 'family')
+    return 'FAMILY';
+  if (normalized === 'sub-category' || normalized === 'subcategory') return 'SUBCATEGORY';
+  if (normalized === 'line') return 'LINE';
+  return 'CATEGORY';
+};
+
+const mergeTaxonomyRoots = (...collections: FrontendTaxonomyNode[][]) => {
+  const map = new Map<string, FrontendTaxonomyNode>();
+
+  const mergeNode = (node: FrontendTaxonomyNode): FrontendTaxonomyNode => {
+    const existing = map.get(node.id);
+    const children = Array.isArray(node.children) ? node.children.map(mergeNode) : [];
+    if (!existing) {
+      const next: FrontendTaxonomyNode = {
+        id: node.id,
+        type: node.type,
+        name: node.name,
+        description: node.description,
+        children
+      };
+      map.set(node.id, next);
+      return next;
+    }
+
+    const childMap = new Map<string, FrontendTaxonomyNode>();
+    [...(existing.children || []), ...children].forEach((child) => {
+      childMap.set(child.id, child);
+    });
+
+    existing.type = existing.type || node.type;
+    existing.name = existing.name || node.name;
+    existing.description = existing.description || node.description;
+    existing.children = Array.from(childMap.values());
+    return existing;
+  };
+
+  collections.flat().forEach((node) => {
+    mergeNode(node);
+  });
+
+  return Array.from(map.values());
+};
+
+const flattenTaxonomy = (roots: FrontendTaxonomyNode[]) => {
+  const nodes: ImportedTaxonomyNode[] = [];
+  const seen = new Set<string>();
+
+  const visit = (
+    node: FrontendTaxonomyNode,
+    parentId: string | null,
+    parentPath: string,
+    depth: number,
+    sortOrder: number
+  ) => {
+    if (seen.has(node.id)) return;
+    seen.add(node.id);
+
+    const slug = sanitizeId(node.id.toLowerCase());
+    const path = `${parentPath}/${slug}`;
+    nodes.push({
+      id: node.id,
+      parentId,
+      name: node.name,
+      slug,
+      kind: taxonomyKindFor(node.type),
+      description: node.description || null,
+      path,
+      depth,
+      sortOrder,
+      metadata: {
+        source: 'sellerfront',
+        sourceType: node.type,
+        frontendId: node.id
+      } as Prisma.InputJsonValue
+    });
+
+    (node.children || []).forEach((child, index) => visit(child, node.id, path, depth + 1, index));
+  };
+
+  roots.forEach((root, index) => visit(root, null, '', 0, index));
+  return nodes;
+};
+
+const buildPathSnapshot = (
+  nodeId: string,
+  nodeMap: Map<string, ImportedTaxonomyNode>
+): Prisma.InputJsonValue => {
+  const path: Array<{ id: string; name: string; slug: string; kind: string; path: string }> = [];
+  let current = nodeMap.get(nodeId);
+  const guard = new Set<string>();
+
+  while (current && !guard.has(current.id)) {
+    guard.add(current.id);
+    path.unshift({
+      id: current.id,
+      name: current.name,
+      slug: current.slug,
+      kind: current.kind,
+      path: current.path
+    });
+    current = current.parentId ? nodeMap.get(current.parentId) ?? null : null;
+  }
+
+  return path as Prisma.InputJsonValue;
 };
 
 async function upsertUser(
@@ -446,6 +591,147 @@ async function upsertRelationships(snapshot: Snapshot, userIdMap: Map<string, st
   }
 }
 
+async function upsertTaxonomy(snapshot: Snapshot, userIdMap: Map<string, string>) {
+  const sellerTaxonomy = snapshot.pageContent.listingWizard.seller.taxonomy as FrontendTaxonomyNode[];
+  const providerTaxonomy = snapshot.pageContent.listingWizard.provider.taxonomy as FrontendTaxonomyNode[];
+  const roots = mergeTaxonomyRoots(
+    CATALOG_TAXONOMY as FrontendTaxonomyNode[],
+    sellerTaxonomy,
+    providerTaxonomy,
+  );
+  const nodes = flattenTaxonomy(roots);
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+
+  await prisma.taxonomyTree.upsert({
+    where: { id: SELLERFRONT_TAXONOMY_TREE_ID },
+    update: {
+      slug: SELLERFRONT_TAXONOMY_TREE_SLUG,
+      name: 'Sellerfront Catalog Taxonomy',
+      description: 'Imported sellerfront seller/provider taxonomy tree.',
+      status: 'ACTIVE'
+    },
+    create: {
+      id: SELLERFRONT_TAXONOMY_TREE_ID,
+      slug: SELLERFRONT_TAXONOMY_TREE_SLUG,
+      name: 'Sellerfront Catalog Taxonomy',
+      description: 'Imported sellerfront seller/provider taxonomy tree.',
+      status: 'ACTIVE'
+    }
+  });
+
+  for (const node of nodes) {
+    await prisma.taxonomyNode.upsert({
+      where: { id: node.id },
+      update: {
+        treeId: SELLERFRONT_TAXONOMY_TREE_ID,
+        parentId: node.parentId,
+        name: node.name,
+        slug: node.slug,
+        kind: node.kind,
+        description: node.description,
+        path: node.path,
+        depth: node.depth,
+        sortOrder: node.sortOrder,
+        isActive: true,
+        metadata: node.metadata
+      },
+      create: {
+        id: node.id,
+        treeId: SELLERFRONT_TAXONOMY_TREE_ID,
+        parentId: node.parentId,
+        name: node.name,
+        slug: node.slug,
+        kind: node.kind,
+        description: node.description,
+        path: node.path,
+        depth: node.depth,
+        sortOrder: node.sortOrder,
+        isActive: true,
+        metadata: node.metadata
+      }
+    });
+  }
+
+  const roleConfigs = [
+    {
+      role: 'seller',
+      baseLines: snapshot.pageContent.listingWizard.seller.baseLines,
+    },
+    {
+      role: 'provider',
+      baseLines: providerListingWizardContent.baseLines,
+    }
+  ] as const;
+
+  for (const config of roleConfigs) {
+    const mockUser = snapshot.users.find((user) => user.role === config.role);
+    if (!mockUser) continue;
+    const resolvedUserId = resolveUserId(userIdMap, mockUser.id);
+    if (!resolvedUserId) continue;
+    const seller = await prisma.seller.findUnique({ where: { id: resolvedUserId } });
+    if (!seller) continue;
+
+    const storefront =
+      (await prisma.storefront.findUnique({ where: { sellerId: seller.id } })) ??
+      (await prisma.storefront.create({
+        data: {
+          sellerId: seller.id,
+          slug: `${seller.handle || sanitizeId(seller.id.toLowerCase())}-storefront`,
+          name: seller.storefrontName || seller.displayName || seller.name,
+          isPublished: false
+        }
+      }));
+
+    for (const [index, line] of config.baseLines.entries()) {
+      const status = line.status === 'suspended' ? 'SUSPENDED' : 'ACTIVE';
+      const pathSnapshot = buildPathSnapshot(line.nodeId, nodeMap);
+
+      await prisma.sellerTaxonomyCoverage.upsert({
+        where: {
+          sellerId_taxonomyNodeId: {
+            sellerId: seller.id,
+            taxonomyNodeId: line.nodeId
+          }
+        },
+        update: {
+          status,
+          removedAt: null,
+          metadata: { source: 'sellerfront', role: config.role } as Prisma.InputJsonValue,
+          pathSnapshot
+        },
+        create: {
+          sellerId: seller.id,
+          taxonomyNodeId: line.nodeId,
+          status,
+          metadata: { source: 'sellerfront', role: config.role } as Prisma.InputJsonValue,
+          pathSnapshot
+        }
+      });
+
+      await prisma.storefrontTaxonomyLink.upsert({
+        where: {
+          storefrontId_taxonomyNodeId: {
+            storefrontId: storefront.id,
+            taxonomyNodeId: line.nodeId
+          }
+        },
+        update: {
+          isPrimary: index === 0,
+          sortOrder: index,
+          pathSnapshot
+        },
+        create: {
+          storefrontId: storefront.id,
+          taxonomyNodeId: line.nodeId,
+          isPrimary: index === 0,
+          sortOrder: index,
+          pathSnapshot
+        }
+      });
+    }
+  }
+}
+
 async function upsertPageContent(snapshot: Snapshot) {
   const pageContentEntries = Object.entries(snapshot.pageContent) as Array<
     [keyof Snapshot['pageContent'], Snapshot['pageContent'][keyof Snapshot['pageContent']]]
@@ -531,6 +817,7 @@ async function main() {
   await upsertNotifications(snapshot, userIdMap);
   await upsertMessages(snapshot, userIdMap);
   await upsertRelationships(snapshot, userIdMap);
+  await upsertTaxonomy(snapshot, userIdMap);
   await upsertPageContent(snapshot);
   await upsertModuleState(snapshot);
   await upsertSnapshotRecords(snapshot);
