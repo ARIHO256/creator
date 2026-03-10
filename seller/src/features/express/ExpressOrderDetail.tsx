@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -200,6 +200,124 @@ function riskMeta(promisedBy: string): RiskMeta {
   if (mins <= 60) return { risk: "risk", riskLabel: "< 1h", mins };
   if (mins <= 180) return { risk: "watch", riskLabel: "< 3h", mins };
   return { risk: "ok", riskLabel: "On track", mins };
+}
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function mapBackendOrderStatus(status: unknown): OrderStatus {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "CONFIRMED") return "Confirmed";
+  if (normalized === "PICKING") return "Picking";
+  if (normalized === "PACKED") return "Packed";
+  if (normalized === "OUT_FOR_DELIVERY") return "Out for Delivery";
+  if (normalized === "DELIVERED") return "Delivered";
+  if (normalized === "FAILED") return "Failed";
+  if (normalized === "CANCELLED") return "Cancelled";
+  return "New";
+}
+
+function mapUiOrderStatus(status: OrderStatus) {
+  if (status === "Confirmed") return "CONFIRMED";
+  if (status === "Picking") return "PICKING";
+  if (status === "Packed") return "PACKED";
+  if (status === "Out for Delivery") return "OUT_FOR_DELIVERY";
+  if (status === "Delivered") return "DELIVERED";
+  if (status === "Failed") return "FAILED";
+  if (status === "Cancelled") return "CANCELLED";
+  return "NEW";
+}
+
+function mapBackendExpressOrder(value: Record<string, unknown>): Order {
+  const metadata = asObject(value.metadata);
+  const proof = asObject(metadata.proof);
+  const feedback = asObject(metadata.feedback);
+  const promisedBy =
+    typeof metadata.promisedBy === "string"
+      ? metadata.promisedBy
+      : typeof value.updatedAt === "string"
+        ? value.updatedAt
+        : new Date().toISOString();
+
+  return {
+    id: String(value.id || ""),
+    customer: String(metadata.customer || "Buyer"),
+    phone: String(metadata.phone || ""),
+    address: String(metadata.address || ""),
+    zone: String(metadata.zone || ""),
+    hub: String(metadata.hub || value.warehouse || ""),
+    items: Number(value.itemCount || 0),
+    total: Number(value.total || 0),
+    currency: String(value.currency || "USD"),
+    status: mapBackendOrderStatus(value.status),
+    slot: String(metadata.slot || ""),
+    channel: String(value.channel || "ExpressMart"),
+    updatedAt:
+      typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(),
+    promisedBy,
+    rider: typeof metadata.rider === "string" ? metadata.rider : null,
+    payment: String(metadata.payment || ""),
+    proof: {
+      photo: typeof proof.photo === "string" ? proof.photo : null,
+      signature: !!proof.signature,
+      otp: String(proof.otp || ""),
+    },
+    feedback: {
+      rating:
+        typeof feedback.rating === "number" && Number.isFinite(feedback.rating)
+          ? feedback.rating
+          : null,
+      note: String(feedback.note || ""),
+      followUp:
+        feedback.followUp === "callback" ||
+        feedback.followUp === "refund" ||
+        feedback.followUp === "replacement"
+          ? (feedback.followUp as FollowUpKey)
+          : "none",
+    },
+    ...riskMeta(promisedBy),
+  };
+}
+
+function mapBackendRider(value: Record<string, unknown>): Rider {
+  return {
+    id: String(value.id || ""),
+    name: String(value.name || ""),
+    zone: String(value.zone || ""),
+    status: value.status === "Busy" ? "Busy" : "Online",
+    capacity: Number(value.capacity || 0),
+  };
+}
+
+function buildExpressOrderMetadata(order: Order) {
+  return {
+    customer: order.customer,
+    phone: order.phone,
+    address: order.address,
+    zone: order.zone,
+    hub: order.hub,
+    slot: order.slot,
+    payment: order.payment,
+    promisedBy: order.promisedBy,
+    rider: order.rider,
+    proof: order.proof,
+    feedback: order.feedback,
+  };
+}
+
+function hashOrderForSync(order: Order) {
+  return JSON.stringify({
+    id: order.id,
+    status: order.status,
+    rider: order.rider,
+    proof: order.proof,
+    feedback: order.feedback,
+    promisedBy: order.promisedBy,
+    payment: order.payment,
+  });
 }
 
 function seedExpressOrders(): Order[] {
@@ -2187,8 +2305,58 @@ export default function ExpressMartPagesPreviewable() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [orders, setOrders] = useSellerCompatState<Order[]>("express.orders", seedExpressOrders());
-  const [riders] = useSellerCompatState<Rider[]>("express.riders", seedRiders());
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [riders, setRiders] = useState<Rider[]>([]);
+  const syncedOrderHashesRef = useRef<Record<string, string>>({});
+  const syncingRef = useRef(false);
+
+  const loadExpressData = async () => {
+    const [ordersPayload, ridersPayload] = await Promise.all([
+      sellerBackendApi.getExpressOrders().catch(() => ({ orders: [] })),
+      sellerBackendApi.getExpressRiders().catch(() => ({ riders: [] })),
+    ]);
+    const nextOrders = Array.isArray(ordersPayload?.orders)
+      ? ordersPayload.orders.map((entry) => mapBackendExpressOrder(entry))
+      : [];
+    const nextRiders = Array.isArray(ridersPayload?.riders)
+      ? ridersPayload.riders.map((entry) => mapBackendRider(entry))
+      : [];
+    syncedOrderHashesRef.current = Object.fromEntries(
+      nextOrders.map((order) => [order.id, hashOrderForSync(order)])
+    );
+    setOrders(nextOrders);
+    setRiders(nextRiders);
+  };
+
+  useEffect(() => {
+    void loadExpressData();
+  }, []);
+
+  useEffect(() => {
+    if (syncingRef.current || orders.length === 0) return;
+    const changed = orders.filter(
+      (order) => syncedOrderHashesRef.current[order.id] !== hashOrderForSync(order)
+    );
+    if (changed.length === 0) return;
+
+    syncingRef.current = true;
+    void Promise.all(
+      changed.map((order) =>
+        sellerBackendApi.patchExpressOrder(order.id, {
+          status: mapUiOrderStatus(order.status),
+          metadata: buildExpressOrderMetadata(order),
+        })
+      )
+    )
+      .then(() => {
+        changed.forEach((order) => {
+          syncedOrderHashesRef.current[order.id] = hashOrderForSync(order);
+        });
+      })
+      .finally(() => {
+        syncingRef.current = false;
+      });
+  }, [orders]);
 
   const [selectedOrderId, setSelectedOrderId] = useState<string>(() => orders[0]?.id || "");
 
@@ -2196,6 +2364,12 @@ export default function ExpressMartPagesPreviewable() {
     // Ensure path is inside /expressmart for this preview
     if (!path.startsWith("/expressmart")) navigate("/expressmart");
   }, [path]);
+
+  useEffect(() => {
+    if (!orders.find((order) => order.id === selectedOrderId)) {
+      setSelectedOrderId(orders[0]?.id || "");
+    }
+  }, [orders, selectedOrderId]);
 
   const activeOrderId = useMemo(() => {
     if (path.startsWith("/expressmart/orders/")) return path.split("/").slice(-1)[0] || selectedOrderId;

@@ -52,6 +52,7 @@ export const sellerBackendApi = {
     ),
   getExpressOrderDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/expressmart/orders/${encodeURIComponent(id)}`),
+  getExpressRiders: () => request<{ riders?: Array<Record<string, unknown>> }>("/api/expressmart/riders"),
   patchExpressOrder: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/expressmart/orders/${encodeURIComponent(id)}`, {
       method: "PATCH",

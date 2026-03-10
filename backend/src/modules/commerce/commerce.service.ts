@@ -316,6 +316,27 @@ export class CommerceService {
     return order;
   }
 
+  async expressRiders(userId: string) {
+    await this.ensureSeller(userId);
+    const record = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key: 'express_riders'
+        }
+      }
+    });
+
+    const payload =
+      record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+        ? (record.payload as Record<string, unknown>)
+        : {};
+
+    return {
+      riders: Array.isArray(payload.riders) ? payload.riders : []
+    };
+  }
+
   async printInvoice(userId: string, id: string) {
     const payload = await this.buildPrintPayload(userId, id);
     return { ...payload, printType: 'invoice' };

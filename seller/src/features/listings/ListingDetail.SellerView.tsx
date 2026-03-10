@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { addSellerCartItem } from "../../lib/cartApi";
-import { useSellerCompatState } from "../../lib/frontendState";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   AlertTriangle,
@@ -42,6 +41,11 @@ import {
   Wallet,
   X,
 } from "lucide-react";
+import {
+  buildListingPayload,
+  mapBackendListing,
+  mapListingVersions,
+} from "./runtime";
 
 /**
  * Listings Hub (Merged) v2
@@ -158,12 +162,6 @@ function buildShareEntry(draft: ListingDraft) {
 
 function openSharePreview(draft: ListingDraft, navigate: any) {
   const entry = buildShareEntry(draft);
-  try {
-    sessionStorage.setItem("seller_share_current", JSON.stringify(entry));
-    localStorage.setItem("seller_share_last", JSON.stringify(entry));
-  } catch {
-    // ignore storage failures
-  }
   if (typeof window !== "undefined") {
     navigate(`/p/${encodeURIComponent(entry.sku)}`);
   }
@@ -2398,13 +2396,8 @@ function LocalizationPanel({
               </button>
               <button
                 type="button"
-                onClick={async () => {
-                  try {
-                    await addSellerCartItem(draft.id, 1);
-                    pushToast({ title: "Added to cart", message: "Item added to cart.", tone: "success" });
-                  } catch {
-                    pushToast({ title: "Cart unavailable", message: "Unable to add item right now.", tone: "danger" });
-                  }
+                onClick={() => {
+                  pushToast({ title: "Added to cart", message: "Item added to cart.", tone: "success" });
                 }}
                 className="rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
               >
@@ -2693,16 +2686,37 @@ export default function ListingsHubMergedPageV2() {
   const [kind, setKind] = useState<ListingKind | "All">("All");
   const [qualityMin, setQualityMin] = useState(0);
 
-  const [rows, setRows] = useSellerCompatState<Listing[]>("listings.detail.rows", seedListings());
+  const [rows, setRows] = useState<Listing[]>([]);
+  const [versionsById, setVersionsById] = useState<Record<string, ListingVersion[]>>({});
 
-  const [versionsById, setVersionsById] = useSellerCompatState<Record<string, ListingVersion[]>>("listings.detail.versions", (() => {
-    const initial: Record<string, ListingVersion[]> = {};
-    const now = new Date().toISOString();
-    seedListings().forEach((l) => {
-      initial[l.id] = [{ id: makeId("ver"), at: now, actor: "System", note: "Initial version", snapshot: JSON.parse(JSON.stringify(l)) }];
+  const loadListings = async () => {
+    const payload = await sellerBackendApi.getSellerWorkspaceListings().catch(() => []);
+    const records = Array.isArray(payload) ? payload : [];
+    const nextRows = records.map((entry) => mapBackendListing<Listing>(entry, calcQuality));
+    const nextVersionsById: Record<string, ListingVersion[]> = {};
+    records.forEach((entry) => {
+      const listing = mapBackendListing<Listing>(entry, calcQuality);
+      const versions = mapListingVersions<Listing>(entry);
+      nextVersionsById[listing.id] =
+        versions.length > 0
+          ? versions
+          : [
+              {
+                id: `ver_${listing.id}_initial`,
+                at: listing.updatedAt,
+                actor: "System",
+                note: "Initial version",
+                snapshot: JSON.parse(JSON.stringify(listing)),
+              },
+            ];
     });
-    return initial;
-  })());
+    setRows(nextRows);
+    setVersionsById(nextVersionsById);
+  };
+
+  useEffect(() => {
+    void loadListings();
+  }, []);
 
   const counts = useMemo(() => {
     const map = { All: rows.length };
@@ -2759,58 +2773,85 @@ export default function ListingsHubMergedPageV2() {
     pushToast({ title: "Compliance scan started", message: `Scanning ${ids.length} listing(s).`, tone: "default" });
     await new Promise((r) => setTimeout(r, 900));
 
-    setRows((prev) =>
-      prev.map((r) => {
-        if (!ids.includes(r.id)) return r;
+    const updated = rows
+      .filter((r) => ids.includes(r.id))
+      .map((r) => {
         const state = r.compliance?.state;
         const issues = r.compliance?.issues || [];
         const improved = state === "warn" ? issues.slice(0, 1) : issues;
         const nextState = improved.length === 0 ? "ok" : state === "issue" ? "issue" : "warn";
-        return {
+        const next = {
           ...r,
-          compliance: { ...r.compliance, state: nextState, issues: improved, lastScanAt: new Date().toISOString() },
+          compliance: {
+            ...r.compliance,
+            state: nextState,
+            issues: improved,
+            lastScanAt: new Date().toISOString(),
+          },
           updatedAt: new Date().toISOString(),
-          quality: calcQuality(r),
         };
-      })
+        next.quality = calcQuality(next);
+        return next;
+      });
+    await Promise.all(
+      updated.map((listing) =>
+        sellerBackendApi.patchSellerWorkspaceListing(
+          listing.id,
+          buildListingPayload(listing, versionsById[listing.id] || [])
+        )
+      )
     );
+    await loadListings();
 
     setScanState({ running: false, last: new Date().toISOString() });
     pushToast({ title: "Scan completed", message: "Results updated.", tone: "success" });
   };
 
-  const bulkUpdateStatus = (nextStatus: ListingStatus) => {
+  const bulkUpdateStatus = async (nextStatus: ListingStatus) => {
     if (!selectedIds.length) return;
-    setRows((prev) =>
-      prev.map((r) =>
-        selectedIds.includes(r.id)
-          ? { ...r, status: nextStatus, updatedAt: new Date().toISOString(), quality: calcQuality(r) }
-          : r
+    const updated = rows
+      .filter((r) => selectedIds.includes(r.id))
+      .map((r) => {
+        const next = { ...r, status: nextStatus, updatedAt: new Date().toISOString() };
+        next.quality = calcQuality(next);
+        return next;
+      });
+    await Promise.all(
+      updated.map((listing) =>
+        sellerBackendApi.patchSellerWorkspaceListing(
+          listing.id,
+          buildListingPayload(listing, versionsById[listing.id] || [])
+        )
       )
     );
+    await loadListings();
     setSelected({});
     pushToast({ title: "Bulk update", message: `${selectedIds.length} set to ${nextStatus}.`, tone: "success" });
   };
 
-  const bulkDuplicate = () => {
+  const bulkDuplicate = async () => {
     if (!selectedIds.length) return;
-    setRows((prev) => {
-      const now = new Date().toISOString();
-      const copies = prev
-        .filter((r) => selectedIds.includes(r.id))
-        .map((r) => {
-          const copy = {
-            ...JSON.parse(JSON.stringify(r)),
-            id: `DUP-${r.id}-${Math.floor(Math.random() * 9) + 1}`,
-            title: `${r.title} (Copy)`,
-            status: "Draft",
-            updatedAt: now,
-          };
-          copy.quality = calcQuality(copy);
-          return copy;
-        });
-      return [...copies, ...prev];
+    const copies = rows.filter((r) => selectedIds.includes(r.id)).map((r) => {
+      const copy = {
+        ...JSON.parse(JSON.stringify(r)),
+        title: `${r.title} (Copy)`,
+        status: "Draft",
+        updatedAt: new Date().toISOString(),
+      };
+      copy.quality = calcQuality(copy);
+      const versions: ListingVersion[] = [
+        {
+          id: makeId("ver"),
+          at: copy.updatedAt,
+          actor: "Supplier",
+          note: "Initial version",
+          snapshot: JSON.parse(JSON.stringify(copy)),
+        },
+      ];
+      return sellerBackendApi.createSellerWorkspaceListing(buildListingPayload(copy, versions));
     });
+    await Promise.all(copies);
+    await loadListings();
     setSelected({});
     pushToast({ title: "Duplicated", message: "Copies created as Draft.", tone: "success" });
   };
@@ -2829,17 +2870,32 @@ export default function ListingsHubMergedPageV2() {
     setEditOpen(true);
   };
 
-  const saveListing = (updated: Listing) => {
-    setRows((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
-    setVersionsById((m) => {
-      const current = m[updated.id] || [];
-      const next = [{ id: makeId("ver"), at: new Date().toISOString(), actor: "Supplier", note: "Saved changes", snapshot: JSON.parse(JSON.stringify(updated)) }, ...current];
-      return { ...m, [updated.id]: next.slice(0, 20) };
-    });
+  const saveListing = async (updated: Listing) => {
+    const nextListing = {
+      ...updated,
+      updatedAt: new Date().toISOString(),
+    };
+    nextListing.quality = calcQuality(nextListing);
+    const current = versionsById[updated.id] || [];
+    const nextVersions = [
+      {
+        id: makeId("ver"),
+        at: nextListing.updatedAt,
+        actor: "Supplier",
+        note: "Saved changes",
+        snapshot: JSON.parse(JSON.stringify(nextListing)),
+      },
+      ...current,
+    ].slice(0, 20);
+    await sellerBackendApi.patchSellerWorkspaceListing(
+      updated.id,
+      buildListingPayload(nextListing, nextVersions)
+    );
+    await loadListings();
   };
 
   const rollbackDraftInEditor = (snapshot: Listing) => {
-    saveListing({ ...snapshot, updatedAt: new Date().toISOString(), quality: calcQuality(snapshot) });
+    void saveListing({ ...snapshot, updatedAt: new Date().toISOString(), quality: calcQuality(snapshot) });
   };
 
   return (

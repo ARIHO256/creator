@@ -40,9 +40,14 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { useRolePageContent } from '../../data/pageContent';
-import type { ListingRow } from '../../data/pageTypes';
+import { sellerBackendApi } from '../../lib/backendApi';
 import { useThemeMode } from '../../theme/themeMode';
+import {
+  buildListingPayload,
+  mapBackendListing,
+  mapListingVersions,
+  SELLER_LISTINGS_LABELS,
+} from './runtime';
 
 /**
  * Listings Hub (Merged) v2
@@ -138,12 +143,6 @@ function buildShareEntry(draft) {
 
 function openSharePreview(draft, navigate) {
   const entry = buildShareEntry(draft);
-  try {
-    sessionStorage.setItem('seller_share_current', JSON.stringify(entry));
-    localStorage.setItem('seller_share_last', JSON.stringify(entry));
-  } catch {
-    // ignore storage failures
-  }
   if (typeof window !== 'undefined') {
     navigate(`/p/${encodeURIComponent(entry.sku)}`);
   }
@@ -375,7 +374,7 @@ function calcQuality(d) {
   return clamp(Math.round(score), 35, 99);
 }
 
-function normalizeListings(rows: ListingRow[]) {
+function normalizeListings(rows) {
   return rows.map((x) => ({ ...x, quality: calcQuality(x) }));
 }
 
@@ -3177,8 +3176,7 @@ export default function ListingsHubMergedPageV2() {
   const { resolvedMode } = useThemeMode();
   const isDark = resolvedMode === 'dark';
   const pageBackground = isDark ? PAGE_BG_DARK : PAGE_BG_LIGHT;
-  const { content, updateContent } = useRolePageContent('listings');
-  const labels = content.labels;
+  const labels = SELLER_LISTINGS_LABELS;
 
   const [toasts, setToasts] = useState([]);
   const pushToast = (t) => {
@@ -3193,53 +3191,37 @@ export default function ListingsHubMergedPageV2() {
   const [marketplace, setMarketplace] = useState('All');
   const [kind, setKind] = useState('All');
   const [qualityMin, setQualityMin] = useState(0);
+  const [rows, setRows] = useState([]);
+  const [versionsById, setVersionsById] = useState({});
 
-  const [rows, setRows] = useState(() => normalizeListings(content.rows));
-  const setRowsPersist = (updater) => {
-    setRows((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      updateContent((current) => ({ ...current, rows: next }));
-      return next;
+  const loadListings = async () => {
+    const payload = await sellerBackendApi.getSellerWorkspaceListings().catch(() => []);
+    const records = Array.isArray(payload) ? payload : [];
+    const nextRows = records.map((entry) => mapBackendListing(entry, calcQuality));
+    const nextVersionsById = {};
+    records.forEach((entry) => {
+      const listing = mapBackendListing(entry, calcQuality);
+      const versions = mapListingVersions(entry);
+      nextVersionsById[listing.id] =
+        versions.length > 0
+          ? versions
+          : [
+              {
+                id: `ver_${listing.id}_initial`,
+                at: listing.updatedAt,
+                actor: 'System',
+                note: 'Initial version',
+                snapshot: JSON.parse(JSON.stringify(listing)),
+              },
+            ];
     });
+    setRows(nextRows);
+    setVersionsById(nextVersionsById);
   };
 
-  const [versionsById, setVersionsById] = useState(() => {
-    const initial = {};
-    const now = new Date().toISOString();
-    normalizeListings(content.rows).forEach((l) => {
-      initial[l.id] = [
-        {
-          id: makeId('ver'),
-          at: now,
-          actor: 'System',
-          note: 'Initial version',
-          snapshot: JSON.parse(JSON.stringify(l)),
-        },
-      ];
-    });
-    return initial;
-  });
-
   useEffect(() => {
-    const next = normalizeListings(content.rows);
-    setRows(next);
-    setVersionsById(() => {
-      const initial = {};
-      const now = new Date().toISOString();
-      next.forEach((l) => {
-        initial[l.id] = [
-          {
-            id: makeId('ver'),
-            at: now,
-            actor: 'System',
-            note: 'Initial version',
-            snapshot: JSON.parse(JSON.stringify(l)),
-          },
-        ];
-      });
-      return initial;
-    });
-  }, [content]);
+    void loadListings();
+  }, []);
 
   const counts = useMemo(() => {
     const map = { All: rows.length };
@@ -3305,14 +3287,14 @@ export default function ListingsHubMergedPageV2() {
     });
     await new Promise((r) => setTimeout(r, 900));
 
-    setRowsPersist((prev) =>
-      prev.map((r) => {
-        if (!ids.includes(r.id)) return r;
+    const updated = rows
+      .filter((r) => ids.includes(r.id))
+      .map((r) => {
         const state = r.compliance?.state;
         const issues = r.compliance?.issues || [];
         const improved = state === 'warn' ? issues.slice(0, 1) : issues;
         const nextState = improved.length === 0 ? 'ok' : state === 'issue' ? 'issue' : 'warn';
-        return {
+        const next = {
           ...r,
           compliance: {
             ...r.compliance,
@@ -3321,29 +3303,47 @@ export default function ListingsHubMergedPageV2() {
             lastScanAt: new Date().toISOString(),
           },
           updatedAt: new Date().toISOString(),
-          quality: calcQuality(r),
         };
-      })
+        next.quality = calcQuality(next);
+        return next;
+      });
+
+    await Promise.all(
+      updated.map((listing) =>
+        sellerBackendApi.patchSellerWorkspaceListing(
+          listing.id,
+          buildListingPayload(listing, versionsById[listing.id] || [])
+        )
+      )
     );
+    await loadListings();
 
     setScanState({ running: false, last: new Date().toISOString() });
     pushToast({ title: 'Scan completed', message: 'Results updated.', tone: 'success' });
   };
 
-  const bulkUpdateStatus = (nextStatus) => {
+  const bulkUpdateStatus = async (nextStatus) => {
     if (!selectedIds.length) return;
-    setRowsPersist((prev) =>
-      prev.map((r) =>
-        selectedIds.includes(r.id)
-          ? {
-            ...r,
-            status: nextStatus,
-            updatedAt: new Date().toISOString(),
-            quality: calcQuality(r),
-          }
-          : r
+    const updated = rows
+      .filter((r) => selectedIds.includes(r.id))
+      .map((r) => {
+        const next = {
+          ...r,
+          status: nextStatus,
+          updatedAt: new Date().toISOString(),
+        };
+        next.quality = calcQuality(next);
+        return next;
+      });
+    await Promise.all(
+      updated.map((listing) =>
+        sellerBackendApi.patchSellerWorkspaceListing(
+          listing.id,
+          buildListingPayload(listing, versionsById[listing.id] || [])
+        )
       )
     );
+    await loadListings();
     setSelected({});
     pushToast({
       title: 'Bulk update',
@@ -3352,25 +3352,29 @@ export default function ListingsHubMergedPageV2() {
     });
   };
 
-  const bulkDuplicate = () => {
+  const bulkDuplicate = async () => {
     if (!selectedIds.length) return;
-    setRowsPersist((prev) => {
-      const now = new Date().toISOString();
-      const copies = prev
-        .filter((r) => selectedIds.includes(r.id))
-        .map((r) => {
-          const copy = {
-            ...JSON.parse(JSON.stringify(r)),
-            id: `DUP-${r.id}-${Math.floor(Math.random() * 9) + 1}`,
-            title: `${r.title} (Copy)`,
-            status: 'Draft',
-            updatedAt: now,
-          };
-          copy.quality = calcQuality(copy);
-          return copy;
-        });
-      return [...copies, ...prev];
+    const copies = rows.filter((r) => selectedIds.includes(r.id)).map((r) => {
+      const copy = {
+        ...JSON.parse(JSON.stringify(r)),
+        title: `${r.title} (Copy)`,
+        status: 'Draft',
+        updatedAt: new Date().toISOString(),
+      };
+      copy.quality = calcQuality(copy);
+      const versions = [
+        {
+          id: makeId('ver'),
+          at: copy.updatedAt,
+          actor: 'Supplier',
+          note: 'Initial version',
+          snapshot: JSON.parse(JSON.stringify(copy)),
+        },
+      ];
+      return sellerBackendApi.createSellerWorkspaceListing(buildListingPayload(copy, versions));
     });
+    await Promise.all(copies);
+    await loadListings();
     setSelected({});
     pushToast({ title: 'Duplicated', message: 'Copies created as Draft.', tone: 'success' });
   };
@@ -3389,26 +3393,32 @@ export default function ListingsHubMergedPageV2() {
     setEditOpen(true);
   };
 
-  const saveListing = (updated) => {
-    setRowsPersist((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
-    setVersionsById((m) => {
-      const current = m[updated.id] || [];
-      const next = [
-        {
-          id: makeId('ver'),
-          at: new Date().toISOString(),
-          actor: 'Supplier',
-          note: 'Saved changes',
-          snapshot: JSON.parse(JSON.stringify(updated)),
-        },
-        ...current,
-      ];
-      return { ...m, [updated.id]: next.slice(0, 20) };
-    });
+  const saveListing = async (updated) => {
+    const nextListing = {
+      ...updated,
+      updatedAt: new Date().toISOString(),
+    };
+    nextListing.quality = calcQuality(nextListing);
+    const current = versionsById[updated.id] || [];
+    const nextVersions = [
+      {
+        id: makeId('ver'),
+        at: nextListing.updatedAt,
+        actor: 'Supplier',
+        note: 'Saved changes',
+        snapshot: JSON.parse(JSON.stringify(nextListing)),
+      },
+      ...current,
+    ].slice(0, 20);
+    await sellerBackendApi.patchSellerWorkspaceListing(
+      updated.id,
+      buildListingPayload(nextListing, nextVersions)
+    );
+    await loadListings();
   };
 
   const rollbackDraftInEditor = (snapshot) => {
-    saveListing({
+    void saveListing({
       ...snapshot,
       updatedAt: new Date().toISOString(),
       quality: calcQuality(snapshot),

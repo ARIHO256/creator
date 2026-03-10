@@ -19,6 +19,210 @@ function buildRoleAssignments(userId, roles) {
   return roles.map((role) => ({ userId, role }));
 }
 
+function uiListingStatusToDb(status) {
+  if (status === 'Live') return 'ACTIVE';
+  if (status === 'In Review') return 'IN_REVIEW';
+  if (status === 'Paused') return 'PAUSED';
+  if (status === 'Rejected') return 'ARCHIVED';
+  return 'DRAFT';
+}
+
+function seededSellerListings() {
+  const base = Date.now();
+  const rows = [
+    {
+      id: 'listing_ev_charger',
+      sku: 'EV-CHG-7KW',
+      title: 'EV Fast Charger 7kW Wallbox',
+      kind: 'Product',
+      marketplace: 'EVmart',
+      category: 'Chargers',
+      currency: 'USD',
+      retailPrice: 620,
+      compareAt: 720,
+      moq: 2,
+      wholesaleTiers: [
+        { qty: 2, price: 600 },
+        { qty: 10, price: 570 },
+        { qty: 50, price: 545 }
+      ],
+      stock: 18,
+      inventory: [
+        { id: 'w1', location: 'Main Warehouse', onHand: 18, reserved: 2 },
+        { id: 'w2', location: 'Kampala Hub', onHand: 6, reserved: 1 }
+      ],
+      images: 7,
+      translations: 5,
+      description:
+        'Premium 7kW wallbox charger with smart scheduling, RFID access, and OCPP-ready control. Suitable for homes and commercial sites.',
+      tags: ['wallbox', '7kW', 'OCPP'],
+      status: 'Live',
+      updatedAt: new Date(base - 1000 * 60 * 18).toISOString(),
+      compliance: {
+        state: 'ok',
+        issues: [],
+        lastScanAt: new Date(base - 1000 * 60 * 42).toISOString()
+      },
+      kpis: { views: 18420, addToCart: 920, orders: 214, conversion: 1.16, revenue: 132680 },
+      trend: {
+        views: [12, 18, 16, 22, 29, 31, 28, 34, 38, 42, 40, 47],
+        orders: [1, 3, 2, 4, 6, 5, 6, 7, 6, 8, 7, 9]
+      }
+    },
+    {
+      id: 'listing_ev_battery_pack',
+      sku: 'EV-BAT-48V-20AH',
+      title: 'E-Bike Battery Pack 48V 20Ah',
+      kind: 'Product',
+      marketplace: 'EVmart',
+      category: 'Batteries',
+      currency: 'USD',
+      retailPrice: 280,
+      compareAt: 320,
+      moq: 5,
+      wholesaleTiers: [
+        { qty: 5, price: 265 },
+        { qty: 20, price: 248 },
+        { qty: 50, price: 235 }
+      ],
+      stock: 42,
+      inventory: [
+        { id: 'w1', location: 'Main Warehouse', onHand: 42, reserved: 6 },
+        { id: 'w2', location: 'Kampala Hub', onHand: 10, reserved: 2 }
+      ],
+      images: 4,
+      translations: 3,
+      description:
+        'High-density 48V 20Ah battery pack designed for long-range e-bikes. Includes smart BMS and premium casing.',
+      tags: ['48V', '20Ah', 'BMS'],
+      status: 'In Review',
+      updatedAt: new Date(base - 1000 * 60 * 55).toISOString(),
+      compliance: {
+        state: 'warn',
+        issues: ['Missing MSDS upload', 'Warranty terms not set'],
+        lastScanAt: null
+      },
+      kpis: { views: 12890, addToCart: 620, orders: 118, conversion: 0.92, revenue: 33040 },
+      trend: {
+        views: [9, 10, 12, 13, 14, 16, 17, 18, 19, 22, 20, 24],
+        orders: [1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 4, 6]
+      }
+    },
+    {
+      id: 'listing_type2_cable',
+      sku: 'EV-CBL-TYPE2-5M',
+      title: 'Type 2 Charging Cable 5m',
+      kind: 'Product',
+      marketplace: 'EVmart',
+      category: 'Accessories',
+      currency: 'USD',
+      retailPrice: 36,
+      compareAt: 45,
+      moq: 10,
+      wholesaleTiers: [
+        { qty: 10, price: 32 },
+        { qty: 100, price: 28 }
+      ],
+      stock: 210,
+      inventory: [{ id: 'w1', location: 'Main Warehouse', onHand: 210, reserved: 9 }],
+      images: 2,
+      translations: 1,
+      description:
+        'Type 2 cable for public and home charging. Durable insulation and premium connector grip.',
+      tags: ['Type2', '5m'],
+      status: 'Draft',
+      updatedAt: new Date(base - 1000 * 60 * 140).toISOString(),
+      compliance: {
+        state: 'warn',
+        issues: ['Low image count', 'Shipping profile not selected'],
+        lastScanAt: null
+      },
+      kpis: { views: 880, addToCart: 22, orders: 4, conversion: 0.45, revenue: 144 },
+      trend: {
+        views: [1, 2, 1, 3, 4, 5, 4, 6, 7, 6, 8, 9],
+        orders: [0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1]
+      }
+    },
+    {
+      id: 'listing_logistics_setup',
+      sku: 'SVC-LOG-WAREHOUSE-PORT',
+      title: 'Warehouse-to-port logistics setup',
+      kind: 'Service',
+      marketplace: 'ServiceMart',
+      category: 'Logistics',
+      currency: 'USD',
+      retailPrice: 190,
+      compareAt: 240,
+      moq: 1,
+      wholesaleTiers: [{ qty: 1, price: 175 }],
+      stock: 999,
+      inventory: [{ id: 'svc', location: 'Capacity', onHand: 999, reserved: 18 }],
+      images: 6,
+      translations: 4,
+      description:
+        'End-to-end logistics planning from warehouse to port. Includes documentation checklist and timelines.',
+      tags: ['freight', 'incoterms'],
+      status: 'Paused',
+      updatedAt: new Date(base - 1000 * 60 * 240).toISOString(),
+      compliance: {
+        state: 'ok',
+        issues: [],
+        lastScanAt: new Date(base - 1000 * 60 * 90).toISOString()
+      },
+      kpis: { views: 6200, addToCart: 210, orders: 44, conversion: 0.71, revenue: 8360 },
+      trend: {
+        views: [8, 10, 11, 14, 16, 17, 18, 19, 18, 17, 16, 15],
+        orders: [1, 1, 2, 3, 3, 4, 5, 5, 4, 4, 3, 3]
+      }
+    },
+    {
+      id: 'listing_dc_fast_install',
+      sku: 'SVC-DC-FAST-INSTALL',
+      title: 'DC fast charger installation package',
+      kind: 'Service',
+      marketplace: 'ServiceMart',
+      category: 'Installations',
+      currency: 'USD',
+      retailPrice: 320,
+      compareAt: 410,
+      moq: 1,
+      wholesaleTiers: [{ qty: 1, price: 295 }],
+      stock: 999,
+      inventory: [{ id: 'svc', location: 'Capacity', onHand: 999, reserved: 7 }],
+      images: 5,
+      translations: 2,
+      description:
+        'Site assessment, installation planning, technician allocation and commissioning support for DC fast charger projects.',
+      tags: ['installation', 'dc-fast', 'commissioning'],
+      status: 'Rejected',
+      updatedAt: new Date(base - 1000 * 60 * 380).toISOString(),
+      compliance: {
+        state: 'issue',
+        issues: ['Electrical compliance pack expired', 'Technician certification missing'],
+        lastScanAt: new Date(base - 1000 * 60 * 120).toISOString()
+      },
+      kpis: { views: 3100, addToCart: 88, orders: 19, conversion: 0.61, revenue: 6080 },
+      trend: {
+        views: [6, 7, 9, 11, 12, 13, 12, 11, 10, 9, 8, 7],
+        orders: [1, 1, 1, 2, 2, 3, 2, 2, 1, 1, 1, 0]
+      }
+    }
+  ];
+
+  return rows.map((row) => ({
+    ...row,
+    versions: [
+      {
+        id: `ver_${row.id}_initial`,
+        at: row.updatedAt,
+        actor: 'System',
+        note: 'Initial version',
+        snapshot: { ...row }
+      }
+    ]
+  }));
+}
+
 async function seedUsers(seed) {
   const passwordHash = await bcrypt.hash('Password123!', 12);
   const seedUser = seed.users?.[0];
@@ -242,27 +446,37 @@ async function seedMarketplace(users, sellerProfiles) {
 
   await prisma.marketplaceListing.createMany({
     data: [
-      {
-        id: 'listing_ev_charger',
+      ...seededSellerListings().map((listing, index) => ({
+        id: listing.id,
         userId: users.sellerUser.id,
         sellerId: sellerProfiles.seller.id,
-        dealId: 'deal_creator_ev_review',
-        title: 'EV Fast Charger 7kW Wallbox',
-        description: 'Seller-owned listing shared through the marketplace feed.',
-        kind: 'PRODUCT',
-        category: 'Chargers',
-        sku: 'EV-CHG-7KW',
-        marketplace: 'EVmart',
-        price: 620,
-        currency: 'USD',
-        inventoryCount: 18,
-        status: 'ACTIVE',
+        dealId: index === 0 ? 'deal_creator_ev_review' : null,
+        title: listing.title,
+        description: listing.description,
+        kind: listing.kind?.toUpperCase(),
+        category: listing.category,
+        sku: listing.sku,
+        marketplace: listing.marketplace,
+        price: listing.retailPrice,
+        currency: listing.currency,
+        inventoryCount: listing.stock,
+        status: uiListingStatusToDb(listing.status),
         metadata: {
-          compareAt: 720,
-          moq: 2,
-          tags: ['wallbox', '7kW', 'OCPP']
+          displayStatus: listing.status,
+          compareAt: listing.compareAt,
+          moq: listing.moq,
+          wholesaleTiers: listing.wholesaleTiers,
+          stock: listing.stock,
+          inventory: listing.inventory,
+          images: listing.images,
+          translations: listing.translations,
+          tags: listing.tags,
+          compliance: listing.compliance,
+          kpis: listing.kpis,
+          trend: listing.trend,
+          versions: listing.versions
         }
-      },
+      })),
       {
         id: 'listing_streamops_package',
         userId: users.providerUser.id,
@@ -1660,6 +1874,21 @@ async function seedDashboardAndCompatibility(users, sellerProfiles) {
     {
       userId: users.sellerUser.id,
       domain: 'seller_workspace',
+      entityType: 'express_riders',
+      entityId: 'main',
+      payload: {
+        riders: [
+          { id: 'r1', name: 'Rider 01 · Asha', zone: 'Makindye', status: 'Online', capacity: 6 },
+          { id: 'r2', name: 'Rider 02 · Kato', zone: 'Kampala Central', status: 'Online', capacity: 4 },
+          { id: 'r3', name: 'Rider 03 · Moses', zone: 'Nakawa', status: 'Online', capacity: 5 },
+          { id: 'r4', name: 'Rider 04 · Susan', zone: 'Nakawa', status: 'Busy', capacity: 0 },
+          { id: 'r5', name: 'Rider 05 · Ben', zone: 'Kampala Central', status: 'Online', capacity: 3 }
+        ]
+      }
+    },
+    {
+      userId: users.sellerUser.id,
+      domain: 'seller_workspace',
       entityType: 'integrations',
       entityId: 'main',
       payload: { integrations: [{ id: 'int_1', name: 'EVmart API', status: 'connected' }], webhooks: [{ id: 'wh_1', topic: 'order.created', status: 'healthy' }] }
@@ -2059,6 +2288,19 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
               accountNumberMasked: '****8821',
               isDefault: true
             }
+          ]
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        key: 'express_riders',
+        payload: {
+          riders: [
+            { id: 'r1', name: 'Rider 01 · Asha', zone: 'Makindye', status: 'Online', capacity: 6 },
+            { id: 'r2', name: 'Rider 02 · Kato', zone: 'Kampala Central', status: 'Online', capacity: 4 },
+            { id: 'r3', name: 'Rider 03 · Moses', zone: 'Nakawa', status: 'Online', capacity: 5 },
+            { id: 'r4', name: 'Rider 04 · Susan', zone: 'Nakawa', status: 'Busy', capacity: 0 },
+            { id: 'r5', name: 'Rider 05 · Ben', zone: 'Kampala Central', status: 'Online', capacity: 3 }
           ]
         }
       },
