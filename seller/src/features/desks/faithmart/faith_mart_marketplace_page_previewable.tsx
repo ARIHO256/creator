@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSellerCompatState } from "../../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
-import { mockCart } from "../../../mocks";
+import { addSellerCartItem } from "../../../lib/cartApi";
 import {
   Calendar,
   Check,
@@ -499,10 +499,10 @@ export default function FaithMartMarketplacePage() {
   const addToCart = async () => {
     if (!active) return;
     try {
-      await mockCart.addItem(active.id, 1);
+      await addSellerCartItem(active.id, 1);
       pushToast({
         title: "Added to cart",
-        message: `${active.title} added to demo cart.`,
+        message: `${active.title} added to cart.`,
         tone: "success",
         action: { label: "View cart", onClick: () => pushToast({ title: "Cart", message: "Cart drawer comes next.", tone: "default" }) },
       });

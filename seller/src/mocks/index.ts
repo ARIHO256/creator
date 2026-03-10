@@ -1,73 +1,51 @@
 import { useEffect, useState } from "react";
+import {
+  bootstrapSellerFrontendState,
+  fetchSellerPageContent,
+  readSellerModule,
+  readSellerPageContent,
+  useSellerCompatState,
+  writeSellerModule,
+} from "../lib/frontendState";
 import type { PageKey, PageContentMap } from "../data/pageContent";
 import type { UserRole } from "../types/roles";
-import type { MockDB } from "./types";
-import { hydrateDb, loadDb, resetDb, subscribeDb, updateDb } from "./db";
 
-export { mockAuth, mockListings, mockCart, mockOrders, mockDelay } from "./api";
-export { resetDb, loadDb, updateDb } from "./db";
-
-export const shouldEnableMocks = () => {
-  const flag = String(import.meta.env.VITE_USE_MOCKS || "");
-  return Boolean(
-    import.meta.env.DEV ||
-      import.meta.env.VITE_ENABLE_MOCKS === "1" ||
-      flag.toLowerCase() === "true"
-  );
-};
+export const shouldEnableMocks = () => false;
 
 export const initMocks = async () => {
-  if (typeof window === "undefined") return;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("reset") === "1") {
-    await hydrateDb(true);
-  } else {
-    await hydrateDb();
-  }
-  (window as any).__resetMockData = () => resetDb();
-  (window as any).__resetMockDB = () => resetDb();
-  (window as any).__mockDb = () => loadDb();
+  await bootstrapSellerFrontendState();
 };
 
-export const getModuleData = <T>(key: string, fallback: T): T => {
-  const db = loadDb();
-  if (!db.modules || !(key in db.modules)) {
-    updateDb((current) => ({
-      ...current,
-      modules: { ...current.modules, [key]: fallback },
-    }));
-    return fallback;
-  }
-  return db.modules[key] as T;
-};
+export const getModuleData = <T>(key: string, fallback: T): T => readSellerModule(key, fallback);
 
 export const setModuleData = <T>(key: string, value: T) => {
-  updateDb((current) => ({
-    ...current,
-    modules: { ...current.modules, [key]: value },
-  }));
+  void writeSellerModule(key, value);
 };
 
-export const useMockState = <T>(key: string, fallback: T) => {
-  const [state, setState] = useState<T>(() => getModuleData(key, fallback));
-  useEffect(() => subscribeDb(() => setState(getModuleData(key, fallback))), [key, fallback]);
-  const setPersist = (updater: ((prev: T) => T) | T) => {
-    setState((prev) => {
-      const next = typeof updater === "function" ? (updater as (prev: T) => T)(prev) : updater;
-      setModuleData(key, next);
-      return next;
-    });
-  };
-  return [state, setPersist] as const;
-};
+export const useMockState = <T>(key: string, fallback: T) => useSellerCompatState(key, fallback);
 
 export const useMockDb = () => {
-  const [db, setDb] = useState<MockDB>(() => loadDb());
-  useEffect(() => subscribeDb(() => setDb(loadDb())), []);
-  return db;
+  const [pageContent, setPageContent] = useState<Record<string, Record<string, unknown>>>({});
+
+  useEffect(() => {
+    let active = true;
+    void bootstrapSellerFrontendState().then(() => {
+      if (!active) return;
+      setPageContent((prev) => ({ ...prev }));
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return {
+    pageContent,
+    modules: {},
+  };
 };
 
-export const getMockPageContent = <K extends PageKey>(key: K, role: UserRole): PageContentMap[K]["seller"] | undefined => {
-  const db = loadDb();
-  return db.pageContent?.[key]?.[role] as PageContentMap[K]["seller"] | undefined;
-};
+export const getMockPageContent = <K extends PageKey>(key: K, role: UserRole): PageContentMap[K]["seller"] | undefined =>
+  readSellerPageContent<PageContentMap[K]["seller"] | undefined>(key, role, undefined);
+
+export const refreshMockPageContent = async <K extends PageKey>(key: K, role: UserRole) =>
+  fetchSellerPageContent<PageContentMap[K]["seller"] | undefined>(key, role, undefined);

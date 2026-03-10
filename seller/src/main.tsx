@@ -30,20 +30,27 @@ const renderApp = () => {
   );
 };
 
-void import("./mocks")
-  .then(async ({ initMocks }) => {
-    await bootstrapSellerFrontendState().catch(() => undefined);
+void bootstrapSellerFrontendState()
+  .catch(() => undefined)
+  .finally(() => {
     initSellerStorageSync({
       localPrefixes: [
+        "session",
+        "theme",
+        "ev_",
+        "evz_",
         "evzone_",
+        "seller.",
         "seller_",
         "provider_",
         "serviceListing.",
         "shipping_",
         "catalog_",
-        "passkeys_",
+        "passkeys",
         "onboarding_status_",
         "mldz_",
+        "channels_",
+        "signup.",
       ],
       sessionPrefixes: [
         "seller_",
@@ -51,11 +58,5 @@ void import("./mocks")
         "mldz_",
       ],
     });
-    await initMocks();
-  })
-  .catch(() => {
-    // Seller boot should still proceed with any cached compatibility state.
-  })
-  .finally(() => {
     renderApp();
   });

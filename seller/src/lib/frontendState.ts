@@ -1,8 +1,11 @@
 import { useEffect, useState, type SetStateAction } from "react";
 
+type SellerPageContentPayload = Record<string, Record<string, unknown>>;
+
 type BootstrapPayload = {
   app: string;
   modules: Record<string, unknown>;
+  pageContent?: SellerPageContentPayload;
   storage: {
     local: Record<string, string>;
     session: Record<string, string>;
@@ -16,9 +19,14 @@ const API_BASE_URL =
   "";
 
 const moduleCache = new Map<string, unknown>();
+const pageContentCache = new Map<string, unknown>();
+const storageCache = {
+  local: new Map<string, string>(),
+  session: new Map<string, string>(),
+};
+
 let bootstrapPromise: Promise<BootstrapPayload> | null = null;
 let storageSyncInitialized = false;
-let storageSnapshotApplied = false;
 let persistModulesTimer: number | null = null;
 let persistStorageTimer: number | null = null;
 const pendingModules = new Map<string, unknown>();
@@ -27,9 +35,11 @@ const pendingStorage = {
   session: new Map<string, string | null>(),
 };
 
+const pageCacheKey = (pageKey: string, role: string) => `${pageKey}::${role}`;
+
 const toUrl = (path: string) => `${API_BASE_URL}${path}`;
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function sellerRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -44,13 +54,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+function primePageContent(payload: SellerPageContentPayload | undefined) {
+  for (const [pageKey, roles] of Object.entries(payload || {})) {
+    for (const [role, value] of Object.entries(roles || {})) {
+      pageContentCache.set(pageCacheKey(pageKey, role), value);
+    }
+  }
+}
+
+function primeStorage(snapshot: BootstrapPayload["storage"] | undefined) {
+  for (const [key, value] of Object.entries(snapshot?.local || {})) {
+    storageCache.local.set(key, value);
+  }
+  for (const [key, value] of Object.entries(snapshot?.session || {})) {
+    storageCache.session.set(key, value);
+  }
+}
+
 async function saveModules() {
   const entries = Array.from(pendingModules.entries());
   pendingModules.clear();
 
   await Promise.all(
     entries.map(([key, payload]) =>
-      request(`/api/sellerfront/module`, {
+      sellerRequest(`/api/sellerfront/module`, {
         method: "PUT",
         body: JSON.stringify({ key, payload }),
       }).catch(() => undefined)
@@ -74,14 +101,14 @@ async function saveStorage() {
   pendingStorage.session.clear();
 
   if (Object.keys(localEntries).length) {
-    await request(`/api/sellerfront/storage`, {
+    await sellerRequest(`/api/sellerfront/storage`, {
       method: "PUT",
       body: JSON.stringify({ type: "local", entries: localEntries }),
     }).catch(() => undefined);
   }
 
   if (Object.keys(sessionEntries).length) {
-    await request(`/api/sellerfront/storage`, {
+    await sellerRequest(`/api/sellerfront/storage`, {
       method: "PUT",
       body: JSON.stringify({ type: "session", entries: sessionEntries }),
     }).catch(() => undefined);
@@ -97,29 +124,72 @@ function scheduleStoragePersist(storageType: StorageType, key: string, value: st
   }, 120);
 }
 
-function applyStorageSnapshot(snapshot: BootstrapPayload["storage"]) {
-  if (typeof window === "undefined" || storageSnapshotApplied) return;
-  storageSnapshotApplied = true;
-  for (const [key, value] of Object.entries(snapshot.local || {})) {
-    window.localStorage.setItem(key, value);
-  }
-  for (const [key, value] of Object.entries(snapshot.session || {})) {
-    window.sessionStorage.setItem(key, value);
-  }
-}
-
 export async function bootstrapSellerFrontendState() {
   if (!bootstrapPromise) {
-    bootstrapPromise = request<BootstrapPayload>(`/api/sellerfront/bootstrap`).then((payload) => {
+    bootstrapPromise = sellerRequest<BootstrapPayload>(`/api/sellerfront/bootstrap`).then((payload) => {
       for (const [key, value] of Object.entries(payload.modules || {})) {
         moduleCache.set(key, value);
       }
-      applyStorageSnapshot(payload.storage);
+      primePageContent(payload.pageContent);
+      primeStorage(payload.storage);
       return payload;
     });
   }
 
   return bootstrapPromise;
+}
+
+export function readSellerModule<T>(key: string, fallback: T): T {
+  if (moduleCache.has(key)) {
+    return moduleCache.get(key) as T;
+  }
+  moduleCache.set(key, fallback);
+  return fallback;
+}
+
+export async function writeSellerModule<T>(key: string, value: T) {
+  moduleCache.set(key, value);
+  scheduleModulePersist(key, value);
+  return value;
+}
+
+export function readSellerPageContent<T>(pageKey: string, role: string, fallback: T): T {
+  const cacheKey = pageCacheKey(pageKey, role);
+  if (pageContentCache.has(cacheKey)) {
+    return pageContentCache.get(cacheKey) as T;
+  }
+  return fallback;
+}
+
+export async function fetchSellerPageContent<T>(pageKey: string, role: string, fallback: T): Promise<T> {
+  try {
+    await bootstrapSellerFrontendState();
+  } catch {
+    // fall through to direct request
+  }
+  const cacheKey = pageCacheKey(pageKey, role);
+  if (pageContentCache.has(cacheKey)) {
+    return pageContentCache.get(cacheKey) as T;
+  }
+
+  const payload = await sellerRequest<T | null>(
+    `/api/sellerfront/page-content?pageKey=${encodeURIComponent(pageKey)}&role=${encodeURIComponent(role)}`
+  ).catch(() => null);
+
+  if (payload === null || payload === undefined) {
+    return fallback;
+  }
+  pageContentCache.set(cacheKey, payload);
+  return payload;
+}
+
+export async function writeSellerPageContent<T>(pageKey: string, role: string, payload: T) {
+  pageContentCache.set(pageCacheKey(pageKey, role), payload);
+  await sellerRequest(`/api/sellerfront/page-content`, {
+    method: "PUT",
+    body: JSON.stringify({ pageKey, role, payload }),
+  }).catch(() => undefined);
+  return payload;
 }
 
 export function useSellerCompatState<T>(key: string, seed: T) {
@@ -141,7 +211,7 @@ export function useSellerCompatState<T>(key: string, seed: T) {
       })
       .catch(async () => {
         try {
-          const payload = await request<T | null>(`/api/sellerfront/module?key=${encodeURIComponent(key)}`);
+          const payload = await sellerRequest<T | null>(`/api/sellerfront/module?key=${encodeURIComponent(key)}`);
           if (payload === null || payload === undefined) {
             moduleCache.set(key, seed);
             if (active) setState(seed);
@@ -182,6 +252,8 @@ export function initSellerStorageSync(options: { localPrefixes?: string[]; sessi
   storageSyncInitialized = true;
   const localPrefixes = options.localPrefixes || [];
   const sessionPrefixes = options.sessionPrefixes || [];
+
+  const originalGetItem = Storage.prototype.getItem;
   const originalSetItem = Storage.prototype.setItem;
   const originalRemoveItem = Storage.prototype.removeItem;
 
@@ -190,24 +262,45 @@ export function initSellerStorageSync(options: { localPrefixes?: string[]; sessi
     return prefixes.some((prefix) => key.startsWith(prefix));
   };
 
-  Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
-    originalSetItem.call(this, key, value);
+  const cacheFor = (storageType: StorageType) =>
+    storageType === "local" ? storageCache.local : storageCache.session;
+
+  Storage.prototype.getItem = function patchedGetItem(key: string) {
     if (this === window.localStorage && matches("local", key)) {
-      scheduleStoragePersist("local", key, value);
+      return cacheFor("local").get(key) ?? null;
     }
     if (this === window.sessionStorage && matches("session", key)) {
-      scheduleStoragePersist("session", key, value);
+      return cacheFor("session").get(key) ?? null;
     }
+    return originalGetItem.call(this, key);
+  };
+
+  Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
+    if (this === window.localStorage && matches("local", key)) {
+      cacheFor("local").set(key, value);
+      scheduleStoragePersist("local", key, value);
+      return;
+    }
+    if (this === window.sessionStorage && matches("session", key)) {
+      cacheFor("session").set(key, value);
+      scheduleStoragePersist("session", key, value);
+      return;
+    }
+    originalSetItem.call(this, key, value);
   };
 
   Storage.prototype.removeItem = function patchedRemoveItem(key: string) {
-    originalRemoveItem.call(this, key);
     if (this === window.localStorage && matches("local", key)) {
+      cacheFor("local").delete(key);
       scheduleStoragePersist("local", key, null);
+      return;
     }
     if (this === window.sessionStorage && matches("session", key)) {
+      cacheFor("session").delete(key);
       scheduleStoragePersist("session", key, null);
+      return;
     }
+    originalRemoveItem.call(this, key);
   };
 
   void bootstrapSellerFrontendState();

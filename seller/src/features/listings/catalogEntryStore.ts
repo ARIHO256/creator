@@ -1,7 +1,5 @@
-import { getModuleData, setModuleData, shouldEnableMocks } from "../../mocks";
+import { readSellerModule, writeSellerModule } from "../../lib/frontendState";
 
-const STORAGE_KEY = "seller_catalog_entries_v1";
-const isBrowser = typeof window !== "undefined";
 const MOCK_KEY = "catalog.lines";
 
 export type CatalogLineNode = {
@@ -30,37 +28,12 @@ export type CatalogEntry = {
   status?: string;
 };
 
-function safeParseCatalogLines(raw: string | null): CatalogLine[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as CatalogLine[];
-    if (Array.isArray(parsed)) return parsed;
-  } catch (error) {
-    console.error("[catalogEntryStore] failed to parse stored catalog lines", error);
-  }
-  return [];
-}
-
 export function loadCatalogLines(): CatalogLine[] {
-  if (shouldEnableMocks()) {
-    return getModuleData<CatalogLine[]>(MOCK_KEY, []);
-  }
-  if (!isBrowser) return [];
-  const payload = window.localStorage.getItem(STORAGE_KEY);
-  return safeParseCatalogLines(payload);
+  return readSellerModule<CatalogLine[]>(MOCK_KEY, []);
 }
 
 export function persistCatalogLines(lines: CatalogLine[]) {
-  if (shouldEnableMocks()) {
-    setModuleData(MOCK_KEY, lines);
-    return;
-  }
-  if (!isBrowser) return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(lines));
-  } catch (error) {
-    console.error("[catalogEntryStore] failed to persist catalog lines", error);
-  }
+  void writeSellerModule(MOCK_KEY, lines);
 }
 
 export function mapLineToCatalogEntry(line: CatalogLine | null): CatalogEntry | null {

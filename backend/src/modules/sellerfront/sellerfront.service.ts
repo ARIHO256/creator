@@ -13,8 +13,9 @@ export class SellerfrontService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getBootstrap(userId: string | null) {
-    const [modules, local, session] = await Promise.all([
+    const [modules, pageContent, local, session] = await Promise.all([
       this.collectModules(userId),
+      this.collectPageContent(userId),
       this.collectStorage('local', userId),
       this.collectStorage('session', userId)
     ]);
@@ -22,6 +23,7 @@ export class SellerfrontService {
     return {
       app: 'sellerfront',
       modules,
+      pageContent,
       storage: {
         local,
         session
@@ -120,6 +122,36 @@ export class SellerfrontService {
     return this.collectStorage(storageType, userId);
   }
 
+  async getPageContent(pageKey: string, role: string, userId: string | null) {
+    const userRecord = userId
+      ? await this.prisma.appRecord.findFirst({
+          where: {
+            domain: 'sellerfront_page_content',
+            entityType: pageKey,
+            entityId: role,
+            userId
+          },
+          orderBy: { updatedAt: 'desc' }
+        })
+      : null;
+
+    if (userRecord?.payload !== undefined) {
+      return userRecord.payload;
+    }
+
+    const globalRecord = await this.prisma.appRecord.findFirst({
+      where: {
+        domain: 'sellerfront_page_content',
+        entityType: pageKey,
+        entityId: role,
+        userId: null
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    return globalRecord?.payload ?? null;
+  }
+
   async upsertModule(userId: string | null, key: string, payload: unknown) {
     const record = await this.prisma.appRecord.upsert({
       where: { id: this.moduleRecordId(key, userId ?? undefined) },
@@ -133,6 +165,29 @@ export class SellerfrontService {
         domain: 'frontend_state_module',
         entityType: 'sellerfront',
         entityId: key,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+
+    return record.payload;
+  }
+
+  async upsertPageContent(userId: string | null, pageKey: string, role: string, payload: unknown) {
+    const record = await this.prisma.appRecord.upsert({
+      where: { id: this.pageContentRecordId(pageKey, role, userId ?? undefined) },
+      update: {
+        ...(userId ? { userId } : {}),
+        domain: 'sellerfront_page_content',
+        entityType: pageKey,
+        entityId: role,
+        payload: payload as Prisma.InputJsonValue
+      },
+      create: {
+        id: this.pageContentRecordId(pageKey, role, userId ?? undefined),
+        ...(userId ? { userId } : {}),
+        domain: 'sellerfront_page_content',
+        entityType: pageKey,
+        entityId: role,
         payload: payload as Prisma.InputJsonValue
       }
     });
@@ -233,6 +288,12 @@ export class SellerfrontService {
       : `frontend_state_module_sellerfront_${sanitize(key)}_global`;
   }
 
+  private pageContentRecordId(pageKey: string, role: string, userId?: string) {
+    return userId
+      ? `sellerfront_page_${sanitize(pageKey)}_${sanitize(role)}_${sanitize(userId)}`
+      : `sellerfront_page_${sanitize(pageKey)}_${sanitize(role)}`;
+  }
+
   private storageRecordId(storageType: StorageType, key: string, userId?: string) {
     return userId
       ? `frontend_state_storage_sellerfront_${storageType}_${sanitize(key)}_${sanitize(userId)}`
@@ -263,6 +324,34 @@ export class SellerfrontService {
       if (record.entityId) {
         acc[record.entityId] = record.payload;
       }
+      return acc;
+    }, {});
+  }
+
+  private async collectPageContent(userId: string | null) {
+    const [globalRecords, userRecords] = await Promise.all([
+      this.prisma.appRecord.findMany({
+        where: {
+          domain: 'sellerfront_page_content',
+          userId: null
+        }
+      }),
+      userId
+        ? this.prisma.appRecord.findMany({
+            where: {
+              domain: 'sellerfront_page_content',
+              userId
+            }
+          })
+        : Promise.resolve([])
+    ]);
+
+    return [...globalRecords, ...userRecords].reduce<Record<string, Record<string, unknown>>>((acc, record) => {
+      if (!record.entityType || !record.entityId) return acc;
+      acc[record.entityType] = {
+        ...(acc[record.entityType] || {}),
+        [record.entityId]: record.payload
+      };
       return acc;
     }, {});
   }

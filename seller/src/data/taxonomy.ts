@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { loadDb } from "../mocks/db";
+import { readSellerPageContent } from "../lib/frontendState";
 import type { ListingTaxonomyNode } from "./pageTypes";
 
 const DEFAULT_API_BASE = "http://localhost:3000/api";
@@ -75,8 +75,10 @@ const transformTree = (
     children: transformTree(node.children || [], kind),
   }));
 
-export const readSellerTaxonomy = () =>
-  normalizeTree(loadDb().pageContent?.listingWizard?.seller?.taxonomy || []);
+export const readSellerTaxonomy = () => {
+  const listingWizard = readSellerPageContent<{ taxonomy?: unknown }>("listingWizard", "seller", {});
+  return normalizeTree(listingWizard.taxonomy || []);
+};
 
 async function fetchTaxonomyTree(slug: string, kind: "seller" | "provider") {
   const nodesResponse = await fetch(`${getApiBase()}/taxonomy/trees/${slug}/nodes`, {

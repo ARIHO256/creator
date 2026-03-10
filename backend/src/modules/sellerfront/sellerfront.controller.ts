@@ -23,6 +23,31 @@ export class SellerfrontController {
     return this.sellerfrontService.getBootstrap(user?.sub ?? null);
   }
 
+  @Get('page-content')
+  @Public()
+  pageContent(
+    @Query('pageKey') pageKey: string,
+    @Query('role') role: string,
+    @CurrentUser() user: RequestUser | undefined
+  ) {
+    return this.sellerfrontService.getPageContent(pageKey, role, user?.sub ?? null);
+  }
+
+  @Put('page-content')
+  @Public()
+  @RateLimit({ limit: 240, windowMs: 60_000 })
+  putPageContent(
+    @CurrentUser() user: RequestUser | undefined,
+    @Body() body: { pageKey: string; role: string; payload: unknown }
+  ) {
+    return this.sellerfrontService.upsertPageContent(
+      user?.sub ?? null,
+      body.pageKey,
+      body.role,
+      body.payload
+    );
+  }
+
   @Get('module')
   @Public()
   module(@Query('key') key: string) {

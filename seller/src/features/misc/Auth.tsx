@@ -6,7 +6,7 @@ import type { Session } from "../../types/session";
 import type { UserRole } from "../../types/roles";
 import { getCurrentRole } from "../../auth/roles";
 import { readSession, writeSession } from "../../auth/session";
-import { mockAuth } from "../../mocks";
+import { authClient } from "../../lib/authApi";
 import { useThemeMode } from "../../theme/themeMode";
 
 // EVzone — Auth Pro v4.4 — JS only (modern, relatable, mobile-first, role-aware)
@@ -101,10 +101,10 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   const handleSocial = async (provider: "google" | "apple") => {
     try {
       const email = `${provider}.${userType}@demo.evzone`;
-      const session = await mockAuth
+      const session = await authClient
         .signIn({ identifier: email, password: "", role: userType })
         .catch(() =>
-          mockAuth.signUp({
+          authClient.signUp({
             name: provider === "google" ? "Google User" : "Apple User",
             email,
             password: "demo1234",
@@ -130,10 +130,10 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
     try {
       const map = JSON.parse(localStorage.getItem("passkeys_v1") || "{}");
       if (!map[identifier]) return say(t("No passkey on file"));
-      const session = await mockAuth
+      const session = await authClient
         .signIn({ identifier, password: "", role: userType })
         .catch(() =>
-          mockAuth.signUp({
+          authClient.signUp({
             name: identifier.includes("@") ? identifier.split("@")[0] : "Passkey User",
             email: identifier.includes("@") ? identifier : `${identifier}@demo.evzone`,
             password: "demo1234",
@@ -423,10 +423,10 @@ function SignIn({ userType, onDone, onFail, needCaptcha, onCaptchaPass, hasWebAu
     try {
       const inferredEmail = identifier.includes("@") ? identifier : `${identifier.replace(/\s+/g, "")}@demo.evzone`;
       const inferredPhone = identifier.includes("@") ? undefined : identifier;
-      const session = await mockAuth
+      const session = await authClient
         .signIn({ identifier, password: pwd, role: userType })
         .catch(() =>
-          mockAuth.signUp({
+          authClient.signUp({
             name: inferredEmail.split("@")[0] || "User",
             email: inferredEmail,
             phone: inferredPhone,
@@ -471,10 +471,10 @@ function Passwordless({ userType, onMagic, onOTP, onPasskeyReg, onPasskey, hasWe
   const [email, setEmail] = useState(""); const [phone, setPhone] = useState(""); const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState("");
   const sendMagic = async () => {
     if (!email.trim()) return;
-    const session = await mockAuth
+    const session = await authClient
       .signIn({ identifier: email, password: "", role: userType })
       .catch(() =>
-        mockAuth.signUp({ name: email.split("@")[0] || "Magic User", email, password: "demo1234", role: userType })
+        authClient.signUp({ name: email.split("@")[0] || "Magic User", email, password: "demo1234", role: userType })
       );
     onMagic({ ...session, auth: "magic" });
   };
@@ -483,10 +483,10 @@ function Passwordless({ userType, onMagic, onOTP, onPasskeyReg, onPasskey, hasWe
     if (otp.trim() !== "123456") return;
     const identifier = phone || email;
     if (!identifier) return;
-    const session = await mockAuth
+    const session = await authClient
       .signIn({ identifier, password: "", role: userType })
       .catch(() =>
-        mockAuth.signUp({ name: "OTP User", email: email || `${identifier}@demo.evzone`, password: "demo1234", role: userType, phone })
+        authClient.signUp({ name: "OTP User", email: email || `${identifier}@demo.evzone`, password: "demo1234", role: userType, phone })
       );
     onOTP({ ...session, auth: "otp" });
   };
@@ -540,7 +540,7 @@ function SignUp({ policy, userType, onDone, onSocial }) {
     if (!firstName || !email || !strong || !okDomain || !match) return;
     setError("");
     try {
-      const session = await mockAuth.signUp({ name, email, password: pwd, role: userType });
+      const session = await authClient.signUp({ name, email, password: pwd, role: userType });
       resetOnboardingDraft(session);
       onDone(session);
     } catch (err) {
@@ -594,7 +594,7 @@ function Recovery({ onDone }) {
   const send = async () => {
     setError("");
     try {
-      await mockAuth.resetPassword(identifier);
+      await authClient.resetPassword(identifier);
       onDone(identifier);
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Recovery failed");

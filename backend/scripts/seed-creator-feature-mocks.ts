@@ -575,6 +575,15 @@ async function main() {
   const taskBoardModule = await import(
     path.join(creatorRoot, 'pages', 'creator', 'TaskBoardPage.tsx')
   );
+  const mySellersModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'MySellersPage.tsx')
+  );
+  const liveReplaysModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'LiveReplaysClipsPage.tsx')
+  );
+  const payoutHistoryModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'PayoutHistoryPage.tsx')
+  );
   const creatorCompatSeedsModule = await import(
     path.join(creatorRoot, 'data', 'creatorCompatSeeds.ts')
   );
@@ -617,6 +626,9 @@ async function main() {
   const settingsSafetyForm = settingsSafetyModule.seedCreatorSettingsSafetyForm() as Record<string, unknown>;
   const auditLogEvents = auditLogModule.seedCreatorAuditEvents() as Array<Record<string, unknown>>;
   const taskBoardColumns = taskBoardModule.seedTaskBoardColumns() as Record<string, Array<Record<string, unknown>>>;
+  const mySellers = mySellersModule.INITIAL_MY_SELLERS as unknown[];
+  const liveReplays = liveReplaysModule.FALLBACK_REPLAYS as unknown[];
+  const payoutHistory = payoutHistoryModule.FALLBACK_PAYOUTS as unknown[];
   const onboardingV25Source = await fs.readFile(
     path.join(pagesRoot, 'creator_onboarding_v_2.tsx'),
     'utf8'
@@ -890,6 +902,9 @@ async function main() {
     ['creator.proposalRoom.messages', proposalMessages],
     ['creator.proposalRoom.appliedSuggestions', []],
     ['creator.awaitingApproval.submissions', awaitingApproval],
+    ['creator.mySellers.items', mySellers],
+    ['creator.liveReplays.items', liveReplays],
+    ['creator.payoutHistory.items', payoutHistory],
     ['creator.assetLibrary.creators', assetLibraryCreators],
     ['creator.assetLibrary.suppliers', assetLibrarySuppliers],
     ['creator.assetLibrary.campaigns', assetLibraryCampaigns],

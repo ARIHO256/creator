@@ -1,8 +1,13 @@
-import type { UserRole } from "../types/roles";
+import { useEffect, useState } from "react";
 import { getCurrentRole } from "../auth/roles";
 import { useSession } from "../auth/session";
-import { getMockPageContent, updateDb, useMockDb } from "../mocks";
-import { loadDb } from "../mocks/db";
+import {
+  bootstrapSellerFrontendState,
+  fetchSellerPageContent,
+  readSellerPageContent,
+  writeSellerPageContent,
+} from "../lib/frontendState";
+import type { UserRole } from "../types/roles";
 import type {
   AnalyticsContent,
   ComplianceContent,
@@ -30,36 +35,41 @@ export type PageContentMap = {
 export type PageKey = keyof PageContentMap;
 export type PageContentByKey<K extends PageKey> = PageContentMap[K]["seller"];
 
-const getStoredContent = <K extends PageKey>(key: K, role: UserRole) =>
-  loadDb().pageContent?.[key]?.[role] as PageContentByKey<K> | undefined;
-
 export function getPageContentByRole<K extends PageKey>(
   key: K,
   role: UserRole
 ): PageContentByKey<K> {
-  return (getMockPageContent(key, role) || getStoredContent(key, role) || {}) as PageContentByKey<K>;
+  return readSellerPageContent<PageContentByKey<K>>(key, role, {} as PageContentByKey<K>);
 }
 
 export function useRolePageContent<K extends PageKey>(key: K, roleOverride?: UserRole) {
   const session = useSession();
   const role = roleOverride ?? getCurrentRole(session);
-  const db = useMockDb();
-  const content = (db?.pageContent?.[key]?.[role] || getStoredContent(key, role) || {}) as PageContentByKey<K>;
+  const [content, setContent] = useState<PageContentByKey<K>>(() =>
+    readSellerPageContent<PageContentByKey<K>>(key, role, {} as PageContentByKey<K>)
+  );
+
+  useEffect(() => {
+    let active = true;
+    void bootstrapSellerFrontendState()
+      .then(() => fetchSellerPageContent<PageContentByKey<K>>(key, role, {} as PageContentByKey<K>))
+      .then((payload) => {
+        if (active) {
+          setContent(payload);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, [key, role]);
 
   const updateContent = (updater: (prev: PageContentByKey<K>) => PageContentByKey<K>) => {
-    updateDb((current) => {
-      const prev = (current.pageContent?.[key]?.[role] || getStoredContent(key, role) || {}) as PageContentByKey<K>;
+    setContent((prev) => {
       const next = updater(prev);
-      return {
-        ...current,
-        pageContent: {
-          ...current.pageContent,
-          [key]: {
-            ...(current.pageContent?.[key] || {}),
-            [role]: next,
-          },
-        },
-      };
+      void writeSellerPageContent(key, role, next);
+      return next;
     });
   };
 

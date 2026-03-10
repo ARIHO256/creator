@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
-import { mockCart } from "../../mocks";
+import { addSellerCartItem } from "../../lib/cartApi";
 import { useSellerCompatState } from "../../lib/frontendState";
 import { useThemeMode } from "../../theme/themeMode";
 import {
@@ -2400,8 +2400,8 @@ function LocalizationPanel({
                 type="button"
                 onClick={async () => {
                   try {
-                    await mockCart.addItem(draft.id, 1);
-                    pushToast({ title: "Added to cart", message: "Item added to demo cart.", tone: "success" });
+                    await addSellerCartItem(draft.id, 1);
+                    pushToast({ title: "Added to cart", message: "Item added to cart.", tone: "success" });
                   } catch {
                     pushToast({ title: "Cart unavailable", message: "Unable to add item right now.", tone: "danger" });
                   }

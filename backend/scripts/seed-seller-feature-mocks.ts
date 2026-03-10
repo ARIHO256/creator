@@ -699,6 +699,31 @@ async function upsertModuleRecord(writer: RecordWriter, key: string, payload: un
   });
 }
 
+async function upsertStorageRecord(
+  writer: RecordWriter,
+  storageType: 'local' | 'session',
+  key: string,
+  value: string
+) {
+  const id = `frontend_state_storage_${sanitize(APP)}_${storageType}_${sanitize(key)}_global`;
+  await writer.appRecord.upsert({
+    where: { id },
+    update: {
+      domain: 'frontend_state_storage',
+      entityType: `${APP}:${storageType}`,
+      entityId: key,
+      payload: asJson({ value })
+    },
+    create: {
+      id,
+      domain: 'frontend_state_storage',
+      entityType: `${APP}:${storageType}`,
+      entityId: key,
+      payload: asJson({ value })
+    }
+  });
+}
+
 async function upsertComplianceModules(writer: RecordWriter) {
   const records = await writer.appRecord.findMany({
     where: {
@@ -813,6 +838,115 @@ async function upsertDerivedModules(writer: RecordWriter) {
   }
 }
 
+async function upsertStorageSeeds(writer: RecordWriter) {
+  const productShareRows = [
+    {
+      sku: 'WBX-7KW-BLK',
+      title: '7kW Wallbox (Black)',
+      channel: 'EVmart',
+      category: 'Chargers',
+      price: 299,
+      currency: 'USD',
+      description: 'Smart EV wallbox with app control and scheduled charging.',
+      inventory: 42,
+      status: 'Live',
+      updated: 'Today, 10:12'
+    },
+    {
+      sku: 'EVC-PORT-CCS2',
+      title: 'CCS2 Port Kit',
+      channel: 'EVmart',
+      category: 'Adapters',
+      price: 69,
+      currency: 'USD',
+      description: 'Universal CCS2 conversion kit for legacy wall chargers.',
+      inventory: 7,
+      status: 'Pending',
+      updated: 'Yesterday'
+    }
+  ];
+
+  const mediaLibrarySeed = [
+    {
+      id: 'MED-1001',
+      url: 'https://picsum.photos/seed/ev/800/600',
+      type: 'image',
+      tags: ['ev', 'wallbox'],
+      usage: 12,
+      title: 'Wallbox hero'
+    }
+  ];
+
+  const templateSeed = [
+    {
+      id: 'TMP-1001',
+      name: 'Wallbox Specs',
+      category: 'EVmart/Chargers',
+      notes: 'Common for 7/11kW',
+      attrs: [
+        { name: 'Power', type: 'number', required: true, options: '' },
+        { name: 'Color', type: 'select', required: false, options: 'Black|White' }
+      ]
+    }
+  ];
+
+  const serviceListingItems = [
+    { id: 'item-0', text: 'Clarify the exact scope of the service and any exclusions', done: false },
+    { id: 'item-1', text: 'Align pricing and units (per hour, per visit, per project)', done: false },
+    { id: 'item-2', text: 'Confirm the service regions and availability hours', done: false }
+  ];
+
+  const storageEntries: Array<{ type: 'local' | 'session'; key: string; value: string }> = [
+    { type: 'local', key: 'catalog_media_library_v1', value: JSON.stringify(mediaLibrarySeed) },
+    { type: 'local', key: 'catalog_attr_templates_v1', value: JSON.stringify(templateSeed) },
+    { type: 'local', key: 'seller_listings_share_v1', value: JSON.stringify(productShareRows) },
+    { type: 'local', key: 'seller_listings_v1', value: JSON.stringify(productShareRows) },
+    { type: 'local', key: 'seller_share_last', value: JSON.stringify(productShareRows[0]) },
+    { type: 'session', key: 'seller_share_current', value: JSON.stringify(productShareRows[0]) },
+    { type: 'local', key: 'serviceListing.status', value: 'ChangesRequested' },
+    { type: 'local', key: 'serviceListing.etaMin', value: '90' },
+    {
+      type: 'local',
+      key: 'serviceListing.adminReason',
+      value:
+        'Please clarify the service scope, update the pricing information, and ensure your availability calendar matches EVzone guidelines.'
+    },
+    {
+      type: 'local',
+      key: 'serviceListing.adminDocs',
+      value: JSON.stringify([{ name: 'EVzone service listing guidelines.pdf', url: '#', type: 'pdf' }])
+    },
+    { type: 'local', key: 'serviceListing.items', value: JSON.stringify(serviceListingItems) },
+    { type: 'local', key: 'serviceListing.note', value: '' },
+    { type: 'local', key: 'serviceListing.serviceName', value: 'New service' },
+    { type: 'local', key: 'serviceListing.category', value: 'Not set' },
+    { type: 'local', key: 'serviceListing.id', value: 'pending' },
+    { type: 'local', key: 'signup.role', value: 'provider' },
+    { type: 'local', key: 'mldz_supplier_subscription_plan_v1', value: 'basic' },
+    { type: 'local', key: 'mldz_supplier_subscription_cycle_v1', value: 'monthly' },
+    { type: 'local', key: 'evz_supplier_dashboard_default_view', value: 'all' },
+    { type: 'local', key: 'evz_supplier_dashboard_custom_views_v1', value: '[]' },
+    { type: 'local', key: 'onboarding_status_map_v1', value: '{}' },
+    { type: 'local', key: 'seller.reviews.count', value: '3' }
+  ];
+
+  for (const entry of storageEntries) {
+    await upsertStorageRecord(writer, entry.type, entry.key, entry.value);
+  }
+
+  await upsertModuleRecord(writer, 'catalog.lines', [
+    buildCatalogLine('category-dc-fast-chargers', 'active'),
+    buildCatalogLine('category-desktops', 'active'),
+    buildCatalogLine('category-women-shoes', 'suspended')
+  ]);
+  await upsertModuleRecord(writer, 'commerce.cart', {
+    id: 'cart_default',
+    items: [],
+    updatedAt: new Date().toISOString()
+  });
+  await upsertModuleRecord(writer, 'commerce.favorites.listingIds', []);
+}
+
 async function main() {
   const files = await collectFeatureFiles(featuresRoot);
   const candidates = [] as Array<{
@@ -900,6 +1034,7 @@ async function main() {
   await prisma.$transaction(async (tx) => {
     await upsertComplianceModules(tx);
     await upsertDerivedModules(tx);
+    await upsertStorageSeeds(tx);
   });
 
   console.log('\nFeature seed summary');
