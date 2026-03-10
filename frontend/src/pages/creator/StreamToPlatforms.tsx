@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { useCreatorCompatState } from '../../lib/frontendState';
 import { CircularProgress } from '@mui/material';
 import {
   Activity,
@@ -406,7 +407,7 @@ export default function StreamToPlatformsPage() {
   const [selectedDestId, setSelectedDestId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const [profile, setProfile] = useState<OutputProfile>({
+  const [profile, setProfile] = useCreatorCompatState<OutputProfile>('creator.streamPlatforms.profile', {
     orientation: 'Auto',
     quality: 'High',
     advancedOpen: false,
@@ -427,7 +428,7 @@ export default function StreamToPlatformsPage() {
 
   const [estimatedUploadMbps, setEstimatedUploadMbps] = useState(12.4);
 
-  const [destinations, setDestinations] = useState<Destination[]>(() => {
+  const [destinations, setDestinations] = useCreatorCompatState<Destination[]>('creator.streamPlatforms.destinations', (() => {
     const base: Destination[] = [
       {
         id: 'yt',
@@ -556,7 +557,7 @@ export default function StreamToPlatformsPage() {
       },
     ];
     return base;
-  });
+  })());
 
   // Derived
   const enabledDests = useMemo(() => destinations.filter((d) => d.enabled), [destinations]);

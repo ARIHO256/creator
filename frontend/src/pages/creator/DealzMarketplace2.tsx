@@ -7,6 +7,7 @@ import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "./AdBuilder";
 import { LiveBuilderDrawer } from "./LiveBuilder2";
 import { AdzPerformanceDrawer } from "./AdzPerformance";
+import { useCreatorCompatState } from "../../lib/frontendState";
 import {
   Calendar,
   CalendarClock,
@@ -227,17 +228,17 @@ function useCountdown(targetISO: string) {
   return { d, h, m, sec, diff };
 }
 
-const SUPPLIERS: Supplier[] = [
+export const SUPPLIERS: Supplier[] = [
   { name: "Acme Co", category: "Retail", logoUrl: "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop" },
   { name: "Global Traders", category: "Wholesale", logoUrl: "https://images.unsplash.com/photo-1554774853-719586f8c277?w=100&h=100&fit=crop" }
 ];
 
-const CREATORS: Creator[] = [
+export const CREATORS: Creator[] = [
   { name: "Jane Doe", handle: "@jane", avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop", verified: true },
   { name: "John Smith", handle: "@john", avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" }
 ];
 
-const DEALZ_SEED: Deal[] = [
+export const DEALZ_SEED: Deal[] = [
   {
     id: "deal_1",
     type: "Shoppable Adz",
@@ -2331,8 +2332,14 @@ export default function DealzMarketplace() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const [dealz, setDealz] = useState<Deal[]>(DEALZ_SEED);
+  const [dealz, setDealz] = useCreatorCompatState<Deal[]>("creator.dealzMarketplace.deals", DEALZ_SEED);
   const [selectedId, setSelectedId] = useState<string>(DEALZ_SEED[0]?.id || "");
+  useEffect(() => {
+    if (!dealz.length) return;
+    if (!dealz.find((deal) => deal.id === selectedId)) {
+      setSelectedId(dealz[0].id);
+    }
+  }, [dealz, selectedId]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 

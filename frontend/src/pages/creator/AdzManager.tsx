@@ -5,6 +5,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "./AdBuilder";
 import { AdzPerformanceDrawer, PerformanceEntity, PerfPlatform } from "./AdzPerformance";
+import { useCreatorCompatState } from "../../lib/frontendState";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
@@ -310,7 +311,7 @@ function Avatar({ src, alt }: { src: string; alt: string }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS: Ad[] = [
+export const DEMO_ADS: Ad[] = [
   {
     id: "AD-10021",
     name: "Flash Dealz: Power Bank",
@@ -533,9 +534,15 @@ export default function AdzManager() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useState<Ad[]>(DEMO_ADS);
+  const [ads, setAds] = useCreatorCompatState<Ad[]>("creator.adzManager.ads", DEMO_ADS);
 
   const [selectedId, setSelectedId] = useState<string>(DEMO_ADS[0]?.id || "");
+  useEffect(() => {
+    if (!ads.length) return;
+    if (!ads.find((ad) => ad.id === selectedId)) {
+      setSelectedId(ads[0].id);
+    }
+  }, [ads, selectedId]);
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
 
   // filters

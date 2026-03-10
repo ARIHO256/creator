@@ -8,6 +8,7 @@ import { formatCurrencyValue } from "../../utils/formatUtils";
 import { PageHeader } from "../../components/PageHeader";
 import { AdzPerformanceDrawer, PerformanceEntity, PerfPlatform } from "./AdzPerformance";
 import AdBuilder from "./AdBuilder";
+import { useCreatorCompatState } from "../../lib/frontendState";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
@@ -518,7 +519,7 @@ function BarList({
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS: Ad[] = [
+export const DEMO_ADS: Ad[] = [
   {
     id: "ADZ-2201",
     campaignName: "Valentine Glow Week",
@@ -725,8 +726,14 @@ export default function AdzDashboard() {
   const [drawer, setDrawer] = useState<DrawerKey>(null);
   const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
 
-  const [ads, setAds] = useState<Ad[]>(DEMO_ADS);
+  const [ads, setAds] = useCreatorCompatState<Ad[]>("creator.adzDashboard.ads", DEMO_ADS);
   const [selectedId, setSelectedId] = useState<string>(DEMO_ADS[0]?.id || "");
+  useEffect(() => {
+    if (!ads.length) return;
+    if (!ads.find((ad) => ad.id === selectedId)) {
+      setSelectedId(ads[0].id);
+    }
+  }, [ads, selectedId]);
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
 
   // Search/filter

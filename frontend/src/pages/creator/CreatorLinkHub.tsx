@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { LinkToolsDrawer } from "./NewLinkPage";
+import { useCreatorCompatState, useCreatorCompatValue } from "../../lib/frontendState";
 import {
   BarChart3,
   Check,
@@ -111,13 +112,16 @@ export default function CreatorLinksHubV3Fixed({
   const [groupBy, setGroupBy] = useState<GroupBy>("Campaign");
   const [supplierTypeFilter, setSupplierTypeFilter] = useState<"All" | SupplierType>("All");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pinnedIds, setPinnedIds] = useState<string[]>(["LIVE-102", "SHOP-311"]);
+  const [pinnedIds, setPinnedIds] = useCreatorCompatState<string[]>(
+    "creator.linkHub.pinnedIds",
+    ["LIVE-102", "SHOP-311"]
+  );
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [newLinkDrawerOpen, setNewLinkDrawerOpen] = useState(initialOpenNewLinkDrawer);
 
   "suppliers include Sellers (suppliers of products) and Providers (service providers).";
 
-  const items: LinkItem[] = useMemo(
+  const defaultItems: LinkItem[] = useMemo(
     () => [
       {
         id: "LIVE-102",
@@ -418,6 +422,7 @@ export default function CreatorLinksHubV3Fixed({
     ],
     []
   );
+  const items = useCreatorCompatValue<LinkItem[]>("creator.linkHub.items", defaultItems);
 
   // Effective supplier filter when groupBy=Provider
   useEffect(() => {

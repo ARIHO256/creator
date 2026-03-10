@@ -14,6 +14,7 @@ import { randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
+import { RecoverAccountDto } from './dto/recover-account.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { SwitchRoleDto } from './dto/switch-role.dto.js';
@@ -199,6 +200,28 @@ export class AuthService {
       tokenRecord.user.roleAssignments.map((assignment) => assignment.role),
       tokenRecord.family
     );
+  }
+
+  async recovery(payload: RecoverAccountDto) {
+    const email = payload.email?.toLowerCase().trim();
+    const phone = payload.phone?.trim();
+
+    if (!email && !phone) {
+      throw new BadRequestException('Either email or phone is required');
+    }
+
+    const existing = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
+      },
+      select: { id: true }
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Account not found');
+    }
+
+    return { ok: true };
   }
 
   async logout(userId: string, payload: RefreshTokenDto) {

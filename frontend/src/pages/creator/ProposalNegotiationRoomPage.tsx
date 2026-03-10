@@ -6,6 +6,7 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 // import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
+import { useCreatorCompatState } from "../../lib/frontendState";
 
 const STATUS_STEPS = [
   "Draft",
@@ -36,7 +37,10 @@ function ProposalNegotiationRoomPage() {
   const location = useLocation();
   const origin = (location.state as { origin?: string })?.origin || "from-seller";
   // const { theme } = useTheme();
-  const [status, setStatus] = useState<Status>("Negotiating");
+  const [status, setStatus] = useCreatorCompatState<Status>(
+    "creator.proposalRoom.status",
+    "Negotiating"
+  );
 
   const baseTerms = useMemo(
     () => ({
@@ -47,9 +51,9 @@ function ProposalNegotiationRoomPage() {
     []
   );
 
-  const [terms, setTerms] = useState<Terms>(baseTerms);
+  const [terms, setTerms] = useCreatorCompatState<Terms>("creator.proposalRoom.terms", baseTerms);
 
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useCreatorCompatState<Message[]>("creator.proposalRoom.messages", [
     {
       id: 1,
       from: "seller",
@@ -123,7 +127,10 @@ function ProposalNegotiationRoomPage() {
     }
   ];
 
-  const [appliedSuggestions, setAppliedSuggestions] = useState<string[]>([]);
+  const [appliedSuggestions, setAppliedSuggestions] = useCreatorCompatState<string[]>(
+    "creator.proposalRoom.appliedSuggestions",
+    []
+  );
 
   // Filter out applied suggestions
   const visibleSuggestions = clauseSuggestions.filter(s => !appliedSuggestions.includes(s.id));

@@ -26,6 +26,7 @@ import {
   Twitch
 } from "lucide-react";
 import { useNotification } from "../../contexts/NotificationContext";
+import { useCreatorCompatState, useCreatorCompatValue } from "../../lib/frontendState";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
 
@@ -281,19 +282,19 @@ type LiveSession = {
 const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 const SAMPLE_VIDEO_2 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4";
 
-const suppliersSeed: Supplier[] = [
+export const suppliersSeed: Supplier[] = [
   { id: "pt_glowup", name: "GlowUp Hub", kind: "Seller", avatarUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?auto=format&fit=crop&w=120&q=60" },
   { id: "pt_gadget", name: "GadgetMart Africa", kind: "Seller", avatarUrl: "https://images.unsplash.com/photo-1520975682031-a6ad56ae0f68?auto=format&fit=crop&w=120&q=60" },
   { id: "pt_grace", name: "Grace Living Studio", kind: "Provider", avatarUrl: "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=120&q=60" }
 ];
 
-const campaignsSeed: Campaign[] = [
+export const campaignsSeed: Campaign[] = [
   { id: "cp_autumn_beauty", supplierId: "pt_glowup", name: "Autumn Beauty Flash" },
   { id: "cp_tech_friday", supplierId: "pt_gadget", name: "Tech Friday Mega" },
   { id: "cp_wellness", supplierId: "pt_grace", name: "Wellness Booking Sprint" }
 ];
 
-const hostsSeed: Host[] = [
+export const hostsSeed: Host[] = [
   { id: "cr_1", name: "Luna Ade", handle: "@lunaade", followers: "410k", verified: true, avatarUrl: "https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=256&q=60" },
   { id: "cr_2", name: "Noah K.", handle: "@noahknows", followers: "680k", verified: true, avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=60" },
   { id: "cr_3", name: "Rina Vale", handle: "@rinavale", followers: "220k", verified: false, avatarUrl: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=256&q=60" }
@@ -303,7 +304,7 @@ function isoNowPlus(ms: number) {
   return new Date(Date.now() + ms).toISOString();
 }
 
-const sessionsSeed: LiveSession[] = [
+export const sessionsSeed: LiveSession[] = [
   {
     id: "ls_9001",
     title: "Autumn Beauty: serum + cleanser bundle",
@@ -859,7 +860,10 @@ export default function LiveDashboardPage() {
     if (!url) return;
     navigate(url);
   }
-  const [sessions, setSessions] = useState<LiveSession[]>(sessionsSeed);
+  const suppliers = useCreatorCompatValue<Supplier[]>("creator.liveDashboard.suppliers", suppliersSeed);
+  const campaigns = useCreatorCompatValue<Campaign[]>("creator.liveDashboard.campaigns", campaignsSeed);
+  const hosts = useCreatorCompatValue<Host[]>("creator.liveDashboard.hosts", hostsSeed);
+  const [sessions, setSessions] = useCreatorCompatState<LiveSession[]>("creator.liveDashboard.sessions", sessionsSeed);
 
   // Filters
   const [tab, setTab] = useState<"All" | "Upcoming" | "Live" | "Ended">("All");
@@ -945,9 +949,9 @@ export default function LiveDashboardPage() {
   }, [sessions, tab, supplierId, q]);
 
   const active = useMemo(() => (activeId ? sessions.find((s) => s.id === activeId) || null : null), [sessions, activeId]);
-  const activeSupplier = useMemo(() => (active ? suppliersSeed.find((p) => p.id === active.supplierId) : undefined), [active]);
-  const activeCampaign = useMemo(() => (active?.campaignId ? campaignsSeed.find((c) => c.id === active.campaignId) : undefined), [active]);
-  const activeHost = useMemo(() => (active ? hostsSeed.find((h) => h.id === active.hostId) : undefined), [active]);
+  const activeSupplier = useMemo(() => (active ? suppliers.find((p) => p.id === active.supplierId) : undefined), [active, suppliers]);
+  const activeCampaign = useMemo(() => (active?.campaignId ? campaigns.find((c) => c.id === active.campaignId) : undefined), [active, campaigns]);
+  const activeHost = useMemo(() => (active ? hosts.find((h) => h.id === active.hostId) : undefined), [active, hosts]);
 
   const kpis = useMemo(() => {
     const live = sessions.filter((s) => s.status === "Live").length;
@@ -977,8 +981,8 @@ export default function LiveDashboardPage() {
 
   // Live Sessionz Pro — derived status for the selected toolkit session (demo logic)
   const toolSession = useMemo(() => sessions.find((s) => s.id === toolSessionId) || null, [sessions, toolSessionId]);
-  const toolSupplier = useMemo(() => (toolSession ? suppliersSeed.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession]);
-  const toolHost = useMemo(() => (toolSession ? hostsSeed.find((h) => h.id === toolSession.hostId) : undefined), [toolSession]);
+  const toolSupplier = useMemo(() => (toolSession ? suppliers.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession, suppliers]);
+  const toolHost = useMemo(() => (toolSession ? hosts.find((h) => h.id === toolSession.hostId) : undefined), [toolSession, hosts]);
 
   const waPrompt = useMemo(() => {
     if (!toolSession) return null;
@@ -1643,7 +1647,7 @@ export default function LiveDashboardPage() {
                   onChange={(e) => setSupplierId(e.target.value)}
                 >
                   <option value="all">All suppliers</option>
-                  {suppliersSeed.map((p) => (
+                  {suppliers.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -1677,8 +1681,8 @@ export default function LiveDashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filtered.map((s) => {
-                      const p = suppliersSeed.find((x) => x.id === s.supplierId);
-                      const h = hostsSeed.find((x) => x.id === s.hostId);
+                      const p = suppliers.find((x) => x.id === s.supplierId);
+                      const h = hosts.find((x) => x.id === s.hostId);
                       const tone = s.status === "Live" ? "good" : s.status === "Scheduled" ? "warn" : s.status === "Ended" ? "neutral" : "neutral";
 
                       return (
@@ -1707,7 +1711,7 @@ export default function LiveDashboardPage() {
                               {p?.avatarUrl ? <img src={p.avatarUrl} className="h-7 w-7 rounded-full border border-slate-200 object-cover" alt={p.name} /> : null}
                               <div className="min-w-0">
                                 <div className="text-[12px] font-semibold truncate text-slate-900 dark:text-slate-100">{p?.name || "—"}</div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaignsSeed.find((c) => c.id === s.campaignId)?.name || "—"}</div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaigns.find((c) => c.id === s.campaignId)?.name || "—"}</div>
                               </div>
                             </div>
                           </td>
@@ -1775,9 +1779,9 @@ export default function LiveDashboardPage() {
         <NewLiveSessionDrawer
           open={newOpen}
           onClose={() => setNewOpen(false)}
-          suppliers={suppliersSeed}
-          campaigns={campaignsSeed}
-          hosts={hostsSeed}
+          suppliers={suppliers}
+          campaigns={campaigns}
+          hosts={hosts}
           onCreate={onCreateSession}
         />
 

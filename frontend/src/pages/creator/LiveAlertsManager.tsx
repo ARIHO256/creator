@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CircularProgress } from "@mui/material";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useCreatorCompatState, useCreatorCompatValue } from "../../lib/frontendState";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -209,7 +210,7 @@ function Modal({
 export default function LiveAlertsManager() {
   const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
-  const session = useMemo(
+  const defaultSession = useMemo(
     () => ({
       id: "LS-20418",
       title: "Autumn Beauty Flash",
@@ -219,10 +220,11 @@ export default function LiveAlertsManager() {
     }),
     [],
   );
+  const session = useCreatorCompatValue("creator.liveAlerts.session", defaultSession);
 
   const liveLink = useMemo(() => buildLiveLink(session.id), [session.id]);
 
-  const channels: Channel[] = useMemo(
+  const defaultChannels: Channel[] = useMemo(
     () => [
       {
         key: "whatsapp",
@@ -267,8 +269,9 @@ export default function LiveAlertsManager() {
     ],
     [],
   );
+  const channels = useCreatorCompatValue<Channel[]>("creator.liveAlerts.channels", defaultChannels);
 
-  const templates: AlertTemplate[] = useMemo(
+  const defaultTemplates: AlertTemplate[] = useMemo(
     () => [
       {
         key: "were_live",
@@ -298,8 +301,12 @@ export default function LiveAlertsManager() {
     ],
     [],
   );
+  const templates = useCreatorCompatValue<AlertTemplate[]>(
+    "creator.liveAlerts.templates",
+    defaultTemplates
+  );
 
-  const [enabledDest, setEnabledDest] = useState<Record<ChannelKey, boolean>>({
+  const [enabledDest, setEnabledDest] = useCreatorCompatState<Record<ChannelKey, boolean>>("creator.liveAlerts.enabledDest", {
     whatsapp: true,
     telegram: true,
     line: false,
@@ -313,7 +320,7 @@ export default function LiveAlertsManager() {
   const [dealEndsMinutes, setDealEndsMinutes] = useState(10);
 
   // cap timestamps (demo)
-  const [lastSent, setLastSent] = useState<Record<AlertKey, number>>({
+  const [lastSent, setLastSent] = useCreatorCompatState<Record<AlertKey, number>>("creator.liveAlerts.lastSent", {
     were_live: Date.now() - 11 * 60 * 1000,
     flash_deal: Date.now() - 20 * 60 * 1000,
     last_chance: Date.now() - 40 * 60 * 1000,

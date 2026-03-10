@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "./AdBuilder";
+import { useCreatorCompatState } from "../../lib/frontendState";
 import {
   BadgeCheck,
   CalendarClock,
@@ -1008,7 +1009,7 @@ function ShoppableAdPreview({
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS: Ad[] = [
+export const DEMO_ADS: Ad[] = [
   {
     id: "ad_1",
     rank: 1,
@@ -1245,8 +1246,14 @@ export default function AdzMarketplace() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads] = useState<Ad[]>(DEMO_ADS);
+  const [ads] = useCreatorCompatState<Ad[]>("creator.adzMarketplace.ads", DEMO_ADS);
   const [selectedId, setSelectedId] = useState<string>(DEMO_ADS[0]?.id || "");
+  useEffect(() => {
+    if (!ads.length) return;
+    if (!ads.find((ad) => ad.id === selectedId)) {
+      setSelectedId(ads[0].id);
+    }
+  }, [ads, selectedId]);
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
 
   // Per-ad mode selections (Retail/Wholesale) for offers

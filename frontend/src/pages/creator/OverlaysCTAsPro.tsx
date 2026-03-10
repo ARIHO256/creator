@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useCreatorCompatValue } from "../../lib/frontendState";
 import {
   BadgeCheck,
   CheckCircle2,
@@ -170,7 +171,7 @@ export default function OverlaysCTAsPro() {
   // Demo pro toggle
   const [isPro, setIsPro] = useState(true);
 
-  const session = useMemo(
+  const defaultSession = useMemo(
     () => ({
       id: "LS-20418",
       title: "Autumn Beauty Flash",
@@ -180,8 +181,9 @@ export default function OverlaysCTAsPro() {
     }),
     [],
   );
+  const session = useCreatorCompatValue("creator.overlays.session", defaultSession);
 
-  const products: Product[] = useMemo(
+  const defaultProducts: Product[] = useMemo(
     () => [
       {
         id: "p1",
@@ -207,6 +209,7 @@ export default function OverlaysCTAsPro() {
     ],
     [],
   );
+  const products = useCreatorCompatValue<Product[]>("creator.overlays.products", defaultProducts);
 
   const [tab, setTab] = useState<"qr" | "links" | "timer" | "lower" | "ab">("qr");
   const [variant, setVariant] = useState<VariantKey>("A");

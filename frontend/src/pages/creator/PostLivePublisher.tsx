@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CircularProgress } from '@mui/material';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { useCreatorCompatState, useCreatorCompatValue } from '../../lib/frontendState';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -253,7 +254,7 @@ export default function PostLivePublisherPage() {
   const [plan, setPlan] = useState<'Standard' | 'Pro'>('Pro');
   const isPro = plan === 'Pro';
 
-  const session = useMemo(
+  const defaultSession = useMemo(
     () => ({
       id: sessionId,
       title: 'Autumn Beauty Flash',
@@ -264,6 +265,7 @@ export default function PostLivePublisherPage() {
     }),
     [sessionId],
   );
+  const session = useCreatorCompatValue('creator.postLive.session', defaultSession);
 
   // Replay/publish state
   const [published, setPublished] = useState(false);
@@ -273,7 +275,7 @@ export default function PostLivePublisherPage() {
   const [showProductStrip, setShowProductStrip] = useState(true);
 
   // Clips
-  const [clips, setClips] = useState<Clip[]>([
+  const [clips, setClips] = useCreatorCompatState<Clip[]>('creator.postLive.clips', [
     { id: 'c1', title: 'GlowUp Bundle – Key benefits', startSec: 140, endSec: 210, format: '9:16', status: 'Exported' },
     { id: 'c2', title: 'Price drop moment', startSec: 520, endSec: 560, format: '9:16', status: 'Queued' },
     { id: 'c3', title: 'Buyer Q&A – shipping', startSec: 760, endSec: 840, format: '16:9', status: 'Draft' },
@@ -294,7 +296,7 @@ export default function PostLivePublisherPage() {
   };
 
   // Channels (send replay)
-  const channels: Channel[] = useMemo(
+  const defaultChannels: Channel[] = useMemo(
     () => [
       { key: 'whatsapp', name: 'WhatsApp', short: 'WA', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.002 },
       { key: 'telegram', name: 'Telegram', short: 'TG', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.0 },
@@ -304,8 +306,9 @@ export default function PostLivePublisherPage() {
     ],
     [],
   );
+  const channels = useCreatorCompatValue<Channel[]>('creator.postLive.channels', defaultChannels);
 
-  const [enabledChannels, setEnabledChannels] = useState<Record<ChannelKey, boolean>>({
+  const [enabledChannels, setEnabledChannels] = useCreatorCompatState<Record<ChannelKey, boolean>>('creator.postLive.enabledChannels', {
     whatsapp: true,
     telegram: true,
     line: false,
