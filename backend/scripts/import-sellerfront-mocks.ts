@@ -4,6 +4,12 @@ import sellerfrontSeedModule from '../../sellerfront/src/mocks/seed.ts';
 import type { MockDB } from '../../sellerfront/src/mocks/types.ts';
 import catalogTaxonomyModule from '../../sellerfront/src/mocks/catalogTaxonomy.ts';
 import providerListingWizardModule from '../../sellerfront/src/mock/provider/listingWizard.ts';
+import {
+  createDefaultOnboardingState,
+  prepareSubmittedOnboarding,
+  sellerSlugToHandle,
+  type OnboardingState
+} from '../src/modules/workflow/onboarding-state.ts';
 
 const prisma = new PrismaClient();
 const { seedMockDb } = sellerfrontSeedModule as {
@@ -87,6 +93,7 @@ const orderStatusFor = (status?: string) => {
 };
 
 const sanitizeId = (value: string) => value.replace(/[^a-zA-Z0-9:_-]+/g, '_');
+const MOCK_ONBOARDING_SOURCE = 'sellerfront_mock_import';
 
 type FrontendTaxonomyNode = {
   id: string;
@@ -235,6 +242,364 @@ const buildPathSnapshot = (
 
   return path as Prisma.InputJsonValue;
 };
+
+const buildTaxonomyNodes = (snapshot: Snapshot) => {
+  const sellerTaxonomy = snapshot.pageContent.listingWizard.seller.taxonomy as FrontendTaxonomyNode[];
+  const providerTaxonomy = snapshot.pageContent.listingWizard.provider.taxonomy as FrontendTaxonomyNode[];
+  const roots = mergeTaxonomyRoots(CATALOG_TAXONOMY as FrontendTaxonomyNode[], sellerTaxonomy, providerTaxonomy);
+  const nodes = flattenTaxonomy(roots);
+  return {
+    nodes,
+    nodeMap: new Map(nodes.map((node) => [node.id, node]))
+  };
+};
+
+const buildTaxonomySelections = (
+  lines: Array<{ nodeId: string; status: string }>,
+  nodeMap: Map<string, ImportedTaxonomyNode>
+) =>
+  lines
+    .map((line) => {
+      const node = nodeMap.get(line.nodeId);
+      if (!node) return null;
+      const pathNodes = buildPathSnapshot(line.nodeId, nodeMap) as Array<{
+        id: string;
+        name: string;
+        slug: string;
+        kind: string;
+        path: string;
+      }>;
+      return {
+        nodeId: line.nodeId,
+        label: node.name,
+        slug: node.slug,
+        status: line.status,
+        path: pathNodes.map((entry) => entry.name),
+        pathNodes: pathNodes.map((entry) => ({
+          id: entry.id,
+          name: entry.name,
+          type: entry.kind
+        }))
+      };
+    })
+    .filter((selection): selection is NonNullable<typeof selection> => Boolean(selection));
+
+const buildWorkflowSeedPayload = (
+  snapshot: Snapshot,
+  role: 'seller' | 'provider',
+  userIdMap: Map<string, string>,
+  nodeMap: Map<string, ImportedTaxonomyNode>
+) => {
+  const user = snapshot.users.find((entry) => entry.role === role);
+  if (!user) return null;
+  const userId = resolveUserId(userIdMap, user.id);
+  if (!userId) return null;
+
+  const address = user.addresses?.[0];
+  const listings = snapshot.listings.filter((listing) => listing.sellerId === user.id);
+  const marketplaces = Array.from(
+    new Set(listings.map((listing) => String(listing.marketplace || '').trim()).filter(Boolean))
+  );
+  const lines =
+    role === 'provider'
+      ? snapshot.pageContent.listingWizard.provider.baseLines
+      : snapshot.pageContent.listingWizard.seller.baseLines;
+  const taxonomySelections = buildTaxonomySelections(lines, nodeMap);
+  const primarySelection =
+    taxonomySelections.find((selection) => selection.status === 'active') ?? taxonomySelections[0] ?? null;
+  const sellerHandle = sellerSlugToHandle(
+    user.email.split('@')[0] || user.name || `${role}-store`
+  );
+  const docs = snapshot.pageContent.compliance[role].docs.map((doc, index) => ({
+    id: String(doc.id ?? `${role}-doc-${index + 1}`),
+    type: String(doc.type ?? 'document'),
+    name: String(doc.fileName || doc.type || `Document ${index + 1}`),
+    file: doc.fileName || undefined,
+    fileUrl: doc.fileName ? `mock://${doc.fileName}` : undefined,
+    status: String(doc.status ?? 'submitted'),
+    expiry: doc.expiresAt || undefined,
+    uploadedAt: doc.uploadedAt || snapshot.seededAt,
+    notes: [doc.channel, ...(Array.isArray(doc.regions) ? doc.regions : [])].filter(Boolean).join(' · ')
+  }));
+  const locale = String(user.preferences?.locale || 'en').toUpperCase();
+  const currency = String(user.preferences?.currency || 'USD').toUpperCase();
+  const providerServices =
+    role === 'provider'
+      ? Array.from(new Set(taxonomySelections.map((selection) => selection.label)))
+      : [];
+  const bookingModes =
+    role === 'provider'
+      ? Array.from(
+          new Set(
+            [
+              marketplaces.includes('ServiceMart') ? 'On-site' : null,
+              marketplaces.includes('Consultations') ? 'Remote' : null,
+              'Scheduled'
+            ].filter((value): value is string => Boolean(value))
+          )
+        )
+      : [];
+  const now = snapshot.seededAt;
+
+  const onboarding: OnboardingState = {
+    ...createDefaultOnboardingState(role === 'provider' ? 'PROVIDER' : 'SELLER'),
+    owner: user.name,
+    status: 'in_progress',
+    storeName: role === 'provider' ? `${user.name} Services` : `${user.name} Store`,
+    storeSlug: sellerHandle,
+    email: user.email,
+    phone: user.phone || '',
+    website: `https://${sellerHandle}.demo.evzone`,
+    about:
+      listings[0]?.description ||
+      (role === 'provider'
+        ? `${user.name} imported from sellerfront provider onboarding mocks.`
+        : `${user.name} imported from sellerfront seller onboarding mocks.`),
+    brandColor: role === 'provider' ? '#F77F00' : '#03CD8C',
+    support: {
+      whatsapp: user.phone || '',
+      email: user.email,
+      phone: user.phone || ''
+    },
+    shipFrom: {
+      country: address?.country || 'UG',
+      province: '',
+      city: address?.city || 'Kampala',
+      address1: address?.line1 || '',
+      address2: '',
+      postalCode: ''
+    },
+    channels: marketplaces,
+    languages: [locale],
+    taxonomySelection: primarySelection,
+    taxonomySelections,
+    docs: {
+      list:
+        docs.length > 0
+          ? docs
+          : [
+              {
+                id: `${role}-doc-seed`,
+                type: role === 'provider' ? 'Service Provider License' : 'Business Registration',
+                name: role === 'provider' ? 'service-license.pdf' : 'business-registration.pdf',
+                fileUrl: `mock://${role}-doc-seed`,
+                status: 'Approved',
+                uploadedAt: now
+              }
+            ]
+    },
+    shipping: {
+      profileId: role === 'provider' ? 'provider-service-default' : 'seller-shipping-default',
+      expressReady: role !== 'provider',
+      handlingTimeDays: role === 'provider' ? 1 : 3
+    },
+    policies: {
+      returnsDays: role === 'provider' ? 0 : 7,
+      warrantyDays: 30,
+      termsUrl: `https://${sellerHandle}.demo.evzone/terms`,
+      privacyUrl: `https://${sellerHandle}.demo.evzone/privacy`,
+      policyNotes: role === 'provider' ? 'Service appointments are confirmed after availability review.' : ''
+    },
+    payout: {
+      method: 'bank_transfer',
+      currency,
+      rhythm: 'weekly',
+      thresholdAmount: role === 'provider' ? 50 : 100,
+      bankName: 'Demo Bank',
+      bankCountry: address?.country || 'UG',
+      bankBranch: 'Main Branch',
+      accountName: user.name,
+      accountNo: role === 'provider' ? '001234567890' : '009876543210',
+      swiftBic: 'DEMOUGKA',
+      iban: '',
+      mobileProvider: 'MTN',
+      mobileCountryCode: '+256',
+      mobileNo: (user.phone || '').replace(/^\+256/, ''),
+      mobileIdType: 'NIN',
+      mobileIdNumber: role === 'provider' ? 'CM1234567890' : 'CM0987654321',
+      alipayRegion: '',
+      alipayLogin: '',
+      wechatRegion: '',
+      wechatId: '',
+      otherMethod: '',
+      otherProvider: '',
+      otherCountry: '',
+      otherNotes: '',
+      notificationsEmail: user.email,
+      notificationsWhatsApp: user.phone || '',
+      confirmDetails: true,
+      otherDetails: '',
+      otherDescription: ''
+    },
+    tax: {
+      taxpayerType: role === 'provider' ? 'SOLE_PROPRIETOR' : 'BUSINESS',
+      legalName: user.name,
+      taxCountry: address?.country || 'UG',
+      taxId: role === 'provider' ? 'PVDR-TAX-001' : 'SELL-TAX-001',
+      vatNumber: '',
+      legalAddress: address?.line1 || '',
+      contact: user.name,
+      contactEmail: user.email,
+      contactSameAsOwner: true
+    },
+    acceptance: {
+      sellerTerms: true,
+      contentPolicy: true,
+      dataProcessing: true
+    },
+    verification: {
+      emailVerified: true,
+      phoneVerified: Boolean(user.phone),
+      verificationPhone: user.phone || '',
+      verificationEmail: user.email,
+      kycStatus: 'APPROVED',
+      otpStatus: 'VERIFIED',
+      kycReference: `${role.toUpperCase()}-KYC-SEED`
+    },
+    steps: [
+      {
+        id: 'profile',
+        title: 'Profile',
+        status: 'completed',
+        required: true,
+        completedAt: now
+      },
+      {
+        id: 'coverage',
+        title: role === 'provider' ? 'Service lines' : 'Catalog coverage',
+        status: 'completed',
+        required: true,
+        completedAt: now
+      },
+      {
+        id: 'documents',
+        title: 'Verification documents',
+        status: 'completed',
+        required: true,
+        completedAt: now
+      },
+      {
+        id: 'review',
+        title: 'Review',
+        status: 'completed',
+        required: true,
+        completedAt: now
+      }
+    ],
+    providerServices,
+    bookingModes,
+    metadata: {
+      source: MOCK_ONBOARDING_SOURCE,
+      importedAt: now,
+      seedRole: role
+    },
+    submittedAt: null,
+    updatedAt: now
+  };
+
+  const submitted = prepareSubmittedOnboarding(onboarding);
+  return {
+    userId,
+    onboarding: submitted,
+    accountApproval: {
+      status: 'pending',
+      progressPercent: 15,
+      submittedAt: submitted.submittedAt,
+      reviewNotes: '',
+      requiredActions: [],
+      documents: (submitted.docs.list as Array<Record<string, unknown>>).map((doc, index) => ({
+        id: String(doc.id ?? `doc-${index + 1}`),
+        type: String(doc.type ?? 'document'),
+        status: String(doc.status ?? 'submitted'),
+        note: typeof doc.notes === 'string' ? doc.notes : undefined
+      })),
+      metadata: {
+        source: MOCK_ONBOARDING_SOURCE,
+        uiStatus: 'Submitted',
+        profileType: submitted.profileType,
+        submissionSnapshot: {
+          owner: submitted.owner,
+          storeName: submitted.storeName,
+          storeSlug: submitted.storeSlug,
+          email: submitted.email,
+          phone: submitted.phone,
+          channels: submitted.channels,
+          languages: submitted.languages,
+          taxonomySelections: submitted.taxonomySelections,
+          submittedAt: submitted.submittedAt,
+          updatedAt: submitted.updatedAt
+        }
+      }
+    }
+  };
+};
+
+async function upsertWorkflowSeedRecord(
+  userId: string,
+  recordType: 'onboarding' | 'account_approval',
+  payload: Prisma.InputJsonValue
+) {
+  const existing = await prisma.workflowRecord.findUnique({
+    where: {
+      userId_recordType_recordKey: {
+        userId,
+        recordType,
+        recordKey: 'main'
+      }
+    }
+  });
+  const existingPayload =
+    existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
+      ? (existing.payload as Record<string, unknown>)
+      : null;
+  const existingMetadata =
+    existingPayload?.metadata && typeof existingPayload.metadata === 'object' && !Array.isArray(existingPayload.metadata)
+      ? (existingPayload.metadata as Record<string, unknown>)
+      : null;
+  const existingSource = typeof existingMetadata?.source === 'string' ? existingMetadata.source : '';
+
+  if (existing && existingSource && existingSource !== MOCK_ONBOARDING_SOURCE) {
+    return;
+  }
+
+  await prisma.workflowRecord.upsert({
+    where: {
+      userId_recordType_recordKey: {
+        userId,
+        recordType,
+        recordKey: 'main'
+      }
+    },
+    update: {
+      payload
+    },
+    create: {
+      userId,
+      recordType,
+      recordKey: 'main',
+      payload
+    }
+  });
+}
+
+async function upsertWorkflowSeeds(snapshot: Snapshot, userIdMap: Map<string, string>) {
+  const { nodeMap } = buildTaxonomyNodes(snapshot);
+
+  for (const role of ['seller', 'provider'] as const) {
+    const seed = buildWorkflowSeedPayload(snapshot, role, userIdMap, nodeMap);
+    if (!seed) continue;
+    await upsertWorkflowSeedRecord(
+      seed.userId,
+      'onboarding',
+      seed.onboarding as unknown as Prisma.InputJsonValue
+    );
+    await upsertWorkflowSeedRecord(
+      seed.userId,
+      'account_approval',
+      seed.accountApproval as Prisma.InputJsonValue
+    );
+  }
+}
 
 async function upsertUser(
   snapshot: Snapshot,
@@ -818,6 +1183,7 @@ async function main() {
   await upsertMessages(snapshot, userIdMap);
   await upsertRelationships(snapshot, userIdMap);
   await upsertTaxonomy(snapshot, userIdMap);
+  await upsertWorkflowSeeds(snapshot, userIdMap);
   await upsertPageContent(snapshot);
   await upsertModuleState(snapshot);
   await upsertSnapshotRecords(snapshot);

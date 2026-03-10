@@ -131,6 +131,7 @@ export class WorkflowService {
     await this.upsertRecord(userId, 'onboarding', 'main', submitted);
     await this.syncSellerProfile(userId, submitted);
     await this.syncTaxonomySelections(userId, submitted);
+    await this.syncAccountApprovalFromOnboarding(userId, submitted);
     await this.jobsService.enqueue({
       queue: 'workflow',
       type: 'ONBOARDING_SUBMITTED',
@@ -367,6 +368,55 @@ export class WorkflowService {
     const primaryNodeId = selectionNodeId ?? nodeIds[0];
     await this.taxonomyService.syncSellerCoverage(userId, nodeIds);
     await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId);
+  }
+
+  private async syncAccountApprovalFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    const current = await this.getRecordPayload(userId, 'account_approval', 'main');
+    const documents = Array.isArray(onboarding.docs?.list)
+      ? onboarding.docs.list.map((doc: Record<string, unknown>, index: number) => ({
+          id: String(doc.id ?? `onboarding-doc-${index + 1}`),
+          type: String(doc.type ?? 'document'),
+          status: String(doc.status ?? 'submitted'),
+          note: typeof doc.notes === 'string' ? doc.notes : undefined
+        }))
+      : [];
+    const requiredActions = Array.isArray(current?.requiredActions)
+      ? (current?.requiredActions as Array<Record<string, unknown>>)
+      : [];
+    const metadata = {
+      ...((current?.metadata as Record<string, unknown> | undefined) ?? {}),
+      source: 'onboarding',
+      uiStatus: current?.status === 'approved' ? 'Approved' : 'Submitted',
+      profileType: onboarding.profileType,
+      submissionSnapshot: {
+        owner: onboarding.owner,
+        storeName: onboarding.storeName,
+        storeSlug: onboarding.storeSlug,
+        email: onboarding.email,
+        phone: onboarding.phone,
+        channels: onboarding.channels,
+        languages: onboarding.languages,
+        taxonomySelections: onboarding.taxonomySelections,
+        submittedAt: onboarding.submittedAt,
+        updatedAt: onboarding.updatedAt
+      }
+    };
+
+    await this.upsertRecord(userId, 'account_approval', 'main', {
+      ...(current ?? {}),
+      status: current?.status === 'approved' ? 'approved' : current?.status === 'rejected' ? 'rejected' : 'pending',
+      progressPercent:
+        typeof current?.progressPercent === 'number' ? current.progressPercent : onboarding.status === 'submitted' ? 15 : 5,
+      submittedAt:
+        typeof current?.submittedAt === 'string' && current.submittedAt ? current.submittedAt : onboarding.submittedAt ?? new Date().toISOString(),
+      reviewNotes: typeof current?.reviewNotes === 'string' ? current.reviewNotes : '',
+      requiredActions,
+      documents,
+      metadata
+    });
   }
 
   private extractTaxonomyNodeIds(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
