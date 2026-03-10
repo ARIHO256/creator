@@ -340,6 +340,63 @@ async function seedCollaboration(users, sellerProfiles) {
     }
   });
 
+  await prisma.proposal.create({
+    data: {
+      id: 'proposal_autumn_beauty_room',
+      campaignId: 'campaign_ev_launch',
+      sellerId: sellerProfiles.seller.id,
+      creatorId: users.creator.id,
+      submittedByUserId: users.sellerUser.id,
+      title: 'Autumn Beauty Flash · Serum Launch',
+      summary: 'Live + Shoppable Adz campaign to push the new GlowUp serum across East Africa.',
+      amount: 400,
+      currency: 'USD',
+      status: 'NEGOTIATING',
+      metadata: {
+        proposalIdLabel: 'P-101',
+        supplierName: 'GlowUp Hub',
+        supplierBadge: 'Top Brand · Beauty & Skincare',
+        sellerInitials: 'GH',
+        creatorInitials: 'RY',
+        campaignTitle: 'Autumn Beauty Flash · Serum Launch',
+        summary: 'Live + Shoppable Adz campaign to push the new GlowUp serum across East Africa.',
+        liveWindow: 'Friday · 20:00–21:30 EAT',
+        region: 'East Africa · Online only',
+        category: 'Beauty & Skincare',
+        deliverablesList: [
+          '1x 60–90 min live session focussed on new GlowUp serum.',
+          '3x short clips for Shoppable Adz (15–30 seconds each).',
+          '2x Instagram stories before and after the live.'
+        ],
+        terms: {
+          deliverables: '• 1x 60–90 min live session (Autumn Beauty Flash)\n• 3x short clips (15–30s) for Shoppable Adz\n• 2x Instagram stories with swipe-up',
+          schedule: '• Live date: Friday, 20:00–21:30 EAT\n• Clips delivery: within 48 hours after live\n• Stories: 24 hours before and after live',
+          compensation: '• Flat fee: $400\n• Commission: 5% on live-driven sales\n• Payment terms: 50% upfront, 50% 7 days after live'
+        },
+        appliedSuggestions: []
+      },
+      messages: {
+        create: [
+          {
+            id: 'proposal_autumn_msg_1',
+            authorUserId: users.sellerUser.id,
+            body: 'Hi Ronald, we’re excited to do the Autumn Beauty Flash with you. We’ve drafted the terms – feel free to adjust.'
+          },
+          {
+            id: 'proposal_autumn_msg_2',
+            authorUserId: users.creator.id,
+            body: 'Thanks! I’d like to add a small clip package and clarify payment timing. See edits under Compensation.'
+          },
+          {
+            id: 'proposal_autumn_msg_3',
+            authorUserId: users.sellerUser.id,
+            body: 'Looks good overall. Can we cap the commission only on live sales, not 7 days after?'
+          }
+        ]
+      }
+    }
+  });
+
   await prisma.contract.create({
     data: {
       id: 'contract_ev_launch',
@@ -475,6 +532,57 @@ async function seedCommerce(users, sellerProfiles) {
         availableAt: daysFromNow(7),
         metadata: {
           campaignId: 'campaign_ev_launch'
+        }
+      },
+      {
+        id: 'txn_creator_payout_paid_1',
+        userId: users.creator.id,
+        sellerId: sellerProfiles.seller.id,
+        type: 'PAYOUT',
+        status: 'PAID',
+        amount: 1250,
+        currency: 'USD',
+        note: 'Bank Transfer',
+        paidAt: daysAgo(54),
+        metadata: {
+          requestedAt: daysAgo(54).toISOString(),
+          reference: 'TXN-882190',
+          recipient: 'Ronald Isabirye',
+          method: 'Bank Transfer'
+        }
+      },
+      {
+        id: 'txn_creator_payout_paid_2',
+        userId: users.creator.id,
+        sellerId: sellerProfiles.seller.id,
+        type: 'PAYOUT',
+        status: 'PAID',
+        amount: 450.5,
+        currency: 'USD',
+        note: 'Mobile Money',
+        paidAt: daysAgo(59),
+        metadata: {
+          requestedAt: daysAgo(59).toISOString(),
+          reference: 'TXN-771239',
+          recipient: '+256 770 000 000',
+          method: 'Mobile Money'
+        }
+      },
+      {
+        id: 'txn_creator_payout_paid_3',
+        userId: users.creator.id,
+        sellerId: sellerProfiles.seller.id,
+        type: 'PAYOUT',
+        status: 'PAID',
+        amount: 2100,
+        currency: 'USD',
+        note: 'Bank Transfer',
+        paidAt: daysAgo(72),
+        metadata: {
+          requestedAt: daysAgo(72).toISOString(),
+          reference: 'TXN-661002',
+          recipient: 'Ronald Isabirye',
+          method: 'Bank Transfer'
         }
       }
     ]
@@ -3137,6 +3245,458 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
             linkBlocking: true
           }
         }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'content_approval',
+        recordKey: 'SUB-001',
+        payload: {
+          id: 'SUB-001',
+          title: 'IG Reel Draft — Serum Promo',
+          campaign: 'GlowUp Serum Promo',
+          supplier: { name: 'GlowUp Hub', type: 'Seller' },
+          channel: 'Instagram',
+          type: 'Video',
+          desk: 'General',
+          status: 'Under Review',
+          riskScore: 28,
+          submittedAtISO: new Date(now - 140 * 60000).toISOString(),
+          dueAtISO: new Date(now + 980 * 60000).toISOString(),
+          notesFromCreator: 'Short 15s hook + benefits + CTA. Please confirm compliance wording.',
+          caption: 'GlowUp Serum Dealz now live. Limited stock. Tap to shop with my link. #MyLiveDealz #ShoppableAdz #ad',
+          assets: [
+            { name: 'ig-reel-draft.mp4', type: 'Video', size: '14.8 MB' },
+            { name: 'cover-4x5.png', type: 'Image', size: '1.2 MB' }
+          ],
+          flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
+          lastUpdatedISO: new Date(now - 122 * 60000).toISOString(),
+          audit: [
+            { atISO: new Date(now - 140 * 60000).toISOString(), msg: 'Submitted' },
+            { atISO: new Date(now - 122 * 60000).toISOString(), msg: 'Moved to Under Review' }
+          ]
+        }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'content_approval',
+        recordKey: 'SUB-002',
+        payload: {
+          id: 'SUB-002',
+          title: 'TikTok Script — Tech Friday Mega',
+          campaign: 'Tech Friday Mega',
+          supplier: { name: 'GadgetMart Africa', type: 'Seller' },
+          channel: 'TikTok',
+          type: 'Caption',
+          desk: 'General',
+          status: 'Changes Requested',
+          riskScore: 52,
+          submittedAtISO: new Date(now - 980 * 60000).toISOString(),
+          dueAtISO: new Date(now - 120 * 60000).toISOString(),
+          notesFromCreator: 'Script focuses on unboxing + quick price anchor + bundle CTA.',
+          caption: 'Tech Friday Mega Live: gadgets bundles + fast checkout. Join live and shop. {LINK}',
+          assets: [{ name: 'tiktok-script.txt', type: 'Doc', size: '12 KB' }],
+          flags: { missingDisclosure: true, sensitiveClaim: false, brandRestriction: false },
+          lastUpdatedISO: new Date(now - 120 * 60000).toISOString(),
+          audit: [
+            { atISO: new Date(now - 980 * 60000).toISOString(), msg: 'Submitted' },
+            { atISO: new Date(now - 915 * 60000).toISOString(), msg: 'Changes requested: add #ad disclosure' }
+          ]
+        }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'content_approval',
+        recordKey: 'SUB-003',
+        payload: {
+          id: 'SUB-003',
+          title: 'YouTube Shorts Cut — Gadget Unboxing',
+          campaign: 'Gadget Unboxing Marathon',
+          supplier: { name: 'GadgetMart Africa', type: 'Seller' },
+          channel: 'YouTube',
+          type: 'Video',
+          desk: 'General',
+          status: 'Pending',
+          riskScore: 35,
+          submittedAtISO: new Date(now - 60 * 60000).toISOString(),
+          dueAtISO: new Date(now + 420 * 60000).toISOString(),
+          notesFromCreator: '45s cut, includes pricing overlay and CTA.',
+          caption: 'New unboxing. Watch and shop with my link. #MyLiveDealz #LiveSessionz',
+          assets: [{ name: 'shorts-cut.mp4', type: 'Video', size: '38.4 MB' }],
+          flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
+          lastUpdatedISO: new Date(now - 60 * 60000).toISOString(),
+          audit: [{ atISO: new Date(now - 60 * 60000).toISOString(), msg: 'Submitted' }]
+        }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'content_approval',
+        recordKey: 'SUB-004',
+        payload: {
+          id: 'SUB-004',
+          title: 'WhatsApp Broadcast Copy — Repair Booking',
+          campaign: 'Repair Booking Offer',
+          supplier: { name: 'FixNow Mobile', type: 'Provider' },
+          channel: 'WhatsApp',
+          type: 'Caption',
+          desk: 'General',
+          status: 'Approved',
+          riskScore: 12,
+          submittedAtISO: new Date(now - 3100 * 60000).toISOString(),
+          dueAtISO: new Date(now).toISOString(),
+          notesFromCreator: 'Simple broadcast message and CTA to book.',
+          caption: 'Need a trusted mobile repair? Book here: {LINK} (Fast, clear pricing). #MyLiveDealz',
+          assets: [{ name: 'whatsapp-broadcast.txt', type: 'Doc', size: '8 KB' }],
+          flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
+          lastUpdatedISO: new Date(now - 3010 * 60000).toISOString(),
+          audit: [
+            { atISO: new Date(now - 3100 * 60000).toISOString(), msg: 'Submitted' },
+            { atISO: new Date(now - 3010 * 60000).toISOString(), msg: 'Approved' }
+          ]
+        }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'content_approval',
+        recordKey: 'SUB-005',
+        payload: {
+          id: 'SUB-005',
+          title: 'Faith-compatible Caption — Wellness',
+          campaign: 'Faith & Wellness',
+          supplier: { name: 'Grace Living Store', type: 'Seller' },
+          channel: 'Instagram',
+          type: 'Caption',
+          desk: 'Faith',
+          status: 'Escalated',
+          riskScore: 79,
+          submittedAtISO: new Date(now - 220 * 60000).toISOString(),
+          dueAtISO: new Date(now + 240 * 60000).toISOString(),
+          notesFromCreator: 'Please validate tone and desk guidelines.',
+          caption: 'Wellness picks for your routine. Shop responsibly with my link. #MyLiveDealz',
+          assets: [{ name: 'caption-faith.txt', type: 'Doc', size: '6 KB' }],
+          flags: { missingDisclosure: true, sensitiveClaim: true, brandRestriction: true },
+          lastUpdatedISO: new Date(now - 198 * 60000).toISOString(),
+          audit: [
+            { atISO: new Date(now - 220 * 60000).toISOString(), msg: 'Submitted' },
+            { atISO: new Date(now - 198 * 60000).toISOString(), msg: 'Escalated to Faith Desk' }
+          ]
+        }
+      }
+    ]
+  });
+
+  await prisma.review.createMany({
+    data: [
+      {
+        id: 'review_creator_autumn_1',
+        reviewerUserId: users.sellerUser.id,
+        subjectType: 'CREATOR',
+        subjectId: users.creator.id,
+        subjectUserId: users.creator.id,
+        sessionId: 'LS-20418',
+        campaignId: 'campaign_ev_launch',
+        title: 'Autumn Beauty Flash',
+        buyerName: 'GlowUp Hub',
+        buyerType: 'Seller',
+        roleTarget: 'creator',
+        itemType: 'live_session',
+        channel: 'MyLiveDealz',
+        marketplace: 'Creator',
+        mldzSurface: 'live_session',
+        sentiment: 'positive',
+        requiresResponse: false,
+        ratingOverall: 5,
+        ratingBreakdown: {
+          presentation: 5,
+          helpfulness: 5,
+          productKnowledge: 4,
+          interaction: 5,
+          trust: 5
+        },
+        quickTags: ['Great energy', 'Clear CTA', 'Helpful demo'],
+        issueTags: [],
+        reviewText: 'Strong pacing, clear product explanation, and the offer moments felt timely.',
+        wouldJoinAgain: true,
+        transactionIntent: 'bought',
+        isPublic: true,
+        isAnonymous: false,
+        status: 'PUBLISHED',
+        createdAt: new Date(now - 170 * 60000)
+      },
+      {
+        id: 'review_creator_autumn_2',
+        reviewerUserId: users.providerUser.id,
+        subjectType: 'CREATOR',
+        subjectId: users.creator.id,
+        subjectUserId: users.creator.id,
+        sessionId: 'LS-20418',
+        campaignId: 'campaign_ev_launch',
+        title: 'Autumn Beauty Flash',
+        buyerName: 'GlowUp Hub',
+        buyerType: 'Seller',
+        roleTarget: 'creator',
+        itemType: 'live_session',
+        channel: 'MyLiveDealz',
+        marketplace: 'Creator',
+        mldzSurface: 'live_session',
+        sentiment: 'mixed',
+        requiresResponse: true,
+        ratingOverall: 4,
+        ratingBreakdown: {
+          presentation: 4,
+          helpfulness: 4,
+          productKnowledge: 4,
+          interaction: 4,
+          trust: 4
+        },
+        quickTags: ['Clear answers', 'Good pacing'],
+        issueTags: ['Wanted more demos'],
+        reviewText: 'Helpful session. A bit more before/after proof would improve trust.',
+        wouldJoinAgain: true,
+        transactionIntent: 'added_to_cart',
+        isPublic: false,
+        isAnonymous: true,
+        status: 'PUBLISHED',
+        createdAt: new Date(now - 160 * 60000)
+      },
+      {
+        id: 'review_creator_glowup_evening',
+        reviewerUserId: users.sellerUser.id,
+        subjectType: 'CREATOR',
+        subjectId: users.creator.id,
+        subjectUserId: users.creator.id,
+        sessionId: 'LS-20419',
+        campaignId: 'campaign_ev_launch',
+        title: 'GlowUp Evening Dealz',
+        buyerName: 'GlowUp Hub',
+        buyerType: 'Seller',
+        roleTarget: 'creator',
+        itemType: 'live_session',
+        channel: 'MyLiveDealz',
+        marketplace: 'Creator',
+        mldzSurface: 'live_session',
+        sentiment: 'positive',
+        requiresResponse: false,
+        ratingOverall: 5,
+        ratingBreakdown: {
+          presentation: 5,
+          helpfulness: 5,
+          productKnowledge: 5,
+          interaction: 4,
+          trust: 5
+        },
+        quickTags: ['Trusted host', 'Great recap'],
+        issueTags: [],
+        reviewText: 'Very polished. The host kept the stream moving and still answered key questions.',
+        wouldJoinAgain: true,
+        transactionIntent: 'just_watched',
+        isPublic: true,
+        isAnonymous: false,
+        status: 'PUBLISHED',
+        createdAt: new Date(now - 1430 * 60000)
+      }
+    ]
+  });
+
+  await prisma.adzLink.createMany({
+    data: [
+      {
+        id: 'LIVE-102',
+        userId: users.creator.id,
+        status: 'scheduled',
+        url: 'https://mldz.link/LIVE-102',
+        data: {
+          id: 'LIVE-102',
+          tab: 'live',
+          title: 'Live Sessionz · Beauty Flash',
+          subtitle: 'Today 18:30 · Kampala',
+          status: 'Scheduled',
+          createdAt: 'Today',
+          expiresAt: 'Tomorrow',
+          pinned: true,
+          campaign: { id: 'CAMP-11', name: 'Beauty Flash Dealz' },
+          supplier: { name: 'GlowUp Hub', type: 'Seller' },
+          primaryUrl: 'https://mylivedealz.com/live/beauty-flash?creator=ronald',
+          shortUrl: 'https://mldz.link/LIVE-102',
+          regionVariants: [
+            { region: 'Global', url: 'https://mldz.link/LIVE-102' },
+            { region: 'Africa', url: 'https://mldz.link/LIVE-102?rg=af' },
+            { region: 'EU/UK', url: 'https://mldz.link/LIVE-102?rg=eu' },
+            { region: 'Asia', url: 'https://mldz.link/LIVE-102?rg=as' },
+            { region: 'China', url: 'https://mldz.link/LIVE-102?rg=cn' }
+          ],
+          metrics: { clicks: 320, purchases: 0, conversionPct: 0, earnings: 0, currency: 'USD' },
+          regionMetrics: [
+            { region: 'Global', clicks: 320, purchases: 0, earnings: 0, currency: 'USD' },
+            { region: 'Africa', clicks: 220, purchases: 0, earnings: 0, currency: 'USD' },
+            { region: 'Asia', clicks: 60, purchases: 0, earnings: 0, currency: 'USD' },
+            { region: 'EU/UK', clicks: 25, purchases: 0, earnings: 0, currency: 'USD' },
+            { region: 'China', clicks: 15, purchases: 0, earnings: 0, currency: 'USD' }
+          ],
+          channels: [
+            { name: 'Instagram Story', url: 'https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=ig_story', hint: 'Best for Stories' },
+            { name: 'TikTok', url: 'https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=tiktok', hint: 'Best for short hooks' },
+            { name: 'YouTube Shorts', url: 'https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=shorts', hint: 'Best for replay discovery' },
+            { name: 'WhatsApp', url: 'https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=whatsapp', hint: 'Best for broadcasts' }
+          ],
+          sharePack: {
+            headline: 'LIVE TODAY: Beauty Flash Dealz',
+            bullets: ['Limited stock + live-only discounts', 'High-quality products from verified Sellers', 'Fast checkout and buyer protections'],
+            captions: [
+              { platform: 'Instagram', text: 'Going live today at 18:30! Beauty Flash Dealz with limited stock. Tap the link to join and shop live. #MyLiveDealz #LiveSessionz' },
+              { platform: 'TikTok', text: 'Live at 18:30. Beauty Flash Dealz. Limited stock. Join and shop live. #LiveSessionz #MyLiveDealz' },
+              { platform: 'WhatsApp', text: 'I’m going live today at 18:30 with Beauty Flash Dealz. Join here: {LINK}' }
+            ],
+            hashtags: ['#MyLiveDealz', '#LiveSessionz', '#BeautyDealz', '#ShopLive']
+          }
+        }
+      },
+      {
+        id: 'LIVE-087',
+        userId: users.creator.id,
+        status: 'active',
+        url: 'https://mldz.link/LIVE-087',
+        data: {
+          id: 'LIVE-087',
+          tab: 'live',
+          title: 'Live Sessionz · Tech Friday Mega',
+          subtitle: 'Replay available',
+          status: 'Active',
+          createdAt: '2 days ago',
+          pinned: false,
+          campaign: { id: 'CAMP-07', name: 'Tech Friday Mega' },
+          supplier: { name: 'GadgetMart Africa', type: 'Seller' },
+          primaryUrl: 'https://mylivedealz.com/replay/tech-friday?creator=ronald',
+          shortUrl: 'https://mldz.link/LIVE-087',
+          regionVariants: [
+            { region: 'Global', url: 'https://mldz.link/LIVE-087' },
+            { region: 'Africa', url: 'https://mldz.link/LIVE-087?rg=af' },
+            { region: 'EU/UK', url: 'https://mldz.link/LIVE-087?rg=eu' },
+            { region: 'Asia', url: 'https://mldz.link/LIVE-087?rg=as' },
+            { region: 'China', url: 'https://mldz.link/LIVE-087?rg=cn' }
+          ],
+          metrics: { clicks: 1850, purchases: 96, conversionPct: 5.2, earnings: 820, currency: 'USD' },
+          regionMetrics: [
+            { region: 'Global', clicks: 1850, purchases: 96, earnings: 820, currency: 'USD' },
+            { region: 'Africa', clicks: 851, purchases: 44, earnings: 377, currency: 'USD' },
+            { region: 'Asia', clicks: 518, purchases: 27, earnings: 230, currency: 'USD' },
+            { region: 'EU/UK', clicks: 296, purchases: 15, earnings: 130, currency: 'USD' },
+            { region: 'China', clicks: 185, purchases: 10, earnings: 83, currency: 'USD' }
+          ],
+          channels: [
+            { name: 'Instagram Feed', url: 'https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=ig_feed', hint: 'Best for evergreen' },
+            { name: 'TikTok', url: 'https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=tiktok', hint: 'Best for reach' },
+            { name: 'WhatsApp', url: 'https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=whatsapp', hint: 'Best for groups' },
+            { name: 'Telegram', url: 'https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=telegram', hint: 'Best for communities' }
+          ],
+          sharePack: {
+            headline: 'REPLAY: Tech Friday Mega Live',
+            bullets: ['High-quality gadgets + bundles', 'Watch the demo, then shop', 'Tracked link supports your earnings'],
+            captions: [
+              { platform: 'Instagram', text: 'Replay is up! Tech Friday Mega Live. Watch the demo and shop through this link. #MyLiveDealz #LiveSessionz' },
+              { platform: 'YouTube Shorts', text: 'Tech Friday replay: best gadgets + bundles. Shop with the link. #MyLiveDealz' },
+              { platform: 'WhatsApp', text: 'Replay is up (Tech Friday). Watch and shop here: {LINK}' }
+            ],
+            hashtags: ['#MyLiveDealz', '#LiveSessionz', '#TechDealz', '#Gadgets']
+          }
+        }
+      },
+      {
+        id: 'SHOP-311',
+        userId: users.creator.id,
+        status: 'active',
+        url: 'https://mldz.link/SHOP-311',
+        data: {
+          id: 'SHOP-311',
+          tab: 'shoppable',
+          title: 'Shoppable Adz · Serum Promo',
+          subtitle: 'Link pack + QR',
+          status: 'Active',
+          createdAt: 'This week',
+          pinned: true,
+          campaign: { id: 'CAMP-21', name: 'GlowUp Serum Promo' },
+          supplier: { name: 'GlowUp Hub', type: 'Seller' },
+          primaryUrl: 'https://mylivedealz.com/shoppable/serum?creator=ronald',
+          shortUrl: 'https://mldz.link/SHOP-311',
+          regionVariants: [
+            { region: 'Global', url: 'https://mldz.link/SHOP-311' },
+            { region: 'Africa', url: 'https://mldz.link/SHOP-311?rg=af' },
+            { region: 'EU/UK', url: 'https://mldz.link/SHOP-311?rg=eu' },
+            { region: 'Asia', url: 'https://mldz.link/SHOP-311?rg=as' },
+            { region: 'China', url: 'https://mldz.link/SHOP-311?rg=cn' }
+          ],
+          metrics: { clicks: 980, purchases: 41, conversionPct: 4.2, earnings: 210, currency: 'USD' },
+          regionMetrics: [
+            { region: 'Global', clicks: 980, purchases: 41, earnings: 210, currency: 'USD' },
+            { region: 'Africa', clicks: 568, purchases: 24, earnings: 122, currency: 'USD' },
+            { region: 'Asia', clicks: 196, purchases: 8, earnings: 42, currency: 'USD' },
+            { region: 'EU/UK', clicks: 137, purchases: 6, earnings: 30, currency: 'USD' },
+            { region: 'China', clicks: 79, purchases: 3, earnings: 16, currency: 'USD' }
+          ],
+          channels: [
+            { name: 'Instagram Story', url: 'https://mylivedealz.com/shoppable/serum?creator=ronald&ch=ig_story', hint: 'Best for Stories' },
+            { name: 'TikTok', url: 'https://mylivedealz.com/shoppable/serum?creator=ronald&ch=tiktok', hint: 'Best for short hooks' },
+            { name: 'YouTube Shorts', url: 'https://mylivedealz.com/shoppable/serum?creator=ronald&ch=shorts', hint: 'Best for replay discovery' },
+            { name: 'WhatsApp', url: 'https://mylivedealz.com/shoppable/serum?creator=ronald&ch=whatsapp', hint: 'Best for broadcasts' }
+          ],
+          sharePack: {
+            headline: 'GlowUp Serum Dealz',
+            bullets: ['Verified Seller · buyer protections', 'Fast checkout', 'Limited stock'],
+            captions: [
+              { platform: 'Instagram', text: 'GlowUp Serum Dealz now live. Limited stock. Tap to shop. #MyLiveDealz #ShoppableAdz' },
+              { platform: 'TikTok', text: 'This serum is selling fast. Tap to shop. #ShoppableAdz #MyLiveDealz' },
+              { platform: 'WhatsApp', text: 'GlowUp Serum deal is live. Shop here: {LINK}' }
+            ],
+            hashtags: ['#MyLiveDealz', '#ShoppableAdz', '#BeautyDealz']
+          }
+        }
+      },
+      {
+        id: 'SHOP-402',
+        userId: users.creator.id,
+        status: 'active',
+        url: 'https://mldz.link/SHOP-402',
+        data: {
+          id: 'SHOP-402',
+          tab: 'shoppable',
+          title: 'Shoppable Adz · Mobile Repair Booking',
+          subtitle: 'Service booking link',
+          status: 'Active',
+          createdAt: 'This month',
+          pinned: false,
+          campaign: { id: 'CAMP-33', name: 'Repair Booking Offer' },
+          supplier: { name: 'FixNow Mobile', type: 'Provider' },
+          primaryUrl: 'https://mylivedealz.com/shoppable/repair?creator=ronald',
+          shortUrl: 'https://mldz.link/SHOP-402',
+          regionVariants: [
+            { region: 'Global', url: 'https://mldz.link/SHOP-402' },
+            { region: 'Africa', url: 'https://mldz.link/SHOP-402?rg=af' },
+            { region: 'EU/UK', url: 'https://mldz.link/SHOP-402?rg=eu' },
+            { region: 'Asia', url: 'https://mldz.link/SHOP-402?rg=as' },
+            { region: 'China', url: 'https://mldz.link/SHOP-402?rg=cn' }
+          ],
+          metrics: { clicks: 540, purchases: 16, conversionPct: 3.0, earnings: 95, currency: 'USD' },
+          regionMetrics: [
+            { region: 'Global', clicks: 540, purchases: 16, earnings: 95, currency: 'USD' },
+            { region: 'Africa', clicks: 384, purchases: 11, earnings: 67, currency: 'USD' },
+            { region: 'Asia', clicks: 65, purchases: 2, earnings: 11, currency: 'USD' },
+            { region: 'EU/UK', clicks: 54, purchases: 2, earnings: 10, currency: 'USD' },
+            { region: 'China', clicks: 37, purchases: 1, earnings: 7, currency: 'USD' }
+          ],
+          channels: [
+            { name: 'Instagram Feed', url: 'https://mylivedealz.com/shoppable/repair?creator=ronald&ch=ig_feed', hint: 'Best for evergreen' },
+            { name: 'WhatsApp', url: 'https://mylivedealz.com/shoppable/repair?creator=ronald&ch=whatsapp', hint: 'Best for groups' },
+            { name: 'Telegram', url: 'https://mylivedealz.com/shoppable/repair?creator=ronald&ch=telegram', hint: 'Best for communities' }
+          ],
+          sharePack: {
+            headline: 'Book Mobile Repair (Trusted Provider)',
+            bullets: ['Verified Provider', 'Clear pricing', 'Easy booking'],
+            captions: [
+              { platform: 'Instagram', text: 'Need a quick mobile repair? Book a trusted Provider here. #MyLiveDealz #ShoppableAdz' },
+              { platform: 'WhatsApp', text: 'Trusted mobile repair booking: {LINK}' }
+            ],
+            hashtags: ['#MyLiveDealz', '#ShoppableAdz', '#Services']
+          }
+        }
       }
     ]
   });
@@ -3167,6 +3727,8 @@ async function clearDatabase() {
   await prisma.taskComment.deleteMany();
   await prisma.taskAttachment.deleteMany();
   await prisma.proposalMessage.deleteMany();
+  await prisma.reviewReply.deleteMany();
+  await prisma.review.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.order.deleteMany();
