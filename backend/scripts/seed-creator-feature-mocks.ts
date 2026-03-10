@@ -370,6 +370,24 @@ async function main() {
   const awaitingApprovalModule = await import(
     path.join(creatorRoot, 'pages', 'creator', 'creator_awaiting_approval.tsx')
   );
+  const assetLibraryModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'AssetLibraryPage.tsx')
+  );
+  const liveStudioModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'LiveStudioPage.tsx')
+  );
+  const reviewsModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'Reviews2.tsx')
+  );
+  const onboardingWizardModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'CreatorOnboardingWizardPage.tsx')
+  );
+  const rolesModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'Roles Permissions_Creator.tsx')
+  );
+  const liveBuilderModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'LiveBuilder2.tsx')
+  );
   const creatorCompatSeedsModule = await import(
     path.join(creatorRoot, 'data', 'creatorCompatSeeds.ts')
   );
@@ -381,6 +399,52 @@ async function main() {
   const proposalTerms = proposalModule.PROPOSAL_ROOM_BASE_TERMS;
   const proposalMessages = proposalModule.PROPOSAL_ROOM_INITIAL_MESSAGES as unknown[];
   const awaitingApproval = awaitingApprovalModule.seedSubmissions() as unknown[];
+  const assetLibraryCreators = assetLibraryModule.ASSET_LIBRARY_CREATORS as unknown[];
+  const assetLibrarySuppliers = assetLibraryModule.ASSET_LIBRARY_SUPPLIERS as unknown[];
+  const assetLibraryCampaigns = assetLibraryModule.ASSET_LIBRARY_CAMPAIGNS as unknown[];
+  const assetLibraryDeliverables = assetLibraryModule.ASSET_LIBRARY_DELIVERABLES as unknown[];
+  const assetLibraryAssets = assetLibraryModule.ASSET_LIBRARY_SEED_ASSETS as unknown[];
+  const liveStudioProducts = liveStudioModule.LIVE_STUDIO_PRODUCTS as unknown[];
+  const liveStudioCohosts = liveStudioModule.LIVE_STUDIO_COHOSTS as unknown[];
+  const liveStudioAttachments = liveStudioModule.LIVE_STUDIO_ATTACHMENTS as unknown[];
+  const liveStudioScenes = liveStudioModule.LIVE_STUDIO_SCENES as unknown[];
+  const liveStudioRunOfShow = liveStudioModule.LIVE_STUDIO_RUN_OF_SHOW as unknown[];
+  const liveStudioScriptCues = liveStudioModule.LIVE_STUDIO_SCRIPT_CUES as unknown[];
+  const liveStudioCommerceGoal = liveStudioModule.LIVE_STUDIO_COMMERCE_GOAL as unknown;
+  const liveStudioSalesEvents = liveStudioModule.LIVE_STUDIO_SALES_EVENTS as unknown[];
+  const liveStudioQaItems = liveStudioModule.LIVE_STUDIO_QA_ITEMS as unknown[];
+  const liveStudioViewers = liveStudioModule.LIVE_STUDIO_VIEWERS as unknown[];
+  const liveStudioAiPrompts = liveStudioModule.LIVE_STUDIO_AI_PROMPTS as unknown[];
+  const liveStudioChatMessages = liveStudioModule.LIVE_STUDIO_CHAT_MESSAGES as unknown[];
+  const reviewRecords = reviewsModule.seedReviewRecords() as unknown[];
+  const onboardingWizardForm = onboardingWizardModule.seedCreatorOnboardingWizardForm() as Record<string, unknown>;
+  const roleRecords = rolesModule.seedRoleRecords() as unknown[];
+  const roleMembers = rolesModule.seedRoleMembers() as unknown[];
+  const roleInvites = rolesModule.seedRoleInvites() as unknown[];
+  const roleAudit = rolesModule.seedRoleAudit() as unknown[];
+  const liveBuilderSuppliers = liveBuilderModule.suppliersSeed as unknown[];
+  const liveBuilderCampaigns = liveBuilderModule.campaignsSeed as unknown[];
+  const liveBuilderHosts = liveBuilderModule.hostsSeed as unknown[];
+  const liveBuilderAssets = liveBuilderModule.assetsSeed as unknown[];
+  const liveBuilderCatalog = liveBuilderModule.catalogSeed as unknown[];
+  const liveBuilderDraftPayload = {
+    ts: Date.now(),
+    step: 'setup',
+    draft: liveBuilderModule.defaultDraft('ls_seed_20418'),
+    externalAssets: {},
+    activeFeaturedItemId: null,
+    activeFeaturedItemKey: null,
+    giveawayUi: {
+      giveawayPanelOpen: false,
+      giveawayAddMode: 'featured',
+      giveawayLinkedItemId: '',
+      giveawayQuantity: '1',
+      customGiveaway: {
+        presetId: '',
+        quantity: '1'
+      }
+    }
+  };
   const audienceNotificationsConfig = creatorCompatSeedsModule.buildAudienceNotificationConfig();
   const audienceNotificationsTemplatePacks =
     creatorCompatSeedsModule.audienceNotificationTemplatePacks;
@@ -534,6 +598,23 @@ async function main() {
     ['creator.proposalRoom.messages', proposalMessages],
     ['creator.proposalRoom.appliedSuggestions', []],
     ['creator.awaitingApproval.submissions', awaitingApproval],
+    ['creator.assetLibrary.creators', assetLibraryCreators],
+    ['creator.assetLibrary.suppliers', assetLibrarySuppliers],
+    ['creator.assetLibrary.campaigns', assetLibraryCampaigns],
+    ['creator.assetLibrary.deliverables', assetLibraryDeliverables],
+    ['creator.assetLibrary.assets', assetLibraryAssets],
+    ['creator.liveStudio.products', liveStudioProducts],
+    ['creator.liveStudio.cohosts', liveStudioCohosts],
+    ['creator.liveStudio.attachments', liveStudioAttachments],
+    ['creator.liveStudio.scenes', liveStudioScenes],
+    ['creator.liveStudio.runOfShow', liveStudioRunOfShow],
+    ['creator.liveStudio.scriptCues', liveStudioScriptCues],
+    ['creator.liveStudio.commerceGoal', liveStudioCommerceGoal],
+    ['creator.liveStudio.salesEvents', liveStudioSalesEvents],
+    ['creator.liveStudio.qaItems', liveStudioQaItems],
+    ['creator.liveStudio.viewers', liveStudioViewers],
+    ['creator.liveStudio.aiPrompts', liveStudioAiPrompts],
+    ['creator.liveStudio.chatMessages', liveStudioChatMessages],
     ['creator.audienceNotifications.config', audienceNotificationsConfig],
     ['creator.audienceNotifications.templatePacks', audienceNotificationsTemplatePacks],
     ['creator.audienceNotifications.channels', audienceNotificationsChannels],
@@ -559,7 +640,22 @@ async function main() {
     ['creator.streamPlatforms.profile', streamProfile],
     ['creator.streamPlatforms.destinations', streamDestinations],
     ['creator.awaitingAdminApprovalPremium.onboarding', awaitingAdminApprovalOnboarding],
-    ['creator.awaitingAdminApprovalPremium.review', awaitingAdminApprovalReview]
+    ['creator.awaitingAdminApprovalPremium.review', awaitingAdminApprovalReview],
+    ['creator.reviews.records', reviewRecords],
+    ['creator.onboardingWizard.form', onboardingWizardForm],
+    ['creator.onboardingWizard.stepIndex', 0],
+    ['creator.roles.records', roleRecords],
+    ['creator.roles.members', roleMembers],
+    ['creator.roles.invites', roleInvites],
+    ['creator.roles.audit', roleAudit],
+    ['creator.roles.activeRole', 'owner'],
+    ['creator.liveBuilder.suppliers', liveBuilderSuppliers],
+    ['creator.liveBuilder.campaigns', liveBuilderCampaigns],
+    ['creator.liveBuilder.hosts', liveBuilderHosts],
+    ['creator.liveBuilder.assets', liveBuilderAssets],
+    ['creator.liveBuilder.catalog', liveBuilderCatalog],
+    ['creator.subscription.plan', 'basic'],
+    ['creator.subscription.cycle', 'monthly']
   ];
 
   for (const [key, payload] of modules) {
@@ -587,6 +683,128 @@ async function main() {
   await upsertGlobalStorageEntry(
     'creatorfront',
     'local',
+    'mldz_creator_subscription_plan_v1',
+    'basic'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz_creator_subscription_cycle_v1',
+    'monthly'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'evzone_payout_method',
+    'bank'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'evzone_payout_details',
+    'Standard Chartered **** 6789'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz:roles:v1',
+    JSON.stringify(roleRecords)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'userRole',
+    'owner'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz:liveSessionReviews:v1',
+    JSON.stringify(reviewRecords)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'creatorOnb.name',
+    String(onboardingWizardForm.name || 'Ronald Isabirye')
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'creatorOnb.id',
+    String(onboardingWizardForm.handle || '@ronald.creates')
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'creatorOnb.niche',
+    Array.isArray(onboardingWizardForm.categories)
+      ? onboardingWizardForm.categories.join(', ')
+      : 'Beauty & Skincare, Tech & Gadgets'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'creatorOnb.status',
+    'Submitted'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'signup.role',
+    'creator'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz_creator_id',
+    'CR-20418'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz_creator_name',
+    'Amina Kato'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'creator.id',
+    'CR-20418'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'creator.name',
+    'Amina Kato'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'creator_live_draft',
+    JSON.stringify(liveBuilderDraftPayload)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz:liveBuilder:draft:v1',
+    JSON.stringify(liveBuilderDraftPayload)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'session',
+    'creator_live_draft',
+    JSON.stringify(liveBuilderDraftPayload)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'session',
+    'mldz:liveBuilder:draft:v1',
+    JSON.stringify(liveBuilderDraftPayload)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
     'mldz_creator_approval_status',
     String(awaitingAdminApprovalReview.status)
   );
@@ -599,13 +817,18 @@ async function main() {
       'promo=1',
       `proposalMessages=${proposalMessages.length}`,
       `awaitingApproval=${awaitingApproval.length}`,
+      `assetLibraryAssets=${Array.isArray(assetLibraryAssets) ? assetLibraryAssets.length : 0}`,
       `audienceTemplatePacks=${Array.isArray(audienceNotificationsTemplatePacks) ? audienceNotificationsTemplatePacks.length : 0}`,
       `linkHubItems=${Array.isArray(linkHubItems) ? linkHubItems.length : 0}`,
       `liveAlertsChannels=${Array.isArray(liveAlertsChannels) ? liveAlertsChannels.length : 0}`,
+      `liveStudioMessages=${Array.isArray(liveStudioChatMessages) ? liveStudioChatMessages.length : 0}`,
+      `reviews=${Array.isArray(reviewRecords) ? reviewRecords.length : 0}`,
       `postLiveClips=${Array.isArray(postLiveClips) ? postLiveClips.length : 0}`,
+      `roles=${Array.isArray(roleRecords) ? roleRecords.length : 0}`,
       `safetyMessages=${Array.isArray(safetyModerationMessages) ? safetyModerationMessages.length : 0}`,
       `streamDestinations=${Array.isArray(streamDestinations) ? streamDestinations.length : 0}`,
-      `onboardingStorageKeys=4`
+      `liveBuilderCatalog=${Array.isArray(liveBuilderCatalog) ? liveBuilderCatalog.length : 0}`,
+      `onboardingStorageKeys=22`
     ].join(' ')
   );
 }
