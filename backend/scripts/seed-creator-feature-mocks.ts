@@ -356,6 +356,184 @@ async function upsertGlobalStorageEntry(
   });
 }
 
+async function findCreatorSeedUserId() {
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: 'creator@mylivedealz.com' },
+        { role: 'CREATOR' },
+        { roleAssignments: { some: { role: 'CREATOR' } } }
+      ]
+    },
+    orderBy: { createdAt: 'asc' }
+  });
+
+  return user?.id ?? null;
+}
+
+async function upsertSeedLiveSessions(userId: string, sessions: Array<Record<string, unknown>>) {
+  for (let index = 0; index < sessions.length; index += 1) {
+    const session = sessions[index] || {};
+    const sessionId = `seed_creator_live_schedule_${sanitize(String(session.id ?? index + 1))}`;
+    const scheduledAt = new Date(Date.now() + (index + 1) * 24 * 60 * 60 * 1000);
+
+    await prisma.liveSession.upsert({
+      where: { id: sessionId },
+      update: {
+        userId,
+        status: String(session.status || 'scheduled').toLowerCase(),
+        title: typeof session.title === 'string' ? session.title : `Live Session ${index + 1}`,
+        scheduledAt,
+        data: asJson({
+          ...session,
+          scheduledFor: scheduledAt.toISOString()
+        })
+      },
+      create: {
+        id: sessionId,
+        userId,
+        status: String(session.status || 'scheduled').toLowerCase(),
+        title: typeof session.title === 'string' ? session.title : `Live Session ${index + 1}`,
+        scheduledAt,
+        data: asJson({
+          ...session,
+          scheduledFor: scheduledAt.toISOString()
+        })
+      }
+    });
+  }
+}
+
+async function upsertSeedAdBuilder(userId: string, builderState: Record<string, unknown>) {
+  await prisma.adzBuilder.upsert({
+    where: { id: 'seed_creator_ad_builder_v1' },
+    update: {
+      userId,
+      status: 'draft',
+      published: false,
+      data: asJson(builderState)
+    },
+    create: {
+      id: 'seed_creator_ad_builder_v1',
+      userId,
+      status: 'draft',
+      published: false,
+      data: asJson(builderState)
+    }
+  });
+}
+
+async function upsertSeedAuditEvents(userId: string, events: Array<Record<string, unknown>>) {
+  for (const [index, event] of events.entries()) {
+    const id = `seed_creator_audit_${sanitize(String(event.id ?? index + 1))}`;
+    const timestamp = typeof event.ts === 'string' ? new Date(event.ts) : new Date();
+    const actor = (event.actor && typeof event.actor === 'object') ? (event.actor as Record<string, unknown>) : {};
+    const entity = (event.entity && typeof event.entity === 'object') ? (event.entity as Record<string, unknown>) : {};
+
+    await prisma.auditEvent.upsert({
+      where: { id },
+      update: {
+        userId,
+        role: typeof actor.role === 'string' ? actor.role : 'CREATOR',
+        action: typeof event.action === 'string' ? event.action : `Audit event ${index + 1}`,
+        entityType: typeof entity.type === 'string' ? entity.type : 'Record',
+        entityId: typeof entity.id === 'string' ? entity.id : null,
+        route: '/api/audit-logs',
+        method: 'GET',
+        statusCode: String(event.outcome || '').toLowerCase() === 'failed' ? 500 : 200,
+        ip: typeof event.ip === 'string' ? event.ip : null,
+        metadata: asJson(event),
+        createdAt: timestamp
+      },
+      create: {
+        id,
+        userId,
+        role: typeof actor.role === 'string' ? actor.role : 'CREATOR',
+        action: typeof event.action === 'string' ? event.action : `Audit event ${index + 1}`,
+        entityType: typeof entity.type === 'string' ? entity.type : 'Record',
+        entityId: typeof entity.id === 'string' ? entity.id : null,
+        route: '/api/audit-logs',
+        method: 'GET',
+        statusCode: String(event.outcome || '').toLowerCase() === 'failed' ? 500 : 200,
+        ip: typeof event.ip === 'string' ? event.ip : null,
+        metadata: asJson(event),
+        createdAt: timestamp
+      }
+    });
+  }
+}
+
+function toTaskStatus(column: string) {
+  switch (column) {
+    case 'approved':
+      return 'APPROVED';
+    case 'submitted':
+      return 'IN_REVIEW';
+    case 'in-progress':
+      return 'IN_PROGRESS';
+    case 'needs-changes':
+      return 'BLOCKED';
+    default:
+      return 'TODO';
+  }
+}
+
+function toTaskPriority(priority: string) {
+  switch (String(priority).toLowerCase()) {
+    case 'critical':
+      return 'URGENT';
+    case 'high':
+      return 'HIGH';
+    case 'low':
+      return 'LOW';
+    default:
+      return 'MEDIUM';
+  }
+}
+
+async function upsertSeedTasks(userId: string, columns: Record<string, Array<Record<string, unknown>>>) {
+  for (const [column, tasks] of Object.entries(columns)) {
+    for (const task of tasks) {
+      const id = `seed_creator_task_${sanitize(String(task.id ?? `${column}_${Math.random()}`))}`;
+      const dueDays = Number(task.dueDaysFromNow ?? 0);
+      const dueAt = Number.isFinite(dueDays)
+        ? new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000)
+        : null;
+
+      await prisma.task.upsert({
+        where: { id },
+        update: {
+          createdByUserId: userId,
+          assigneeUserId: userId,
+          title: typeof task.title === 'string' ? task.title : 'Task',
+          description: typeof task.campaign === 'string' ? task.campaign : null,
+          status: toTaskStatus(column) as any,
+          priority: toTaskPriority(String(task.priority ?? 'medium')) as any,
+          dueAt,
+          metadata: asJson({
+            ...task,
+            column
+          })
+        },
+        create: {
+          id,
+          createdByUserId: userId,
+          assigneeUserId: userId,
+          title: typeof task.title === 'string' ? task.title : 'Task',
+          description: typeof task.campaign === 'string' ? task.campaign : null,
+          status: toTaskStatus(column) as any,
+          priority: toTaskPriority(String(task.priority ?? 'medium')) as any,
+          dueAt,
+          metadata: asJson({
+            ...task,
+            column
+          })
+        }
+      });
+    }
+  }
+}
+
 async function main() {
   const repoRoot = path.resolve(process.cwd(), '..');
   const creatorRoot = path.join(repoRoot, 'creator', 'src');
@@ -387,6 +565,15 @@ async function main() {
   );
   const liveBuilderModule = await import(
     path.join(creatorRoot, 'pages', 'creator', 'LiveBuilder2.tsx')
+  );
+  const settingsSafetyModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'CreatorSettingsSafetyPage.tsx')
+  );
+  const auditLogModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'CreatorAuditLogPage.tsx')
+  );
+  const taskBoardModule = await import(
+    path.join(creatorRoot, 'pages', 'creator', 'TaskBoardPage.tsx')
   );
   const creatorCompatSeedsModule = await import(
     path.join(creatorRoot, 'data', 'creatorCompatSeeds.ts')
@@ -427,6 +614,111 @@ async function main() {
   const liveBuilderHosts = liveBuilderModule.hostsSeed as unknown[];
   const liveBuilderAssets = liveBuilderModule.assetsSeed as unknown[];
   const liveBuilderCatalog = liveBuilderModule.catalogSeed as unknown[];
+  const settingsSafetyForm = settingsSafetyModule.seedCreatorSettingsSafetyForm() as Record<string, unknown>;
+  const auditLogEvents = auditLogModule.seedCreatorAuditEvents() as Array<Record<string, unknown>>;
+  const taskBoardColumns = taskBoardModule.seedTaskBoardColumns() as Record<string, Array<Record<string, unknown>>>;
+  const onboardingV25Source = await fs.readFile(
+    path.join(pagesRoot, 'creator_onboarding_v_2.tsx'),
+    'utf8'
+  );
+  const adBuilderSource = await fs.readFile(
+    path.join(pagesRoot, 'AdBuilder.tsx'),
+    'utf8'
+  );
+  const liveScheduleSource = await fs.readFile(
+    path.join(pagesRoot, 'LiveScheduleCalendarPage.tsx'),
+    'utf8'
+  );
+  const onboardingV25Form = evaluateTsProgram(
+    [extractFunctionBlock(onboardingV25Source, 'seedCreatorOnboardingV25Form')],
+    'seedCreatorOnboardingV25Form()',
+    {}
+  ) as Record<string, unknown>;
+  const onboardingV25EvzoneAccount = evaluateTsExpression(
+    extractInitializer(onboardingV25Source, 'CREATOR_ONBOARDING_V25_EVZONE_ACCOUNT'),
+    {}
+  ) as Record<string, unknown>;
+  const adBuilderCreator = evaluateTsExpression(
+    extractInitializer(adBuilderSource, 'AD_BUILDER_CREATOR'),
+    {}
+  ) as Record<string, unknown>;
+  const adBuilderSuppliers = evaluateTsExpression(
+    extractInitializer(adBuilderSource, 'AD_BUILDER_SUPPLIERS'),
+    {}
+  ) as unknown[];
+  const adBuilderCampaigns = evaluateTsExpression(
+    extractInitializer(adBuilderSource, 'AD_BUILDER_CAMPAIGNS'),
+    {}
+  ) as unknown[];
+  const adBuilderOffers = evaluateTsExpression(
+    extractInitializer(adBuilderSource, 'AD_BUILDER_OFFERS'),
+    {}
+  ) as unknown[];
+  const adBuilderAssets = evaluateTsExpression(
+    extractInitializer(adBuilderSource, 'AD_BUILDER_ASSETS'),
+    {}
+  ) as unknown[];
+  const adBuilderUtmPresets = evaluateTsExpression(
+    extractInitializer(adBuilderSource, 'AD_BUILDER_UTM_PRESETS'),
+    {}
+  ) as unknown[];
+  const adBuilderDefaultStart = new Date();
+  adBuilderDefaultStart.setDate(adBuilderDefaultStart.getDate() + 1);
+  adBuilderDefaultStart.setHours(18, 0, 0, 0);
+  const adBuilderDefaultEnd = new Date(adBuilderDefaultStart);
+  adBuilderDefaultEnd.setHours(adBuilderDefaultEnd.getHours() + 1);
+  const defaultAdBuilderSupplierId =
+    (adBuilderSuppliers[0] as { id?: string } | undefined)?.id || 'p1';
+  const defaultAdBuilderCampaignId =
+    ((adBuilderCampaigns as Array<{ supplierId?: string; id?: string }>).find(
+      (campaign) => campaign.supplierId === defaultAdBuilderSupplierId
+    )?.id) ||
+    (adBuilderCampaigns[0] as { id?: string } | undefined)?.id ||
+    'c1';
+  const defaultAdBuilderOfferId =
+    ((adBuilderOffers as Array<{ campaignId?: string; id?: string }>).find(
+      (offer) => offer.campaignId === defaultAdBuilderCampaignId
+    )?.id) ||
+    (adBuilderOffers[0] as { id?: string } | undefined)?.id ||
+    'o1';
+  const adBuilderState = {
+    supplierId: defaultAdBuilderSupplierId,
+    campaignId: defaultAdBuilderCampaignId,
+    selectedOfferIds: [defaultAdBuilderOfferId].filter(Boolean),
+    primaryOfferId: defaultAdBuilderOfferId,
+    platforms: ['Instagram'],
+    platformOtherList: [],
+    platformOtherDraft: '',
+    heroImageAssetId: (adBuilderAssets as Array<{ roleHint?: string; status?: string; id?: string }>).find(
+      (asset) => asset.roleHint === 'hero_image' && asset.status === 'approved'
+    )?.id,
+    heroIntroVideoAssetId: (adBuilderAssets as Array<{ roleHint?: string; status?: string; id?: string }>).find(
+      (asset) => asset.roleHint === 'hero_video' && asset.status === 'approved'
+    )?.id,
+    itemPosterByOfferId: {},
+    itemVideoByOfferId: {},
+    ctaText: 'Shop the featured dealz before they end.',
+    primaryCtaLabel: 'Buy now',
+    secondaryCtaLabel: 'Add to cart',
+    landingBehavior: 'Checkout',
+    landingUrl: '',
+    shortDomain: 'mldz.link',
+    shortSlug: 'adz-seed-default',
+    utmPresetId: (adBuilderUtmPresets[0] as { id?: string } | undefined)?.id || 'utm1',
+    utmCustom: {},
+    startDate: `${adBuilderDefaultStart.getFullYear()}-${String(adBuilderDefaultStart.getMonth() + 1).padStart(2, '0')}-${String(adBuilderDefaultStart.getDate()).padStart(2, '0')}`,
+    startTime: `${String(adBuilderDefaultStart.getHours()).padStart(2, '0')}:${String(adBuilderDefaultStart.getMinutes()).padStart(2, '0')}`,
+    endDate: `${adBuilderDefaultEnd.getFullYear()}-${String(adBuilderDefaultEnd.getMonth() + 1).padStart(2, '0')}-${String(adBuilderDefaultEnd.getDate()).padStart(2, '0')}`,
+    endTime: `${String(adBuilderDefaultEnd.getHours()).padStart(2, '0')}:${String(adBuilderDefaultEnd.getMinutes()).padStart(2, '0')}`,
+  } as Record<string, unknown>;
+  const liveScheduleSessions = evaluateTsExpression(
+    extractInitializer(liveScheduleSource, 'LIVE_SCHEDULE_SESSIONS'),
+    {}
+  ) as Array<Record<string, unknown>>;
+  const liveScheduleAiSlots = evaluateTsExpression(
+    extractInitializer(liveScheduleSource, 'LIVE_SCHEDULE_AI_SLOTS'),
+    {}
+  ) as unknown[];
   const liveBuilderDraftPayload = {
     ts: Date.now(),
     step: 'setup',
@@ -547,17 +839,17 @@ async function main() {
     { DEFAULT_TITLE: 'GlowUp Hub: Autumn Beauty Flash Live' }
   );
   const onboardingDefaultForm = evaluateTsProgram(
-    [extractFunctionBlock(onboardingV2Source, 'defaultForm')],
-    'defaultForm()',
+    [extractFunctionBlock(onboardingV2Source, 'seedCreatorOnboardingV25Form')],
+    'seedCreatorOnboardingV25Form()',
     {}
   );
   const settingsDefaultForm = evaluateTsProgram(
     [
       extractFunctionBlock(settingsSafetySource, 'nowLabel'),
       extractFunctionBlock(settingsSafetySource, 'defaultSettings'),
-      extractFunctionBlock(settingsSafetySource, 'defaultForm')
+      extractFunctionBlock(settingsSafetySource, 'seedCreatorSettingsSafetyForm')
     ],
-    'defaultForm()',
+    'seedCreatorSettingsSafetyForm()',
     {}
   );
 
@@ -642,18 +934,37 @@ async function main() {
     ['creator.awaitingAdminApprovalPremium.onboarding', awaitingAdminApprovalOnboarding],
     ['creator.awaitingAdminApprovalPremium.review', awaitingAdminApprovalReview],
     ['creator.reviews.records', reviewRecords],
+    ['creator.auditLog.viewerPerms', { 'audit.view': true, 'audit.export': true, 'audit.view_sensitive': true }],
+    ['creator.auditLog.events', auditLogEvents],
     ['creator.onboardingWizard.form', onboardingWizardForm],
     ['creator.onboardingWizard.stepIndex', 0],
+    ['creator.onboardingV25.form', onboardingV25Form],
+    ['creator.onboardingV25.stepIndex', 0],
+    ['creator.onboardingV25.maxUnlocked', 0],
+    ['creator.onboardingV25.evzoneAccount', onboardingV25EvzoneAccount],
     ['creator.roles.records', roleRecords],
     ['creator.roles.members', roleMembers],
     ['creator.roles.invites', roleInvites],
     ['creator.roles.audit', roleAudit],
     ['creator.roles.activeRole', 'owner'],
+    ['creator.settingsSafety.form', settingsSafetyForm],
+    ['creator.taskBoard.columns', taskBoardColumns],
     ['creator.liveBuilder.suppliers', liveBuilderSuppliers],
     ['creator.liveBuilder.campaigns', liveBuilderCampaigns],
     ['creator.liveBuilder.hosts', liveBuilderHosts],
     ['creator.liveBuilder.assets', liveBuilderAssets],
     ['creator.liveBuilder.catalog', liveBuilderCatalog],
+    ['creator.liveSchedule.sessions', liveScheduleSessions],
+    ['creator.liveSchedule.aiSlots', liveScheduleAiSlots],
+    ['creator.adBuilder.creator', adBuilderCreator],
+    ['creator.adBuilder.suppliers', adBuilderSuppliers],
+    ['creator.adBuilder.campaigns', adBuilderCampaigns],
+    ['creator.adBuilder.offers', adBuilderOffers],
+    ['creator.adBuilder.assets', adBuilderAssets],
+    ['creator.adBuilder.utmPresets', adBuilderUtmPresets],
+    ['creator.adBuilder.builder', adBuilderState],
+    ['creator.adBuilder.externalAssets', {}],
+    ['creator.adBuilder.cart', {}],
     ['creator.subscription.plan', 'basic'],
     ['creator.subscription.cycle', 'monthly']
   ];
@@ -725,6 +1036,12 @@ async function main() {
   await upsertGlobalStorageEntry(
     'creatorfront',
     'local',
+    'creatorPlatformEntered',
+    'false'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
     'creatorOnb.name',
     String(onboardingWizardForm.name || 'Ronald Isabirye')
   );
@@ -753,6 +1070,12 @@ async function main() {
     'local',
     'signup.role',
     'creator'
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'pendingSubmissions',
+    '[]'
   );
   await upsertGlobalStorageEntry(
     'creatorfront',
@@ -805,9 +1128,41 @@ async function main() {
   await upsertGlobalStorageEntry(
     'creatorfront',
     'local',
+    'mldz:adBuilder:builderDraft:v1',
+    JSON.stringify({
+      ts: Date.now(),
+      step: 'offer',
+      builder: adBuilderState,
+      externalAssets: {}
+    })
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'session',
+    'mldz:adBuilder:builderDraft:v1',
+    JSON.stringify({
+      ts: Date.now(),
+      step: 'offer',
+      builder: adBuilderState,
+      externalAssets: {}
+    })
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
     'mldz_creator_approval_status',
     String(awaitingAdminApprovalReview.status)
   );
+
+  const creatorSeedUserId = await findCreatorSeedUserId();
+  if (creatorSeedUserId) {
+    await upsertSeedLiveSessions(creatorSeedUserId, liveScheduleSessions);
+    await upsertSeedAdBuilder(creatorSeedUserId, adBuilderState);
+    await upsertSeedAuditEvents(creatorSeedUserId, auditLogEvents);
+    await upsertSeedTasks(creatorSeedUserId, taskBoardColumns);
+  } else {
+    console.warn('Skipping normalized creator live/ad seed because no creator user was found.');
+  }
 
   console.log(
     [
@@ -823,12 +1178,17 @@ async function main() {
       `liveAlertsChannels=${Array.isArray(liveAlertsChannels) ? liveAlertsChannels.length : 0}`,
       `liveStudioMessages=${Array.isArray(liveStudioChatMessages) ? liveStudioChatMessages.length : 0}`,
       `reviews=${Array.isArray(reviewRecords) ? reviewRecords.length : 0}`,
+      `auditEvents=${Array.isArray(auditLogEvents) ? auditLogEvents.length : 0}`,
+      `taskColumns=${Object.keys(taskBoardColumns).length}`,
       `postLiveClips=${Array.isArray(postLiveClips) ? postLiveClips.length : 0}`,
       `roles=${Array.isArray(roleRecords) ? roleRecords.length : 0}`,
       `safetyMessages=${Array.isArray(safetyModerationMessages) ? safetyModerationMessages.length : 0}`,
       `streamDestinations=${Array.isArray(streamDestinations) ? streamDestinations.length : 0}`,
       `liveBuilderCatalog=${Array.isArray(liveBuilderCatalog) ? liveBuilderCatalog.length : 0}`,
-      `onboardingStorageKeys=22`
+      `liveScheduleSessions=${Array.isArray(liveScheduleSessions) ? liveScheduleSessions.length : 0}`,
+      `adBuilderOffers=${Array.isArray(adBuilderOffers) ? adBuilderOffers.length : 0}`,
+      `onboardingV25Seeded=1`,
+      `onboardingStorageKeys=24`
     ].join(' ')
   );
 }
