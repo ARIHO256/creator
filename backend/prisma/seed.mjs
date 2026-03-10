@@ -1284,6 +1284,111 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
     ]
   });
 
+  await prisma.sellerFollow.createMany({
+    data: [
+      {
+        userId: users.creator.id,
+        sellerId: sellerProfiles.seller.id
+      },
+      {
+        userId: users.creator.id,
+        sellerId: sellerProfiles.provider.id
+      }
+    ]
+  });
+
+  await prisma.userSubscription.create({
+    data: {
+      userId: users.creator.id,
+      plan: 'pro',
+      cycle: 'monthly',
+      status: 'active',
+      metadata: {
+        renewsAt: daysFromNow(21).toISOString(),
+        billingEmail: 'admin@creator.app',
+        billingMethod: {
+          type: 'card',
+          label: 'Visa ending in 4242',
+          brand: 'Visa',
+          last4: '4242',
+          holderName: 'Creator Admin',
+          expMonth: 12,
+          expYear: 2029
+        },
+        support: {
+          contactEmail: 'support@mylivedealz.com',
+          salesEmail: 'sales@mylivedealz.com',
+          helpCenterUrl: 'https://mylivedealz.com/help',
+          managerName: 'Growth Ops'
+        },
+        notes: ['Unlimited Dealz enabled', 'Priority creator support'],
+        limits: {
+          livesPerMonth: 'unlimited',
+          collaborators: 5
+        }
+      }
+    }
+  });
+
+  await prisma.auditEvent.createMany({
+    data: [
+      {
+        userId: users.creator.id,
+        role: 'CREATOR',
+        action: 'audit.export_requested',
+        entityType: 'audit_log',
+        entityId: 'creator_audit_export',
+        route: '/api/audit-logs',
+        method: 'GET',
+        statusCode: 200,
+        ip: '127.0.0.1',
+        userAgent: 'seed-script',
+        metadata: {
+          outcome: 'success',
+          severity: 'info',
+          module: 'Roles & Permissions',
+          detail: 'Exported last 7 days of audit logs'
+        }
+      },
+      {
+        userId: users.creator.id,
+        role: 'CREATOR',
+        action: 'live.session_updated',
+        entityType: 'live_session',
+        entityId: 'live_session_launch',
+        route: '/api/live/sessions/live_session_launch',
+        method: 'PATCH',
+        statusCode: 200,
+        ip: '127.0.0.1',
+        userAgent: 'seed-script',
+        metadata: {
+          outcome: 'success',
+          severity: 'warning',
+          module: 'Live Crew',
+          detail: 'Adjusted live schedule timing'
+        }
+      },
+      {
+        userId: users.creator.id,
+        role: 'CREATOR',
+        action: 'settings.safety_controls_updated',
+        entityType: 'workspace_setting',
+        entityId: 'roles_security',
+        route: '/api/settings/security',
+        method: 'PATCH',
+        statusCode: 200,
+        ip: '127.0.0.1',
+        userAgent: 'seed-script',
+        metadata: {
+          outcome: 'success',
+          severity: 'info',
+          module: 'Settings & Safety',
+          detail: 'Updated moderation guardrails'
+        }
+      }
+    ]
+  });
+
   await prisma.notification.createMany({
     data: [
       {
@@ -1917,6 +2022,33 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
           category: 'Production Services',
           listingId: 'svc_streamops_1'
         }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'screen_state',
+        recordKey: 'live-schedule-ai-slots',
+        payload: {
+          slots: [
+            {
+              id: 1,
+              label: 'Wed 20:00-21:00',
+              reason: 'Peak East Africa view time · 1.3x retention',
+              recommendedFor: 'Tech & Beauty'
+            },
+            {
+              id: 2,
+              label: 'Fri 19:30-20:30',
+              reason: 'High intent just before weekend shopping',
+              recommendedFor: 'Gadgets & Flash dealz'
+            },
+            {
+              id: 3,
+              label: 'Sun 09:00-10:00',
+              reason: 'Faith & Wellness audience spike',
+              recommendedFor: 'Faith-compatible shows'
+            }
+          ]
+        }
       }
     ]
   });
@@ -2191,6 +2323,95 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
     }
   });
 
+  await prisma.liveSession.createMany({
+    data: [
+      {
+        id: 'live_session_tech_friday',
+        userId: users.creator.id,
+        status: 'draft',
+        title: 'Tech Friday Mega Live',
+        scheduledAt: daysFromNow(2),
+        data: {
+          id: 'live_session_tech_friday',
+          title: 'Tech Friday Mega Live',
+          campaign: 'Tech Friday Mega Live',
+          seller: 'GadgetMart Africa',
+          scheduledFor: daysFromNow(2).toISOString(),
+          scheduledAt: daysFromNow(2).toISOString(),
+          weekday: 'Fri',
+          dateLabel: 'Fri 11 Oct',
+          time: '20:00-21:30',
+          location: 'MyLiveDealz',
+          simulcast: ['Facebook'],
+          status: 'draft',
+          role: 'Host',
+          durationMin: 90,
+          scriptsReady: false,
+          assetsReady: false,
+          productsCount: 12,
+          workloadScore: 4,
+          conflict: true
+        }
+      },
+      {
+        id: 'live_session_wellness',
+        userId: users.creator.id,
+        status: 'scheduled',
+        title: 'Faith & Wellness Morning Dealz',
+        scheduledAt: daysFromNow(3),
+        data: {
+          id: 'live_session_wellness',
+          title: 'Faith & Wellness Morning Dealz',
+          campaign: 'Faith & Wellness Morning Dealz',
+          seller: 'Grace Living Store',
+          scheduledFor: daysFromNow(3).toISOString(),
+          scheduledAt: daysFromNow(3).toISOString(),
+          weekday: 'Sat',
+          dateLabel: 'Sat 12 Oct',
+          time: '09:00-10:00',
+          location: 'MyLiveDealz',
+          simulcast: [],
+          status: 'scheduled',
+          role: 'Host',
+          durationMin: 60,
+          scriptsReady: true,
+          assetsReady: true,
+          productsCount: 6,
+          workloadScore: 2,
+          conflict: false
+        }
+      },
+      {
+        id: 'live_session_replay_slot',
+        userId: users.creator.id,
+        status: 'scheduled',
+        title: 'Tech Friday Clips Replay',
+        scheduledAt: daysFromNow(4),
+        data: {
+          id: 'live_session_replay_slot',
+          title: 'Tech Friday - Clips replay',
+          campaign: 'Tech Friday Mega Live',
+          seller: 'GadgetMart Africa',
+          scheduledFor: daysFromNow(4).toISOString(),
+          scheduledAt: daysFromNow(4).toISOString(),
+          weekday: 'Sun',
+          dateLabel: 'Sun 13 Oct',
+          time: '21:00-21:30',
+          location: 'Replays only',
+          simulcast: ['MyLiveDealz'],
+          status: 'scheduled',
+          role: 'Replay host',
+          durationMin: 30,
+          scriptsReady: false,
+          assetsReady: true,
+          productsCount: 4,
+          workloadScore: 1,
+          conflict: false
+        }
+      }
+    ]
+  });
+
   await prisma.liveStudio.create({
     data: {
       id: 'live_session_launch',
@@ -2292,16 +2513,204 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
     }
   });
 
+  await prisma.liveReplay.createMany({
+    data: [
+      {
+        id: 'live_replay_tech_friday',
+        userId: users.creator.id,
+        sessionId: 'live_session_tech_friday',
+        status: 'draft',
+        published: false,
+        data: {
+          id: 'live_replay_tech_friday',
+          sessionId: 'live_session_tech_friday',
+          title: 'Tech Friday Mega Live - Gadgets Q&A',
+          date: daysAgo(2).toISOString(),
+          views: 2310,
+          sales: 87,
+          durationSec: 5283,
+          notes: ['Q&A heavy', 'Late peak', 'Bundle upsells']
+        }
+      },
+      {
+        id: 'live_replay_wellness',
+        userId: users.creator.id,
+        sessionId: 'live_session_wellness',
+        status: 'published',
+        published: true,
+        publishedAt: daysAgo(1),
+        data: {
+          id: 'live_replay_wellness',
+          sessionId: 'live_session_wellness',
+          title: 'Faith & Wellness Morning Dealz',
+          date: daysAgo(1).toISOString(),
+          views: 987,
+          sales: 29,
+          durationSec: 3250,
+          notes: ['Soft opener', 'High replay', 'Community chat']
+        }
+      }
+    ]
+  });
+
   await prisma.liveToolConfig.createMany({
     data: [
       {
         userId: users.creator.id,
         key: 'audience-notifications',
         data: {
-          enabled: true,
-          channels: ['push', 'email'],
-          reminders: [{ id: 'rem_1', label: '45 min before', minutes: 45 }],
-          templates: [{ id: 'tpl_aud_1', name: 'Live starts soon' }]
+          plan: 'Pro',
+          sessionStatus: 'Scheduled',
+          sessionTitle: 'Autumn Beauty Flash',
+          startLocal: daysFromNow(1).toISOString().slice(0, 16),
+          endLocal: new Date(daysFromNow(1).getTime() + 60 * 60 * 1000).toISOString().slice(0, 16),
+          bufferMinutes: 15,
+          waNumber: '+256 700 000 000',
+          sessionUrl: 'https://mylivedealz.com/live/live_session_launch',
+          selectedPackId: 'pack_default_v3',
+          enabledChannels: {
+            whatsapp: true,
+            telegram: true,
+            line: false,
+            viber: false,
+            rcs: false
+          },
+          enabledReminders: {
+            t24h: true,
+            t1h: true,
+            t10m: true,
+            live_now: true,
+            deal_drop: false,
+            replay_ready: true
+          },
+          replayDelayMinutes: 20,
+          dealDropMode: 'manual',
+          dealDropAtOffsetMin: 12,
+          channels: [
+            {
+              key: 'whatsapp',
+              name: 'WhatsApp',
+              short: 'WA',
+              connected: 'Connected',
+              supportsQr: true,
+              supportsButtons: true,
+              note: '24h window rules apply. Uses initiation prompt + in-window reminders only.'
+            },
+            {
+              key: 'telegram',
+              name: 'Telegram',
+              short: 'TG',
+              connected: 'Connected',
+              supportsQr: true,
+              supportsButtons: true,
+              note: 'Recommended for high engagement and low delivery friction.'
+            },
+            {
+              key: 'line',
+              name: 'LINE',
+              short: 'LINE',
+              connected: 'Needs re-auth',
+              supportsQr: true,
+              supportsButtons: true,
+              proOnly: true,
+              note: 'Pro: unlock advanced templates and per-channel formatting.'
+            },
+            {
+              key: 'viber',
+              name: 'Viber',
+              short: 'Viber',
+              connected: 'Connected',
+              supportsQr: true,
+              supportsButtons: true,
+              proOnly: true,
+              note: 'Pro: unlock deep links and rich buttons (where supported).'
+            },
+            {
+              key: 'rcs',
+              name: 'RCS',
+              short: 'RCS',
+              connected: 'Connected',
+              supportsQr: false,
+              supportsButtons: false,
+              proOnly: true,
+              note: 'Pro: RCS/SMS fallback. Buttons vary by device; keep copy short.'
+            }
+          ],
+          reminders: [
+            {
+              key: 't24h',
+              label: 'T-24h (WA-adjusted)',
+              description: 'Initiation prompt goes live (time computed from WhatsApp 24h window).',
+              defaultEnabled: true
+            },
+            {
+              key: 't1h',
+              label: 'T-1h',
+              description: 'Reminder message to opted-in users.',
+              defaultEnabled: true
+            },
+            {
+              key: 't10m',
+              label: 'T-10m',
+              description: 'Reminder message to opted-in users.',
+              defaultEnabled: true
+            },
+            {
+              key: 'live_now',
+              label: 'Live Now',
+              description: 'Sends when the session starts.',
+              defaultEnabled: true
+            },
+            {
+              key: 'deal_drop',
+              label: 'Deal Drop',
+              description: 'Manual or scheduled alert when dealz go live.',
+              defaultEnabled: false
+            },
+            {
+              key: 'replay_ready',
+              label: 'Replay Ready',
+              description: 'Sends after replay is published.',
+              defaultEnabled: true
+            }
+          ],
+          templatePacks: [
+            {
+              id: 'pack_default_v3',
+              name: 'Default Reminders',
+              version: 'v3.2',
+              approved: true,
+              channels: ['whatsapp', 'telegram', 'rcs'],
+              notes: 'Short, compliance-safe copy. Works well across Africa & SEA.',
+              templates: {
+                initiationPrompt: 'Tap to get Live Session reminders for {{title}}.\nWe’ll only message you after you start the chat.',
+                t24h: '⏰ Reminder: {{title}} starts soon.\nTap here to join + shop: {{link}}',
+                t1h: '⏳ 1 hour to go: {{title}}\nJoin + shop: {{link}}',
+                t10m: '🔥 10 minutes! {{title}}\nTap to join: {{link}}',
+                live_now: '🔴 We are LIVE: {{title}}\nTap to join: {{link}}',
+                deal_drop: '⚡ Deal drop! New offers are live now.\nTap: {{link}}',
+                replay_ready: '🎬 Replay ready: {{title}}\nWatch + shop: {{link}}'
+              }
+            },
+            {
+              id: 'pack_flash_v5',
+              name: 'Flash Sales Pack',
+              version: 'v5.0',
+              approved: true,
+              channels: ['whatsapp', 'telegram', 'line', 'viber', 'rcs'],
+              notes: 'Higher urgency language + deal-drop emphasis.',
+              proOnly: true,
+              templates: {
+                initiationPrompt: 'Tap to unlock Flash Deal alerts for {{title}}.\nStart chat to opt in.',
+                t24h: '⚡ Flash Deal soon: {{title}}.\nTap to opt in + join: {{link}}',
+                t1h: '🚀 1 hour: {{title}} starts.\nTap: {{link}}',
+                t10m: '🔥 10 min! Dealz dropping soon.\nJoin: {{link}}',
+                live_now: '🔴 LIVE NOW: {{title}}.\nTap to enter: {{link}}',
+                deal_drop: '💥 Deal Drop: limited stock.\nTap to shop: {{link}}',
+                replay_ready: '🎬 Replay + last chance dealz: {{title}}.\nTap: {{link}}'
+              }
+            }
+          ]
         }
       },
       {
@@ -2329,9 +2738,12 @@ async function clearDatabase() {
   await prisma.adzBuilder.deleteMany();
   await prisma.promoAd.deleteMany();
   await prisma.notification.deleteMany();
+  await prisma.auditEvent.deleteMany();
   await prisma.workflowRecord.deleteMany();
   await prisma.workspaceSetting.deleteMany();
   await prisma.userSetting.deleteMany();
+  await prisma.userSubscription.deleteMany();
+  await prisma.sellerFollow.deleteMany();
   await prisma.shippingRate.deleteMany();
   await prisma.shippingProfile.deleteMany();
   await prisma.catalogTemplate.deleteMany();
