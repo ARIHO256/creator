@@ -1,6 +1,6 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Redis } from 'ioredis';
+import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { Redis } from "ioredis";
 
 @Injectable()
 export class RealtimePublisher implements OnModuleDestroy {
@@ -10,18 +10,22 @@ export class RealtimePublisher implements OnModuleDestroy {
   private readonly prefix: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.enabled = !['0', 'false', 'no', 'off'].includes(
-      String(this.configService.get('realtime.enabled') ?? 'true').toLowerCase()
+    // guard against missing service (shouldn't happen if ConfigModule is imported)
+    const cfg =
+      this.configService ?? ({ get: () => undefined } as ConfigService);
+
+    this.enabled = !["0", "false", "no", "off"].includes(
+      String(cfg.get("realtime.enabled") ?? "true").toLowerCase(),
     );
-    this.prefix = String(this.configService.get('realtime.channelPrefix') ?? 'mldz:realtime:');
+    this.prefix = String(cfg.get("realtime.channelPrefix") ?? "mldz:realtime:");
     const redisUrl =
-      this.configService.get<string>('realtime.redisUrl') ??
-      this.configService.get<string>('cache.redisUrl') ??
-      '';
+      (cfg.get<string>("realtime.redisUrl") as string) ??
+      (cfg.get<string>("cache.redisUrl") as string) ??
+      "";
 
     if (this.enabled && redisUrl) {
       this.client = new Redis(redisUrl, { maxRetriesPerRequest: 2 });
-      this.client.on('error', (error) => {
+      this.client.on("error", (error) => {
         this.logger.warn(`Realtime Redis error: ${error.message}`);
       });
     }

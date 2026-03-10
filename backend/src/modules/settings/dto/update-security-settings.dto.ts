@@ -31,8 +31,32 @@ export class UpdateSecuritySettingsDto {
   twoFactor?: boolean;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  twoFactorMethod?: string;
+
+  @IsOptional()
+  @IsObject()
+  twoFactorConfig?: Record<string, unknown>;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SecuritySessionDto)
   sessions?: SecuritySessionDto[];
+
+  @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  passkeys?: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  trustedDevices?: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsArray()
+  @IsObject({ each: true })
+  alerts?: Record<string, unknown>[];
 }

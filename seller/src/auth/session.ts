@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import type { Session } from "../types/session";
 import type { UserRole } from "../types/roles";
 
-const SESSION_KEY = "session";
 const SESSION_EVENT = "session-changed";
 
 type SessionListener = () => void;
 
 const VALID_ROLES: UserRole[] = ["seller", "provider"];
+
+let inMemorySession: Session | null = null;
 
 export const isValidSession = (session: Session | null | undefined): session is Session => {
   if (!session || typeof session !== "object") return false;
@@ -30,37 +31,25 @@ export const isValidSession = (session: Session | null | undefined): session is 
 };
 
 export const readSession = (): Session | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Session;
-    if (!isValidSession(parsed)) {
-      window.localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
+  if (!isValidSession(inMemorySession)) {
+    inMemorySession = null;
   }
+  return inMemorySession;
 };
 
 export const writeSession = (session: Session | null) => {
-  if (typeof window === "undefined") return;
-  try {
-    if (!session) {
-      window.localStorage.removeItem(SESSION_KEY);
-    } else {
-      window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  inMemorySession = session && isValidSession(session) ? session : null;
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(new Event(SESSION_EVENT));
+    } catch {
+      // ignore dispatch errors
     }
-    window.dispatchEvent(new Event(SESSION_EVENT));
-  } catch {
-    // ignore storage errors
   }
 };
 
 export const updateSession = (partial: Partial<Session>) => {
-  const current = readSession() || {};
+  const current = readSession() || ({} as Session);
   writeSession({ ...current, ...partial });
 };
 
@@ -70,10 +59,8 @@ export const useSession = () => {
   useEffect(() => {
     const sync: SessionListener = () => setSession(readSession());
     if (typeof window === "undefined") return;
-    window.addEventListener("storage", sync);
     window.addEventListener(SESSION_EVENT, sync);
     return () => {
-      window.removeEventListener("storage", sync);
       window.removeEventListener(SESSION_EVENT, sync);
     };
   }, []);

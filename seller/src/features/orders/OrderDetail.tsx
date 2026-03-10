@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -76,6 +76,26 @@ type Order = {
   label: string;
   mins: number;
 };
+type ReturnCase = {
+  id: string;
+  orderId: string;
+  status: string;
+  reason: string;
+  pathway: string;
+  amount: number;
+  currency: string;
+  createdAt: string;
+};
+type DisputeCase = {
+  id: string;
+  orderId: string;
+  type: string;
+  status: string;
+  risk: number;
+  createdAt: string;
+  updatedAt: string;
+};
+type BackendRecord = Record<string, unknown>;
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -168,38 +188,64 @@ function riskMeta(slaDueAt: string): RiskMeta {
   return { risk: "ok", label: "On track", mins };
 }
 
-function seedOrders(): Order[] {
-  const now = Date.now();
-  const hoursAgo = (h) => new Date(now - h * 3600_000).toISOString();
-  const dueIn = (m) => new Date(Date.now() + m * 60_000).toISOString();
-
-  return [
-    { id: "ORD-10512", customer: "Amina K.", channel: "EVzone", items: 5, total: 2480, currency: "USD", status: "New", warehouse: "Main Warehouse", updatedAt: hoursAgo(0.3), slaDueAt: dueIn(70) },
-    { id: "ORD-10511", customer: "Kato S.", channel: "WhatsApp", items: 1, total: 320, currency: "USD", status: "Confirmed", warehouse: "Kampala Hub", updatedAt: hoursAgo(1.6), slaDueAt: dueIn(330) },
-    { id: "ORD-10510", customer: "Moses N.", channel: "API", items: 9, total: 12650, currency: "CNY", status: "Packed", warehouse: "Main Warehouse", updatedAt: hoursAgo(3.2), slaDueAt: dueIn(980) },
-    { id: "ORD-10509", customer: "Sarah T.", channel: "EVzone", items: 2, total: 560, currency: "USD", status: "Shipped", warehouse: "Nairobi Hub", updatedAt: hoursAgo(12), slaDueAt: dueIn(1440) },
-    { id: "ORD-10508", customer: "Ibrahim H.", channel: "WhatsApp", items: 3, total: 980, currency: "USD", status: "On Hold", warehouse: "Kampala Hub", updatedAt: hoursAgo(4.5), slaDueAt: dueIn(30) },
-    { id: "ORD-10507", customer: "Joy A.", channel: "EVzone", items: 1, total: 210, currency: "USD", status: "Cancelled", warehouse: "Main Warehouse", updatedAt: hoursAgo(30), slaDueAt: dueIn(9999) },
-    { id: "ORD-10506", customer: "Chen L.", channel: "API", items: 12, total: 8620, currency: "CNY", status: "Delivered", warehouse: "Main Warehouse", updatedAt: hoursAgo(90), slaDueAt: dueIn(9999) },
-  ].map((o) => ({ ...o, ...riskMeta(o.slaDueAt) }));
+function formatOrderStatus(value: unknown) {
+  const status = String(value || "")
+    .toLowerCase()
+    .replace(/_/g, " ");
+  if (!status) return "Draft";
+  return status.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function seedReturns() {
-  const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
-  return [
-    { id: "RMA-2201", orderId: "ORD-10511", status: "Requested", reason: "Damaged item", pathway: "Refund to Wallet", amount: 320, currency: "USD", createdAt: ago(220) },
-    { id: "RMA-2200", orderId: "ORD-10510", status: "Approved", reason: "Wrong variant", pathway: "Exchange", amount: 248, currency: "CNY", createdAt: ago(780) },
-    { id: "RMA-2199", orderId: "ORD-10509", status: "In Transit", reason: "Not as described", pathway: "Refund to Bank", amount: 560, currency: "USD", createdAt: ago(1440) },
-  ];
+function asRecord(value: unknown): BackendRecord {
+  return value && typeof value === "object" ? (value as BackendRecord) : {};
 }
 
-function seedDisputes() {
-  const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
-  return [
-    { id: "DSP-901", orderId: "ORD-10512", type: "Item not received", status: "Open", risk: 82, createdAt: ago(180), updatedAt: ago(25) },
-    { id: "DSP-900", orderId: "ORD-10508", type: "Payment dispute", status: "Under review", risk: 64, createdAt: ago(620), updatedAt: ago(120) },
-    { id: "DSP-899", orderId: "ORD-10509", type: "Quality dispute", status: "Resolved", risk: 18, createdAt: ago(2200), updatedAt: ago(900) },
-  ];
+function mapBackendOrder(entry: BackendRecord): Order {
+  const metadata = asRecord(entry.metadata);
+  const slaDueAt =
+    typeof metadata.slaDueAt === "string" && metadata.slaDueAt
+      ? metadata.slaDueAt
+      : new Date(Date.now() + 6 * 3600_000).toISOString();
+  return {
+    id: String(entry.id || ""),
+    customer: String(metadata.customer || "Customer"),
+    channel: String(entry.channel || "EVzone"),
+    items: Number(entry.itemCount || 0),
+    total: Number(entry.total || 0),
+    currency: String(entry.currency || "USD"),
+    status: formatOrderStatus(entry.status),
+    warehouse: String(entry.warehouse || "Main Warehouse"),
+    updatedAt: String(entry.updatedAt || new Date().toISOString()),
+    slaDueAt,
+    ...riskMeta(slaDueAt),
+  };
+}
+
+function mapBackendReturn(entry: BackendRecord): ReturnCase {
+  const metadata = asRecord(entry.metadata);
+  return {
+    id: String(entry.id || ""),
+    orderId: String(entry.orderId || ""),
+    status: String(metadata.displayStatus || formatOrderStatus(entry.status)),
+    reason: String(entry.reason || "Support case"),
+    pathway: String(metadata.pathway || "Refund"),
+    amount: Number(metadata.amount || 0),
+    currency: String(metadata.currency || "USD"),
+    createdAt: String(entry.requestedAt || entry.createdAt || new Date().toISOString()),
+  };
+}
+
+function mapBackendDispute(entry: BackendRecord): DisputeCase {
+  const metadata = asRecord(entry.metadata);
+  return {
+    id: String(entry.id || ""),
+    orderId: String(entry.orderId || ""),
+    type: String(entry.reason || "Dispute"),
+    status: String(metadata.displayStatus || formatOrderStatus(entry.status)),
+    risk: Number(metadata.risk || 0),
+    createdAt: String(entry.openedAt || entry.createdAt || new Date().toISOString()),
+    updatedAt: String(entry.updatedAt || entry.resolvedAt || new Date().toISOString()),
+  };
 }
 
 function Badge({ children, tone = "slate" }) {
@@ -1993,12 +2039,49 @@ function Disputes({ disputesList, pushToast }) {
 
 export default function OrdersOpsPreviewableV4() {
   const [screen, setScreen] = useState("orders");
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [returnsList, setReturnsList] = useState<ReturnCase[]>([]);
+  const [disputesList, setDisputesList] = useState<DisputeCase[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  const [orders] = useSellerCompatState("orders.detail.orders", seedOrders());
-  const [returnsList] = useSellerCompatState("orders.detail.returns", seedReturns());
-  const [disputesList] = useSellerCompatState("orders.detail.disputes", seedDisputes());
-
-  const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id || "ORD-10512");
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    setLoadError("");
+    void Promise.all([
+      sellerBackendApi.getSellerOrders(),
+      sellerBackendApi.getSellerReturns(),
+      sellerBackendApi.getSellerDisputes(),
+    ])
+      .then(([ordersPayload, returnsPayload, disputesPayload]) => {
+        if (!active) return;
+        const nextOrders = Array.isArray(ordersPayload?.orders)
+          ? ordersPayload.orders.map((entry) => mapBackendOrder(asRecord(entry)))
+          : [];
+        const nextReturns = Array.isArray(returnsPayload)
+          ? returnsPayload.map((entry) => mapBackendReturn(asRecord(entry)))
+          : [];
+        const nextDisputes = Array.isArray(disputesPayload)
+          ? disputesPayload.map((entry) => mapBackendDispute(asRecord(entry)))
+          : [];
+        setOrders(nextOrders);
+        setReturnsList(nextReturns);
+        setDisputesList(nextDisputes);
+        setSelectedOrderId((current) => current || nextOrders[0]?.id || "");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLoadError(error instanceof Error ? error.message : "Unable to load seller orders.");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -2083,6 +2166,22 @@ export default function OrdersOpsPreviewableV4() {
           </div>
         </div>
       </div>
+
+      {isLoading ? (
+        <div className="px-[0.55%] pt-4">
+          <div className="rounded-2xl border border-slate-200/70 bg-white/90 px-4 py-3 text-sm font-semibold text-slate-600">
+            Loading seller orders...
+          </div>
+        </div>
+      ) : null}
+
+      {loadError ? (
+        <div className="px-[0.55%] pt-4">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+            {loadError}
+          </div>
+        </div>
+      ) : null}
 
       <div className="w-full px-[0.55%] py-6">
         <AnimatePresence mode="wait">

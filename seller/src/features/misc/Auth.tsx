@@ -7,6 +7,7 @@ import type { UserRole } from "../../types/roles";
 import { getCurrentRole } from "../../auth/roles";
 import { readSession, writeSession } from "../../auth/session";
 import { authClient } from "../../lib/authApi";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 
 // EVzone — Auth Pro v4.4 — JS only (modern, relatable, mobile-first, role-aware)
@@ -30,6 +31,58 @@ export type AuthProps = {
   onClose?: () => void;
   variant?: "default" | "modal";
 };
+
+type AuthSecuritySession = {
+  id: string;
+  device?: string;
+  ip?: string;
+  lastActiveAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type AuthPasskey = {
+  id: string;
+  identifier: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  label?: string;
+};
+
+type AuthSecurityState = {
+  twoFactor?: boolean;
+  twoFactorMethod?: string;
+  twoFactorConfig?: { enabled?: boolean; verified?: boolean; secret?: string | null };
+  passkeys?: AuthPasskey[];
+  sessions?: AuthSecuritySession[];
+  trustedDevices?: Array<Record<string, unknown>>;
+};
+
+function readUserAgentDeviceLabel() {
+  if (typeof window === "undefined") return "Browser session";
+  const ua = window.navigator.userAgent || "";
+  if (/iphone|ipad|ios/i.test(ua)) return "Safari / iOS";
+  if (/android/i.test(ua)) return "Chrome / Android";
+  if (/windows/i.test(ua)) return "Browser / Windows";
+  if (/macintosh|mac os/i.test(ua)) return "Browser / macOS";
+  if (/linux/i.test(ua)) return "Browser / Linux";
+  return "Browser session";
+}
+
+function buildAuthSecuritySession(user: Session, trusted: boolean): AuthSecuritySession {
+  return {
+    id: `auth_${user.userId || user.email || "guest"}`,
+    device: readUserAgentDeviceLabel(),
+    ip: "Unknown",
+    lastActiveAt: new Date().toISOString(),
+    metadata: {
+      trusted,
+      current: true,
+      userAgent: typeof window !== "undefined" ? window.navigator.userAgent : "",
+      email: user.email || null,
+      role: user.role || "seller",
+    },
+  };
+}
 
 export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = "default" }: AuthProps = {}) {
   const brand = useMemo(() => ({ green: '#03CD8C', orange: '#F77F00', ink: '#111827', mist: '#F7F7F7', bg1: '#FDFCFB', bg2: '#F3FAF8' }), []);
@@ -69,6 +122,21 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
     try { window.dispatchEvent(new Event("session-changed")); } catch { }
   };
   const saveSession = (u: Session) => { writeSession(u); setSession(u); broadcastSessionChange(); };
+  const [securityState, setSecurityState] = useState<AuthSecurityState | null>(null);
+  useEffect(() => {
+    if (!session?.accessToken && !session?.token) return;
+    let active = true;
+    void sellerBackendApi
+      .getSecuritySettings()
+      .then((payload) => {
+        if (!active) return;
+        setSecurityState(payload as AuthSecurityState);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken, session?.token]);
 
   const goLanding = () => {
     if (typeof window !== "undefined") {
@@ -87,15 +155,41 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   };
 
   const handleAuthSuccess = (user: Session, message?: string, redirectPath = "/dashboard") => {
-    saveSession(user);
-    if (message) say(message);
-    if (typeof onClose === "function") onClose();
-    const target = resolvePostAuthRedirect(user, redirectPath);
-    setTimeout(() => {
-      if (typeof window !== "undefined") {
-        window.location.href = target;
+    const persistSecurityState = async () => {
+      saveSession(user);
+      const security = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const nextSession = buildAuthSecuritySession(user, Boolean(user.remember));
+      const sessions = Array.isArray(security.sessions) ? security.sessions.filter((entry) => entry?.id !== nextSession.id) : [];
+      const nextSecurity: Record<string, unknown> = {
+        ...security,
+        sessions: [nextSession, ...sessions].slice(0, 20),
+      };
+      if (user.remember) {
+        const trustedDevices = Array.isArray(security.trustedDevices) ? security.trustedDevices : [];
+        nextSecurity.trustedDevices = [
+          {
+            id: nextSession.id,
+            name: nextSession.device,
+            trusted: true,
+            trustedAt: new Date().toISOString(),
+            lastSeen: nextSession.lastActiveAt,
+          },
+          ...trustedDevices.filter((entry) => entry?.id !== nextSession.id),
+        ].slice(0, 20);
       }
-    }, 120);
+      const persisted = await sellerBackendApi.patchSecuritySettings(nextSecurity).catch(() => security);
+      setSecurityState(persisted as AuthSecurityState);
+      if (message) say(message);
+      if (typeof onClose === "function") onClose();
+      const target = resolvePostAuthRedirect(user, redirectPath);
+      setTimeout(() => {
+        if (typeof window !== "undefined") {
+          window.location.href = target;
+        }
+      }, 120);
+    };
+
+    void persistSecurityState();
   };
 
   const handleSocial = async (provider: "google" | "apple") => {
@@ -124,12 +218,52 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
 
   // Passkeys (stubs)
   const hasWebAuthn = typeof window !== "undefined" && !!(window.PublicKeyCredential);
-  const registerPasskey = async (user) => { if (!hasWebAuthn) return say(t('Passkeys not supported')); try { const credId = 'pk_' + Math.random().toString(36).slice(2, 10); const map = JSON.parse(localStorage.getItem('passkeys_v1') || '{}'); map[user.userId] = credId; localStorage.setItem('passkeys_v1', JSON.stringify(map)); say(t('Passkey registered')); } catch { say(t('Passkey setup failed')); } };
+  const registerPasskey = async (user: Session) => {
+    if (!hasWebAuthn) return say(t("Passkeys not supported"));
+    try {
+      const identifier = (user.userId || user.email || user.phone || "guest").toString();
+      let activeUser = user;
+      if (!activeUser.accessToken && !activeUser.token) {
+        activeUser = await authClient
+          .signIn({ identifier, password: "", role: userType })
+          .catch(() =>
+            authClient.signUp({
+              name: identifier.includes("@") ? identifier.split("@")[0] : "Passkey User",
+              email: identifier.includes("@") ? identifier : `${identifier}@demo.evzone`,
+              password: "demo1234",
+              role: userType,
+            })
+          );
+        saveSession(activeUser);
+      }
+      const current = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const nextPasskey: AuthPasskey = {
+        id: "pk_" + Math.random().toString(36).slice(2, 10),
+        identifier,
+        label: readUserAgentDeviceLabel(),
+        createdAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+      };
+      const passkeys = Array.isArray(current.passkeys) ? current.passkeys.filter((entry) => entry.identifier !== identifier) : [];
+      const persisted = await sellerBackendApi.patchSecuritySettings({
+        ...current,
+        passkeys: [nextPasskey, ...passkeys].slice(0, 12),
+      });
+      setSecurityState(persisted as AuthSecurityState);
+      say(t("Passkey registered"));
+    } catch {
+      say(t("Passkey setup failed"));
+    }
+  };
   const signInPasskey = async (identifier) => {
     if (!hasWebAuthn) return say(t("Passkeys not supported"));
     try {
-      const map = JSON.parse(localStorage.getItem("passkeys_v1") || "{}");
-      if (!map[identifier]) return say(t("No passkey on file"));
+      const key = String(identifier || "guest");
+      const current = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const match = Array.isArray(current.passkeys)
+        ? current.passkeys.find((entry) => entry.identifier === key)
+        : null;
+      if (!match) return say(t("No passkey on file"));
       const session = await authClient
         .signIn({ identifier, password: "", role: userType })
         .catch(() =>
@@ -148,8 +282,39 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
 
   // 2FA TOTP (demo)
   const [totp, setTotp] = useState({ enabled: false, secret: 'JBSWY3DPEHPK3PXP' });
-  const setupTOTP = () => { setTotp({ enabled: true, secret: 'JBSWY3DPEHPK3PXP' }); say(t('TOTP enabled')); };
-  const verifyTOTP = (code) => { if (String(code).trim() === '123456') { say(t('TOTP verified')); return true; } say(t('Invalid TOTP')); return false; };
+  useEffect(() => {
+    const config = securityState?.twoFactorConfig;
+    if (!config) return;
+    setTotp({
+      enabled: Boolean(config.enabled),
+      secret: String(config.secret || 'JBSWY3DPEHPK3PXP'),
+    });
+  }, [securityState]);
+  const setupTOTP = () => {
+    const next = {
+      twoFactor: true,
+      twoFactorMethod: "authenticator",
+      twoFactorConfig: { enabled: true, verified: false, secret: 'JBSWY3DPEHPK3PXP' },
+    };
+    setTotp({ enabled: true, secret: 'JBSWY3DPEHPK3PXP' });
+    void sellerBackendApi.patchSecuritySettings(next).then((payload) => {
+      setSecurityState(payload as AuthSecurityState);
+      say(t('TOTP enabled'));
+    }).catch(() => say(t('TOTP enabled')));
+  };
+  const verifyTOTP = (code) => {
+    if (String(code).trim() === '123456') {
+      void sellerBackendApi.patchSecuritySettings({
+        twoFactor: true,
+        twoFactorMethod: "authenticator",
+        twoFactorConfig: { enabled: true, verified: true, secret: totp.secret },
+      }).then((payload) => setSecurityState(payload as AuthSecurityState)).catch(() => undefined);
+      say(t('TOTP verified'));
+      return true;
+    }
+    say(t('Invalid TOTP'));
+    return false;
+  };
 
   const isModal = variant === "modal";
 
@@ -259,7 +424,13 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
         <button
           className="btn btn-ghost"
           onClick={() => {
-            localStorage.removeItem('session');
+            if (session?.userId || session?.email) {
+              void sellerBackendApi.signOutDevice(`auth_${session.userId || session.email}`).catch(() => undefined);
+            }
+            void authClient
+              .signOut(session.refreshToken, session.accessToken)
+              .catch(() => undefined);
+            writeSession(null);
             setSession(null);
             broadcastSessionChange();
             say(t('Signed out'));
@@ -529,10 +700,6 @@ function SignUp({ policy, userType, onDone, onSocial }) {
   const match = pwd && confirm && pwd === confirm;
   const isDisabled = !firstName || !email || !strong || !agree || !okDomain || !match;
   const resetOnboardingDraft = (u) => {
-    try {
-      if (userType === 'seller') localStorage.removeItem('seller_onb_pro_v3');
-      if (userType === 'provider') localStorage.removeItem('provider_onb_pro_v31');
-    } catch { }
     try { recordOnboardingStatus(userType, u, 'DRAFT'); } catch { }
   };
   const create = async () => {

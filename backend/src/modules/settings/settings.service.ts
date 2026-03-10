@@ -34,6 +34,19 @@ const DEFAULT_WORKSPACE_SECURITY = {
   supplierGuestExpiryHours: 24,
   inviteDomainAllowlist: DEFAULT_INVITE_DOMAIN_ALLOWLIST
 };
+const DEFAULT_SECURITY_SETTINGS = {
+  twoFactor: false,
+  twoFactorMethod: 'authenticator',
+  twoFactorConfig: {
+    enabled: false,
+    verified: false,
+    secret: null
+  },
+  passkeys: [],
+  sessions: [],
+  trustedDevices: [],
+  alerts: []
+};
 
 @Injectable()
 export class SettingsService {
@@ -108,14 +121,36 @@ export class SettingsService {
     return record.payload as Record<string, unknown>;
   }
   async signOutDevice(userId: string, id: string) {
-    const devicesPayload = await this.getUserSetting(userId, 'devices', { devices: [] });
+    const [devicesPayload, securityPayload] = await Promise.all([
+      this.getUserSetting(userId, 'devices', { devices: [] }),
+      this.securitySettings(userId)
+    ]);
     const devices = this.extractList(devicesPayload, 'devices');
     const nextDevices = devices.filter((device: any) => device?.id !== id);
-    await this.upsertUserSetting(userId, 'devices', { devices: nextDevices });
+    const nextSecurity = {
+      ...DEFAULT_SECURITY_SETTINGS,
+      ...securityPayload,
+      sessions: this.extractList(securityPayload, 'sessions').filter((session: any) => session?.id !== id),
+      trustedDevices: this.extractList(securityPayload, 'trustedDevices').filter((device: any) => device?.id !== id)
+    };
+    await Promise.all([
+      this.upsertUserSetting(userId, 'devices', { devices: nextDevices }),
+      this.upsertWorkspaceSetting(userId, 'security', nextSecurity)
+    ]);
     return { deleted: true };
   }
   async signOutAll(userId: string) {
-    await this.upsertUserSetting(userId, 'devices', { devices: [] });
+    const securityPayload = await this.securitySettings(userId);
+    const nextSecurity = {
+      ...DEFAULT_SECURITY_SETTINGS,
+      ...securityPayload,
+      sessions: [],
+      trustedDevices: []
+    };
+    await Promise.all([
+      this.upsertUserSetting(userId, 'devices', { devices: [] }),
+      this.upsertWorkspaceSetting(userId, 'security', nextSecurity)
+    ]);
     return { signedOutAll: true };
   }
 
@@ -487,13 +522,32 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
-  securitySettings(userId: string) { return this.getWorkspaceSetting(userId, 'security', { twoFactor: false, sessions: [] }); }
+  async securitySettings(userId: string) {
+    const current = await this.getWorkspaceSetting(userId, 'security', DEFAULT_SECURITY_SETTINGS);
+    return {
+      ...DEFAULT_SECURITY_SETTINGS,
+      ...current,
+      twoFactorConfig: {
+        ...DEFAULT_SECURITY_SETTINGS.twoFactorConfig,
+        ...((current.twoFactorConfig as Record<string, unknown> | undefined) ?? {})
+      },
+      passkeys: this.extractList(current, 'passkeys'),
+      sessions: this.extractList(current, 'sessions'),
+      trustedDevices: this.extractList(current, 'trustedDevices'),
+      alerts: this.extractList(current, 'alerts')
+    };
+  }
   async updateSecuritySettings(userId: string, body: UpdateSecuritySettingsDto) {
     const current = await this.securitySettings(userId);
     const next = {
       ...current,
       ...(body.twoFactor !== undefined ? { twoFactor: body.twoFactor } : {}),
-      ...(body.sessions ? { sessions: body.sessions } : {})
+      ...(body.twoFactorMethod ? { twoFactorMethod: body.twoFactorMethod } : {}),
+      ...(body.twoFactorConfig ? { twoFactorConfig: this.deepMerge(current.twoFactorConfig ?? {}, body.twoFactorConfig) } : {}),
+      ...(body.sessions ? { sessions: body.sessions } : {}),
+      ...(body.passkeys ? { passkeys: body.passkeys } : {}),
+      ...(body.trustedDevices ? { trustedDevices: body.trustedDevices } : {}),
+      ...(body.alerts ? { alerts: body.alerts } : {})
     };
     const record = await this.upsertWorkspaceSetting(userId, 'security', next);
     await this.audit.log({

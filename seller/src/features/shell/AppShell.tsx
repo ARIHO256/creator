@@ -5,8 +5,7 @@ import { getCurrentRole } from '../../auth/roles';
 import { clearSession, readSession, updateSession, useSession } from '../../auth/session';
 import type { UserRole } from '../../types/roles';
 import { useLocalization } from '../../localization/LocalizationProvider';
-import { useMockState } from '../../mocks';
-import { getPageContentByRole } from '../../data/pageContent';
+import { sellerBackendApi } from '../../lib/backendApi';
 import type { NotifCategory, NotifItem } from '../../data/pageTypes';
 import { useThemeMode } from '../../theme/themeMode';
 import {
@@ -218,34 +217,8 @@ const TOKENS = {
 };
 const COLLAPSED_ICON_SCALE = 1.15;
 
-const LS_KEYS = {
-  RECENTS: 'evzone_supplierhub_recents_v9',
-  FAVORITES: 'evzone_supplierhub_favorites_v9',
-  SAVED_VIEWS: 'evzone_supplierhub_saved_views_v9',
-  AUDIT: 'evzone_supplierhub_audit_v9',
-};
-
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
-}
-
-function safeParse<T>(raw: string | null, fallback: T): T {
-  try {
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function lsGet<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  return safeParse<T>(window.localStorage.getItem(key), fallback);
-}
-
-function lsSet<T>(key: string, value: T) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(key, JSON.stringify(value));
 }
 
 function useHashRoute() {
@@ -5195,6 +5168,7 @@ export default function EVzoneSupplierHubAppShellV9({
         next === 'provider'
           ? Array.from(new Set([...currentRoles.filter((r) => r !== 'seller'), 'provider']))
           : currentRoles.filter((r) => r !== 'provider');
+      void sellerBackendApi.switchAuthRole({ role: String(next).toUpperCase() }).catch(() => undefined);
       updateSession({ role: next, roles: nextRoles as Role[] });
     },
     []
@@ -5222,35 +5196,64 @@ export default function EVzoneSupplierHubAppShellV9({
   }, []);
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [audit, setAudit] = useState<AuditEvent[]>(() => lsGet<AuditEvent[]>(LS_KEYS.AUDIT, []));
-  useEffect(() => lsSet(LS_KEYS.AUDIT, audit), [audit]);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void sellerBackendApi
+      .getUiState()
+      .then((payload) => {
+        if (cancelled) return;
+        const shell = (payload.shell as Record<string, unknown> | undefined) || {};
+        const nextAudit = Array.isArray((shell as any).auditFeed) ? ((shell as any).auditFeed as AuditEvent[]) : [];
+        const nextRecents = Array.isArray((shell as any).recentsRoutes) ? ((shell as any).recentsRoutes as string[]) : [];
+        const nextFavorites = Array.isArray((shell as any).favoriteRoutes)
+          ? ((shell as any).favoriteRoutes as string[])
+          : [];
+        setAudit(nextAudit);
+        setRecents(nextRecents);
+        setFavorites(nextFavorites);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const logAudit = useCallback((e: Omit<AuditEvent, 'id' | 'at'>) => {
-    setAudit((s) => [{ id: makeId('audit'), at: nowIso(), ...e }, ...s].slice(0, 200));
+    setAudit((s) => {
+      const next = [{ id: makeId('audit'), at: nowIso(), ...e }, ...s].slice(0, 200);
+      void sellerBackendApi
+        .patchUiState({ shell: { auditFeed: next } })
+        .catch(() => undefined);
+      return next;
+    });
   }, []);
 
-  const [savedViews, setSavedViews] = useState<SavedView[]>(() => {
-    const existing = lsGet<SavedView[]>(LS_KEYS.SAVED_VIEWS, []);
-    if (existing.length) return existing;
-    return [
-      {
-        id: makeId('view'),
-        name: 'Wholesale RFQs: last 7 days · urgent',
-        route: '/wholesale/rfq',
-        group: 'RFQs',
-        pinned: true,
-        note: 'Quick access view',
-      },
-    ];
-  });
-  useEffect(() => lsSet(LS_KEYS.SAVED_VIEWS, savedViews), [savedViews]);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void sellerBackendApi
+      .getSavedViews()
+      .then((payload) => {
+        if (cancelled) return;
+        const views = Array.isArray((payload as any).views) ? ((payload as any).views as SavedView[]) : [];
+        setSavedViews(views);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const saveView = useCallback((v: Omit<SavedView, 'id'>) => {
-    setSavedViews((s) => [{ id: makeId('view'), ...v }, ...s].slice(0, 30));
+    setSavedViews((s) => {
+      const next = [{ id: makeId('view'), ...v }, ...s].slice(0, 30);
+      void sellerBackendApi
+        .patchSavedViews({ views: next })
+        .catch(() => undefined);
+      return next;
+    });
   }, []);
 
-  const [favorites, setFavorites] = useMockState<string[]>(
-    'shell.favorites',
-    lsGet<string[]>(LS_KEYS.FAVORITES, [])
-  );
+  const [favorites, setFavorites] = useState<string[]>([]);
   const isFavorite = favorites.includes(path);
   const toggleFavorite = () => {
     setFavorites((s) => {
@@ -5259,12 +5262,14 @@ export default function EVzoneSupplierHubAppShellV9({
         title: s.includes(path) ? 'Removed from favorites' : 'Added to favorites',
         tone: 'default',
       });
+      void sellerBackendApi
+        .patchUiState({ shell: { favoriteRoutes: next } })
+        .catch(() => undefined);
       return next.slice(0, 40);
     });
   };
 
-  const [recents, setRecents] = useState<string[]>(() => lsGet<string[]>(LS_KEYS.RECENTS, []));
-  useEffect(() => lsSet(LS_KEYS.RECENTS, recents), [recents]);
+  const [recents, setRecents] = useState<string[]>([]);
 
   useEffect(() => {
     const raw = location.hash?.replace(/^#/, '');
@@ -5286,7 +5291,13 @@ export default function EVzoneSupplierHubAppShellV9({
       if (getShellKey(cleaned) !== 'core') {
         setSecondarySidebarOpen(true);
       }
-      setRecents((s) => [cleaned, ...s.filter((x) => x !== cleaned)].slice(0, 20));
+      setRecents((s) => {
+        const next = [cleaned, ...s.filter((x) => x !== cleaned)].slice(0, 20);
+        void sellerBackendApi
+          .patchUiState({ shell: { recentsRoutes: next } })
+          .catch(() => undefined);
+        return next;
+      });
       routerNavigate(cleaned);
       setShellMenuOpen(false);
     },
@@ -5310,34 +5321,76 @@ export default function EVzoneSupplierHubAppShellV9({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const notificationsContent = useMemo(() => getPageContentByRole('notifications', role), [role]);
-  const [notifItems, setNotifItems] = useState<NotifItem[]>(() => notificationsContent.items);
+  const [notifItems, setNotifItems] = useState<NotifItem[]>([]);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [ordersCount, setOrdersCount] = useState(0);
+  const [bookingsCount, setBookingsCount] = useState(0);
+  const [reviewsCount, setReviewsCount] = useState(0);
+  const [notifCategories, setNotifCategories] = useState<NotificationCategory[]>(['All']);
   useEffect(() => {
-    setNotifItems(notificationsContent.items);
-  }, [notificationsContent]);
-  const notifCategories = notificationsContent.categories;
+    let cancelled = false;
+    void sellerBackendApi
+      .getNotifications()
+      .then((payload) => {
+        if (cancelled) return;
+        const nextItems = Array.isArray(payload) ? (payload as NotifItem[]) : [];
+        setNotifItems(nextItems);
+        const nextCategories = Array.from(
+          new Set(nextItems.map((item) => item.category).filter(Boolean))
+        ) as NotificationCategory[];
+        setNotifCategories(['All', ...nextCategories]);
+      })
+      .catch(() => undefined);
+    void sellerBackendApi
+      .getMessages()
+      .then((payload) => {
+        if (cancelled) return;
+        const threads = Array.isArray((payload as { threads?: unknown[] }).threads)
+          ? ((payload as { threads?: Array<{ unreadCount?: number }> }).threads ?? [])
+          : [];
+        setUnreadMessages(threads.reduce((sum, thread) => sum + Number(thread.unreadCount ?? 0), 0));
+      })
+      .catch(() => undefined);
+    if (role === 'provider') {
+      void Promise.all([
+        sellerBackendApi.getProviderBookings().catch(() => ({ bookings: [] })),
+        sellerBackendApi.getProviderReviews().catch(() => ({ reviews: [] })),
+      ]).then(([bookingsPayload, reviewsPayload]) => {
+        if (cancelled) return;
+        const bookings = Array.isArray((bookingsPayload as { bookings?: unknown[] }).bookings)
+          ? ((bookingsPayload as { bookings?: unknown[] }).bookings ?? [])
+          : [];
+        const reviews = Array.isArray((reviewsPayload as { reviews?: unknown[] }).reviews)
+          ? ((reviewsPayload as { reviews?: unknown[] }).reviews ?? [])
+          : [];
+        setOrdersCount(0);
+        setBookingsCount(bookings.length);
+        setReviewsCount(reviews.length);
+      }).catch(() => undefined);
+    } else {
+      void Promise.all([
+        sellerBackendApi.getSellerOrders().catch(() => ({ orders: [] })),
+        sellerBackendApi.getReviewsSummary().catch(() => ({ total: 0 })),
+      ]).then(([ordersPayload, reviewsPayload]) => {
+        if (cancelled) return;
+        const orders = Array.isArray((ordersPayload as { orders?: unknown[] }).orders)
+          ? ((ordersPayload as { orders?: unknown[] }).orders ?? [])
+          : [];
+        setOrdersCount(orders.length);
+        setBookingsCount(0);
+        setReviewsCount(Number((reviewsPayload as { total?: number }).total ?? 0));
+      }).catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
 
   const unreadNotifs = useMemo(() => notifItems.filter((n) => n.unread).length, [notifItems]);
   const notifBadgeCount = useMemo(
     () => (unreadNotifs > 0 ? unreadNotifs : notifItems.length),
     [unreadNotifs, notifItems]
   );
-  const unreadMessages = useMemo(() => {
-    const content = getPageContentByRole('messages', role);
-    return content.threads.reduce((sum, t) => sum + (t.unreadCount ?? 0), 0);
-  }, [role]);
-  const ordersContent = useMemo(() => getPageContentByRole('orders', role), [role]);
-  const ordersCount = ordersContent.orders?.length ?? 0;
-  const bookingsCount = ordersContent.bookings?.length ?? 0;
-  const reviewsCount = useMemo(() => {
-    if (role === 'provider') {
-      const providerReviews = lsGet<Array<unknown>>('provider.reviews', []);
-      return providerReviews.length || 6;
-    }
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem('seller.reviews.count') : null;
-    const parsed = raw ? Number(raw) : NaN;
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 21;
-  }, [role, path]);
 
   const supplierNav = useSupplierNav(role, {
     messages: unreadMessages,

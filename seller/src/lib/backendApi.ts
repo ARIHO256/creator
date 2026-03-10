@@ -33,6 +33,47 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const sellerBackendApi = {
   getAuthMe: () => request<Record<string, unknown>>("/api/auth/me"),
+  switchAuthRole: (body: { role: string }) =>
+    request<Record<string, unknown>>("/api/auth/switch-role", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getSellerOrders: () =>
+    request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
+      "/api/seller/orders"
+    ),
+  getSellerOrderDetail: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}`),
+  getSellerReturns: () => request<Array<Record<string, unknown>>>("/api/seller/returns"),
+  getSellerDisputes: () => request<Array<Record<string, unknown>>>("/api/seller/disputes"),
+  getExpressOrders: () =>
+    request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
+      "/api/expressmart/orders"
+    ),
+  getExpressOrderDetail: (id: string) =>
+    request<Record<string, unknown>>(`/api/expressmart/orders/${encodeURIComponent(id)}`),
+  patchExpressOrder: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/expressmart/orders/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getMessages: () => request<Record<string, unknown>>("/api/messages"),
+  getMessageThread: (threadId: string) =>
+    request<Record<string, unknown>>(`/api/messages/${encodeURIComponent(threadId)}`),
+  replyMessageThread: (threadId: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/messages/${encodeURIComponent(threadId)}/reply`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  markMessageThreadRead: (threadId: string) =>
+    request<Record<string, unknown>>(`/api/messages/${encodeURIComponent(threadId)}/read`, {
+      method: "PATCH",
+    }),
+  markAllMessagesRead: () =>
+    request<Record<string, unknown>>("/api/messages/read-all", {
+      method: "POST",
+    }),
+  getNotifications: () => request<Array<Record<string, unknown>>>("/api/notifications"),
   getPreferences: () => request<Record<string, unknown>>("/api/settings/preferences"),
   patchPreferences: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/settings/preferences", {
@@ -56,6 +97,20 @@ export const sellerBackendApi = {
     request<Record<string, unknown>>("/api/settings/payout-methods", {
       method: "PATCH",
       body: JSON.stringify(body),
+    }),
+  getSecuritySettings: () => request<Record<string, unknown>>("/api/settings/security"),
+  patchSecuritySettings: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/settings/security", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  signOutDevice: (id: string) =>
+    request<Record<string, unknown>>(`/api/settings/devices/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  signOutAllDevices: () =>
+    request<Record<string, unknown>>("/api/settings/devices/sign-out-all", {
+      method: "POST",
     }),
   getSavedViews: () => request<Record<string, unknown>>("/api/settings/saved-views"),
   patchSavedViews: (body: Record<string, unknown>) =>
@@ -151,7 +206,101 @@ export const sellerBackendApi = {
     request<{ deleted?: boolean }>(`/api/media/assets/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }),
+  getSellerWorkspaceListings: () => request<Array<Record<string, unknown>>>("/api/sellers/me/listings"),
+  createSellerWorkspaceListing: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/sellers/me/listings", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchSellerWorkspaceListing: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/sellers/me/listings/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getShippingProfiles: () => request<Record<string, unknown>>("/api/seller/shipping-profiles"),
+  getOpsOverview: () => request<Record<string, unknown>>("/api/ops/overview"),
+  getOpsInventory: () => request<Record<string, unknown>>("/api/ops/inventory"),
+  getOpsShipping: () => request<Record<string, unknown>>("/api/ops/shipping"),
+  getOpsWarehouses: () => request<Record<string, unknown>>("/api/ops/warehouses"),
+  getOpsDocuments: () => request<Record<string, unknown>>("/api/ops/documents"),
+  getOpsExports: () => request<Record<string, unknown>>("/api/ops/exports"),
+  getOpsExceptions: () => request<Record<string, unknown>>("/api/ops/exceptions"),
+  getFinanceWallets: () => request<Record<string, unknown>>("/api/seller/finance/wallets"),
+  getFinanceHolds: () => request<Record<string, unknown>>("/api/seller/finance/holds"),
+  getFinanceInvoices: () => request<Record<string, unknown>>("/api/seller/finance/invoices"),
+  getFinanceStatements: () => request<Record<string, unknown>>("/api/seller/finance/statements"),
+  getFinanceTaxReports: () => request<Record<string, unknown>>("/api/seller/finance/tax-reports"),
+  getHelpSupportContent: () => request<Record<string, unknown>>("/api/help-support/content"),
+  createHelpSupportTicket: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/help-support/tickets", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getSystemStatus: () => request<Record<string, unknown>>("/api/system-status"),
+  getCompliance: () => request<Record<string, unknown>>("/api/compliance"),
+  createComplianceItem: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/compliance/items", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchComplianceItem: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/compliance/items/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getReviewsSummary: () => request<Record<string, unknown>>("/api/reviews/summary"),
+  getRegulatoryDesks: () => request<Record<string, unknown>>("/api/regulatory/desks"),
+  getRegulatoryDesk: (slug: string) =>
+    request<Record<string, unknown>>(`/api/regulatory/desks/${encodeURIComponent(slug)}`),
+  getProviderServiceCommand: () => request<Record<string, unknown>>("/api/provider/service-command"),
+  getProviderQuotes: () => request<Record<string, unknown>>("/api/provider/quotes"),
+  getProviderJointQuotes: () => request<Record<string, unknown>>("/api/provider/joint-quotes"),
+  createProviderJointQuote: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/provider/joint-quotes", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getProviderConsultations: () => request<Record<string, unknown>>("/api/provider/consultations"),
+  getProviderBookings: () => request<Record<string, unknown>>("/api/provider/bookings"),
+  getProviderPortfolio: () => request<Record<string, unknown>>("/api/provider/portfolio"),
+  getProviderReviews: () => request<Record<string, unknown>>("/api/provider/reviews"),
+  getProviderDisputes: () => request<Record<string, unknown>>("/api/provider/disputes"),
+  getWholesaleRfqs: () => request<Record<string, unknown>>("/api/wholesale/rfqs"),
+  getWholesaleQuotes: () => request<Record<string, unknown>>("/api/wholesale/quotes"),
+  getAdzCampaigns: () => request<Array<Record<string, unknown>>>("/api/adz/campaigns"),
+  getAdzCampaign: (id: string) =>
+    request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}`),
+  createAdzCampaign: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/adz/campaigns", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchAdzCampaign: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getAdzMarketplace: () => request<Array<Record<string, unknown>>>("/api/adz/marketplace"),
+  getAdzBuilder: (id: string) =>
+    request<Record<string, unknown>>(`/api/adz/builder/${encodeURIComponent(id)}`),
+  saveAdzBuilder: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/adz/builder/save", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  publishAdzBuilder: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/adz/builder/${encodeURIComponent(id)}/publish`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getAdzPerformance: (id: string) =>
+    request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}/performance`),
+  getSubscription: () => request<Record<string, unknown>>("/api/subscription"),
+  patchSubscription: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/subscription", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getMarketplaceListings: () => request<Array<Record<string, unknown>>>("/api/marketplace/listings"),
   getListingDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/listings/${encodeURIComponent(id)}`),

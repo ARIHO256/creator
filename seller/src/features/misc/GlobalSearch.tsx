@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, Link } from "react-router-dom";
 import { Typography } from "@mui/material";
 import Card, { CardHeader, CardContent } from "../../components/ui/Card";
@@ -6,6 +6,7 @@ import EmptyState from "../../components/ui/EmptyState";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { getCurrentRole } from "../../auth/roles";
 import { useSession } from "../../auth/session";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 function useQueryParam(name) {
   const location = useLocation();
@@ -15,51 +16,34 @@ function useQueryParam(name) {
   }, [location.search, name]);
 }
 
-function safeParse(key, fallback) {
-  try {
-    const raw =
-      window.localStorage.getItem(key) ||
-      (Array.isArray(fallback.keys) &&
-        fallback.keys
-          .map((k) => window.localStorage.getItem(k))
-          .find((v) => !!v)) ||
-      fallback.default ||
-      "[]";
-    const value = JSON.parse(raw);
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function GlobalSearch() {
   const { t } = useLocalization();
   const session = useSession();
   const role = getCurrentRole(session);
   const q = useQueryParam("q");
   const normalized = q.trim().toLowerCase();
+  const [orders, setOrders] = useState<any[]>([]);
+  const [rfqs, setRfqs] = useState<any[]>([]);
+  const [quotes, setQuotes] = useState<any[]>([]);
+  const [listings, setListings] = useState<any[]>([]);
 
-  const { orders, rfqs, quotes, listings } = useMemo(() => {
-    if (typeof window === "undefined") {
-      return { orders: [], rfqs: [], quotes: [], listings: [] };
-    }
-    const orders = safeParse("seller_orders_v1", {
-      keys: ["orders"],
-      default: "[]",
-    });
-    const rfqs = safeParse("wholesale_rfq_inbox_v1", {
-      keys: ["rfqs"],
-      default: "[]",
-    });
-    const quotes = safeParse("quotes_pending_v1", {
-      keys: ["quotes"],
-      default: "[]",
-    });
-    const listings = safeParse("seller_listings_share_v1", {
-      keys: [],
-      default: "[]",
-    });
-    return { orders, rfqs, quotes, listings };
+  useEffect(() => {
+    let active = true;
+    void Promise.all([
+      sellerBackendApi.getSellerOrders().catch(() => ({ orders: [] })),
+      sellerBackendApi.getWholesaleRfqs().catch(() => ({ rfqs: [] })),
+      sellerBackendApi.getWholesaleQuotes().catch(() => ({ quotes: [] })),
+      sellerBackendApi.getSellerWorkspaceListings().catch(() => []),
+    ]).then(([ordersPayload, rfqsPayload, quotesPayload, listingsPayload]) => {
+      if (!active) return;
+      setOrders(Array.isArray((ordersPayload as { orders?: unknown[] }).orders) ? ((ordersPayload as { orders?: unknown[] }).orders ?? []) : []);
+      setRfqs(Array.isArray((rfqsPayload as { rfqs?: unknown[] }).rfqs) ? ((rfqsPayload as { rfqs?: unknown[] }).rfqs ?? []) : []);
+      setQuotes(Array.isArray((quotesPayload as { quotes?: unknown[] }).quotes) ? ((quotesPayload as { quotes?: unknown[] }).quotes ?? []) : []);
+      setListings(Array.isArray(listingsPayload) ? listingsPayload : []);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filtered = useMemo(() => {

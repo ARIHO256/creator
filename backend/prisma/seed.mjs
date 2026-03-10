@@ -308,6 +308,84 @@ async function seedCollaboration(users, sellerProfiles) {
     }
   });
 
+  await prisma.campaign.createMany({
+    data: [
+      {
+        id: 'campaign_beauty_flash',
+        sellerId: sellerProfiles.seller.id,
+        creatorId: users.creator.id,
+        createdByUserId: users.sellerUser.id,
+        title: 'Autumn Beauty Flash',
+        description: 'Beauty flash campaign used by creator asset library and ad builder flows.',
+        status: 'ACTIVE',
+        budget: 900,
+        currency: 'USD',
+        metadata: {
+          supplierId: 'p-1',
+          supplierName: 'GlowUp Hub',
+          supplierKind: 'Seller',
+          supplierHandle: '@glowuphub',
+          supplierVerified: true,
+          brand: 'GlowUp Hub',
+          deliverables: [
+            { id: 'd-1', label: '3x Shoppable Adz clips', dueDateLabel: 'Due: 18 Nov' },
+            { id: 'd-2', label: '1x Live opener + overlays pack', dueDateLabel: 'Due: 20 Nov' }
+          ]
+        },
+        startAt: daysAgo(2),
+        endAt: daysFromNow(12)
+      },
+      {
+        id: 'campaign_tech_friday',
+        sellerId: sellerProfiles.seller.id,
+        creatorId: users.creator.id,
+        createdByUserId: users.sellerUser.id,
+        title: 'Tech Friday Mega Live',
+        description: 'Tech-focused campaign used by creator asset library and marketplace flows.',
+        status: 'ACTIVE',
+        budget: 1250,
+        currency: 'USD',
+        metadata: {
+          supplierId: 'p-2',
+          supplierName: 'GadgetMart Africa',
+          supplierKind: 'Seller',
+          supplierHandle: '@gadgetmart',
+          supplierVerified: true,
+          brand: 'GadgetMart',
+          deliverables: [
+            { id: 'd-3', label: '2x Tech offer overlays', dueDateLabel: 'Due: 28 Nov' }
+          ]
+        },
+        startAt: daysAgo(1),
+        endAt: daysFromNow(15)
+      },
+      {
+        id: 'campaign_faith_morning',
+        sellerId: sellerProfiles.provider.id,
+        creatorId: users.creator.id,
+        createdByUserId: users.providerUser.id,
+        title: 'Faith & Wellness Morning Dealz',
+        description: 'Provider-led service campaign used by creator asset library flows.',
+        status: 'ACTIVE',
+        budget: 780,
+        currency: 'USD',
+        metadata: {
+          supplierId: 'p-3',
+          supplierName: 'Grace Living Store',
+          supplierKind: 'Provider',
+          supplierHandle: '@graceliving',
+          supplierVerified: false,
+          brand: 'Grace Living',
+          deliverables: [
+            { id: 'd-4', label: '1x Service booking promo', dueDateLabel: 'Due: 03 Dec' }
+          ]
+        },
+        startAt: daysAgo(4),
+        endAt: daysFromNow(9)
+      }
+    ]
+  });
+
   await prisma.proposal.create({
     data: {
       id: 'proposal_ev_launch',
@@ -455,25 +533,226 @@ async function seedCollaboration(users, sellerProfiles) {
     }
   });
 
-  await prisma.deliverableAsset.create({
-    data: {
-      id: 'asset_post_live_recap',
-      campaignId: 'campaign_ev_launch',
-      contractId: 'contract_ev_launch',
-      ownerUserId: users.creator.id,
-      reviewerUserId: users.sellerUser.id,
-      title: 'Post-live recap clip',
-      assetType: 'VIDEO',
-      url: 'https://example.com/post-live-recap.mp4',
-      status: 'IN_REVIEW',
-      metadata: {
-        durationSeconds: 58
+  await prisma.deliverableAsset.createMany({
+    data: [
+      {
+        id: 'asset_post_live_recap',
+        campaignId: 'campaign_ev_launch',
+        contractId: 'contract_ev_launch',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'Post-live recap clip',
+        assetType: 'VIDEO',
+        url: 'https://example.com/post-live-recap.mp4',
+        status: 'IN_REVIEW',
+        metadata: {
+          durationSeconds: 58,
+          source: 'creator',
+          previewKind: 'video',
+          previewUrl: 'https://example.com/post-live-recap.mp4'
+        }
+      },
+      {
+        id: 'asset_library_a_1',
+        campaignId: 'campaign_beauty_flash',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'Autumn Beauty opener sequence',
+        assetType: 'VIDEO',
+        url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        status: 'APPROVED',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Autumn Beauty Flash · GlowUp Hub',
+          supplierId: 'p-1',
+          brand: 'GlowUp Hub',
+          source: 'supplier',
+          tags: ['Beauty', 'Serum', 'Opener'],
+          previewKind: 'video',
+          previewUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+          thumbnailUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=320&q=60',
+          role: 'opener',
+          usageNotes: 'Intro bumper for Beauty Flash lives. Include for all serum-focused shows.',
+          restrictions: 'Use only for GlowUp serum campaigns in 2025.',
+          desktopMode: 'fullscreen'
+        }
+      },
+      {
+        id: 'asset_library_a_2',
+        campaignId: 'campaign_beauty_flash',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'GlowUp hero slide - Serum benefits',
+        assetType: 'IMAGE',
+        url: 'https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=1920&h=1080&q=70',
+        status: 'APPROVED',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Autumn Beauty Flash · GlowUp Hub',
+          supplierId: 'p-1',
+          brand: 'GlowUp Hub',
+          source: 'supplier',
+          tags: ['Beauty', 'Hero', 'Benefits'],
+          previewKind: 'image',
+          previewUrl: 'https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=1920&h=1080&q=70',
+          thumbnailUrl: 'https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=320&q=60',
+          role: 'hero',
+          dimensions: { width: 1920, height: 1080 },
+          usageNotes: 'Use as hero still when creator has no hero video.',
+          restrictions: 'Do not crop brand mark. Keep safe margins for subtitles.'
+        }
+      },
+      {
+        id: 'asset_library_a_3',
+        campaignId: 'campaign_beauty_flash',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'Flash offer graphic - 20% off window',
+        assetType: 'OVERLAY',
+        url: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70',
+        status: 'APPROVED',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Autumn Beauty Flash · GlowUp Hub',
+          supplierId: 'p-1',
+          brand: 'GlowUp Hub',
+          source: 'supplier',
+          tags: ['Offer', 'Timer', 'Flash'],
+          previewKind: 'image',
+          previewUrl: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70',
+          thumbnailUrl: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=320&q=60',
+          role: 'offer',
+          usageNotes: 'Overlay for mid-show offer callouts. Best with voiceover.',
+          restrictions: 'Avoid stacking with other countdown overlays.'
+        }
+      },
+      {
+        id: 'asset_library_a_4',
+        campaignId: 'campaign_tech_friday',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'Deal ticker lower third',
+        assetType: 'OVERLAY',
+        url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70',
+        status: 'APPROVED',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Tech Friday Mega Live · GadgetMart Africa',
+          supplierId: 'p-2',
+          brand: 'GadgetMart',
+          source: 'catalog',
+          tags: ['Ticker', 'Dealz', 'Lower third'],
+          previewKind: 'image',
+          previewUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70',
+          thumbnailUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=320&q=60',
+          role: 'lower_third',
+          usageNotes: 'Auto-populated from catalog promos. Works best with dark backgrounds.',
+          restrictions: 'Do not modify product prices in this overlay.'
+        }
+      },
+      {
+        id: 'asset_library_a_5',
+        campaignId: 'campaign_beauty_flash',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'Creator base script - Flash format',
+        assetType: 'SCRIPT',
+        status: 'APPROVED',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Global template · Creator library',
+          supplierId: 'p-1',
+          brand: 'GlowUp Hub',
+          source: 'creator',
+          tags: ['Template', 'Script', 'Flash'],
+          previewKind: 'image',
+          role: 'script',
+          usageNotes: 'Compliance-safe script skeleton including disclosure and CTA blocks.',
+          restrictions: 'Customize product claims to match verified catalog facts only.'
+        }
+      },
+      {
+        id: 'asset_library_a_6',
+        campaignId: 'campaign_tech_friday',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'Universal price-drop overlay',
+        assetType: 'OVERLAY',
+        url: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70',
+        status: 'IN_REVIEW',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Global template · Creator library',
+          supplierId: 'p-2',
+          brand: 'GadgetMart',
+          source: 'creator',
+          tags: ['Template', 'Overlay', 'Price drop'],
+          previewKind: 'image',
+          previewUrl: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70',
+          thumbnailUrl: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=320&q=60',
+          role: 'overlay',
+          usageNotes: 'Use for live price-drop moments. Keep overlay on screen < 6 seconds.',
+          restrictions: 'Requires approval for each campaign.',
+          reviewStage: 'pending_admin'
+        }
+      },
+      {
+        id: 'asset_library_a_7',
+        campaignId: 'campaign_tech_friday',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.sellerUser.id,
+        title: 'Tech Friday hero overlay',
+        assetType: 'OVERLAY',
+        url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70',
+        status: 'APPROVED',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Tech Friday Mega Live · GadgetMart Africa',
+          supplierId: 'p-2',
+          brand: 'GadgetMart',
+          source: 'supplier',
+          tags: ['Tech', 'Overlay'],
+          previewKind: 'image',
+          previewUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70',
+          thumbnailUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=320&q=60',
+          role: 'hero',
+          usageNotes: 'Overlay for opening of Tech Friday shows.',
+          restrictions: 'Use only for Tech Friday campaigns.'
+        }
+      },
+      {
+        id: 'asset_library_a_8',
+        campaignId: 'campaign_faith_morning',
+        ownerUserId: users.creator.id,
+        reviewerUserId: users.providerUser.id,
+        title: 'Faith Morning warm opener',
+        assetType: 'VIDEO',
+        url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        status: 'CHANGES_REQUESTED',
+        metadata: {
+          creatorScope: 'all',
+          subtitle: 'Faith & Wellness Morning Dealz · Grace Living Store',
+          supplierId: 'p-3',
+          brand: 'Grace Living',
+          source: 'creator',
+          tags: ['Faith', 'Opener'],
+          previewKind: 'video',
+          previewUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+          thumbnailUrl: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=320&q=60',
+          role: 'opener',
+          usageNotes: 'Warm opener for service sessionz.',
+          restrictions: 'Remove background music unless licensed.'
+        }
       }
-    }
+    ]
   });
 }
 
 async function seedCommerce(users, sellerProfiles) {
+  const hoursAgo = (hours) => new Date(Date.now() - hours * 3600_000);
+  const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60_000);
+  const minutesFromNow = (minutes) => new Date(Date.now() + minutes * 60_000);
+
   await prisma.order.create({
     data: {
       id: 'ORD-10512',
@@ -486,6 +765,10 @@ async function seedCommerce(users, sellerProfiles) {
       status: 'NEW',
       warehouse: 'Main Warehouse',
       notes: 'Seed order representing seller operations domain.',
+      metadata: {
+        customer: 'Amina K.',
+        slaDueAt: minutesFromNow(70).toISOString()
+      },
       items: {
         create: [
           {
@@ -496,10 +779,339 @@ async function seedCommerce(users, sellerProfiles) {
             qty: 4,
             unitPrice: 620,
             currency: 'USD'
+          },
+          {
+            id: 'order_item_1_b',
+            sku: 'EV-ACC-001',
+            name: 'Cable management kit',
+            qty: 1,
+            unitPrice: 0,
+            currency: 'USD'
           }
         ]
       }
     }
+  });
+
+  await prisma.order.createMany({
+    data: [
+      {
+        id: 'ORD-10511',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'WhatsApp',
+        currency: 'USD',
+        total: 320,
+        itemCount: 1,
+        status: 'CONFIRMED',
+        warehouse: 'Kampala Hub',
+        updatedAt: hoursAgo(1.6),
+        metadata: {
+          customer: 'Kato S.',
+          slaDueAt: minutesFromNow(330).toISOString()
+        }
+      },
+      {
+        id: 'ORD-10510',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'API',
+        currency: 'CNY',
+        total: 12650,
+        itemCount: 9,
+        status: 'PACKED',
+        warehouse: 'Main Warehouse',
+        updatedAt: hoursAgo(3.2),
+        metadata: {
+          customer: 'Moses N.',
+          slaDueAt: minutesFromNow(980).toISOString()
+        }
+      },
+      {
+        id: 'ORD-10509',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'EVzone',
+        currency: 'USD',
+        total: 560,
+        itemCount: 2,
+        status: 'SHIPPED',
+        warehouse: 'Nairobi Hub',
+        updatedAt: hoursAgo(12),
+        metadata: {
+          customer: 'Sarah T.',
+          slaDueAt: minutesFromNow(1440).toISOString()
+        }
+      },
+      {
+        id: 'ORD-10508',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'WhatsApp',
+        currency: 'USD',
+        total: 980,
+        itemCount: 3,
+        status: 'ON_HOLD',
+        warehouse: 'Kampala Hub',
+        updatedAt: hoursAgo(4.5),
+        metadata: {
+          customer: 'Ibrahim H.',
+          slaDueAt: minutesFromNow(30).toISOString()
+        }
+      },
+      {
+        id: 'ORD-10507',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'EVzone',
+        currency: 'USD',
+        total: 210,
+        itemCount: 1,
+        status: 'CANCELLED',
+        warehouse: 'Main Warehouse',
+        updatedAt: hoursAgo(30),
+        metadata: {
+          customer: 'Joy A.',
+          slaDueAt: minutesFromNow(9999).toISOString()
+        }
+      },
+      {
+        id: 'ORD-10506',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'API',
+        currency: 'CNY',
+        total: 8620,
+        itemCount: 12,
+        status: 'DELIVERED',
+        warehouse: 'Main Warehouse',
+        updatedAt: hoursAgo(90),
+        metadata: {
+          customer: 'Chen L.',
+          slaDueAt: minutesFromNow(9999).toISOString()
+        }
+      },
+      {
+        id: 'EX-24018',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'ExpressMart',
+        currency: 'UGX',
+        total: 186000,
+        itemCount: 6,
+        status: 'NEW',
+        warehouse: 'Kampala Hub',
+        updatedAt: minutesAgo(9),
+        metadata: {
+          customer: 'Amina K.',
+          phone: '+256 700 123 456',
+          address: 'Nsambya Road, Kampala',
+          zone: 'Kampala Central',
+          hub: 'Kampala Hub',
+          slot: '19:00 - 20:00',
+          payment: 'EVzone Pay Wallet',
+          promisedBy: minutesFromNow(55).toISOString(),
+          rider: null,
+          proof: { photo: null, signature: false, otp: '' },
+          feedback: { rating: null, note: '', followUp: 'none' }
+        }
+      },
+      {
+        id: 'EX-24017',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'ExpressMart',
+        currency: 'UGX',
+        total: 54000,
+        itemCount: 2,
+        status: 'CONFIRMED',
+        warehouse: 'Kampala Hub',
+        updatedAt: minutesAgo(24),
+        metadata: {
+          customer: 'Kato S.',
+          phone: '+256 781 098 221',
+          address: 'Bukoto, Kampala',
+          zone: 'Nakawa',
+          hub: 'Kampala Hub',
+          slot: '18:00 - 19:00',
+          payment: 'Cashless',
+          promisedBy: minutesFromNow(95).toISOString(),
+          rider: 'Rider 03 · Moses',
+          proof: { photo: null, signature: false, otp: '' },
+          feedback: { rating: null, note: '', followUp: 'none' }
+        }
+      },
+      {
+        id: 'EX-24016',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'ExpressMart',
+        currency: 'UGX',
+        total: 122000,
+        itemCount: 4,
+        status: 'PICKING',
+        warehouse: 'Kampala Hub',
+        updatedAt: minutesAgo(48),
+        metadata: {
+          customer: 'Sarah T.',
+          phone: '+256 704 555 111',
+          address: 'Bugolobi, Kampala',
+          zone: 'Nakawa',
+          hub: 'Kampala Hub',
+          slot: '18:00 - 19:00',
+          payment: 'Card',
+          promisedBy: minutesFromNow(140).toISOString(),
+          rider: 'Rider 01 · Asha',
+          proof: { photo: null, signature: false, otp: '' },
+          feedback: { rating: null, note: '', followUp: 'none' }
+        }
+      },
+      {
+        id: 'EX-24015',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'ExpressMart',
+        currency: 'UGX',
+        total: 76000,
+        itemCount: 3,
+        status: 'PACKED',
+        warehouse: 'Kampala Hub',
+        updatedAt: minutesAgo(72),
+        metadata: {
+          customer: 'Moses N.',
+          phone: '+256 783 221 809',
+          address: 'Kololo, Kampala',
+          zone: 'Kampala Central',
+          hub: 'Kampala Hub',
+          slot: '17:00 - 18:00',
+          payment: 'Wallet',
+          promisedBy: minutesFromNow(35).toISOString(),
+          rider: 'Rider 02 · Kato',
+          proof: { photo: null, signature: false, otp: '' },
+          feedback: { rating: null, note: '', followUp: 'none' }
+        }
+      },
+      {
+        id: 'EX-24014',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'ExpressMart',
+        currency: 'UGX',
+        total: 91000,
+        itemCount: 5,
+        status: 'OUT_FOR_DELIVERY',
+        warehouse: 'Kampala Hub',
+        updatedAt: minutesAgo(110),
+        metadata: {
+          customer: 'Joy A.',
+          phone: '+256 772 000 410',
+          address: 'Muyenga, Kampala',
+          zone: 'Makindye',
+          hub: 'Kampala Hub',
+          slot: '16:00 - 17:00',
+          payment: 'Cash on delivery',
+          promisedBy: minutesFromNow(22).toISOString(),
+          rider: 'Rider 01 · Asha',
+          proof: { photo: null, signature: false, otp: '' },
+          feedback: { rating: null, note: '', followUp: 'none' }
+        }
+      },
+      {
+        id: 'EX-24013',
+        sellerId: sellerProfiles.seller.id,
+        buyerUserId: users.creator.id,
+        channel: 'ExpressMart',
+        currency: 'UGX',
+        total: 148000,
+        itemCount: 7,
+        status: 'DELIVERED',
+        warehouse: 'Kampala Hub',
+        updatedAt: minutesAgo(320),
+        metadata: {
+          customer: 'Ibrahim H.',
+          phone: '+256 755 301 120',
+          address: 'Ntinda, Kampala',
+          zone: 'Nakawa',
+          hub: 'Kampala Hub',
+          slot: '13:00 - 14:00',
+          payment: 'Mobile Money',
+          promisedBy: minutesFromNow(999).toISOString(),
+          rider: 'Rider 05 · Ben',
+          proof: { photo: 'POD_photo.jpg', signature: true, otp: '' },
+          feedback: { rating: 5, note: 'Fast delivery', followUp: 'none' }
+        }
+      }
+    ]
+  });
+
+  await prisma.sellerReturn.createMany({
+    data: [
+      {
+        id: 'RMA-2201',
+        sellerId: sellerProfiles.seller.id,
+        orderId: 'ORD-10511',
+        status: 'REQUESTED',
+        reason: 'Damaged item',
+        requestedAt: minutesAgo(220),
+        metadata: { pathway: 'Refund to Wallet', amount: 320, currency: 'USD', displayStatus: 'Requested' }
+      },
+      {
+        id: 'RMA-2200',
+        sellerId: sellerProfiles.seller.id,
+        orderId: 'ORD-10510',
+        status: 'APPROVED',
+        reason: 'Wrong variant',
+        requestedAt: minutesAgo(780),
+        approvedAt: minutesAgo(720),
+        metadata: { pathway: 'Exchange', amount: 248, currency: 'CNY', displayStatus: 'Approved' }
+      },
+      {
+        id: 'RMA-2199',
+        sellerId: sellerProfiles.seller.id,
+        orderId: 'ORD-10509',
+        status: 'RECEIVED',
+        reason: 'Not as described',
+        requestedAt: minutesAgo(1440),
+        receivedAt: minutesAgo(1200),
+        metadata: { pathway: 'Refund to Bank', amount: 560, currency: 'USD', displayStatus: 'In Transit' }
+      }
+    ]
+  });
+
+  await prisma.sellerDispute.createMany({
+    data: [
+      {
+        id: 'DSP-901',
+        sellerId: sellerProfiles.seller.id,
+        orderId: 'ORD-10512',
+        status: 'OPEN',
+        reason: 'Item not received',
+        openedAt: minutesAgo(180),
+        updatedAt: minutesAgo(25),
+        metadata: { risk: 82, displayStatus: 'Open' }
+      },
+      {
+        id: 'DSP-900',
+        sellerId: sellerProfiles.seller.id,
+        orderId: 'ORD-10508',
+        status: 'UNDER_REVIEW',
+        reason: 'Payment dispute',
+        openedAt: minutesAgo(620),
+        updatedAt: minutesAgo(120),
+        metadata: { risk: 64, displayStatus: 'Under review' }
+      },
+      {
+        id: 'DSP-899',
+        sellerId: sellerProfiles.seller.id,
+        orderId: 'ORD-10509',
+        status: 'RESOLVED',
+        reason: 'Quality dispute',
+        openedAt: minutesAgo(2200),
+        resolvedAt: minutesAgo(900),
+        updatedAt: minutesAgo(900),
+        metadata: { risk: 18, displayStatus: 'Resolved' }
+      }
+    ]
   });
 
   await prisma.transaction.createMany({
@@ -1349,6 +1961,85 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
                 warehouses: [],
                 channels: ['MyLiveDealz']
               }
+            }
+          ]
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        key: 'security',
+        payload: {
+          twoFactor: true,
+          twoFactorMethod: 'authenticator',
+          twoFactorConfig: {
+            enabled: true,
+            verified: true,
+            secret: 'JBSWY3DPEHPK3PXP'
+          },
+          passkeys: [
+            {
+              id: 'pk_seller_macbook',
+              identifier: 'seller@evhub.com',
+              label: 'Chrome / macOS',
+              createdAt: '2026-03-01T09:12:00.000Z',
+              lastUsedAt: '2026-03-09T19:44:00.000Z'
+            }
+          ],
+          sessions: [
+            {
+              id: 'auth_user_seller_evhub',
+              device: 'Chrome / macOS',
+              ip: '41.210.9.12',
+              lastActiveAt: '2026-03-10T08:15:00.000Z',
+              metadata: {
+                trusted: true,
+                current: true,
+                location: 'Kampala, UG'
+              }
+            },
+            {
+              id: 'auth_ios_seller_evhub',
+              device: 'Safari / iOS',
+              ip: '41.210.9.87',
+              lastActiveAt: '2026-03-09T20:05:00.000Z',
+              metadata: {
+                trusted: true,
+                current: false,
+                location: 'Kampala, UG'
+              }
+            }
+          ],
+          trustedDevices: [
+            {
+              id: 'auth_user_seller_evhub',
+              name: 'Office MacBook',
+              type: 'desktop',
+              trusted: true,
+              trustedAt: '2026-02-20T08:30:00.000Z',
+              lastSeen: '2026-03-10T08:15:00.000Z',
+              note: 'Primary admin device'
+            },
+            {
+              id: 'auth_ios_seller_evhub',
+              name: 'iPhone 15',
+              type: 'mobile',
+              trusted: true,
+              trustedAt: '2026-02-11T07:30:00.000Z',
+              lastSeen: '2026-03-09T20:05:00.000Z',
+              note: '2FA fallback device'
+            }
+          ],
+          alerts: [
+            {
+              id: 'seller_sec_alert_1',
+              title: 'New device sign-in',
+              reason: 'A mobile Safari session was approved with 2FA.',
+              risk: 48,
+              createdAt: '2026-03-09T20:05:00.000Z',
+              location: 'Kampala, UG',
+              ip: '41.210.9.87',
+              status: 'Resolved',
+              tags: ['2FA', 'trusted device']
             }
           ]
         }
@@ -2242,9 +2933,18 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
       isMarketplace: true,
       data: {
         id: 'AD-101',
+        dealType: 'Shoppable Adz',
+        tagline: 'Serum + skincare conversion push',
+        notes: 'Backend-backed creator ad campaign for marketplace and builder flows.',
         campaignName: 'Autumn Beauty Flash',
         campaignSubtitle: 'Serum + skincare conversion push',
-        supplier: { name: 'GlowUp Hub', category: 'Beauty', logoUrl: 'https://example.com/glowup-logo.png' },
+        supplier: {
+          id: 'p-1',
+          name: 'GlowUp Hub',
+          category: 'Beauty',
+          logoUrl: 'https://example.com/glowup-logo.png',
+          avatarUrl: 'https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=512&auto=format&fit=crop'
+        },
         creator: { name: 'Ronald M', handle: '@ronaldm', avatarUrl: 'https://example.com/creator-avatar.png', verified: true },
         status: 'Live',
         platforms: ['Instagram', 'TikTok', 'MyLiveDealz'],
@@ -2253,6 +2953,30 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         timezone: 'Africa/Kampala',
         heroImageUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=1200&auto=format&fit=crop',
         heroIntroVideoUrl: 'https://example.com/beauty-flash.mp4',
+        ctaPrimaryLabel: 'Buy now',
+        ctaSecondaryLabel: 'Add to cart',
+        shortDomain: 'mldz.link',
+        shortSlug: 'autumn-beauty-flash',
+        utmPresets: [
+          {
+            id: 'utm1',
+            name: 'Host IG Story',
+            description: 'Strong host attribution for IG story swipes.',
+            params: { utm_source: 'instagram', utm_medium: 'story', utm_campaign: 'host', utm_content: 'ronald' }
+          },
+          {
+            id: 'utm2',
+            name: 'TikTok Bio Link',
+            description: 'Bio link tracking for TikTok host traffic.',
+            params: { utm_source: 'tiktok', utm_medium: 'bio', utm_campaign: 'host', utm_content: 'ronald' }
+          },
+          {
+            id: 'utm3',
+            name: 'Marketplace Featured',
+            description: 'Marketplace featured slot traffic.',
+            params: { utm_source: 'marketplace', utm_medium: 'featured', utm_campaign: 'dealz', utm_content: 'hero' }
+          }
+        ],
         compensation: { type: 'Hybrid', commissionRate: 0.08, flatFee: 200, currency: 'USD' },
         offers: [
           {
@@ -2261,8 +2985,27 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
             name: 'Vitamin C Serum',
             currency: 'USD',
             price: 22,
+            basePrice: 29,
             stockLeft: 48,
+            sold: 96,
             posterUrl: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?q=80&w=900&auto=format&fit=crop',
+            catalogPosterUrl: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?q=80&w=900&auto=format&fit=crop',
+            catalogVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+            sellingModes: ['RETAIL'],
+            defaultSellingMode: 'RETAIL'
+          },
+          {
+            id: 'O-101B',
+            type: 'PRODUCT',
+            name: 'Hydra Cleanser',
+            currency: 'USD',
+            price: 18,
+            basePrice: 24,
+            stockLeft: 15,
+            sold: 44,
+            posterUrl: 'https://images.unsplash.com/photo-1612817152414-857f7b8872d9?q=80&w=800&auto=format&fit=crop',
+            catalogPosterUrl: 'https://images.unsplash.com/photo-1612817152414-857f7b8872d9?q=80&w=800&auto=format&fit=crop',
+            catalogVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
             sellingModes: ['RETAIL'],
             defaultSellingMode: 'RETAIL'
           }
@@ -2287,9 +3030,18 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
       isMarketplace: true,
       data: {
         id: 'AD-102',
+        dealType: 'Live + Shoppables',
+        tagline: 'Gadget bundle preview',
+        notes: 'Hybrid marketplace campaign with scheduled live session.',
         campaignName: 'Tech Friday Mega Live',
         campaignSubtitle: 'Gadget bundle preview',
-        supplier: { name: 'GadgetMart Africa', category: 'Tech', logoUrl: 'https://example.com/gadgetmart-logo.png' },
+        supplier: {
+          id: 'p-2',
+          name: 'GadgetMart Africa',
+          category: 'Tech',
+          logoUrl: 'https://example.com/gadgetmart-logo.png',
+          avatarUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=512&auto=format&fit=crop'
+        },
         creator: { name: 'Ronald M', handle: '@ronaldm', avatarUrl: 'https://example.com/creator-avatar.png', verified: true },
         status: 'Scheduled',
         platforms: ['YouTube', 'MyLiveDealz'],
@@ -2297,6 +3049,8 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         endISO: daysFromNow(9).toISOString(),
         timezone: 'Africa/Kampala',
         heroImageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1200&auto=format&fit=crop',
+        ctaPrimaryLabel: 'Reserve deal',
+        ctaSecondaryLabel: 'Watch live',
         compensation: { type: 'Commission', commissionRate: 0.12 },
         offers: [
           {
@@ -2305,8 +3059,12 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
             name: 'Wireless Earbuds',
             currency: 'USD',
             price: 55,
+            basePrice: 70,
             stockLeft: 120,
+            sold: 22,
             posterUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=900&auto=format&fit=crop',
+            catalogPosterUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=900&auto=format&fit=crop',
+            catalogVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
             sellingModes: ['RETAIL', 'WHOLESALE'],
             defaultSellingMode: 'WHOLESALE',
             wholesale: {
@@ -2319,6 +3077,25 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
             }
           }
         ],
+        live: {
+          id: 'live_tech_friday',
+          status: 'Scheduled',
+          title: 'Tech Friday Mega Live',
+          description: 'First look at the latest gadgets and accessory bundles.',
+          timezoneLabel: 'GMT+3',
+          promoLink: 'https://mylivedealz.com/live/tech-friday?creator=ronald',
+          heroImageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1200&auto=format&fit=crop',
+          featured: [
+            {
+              id: 'live_item_102',
+              kind: 'product',
+              name: 'Wireless Earbuds',
+              priceLabel: '$55',
+              stockLeft: 120,
+              posterUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=900&auto=format&fit=crop'
+            }
+          ]
+        },
         generated: true,
         hasBrokenLink: false,
         lowStock: false,
@@ -2328,6 +3105,64 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         revenue7d: 410,
         currency: 'USD',
         kpis: [{ label: 'Pre-save', value: '410' }]
+      }
+    },
+    {
+      id: 'adz_creator_faith_service',
+      status: 'Draft',
+      title: 'Faith & Wellness Service Promo',
+      budget: 640,
+      currency: 'USD',
+      isMarketplace: true,
+      data: {
+        id: 'AD-103',
+        dealType: 'Live Sessionz',
+        tagline: 'Morning booking promo for guided wellness sessions',
+        notes: 'Service-led live invite used by creator marketplace flows.',
+        campaignName: 'Faith & Wellness Morning Dealz',
+        campaignSubtitle: 'Guided service booking promo',
+        supplier: {
+          id: 'p-3',
+          name: 'Grace Living Store',
+          category: 'Wellness',
+          logoUrl: 'https://example.com/grace-living-logo.png',
+          avatarUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=512&auto=format&fit=crop'
+        },
+        creator: { name: 'Ronald M', handle: '@ronaldm', avatarUrl: 'https://example.com/creator-avatar.png', verified: true },
+        status: 'Draft',
+        platforms: ['Instagram', 'MyLiveDealz'],
+        startISO: daysFromNow(4).toISOString(),
+        endISO: daysFromNow(6).toISOString(),
+        timezone: 'Africa/Kampala',
+        heroImageUrl: 'https://images.unsplash.com/photo-1515378791036-0648a814c963?auto=format&fit=crop&w=1200&q=70',
+        live: {
+          id: 'live_faith_service',
+          status: 'Scheduled',
+          title: 'Faith & Wellness Morning Dealz',
+          description: 'Morning service session with booking CTA for wellness consultations.',
+          timezoneLabel: 'GMT+3',
+          promoLink: 'https://mylivedealz.com/live/faith-morning?creator=ronald',
+          heroImageUrl: 'https://images.unsplash.com/photo-1515378791036-0648a814c963?auto=format&fit=crop&w=1200&q=70',
+          featured: [
+            {
+              id: 'live_item_103',
+              kind: 'service',
+              name: 'Wellness Consultation',
+              priceLabel: '$45',
+              stockLeft: -1,
+              posterUrl: 'https://images.unsplash.com/photo-1515378791036-0648a814c963?auto=format&fit=crop&w=900&q=70'
+            }
+          ]
+        },
+        generated: false,
+        hasBrokenLink: false,
+        lowStock: false,
+        impressions7d: 1320,
+        clicks7d: 118,
+        orders7d: 7,
+        revenue7d: 190,
+        currency: 'USD',
+        kpis: [{ label: 'Booked consults', value: '7' }]
       }
     }
   ];
@@ -2358,6 +3193,52 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
       }
     });
   }
+
+  await prisma.adzBuilder.create({
+    data: {
+      id: 'adz_builder_default',
+      userId: users.creator.id,
+      status: 'draft',
+      data: {
+        creator: {
+          name: 'Ronald M',
+          handle: '@ronaldm',
+          avatarUrl: 'https://example.com/creator-avatar.png',
+          badge: 'Host'
+        },
+        step: 'offer',
+        isGenerated: false,
+        cart: {},
+        externalAssets: {},
+        builder: {
+          supplierId: 'p-1',
+          campaignId: 'adz_creator_autumn_beauty',
+          selectedOfferIds: ['O-101'],
+          primaryOfferId: 'O-101',
+          platforms: ['Instagram'],
+          platformOtherList: [],
+          platformOtherDraft: '',
+          heroImageAssetId: 'asset_library_a_2',
+          heroIntroVideoAssetId: 'asset_library_a_1',
+          itemPosterByOfferId: {},
+          itemVideoByOfferId: {},
+          ctaText: 'Shop the featured dealz before they end.',
+          primaryCtaLabel: 'Buy now',
+          secondaryCtaLabel: 'Add to cart',
+          landingBehavior: 'Checkout',
+          landingUrl: '',
+          shortDomain: 'mldz.link',
+          shortSlug: 'autumn-beauty-flash',
+          utmPresetId: 'utm1',
+          utmCustom: {},
+          startDate: daysFromNow(1).toISOString().slice(0, 10),
+          startTime: '18:00',
+          endDate: daysFromNow(1).toISOString().slice(0, 10),
+          endTime: '19:00'
+        }
+      }
+    }
+  });
 
   await prisma.promoAd.create({
     data: {
@@ -3245,7 +4126,12 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
             linkBlocking: true
           }
         }
-      },
+      }
+    ]
+  });
+
+  await prisma.workflowRecord.createMany({
+    data: [
       {
         userId: users.creator.id,
         recordType: 'content_approval',
