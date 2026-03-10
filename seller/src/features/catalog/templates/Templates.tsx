@@ -1,26 +1,40 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocalization } from "../../../localization/LocalizationProvider";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 export default function SellerCatalogTemplatesEVzoneV1_JS() {
   const brand = useMemo(() => ({ green: '#03CD8C', orange: '#F77F00', grey: '#A6A6A6', greyLight: '#F2F2F2', black: '#111827' }), []);
   const { t, language, setLanguage, languageOptions } = useLocalization();
 
-  // --- Data (JS only) ---
-  const KEY = 'catalog_attr_templates_v1';
-  
   type TemplateAttr = { name: string; type: string; required: boolean; options: string };
   type Template = { id: string; name: string; category: string; notes?: string; attrs: TemplateAttr[] };
-
-  const seed: Template[] = [
-    {
-      id: 'TMP-1001', name: 'Wallbox Specs', category: 'EVmart/Chargers', notes: 'Common for 7/11kW', attrs: [
-        { name: 'Power', type: 'number', required: true, options: '' },
-        { name: 'Color', type: 'select', required: false, options: 'Black|White' },
-      ]
-    },
-  ];
-  const load = (): Template[] => { try { const s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch { } return seed; };
-  const [rows, setRows] = useState<Template[]>(load()); useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch { } }, [rows]);
+  const mapTemplate = (row: any): Template => ({
+    id: String(row.id),
+    name: String(row.name || ""),
+    category: String(row.category || ""),
+    notes: row.notes || "",
+    attrs: Array.isArray(row.attrs)
+      ? row.attrs
+      : Array.isArray(row.attributes)
+        ? row.attributes
+        : Array.isArray(row.payload?.attrs)
+          ? row.payload.attrs
+          : [],
+  });
+  const [rows, setRows] = useState<Template[]>([]);
+  useEffect(() => {
+    let active = true;
+    void sellerBackendApi
+      .getCatalogTemplates()
+      .then((payload) => {
+        if (!active) return;
+        setRows(Array.isArray(payload.templates) ? payload.templates.map(mapTemplate) : []);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // --- UI state ---
   const [q, setQ] = useState('');
@@ -31,10 +45,49 @@ export default function SellerCatalogTemplatesEVzoneV1_JS() {
 
   // --- Actions ---
   const addTemplate = () => { const id = 'TMP-' + (1000 + rows.length + 1); setOpen({ id, name: '', category: '', notes: '', attrs: [] }); };
-  const saveTemplate = () => { if (!open) return; if (!open.name || !open.category) { toastIt(t('Name + category required')); return; } setRows(list => { const idx = list.findIndex(x => x.id === open.id); if (idx >= 0) { const n = [...list]; n[idx] = open; return n; } return [open, ...list]; }); setOpen(null); toastIt(t('Saved')); };
-  const delTemplate = (id) => setRows(list => list.filter(x => x.id !== id));
-  const dupTemplate = (item) => { const copy = JSON.parse(JSON.stringify(item)); copy.id = 'TMP-' + (1000 + rows.length + 1); copy.name = item.name + ' (Copy)'; setRows(list => [copy, ...list]); };
-  const pushToWizard = (item) => { try { localStorage.setItem('catalog_attr_templates', JSON.stringify(item)); toastIt(t('Pushed to wizard')); } catch { toastIt(t('Failed')); } };
+  const saveTemplate = async () => {
+    if (!open) return;
+    if (!open.name || !open.category) { toastIt(t('Name + category required')); return; }
+    const payload = { name: open.name, category: open.category, notes: open.notes || "", kind: "ATTRIBUTE_SET", attrs: open.attrs };
+    const saved = rows.some((entry) => entry.id === open.id)
+      ? await sellerBackendApi.patchCatalogTemplate(open.id, payload).catch(() => null)
+      : await sellerBackendApi.createCatalogTemplate(payload).catch(() => null);
+    if (!saved) { toastIt(t('Failed')); return; }
+    const next = mapTemplate(saved);
+    setRows((list) => {
+      const idx = list.findIndex((x) => x.id === open.id || x.id === next.id);
+      if (idx >= 0) {
+        const copy = [...list];
+        copy[idx] = next;
+        return copy;
+      }
+      return [next, ...list];
+    });
+    setOpen(null);
+    toastIt(t('Saved'));
+  };
+  const delTemplate = async (id) => {
+    const result = await sellerBackendApi.deleteCatalogTemplate(id).catch(() => null);
+    if (!result?.deleted) { toastIt(t('Failed')); return; }
+    setRows((list) => list.filter((x) => x.id !== id));
+  };
+  const dupTemplate = async (item) => {
+    const copy = JSON.parse(JSON.stringify(item));
+    copy.name = item.name + ' (Copy)';
+    const created = await sellerBackendApi.createCatalogTemplate({
+      name: copy.name,
+      category: copy.category,
+      notes: copy.notes || "",
+      kind: "ATTRIBUTE_SET",
+      attrs: copy.attrs || [],
+    }).catch(() => null);
+    if (!created) { toastIt(t('Failed')); return; }
+    setRows((list) => [mapTemplate(created), ...list]);
+  };
+  const pushToWizard = async (item) => {
+    const result = await sellerBackendApi.patchUiState({ catalog: { wizardTemplate: item } }).catch(() => null);
+    toastIt(result ? t('Pushed to wizard') : t('Failed'));
+  };
 
   // --- Attribute helpers ---
   const addAttr = () => setOpen(o => o ? { ...o, attrs: [...(o.attrs || []), { name: '', type: 'text', required: false, options: '' }] } : o);

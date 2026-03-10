@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -58,8 +59,6 @@ type Toast = {
   message?: string;
   action?: { label: string; onClick: () => void };
 };
-
-const LS_KEY = "evzone_provider_new_quote_draft_v1";
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -700,16 +699,20 @@ export default function ProviderNewQuotePage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [draft, setDraft] = useState(() => {
-    try {
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem(LS_KEY) : null;
-      if (!raw) return defaultDraft();
-      const parsed = JSON.parse(raw);
-      return { ...defaultDraft(), ...parsed };
-    } catch {
-      return defaultDraft();
-    }
-  });
+  const [draft, setDraft] = useState(() => defaultDraft());
+
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getWorkflowScreenState("provider-new-quote").then((payload) => {
+      if (!active) return;
+      setDraft({ ...defaultDraft(), ...payload });
+    }).catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [step, setStep] = useState(0);
   const steps = ["Scope", "Pricing", "Timeline", "Terms", "Send"]; // 0..4
@@ -722,12 +725,9 @@ export default function ProviderNewQuotePage() {
   useEffect(() => {
     if (autosaveRef.current) window.clearTimeout(autosaveRef.current);
     autosaveRef.current = window.setTimeout(() => {
-      try {
-        window.localStorage.setItem(LS_KEY, JSON.stringify(draft));
+      void sellerBackendApi.patchWorkflowScreenState("provider-new-quote", draft).then(() => {
         setAutosaveAt(new Date().toISOString());
-      } catch {
-        // ignore
-      }
+      }).catch(() => undefined);
     }, 550);
     return () => {
       if (autosaveRef.current) window.clearTimeout(autosaveRef.current);
@@ -850,11 +850,7 @@ export default function ProviderNewQuotePage() {
   const resetDraft = () => {
     const fresh = defaultDraft();
     setDraft(fresh);
-    try {
-      window.localStorage.setItem(LS_KEY, JSON.stringify(fresh));
-    } catch {
-      // ignore
-    }
+    void sellerBackendApi.patchWorkflowScreenState("provider-new-quote", fresh).catch(() => undefined);
     pushToast({ title: "Draft reset", message: "A new quote draft was created.", tone: "default" });
   };
 

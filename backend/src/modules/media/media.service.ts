@@ -220,6 +220,38 @@ export class MediaService {
     });
   }
 
+  async update(userId: string, id: string, payload: Record<string, unknown>) {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id, userId }
+    });
+    if (!asset) {
+      throw new NotFoundException('Media asset not found');
+    }
+    return this.prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: {
+        name: typeof payload.name === 'string' ? payload.name : undefined,
+        kind: typeof payload.kind === 'string' ? payload.kind : undefined,
+        url: typeof payload.url === 'string' ? payload.url : undefined,
+        metadata:
+          payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+            ? (payload.metadata as Prisma.InputJsonValue)
+            : undefined
+      }
+    });
+  }
+
+  async remove(userId: string, id: string) {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id, userId }
+    });
+    if (!asset) {
+      throw new NotFoundException('Media asset not found');
+    }
+    await this.prisma.mediaAsset.delete({ where: { id: asset.id } });
+    return { deleted: true };
+  }
+
   private buildStorageKey(userId: string, name: string, extension?: string) {
     const now = new Date();
     const safeName =

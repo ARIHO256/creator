@@ -122,6 +122,18 @@ export class CatalogService {
     });
   }
 
+  async deleteTemplate(userId: string, id: string) {
+    const seller = await this.sellersService.ensureSellerProfile(userId);
+    const existing = await this.prisma.catalogTemplate.findFirst({
+      where: { id, sellerId: seller.id }
+    });
+    if (!existing) {
+      throw new NotFoundException('Catalog template not found');
+    }
+    await this.prisma.catalogTemplate.delete({ where: { id: existing.id } });
+    return { deleted: true };
+  }
+
   async importTemplates(userId: string, body: ImportCatalogTemplatesDto) {
     const seller = await this.sellersService.ensureSellerProfile(userId);
     const mode = body.mode ?? 'UPSERT';

@@ -154,6 +154,19 @@ export class WorkflowService {
         payload ?? { status: 'pending', progressPercent: 0, requiredActions: [], documents: [] }
     );
   }
+  screenState(userId: string, key: string) {
+    return this.getRecordPayload(userId, 'screen_state', key).then((payload) => payload ?? {});
+  }
+  async patchScreenState(userId: string, key: string, body: Record<string, unknown>) {
+    const current = (await this.screenState(userId, key)) as Record<string, unknown>;
+    const next = {
+      ...current,
+      ...this.ensureObjectPayload(body),
+      updatedAt: new Date().toISOString()
+    };
+    const record = await this.upsertRecord(userId, 'screen_state', key, next);
+    return record.payload as Record<string, unknown>;
+  }
   async patchAccountApproval(userId: string, body: UpdateAccountApprovalDto) {
     const record = await this.upsertRecord(userId, 'account_approval', 'main', {
       ...body,

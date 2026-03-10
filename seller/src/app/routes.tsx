@@ -13,6 +13,7 @@ import type { AuthProps } from '../features/misc/Auth';
 import { isValidSession, useSession } from '../auth/session';
 import { getCurrentRole } from '../auth/roles';
 import { ProviderGuard, SellerGuard, SellerOrProviderGuard } from '../auth/RoleGuard';
+import { sellerBackendApi } from '../lib/backendApi';
 
 const scaffold = (name: string) => {
   const Scaffold = () => {
@@ -150,11 +151,22 @@ const SupplierMldzRedirect = () => {
 };
 
 const useChannels = (): Record<string, boolean> => {
-  try {
-    return JSON.parse(localStorage.getItem('channels_enabled_v1') || '{}');
-  } catch {
-    return {};
-  }
+  const [channels, setChannels] = React.useState<Record<string, boolean>>({});
+  useEffect(() => {
+    let active = true;
+    void sellerBackendApi
+      .getUiState()
+      .then((payload) => {
+        if (!active) return;
+        const next = (payload.channels as Record<string, boolean> | undefined) || {};
+        setChannels(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  return channels;
 };
 
 type GuardProps = {

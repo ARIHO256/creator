@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLocalization } from '../../localization/LocalizationProvider'
 import { Link } from 'react-router-dom'
+import { sellerBackendApi } from '../../lib/backendApi'
 
 /**
  * EVzone - Service Listing Review Status (Provider / Seller / Creator)
@@ -27,29 +28,18 @@ export default function ServiceListingApprovalPending() {
   )
 
   const serviceName =
-    qp.serviceName ||
-    (typeof window !== 'undefined'
-      ? localStorage.getItem('serviceListing.serviceName') || t('New service')
-      : t('New service'))
+    qp.serviceName || t('New service')
 
   const category =
-    qp.category ||
-    (typeof window !== 'undefined'
-      ? localStorage.getItem('serviceListing.category') || t('Not set')
-      : t('Not set'))
+    qp.category || t('Not set')
 
   const role =
-    qp.role ||
-    (typeof window !== 'undefined'
-      ? localStorage.getItem('signup.role') || t('provider')
-      : t('provider'))
+    qp.role || t('provider')
 
   const listingId =
     qp.listingId ||
     qp.serviceId ||
-    (typeof window !== 'undefined'
-      ? localStorage.getItem('serviceListing.id') || t('pending')
-      : t('pending'))
+    t('pending')
 
   const initialStatus =
     typeof window !== 'undefined' && qp.status
@@ -65,43 +55,22 @@ export default function ServiceListingApprovalPending() {
 
   // Core state
   const [status, setStatus] = useState(initialStatus)
-  const [etaMin, setEtaMin] = useState(
-    Number(
-      (typeof window !== 'undefined' && localStorage.getItem('serviceListing.etaMin')) ||
-      90
-    )
-  )
+  const [etaMin, setEtaMin] = useState(90)
 
   // Admin request (what was returned)
   const [adminReason, setAdminReason] = useState(
-    (typeof window !== 'undefined' && localStorage.getItem('serviceListing.adminReason')) ||
     reasonFromQ
   )
 
-  const [adminDocs, setAdminDocs] = useState(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      return JSON.parse(localStorage.getItem('serviceListing.adminDocs') || '[]')
-    } catch {
-      return []
-    }
-  }) // [{name,url,type}]
+  const [adminDocs, setAdminDocs] = useState([]) // [{name,url,type}]
 
   // Provider response draft
   const [items, setItems] = useState(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const cached = JSON.parse(localStorage.getItem('serviceListing.items') || '[]')
-        if (Array.isArray(cached) && cached.length) return cached
-      } catch { }
-    }
     return itemsFromQ.map((t, i) => ({ id: `item-${i}`, text: t, done: false }))
   })
 
   const [newItem, setNewItem] = useState('')
-  const [note, setNote] = useState(
-    (typeof window !== 'undefined' && localStorage.getItem('serviceListing.note')) || ''
-  )
+  const [note, setNote] = useState('')
 
   const [files, setFiles] = useState<File[]>([]) // File[] (local preview only)
   const [notice, setNotice] = useState('')
@@ -161,20 +130,19 @@ export default function ServiceListingApprovalPending() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status])
 
-  // Persist draft
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      localStorage.setItem('serviceListing.status', status)
-      localStorage.setItem('serviceListing.etaMin', String(etaMin))
-      localStorage.setItem('serviceListing.adminReason', adminReason || '')
-      localStorage.setItem('serviceListing.adminDocs', JSON.stringify(adminDocs || []))
-      localStorage.setItem('serviceListing.items', JSON.stringify(items || []))
-      localStorage.setItem('serviceListing.note', note || '')
-      localStorage.setItem('serviceListing.serviceName', serviceName || '')
-      localStorage.setItem('serviceListing.category', category || '')
-      localStorage.setItem('serviceListing.id', listingId || '')
-    } catch { }
+    void sellerBackendApi.patchWorkflowScreenState('service-listing-approval', {
+      status,
+      etaMin,
+      adminReason,
+      adminDocs,
+      items,
+      note,
+      serviceName,
+      category,
+      listingId,
+      role,
+    }).catch(() => undefined)
   }, [
     status,
     etaMin,
@@ -362,12 +330,14 @@ export default function ServiceListingApprovalPending() {
   function clearDraft() {
     try {
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('serviceListing.status')
-        localStorage.removeItem('serviceListing.etaMin')
-        localStorage.removeItem('serviceListing.adminReason')
-        localStorage.removeItem('serviceListing.adminDocs')
-        localStorage.removeItem('serviceListing.items')
-        localStorage.removeItem('serviceListing.note')
+        void sellerBackendApi.patchWorkflowScreenState('service-listing-approval', {
+          status: 'ChangesRequested',
+          etaMin: 90,
+          adminReason: '',
+          adminDocs: [],
+          items: [],
+          note: '',
+        }).catch(() => undefined)
       }
       setNotice('Draft cleared.')
     } catch { }
@@ -793,3 +763,20 @@ try {
     'status enum ok'
   )
 } catch { }
+  useEffect(() => {
+    let active = true
+
+    void sellerBackendApi.getWorkflowScreenState('service-listing-approval').then((payload) => {
+      if (!active) return
+      if (typeof payload.status === 'string') setStatus(payload.status)
+      if (Number.isFinite(Number(payload.etaMin))) setEtaMin(Number(payload.etaMin))
+      if (typeof payload.adminReason === 'string') setAdminReason(payload.adminReason)
+      if (Array.isArray(payload.adminDocs)) setAdminDocs(payload.adminDocs)
+      if (Array.isArray(payload.items)) setItems(payload.items)
+      if (typeof payload.note === 'string') setNote(payload.note)
+    }).catch(() => undefined)
+
+    return () => {
+      active = false
+    }
+  }, [])

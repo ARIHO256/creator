@@ -34,6 +34,10 @@ export class SettingsController {
   @Patch('settings/preferences')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   updatePreferences(@CurrentUser() user: RequestUser, @Body() body: UpdatePreferencesDto) { return this.service.updatePreferences(user.sub, body); }
+  @Get('settings/ui-state') uiState(@CurrentUser() user: RequestUser) { return this.service.uiState(user.sub); }
+  @Patch('settings/ui-state')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  updateUiState(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.updateUiState(user.sub, body); }
   @Get('settings/payout-methods') payoutMethods(@CurrentUser() user: RequestUser) { return this.service.payoutMethods(user.sub); }
   @Patch('settings/payout-methods')
   @RateLimit({ limit: 10, windowMs: 60_000 })

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocalization } from "../../../localization/LocalizationProvider";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 // Seller — Catalog — Media Library v1 (EVzone) — JS only (fixed)
 // Route: /catalog/media-library
@@ -10,20 +11,75 @@ export default function SellerCatalogMediaLibraryEVzoneV1_JS() {
   const brand = useMemo(() => ({ green: '#03CD8C', orange: '#F77F00', grey: '#A6A6A6', greyLight: '#F2F2F2', black: '#111827' }), []);
   const { t, language, setLanguage, languageOptions } = useLocalization();
 
-  // --- Data (JS only) ---
-  const KEY = 'catalog_media_library_v1';
-  const seed = [{ id: 'MED-1001', url: 'https://picsum.photos/seed/ev/800/600', type: 'image', tags: ['ev', 'wallbox'], usage: 12, title: 'Wallbox hero' }];
-  const load = () => { try { const s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch { } return seed; };
-  const [rows, setRows] = useState(load()); useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch { } }, [rows]);
+  const mapAsset = (row: any) => ({
+    id: String(row.id),
+    url: String(row.url || ""),
+    type: String(row.kind || row.type || "image"),
+    tags: Array.isArray(row.metadata?.tags) ? row.metadata.tags : [],
+    usage: Number(row.metadata?.usage || 0),
+    title: String(row.metadata?.title || row.name || ""),
+  });
+  const [rows, setRows] = useState<any[]>([]);
+  useEffect(() => {
+    let active = true;
+    void sellerBackendApi
+      .getMediaAssets()
+      .then((payload) => {
+        if (!active) return;
+        setRows(Array.isArray(payload) ? payload.map(mapAsset) : []);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [q, setQ] = useState(''); const [ft, setFt] = useState('All'); // 'All'|'image'|'video'
   const [toast, setToast] = useState(''); const toastIt = (t) => { setToast(t); setTimeout(() => setToast(''), 1300); };
 
   const filtered = useMemo(() => rows.filter(r => (ft === 'All' || r.type === ft) && (!q.trim() || `${r.id} ${r.title || ''} ${(r.tags || []).join(' ')}`.toLowerCase().includes(q.toLowerCase()))), [rows, q, ft]);
 
-  const addAsset = (url, type, tags, title) => { const id = 'MED-' + (1000 + rows.length + 1); setRows(list => [{ id, url, type, tags: (String(tags || '').split(',').map(x => x.trim()).filter(Boolean)), usage: 0, title: title || '' }, ...list]); toastIt(t('Added')); };
-  const remove = (id) => setRows(list => list.filter(x => x.id !== id));
-  const bumpUsage = (id) => setRows(list => list.map(a => a.id === id ? ({ ...a, usage: (a.usage || 0) + 1 }) : a));
+  const addAsset = async (url, type, tags, title) => {
+    const created = await sellerBackendApi.createMediaAsset({
+      name: title || url,
+      kind: type,
+      url,
+      visibility: "PUBLIC",
+      metadata: {
+        tags: String(tags || '').split(',').map((x) => x.trim()).filter(Boolean),
+        usage: 0,
+        title: title || ''
+      }
+    }).catch(() => null);
+    if (!created) { toastIt(t('Invalid JSON')); return; }
+    setRows((list) => [mapAsset(created), ...list]);
+    toastIt(t('Added'));
+  };
+  const remove = async (id) => {
+    const result = await sellerBackendApi.deleteMediaAsset(id).catch(() => null);
+    if (!result?.deleted) return;
+    setRows((list) => list.filter((x) => x.id !== id));
+  };
+  const bumpUsage = async (id) => {
+    const current = rows.find((entry) => entry.id === id);
+    if (!current) return;
+    const nextUsage = Number(current.usage || 0) + 1;
+    const updated = await sellerBackendApi.patchMediaAsset(id, {
+      name: current.title || current.id,
+      kind: current.type,
+      url: current.url,
+      metadata: {
+        tags: current.tags || [],
+        usage: nextUsage,
+        title: current.title || ""
+      }
+    }).catch(() => null);
+    setRows((list) =>
+      updated
+        ? list.map((asset) => asset.id === id ? { ...asset, usage: nextUsage } : asset)
+        : list
+    );
+  };
 
   const exportJSON = () => { try { const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'media_library.json'; a.click(); } catch { } };
   const importJSON = (file) => { if (!file) return; const r = new FileReader(); r.onload = () => { try { const arr = JSON.parse(String(r.result || '[]')); setRows(Array.isArray(arr) ? arr : rows); toastIt(t('Imported')); } catch { toastIt(t('Invalid JSON')); } }; r.readAsText(file); };

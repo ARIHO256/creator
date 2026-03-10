@@ -1,48 +1,36 @@
 import React, { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
-
-const FALLBACK_LISTINGS = [
-  { sku: "WBX-7KW-BLK", title: "7kW Wallbox (Black)", channel: "EVmart", category: "Chargers", price: 299, currency: "USD", description: "Smart EV wallbox with app control and scheduled charging.", inventory: 42, status: "Live", updated: "Today, 10:12" },
-  { sku: "EVC-PORT-CCS2", title: "CCS2 Port Kit", channel: "EVmart", category: "Adapters", price: 69, currency: "USD", description: "Universal CCS2 conversion kit for legacy wall chargers.", inventory: 7, status: "Pending", updated: "Yesterday" },
-  { sku: "PPE-MASK-50", title: "Surgical Masks (50 pack)", channel: "HealthMart", category: "Pharmacy/OTC", price: 12, currency: "USD", description: "Medical grade disposable masks (box of 50).", inventory: 320, status: "Live", updated: "2d ago" },
-  { sku: "STYLE-TEE-XL-BK", title: "EVzone Tee — XL Black", channel: "StyleMart", category: "T‑Shirts", price: 18, currency: "USD", description: "Classic EVzone logo tee, heavy cotton, unisex fit.", inventory: 0, status: "Rejected", updated: "2d ago" },
-  { sku: "GAD-WATCH-UL", title: "Smart Watch Ultra", channel: "GadgetMart", category: "Wearables", price: 139, currency: "USD", description: "Rugged AMOLED smart watch with LTE and 7‑day battery.", inventory: 15, status: "Draft", updated: "3d ago" },
-];
-
-function loadListings() {
-  try {
-    const stored = JSON.parse(localStorage.getItem("seller_listings_share_v1") || localStorage.getItem("seller_listings_v1") || "[]");
-    if (Array.isArray(stored) && stored.length) return stored;
-  } catch (error) {
-    console.warn("Failed to load stored listings for share page", error);
-  }
-  return FALLBACK_LISTINGS;
-}
+import { sellerBackendApi } from "../../lib/backendApi";
 
 export default function ProductShare() {
   const { t } = useLocalization();
   const { sku } = useParams();
-  const listings = useMemo(loadListings, []);
+  const [listings, setListings] = useState<any[]>([]);
+  useEffect(() => {
+    let active = true;
+    void sellerBackendApi
+      .getMarketplaceListings()
+      .then((rows) => {
+        if (active && Array.isArray(rows)) setListings(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
   const targetSku = (sku || "").trim().toLowerCase();
-  let item = listings.find((entry) => (entry.sku || "").toLowerCase() === targetSku);
-
-  if (!item && typeof window !== "undefined") {
-    try {
-      const cached = JSON.parse(sessionStorage.getItem("seller_share_current") || "null");
-      if (cached && (cached.sku || "").toLowerCase() === targetSku) {
-        item = cached;
-      }
-    } catch { }
-    if (!item) {
-      try {
-        const last = JSON.parse(localStorage.getItem("seller_share_last") || "null");
-        if (last && (last.sku || "").toLowerCase() === targetSku) {
-          item = last;
-        }
-      } catch { }
-    }
-  }
+  const item = useMemo(
+    () =>
+      listings.find((entry) => {
+        const candidates = [entry.sku, entry.id, entry.slug, entry.title]
+          .map((value) => String(value || "").toLowerCase())
+          .filter(Boolean);
+        return candidates.includes(targetSku);
+      }),
+    [listings, targetSku]
+  );
 
   if (!item) {
     return (
@@ -68,7 +56,8 @@ export default function ProductShare() {
     );
   }
 
-  const { title, channel, category, price, currency, description, inventory, status, updated } = item;
+  const { title, marketplace: channel, category, price, currency, description, inventoryCount: inventory, status, updatedAt } = item;
+  const updated = updatedAt ? new Date(updatedAt).toLocaleString() : "—";
   const statusTone = status === "Live" ? "#03CD8C" : status === "Pending" ? "#F77F00" : status === "Rejected" ? "#6b7280" : "#64748b";
 
   return (

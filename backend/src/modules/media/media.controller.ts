@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -40,5 +40,15 @@ export class MediaController {
   @Post('assets')
   create(@CurrentUser() user: RequestUser, @Body() payload: CreateMediaAssetDto) {
     return this.mediaService.create(user.sub, payload);
+  }
+
+  @Patch('assets/:id')
+  update(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: Record<string, unknown>) {
+    return this.mediaService.update(user.sub, id, payload);
+  }
+
+  @Delete('assets/:id')
+  remove(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.mediaService.remove(user.sub, id);
   }
 }

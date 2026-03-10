@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useSession } from "../../auth/session";
 import { recordOnboardingStatus } from "./onboardingStatus";
+import { sellerBackendApi } from "../../lib/backendApi";
 import SellerOnboardingTaxonomyNavigator from "./SellerOnboardingTaxonomyNavigator";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { useThemeMode } from "../../theme/themeMode";
@@ -1021,46 +1023,135 @@ function ChipButton({ active, children, onClick, disabled }) {
   );
 }
 
+const DEFAULT_REVIEW_STATE = {
+  submittedAt: null,
+  inReviewAt: null,
+  approvedAt: null,
+  slaHours: 48,
+};
+
+function toUiOnboardingStatus(value: unknown) {
+  const normalized = String(value || "").toLowerCase();
+  return normalized === "submitted" || normalized === "resubmitted" || normalized === "approved"
+    ? "SUBMITTED"
+    : "DRAFT";
+}
+
+function toWorkflowOnboardingStatus(value: unknown) {
+  const normalized = String(value || "").toLowerCase();
+  return normalized === "submitted" || normalized === "resubmitted" ? "submitted" : "draft";
+}
+
+function normalizeSellerFormPayload(
+  payload: Record<string, unknown> | null | undefined,
+  base: SellerForm,
+  activeUserId: string
+): SellerForm {
+  const parsed = payload && typeof payload === "object" ? (payload as Partial<SellerForm>) : null;
+  if (!parsed) return base;
+
+  const owner = String(parsed.owner || parsed.email || "").toLowerCase();
+  if (activeUserId && owner && owner !== activeUserId) {
+    return base;
+  }
+
+  const merged = {
+    ...base,
+    ...parsed,
+    owner: activeUserId || owner || base.owner,
+    status: toUiOnboardingStatus(parsed.status),
+    shipFrom: { ...base.shipFrom, ...(parsed.shipFrom || {}) },
+    support: { ...base.support, ...(parsed.support || {}) },
+    shipping: {
+      ...base.shipping,
+      ...(parsed.shipping || {}),
+      handlingTimeDays:
+        parsed.shipping && parsed.shipping.handlingTimeDays != null
+          ? String(parsed.shipping.handlingTimeDays)
+          : base.shipping.handlingTimeDays,
+    },
+    policies: {
+      ...base.policies,
+      ...(parsed.policies || {}),
+      returnsDays:
+        parsed.policies && parsed.policies.returnsDays != null
+          ? String(parsed.policies.returnsDays)
+          : base.policies.returnsDays,
+      warrantyDays:
+        parsed.policies && parsed.policies.warrantyDays != null
+          ? String(parsed.policies.warrantyDays)
+          : base.policies.warrantyDays,
+    },
+    docs: { list: Array.isArray(parsed?.docs?.list) ? parsed.docs.list : base.docs.list },
+    payout: hydratePayoutData(base.payout, parsed.payout || {}),
+    tax: { ...base.tax, ...(parsed.tax || {}) },
+    acceptance: { ...base.acceptance, ...(parsed.acceptance || {}) },
+  } satisfies SellerForm;
+
+  if (
+    merged.taxonomySelection?.nodeId &&
+    (!Array.isArray(merged.taxonomySelections) || merged.taxonomySelections.length === 0)
+  ) {
+    merged.taxonomySelections = [merged.taxonomySelection];
+  }
+
+  if (!Array.isArray(merged.channels) || !merged.channels.length) {
+    merged.channels = ["marketplace_retail"];
+  }
+  if (!Array.isArray(merged.languages) || !merged.languages.length) {
+    merged.languages = ["en"];
+  }
+
+  return merged;
+}
+
+function normalizeScreenUi(payload: Record<string, unknown> | null | undefined) {
+  const screen = payload && typeof payload === "object" ? payload : {};
+  const ui = screen && typeof screen.ui === "object" ? (screen.ui as Record<string, unknown>) : {};
+  const review =
+    screen && typeof screen.review === "object"
+      ? (screen.review as Record<string, unknown>)
+      : DEFAULT_REVIEW_STATE;
+
+  return {
+    ui: {
+      theme: String(ui.theme || "light"),
+      step: Number(ui.step || 1) || 1,
+      compactAside: Boolean(ui.compactAside),
+    },
+    review: {
+      ...DEFAULT_REVIEW_STATE,
+      ...(review || {}),
+    },
+  };
+}
+
+function normalizeShippingProfiles(payload: Record<string, unknown> | null | undefined): ShippingProfile[] {
+  const rows =
+    payload && typeof payload === "object" && Array.isArray((payload as { profiles?: unknown[] }).profiles)
+      ? ((payload as { profiles?: Array<Record<string, unknown>> }).profiles ?? [])
+      : [];
+
+  return rows.map((entry) => ({
+    id: String(entry.id || ""),
+    name: String(entry.name || "Shipping Profile"),
+    isDefault: Boolean(entry.isDefault),
+    archived: String(entry.status || "").toUpperCase() === "ARCHIVED",
+  }));
+}
+
 export default function SellerOnboardingProV4_JS() {
-  const { t } = useLocalization();
+  const { t, language, setLanguage } = useLocalization();
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
+  const sessionUser = useSession();
 
-  // Language selector (stored)
-  const [lang, setLang] = useState("en");
-  useEffect(() => {
-    setLang(localStorage.getItem("ev_lang") || "en");
-  }, []);
-  useEffect(() => {
-    localStorage.setItem("ev_lang", lang);
-  }, [lang]);
-
-  const [ui, setUi] = useState(() => {
-    const saved = safeJsonParse(localStorage.getItem(STORAGE.ui));
-    return {
-      theme: saved?.theme || "light",
-      step: Number(saved?.step || 1) || 1,
-      compactAside: !!saved?.compactAside,
-    };
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.ui, JSON.stringify(ui));
-    } catch {
-      // ignore
-    }
-  }, [ui]);
-
-  const [sessionUser] = useState(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const s = localStorage.getItem("session");
-      return s ? JSON.parse(s) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [ui, setUi] = useState(() => ({
+    theme: "light",
+    step: 1,
+    compactAside: false,
+  }));
 
   const activeUserId = useMemo(() => {
     const val = sessionUser?.userId || sessionUser?.email || sessionUser?.phone || "";
@@ -1178,65 +1269,12 @@ export default function SellerOnboardingProV4_JS() {
     [activeUserId]
   );
 
-  const load = useCallback((): SellerForm => {
-    const s4 = safeJsonParse(localStorage.getItem(STORAGE.form));
-    const s3 = safeJsonParse(localStorage.getItem(STORAGE.legacy));
-    const parsed = s4 || s3;
-    const base = createEmptyForm();
-
-    if (!parsed) return base;
-
-    const owner = String(parsed.owner || parsed.email || "").toLowerCase();
-    const isOtherUser = activeUserId && owner && owner !== activeUserId;
-    const legacyMismatch =
-      activeUserId &&
-      !owner &&
-      parsed.status &&
-      parsed.status !== "DRAFT" &&
-      parsed.email &&
-      String(parsed.email).toLowerCase() !== activeUserId;
-
-    if (isOtherUser || legacyMismatch) return base;
-
-    const merged = {
-      ...base,
-      ...parsed,
-      shipFrom: { ...base.shipFrom, ...(parsed.shipFrom || {}) },
-      support: { ...base.support, ...(parsed.support || {}) },
-      shipping: { ...base.shipping, ...(parsed.shipping || {}) },
-      policies: { ...base.policies, ...(parsed.policies || {}) },
-      docs: { list: Array.isArray(parsed?.docs?.list) ? parsed.docs.list : base.docs.list },
-      payout: hydratePayoutData(base.payout, parsed.payout || {}),
-      tax: { ...base.tax, ...(parsed.tax || {}) },
-      acceptance: { ...base.acceptance, ...(parsed.acceptance || {}) },
-    };
-
-    // Backward compatibility: taxonomySelection -> taxonomySelections
-    if (
-      merged.taxonomySelection?.nodeId &&
-      (!Array.isArray(merged.taxonomySelections) || merged.taxonomySelections.length === 0)
-    ) {
-      merged.taxonomySelections = [merged.taxonomySelection];
-    }
-
-    // Owner
-    merged.owner = activeUserId || owner || merged.owner;
-
-    // Ensure channels and languages
-    if (!Array.isArray(merged.channels) || !merged.channels.length) {
-      merged.channels = ["marketplace_retail"];
-    }
-    if (!Array.isArray(merged.languages) || !merged.languages.length) {
-      merged.languages = ["en"];
-    }
-
-    return merged;
-  }, [activeUserId, createEmptyForm]);
-
-  const [form, setForm] = useState<SellerForm>(load);
+  const [form, setForm] = useState<SellerForm>(() => createEmptyForm());
   const [lastSaved, setLastSaved] = useState("");
   const [toast, setToast] = useState<ToastState | null>(null);
   const [stepErrors, setStepErrors] = useState<Record<number, boolean>>({});
+  const [hydrated, setHydrated] = useState(false);
+  const saveReadyRef = useRef(false);
 
   const setF = (
     patch: Partial<SellerForm> | ((prev: SellerForm) => Partial<SellerForm> | null)
@@ -1249,17 +1287,6 @@ export default function SellerOnboardingProV4_JS() {
       return changed ? nextState : prev;
     });
 
-  // Autosave
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.form, JSON.stringify(form));
-      localStorage.setItem(STORAGE.legacy, JSON.stringify(form));
-      setLastSaved(ts());
-    } catch {
-      // ignore
-    }
-  }, [form]);
-
   // Keep the current onboarding screen as the single source of truth.
   useEffect(() => {
     if (form.status === "SUBMITTED" && location.pathname === "/seller/onboarding") {
@@ -1267,18 +1294,7 @@ export default function SellerOnboardingProV4_JS() {
     }
   }, [form.status, navigate, location.pathname]);
 
-  // Review timeline state
-  const [review, setReview] = useState(() => {
-    const s = safeJsonParse(localStorage.getItem(STORAGE.review));
-    return s || { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 };
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE.review, JSON.stringify(review));
-    } catch {
-      // ignore
-    }
-  }, [review]);
+  const [review, setReview] = useState(DEFAULT_REVIEW_STATE);
 
   // Step
   const step = clamp(ui.step || 1, 1, 6);
@@ -1349,48 +1365,106 @@ export default function SellerOnboardingProV4_JS() {
     [setF]
   );
 
-  // Shipping Profiles
-  const defaultShippingProfiles = useMemo<ShippingProfile[]>(
-    () => [{ id: "SHP-DEFAULT", name: "Standard Shipping", isDefault: true }],
-    []
-  );
   const [profiles, setProfiles] = useState<ShippingProfile[]>([]);
   useEffect(() => {
-    try {
-      const latest = safeJsonParse(localStorage.getItem("shipping_profiles_latest")) || [];
-      const sellerProfiles = safeJsonParse(localStorage.getItem("seller_shipping_profiles_v1")) || [];
+    if (!profiles.length || form.shipping?.profileId) return;
+    const fallback = profiles.find((profile) => profile.isDefault)?.id || profiles[0]?.id || "";
+    if (!fallback) return;
+    setF((prev) => ({ shipping: { ...prev.shipping, profileId: fallback } }));
+  }, [form.shipping?.profileId, profiles]);
 
-      let list: ShippingProfile[] =
-        Array.isArray(latest) && latest.length
-          ? latest
-          : Array.isArray(sellerProfiles)
-            ? sellerProfiles.filter((p) => !p.archived)
-            : [];
+  useEffect(() => {
+    if (hydrated) return;
+    let cancelled = false;
 
-      if (!Array.isArray(list)) list = [];
-      if (!list.length) {
-        list = defaultShippingProfiles;
-        localStorage.setItem("shipping_profiles_latest", JSON.stringify(list));
-        localStorage.setItem("shipping_profile_default", list[0].id);
+    const hydrate = async () => {
+      try {
+        const [onboarding, screenState, shippingPayload] = await Promise.all([
+          sellerBackendApi.getOnboarding().catch(() => null),
+          sellerBackendApi.getWorkflowScreenState("seller-onboarding").catch(() => null),
+          sellerBackendApi.getShippingProfiles().catch(() => null),
+        ]);
+
+        if (cancelled) return;
+
+        const base = createEmptyForm();
+        const normalizedForm = normalizeSellerFormPayload(
+          onboarding as Record<string, unknown> | null,
+          base,
+          activeUserId
+        );
+        const normalizedScreen = normalizeScreenUi(screenState as Record<string, unknown> | null);
+        const nextProfiles = normalizeShippingProfiles(
+          shippingPayload as Record<string, unknown> | null
+        ).filter((profile) => !profile.archived);
+
+        setForm(normalizedForm);
+        setUi(normalizedScreen.ui);
+        setReview(normalizedScreen.review);
+        setProfiles(nextProfiles);
+      } catch {
+        if (!cancelled) {
+          setToast({
+            tone: "error",
+            title: "Backend sync failed",
+            message: "We could not load your onboarding draft from the backend.",
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
+          window.setTimeout(() => {
+            saveReadyRef.current = true;
+          }, 0);
+        }
       }
+    };
 
-      setProfiles(list);
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUserId, createEmptyForm, hydrated]);
 
-      setF((prev) => {
-        if (prev.shipping?.profileId) return null;
-        const fallback =
-          localStorage.getItem("shipping_profile_default") ||
-          list.find((p) => p.isDefault)?.id ||
-          list[0]?.id ||
-          "";
-        if (!fallback) return null;
-        localStorage.setItem("shipping_profile_default", fallback);
-        return { shipping: { ...prev.shipping, profileId: fallback } };
+  useEffect(() => {
+    if (!hydrated || !saveReadyRef.current) return;
+    const timeoutId = window.setTimeout(() => {
+      void sellerBackendApi
+        .patchOnboarding({
+          ...form,
+          profileType: "SELLER",
+          status: toWorkflowOnboardingStatus(form.status),
+        })
+        .then(() => setLastSaved(ts()))
+        .catch(() => {
+          setToast({
+            tone: "error",
+            title: "Autosave failed",
+            message: "Changes are not syncing to the backend right now.",
+          });
+        });
+    }, 450);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [form, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !saveReadyRef.current) return;
+    const timeoutId = window.setTimeout(() => {
+      void sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
+        ui,
+        review,
+      }).catch(() => {
+        setToast({
+          tone: "error",
+          title: "State sync failed",
+          message: "Onboarding review state could not be saved to the backend.",
+        });
       });
-    } catch {
-      // ignore
-    }
-  }, [defaultShippingProfiles]);
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [hydrated, review, ui]);
 
   // Slug validation + mock availability
   const [slugState, setSlugState] = useState({ status: "idle", message: "" });
@@ -1412,17 +1486,38 @@ export default function SellerOnboardingProV4_JS() {
       return;
     }
 
+    let cancelled = false;
     setSlugState({ status: "checking", message: "Checking availability..." });
-    const id = setTimeout(() => {
-      const taken = slug.endsWith("-official") || slug.endsWith("-store") || slug.startsWith("test-");
-      setSlugState(
-        taken
-          ? { status: "taken", message: "This handle looks taken. Try a different one." }
-          : { status: "ok", message: "Available." }
-      );
-    }, 450);
+    const id = window.setTimeout(() => {
+      void sellerBackendApi
+        .getSlugAvailability(slug)
+        .then((result) => {
+          if (cancelled) return;
+          if (result?.available) {
+            setSlugState({ status: "ok", message: "Available." });
+            return;
+          }
+          if (result?.reason === "reserved") {
+            setSlugState({ status: "taken", message: "This handle is reserved." });
+            return;
+          }
+          if (result?.reason === "taken") {
+            setSlugState({ status: "taken", message: "This handle is already taken." });
+            return;
+          }
+          setSlugState({ status: "invalid", message: "This handle is invalid." });
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSlugState({ status: "invalid", message: "Could not verify this handle right now." });
+          }
+        });
+    }, 350);
 
-    return () => clearTimeout(id);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(id);
+    };
   }, [form.storeSlug]);
 
   // Required docs
@@ -1774,26 +1869,53 @@ export default function SellerOnboardingProV4_JS() {
     r.readAsText(f);
   };
 
-  const resetDraft = () => {
+  const resetDraft = async () => {
     if (!window.confirm("Reset this onboarding draft? This clears your local draft on this device.")) return;
-    try {
-      localStorage.removeItem(STORAGE.form);
-      localStorage.removeItem(STORAGE.legacy);
-      localStorage.removeItem(STORAGE.review);
-    } catch {
-      // ignore
-    }
     const fresh = createEmptyForm();
     setForm(fresh);
-    setReview({ submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 });
+    setReview(DEFAULT_REVIEW_STATE);
     setStep(1);
+    try {
+      await Promise.all([
+        sellerBackendApi.resetOnboarding(),
+        sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
+          ui: { ...ui, step: 1 },
+          review: DEFAULT_REVIEW_STATE,
+        }),
+      ]);
+    } catch {
+      setToast({
+        tone: "error",
+        title: "Reset failed",
+        message: "We could not reset the backend onboarding draft.",
+      });
+      return;
+    }
     recordOnboardingStatus("seller", sessionUser || { userId: activeUserId || "" }, "DRAFT");
     setToast({ tone: "success", title: "Reset complete", message: "A fresh draft has been created." });
   };
 
-  const withdraw = () => {
+  const withdraw = async () => {
     setF({ status: "DRAFT" });
     setReview((r) => ({ ...r, submittedAt: null, inReviewAt: null, approvedAt: null }));
+    try {
+      await Promise.all([
+        sellerBackendApi.patchOnboarding({
+          status: "draft",
+          profileType: "SELLER",
+        }),
+        sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
+          review: { ...DEFAULT_REVIEW_STATE },
+        }),
+      ]);
+    } catch {
+      setToast({
+        tone: "error",
+        title: "Withdraw failed",
+        message: "We could not reopen the onboarding draft from the backend.",
+      });
+      return;
+    }
     recordOnboardingStatus(
       "seller",
       sessionUser || { userId: activeUserId || form.email, email: activeUserId || form.email },
@@ -1886,7 +2008,7 @@ export default function SellerOnboardingProV4_JS() {
     return missingFields;
   }, [form, requiredOk, slugState.status, t]);
 
-  const submit = () => {
+  const submit = async () => {
     const nextState = ensureMinimum();
 
     const blockers = {
@@ -1920,15 +2042,41 @@ export default function SellerOnboardingProV4_JS() {
       return;
     }
 
-    // Mark documents submitted
+    const submittedDocs = (nextState.docs.list || []).map((doc) => ({ ...doc, status: "Submitted" }));
+    const submittedAt = new Date().toISOString();
+
     try {
-      setF({ docs: { list: (nextState.docs.list || []).map((d) => ({ ...d, status: "Submitted" })) } });
+      await Promise.all([
+        sellerBackendApi.submitOnboarding({
+          ...nextState,
+          docs: { list: submittedDocs },
+          profileType: "SELLER",
+          status: "submitted",
+        }),
+        sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
+          ui,
+          review: {
+            ...review,
+            submittedAt,
+            inReviewAt: submittedAt,
+            approvedAt: null,
+          },
+        }),
+      ]);
     } catch {
-      // ignore
+      setToast({
+        tone: "error",
+        title: "Submit failed",
+        message: "Your onboarding could not be submitted to the backend.",
+      });
+      return;
     }
 
-    setF({ status: "SUBMITTED" });
-    setReview((r) => ({ ...r, submittedAt: new Date().toISOString(), inReviewAt: null, approvedAt: null }));
+    setF({
+      status: "SUBMITTED",
+      docs: { list: submittedDocs },
+    });
+    setReview((r) => ({ ...r, submittedAt, inReviewAt: submittedAt, approvedAt: null }));
     recordOnboardingStatus(
       "seller",
       sessionUser || { userId: activeUserId || form.email, email: activeUserId || form.email },
@@ -2278,8 +2426,8 @@ export default function SellerOnboardingProV4_JS() {
                 </div>
               </div>
               <select
-                value={lang}
-                onChange={(e) => setLang(e.target.value)}
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
                 className="btn-ghost"
                 aria-label="Language"
               >

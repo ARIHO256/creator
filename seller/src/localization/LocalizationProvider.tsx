@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import dictionaries from "./dictionaries";
+import { sellerBackendApi } from "../lib/backendApi";
 import {
   LANGUAGE_OPTIONS,
   CURRENCY_OPTIONS,
@@ -64,20 +65,23 @@ function interpolate(template: string, params: TranslateParams = {}) {
 }
 
 export function LocalizationProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguageState] = useState(() =>
-    normalizeLanguage(
-      typeof window === "undefined"
-        ? "en"
-        : window.localStorage.getItem(LOCAL_STORAGE_LANG_KEY) || navigator.language || "en"
-    )
-  );
-  const [currency, setCurrencyState] = useState(() =>
-    normalizeCurrency(
-      typeof window === "undefined"
-        ? "USD"
-        : window.localStorage.getItem(LOCAL_STORAGE_CUR_KEY) || "USD"
-    )
-  );
+  const [language, setLanguageState] = useState(() => normalizeLanguage("en"));
+  const [currency, setCurrencyState] = useState(() => normalizeCurrency("USD"));
+
+  useEffect(() => {
+    let active = true;
+    void sellerBackendApi
+      .getPreferences()
+      .then((payload) => {
+        if (!active) return;
+        setLanguageState(normalizeLanguage(String(payload.locale || navigator.language || "en")));
+        setCurrencyState(normalizeCurrency(String(payload.currency || "USD")));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     if (typeof document === "undefined") return;
     // Keep the source language stable for global translation while preserving UI direction.
@@ -89,17 +93,15 @@ export function LocalizationProvider({ children }: { children: React.ReactNode }
   const setLanguage = useCallback((next: string) => {
     const normalized = normalizeLanguage(next);
     setLanguageState(normalized);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(LOCAL_STORAGE_LANG_KEY, normalized);
-    }
+    void sellerBackendApi.patchPreferences({ locale: normalized }).catch(() => undefined);
+    void sellerBackendApi.patchUiState({ locale: normalized }).catch(() => undefined);
   }, []);
 
   const setCurrency = useCallback((next: string) => {
     const normalized = normalizeCurrency(next);
     setCurrencyState(normalized);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(LOCAL_STORAGE_CUR_KEY, normalized);
-    }
+    void sellerBackendApi.patchPreferences({ currency: normalized }).catch(() => undefined);
+    void sellerBackendApi.patchUiState({ currency: normalized }).catch(() => undefined);
   }, []);
 
   const translate = useCallback(

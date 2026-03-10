@@ -435,6 +435,34 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
+  uiState(userId: string) {
+    return this.getUserSetting(userId, 'ui_state', {
+      theme: null,
+      locale: null,
+      currency: null,
+      moneyBar: {},
+      creatorContext: {},
+      shell: {},
+      onboarding: {},
+      channels: {}
+    });
+  }
+  async updateUiState(userId: string, body: Record<string, unknown>) {
+    const current = await this.uiState(userId);
+    const next = this.deepMerge(current, body);
+    const record = await this.upsertUserSetting(userId, 'ui_state', next);
+    await this.audit.log({
+      userId,
+      action: 'settings.ui_state_updated',
+      entityType: 'user_setting',
+      entityId: 'ui_state',
+      route: '/api/settings/ui-state',
+      method: 'PATCH',
+      statusCode: 200,
+      metadata: { keys: Object.keys(body || {}) }
+    });
+    return record.payload as Record<string, unknown>;
+  }
   payoutMethods(userId: string) { return this.getWorkspaceSetting(userId, 'payout_methods', { methods: [] }); }
   async updatePayoutMethods(userId: string, body: UpdatePayoutMethodsDto) {
     const methods = Array.isArray(body.methods) ? body.methods : [];

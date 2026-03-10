@@ -54,6 +54,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useRolePageContent } from '../../data/pageContent';
 import type { DashboardQuickAction } from '../../data/pageTypes';
 import type { UserRole } from '../../types/roles';
+import { sellerBackendApi } from '../../lib/backendApi';
 
 const TOKENS = {
   green: '#03CD8C',
@@ -63,9 +64,6 @@ const TOKENS = {
   black: '#0B0F14',
 };
 const MIX_TREND_CARD_HEIGHT = 260;
-
-const STORAGE_DEFAULT_VIEW = 'evz_supplier_dashboard_default_view';
-const STORAGE_CUSTOM_VIEWS = 'evz_supplier_dashboard_custom_views_v1';
 
 type ViewFilters = {
   marketplaces: string[];
@@ -1008,58 +1006,66 @@ export default function SupplierHubDashboardPage({
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    let active = true;
 
-    // Load custom views (saved locally)
-    const storedCustom = safeJsonParse(window.localStorage.getItem(STORAGE_CUSTOM_VIEWS), []);
-    const safeCustom: CustomView[] = Array.isArray(storedCustom) ? storedCustom : [];
-    setCustomViews(safeCustom);
+    void Promise.all([
+      sellerBackendApi.getSavedViews().catch(() => ({ views: [] })),
+      sellerBackendApi.getUiState().catch(() => ({})),
+    ]).then(([savedViewsPayload, uiStatePayload]) => {
+      if (!active) return;
 
-    // Resolve default view (preset or custom)
-    const savedDefault = window.localStorage.getItem(STORAGE_DEFAULT_VIEW);
-    const universe = [...PRESET_VIEWS, ...safeCustom];
-    const resolvedDefault =
-      savedDefault && universe.some((v) => v.id === savedDefault) ? savedDefault : 'all';
-    setDefaultViewId(resolvedDefault);
-    setViewId(resolvedDefault);
+      const safeCustom: CustomView[] = Array.isArray(savedViewsPayload.views)
+        ? (savedViewsPayload.views as CustomView[])
+        : [];
+      setCustomViews(safeCustom);
 
-    // Apply shared view from URL (supports both search params and hash-router params)
-    const params = getShareParamsFromLocation();
-    const hasShare =
-      params.has('range') ||
-      params.has('from') ||
-      params.has('to') ||
-      params.has('m') ||
-      params.has('w') ||
-      params.has('c');
-    if (hasShare) {
-      applyingView.current = true;
+      const savedDefault = String((uiStatePayload.dashboard as { defaultViewId?: string } | undefined)?.defaultViewId || 'all');
+      const universe = [...PRESET_VIEWS, ...safeCustom];
+      const resolvedDefault =
+        savedDefault && universe.some((v) => v.id === savedDefault) ? savedDefault : 'all';
+      setDefaultViewId(resolvedDefault);
+      setViewId(resolvedDefault);
 
-      const nextRange = params.get('range');
-      if (isTimeRangeKey(nextRange)) setRange(nextRange);
+      const params = getShareParamsFromLocation();
+      const hasShare =
+        params.has('range') ||
+        params.has('from') ||
+        params.has('to') ||
+        params.has('m') ||
+        params.has('w') ||
+        params.has('c');
+      if (hasShare) {
+        applyingView.current = true;
 
-      const from = params.get('from');
-      const to = params.get('to');
-      if (from) setCustomFrom(from);
-      if (to) setCustomTo(to);
+        const nextRange = params.get('range');
+        if (isTimeRangeKey(nextRange)) setRange(nextRange);
 
-      setFilters({
-        marketplaces: parseCommaList(params.get('m')),
-        warehouses: parseCommaList(params.get('w')),
-        channels: parseCommaList(params.get('c')),
-      });
+        const from = params.get('from');
+        const to = params.get('to');
+        if (from) setCustomFrom(from);
+        if (to) setCustomTo(to);
 
-      setViewId('custom');
-      window.setTimeout(() => {
-        applyingView.current = false;
-      }, 0);
-      showToast('View loaded from link');
-    }
+        setFilters({
+          marketplaces: parseCommaList(params.get('m')),
+          warehouses: parseCommaList(params.get('w')),
+          channels: parseCommaList(params.get('c')),
+        });
+
+        setViewId('custom');
+        window.setTimeout(() => {
+          applyingView.current = false;
+        }, 0);
+        showToast('View loaded from link');
+      }
+    });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(STORAGE_CUSTOM_VIEWS, JSON.stringify(customViews));
+    void sellerBackendApi.patchSavedViews({ views: customViews }).catch(() => undefined);
   }, [customViews]);
   // Apply preset views (and treat any manual change as a "custom" view)
   useEffect(() => {
@@ -2202,8 +2208,8 @@ export default function SupplierHubDashboardPage({
 
   const setDefaultView = () => {
     const v = allViews.some((x) => x.id === viewId) ? viewId : 'all';
-    if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_DEFAULT_VIEW, v);
     setDefaultViewId(v);
+    void sellerBackendApi.patchUiState({ dashboard: { defaultViewId: v } }).catch(() => undefined);
     showToast('Default view saved');
   };
 

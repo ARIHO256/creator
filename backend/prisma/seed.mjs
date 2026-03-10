@@ -1144,7 +1144,707 @@ async function seedAnalytics(users) {
   });
 }
 
+async function seedFrontendReplacementData(users, sellerProfiles) {
+  await prisma.userSetting.createMany({
+    data: [
+      {
+        userId: users.creator.id,
+        key: 'ui_state',
+        payload: {
+          theme: 'light',
+          locale: 'en',
+          currency: 'USD',
+          moneyBar: {
+            hiddenWidgetIds: ['projected']
+          },
+          creatorContext: {
+            followedSellerIds: [1, 3],
+            rankTier: 'Silver'
+          }
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        key: 'ui_state',
+        payload: {
+          locale: 'en',
+          currency: 'USD',
+          channels: ['marketplace_retail', 'mylivedealz'],
+          shell: { sidebarScroll: 144 },
+          onboarding: { statusMap: { seller: 'SUBMITTED', provider: 'DRAFT' } },
+          dashboard: {
+            defaultViewId: 'all'
+          }
+        }
+      },
+      {
+        userId: users.providerUser.id,
+        key: 'ui_state',
+        payload: {
+          locale: 'en',
+          currency: 'USD',
+          onboarding: { statusMap: { provider: 'SUBMITTED' } }
+        }
+      }
+    ]
+  });
+
+  await prisma.workspaceSetting.createMany({
+    data: [
+      {
+        userId: users.creator.id,
+        key: 'payout_methods',
+        payload: {
+          methods: [
+            {
+              id: 'pm_creator_bank',
+              type: 'bank',
+              label: 'Standard Chartered Bank',
+              details: 'Standard Chartered Bank • Ronald Isabirye • 0123456789',
+              accountName: 'Ronald Isabirye',
+              accountNumberMasked: '****6789',
+              currency: 'USD',
+              isDefault: true
+            }
+          ]
+        }
+      },
+      {
+        userId: users.creator.id,
+        key: 'saved_views',
+        payload: {
+          views: [
+            {
+              id: 'creator_saved_view_reviews',
+              name: 'Reviews Focus',
+              route: '/reviews',
+              group: 'Other',
+              pinned: true
+            }
+          ]
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        key: 'saved_views',
+        payload: {
+          views: [
+            {
+              id: 'seller_dashboard_mldz',
+              name: 'MyLiveDealz Focus',
+              route: '/dashboard',
+              group: 'Campaigns',
+              pinned: true,
+              range: '7d',
+              filters: {
+                marketplaces: ['EVmart'],
+                warehouses: [],
+                channels: ['MyLiveDealz']
+              }
+            }
+          ]
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        key: 'payout_methods',
+        payload: {
+          methods: [
+            {
+              id: 'pm_seller_bank',
+              type: 'bank',
+              label: 'Stanbic USD Settlement',
+              bank: 'Stanbic',
+              currency: 'USD',
+              accountName: 'EV Hub Commerce Ltd',
+              accountNumberMasked: '****8821',
+              isDefault: true
+            }
+          ]
+        }
+      },
+      {
+        userId: users.providerUser.id,
+        key: 'payout_methods',
+        payload: {
+          methods: [
+            {
+              id: 'pm_provider_bank',
+              type: 'bank',
+              label: 'Equity Operations Account',
+              bank: 'Equity',
+              currency: 'USD',
+              accountName: 'StreamOps Media Services',
+              accountNumberMasked: '****1204',
+              isDefault: true
+            }
+          ]
+        }
+      }
+    ]
+  });
+
+  await prisma.notification.createMany({
+    data: [
+      {
+        userId: users.creator.id,
+        title: 'New proposal from GlowUp Hub',
+        body: 'They updated terms: $450-$600 + 5% commission. Reply to keep the slot.',
+        kind: 'proposal',
+        metadata: {
+          brand: 'GlowUp Hub',
+          campaign: 'Autumn Beauty Flash',
+          link: '/proposals'
+        }
+      },
+      {
+        userId: users.creator.id,
+        title: 'Live starts in 45 minutes',
+        body: 'Beauty Flash Live. Make sure products and overlays are ready.',
+        kind: 'live',
+        metadata: {
+          brand: 'GlowUp Hub',
+          campaign: 'Beauty Flash Live',
+          link: '/live-studio'
+        }
+      },
+      {
+        userId: users.creator.id,
+        title: 'Payout scheduled',
+        body: 'USD 260 scheduled for settlement via bank transfer.',
+        kind: 'earnings',
+        readAt: daysAgo(1),
+        metadata: {
+          brand: 'GlowUp Hub',
+          campaign: 'Payout',
+          link: '/earnings'
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        title: 'Seller onboarding submitted',
+        body: 'Your seller onboarding package is now under admin review.',
+        kind: 'workflow',
+        metadata: {
+          brand: 'EV Hub',
+          campaign: 'Seller onboarding'
+        }
+      }
+    ]
+  });
+
+  await prisma.workflowRecord.createMany({
+    data: [
+      {
+        userId: users.creator.id,
+        recordType: 'account_approval',
+        recordKey: 'main',
+        payload: {
+          status: 'under_review',
+          progressPercent: 72,
+          requiredActions: [],
+          documents: [],
+          submittedAt: daysAgo(2).toISOString()
+        }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'screen_state',
+        recordKey: 'creator-awaiting-admin-approval',
+        payload: {
+          status: 'UnderReview',
+          etaMin: 45,
+          submittedAt: daysAgo(2).toISOString(),
+          adminReason: '',
+          adminDocs: [],
+          items: [],
+          note: '',
+          prefEmail: true,
+          prefInApp: true
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        recordType: 'account_approval',
+        recordKey: 'main',
+        payload: {
+          status: 'submitted',
+          progressPercent: 60,
+          requiredActions: [],
+          documents: [],
+          submittedAt: daysAgo(1).toISOString()
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        recordType: 'screen_state',
+        recordKey: 'seller-onboarding',
+        payload: {
+          ui: {
+            theme: 'light',
+            step: 3,
+            compactAside: false
+          },
+          review: {
+            submittedAt: daysAgo(1).toISOString(),
+            inReviewAt: daysAgo(1).toISOString(),
+            approvedAt: null,
+            slaHours: 48
+          }
+        }
+      },
+      {
+        userId: users.providerUser.id,
+        recordType: 'screen_state',
+        recordKey: 'provider-onboarding',
+        payload: {
+          ui: {
+            step: 2
+          },
+          review: {
+            submittedAt: daysAgo(1).toISOString(),
+            inReviewAt: daysAgo(1).toISOString(),
+            approvedAt: null,
+            slaHours: 48
+          }
+        }
+      },
+      {
+        userId: users.sellerUser.id,
+        recordType: 'screen_state',
+        recordKey: 'supplier-awaiting-admin-approval',
+        payload: {
+          submission: {
+            campaignTitle: 'EV Hub Charger Launch',
+            campaignId: 'campaign_ev_launch',
+            submittedAt: daysAgo(1).toISOString(),
+            promoType: 'Discount',
+            itemsCount: 3,
+            landingLinks: ['https://example.com/ev-launch'],
+            notes: 'Waiting for admin approval.',
+            creatorUsageDecision: 'I will use a Creator',
+            contentApprovalMode: 'Manual',
+            supplierApprovalComplete: true
+          },
+          review: {
+            status: 'UnderReview',
+            etaMin: 60,
+            adminReason: '',
+            adminDocs: [],
+            items: [],
+            note: ''
+          }
+        }
+      },
+      {
+        userId: users.providerUser.id,
+        recordType: 'screen_state',
+        recordKey: 'provider-new-quote',
+        payload: {
+          quoteId: 'Q-2026-1001',
+          meta: { status: 'Draft' },
+          client: { name: 'EV Hub', channel: 'Email' },
+          scope: {
+            summary: 'Full live production support for a launch event.',
+            deliverables: [{ id: 'del_seed_1', title: 'OBS scene setup', detail: 'Branded lower thirds and scenes.' }]
+          },
+          lines: [
+            {
+              id: 'line_seed_1',
+              name: 'Live production support',
+              qty: 1,
+              unitCost: 800,
+              priceMode: 'markup',
+              markupPct: 30,
+              unitPrice: 1040,
+              notes: 'Day-of-show production lead.'
+            }
+          ],
+          timeline: {
+            startDate: daysFromNow(3).toISOString().slice(0, 10),
+            durationDays: 14,
+            milestones: [{ id: 'ms_seed_1', title: 'Kickoff and setup', dueInDays: 3, percent: 50 }]
+          },
+          terms: {
+            paymentTerms: '50% upfront, 50% on completion'
+          }
+        }
+      },
+      {
+        userId: users.providerUser.id,
+        recordType: 'screen_state',
+        recordKey: 'service-listing-approval',
+        payload: {
+          status: 'ChangesRequested',
+          etaMin: 90,
+          adminReason: 'Clarify scope, align pricing units, and confirm service regions.',
+          adminDocs: [{ name: 'EVzone service listing guidelines.pdf', url: '#', type: 'pdf' }],
+          items: [
+            { id: 'item-1', text: 'Clarify exact scope of the service and exclusions', done: false },
+            { id: 'item-2', text: 'Align pricing and units', done: false }
+          ],
+          note: '',
+          serviceName: 'Studio Ops Pro',
+          category: 'Production Services',
+          listingId: 'svc_streamops_1'
+        }
+      }
+    ]
+  });
+
+  await prisma.catalogTemplate.createMany({
+    data: [
+      {
+        id: 'catalog_tpl_launch',
+        sellerId: sellerProfiles.seller.id,
+        name: 'Launch Bundle',
+        kind: 'listing',
+        category: 'Chargers',
+        attrCount: 3,
+        payload: {
+          sections: ['Overview', 'Specs', 'Warranty'],
+          tone: 'Premium'
+        }
+      },
+      {
+        id: 'catalog_tpl_service',
+        sellerId: sellerProfiles.provider.id,
+        name: 'Service Scope Template',
+        kind: 'service',
+        category: 'Production Services',
+        attrCount: 3,
+        payload: {
+          sections: ['Scope', 'Deliverables', 'SLA']
+        }
+      }
+    ]
+  });
+
+  await prisma.mediaAsset.createMany({
+    data: [
+      {
+        id: 'media_ev_launch_hero',
+        userId: users.sellerUser.id,
+        name: 'EV Launch Hero',
+        kind: 'image',
+        url: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?q=80&w=1200&auto=format&fit=crop',
+        metadata: {
+          usageCount: 2,
+          tags: ['hero', 'launch']
+        }
+      },
+      {
+        id: 'media_streamops_reel',
+        userId: users.providerUser.id,
+        name: 'Studio Reel',
+        kind: 'video',
+        url: 'https://example.com/streamops-reel.mp4',
+        metadata: {
+          usageCount: 1,
+          tags: ['portfolio']
+        }
+      }
+    ]
+  });
+
+  await prisma.shippingProfile.create({
+    data: {
+      id: 'ship_profile_evhub_main',
+      sellerId: sellerProfiles.seller.id,
+      name: 'Main Warehouse Standard',
+      status: 'ACTIVE',
+      handlingTimeDays: 2,
+      regions: ['UG', 'KE'],
+      isDefault: true,
+      metadata: {
+        city: 'Kampala',
+        serviceLevel: 'Standard'
+      }
+    }
+  });
+
+  const creatorAdzCampaigns = [
+    {
+      id: 'adz_creator_autumn_beauty',
+      status: 'Live',
+      title: 'Autumn Beauty Flash',
+      budget: 1500,
+      currency: 'USD',
+      isMarketplace: true,
+      data: {
+        id: 'AD-101',
+        campaignName: 'Autumn Beauty Flash',
+        campaignSubtitle: 'Serum + skincare conversion push',
+        supplier: { name: 'GlowUp Hub', category: 'Beauty', logoUrl: 'https://example.com/glowup-logo.png' },
+        creator: { name: 'Ronald M', handle: '@ronaldm', avatarUrl: 'https://example.com/creator-avatar.png', verified: true },
+        status: 'Live',
+        platforms: ['Instagram', 'TikTok', 'MyLiveDealz'],
+        startISO: daysAgo(1).toISOString(),
+        endISO: daysFromNow(7).toISOString(),
+        timezone: 'Africa/Kampala',
+        heroImageUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=1200&auto=format&fit=crop',
+        heroIntroVideoUrl: 'https://example.com/beauty-flash.mp4',
+        compensation: { type: 'Hybrid', commissionRate: 0.08, flatFee: 200, currency: 'USD' },
+        offers: [
+          {
+            id: 'O-101',
+            type: 'PRODUCT',
+            name: 'Vitamin C Serum',
+            currency: 'USD',
+            price: 22,
+            stockLeft: 48,
+            posterUrl: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?q=80&w=900&auto=format&fit=crop',
+            sellingModes: ['RETAIL'],
+            defaultSellingMode: 'RETAIL'
+          }
+        ],
+        generated: true,
+        hasBrokenLink: false,
+        lowStock: false,
+        impressions7d: 18250,
+        clicks7d: 1850,
+        orders7d: 96,
+        revenue7d: 820,
+        currency: 'USD',
+        kpis: [{ label: 'CTR', value: '10.1%' }]
+      }
+    },
+    {
+      id: 'adz_creator_tech_friday',
+      status: 'Scheduled',
+      title: 'Tech Friday Mega Live',
+      budget: 2200,
+      currency: 'USD',
+      isMarketplace: true,
+      data: {
+        id: 'AD-102',
+        campaignName: 'Tech Friday Mega Live',
+        campaignSubtitle: 'Gadget bundle preview',
+        supplier: { name: 'GadgetMart Africa', category: 'Tech', logoUrl: 'https://example.com/gadgetmart-logo.png' },
+        creator: { name: 'Ronald M', handle: '@ronaldm', avatarUrl: 'https://example.com/creator-avatar.png', verified: true },
+        status: 'Scheduled',
+        platforms: ['YouTube', 'MyLiveDealz'],
+        startISO: daysFromNow(2).toISOString(),
+        endISO: daysFromNow(9).toISOString(),
+        timezone: 'Africa/Kampala',
+        heroImageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=1200&auto=format&fit=crop',
+        compensation: { type: 'Commission', commissionRate: 0.12 },
+        offers: [
+          {
+            id: 'O-102',
+            type: 'PRODUCT',
+            name: 'Wireless Earbuds',
+            currency: 'USD',
+            price: 55,
+            stockLeft: 120,
+            posterUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?q=80&w=900&auto=format&fit=crop',
+            sellingModes: ['RETAIL', 'WHOLESALE'],
+            defaultSellingMode: 'WHOLESALE',
+            wholesale: {
+              moq: 5,
+              step: 5,
+              tiers: [
+                { minQty: 5, unitPrice: 48 },
+                { minQty: 10, unitPrice: 44 }
+              ]
+            }
+          }
+        ],
+        generated: true,
+        hasBrokenLink: false,
+        lowStock: false,
+        impressions7d: 8450,
+        clicks7d: 640,
+        orders7d: 22,
+        revenue7d: 410,
+        currency: 'USD',
+        kpis: [{ label: 'Pre-save', value: '410' }]
+      }
+    }
+  ];
+
+  for (const campaign of creatorAdzCampaigns) {
+    await prisma.adzCampaign.create({
+      data: {
+        id: campaign.id,
+        userId: users.creator.id,
+        status: campaign.status,
+        title: campaign.title,
+        budget: campaign.budget,
+        currency: campaign.currency,
+        isMarketplace: campaign.isMarketplace,
+        data: campaign.data
+      }
+    });
+
+    await prisma.adzPerformance.create({
+      data: {
+        campaignId: campaign.id,
+        clicks: Number(campaign.data.clicks7d ?? 0),
+        purchases: Number(campaign.data.orders7d ?? 0),
+        earnings: Number(campaign.data.revenue7d ?? 0),
+        data: {
+          impressions: campaign.data.impressions7d ?? 0
+        }
+      }
+    });
+  }
+
+  await prisma.promoAd.create({
+    data: {
+      id: 'PR-101',
+      userId: users.creator.id,
+      status: 'Active',
+      data: {
+        id: 'PR-101',
+        name: 'Autumn Beauty Flash - Serum Promo',
+        seller: 'GlowUp Hub',
+        campaign: 'Autumn Beauty Flash',
+        status: 'Active',
+        compType: 'Hybrid',
+        compSummary: '$200 flat + 5% commission',
+        earnings: 820,
+        clicks: 1850,
+        purchases: 96,
+        conversion: 5.2,
+        category: 'Beauty',
+        region: 'East Africa',
+        hasContract: true,
+        hasLives: true
+      }
+    }
+  });
+
+  await prisma.liveBuilder.create({
+    data: {
+      id: 'live_builder_launch',
+      userId: users.creator.id,
+      sessionId: 'live_session_launch',
+      status: 'draft',
+      data: {
+        id: 'live_builder_launch',
+        title: 'Autumn Beauty Live Builder',
+        seller: 'GlowUp Hub',
+        campaign: 'Autumn Beauty Flash',
+        host: 'Ronald M'
+      }
+    }
+  });
+
+  await prisma.liveSession.create({
+    data: {
+      id: 'live_session_launch',
+      userId: users.creator.id,
+      status: 'scheduled',
+      title: 'Autumn Beauty Live',
+      scheduledAt: daysFromNow(1),
+      data: {
+        id: 'live_session_launch',
+        title: 'Autumn Beauty Live',
+        campaign: 'Autumn Beauty Flash',
+        seller: 'GlowUp Hub',
+        scheduledFor: daysFromNow(1).toISOString(),
+        scheduledAt: daysFromNow(1).toISOString(),
+        weekday: 'Friday',
+        dateLabel: daysFromNow(1).toISOString().slice(0, 10),
+        time: '18:00',
+        location: 'Studio A',
+        simulcast: ['Instagram', 'TikTok'],
+        status: 'scheduled',
+        role: 'Host',
+        durationMin: 60,
+        scriptsReady: true,
+        assetsReady: true,
+        productsCount: 6,
+        workloadScore: 42,
+        conflict: false
+      }
+    }
+  });
+
+  await prisma.liveStudio.create({
+    data: {
+      id: 'live_session_launch',
+      userId: users.creator.id,
+      sessionId: 'live_session_launch',
+      status: 'idle',
+      data: {
+        id: 'live_session_launch',
+        title: 'Autumn Beauty Live',
+        status: 'idle',
+        products: [{ id: 'prod_1', name: 'Vitamin C Serum', price: 22 }],
+        coHosts: [{ id: 'cohost_1', name: 'Nina', role: 'Moderator', active: true }],
+        scenes: [{ id: 'scene_1', title: 'Opening CTA' }],
+        runOfShow: [{ id: 'shot_1', title: 'Intro', durationSec: 90 }],
+        scriptCues: ['Welcome viewers', 'Highlight serum benefits'],
+        qaItems: [{ id: 'qa_1', q: 'Is it suitable for sensitive skin?', a: 'Yes, with patch test.' }],
+        viewers: [{ id: 'viewer_1', name: 'Amina K.', spent: 120 }],
+        aiPrompts: ['Mention limited stock', 'Invite questions']
+      }
+    }
+  });
+
+  await prisma.liveReplay.create({
+    data: {
+      id: 'live_replay_launch',
+      userId: users.creator.id,
+      sessionId: 'live_session_launch',
+      status: 'draft',
+      published: false,
+      data: {
+        id: 'live_replay_launch',
+        sessionId: 'live_session_launch',
+        title: 'Autumn Beauty Live Replay',
+        views: 0,
+        sales: 0,
+        durationSec: 3600
+      }
+    }
+  });
+
+  await prisma.liveToolConfig.createMany({
+    data: [
+      {
+        userId: users.creator.id,
+        key: 'audience-notifications',
+        data: {
+          enabled: true,
+          channels: ['push', 'email'],
+          reminders: [{ id: 'rem_1', label: '45 min before', minutes: 45 }],
+          templates: [{ id: 'tpl_aud_1', name: 'Live starts soon' }]
+        }
+      },
+      {
+        userId: users.creator.id,
+        key: 'streaming',
+        data: {
+          destinations: ['Instagram', 'TikTok'],
+          bitrate: '4500kbps'
+        }
+      }
+    ]
+  });
+}
+
 async function clearDatabase() {
+  await prisma.liveMoment.deleteMany();
+  await prisma.liveToolConfig.deleteMany();
+  await prisma.liveReplay.deleteMany();
+  await prisma.liveStudio.deleteMany();
+  await prisma.liveSession.deleteMany();
+  await prisma.liveBuilder.deleteMany();
+  await prisma.adzPerformance.deleteMany();
+  await prisma.adzLink.deleteMany();
+  await prisma.adzCampaign.deleteMany();
+  await prisma.adzBuilder.deleteMany();
+  await prisma.promoAd.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.workflowRecord.deleteMany();
+  await prisma.workspaceSetting.deleteMany();
+  await prisma.userSetting.deleteMany();
+  await prisma.shippingRate.deleteMany();
+  await prisma.shippingProfile.deleteMany();
+  await prisma.catalogTemplate.deleteMany();
   await prisma.taskComment.deleteMany();
   await prisma.taskAttachment.deleteMany();
   await prisma.proposalMessage.deleteMany();
@@ -1183,6 +1883,7 @@ async function main() {
   await seedCollaboration(users, sellerProfiles);
   await seedCommerce(users, sellerProfiles);
   await seedDashboardAndCompatibility(users, sellerProfiles);
+  await seedFrontendReplacementData(users, sellerProfiles);
   await seedAnalytics(users);
 
   console.log('Seeded unified creator/seller backend data.');
