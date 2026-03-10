@@ -18,6 +18,7 @@
     "seller:import-mocks": "node --env-file=.env --import tsx scripts/import-sellerfront-mocks.ts",
     "seller:import-compat": "node --env-file=.env --import tsx scripts/import-sellerfront-compat-seeds.ts",
     "seller:import-finance": "node --env-file=.env --import tsx scripts/import-sellerfront-finance-seeds.ts",
+    "seller:import-provider-service-taxonomy": "node --env-file=.env --import tsx scripts/import-provider-service-taxonomy.ts",
     "seller:seed-src-mock": "node --env-file=.env --import tsx scripts/seed-seller-src-mock.ts",
     "seller:seed-feature-mocks": "node --env-file=.env --import tsx scripts/seed-seller-feature-mocks.ts",
     "test": "tsx --test test/**/*.test.ts"
