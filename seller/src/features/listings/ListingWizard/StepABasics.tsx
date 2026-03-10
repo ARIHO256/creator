@@ -16,8 +16,8 @@ import { TreeView, TreeItem } from '@mui/lab';
 import { useNavigate } from 'react-router-dom';
 import { loadCatalogLines } from '../catalogEntryStore';
 import { useLocalization } from '../../../localization/LocalizationProvider';
-import { useRolePageContent } from '../../../mock/shared/pageContent';
-import type { ListingLineSeed, ListingTaxonomyNode } from '../../../mock/shared/types';
+import { useRolePageContent } from '../../../data/pageContent';
+import type { ListingLineSeed, ListingTaxonomyNode } from '../../../data/pageTypes';
 
 // -----------------------------------------------------------------------------
 // Brand tokens (match storefront)

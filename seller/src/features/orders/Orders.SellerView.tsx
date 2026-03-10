@@ -24,7 +24,7 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { useRolePageContent } from '../../mock/shared/pageContent';
+import { useRolePageContent } from '../../data/pageContent';
 
 /**
  * Orders + Ops Preview Host (PREVIEWABLE)

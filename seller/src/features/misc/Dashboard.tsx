@@ -51,8 +51,8 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useRolePageContent } from '../../mock/shared/pageContent';
-import type { DashboardQuickAction } from '../../mock/shared/types';
+import { useRolePageContent } from '../../data/pageContent';
+import type { DashboardQuickAction } from '../../data/pageTypes';
 import type { UserRole } from '../../types/roles';
 
 const TOKENS = {

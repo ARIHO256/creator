@@ -1,26 +1,95 @@
 import type { MockDB } from "./types";
 import { readStorage, writeStorage, clearStorage } from "./storage";
-import { seedMockDb } from "./seed";
 
 const DB_EVENT = "mock-db-changed";
+const DEFAULT_API_BASE = "http://localhost:3000/api";
 
 let cached: MockDB | null = null;
+let hydration: Promise<MockDB> | null = null;
 
 const broadcast = () => {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(DB_EVENT));
 };
 
+const emptyDb = (): MockDB =>
+  ({
+    version: 1,
+    seededAt: new Date().toISOString(),
+    users: [],
+    sessions: [],
+    pageContent: {} as MockDB["pageContent"],
+    listings: [],
+    orders: [],
+    cart: {
+      id: "cart_empty",
+      items: [],
+      updatedAt: new Date().toISOString(),
+    },
+    favorites: {
+      listingIds: [],
+    },
+    follows: {
+      sellerIds: [],
+    },
+    messages: {} as MockDB["messages"],
+    notifications: {} as MockDB["notifications"],
+    modules: {},
+  }) as MockDB;
+
+const getApiBase = () => {
+  const raw = String(import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE).trim();
+  return raw.replace(/\/+$/, "");
+};
+
+const isMockDb = (value: unknown): value is MockDB =>
+  Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as MockDB).version === "number" &&
+      Array.isArray((value as MockDB).users) &&
+      typeof (value as MockDB).modules === "object"
+  );
+
+const normalizeDb = (value: unknown) => (isMockDb(value) ? value : emptyDb());
+
+export const hydrateDb = async (force = false): Promise<MockDB> => {
+  if (hydration && !force) {
+    return hydration;
+  }
+
+  hydration = (async () => {
+    if (force) {
+      cached = null;
+      clearStorage();
+    }
+
+    try {
+      const response = await fetch(`${getApiBase()}/sellerfront/mock-db`, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch seller mock DB: ${response.status}`);
+      }
+      const payload = normalizeDb(await response.json());
+      saveDb(payload);
+      return payload;
+    } catch {
+      return loadDb();
+    } finally {
+      hydration = null;
+    }
+  })();
+
+  return hydration;
+};
+
 export const loadDb = (): MockDB => {
   if (cached) return cached;
-  const seeded = seedMockDb();
   const stored = readStorage<MockDB | null>(null);
-  if (!stored || typeof stored !== "object" || !stored.version) {
-    cached = seeded;
-    writeStorage(seeded);
-    return cached;
-  }
-  cached = stored;
+  cached = normalizeDb(stored);
   return cached;
 };
 
@@ -38,11 +107,12 @@ export const updateDb = (fn: (current: MockDB) => MockDB) => {
 };
 
 export const resetDb = () => {
-  const seeded = seedMockDb();
-  cached = seeded;
-  writeStorage(seeded);
+  clearStorage();
+  cached = emptyDb();
+  writeStorage(cached);
   broadcast();
-  return seeded;
+  void hydrateDb(true);
+  return cached;
 };
 
 export const clearDb = () => {

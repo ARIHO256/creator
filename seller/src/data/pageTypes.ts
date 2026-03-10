@@ -1,8 +1,7 @@
-import type { UserRole } from "../../types/roles";
+import type { UserRole } from "../types/roles";
 
 export type Role = UserRole;
 
-// Messages
 export type ThreadTag =
   | "Order"
   | "RFQ"
@@ -73,7 +72,6 @@ export type MessagesContent = {
   templates: MessageTemplate[];
 };
 
-// Notifications
 export type NotifCategory =
   | "Orders"
   | "RFQs"
@@ -113,7 +111,6 @@ export type NotificationsContent = {
   watches: Watch[];
 };
 
-// Analytics
 export type AnalyticsKpi = {
   label: string;
   value: string;
@@ -159,7 +156,6 @@ export type AnalyticsContent = {
   metricOptions: string[];
 };
 
-// Help & Support
 export type HelpSupportKBItem = { id: string; cat: string; title: string; url: string };
 export type HelpSupportFAQItem = { q: string; a: string };
 export type HelpSupportStatusItem = { id: string; name: string; state: string };
@@ -196,7 +192,6 @@ export type HelpSupportContent = {
   refPlaceholder: string;
 };
 
-// Compliance
 export type ComplianceDocStatus =
   | "Approved"
   | "ExpiringSoon"
@@ -239,7 +234,6 @@ export type ComplianceContent = {
   autoDefault: string[];
 };
 
-// Dashboard
 export type DashboardQuickAction = {
   key: string;
   label: string;
@@ -275,7 +269,6 @@ export type DashboardContent = {
   bases: DashboardBases;
 };
 
-// Orders
 export type SellerOrderRow = {
   id: string;
   customer: string;
@@ -337,7 +330,6 @@ export type OrdersContent = {
   subhead: string;
 };
 
-// Listings
 export type ListingInventorySlot = {
   id: string;
   location: string;
@@ -424,7 +416,6 @@ export type ListingsContent = {
   rows: ListingRow[];
 };
 
-// Listing Wizard (Step A)
 export type ListingTaxonomyNode = {
   id: string;
   type: string;

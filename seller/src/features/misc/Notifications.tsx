@@ -16,8 +16,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useRolePageContent } from "../../mock/shared/pageContent";
-import type { NotifCategory, NotifItem, NotifPriority, Watch } from "../../mock/shared/types";
+import { useRolePageContent } from "../../data/pageContent";
+import type { NotifCategory, NotifItem, NotifPriority, Watch } from "../../data/pageTypes";
 
 /**
  * SupplierHub Notifications Page (Premium)

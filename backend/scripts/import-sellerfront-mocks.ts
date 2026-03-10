@@ -1,9 +1,6 @@
 import bcrypt from 'bcrypt';
 import { PrismaClient, type Prisma, type UserRole } from '@prisma/client';
-import sellerfrontSeedModule from '../../seller/src/mocks/seed.ts';
 import type { MockDB } from '../../seller/src/mocks/types.ts';
-import catalogTaxonomyModule from '../../seller/src/mocks/catalogTaxonomy.ts';
-import providerListingWizardModule from '../../seller/src/mock/provider/listingWizard.ts';
 import {
   createDefaultOnboardingState,
   prepareSubmittedOnboarding,
@@ -12,17 +9,6 @@ import {
 } from '../src/modules/workflow/onboarding-state.ts';
 
 const prisma = new PrismaClient();
-const { seedMockDb } = sellerfrontSeedModule as {
-  seedMockDb: () => MockDB;
-};
-const { CATALOG_TAXONOMY } = catalogTaxonomyModule as {
-  CATALOG_TAXONOMY: FrontendTaxonomyNode[];
-};
-const { providerListingWizardContent } = providerListingWizardModule as {
-  providerListingWizardContent: {
-    baseLines: Array<{ nodeId: string; status: string }>;
-  };
-};
 
 const SELLERFRONT_LIVE_RECORD_ID = 'sellerfront_mockdb_live';
 const SELLERFRONT_SEED_RECORD_ID = 'sellerfront_mockdb_seed';
@@ -246,7 +232,7 @@ const buildPathSnapshot = (
 const buildTaxonomyNodes = (snapshot: Snapshot) => {
   const sellerTaxonomy = snapshot.pageContent.listingWizard.seller.taxonomy as FrontendTaxonomyNode[];
   const providerTaxonomy = snapshot.pageContent.listingWizard.provider.taxonomy as FrontendTaxonomyNode[];
-  const roots = mergeTaxonomyRoots(CATALOG_TAXONOMY as FrontendTaxonomyNode[], sellerTaxonomy, providerTaxonomy);
+  const roots = mergeTaxonomyRoots(sellerTaxonomy, sellerTaxonomy, providerTaxonomy);
   const nodes = flattenTaxonomy(roots);
   return {
     nodes,
@@ -959,11 +945,7 @@ async function upsertRelationships(snapshot: Snapshot, userIdMap: Map<string, st
 async function upsertTaxonomy(snapshot: Snapshot, userIdMap: Map<string, string>) {
   const sellerTaxonomy = snapshot.pageContent.listingWizard.seller.taxonomy as FrontendTaxonomyNode[];
   const providerTaxonomy = snapshot.pageContent.listingWizard.provider.taxonomy as FrontendTaxonomyNode[];
-  const roots = mergeTaxonomyRoots(
-    CATALOG_TAXONOMY as FrontendTaxonomyNode[],
-    sellerTaxonomy,
-    providerTaxonomy,
-  );
+  const roots = mergeTaxonomyRoots(sellerTaxonomy, sellerTaxonomy, providerTaxonomy);
   const nodes = flattenTaxonomy(roots);
   const nodeMap = new Map(nodes.map((node) => [node.id, node]));
 
@@ -1024,7 +1006,7 @@ async function upsertTaxonomy(snapshot: Snapshot, userIdMap: Map<string, string>
     },
     {
       role: 'provider',
-      baseLines: providerListingWizardContent.baseLines,
+      baseLines: snapshot.pageContent.listingWizard.provider.baseLines,
     }
   ] as const;
 
@@ -1169,8 +1151,24 @@ async function upsertSnapshotRecords(snapshot: Snapshot) {
   }
 }
 
+async function loadSeedSnapshot() {
+  const [seedRecord, liveRecord] = await Promise.all([
+    prisma.appRecord.findUnique({ where: { id: SELLERFRONT_SEED_RECORD_ID } }),
+    prisma.appRecord.findUnique({ where: { id: SELLERFRONT_LIVE_RECORD_ID } })
+  ]);
+
+  const snapshot = (seedRecord?.payload || liveRecord?.payload) as Snapshot | null;
+  if (!snapshot) {
+    throw new Error(
+      'Sellerfront seed snapshot is not available in AppRecord. Seed/import the seller mock DB before rerunning this importer.'
+    );
+  }
+
+  return snapshot;
+}
+
 async function main() {
-  const snapshot = seedMockDb();
+  const snapshot = await loadSeedSnapshot();
   const userIdMap = new Map<string, string>();
 
   for (const user of snapshot.users) {

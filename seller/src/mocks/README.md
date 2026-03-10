@@ -1,12 +1,11 @@
 # Mock System
 
-This app ships with a lightweight mock data layer for end-to-end demos without a backend. The mock DB lives in `localStorage` under `__EVZONE_MOCK_DB__` and is seeded on first load.
+This app uses a compatibility data layer that hydrates from the backend seller snapshot into `localStorage` under `__EVZONE_MOCK_DB__`.
 
 ## How It Works
-- `src/mocks/seed.ts` defines the initial dataset.
-- `src/mocks/db.ts` handles persistence + change notifications.
+- `src/mocks/db.ts` hydrates the seller snapshot from the backend and handles persistence + change notifications.
 - `src/mocks/api.ts` provides mock actions (auth, listings, cart, orders) with delays/errors.
-- `useRolePageContent()` now reads from the mock DB when available, so seller/provider pages render persisted content.
+- `useRolePageContent()` reads from the hydrated DB snapshot, so seller/provider pages render DB-backed persisted content.
 
 ## Resetting Data
 - Query param: `?reset=1`

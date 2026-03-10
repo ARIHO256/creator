@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { PageKey, PageContentMap } from "../mock/shared/pageContent";
+import type { PageKey, PageContentMap } from "../data/pageContent";
 import type { UserRole } from "../types/roles";
 import type { MockDB } from "./types";
-import { loadDb, resetDb, subscribeDb, updateDb } from "./db";
+import { hydrateDb, loadDb, resetDb, subscribeDb, updateDb } from "./db";
 
 export { mockAuth, mockListings, mockCart, mockOrders, mockDelay } from "./api";
 export { resetDb, loadDb, updateDb } from "./db";
@@ -16,13 +16,13 @@ export const shouldEnableMocks = () => {
   );
 };
 
-export const initMocks = () => {
+export const initMocks = async () => {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
   if (params.get("reset") === "1") {
-    resetDb();
+    await hydrateDb(true);
   } else {
-    loadDb();
+    await hydrateDb();
   }
   (window as any).__resetMockData = () => resetDb();
   (window as any).__resetMockDB = () => resetDb();

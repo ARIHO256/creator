@@ -35,7 +35,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { useRolePageContent } from "../../mock/shared/pageContent";
+import { useRolePageContent } from "../../data/pageContent";
 import type {
   AttachmentType,
   ChatMessage,
@@ -43,7 +43,7 @@ import type {
   MessageTemplate,
   MessageThread,
   ThreadTag,
-} from "../../mock/shared/types";
+} from "../../data/pageTypes";
 
 /**
  * SupplierHub Premium Messages Page

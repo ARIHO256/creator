@@ -40,8 +40,8 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { useRolePageContent } from '../../mock/shared/pageContent';
-import type { ListingRow } from '../../mock/shared/types';
+import { useRolePageContent } from '../../data/pageContent';
+import type { ListingRow } from '../../data/pageTypes';
 import { useThemeMode } from '../../theme/themeMode';
 
 /**

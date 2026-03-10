@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Put } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { Public } from '../../common/decorators/public.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -11,6 +12,7 @@ export class SellerfrontController {
   constructor(private readonly sellerfrontService: SellerfrontService) {}
 
   @Get('mock-db')
+  @Public()
   mockDb() {
     return this.sellerfrontService.getMockDb();
   }

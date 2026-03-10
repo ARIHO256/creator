@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalization } from "../../localization/LocalizationProvider";
-import { useRolePageContent } from "../../mock/shared/pageContent";
-import type { ComplianceDoc, ComplianceDocStatus, ComplianceQueueItem } from "../../mock/shared/types";
+import { useRolePageContent } from "../../data/pageContent";
+import type { ComplianceDoc, ComplianceDocStatus, ComplianceQueueItem } from "../../data/pageTypes";
 
 // Seller — Compliance Center (EVzone) v2 — JS only
 // Route: /compliance

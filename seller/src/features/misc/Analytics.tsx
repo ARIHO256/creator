@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { UserRole } from "../../types/roles";
-import { useRolePageContent } from "../../mock/shared/pageContent";
-import type { AlertRuleConfig, AnalyticsAttributionRow, AnalyticsCohortContent, AnalyticsHighlights, AnalyticsKpi } from "../../mock/shared/types";
+import { useRolePageContent } from "../../data/pageContent";
+import type { AlertRuleConfig, AnalyticsAttributionRow, AnalyticsCohortContent, AnalyticsHighlights, AnalyticsKpi } from "../../data/pageTypes";
 import {
   AlertTriangle,
   ArrowUpRight,

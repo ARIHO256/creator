@@ -2,7 +2,6 @@ import fs from 'fs/promises';
 import path from 'path';
 import vm from 'vm';
 import { PrismaClient, type Prisma } from '@prisma/client';
-import sellerfrontSeedModule from '../../seller/src/mocks/seed.ts';
 import type { MockDB } from '../../seller/src/mocks/types.ts';
 
 const prisma = new PrismaClient();
@@ -11,7 +10,31 @@ const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9:_-]+/g, '_');
 const asJson = (value: unknown) => value as Prisma.InputJsonValue;
 const SELLERFRONT_LIVE_RECORD_ID = 'sellerfront_mockdb_live';
 const SELLERFRONT_SEED_RECORD_ID = 'sellerfront_mockdb_seed';
-const { seedMockDb } = sellerfrontSeedModule as { seedMockDb: () => MockDB };
+
+const emptySnapshot = (): MockDB =>
+  ({
+    version: 1,
+    seededAt: new Date().toISOString(),
+    users: [],
+    sessions: [],
+    pageContent: {} as MockDB['pageContent'],
+    listings: [],
+    orders: [],
+    cart: {
+      id: 'cart_empty',
+      items: [],
+      updatedAt: new Date().toISOString()
+    },
+    favorites: {
+      listingIds: []
+    },
+    follows: {
+      sellerIds: []
+    },
+    messages: {} as MockDB['messages'],
+    notifications: {} as MockDB['notifications'],
+    modules: {}
+  }) as MockDB;
 
 function extractConstInitializer(source: string, constName: string) {
   const signature = new RegExp(`(?:export\\s+)?const\\s+${constName}\\b`);
@@ -185,12 +208,12 @@ function ensureSnapshot(payload: unknown): MockDB {
   if (payload && typeof payload === 'object') {
     const snapshot = payload as MockDB;
     return {
-      ...seedMockDb(),
+      ...emptySnapshot(),
       ...snapshot,
       modules: { ...(snapshot.modules || {}) }
     };
   }
-  return seedMockDb();
+  return emptySnapshot();
 }
 
 async function mergeSnapshotModules(

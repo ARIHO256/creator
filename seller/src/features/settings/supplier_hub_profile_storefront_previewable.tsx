@@ -18,8 +18,9 @@ import { TreeItem, TreeView } from '@mui/lab';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { loadCatalogLines, persistCatalogLines } from '../listings/catalogEntryStore';
-import { CATALOG_TAXONOMY, type CatalogTaxonomyNode } from '../../mocks/catalogTaxonomy';
+import { readSellerTaxonomy, useSellerTaxonomy } from '../../data/taxonomy';
 import { useMockState } from '../../mocks';
+import type { ListingTaxonomyNode } from '../../data/pageTypes';
 import {
   AlertTriangle,
   Building2,
@@ -63,7 +64,7 @@ const TOKENS = {
 type ToastTone = 'success' | 'warning' | 'danger' | 'default';
 type Toast = { id: string; title: string; message?: string; tone?: ToastTone; action?: { label: string; onClick: () => void } };
 type CustomSocial = { id: string; name: string; handle: string };
-type TaxonomyNode = CatalogTaxonomyNode;
+type TaxonomyNode = ListingTaxonomyNode;
 type CatalogLine = { id: string; nodeId: string; path: Array<{ id: string; name: string; type: string }>; status: 'active' | 'suspended' };
 type StoreStatus = 'Active' | 'Planned';
 type StoreRecord = { id: string; name: string; handle: string; region: string; status: StoreStatus };
@@ -165,8 +166,6 @@ function buildLine(tree: TaxonomyNode[], nodeId: string, status: 'active' | 'sus
     status,
   };
 }
-
-const TAXONOMY: TaxonomyNode[] = CATALOG_TAXONOMY;
 
 function Badge({ children, tone = 'slate' }) {
   return (
@@ -440,10 +439,11 @@ function seed() {
         { id: 'category-desktops', status: 'active' },
         { id: 'category-women-shoes', status: 'suspended' },
       ];
+      const taxonomy = readSellerTaxonomy();
       const persisted = loadCatalogLines();
       const uniqueLines = new Map();
       seeds.forEach((seed) => {
-        const line = buildLine(TAXONOMY, seed.id, seed.status);
+        const line = buildLine(taxonomy, seed.id, seed.status);
         if (line?.nodeId) uniqueLines.set(line.nodeId, line);
       });
       persisted.forEach((line) => {
@@ -1339,6 +1339,7 @@ function ProductLinesManagerFullPage({
 }
 
 export default function SupplierHubProfileStorefrontPage() {
+  const taxonomy = useSellerTaxonomy();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
@@ -2771,7 +2772,7 @@ export default function SupplierHubProfileStorefrontPage() {
           setLinesEditorOpen(false);
           setResumeListingTarget('');
         }}
-        taxonomy={TAXONOMY}
+        taxonomy={taxonomy}
         productLines={productLines}
         setProductLines={updateProductLines}
         resumeTarget={resumeListingTarget}

@@ -4,8 +4,8 @@ import type {
   OrdersContent,
   MessagesContent,
   NotificationsContent,
-} from "../mock/shared/types";
-import type { PageContentMap } from "../mock/shared/pageContent";
+} from "../data/pageTypes";
+import type { PageContentMap } from "../data/pageContent";
 
 export type MockUser = {
   id: string;

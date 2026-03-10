@@ -6,8 +6,8 @@ import { clearSession, readSession, updateSession, useSession } from '../../auth
 import type { UserRole } from '../../types/roles';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { useMockState } from '../../mocks';
-import { getPageContentByRole } from '../../mock/shared/pageContent';
-import type { NotifCategory, NotifItem } from '../../mock/shared/types';
+import { getPageContentByRole } from '../../data/pageContent';
+import type { NotifCategory, NotifItem } from '../../data/pageTypes';
 import { useThemeMode } from '../../theme/themeMode';
 import {
   Activity,
