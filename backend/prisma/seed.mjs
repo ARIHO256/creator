@@ -2301,16 +2301,20 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
       scheduledAt: daysFromNow(1),
       data: {
         id: 'live_session_launch',
-        title: 'Autumn Beauty Live',
+        title: 'Autumn Beauty: serum + cleanser bundle',
         campaign: 'Autumn Beauty Flash',
         seller: 'GlowUp Hub',
+        supplierId: 'pt_glowup',
+        campaignId: 'cp_autumn_beauty',
+        hostId: 'cr_1',
         scheduledFor: daysFromNow(1).toISOString(),
         scheduledAt: daysFromNow(1).toISOString(),
         weekday: 'Friday',
         dateLabel: daysFromNow(1).toISOString().slice(0, 10),
         time: '18:00',
         location: 'Studio A',
-        simulcast: ['Instagram', 'TikTok'],
+        simulcast: ['TikTok Live', 'Instagram Live'],
+        platforms: ['TikTok Live', 'Instagram Live'],
         status: 'scheduled',
         role: 'Host',
         durationMin: 60,
@@ -2318,7 +2322,15 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         assetsReady: true,
         productsCount: 6,
         workloadScore: 42,
-        conflict: false
+        conflict: false,
+        desktopMode: 'modal',
+        heroImageUrl: 'https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=1200&q=60',
+        heroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        peakViewers: 12400,
+        avgWatchMin: 11.2,
+        chatRate: 180,
+        gmv: 32840,
+        crewConflicts: 2
       }
     }
   });
@@ -2333,16 +2345,20 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         scheduledAt: daysFromNow(2),
         data: {
           id: 'live_session_tech_friday',
-          title: 'Tech Friday Mega Live',
-          campaign: 'Tech Friday Mega Live',
+          title: 'Tech Friday Live: top 3 gadgets under 50',
+          campaign: 'Tech Friday Mega',
           seller: 'GadgetMart Africa',
+          supplierId: 'pt_gadget',
+          campaignId: 'cp_tech_friday',
+          hostId: 'cr_2',
           scheduledFor: daysFromNow(2).toISOString(),
           scheduledAt: daysFromNow(2).toISOString(),
           weekday: 'Fri',
           dateLabel: 'Fri 11 Oct',
           time: '20:00-21:30',
           location: 'MyLiveDealz',
-          simulcast: ['Facebook'],
+          simulcast: ['TikTok Live', 'YouTube Live'],
+          platforms: ['TikTok Live', 'YouTube Live'],
           status: 'draft',
           role: 'Host',
           durationMin: 90,
@@ -2350,63 +2366,95 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
           assetsReady: false,
           productsCount: 12,
           workloadScore: 4,
-          conflict: true
+          conflict: true,
+          desktopMode: 'fullscreen',
+          heroImageUrl: 'https://images.unsplash.com/photo-1518441902117-f0a80e5b0c17?auto=format&fit=crop&w=1200&q=60',
+          heroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4',
+          peakViewers: 0,
+          avgWatchMin: 0,
+          chatRate: 0,
+          gmv: 0,
+          crewConflicts: 0
         }
       },
       {
         id: 'live_session_wellness',
         userId: users.creator.id,
-        status: 'scheduled',
-        title: 'Faith & Wellness Morning Dealz',
+        status: 'live',
+        title: 'Wellness booking live: before/after + Q&A',
         scheduledAt: daysFromNow(3),
         data: {
           id: 'live_session_wellness',
-          title: 'Faith & Wellness Morning Dealz',
-          campaign: 'Faith & Wellness Morning Dealz',
-          seller: 'Grace Living Store',
+          title: 'Wellness booking live: before/after + Q&A',
+          campaign: 'Wellness Booking Sprint',
+          seller: 'Grace Living Studio',
+          supplierId: 'pt_grace',
+          campaignId: 'cp_wellness',
+          hostId: 'cr_3',
           scheduledFor: daysFromNow(3).toISOString(),
           scheduledAt: daysFromNow(3).toISOString(),
           weekday: 'Sat',
           dateLabel: 'Sat 12 Oct',
           time: '09:00-10:00',
           location: 'MyLiveDealz',
-          simulcast: [],
-          status: 'scheduled',
+          simulcast: ['Instagram Live', 'Facebook Live'],
+          platforms: ['Instagram Live', 'Facebook Live'],
+          status: 'live',
           role: 'Host',
           durationMin: 60,
           scriptsReady: true,
           assetsReady: true,
           productsCount: 6,
           workloadScore: 2,
-          conflict: false
+          conflict: false,
+          desktopMode: 'modal',
+          heroImageUrl: 'https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=1200&q=60',
+          heroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+          peakViewers: 3100,
+          avgWatchMin: 7.4,
+          chatRate: 92,
+          gmv: 5400,
+          crewConflicts: 0
         }
       },
       {
         id: 'live_session_replay_slot',
         userId: users.creator.id,
-        status: 'scheduled',
-        title: 'Tech Friday Clips Replay',
+        status: 'ended',
+        title: 'Replay: price breakdown + honest Q&A',
         scheduledAt: daysFromNow(4),
         data: {
           id: 'live_session_replay_slot',
-          title: 'Tech Friday - Clips replay',
-          campaign: 'Tech Friday Mega Live',
-          seller: 'GadgetMart Africa',
+          title: 'Replay: price breakdown + honest Q&A',
+          campaign: 'Autumn Beauty Flash',
+          seller: 'GlowUp Hub',
+          supplierId: 'pt_glowup',
+          campaignId: 'cp_autumn_beauty',
+          hostId: 'cr_1',
           scheduledFor: daysFromNow(4).toISOString(),
           scheduledAt: daysFromNow(4).toISOString(),
           weekday: 'Sun',
           dateLabel: 'Sun 13 Oct',
           time: '21:00-21:30',
           location: 'Replays only',
-          simulcast: ['MyLiveDealz'],
-          status: 'scheduled',
+          simulcast: ['TikTok Live'],
+          platforms: ['TikTok Live'],
+          status: 'ended',
           role: 'Replay host',
           durationMin: 30,
           scriptsReady: false,
           assetsReady: true,
           productsCount: 4,
           workloadScore: 1,
-          conflict: false
+          conflict: false,
+          desktopMode: 'modal',
+          heroImageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=60',
+          heroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4',
+          peakViewers: 11200,
+          avgWatchMin: 9.8,
+          chatRate: 150,
+          gmv: 27900,
+          crewConflicts: 0
         }
       }
     ]
@@ -2717,8 +2765,377 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         userId: users.creator.id,
         key: 'streaming',
         data: {
-          destinations: ['Instagram', 'TikTok'],
-          bitrate: '4500kbps'
+          isPro: true,
+          sessionStatus: 'Draft',
+          selectedDestId: 'yt',
+          profile: {
+            orientation: 'Auto',
+            quality: 'High',
+            advancedOpen: false,
+            resolution: '1080p',
+            bitrateKbps: 4500,
+            audio: 'Stereo',
+            gainDb: 0,
+            latency: 'Low',
+            adaptiveBitrate: true
+          },
+          degradeMode: 'Reduce quality, keep all destinations',
+          recordMaster: true,
+          autoReplay: true,
+          autoHighlights: false,
+          downloadMasterAllowed: false,
+          estimatedUploadMbps: 12.4,
+          destinations: [
+            {
+              id: 'yt',
+              name: 'YouTube Live',
+              kind: 'Video Live',
+              status: 'Connected',
+              enabled: true,
+              accountLabel: 'GlowUp Hub Official',
+              supportsStreamKey: true,
+              supportsPrivacy: true,
+              supportsCategory: true,
+              supportsTags: true,
+              supportsDelay: true,
+              supportsAutoReconnect: true,
+              proAdvanced: false,
+              settings: {
+                title: 'GlowUp Hub: Autumn Beauty Flash Live',
+                description: 'Serum benefits, fit checks, and instant buy links.',
+                privacy: 'Public',
+                category: 'Beauty',
+                tags: ['beauty', 'serum', 'flash'],
+                delaySec: 0,
+                autoReconnect: true
+              },
+              health: { framesDropped: 0, reconnects: 0, lastAckSec: 2, outBitrateKbps: 4300 }
+            },
+            {
+              id: 'fb',
+              name: 'Facebook Live',
+              kind: 'Community Live',
+              status: 'Needs re-auth',
+              enabled: false,
+              accountLabel: 'GlowUp Community',
+              supportsStreamKey: true,
+              supportsPrivacy: true,
+              supportsCategory: false,
+              supportsTags: false,
+              supportsDelay: false,
+              supportsAutoReconnect: true,
+              proAdvanced: false,
+              errorTitle: 'Your session expired',
+              errorNext: 'Re-authenticate the connected account to restore posting permissions.',
+              settings: {
+                title: 'GlowUp Hub: Autumn Beauty Flash Live',
+                description: 'Beauty Flash live. Products pinned for instant checkout.',
+                privacy: 'Public',
+                tags: ['live'],
+                delaySec: 0,
+                autoReconnect: true
+              },
+              health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 }
+            },
+            {
+              id: 'tt',
+              name: 'TikTok Live',
+              kind: 'Video Live',
+              status: 'Stream key missing',
+              enabled: false,
+              accountLabel: 'Creator account',
+              supportsStreamKey: true,
+              supportsPrivacy: false,
+              supportsCategory: false,
+              supportsTags: false,
+              supportsDelay: true,
+              supportsAutoReconnect: true,
+              proAdvanced: true,
+              errorTitle: 'Stream key required',
+              errorNext: 'Add a stream key or connect via OAuth if supported in your region.',
+              settings: {
+                title: 'GlowUp Hub: Autumn Beauty Flash Live',
+                description: 'Live now. Limited stock.',
+                tags: ['tiktok'],
+                delaySec: 0,
+                autoReconnect: true
+              },
+              health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 }
+            },
+            {
+              id: 'ig',
+              name: 'Instagram Live',
+              kind: 'Video Live',
+              status: 'Connected',
+              enabled: true,
+              accountLabel: 'Creator Studio',
+              supportsStreamKey: false,
+              supportsPrivacy: false,
+              supportsCategory: false,
+              supportsTags: false,
+              supportsDelay: false,
+              supportsAutoReconnect: true,
+              proAdvanced: false,
+              settings: {
+                title: 'GlowUp Hub: Autumn Beauty Flash Live',
+                description: 'Quick demo + price breakdown + instant buy.',
+                tags: ['beauty', 'live'],
+                delaySec: 0,
+                autoReconnect: true
+              },
+              health: { framesDropped: 1, reconnects: 0, lastAckSec: 3, outBitrateKbps: 3800 }
+            },
+            {
+              id: 'tw',
+              name: 'Twitch',
+              kind: 'Video Live',
+              status: 'Blocked',
+              enabled: false,
+              accountLabel: 'Channel under review',
+              supportsStreamKey: true,
+              supportsPrivacy: false,
+              supportsCategory: true,
+              supportsTags: false,
+              supportsDelay: true,
+              supportsAutoReconnect: true,
+              proAdvanced: false,
+              errorTitle: 'Destination blocked',
+              errorNext: 'Account flagged by platform policy. Contact support or switch destination.',
+              settings: {
+                title: 'GlowUp Hub: Autumn Beauty Flash Live',
+                description: 'Live commerce stream.',
+                category: 'Just Chatting',
+                tags: ['commerce'],
+                delaySec: 0,
+                autoReconnect: true
+              },
+              health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 }
+            }
+          ]
+        }
+      },
+      {
+        userId: users.creator.id,
+        key: 'overlays',
+        data: {
+          isPro: true,
+          session: {
+            id: 'live_session_launch',
+            title: 'Autumn Beauty Flash',
+            status: 'Scheduled',
+            startISO: daysFromNow(1).toISOString(),
+            endISO: new Date(daysFromNow(1).getTime() + 90 * 60 * 1000).toISOString()
+          },
+          products: [
+            {
+              id: 'p1',
+              name: 'GlowUp Serum Bundle',
+              price: '$29.99',
+              stock: 18,
+              posterUrl: 'https://images.unsplash.com/photo-1585232351009-aa87416fca90?auto=format&fit=crop&w=500&q=60'
+            },
+            {
+              id: 'p2',
+              name: 'Vitamin C Glow Kit',
+              price: '$24.50',
+              stock: 6,
+              posterUrl: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=500&q=60'
+            },
+            {
+              id: 'p3',
+              name: 'Hydration Night Mask',
+              price: '$19.00',
+              stock: 0,
+              posterUrl: 'https://images.unsplash.com/photo-1585386959984-a41552231691?auto=format&fit=crop&w=500&q=60'
+            }
+          ],
+          tab: 'qr',
+          variant: 'A',
+          qrEnabled: true,
+          qrLabel: 'Scan to shop',
+          qrUrl: 'https://mylivedealz.com/live/live_session_launch',
+          qrCorner: 'tr',
+          qrSize: 180,
+          destUrl: 'https://mylivedealz.com/dealz/autumn-flash',
+          utmSource: 'whatsapp',
+          utmMedium: 'msg',
+          utmCampaign: 'autumn_beauty_flash',
+          utmContent: 'reminder_t10m',
+          shortDomain: 'go.mylivedealz.com',
+          shortSlug: 'glow247',
+          timerEnabled: true,
+          timerStyle: 'pill',
+          timerText: 'Deal ends in',
+          dealEndISO: new Date(daysFromNow(1).getTime() + 90 * 60 * 1000).toISOString(),
+          lowerEnabled: true,
+          lowerPlacement: 'bottom',
+          lowerProductId: 'p1',
+          ctaText: 'Buy now',
+          abEnabled: true,
+          notesA: 'Variant A: QR top-right + lower-third.',
+          notesB: 'Variant B: Countdown bar + shorter CTA.'
+        }
+      },
+      {
+        userId: users.creator.id,
+        key: 'post-live',
+        data: {
+          plan: 'Pro',
+          session: {
+            id: 'live_session_launch',
+            title: 'Autumn Beauty Flash',
+            status: 'Ended',
+            endedISO: new Date(now - 33 * 60 * 1000).toISOString(),
+            replayUrl: 'https://mylivedealz.com/replay/live_session_launch',
+            coverUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=70'
+          },
+          published: false,
+          schedulePublish: false,
+          publishAt: new Date(now + 30 * 60 * 1000).toISOString(),
+          allowComments: true,
+          showProductStrip: true,
+          clips: [
+            { id: 'c1', title: 'GlowUp Bundle - Key benefits', startSec: 140, endSec: 210, format: '9:16', status: 'Exported' },
+            { id: 'c2', title: 'Price drop moment', startSec: 520, endSec: 560, format: '9:16', status: 'Queued' },
+            { id: 'c3', title: 'Buyer Q&A - shipping', startSec: 760, endSec: 840, format: '16:9', status: 'Draft' }
+          ],
+          channels: [
+            { key: 'whatsapp', name: 'WhatsApp', short: 'WA', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.002 },
+            { key: 'telegram', name: 'Telegram', short: 'TG', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.0 },
+            { key: 'line', name: 'LINE', short: 'LINE', connected: 'Needs re-auth', supportsRich: true, costPerMessageUSD: 0.003 },
+            { key: 'viber', name: 'Viber', short: 'Viber', connected: 'Connected', supportsRich: false, costPerMessageUSD: 0.0015 },
+            { key: 'rcs', name: 'RCS', short: 'RCS', connected: 'Connected', supportsRich: false, costPerMessageUSD: 0.008 }
+          ],
+          enabledChannels: { whatsapp: true, telegram: true, line: false, viber: false, rcs: false },
+          audience: 'past_buyers',
+          scheduleSends: true,
+          sendNow: false,
+          templatePack: 'Default',
+          cartRecovery: true,
+          priceDrop: false,
+          restock: true,
+          metrics: {
+            viewers: 18420,
+            clicks: 3120,
+            orders: 284,
+            gmv: 9210,
+            addToCart: 740,
+            cartAbandon: 310,
+            ctr: 0.169,
+            conv: 0.091,
+            ordersSeries: [4, 6, 8, 10, 9, 12, 15, 14, 18, 17, 16, 19, 21, 18, 16]
+          }
+        }
+      },
+      {
+        userId: users.creator.id,
+        key: 'live-alerts',
+        data: {
+          session: {
+            id: 'live_session_launch',
+            title: 'Autumn Beauty Flash',
+            status: 'Live',
+            startedISO: new Date(now - 9 * 60 * 1000).toISOString(),
+            endsISO: new Date(now + 51 * 60 * 1000).toISOString()
+          },
+          channels: [
+            {
+              key: 'whatsapp',
+              name: 'WhatsApp',
+              short: 'WA',
+              status: 'Connected',
+              supportsPin: true,
+              pinHint: 'Pin the live link message so late joiners can tap it quickly.'
+            },
+            {
+              key: 'telegram',
+              name: 'Telegram',
+              short: 'TG',
+              status: 'Connected',
+              supportsPin: true,
+              pinHint: 'Pin the latest message in the channel/group to keep the link visible.'
+            },
+            {
+              key: 'line',
+              name: 'LINE',
+              short: 'LINE',
+              status: 'Needs re-auth',
+              supportsPin: true,
+              pinHint: 'Reconnect your LINE account, then pin the live link message.'
+            },
+            {
+              key: 'viber',
+              name: 'Viber',
+              short: 'Viber',
+              status: 'Connected',
+              supportsPin: true,
+              pinHint: 'Pin one live link message so it stays visible while you are live.'
+            },
+            {
+              key: 'rcs',
+              name: 'RCS',
+              short: 'RCS',
+              status: 'Connected',
+              supportsPin: false,
+              pinHint: 'Pinning varies by device. Keep alerts spaced out and resend sparingly.'
+            }
+          ],
+          templateSeeds: [
+            { key: 'were_live', title: 'We are live', subtitle: 'Kick off attendance fast.', minIntervalMinutes: 8, iconKey: 'bell' },
+            { key: 'flash_deal', title: 'Flash deal', subtitle: 'Announce a drop (with caps).', minIntervalMinutes: 10, iconKey: 'flame' },
+            { key: 'last_chance', title: 'Last chance', subtitle: 'Final push before end.', minIntervalMinutes: 12, iconKey: 'timer' }
+          ],
+          enabledDest: { whatsapp: true, telegram: true, line: false, viber: false, rcs: false },
+          dealName: 'GlowUp Serum Bundle',
+          dealEndsMinutes: 10,
+          lastSent: {
+            were_live: now - 11 * 60 * 1000,
+            flash_deal: now - 20 * 60 * 1000,
+            last_chance: now - 40 * 60 * 1000
+          }
+        }
+      },
+      {
+        userId: users.creator.id,
+        key: 'safety',
+        data: {
+          session: {
+            id: 'live_session_launch',
+            title: 'Autumn Beauty Flash',
+            status: 'Live',
+            startedISO: new Date(now - 22 * 60 * 1000).toISOString(),
+            endsISO: new Date(now + 58 * 60 * 1000).toISOString()
+          },
+          destinations: [
+            { id: 'yt', name: 'YouTube Live', type: 'Video Live', status: 'Connected', liveState: 'Live', supportsChat: true, supportsMuteChat: true, supportsEmergencyActions: true },
+            { id: 'tt', name: 'TikTok Live', type: 'Video Live', status: 'Connected', liveState: 'Live', supportsChat: true, supportsMuteChat: false, supportsEmergencyActions: false },
+            { id: 'ig', name: 'Instagram Live', type: 'Community Live', status: 'Needs re-auth', liveState: 'Not live', supportsChat: true, supportsMuteChat: false, supportsEmergencyActions: false },
+            { id: 'fb', name: 'Facebook Live', type: 'Video Live', status: 'Connected', liveState: 'Live', supportsChat: true, supportsMuteChat: true, supportsEmergencyActions: true }
+          ],
+          messages: [
+            { id: 'm1', destId: 'yt', userName: 'Amara K.', handle: '@amarak', text: 'Is the GlowUp bundle available for delivery today?', atISO: new Date(now - 2 * 60 * 1000).toISOString(), flags: [] },
+            { id: 'm2', destId: 'yt', userName: 'DealHunter', handle: '@dealhunter', text: 'FREE iPhone here http://bit.ly/scam', atISO: new Date(now - 3 * 60 * 1000).toISOString(), flags: ['Link', 'Spam'] },
+            { id: 'm3', destId: 'tt', userName: 'Kato', handle: '@kato_ug', text: 'Price drop please!', atISO: new Date(now - 4 * 60 * 1000).toISOString(), flags: [] },
+            { id: 'm4', destId: 'fb', userName: 'Sarah N.', handle: '@sarahn', text: 'This is fake, you people are thieves', atISO: new Date(now - 6 * 60 * 1000).toISOString(), flags: ['Harassment'] },
+            { id: 'm5', destId: 'fb', userName: 'VIP Buyer', handle: '@vipbuyer', text: 'Added to cart. Waiting for checkout link!', atISO: new Date(now - 8 * 60 * 1000).toISOString(), flags: [] },
+            { id: 'm6', destId: 'tt', userName: 'Spammy', handle: '@spammy', text: 'follow me for dealz, follow follow follow', atISO: new Date(now - 9 * 60 * 1000).toISOString(), flags: ['Spam'] }
+          ],
+          keywordRules: [
+            { id: 'k1', phrase: 'http://', match: 'Contains', action: 'Flag', scope: 'All destinations', enabled: true },
+            { id: 'k2', phrase: 'free iphone', match: 'Contains', action: 'Block', scope: 'All destinations', enabled: true },
+            { id: 'k3', phrase: 'thieves', match: 'Exact', action: 'Mask', scope: 'Selected destinations', destinationIds: ['fb'], enabled: true }
+          ],
+          controls: {
+            plan: 'Pro',
+            roleMode: 'creator',
+            activeDestId: 'yt',
+            handledIds: {},
+            muteChat: { yt: false, tt: false, ig: false, fb: false },
+            pauseNotifications: false,
+            autoModeration: true,
+            slowMode: false,
+            linkBlocking: true
+          }
         }
       }
     ]
