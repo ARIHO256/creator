@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMockState } from '../../../mocks';
 const ORANGE = '#f77f00';
 
 declare global {
@@ -1230,12 +1231,65 @@ const INIT_CAMPAIGNS = [
   },
 ];
 
+export function seedSupplierCampaigns() {
+  return JSON.parse(JSON.stringify(INIT_CAMPAIGNS));
+}
+
+export function seedSupplierCampaignBuilder() {
+  return {
+    name: '',
+    type: 'Shoppable Adz',
+    region: 'East Africa',
+    currency: 'USD',
+    estValue: 1000,
+    internalReference: '',
+    commerceMode: 'Retail',
+    bundleMode: 'Single item',
+    startDate: todayYMD(),
+    durationDays: 7,
+    startTime: '09:00',
+    endTime: '21:00',
+    timezone: 'Africa/Kampala',
+    flashWindows: '',
+    marketRegions: ['East Africa'],
+    shippingConstraints: [],
+    contentLanguages: ['English'],
+    promoType: 'Discount',
+    promoArrangement: 'PercentOff',
+    promoCode: '',
+    shippingThreshold: 0,
+    giftNote: '',
+    offerScope: 'Products',
+    defaultDiscountMode: 'percent',
+    defaultDiscountValue: 10,
+    items: [],
+    hasGiveaways: false,
+    giveaways: [],
+    regulatedDocsConfirmed: false,
+    regulatedDisclaimersAccepted: false,
+    regulatedDeskNotes: '',
+    creatorUsageDecision: 'I will use a Creator',
+    collabMode: 'Open for Collabs',
+    approvalMode: 'Manual',
+    allowMultiCreators: true,
+    notes: '',
+    internalOwner: 'Supplier Manager',
+  };
+}
+
+const seedSupplierCampaignsValue = seedSupplierCampaigns();
+const seedSupplierCampaignBuilderValue = seedSupplierCampaignBuilder();
+const seedSupplierCampaignBuilderStep = 1;
+
 /* ------------------------- main component ------------------------- */
 
 export default function SupplierMyCampaignsPage() {
   const { toasts, push } = useToasts();
 
-  const [campaigns, setCampaigns] = useState<any[]>(INIT_CAMPAIGNS as any[]);
+  const [campaigns, setCampaigns] = useMockState<any[]>(
+    'supplier.myCampaigns.items',
+    seedSupplierCampaignsValue
+  );
 
   const [activeStageFilter, setActiveStageFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -1252,69 +1306,14 @@ export default function SupplierMyCampaignsPage() {
   const [catalogKind, setCatalogKind] = useState('Product');
   const overlayOpen = builderOpen || detailsOpen || catalogOpen;
 
-  const [builderStep, setBuilderStep] = useState(1);
-  const [builder, setBuilder] = useState<any>(() => ({
-    name: '',
-    type: 'Shoppable Adz',
-    region: 'East Africa',
-    currency: 'USD',
-    estValue: 1000,
-
-    // internal reference
-    internalReference: '',
-
-    // commerce model (Retail or Wholesale)
-    commerceMode: 'Retail',
-    bundleMode: 'Single item',
-
-    // duration
-    startDate: todayYMD(),
-    durationDays: 7, // min 1 max 45
-
-    // timing + targeting
-    startTime: '09:00',
-    endTime: '21:00',
-    timezone: 'Africa/Kampala',
-    flashWindows: '',
-    marketRegions: ['East Africa'],
-    shippingConstraints: [],
-    contentLanguages: ['English'],
-
-    // promo
-    promoType: 'Discount',
-    promoArrangement: 'PercentOff',
-    promoCode: '',
-    shippingThreshold: 0,
-    giftNote: '',
-
-    // offer scope
-    offerScope: 'Products',
-
-    // discount defaults (used by catalog)
-    defaultDiscountMode: 'percent',
-    defaultDiscountValue: 10,
-
-    // selected items (campaign catalog)
-    items: [],
-
-    // giveaways (only applicable to live campaign types)
-    hasGiveaways: false,
-    giveaways: [],
-
-    // compliance (only required when regulated items are present)
-    regulatedDocsConfirmed: false,
-    regulatedDisclaimersAccepted: false,
-    regulatedDeskNotes: '',
-
-    // flow
-    creatorUsageDecision: 'I will use a Creator',
-    collabMode: 'Open for Collabs',
-    approvalMode: 'Manual',
-    allowMultiCreators: true,
-
-    notes: '',
-    internalOwner: 'Supplier Manager',
-  }));
+  const [builderStep, setBuilderStep] = useMockState(
+    'supplier.myCampaigns.builderStep',
+    seedSupplierCampaignBuilderStep
+  );
+  const [builder, setBuilder] = useMockState<any>(
+    'supplier.myCampaigns.builder',
+    seedSupplierCampaignBuilderValue
+  );
 
   const giveawaysSupported = useMemo(
     () => campaignTypeSupportsGiveaways(builder.type),

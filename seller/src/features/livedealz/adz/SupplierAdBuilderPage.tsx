@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useMockState } from "../../../mocks";
 
 /**
  * Dependency-free stubs for China-CDN safety and simple drop-in.
@@ -359,6 +360,63 @@ type BuilderState = {
   endDate: string;
   endTime: string;
 };
+
+export function seedSupplierAdBuilderStepValue() {
+  return "offer" as BuilderStep;
+}
+
+export function seedSupplierAdBuilderApprovalStateValue() {
+  return "Draft" as "Draft" | "Submitted" | "Approved";
+}
+
+export function seedSupplierAdBuilderStateValue(): BuilderState {
+  const defaultSupplierId = SUPPLIERS[0]?.id || "p1";
+  const defaultCampaignId =
+    CAMPAIGNS.find((c) => c.supplierId === defaultSupplierId)?.id || CAMPAIGNS[0]?.id || "c1";
+  const defaultStart = new Date();
+  defaultStart.setDate(defaultStart.getDate() + 1);
+  defaultStart.setHours(18, 0, 0, 0);
+  const defaultEnd = new Date(defaultStart);
+  defaultEnd.setHours(defaultEnd.getHours() + 1);
+
+  return {
+    supplierId: defaultSupplierId,
+    campaignId: defaultCampaignId,
+    selectedOfferIds: [
+      OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1",
+    ].filter(Boolean),
+    primaryOfferId:
+      OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1",
+    platforms: ["Instagram"],
+    platformOtherList: [],
+    platformOtherDraft: "",
+    heroImageAssetId: ASSETS.find((a) => a.roleHint === "hero_image" && a.status === "approved")?.id,
+    heroIntroVideoAssetId: ASSETS.find((a) => a.roleHint === "hero_video" && a.status === "approved")?.id,
+    itemPosterByOfferId: {},
+    itemVideoByOfferId: {},
+    ctaText: "Shop the featured dealz before they end.",
+    primaryCtaLabel: "Buy now",
+    secondaryCtaLabel: "Add to cart",
+    landingBehavior: "Checkout",
+    landingUrl: "",
+    shortDomain: "mldz.link",
+    shortSlug: "adz-" + Math.random().toString(36).slice(2, 7),
+    utmPresetId: UTM_PRESETS[0].id,
+    utmCustom: {},
+    startDate: toDateInputValue(defaultStart),
+    startTime: toTimeInputValue(defaultStart),
+    endDate: toDateInputValue(defaultEnd),
+    endTime: toTimeInputValue(defaultEnd),
+  };
+}
+
+export function seedSupplierAdBuilderExternalAssetsValue() {
+  return {} as Record<string, Asset>;
+}
+
+export function seedSupplierAdBuilderCartValue() {
+  return {} as Record<string, number>;
+}
 
 const cx = (...xs: Array<string | false | null | undefined>) => xs.filter(Boolean).join(" ");
 
@@ -1752,7 +1810,10 @@ export default function AdBuilder({
     { key: "schedule", label: "Schedule", desc: "Start + End times (scroll picker)" },
     { key: "review", label: "Review", desc: "Preflight + submit" },
   ];
-  const [step, setStep] = useState<BuilderStep>("offer");
+  const [step, setStep] = useMockState<BuilderStep>(
+    "supplier.adBuilder.step",
+    seedSupplierAdBuilderStepValue()
+  );
 
   const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
 
@@ -1772,7 +1833,10 @@ export default function AdBuilder({
     }
   };
 
-  const [approvalState, setApprovalState] = useState<"Draft" | "Submitted" | "Approved">("Draft");
+  const [approvalState, setApprovalState] = useMockState<"Draft" | "Submitted" | "Approved">(
+    "supplier.adBuilder.approvalState",
+    seedSupplierAdBuilderApprovalStateValue()
+  );
   const isSubmitted = approvalState !== "Draft";
   const isApproved = approvalState === "Approved";
   const [showSharePanel, setShowSharePanel] = useState(false);
@@ -1796,35 +1860,16 @@ export default function AdBuilder({
     return d;
   }, [defaultStart]);
 
-  const [builder, setBuilder] = useState<BuilderState>(() => ({
-    supplierId: defaultSupplierId,
-    campaignId: defaultCampaignId,
-    selectedOfferIds: [OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1"].filter(Boolean),
-    primaryOfferId: OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1",
-    platforms: ["Instagram"],
-    platformOtherList: [],
-    platformOtherDraft: "",
-    heroImageAssetId: ASSETS.find((a) => a.roleHint === "hero_image" && a.status === "approved")?.id,
-    heroIntroVideoAssetId: ASSETS.find((a) => a.roleHint === "hero_video" && a.status === "approved")?.id,
-    itemPosterByOfferId: {},
-    itemVideoByOfferId: {},
-    ctaText: "Shop the featured dealz before they end.",
-    primaryCtaLabel: "Buy now",
-    secondaryCtaLabel: "Add to cart",
-    landingBehavior: "Checkout",
-    landingUrl: "",
-    shortDomain: "mldz.link",
-    shortSlug: "adz-" + Math.random().toString(36).slice(2, 7),
-    utmPresetId: UTM_PRESETS[0].id,
-    utmCustom: {},
-    startDate: toDateInputValue(defaultStart),
-    startTime: toTimeInputValue(defaultStart),
-    endDate: toDateInputValue(defaultEnd),
-    endTime: toTimeInputValue(defaultEnd),
-  }));
+  const [builder, setBuilder] = useMockState<BuilderState>(
+    "supplier.adBuilder.builder",
+    seedSupplierAdBuilderStateValue()
+  );
 
   // External assets from Asset Library picker roundtrip
-  const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>({});
+  const [externalAssets, setExternalAssets] = useMockState<Record<string, Asset>>(
+    "supplier.adBuilder.externalAssets",
+    seedSupplierAdBuilderExternalAssetsValue()
+  );
 
   const supplier = useMemo(() => SUPPLIERS.find((p) => p.id === builder.supplierId) || SUPPLIERS[0], [builder.supplierId]);
   const campaignOptions = useMemo(() => CAMPAIGNS.filter((c) => c.supplierId === builder.supplierId), [builder.supplierId]);
@@ -1835,7 +1880,10 @@ export default function AdBuilder({
   const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
 
   // Cart state (shared between the preview cards and the fullscreen viewer)
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useMockState<Record<string, number>>(
+    "supplier.adBuilder.cart",
+    seedSupplierAdBuilderCartValue()
+  );
   // Keep cart clean if selected offers change (e.g., creator edits selection)
   useEffect(() => {
     setCart((prev) => {

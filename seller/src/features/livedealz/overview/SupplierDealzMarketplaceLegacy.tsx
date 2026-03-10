@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { useMockState } from "../../../mocks";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "../adz/SupplierAdBuilderPage";
 import { LiveBuilderDrawer } from "../live/SupplierLiveDashboardPage";
@@ -675,6 +676,22 @@ const DEALZ_SEED: Deal[] = [
     }
   }
 ];
+
+export function seedSupplierDealzMarketplaceDeals() {
+  return JSON.parse(JSON.stringify(DEALZ_SEED));
+}
+
+export function seedSupplierDealzMarketplaceSelectedId() {
+  return DEALZ_SEED[0]?.id || "";
+}
+
+export function seedSupplierDealzMarketplaceCart() {
+  return {} as Record<string, number>;
+}
+
+const seedSupplierDealzMarketplaceDealsValue = seedSupplierDealzMarketplaceDeals();
+const seedSupplierDealzMarketplaceSelectedIdValue = seedSupplierDealzMarketplaceSelectedId();
+const seedSupplierDealzMarketplaceCartValue = seedSupplierDealzMarketplaceCart();
 
 const shoppable1 = DEALZ_SEED[0].shoppable!;
 const live1: LiveInvite = {
@@ -2355,8 +2372,14 @@ export default function SupplierDealzMarketplace() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const [dealz, setDealz] = useState<Deal[]>(DEALZ_SEED);
-  const [selectedId, setSelectedId] = useState<string>(DEALZ_SEED[0]?.id || "");
+  const [dealz, setDealz] = useMockState<Deal[]>(
+    "supplier.dealzMarketplaceLegacy.deals",
+    seedSupplierDealzMarketplaceDealsValue
+  );
+  const [selectedId, setSelectedId] = useMockState<string>(
+    "supplier.dealzMarketplaceLegacy.selectedId",
+    seedSupplierDealzMarketplaceSelectedIdValue
+  );
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 
@@ -2382,9 +2405,15 @@ export default function SupplierDealzMarketplace() {
   const selected = useMemo(() => dealz.find((d) => d.id === selectedId), [selectedId, dealz]);
 
   // Cart state for the Shoppable Ad preview (per selected deal)
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useMockState<Record<string, number>>(
+    "supplier.dealzMarketplaceLegacy.cart",
+    seedSupplierDealzMarketplaceCartValue
+  );
   // Cart state for the Live Session invite preview (per selected deal)
-  const [liveCart, setLiveCart] = useState<Record<string, number>>({});
+  const [liveCart, setLiveCart] = useMockState<Record<string, number>>(
+    "supplier.dealzMarketplaceLegacy.liveCart",
+    seedSupplierDealzMarketplaceCartValue
+  );
   const navigate = useNavigate();
 
   function safeNav(url: string) {
