@@ -404,9 +404,106 @@ function evaluateIdentifier(
 
 function parseUseMockStateMappings(source: string) {
   const mappings: Array<{ key: string; expr: string }> = [];
-  const regex = /useMockState(?:<[^>]+>)?\(\s*["'`]([^"'`]+)["'`]\s*,\s*([^\n\r]+?)\s*\)/g;
-  for (const match of source.matchAll(regex)) {
-    mappings.push({ key: match[1], expr: match[2].trim() });
+
+  for (let index = 0; index < source.length; index += 1) {
+    const start = source.indexOf('useMockState', index);
+    if (start < 0) break;
+    index = start + 'useMockState'.length - 1;
+
+    let cursor = start + 'useMockState'.length;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+
+    if (source[cursor] === '<') {
+      let depth = 1;
+      cursor += 1;
+      while (cursor < source.length && depth > 0) {
+        const ch = source[cursor];
+        if (ch === '<') depth += 1;
+        if (ch === '>') depth -= 1;
+        cursor += 1;
+      }
+      while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    }
+
+    if (source[cursor] !== '(') {
+      continue;
+    }
+    cursor += 1;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+
+    const quote = source[cursor];
+    if (!['"', "'", '`'].includes(quote)) {
+      continue;
+    }
+    cursor += 1;
+    const keyStart = cursor;
+    while (cursor < source.length && source[cursor] !== quote) cursor += 1;
+    const key = source.slice(keyStart, cursor);
+    cursor += 1;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    if (source[cursor] !== ',') {
+      continue;
+    }
+    cursor += 1;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+
+    const exprStart = cursor;
+    let depthParen = 0;
+    let depthBracket = 0;
+    let depthBrace = 0;
+    let inSingle = false;
+    let inDouble = false;
+    let inTemplate = false;
+    let escaped = false;
+
+    for (; cursor < source.length; cursor += 1) {
+      const ch = source[cursor];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (inSingle) {
+        if (ch === "'") inSingle = false;
+        continue;
+      }
+      if (inDouble) {
+        if (ch === '"') inDouble = false;
+        continue;
+      }
+      if (inTemplate) {
+        if (ch === '`') inTemplate = false;
+        continue;
+      }
+      if (ch === "'") {
+        inSingle = true;
+        continue;
+      }
+      if (ch === '"') {
+        inDouble = true;
+        continue;
+      }
+      if (ch === '`') {
+        inTemplate = true;
+        continue;
+      }
+      if (ch === '(') depthParen += 1;
+      if (ch === ')') {
+        if (depthParen === 0 && depthBracket === 0 && depthBrace === 0) {
+          mappings.push({ key, expr: source.slice(exprStart, cursor).trim() });
+          break;
+        }
+        depthParen -= 1;
+        continue;
+      }
+      if (ch === '[') depthBracket += 1;
+      if (ch === ']') depthBracket -= 1;
+      if (ch === '{') depthBrace += 1;
+      if (ch === '}') depthBrace -= 1;
+    }
   }
   return mappings;
 }

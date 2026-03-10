@@ -74,10 +74,6 @@ function extractInitializer(source: string, constName: string) {
         inTemplate = false;
         continue;
       }
-      if (ch === '$' && source[index + 1] === '{') {
-        depthBrace += 1;
-        index += 1;
-      }
       continue;
     }
     if (ch === "'") {
