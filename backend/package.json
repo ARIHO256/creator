@@ -16,6 +16,7 @@
     "prisma:seed:loadtest": "node prisma/seed-loadtest.mjs",
     "creatorfront:import-compat": "node --env-file=.env --import tsx scripts/import-creator-compat-seeds.ts",
     "sellerfront:import-mocks": "node --env-file=.env --import tsx scripts/import-sellerfront-mocks.ts",
+    "sellerfront:import-compat": "node --env-file=.env --import tsx scripts/import-sellerfront-compat-seeds.ts",
     "test": "tsx --test test/**/*.test.ts"
   },
   "dependencies": {

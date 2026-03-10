@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Redis = require('ioredis');
+import { Redis } from 'ioredis';
 
 @Injectable()
 export class RealtimePublisher implements OnModuleDestroy {
@@ -20,8 +20,7 @@ export class RealtimePublisher implements OnModuleDestroy {
       '';
 
     if (this.enabled && redisUrl) {
-      const RedisClient = (Redis as any).default ?? (Redis as any);
-      this.client = new RedisClient(redisUrl, { maxRetriesPerRequest: 2 });
+      this.client = new Redis(redisUrl, { maxRetriesPerRequest: 2 });
       this.client.on('error', (error) => {
         this.logger.warn(`Realtime Redis error: ${error.message}`);
       });
