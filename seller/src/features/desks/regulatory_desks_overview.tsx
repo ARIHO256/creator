@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
@@ -579,7 +579,7 @@ function ProgressBar({ pct, tone }: { pct: number; tone: "green" | "orange" | "d
 
 export default function RegulatoryDesksHome() {
   const navigate = useNavigate();
-  const [data, setData] = useMockState("desks.regulatory.overview", seedData());
+  const [data, setData] = useSellerCompatState("desks.regulatory.overview", seedData());
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {

@@ -1,15 +1,33 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { AppRecord, Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 
 const SELLERFRONT_LIVE_RECORD_ID = 'sellerfront_mockdb_live';
 const SELLERFRONT_SEED_RECORD_ID = 'sellerfront_mockdb_seed';
 const asJson = (value: Record<string, unknown>) => value as unknown as Prisma.InputJsonValue;
 const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9:_-]+/g, '_');
+type StorageType = 'local' | 'session';
 
 @Injectable()
 export class SellerfrontService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async getBootstrap(userId: string | null) {
+    const [modules, local, session] = await Promise.all([
+      this.collectModules(userId),
+      this.collectStorage('local', userId),
+      this.collectStorage('session', userId)
+    ]);
+
+    return {
+      app: 'sellerfront',
+      modules,
+      storage: {
+        local,
+        session
+      }
+    };
+  }
 
   private async withSeededModules(payload: unknown) {
     const snapshot =
@@ -98,6 +116,10 @@ export class SellerfrontService {
     return record?.payload ?? null;
   }
 
+  async getStorage(storageType: StorageType, userId: string | null) {
+    return this.collectStorage(storageType, userId);
+  }
+
   async upsertModule(userId: string | null, key: string, payload: unknown) {
     const record = await this.prisma.appRecord.upsert({
       where: { id: this.moduleRecordId(key, userId ?? undefined) },
@@ -116,6 +138,44 @@ export class SellerfrontService {
     });
 
     return record.payload;
+  }
+
+  async upsertStorageEntries(
+    userId: string | null,
+    storageType: StorageType,
+    entries: Record<string, string | null>
+  ) {
+    const output: Record<string, string | null> = {};
+
+    for (const [key, value] of Object.entries(entries)) {
+      if (value === null) {
+        await this.prisma.appRecord.deleteMany({
+          where: { id: this.storageRecordId(storageType, key, userId ?? undefined) }
+        });
+        output[key] = null;
+        continue;
+      }
+
+      const record = await this.prisma.appRecord.upsert({
+        where: { id: this.storageRecordId(storageType, key, userId ?? undefined) },
+        update: {
+          ...(userId ? { userId } : {}),
+          payload: { value } as Prisma.InputJsonValue
+        },
+        create: {
+          id: this.storageRecordId(storageType, key, userId ?? undefined),
+          ...(userId ? { userId } : {}),
+          domain: 'frontend_state_storage',
+          entityType: `sellerfront:${storageType}`,
+          entityId: key,
+          payload: { value } as Prisma.InputJsonValue
+        }
+      });
+
+      output[key] = this.readStorageRecord(record);
+    }
+
+    return output;
   }
 
   async updateMockDb(userId: string | null, payload: Record<string, unknown>) {
@@ -171,5 +231,74 @@ export class SellerfrontService {
     return userId
       ? `frontend_state_module_sellerfront_${sanitize(key)}_${sanitize(userId)}`
       : `frontend_state_module_sellerfront_${sanitize(key)}_global`;
+  }
+
+  private storageRecordId(storageType: StorageType, key: string, userId?: string) {
+    return userId
+      ? `frontend_state_storage_sellerfront_${storageType}_${sanitize(key)}_${sanitize(userId)}`
+      : `frontend_state_storage_sellerfront_${storageType}_${sanitize(key)}_global`;
+  }
+
+  private async collectModules(userId: string | null) {
+    const [globalRecords, userRecords] = await Promise.all([
+      this.prisma.appRecord.findMany({
+        where: {
+          domain: 'frontend_state_module',
+          entityType: 'sellerfront',
+          userId: null
+        }
+      }),
+      userId
+        ? this.prisma.appRecord.findMany({
+            where: {
+              domain: 'frontend_state_module',
+              entityType: 'sellerfront',
+              userId
+            }
+          })
+        : Promise.resolve([])
+    ]);
+
+    return [...globalRecords, ...userRecords].reduce<Record<string, unknown>>((acc, record) => {
+      if (record.entityId) {
+        acc[record.entityId] = record.payload;
+      }
+      return acc;
+    }, {});
+  }
+
+  private async collectStorage(storageType: StorageType, userId: string | null) {
+    const [globalRecords, userRecords] = await Promise.all([
+      this.prisma.appRecord.findMany({
+        where: {
+          domain: 'frontend_state_storage',
+          entityType: `sellerfront:${storageType}`,
+          userId: null
+        }
+      }),
+      userId
+        ? this.prisma.appRecord.findMany({
+            where: {
+              domain: 'frontend_state_storage',
+              entityType: `sellerfront:${storageType}`,
+              userId
+            }
+          })
+        : Promise.resolve([])
+    ]);
+
+    return [...globalRecords, ...userRecords].reduce<Record<string, string>>((acc, record) => {
+      if (!record.entityId) return acc;
+      const value = this.readStorageRecord(record);
+      if (value !== null) {
+        acc[record.entityId] = value;
+      }
+      return acc;
+    }, {});
+  }
+
+  private readStorageRecord(record: AppRecord) {
+    const payload = record.payload as { value?: unknown } | null;
+    return typeof payload?.value === 'string' ? payload.value : null;
   }
 }

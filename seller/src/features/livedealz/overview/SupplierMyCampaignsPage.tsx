@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useMockState } from '../../../mocks';
+import { useSellerCompatState } from '../../../lib/frontendState';
 const ORANGE = '#f77f00';
 
 declare global {
@@ -1306,7 +1306,7 @@ export default function SupplierMyCampaignsPage() {
   const [catalogKind, setCatalogKind] = useState('Product');
   const overlayOpen = builderOpen || detailsOpen || catalogOpen;
 
-  const [builderStep, setBuilderStep] = useMockState(
+  const [builderStep, setBuilderStep] = useSellerCompatState(
     'supplier.myCampaigns.builderStep',
     seedSupplierCampaignBuilderStep
   );

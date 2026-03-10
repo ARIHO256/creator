@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
@@ -624,7 +624,7 @@ export default function OpsShippingProfilesPremium() {
 
   const [role, setRole] = useState("seller");
 
-  const [warehouses] = useMockState("ops.shipping.warehouses", seedWarehouses());
+  const [warehouses] = useSellerCompatState("ops.shipping.warehouses", seedWarehouses());
   const [profiles, setProfiles] = useMockState<ShippingProfile[]>("ops.shipping.profiles", seedProfiles(warehouses));
 
   const [query, setQuery] = useState("");

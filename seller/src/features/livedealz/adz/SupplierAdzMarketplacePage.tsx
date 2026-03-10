@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMockState } from "../../../mocks";
+import { useSellerCompatState } from "../../../lib/frontendState";
 
 /**
  * SupplierAdzMarketplacePage.jsx
@@ -1349,7 +1349,7 @@ export default function SupplierAdzMarketplacePage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useMockState("supplier.adzMarketplace.ads", DEMO_ADS);
+  const [ads, setAds] = useSellerCompatState("supplier.adzMarketplace.ads", DEMO_ADS);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     if (!ads.length) return;

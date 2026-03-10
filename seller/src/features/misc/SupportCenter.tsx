@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "react-router-dom";
 import {
@@ -751,10 +751,10 @@ export default function SupportCenterPage() {
   };
   const dismissToast = (id) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [status, setStatus] = useMockState("support.status", seedStatus());
-  const [tickets, setTickets] = useMockState("support.tickets", seedTickets());
-  const [articles] = useMockState("support.articles", seedArticles());
-  const [playbooks] = useMockState("support.playbooks", seedPlaybooks());
+  const [status, setStatus] = useSellerCompatState("support.status", seedStatus());
+  const [tickets, setTickets] = useSellerCompatState("support.tickets", seedTickets());
+  const [articles] = useSellerCompatState("support.articles", seedArticles());
+  const [playbooks] = useSellerCompatState("support.playbooks", seedPlaybooks());
 
   const stats = useMemo(() => computeTicketStats(tickets), [tickets]);
 

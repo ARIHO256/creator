@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { useThemeMode } from "../../theme/themeMode";
 import { useNavigate } from "react-router-dom";
@@ -599,7 +599,7 @@ export default function ProviderServiceCommandPage() {
   const [dateScope, setDateScope] = useState<DateScope>("Today");
   const [serviceLine, setServiceLine] = useState("All services");
 
-  const [schedule] = useMockState("provider.serviceCommand.schedule", seedSchedule());
+  const [schedule] = useSellerCompatState("provider.serviceCommand.schedule", seedSchedule());
   const [queue, setQueue] = useMockState<QueueItem[]>("provider.serviceCommand.queue", seedQueue());
 
   const queueCounts = useMemo(() => {

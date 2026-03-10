@@ -17,6 +17,12 @@ export class SellerfrontController {
     return this.sellerfrontService.getMockDb();
   }
 
+  @Get('bootstrap')
+  @Public()
+  bootstrap(@CurrentUser() user: RequestUser | undefined) {
+    return this.sellerfrontService.getBootstrap(user?.sub ?? null);
+  }
+
   @Get('module')
   @Public()
   module(@Query('key') key: string) {
@@ -31,6 +37,22 @@ export class SellerfrontController {
     @Body() body: { key: string; payload: unknown }
   ) {
     return this.sellerfrontService.upsertModule(user?.sub ?? null, body.key, body.payload);
+  }
+
+  @Get('storage')
+  @Public()
+  storage(@Query('type') type: 'local' | 'session', @CurrentUser() user: RequestUser | undefined) {
+    return this.sellerfrontService.getStorage(type, user?.sub ?? null);
+  }
+
+  @Put('storage')
+  @Public()
+  @RateLimit({ limit: 240, windowMs: 60_000 })
+  putStorage(
+    @CurrentUser() user: RequestUser | undefined,
+    @Body() body: { type: 'local' | 'session'; entries: Record<string, string | null> }
+  ) {
+    return this.sellerfrontService.upsertStorageEntries(user?.sub ?? null, body.type, body.entries || {});
   }
 
   @Put('mock-db')

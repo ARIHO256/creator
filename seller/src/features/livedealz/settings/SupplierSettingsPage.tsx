@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../../mocks";
+import { useSellerCompatState } from "../../../lib/frontendState";
 
 /**
  * SupplierSettingsSafetyPage.jsx
@@ -727,7 +727,7 @@ export function seedSupplierSettingsForm() {
 export default function SupplierSettingsSafetyPage() {
   const { toasts, push } = useToasts();
 
-  const [form, setForm] = useMockState("supplier.settings.form", seedSupplierSettingsForm());
+  const [form, setForm] = useSellerCompatState("supplier.settings.form", seedSupplierSettingsForm());
   const [saved, setSaved] = useState(true);
 
   const [openPolicy, setOpenPolicy] = useState(null); // platform | content | payout | full | null

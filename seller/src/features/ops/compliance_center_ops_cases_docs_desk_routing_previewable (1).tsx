@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -486,8 +486,8 @@ export default function ComplianceCenterPreviewable() {
 
   const [tab, setTab] = useState("Overview");
 
-  const [cases, setCases] = useMockState("ops.compliance.cases", seedCases());
-  const [docs, setDocs] = useMockState("ops.compliance.docs", seedDocs());
+  const [cases, setCases] = useSellerCompatState("ops.compliance.cases", seedCases());
+  const [docs, setDocs] = useSellerCompatState("ops.compliance.docs", seedDocs());
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");

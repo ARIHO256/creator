@@ -192,6 +192,29 @@ const manualResolvers: Record<string, Record<string, ManualResolver>> = {
       const endpoints = (seedWebhooks as () => unknown[])();
       return (seedWebhookLogs as (endpoints: unknown[]) => unknown)(endpoints);
     }
+  },
+  'listings/ListingDetail.SellerView.tsx': {
+    seedListingVersions(capture) {
+      const seedListings = capture.seedListings;
+      if (typeof seedListings !== 'function') {
+        throw new Error('Missing seedListings in listing detail seller view.');
+      }
+      const rows = (seedListings as () => Array<{ id: string }>)();
+      const initial: Record<string, unknown[]> = {};
+      const now = new Date().toISOString();
+      for (const row of rows) {
+        initial[row.id] = [
+          {
+            id: `seed_version_${row.id}`,
+            at: now,
+            actor: 'System',
+            note: 'Initial version',
+            snapshot: row
+          }
+        ];
+      }
+      return initial;
+    }
   }
 };
 
@@ -564,6 +587,13 @@ function resolveModulePayload(file: string, expr: string, evaluated: Record<stri
   }
 
   if (
+    file === 'settings/settings_integrations_connected_apps_api_keys_webhook_health.tsx' &&
+    expr === 'seedWebhookLogs(seedWebhooks())'
+  ) {
+    return evaluated.seedWebhookLogs;
+  }
+
+  if (
     file === 'provider/provider_joint_quote_collaboration_split_responsibilities_previewable.tsx' &&
     expr === 'buildSowText(seedQuote())'
   ) {
@@ -578,7 +608,41 @@ function resolveModulePayload(file: string, expr: string, evaluated: Record<stri
     return evaluated.seedProfiles;
   }
 
+  if (file === 'settings/supplier_hub_profile_storefront_previewable.tsx' && expr.startsWith('seeded.')) {
+    const seed = evaluated.seed;
+    if (!seed || typeof seed !== 'object') {
+      return undefined;
+    }
+    return expr
+      .slice('seeded.'.length)
+      .split('.')
+      .reduce<unknown>((acc, part) => {
+        if (acc && typeof acc === 'object' && part in (acc as Record<string, unknown>)) {
+          return (acc as Record<string, unknown>)[part];
+        }
+        return undefined;
+      }, seed);
+  }
+
+  if (file === 'listings/ListingDetail.SellerView.tsx' && expr.includes('seedListings().forEach')) {
+    return evaluated.seedListingVersions;
+  }
+
   return undefined;
+}
+
+function expandModuleKeys(file: string, key: string) {
+  if (file === 'settings/saved_views_manager_rename_pin_share_compliance_lock_previewable.tsx') {
+    return [
+      'settings.savedViews.evzone_supplierhub_saved_views_v9',
+      'settings.savedViews.evzone_supplierhub_saved_views_v2',
+      'settings.savedViews.evzone_supplierhub_saved_views_v1',
+      'settings.savedViews.evzone_partnerhub_saved_views_v1',
+      'settings.savedViews.evzone_saved_views_manager_demo_v1'
+    ];
+  }
+
+  return [key];
 }
 
 async function collectFeatureFiles(root: string, current = root): Promise<string[]> {
@@ -662,6 +726,93 @@ async function upsertComplianceModules(writer: RecordWriter) {
   }
 }
 
+async function upsertDerivedModules(writer: RecordWriter) {
+  const records = await writer.appRecord.findMany({
+    where: {
+      domain: FEATURE_DOMAIN,
+      OR: [
+        {
+          entityType: 'settings/supplier_hub_profile_storefront_previewable.tsx',
+          entityId: 'seed'
+        },
+        {
+          entityType: 'listings/ListingDetail.SellerView.tsx',
+          entityId: 'seedListings'
+        },
+        {
+          entityType: 'settings/audit_log_explorer_filters_exports_evidence_bundles_previewable.tsx',
+          entityId: 'seedAudit'
+        }
+      ]
+    },
+    select: {
+      entityType: true,
+      entityId: true,
+      payload: true
+    }
+  });
+
+  const profile = records.find(
+    (record) =>
+      record.entityType === 'settings/supplier_hub_profile_storefront_previewable.tsx' &&
+      record.entityId === 'seed'
+  )?.payload as Record<string, unknown> | undefined;
+
+  if (profile && typeof profile === 'object') {
+    const profileKeys = [
+      'identity',
+      'branding',
+      'addresses',
+      'stores',
+      'productLines',
+      'regions',
+      'supportHours',
+      'socials',
+      'customSocials'
+    ] as const;
+
+    for (const key of profileKeys) {
+      await upsertModuleRecord(writer, `settings.profile.${key}`, profile[key] ?? (key === 'customSocials' ? [] : null));
+    }
+  }
+
+  const listingRows = records.find(
+    (record) => record.entityType === 'listings/ListingDetail.SellerView.tsx' && record.entityId === 'seedListings'
+  )?.payload as Array<Record<string, unknown>> | undefined;
+
+  if (Array.isArray(listingRows)) {
+    const now = new Date().toISOString();
+    const versions = Object.fromEntries(
+      listingRows
+        .filter((row) => typeof row?.id === 'string')
+        .map((row) => [
+          row.id as string,
+          [
+            {
+              id: `seed_version_${row.id as string}`,
+              at: now,
+              actor: 'System',
+              note: 'Initial version',
+              snapshot: row
+            }
+          ]
+        ])
+    );
+    await upsertModuleRecord(writer, 'listings.detail.versions', versions);
+  }
+
+  const auditRows = records.find(
+    (record) =>
+      record.entityType === 'settings/audit_log_explorer_filters_exports_evidence_bundles_previewable.tsx' &&
+      record.entityId === 'seedAudit'
+  )?.payload as Array<Record<string, unknown>> | undefined;
+
+  if (Array.isArray(auditRows)) {
+    const activeId = typeof auditRows[0]?.id === 'string' ? (auditRows[0].id as string) : null;
+    await upsertModuleRecord(writer, 'settings.audit.activeId', activeId);
+  }
+}
+
 async function main() {
   const files = await collectFeatureFiles(featuresRoot);
   const candidates = [] as Array<{
@@ -736,8 +887,10 @@ async function main() {
         if (payload === undefined) {
           continue;
         }
-        await upsertModuleRecord(tx, mapping.key, payload);
-        summary.modules.push(mapping.key);
+        for (const key of expandModuleKeys(candidate.file, mapping.key)) {
+          await upsertModuleRecord(tx, key, payload);
+          summary.modules.push(key);
+        }
       }
     });
 
@@ -746,6 +899,7 @@ async function main() {
 
   await prisma.$transaction(async (tx) => {
     await upsertComplianceModules(tx);
+    await upsertDerivedModules(tx);
   });
 
   console.log('\nFeature seed summary');

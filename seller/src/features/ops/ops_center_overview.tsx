@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -384,7 +384,7 @@ function toneFromHealth(status: string) {
 }
 
 export default function OpsCenterOverview() {
-  const [data] = useMockState("ops.centerOverview", seedData());
+  const [data] = useSellerCompatState("ops.centerOverview", seedData());
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {

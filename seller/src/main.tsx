@@ -5,6 +5,7 @@ import App from "./App";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import { LocalizationProvider } from "./localization/LocalizationProvider";
 import { AppThemeProvider } from "./theme/AppThemeProvider";
+import { bootstrapSellerFrontendState, initSellerStorageSync } from "./lib/frontendState";
 import "./styles/theme.css";
 import "./index.css";
 
@@ -31,6 +32,25 @@ const renderApp = () => {
 
 void import("./mocks")
   .then(async ({ initMocks }) => {
+    await bootstrapSellerFrontendState().catch(() => undefined);
+    initSellerStorageSync({
+      localPrefixes: [
+        "evzone_",
+        "seller_",
+        "provider_",
+        "serviceListing.",
+        "shipping_",
+        "catalog_",
+        "passkeys_",
+        "onboarding_status_",
+        "mldz_",
+      ],
+      sessionPrefixes: [
+        "seller_",
+        "catalog_",
+        "mldz_",
+      ],
+    });
     await initMocks();
   })
   .catch(() => {

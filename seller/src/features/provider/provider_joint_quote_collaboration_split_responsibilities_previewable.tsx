@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -432,7 +432,7 @@ export default function ProviderJointQuotePage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [step, setStep] = useState("Overview");
-  const [quote, setQuote] = useMockState("provider.jointQuote.quote", seedQuote());
+  const [quote, setQuote] = useSellerCompatState("provider.jointQuote.quote", seedQuote());
   const [dirty, setDirty] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -615,7 +615,7 @@ export default function ProviderJointQuotePage() {
     pushToast({ title: "Milestone added", tone: "success" });
   };
 
-  const [sowText, setSowText] = useMockState("provider.jointQuote.sowText", buildSowText(seedQuote()));
+  const [sowText, setSowText] = useSellerCompatState("provider.jointQuote.sowText", buildSowText(seedQuote()));
   useEffect(() => {
     setSowText(buildSowText(quote));
     // eslint-disable-next-line react-hooks/exhaustive-deps

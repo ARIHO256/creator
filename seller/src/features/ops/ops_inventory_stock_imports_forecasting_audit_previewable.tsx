@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -454,7 +454,7 @@ export default function OpsInventoryPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [items, setItems] = useMockState("ops.inventory.items", seedInventory());
+  const [items, setItems] = useSellerCompatState("ops.inventory.items", seedInventory());
 
   const [query, setQuery] = useState("");
   const [warehouse, setWarehouse] = useState("All");
@@ -503,7 +503,7 @@ export default function OpsInventoryPage() {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [items, query, warehouse, category, status]);
 
-  const [activeSku, setActiveSku] = useMockState("ops.inventory.activeSku", seedInventory()[0]?.sku);
+  const [activeSku, setActiveSku] = useSellerCompatState("ops.inventory.activeSku", seedInventory()[0]?.sku);
   useEffect(() => {
     if (!filtered.find((x) => x.sku === activeSku)) setActiveSku(filtered[0]?.sku);
   }, [filtered]);

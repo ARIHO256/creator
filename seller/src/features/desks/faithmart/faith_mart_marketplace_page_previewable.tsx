@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../../mocks";
+import { useSellerCompatState } from "../../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { mockCart } from "../../../mocks";
 import {
@@ -446,7 +446,7 @@ function ItemCard({ item, mode, onOpen }) {
 }
 
 export default function FaithMartMarketplacePage() {
-  const [seeded] = useMockState("desks.faithmart.marketplace", seedData());
+  const [seeded] = useSellerCompatState("desks.faithmart.marketplace", seedData());
 
   const [mode, setMode] = useState("retail");
   const [tab, setTab] = useState("All");

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMockState } from "../../../mocks";
+import { useSellerCompatState } from "../../../lib/frontendState";
 
 /**
  * SupplierAdzManagerPage.jsx
@@ -521,7 +521,7 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useMockState("supplier.adzManager.ads", DEMO_ADS);
+  const [ads, setAds] = useSellerCompatState("supplier.adzManager.ads", DEMO_ADS);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     if (!ads.length) return;
