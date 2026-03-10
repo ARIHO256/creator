@@ -1364,6 +1364,435 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         }
       },
       {
+        userId: users.creator.id,
+        recordType: 'screen_state',
+        recordKey: 'creator-onboarding-v25',
+        payload: {
+          stepIndex: 2,
+          maxUnlocked: 2,
+          form: {
+            profile: {
+              name: 'Ronald M',
+              handle: '@ronald.m',
+              tagline: 'Live commerce host for EV and tech brands',
+              bio: 'Creator profile seeded for backend-backed onboarding recovery.',
+              timezone: 'Africa/Kampala (EAT)',
+              currency: 'USD',
+              contentLanguages: ['English'],
+              audienceRegions: ['East Africa'],
+              country: 'Uganda',
+              creatorType: 'Individual',
+              email: 'creator@mylivedealz.com',
+              phone: '+256700000001',
+              whatsapp: '+256700000001',
+              profilePhotoName: 'ronald-profile.png',
+              mediaKitName: 'ronald-media-kit.pdf',
+              team: {
+                name: '',
+                type: '',
+                size: '1–5',
+                website: '',
+                logoName: ''
+              },
+              agency: {
+                name: '',
+                type: '',
+                website: '',
+                logoName: ''
+              }
+            },
+            socials: {
+              instagram: '@ronald.m',
+              tiktok: '@ronaldlive',
+              youtube: 'https://youtube.com/@ronaldm',
+              primaryPlatform: 'Instagram',
+              primaryOtherPlatform: '',
+              primaryOtherCustomName: '',
+              primaryOtherHandle: '',
+              primaryOtherFollowers: '',
+              extra: []
+            },
+            kyc: {
+              status: 'pending',
+              documentType: 'National ID',
+              idFileName: 'national-id.pdf',
+              selfieFileName: 'selfie.jpg',
+              addressFileName: '',
+              idUploaded: true,
+              selfieUploaded: true,
+              addressUploaded: false,
+              org: {
+                registrationFileName: '',
+                taxFileName: '',
+                authorizationFileName: '',
+                registrationUploaded: false,
+                taxUploaded: false,
+                authorizationUploaded: false
+              }
+            },
+            payout: {
+              method: 'Bank transfer',
+              currency: 'USD',
+              schedule: 'Weekly',
+              minThreshold: 50,
+              acceptPayoutPolicy: false,
+              verificationDeliveryMethod: 'Email',
+              verificationContactValue: 'creator@mylivedealz.com',
+              verification: {
+                status: 'code_sent',
+                code: ''
+              },
+              bank: {
+                bankName: 'Stanbic Bank',
+                accountName: 'Ronald M',
+                accountNumber: '00123456789',
+                swift: 'SBICUGKX'
+              },
+              mobile: { provider: '', phone: '' },
+              wallet: { email: '' },
+              alipay: { name: '', account: '' },
+              wechat: { name: '', wechatId: '', phone: '' },
+              tax: { residencyCountry: 'Uganda', taxId: 'TIN-445510' },
+              scrolledToBottomPayout: false
+            },
+            preferences: {
+              lines: ['Electronics', 'Live commerce'],
+              formats: ['Live Sessionz'],
+              models: ['Flat fee', 'Commission'],
+              availability: {
+                days: ['Mon', 'Tue', 'Wed'],
+                timeWindow: '18:00 - 22:00'
+              },
+              rateCard: {
+                minFlatFee: '350',
+                preferredCommissionPct: '8',
+                notes: 'Open to repeat seller launches and premium live bundles.'
+              },
+              inviteRules: 'All suppliers (Sellers + Providers)',
+              supplierType: 'Both'
+            },
+            review: {
+              seenPolicies: {
+                platform: false,
+                content: false,
+                payout: false
+              },
+              scrolledToBottom: false,
+              confirmMultiUserCompliance: false,
+              acceptTerms: false
+            }
+          }
+        }
+      },
+      {
+        userId: users.creator.id,
+        recordType: 'screen_state',
+        recordKey: 'live-builder-bootstrap',
+        payload: {
+          suppliers: [
+            {
+              id: 'pt_glowup',
+              name: 'GlowUp Hub',
+              kind: 'Seller',
+              verified: true,
+              rating: 4.8,
+              responseTime: 'Typically replies within 25 min',
+              avatarUrl: 'https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?auto=format&fit=crop&w=120&q=60'
+            },
+            {
+              id: 'pt_gadget',
+              name: 'GadgetMart Africa',
+              kind: 'Seller',
+              verified: true,
+              rating: 4.6,
+              responseTime: 'Typically replies within 40 min',
+              avatarUrl: 'https://images.unsplash.com/photo-1520975682031-a6ad56ae0f68?auto=format&fit=crop&w=120&q=60'
+            },
+            {
+              id: 'pt_grace',
+              name: 'Grace Living Studio',
+              kind: 'Provider',
+              verified: true,
+              rating: 4.9,
+              responseTime: 'Typically replies within 1 hr',
+              avatarUrl: 'https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=120&q=60'
+            }
+          ],
+          campaigns: [
+            {
+              id: 'cp_autumn_beauty',
+              supplierId: 'pt_glowup',
+              name: 'Autumn Beauty Flash',
+              startsAtISO: daysAgo(1).toISOString(),
+              endsAtISO: daysFromNow(2).toISOString()
+            },
+            {
+              id: 'cp_tech_friday',
+              supplierId: 'pt_gadget',
+              name: 'Tech Friday Mega',
+              startsAtISO: new Date(now + 2 * 60 * 60 * 1000).toISOString(),
+              endsAtISO: new Date(now + 26 * 60 * 60 * 1000).toISOString()
+            },
+            {
+              id: 'cp_wellness',
+              supplierId: 'pt_grace',
+              name: 'Wellness Booking Sprint',
+              startsAtISO: daysFromNow(1).toISOString(),
+              endsAtISO: daysFromNow(3).toISOString()
+            }
+          ],
+          hosts: [
+            {
+              id: 'cr_1',
+              name: 'Jane Doe',
+              handle: '@janedoe',
+              niche: 'Live host • dealz',
+              followers: '128k',
+              avatarUrl: 'https://images.unsplash.com/photo-1544006659-f0b21884ce1d?auto=format&fit=crop&w=256&q=60',
+              verified: true
+            },
+            {
+              id: 'cr_2',
+              name: 'Noah K.',
+              handle: '@noahknows',
+              niche: 'Tech • gadgets',
+              followers: '680k',
+              avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=60',
+              verified: true
+            },
+            {
+              id: 'cr_3',
+              name: 'Rina Vale',
+              handle: '@rinavale',
+              niche: 'Services • wellness',
+              followers: '220k',
+              avatarUrl: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=256&q=60',
+              verified: false
+            }
+          ],
+          assets: [
+            {
+              id: 'as_opener_1',
+              name: 'Autumn Beauty opener sequence',
+              type: 'Opener',
+              owner: 'Seller',
+              tags: ['Beauty', 'Opener', 'Flash'],
+              lastUpdatedLabel: '2 days ago',
+              previewUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=60',
+              previewKind: 'image',
+              usageNotes: 'Intro bumper for Beauty Flash lives. Include for all serum-focused shows.',
+              restrictions: 'Use only for GlowUp campaigns.'
+            },
+            {
+              id: 'as_lower_1',
+              name: 'Deal ticker lower third',
+              type: 'Lower third',
+              owner: 'Platform',
+              tags: ['Ticker', 'Dealz', 'Lower third'],
+              lastUpdatedLabel: '1 week ago',
+              previewUrl: 'https://images.unsplash.com/photo-1557682250-33bd709cbe85?auto=format&fit=crop&w=1200&q=60',
+              previewKind: 'image',
+              usageNotes: 'Shows countdown + pinned item price.',
+              restrictions: 'Keep within safe area for mobile.'
+            },
+            {
+              id: 'as_overlay_1',
+              name: 'Universal price-drop overlay',
+              type: 'Overlay',
+              owner: 'Host',
+              tags: ['Overlay', 'Price drop'],
+              lastUpdatedLabel: '3 days ago',
+              previewUrl: 'https://images.unsplash.com/photo-1518441902117-f0a80e5b0c17?auto=format&fit=crop&w=1200&q=60',
+              previewKind: 'image',
+              usageNotes: 'Use when dropping price or offering limited-time bonus.',
+              restrictions: 'Avoid restricted terms.'
+            },
+            {
+              id: 'as_script_1',
+              name: 'Host base script — Flash format',
+              type: 'Script',
+              owner: 'Host',
+              tags: ['Template', 'Script', 'Flash'],
+              lastUpdatedLabel: 'Today',
+              previewUrl: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=1200&q=60',
+              previewKind: 'image',
+              usageNotes: 'Includes opener, proof, CTA, objections, closing.',
+              restrictions: 'Keep claims compliant.'
+            },
+            {
+              id: 'as_opener_2',
+              name: 'Tech Friday live opener',
+              type: 'Opener',
+              owner: 'Seller',
+              tags: ['Tech', 'Opener'],
+              lastUpdatedLabel: 'Yesterday',
+              previewUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4',
+              previewKind: 'video',
+              usageNotes: 'Fast paced opener for electronics lives.',
+              restrictions: 'Avoid copyrighted music unless cleared.'
+            }
+          ],
+          catalog: [
+            {
+              id: 'it_powerbank',
+              campaignId: 'cp_tech_friday',
+              kind: 'product',
+              name: 'VoltMax Pro - 30,000mAh',
+              imageUrl: 'https://images.unsplash.com/photo-1557180295-76eee20ae8aa?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: 'Live-only 25% off',
+              stock: 12,
+              claimedCount: 4,
+              retailPricePreview: '$59 -> $44',
+              wholesalePricePreview: '$41 -> $44',
+              wholesaleMoq: 10,
+              url: 'https://mylivedealz.com/deal/p1'
+            },
+            {
+              id: 'it_earbuds',
+              campaignId: 'cp_tech_friday',
+              kind: 'product',
+              name: 'Auralink TWS Buds (ANC)',
+              imageUrl: 'https://images.unsplash.com/photo-1518443854922-108a0e71c8bf?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: 'Bundle & Save',
+              stock: 250,
+              claimedCount: 25,
+              retailPricePreview: '$79 -> $55',
+              wholesalePricePreview: '$49 -> $52',
+              wholesaleMoq: 20,
+              url: 'https://mylivedealz.com/deal/p2'
+            },
+            {
+              id: 'it_cam',
+              campaignId: 'cp_tech_friday',
+              kind: 'product',
+              name: 'SnapCam 4K Action - Creator Kit',
+              imageUrl: 'https://images.unsplash.com/photo-1489769002049-ccd828976a6c?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: 'Limited Stock',
+              stock: 7,
+              retailPricePreview: '$219 -> $169',
+              wholesalePricePreview: '$149 -> $165',
+              wholesaleMoq: 5,
+              url: 'https://mylivedealz.com/deal/p3'
+            },
+            {
+              id: 'it_adapter',
+              campaignId: 'cp_tech_friday',
+              kind: 'product',
+              name: 'Smart Travel Adapter - 65W',
+              imageUrl: 'https://images.unsplash.com/photo-1582582421114-80f5a72ad1c8?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: 'Hot pick',
+              stock: 34,
+              retailPricePreview: '$29 -> $19',
+              wholesalePricePreview: '$14 -> $17',
+              wholesaleMoq: 50,
+              url: 'https://mylivedealz.com/deal/p4'
+            },
+            {
+              id: 'it_serum',
+              campaignId: 'cp_autumn_beauty',
+              kind: 'product',
+              name: 'GlowUp Vitamin C Serum',
+              imageUrl: 'https://images.unsplash.com/photo-1586953208448-b95a79798f07?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: 'Flash deal',
+              stock: 42,
+              retailPricePreview: '£19 -> £14',
+              wholesalePricePreview: '£11 -> £13',
+              wholesaleMoq: 12
+            },
+            {
+              id: 'it_cleanser',
+              campaignId: 'cp_autumn_beauty',
+              kind: 'product',
+              name: 'Barrier Repair Cleanser',
+              imageUrl: 'https://images.unsplash.com/photo-1585386959984-a41552231693?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: '2-pack',
+              stock: 18,
+              retailPricePreview: '£14 -> £11',
+              wholesalePricePreview: '£8 -> £10',
+              wholesaleMoq: 20
+            },
+            {
+              id: 'it_consult',
+              campaignId: 'cp_wellness',
+              kind: 'service',
+              name: 'Live Consultation - Gadget Setup',
+              imageUrl: 'https://images.unsplash.com/photo-1553877522-43269d4ea984?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: 'Limited slots',
+              startingFrom: '$15',
+              durationMins: 20,
+              serviceMode: 'online',
+              bookingType: 'request',
+              providerName: 'VoltMall Tech Team'
+            },
+            {
+              id: 'it_repair',
+              campaignId: 'cp_wellness',
+              kind: 'service',
+              name: 'On-site Device Repair Quote',
+              imageUrl: 'https://images.unsplash.com/photo-1581091215367-59ab6b4d99a7?auto=format&fit=crop&w=500&h=500&q=60',
+              badge: 'Needs assessment',
+              startingFrom: '$0',
+              durationMins: 0,
+              serviceMode: 'on-site',
+              bookingType: 'quote',
+              providerName: 'VoltMall Repairs'
+            }
+          ],
+          giveawayPresets: {
+            cp_autumn_beauty: [
+              {
+                id: 'sgw_beauty_kit',
+                campaignId: 'cp_autumn_beauty',
+                title: 'GlowUp Night Routine Kit',
+                imageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=500&h=500&q=60',
+                notes: 'Supplier-set custom giveaway for top-engagement moments.',
+                quantity: 3
+              },
+              {
+                id: 'sgw_vanity_pouch',
+                campaignId: 'cp_autumn_beauty',
+                title: 'Premium Vanity Pouch',
+                imageUrl: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=500&h=500&q=60',
+                notes: 'Exclusive giveaway for high-potential leads.',
+                quantity: 10,
+                claimedCount: 6
+              }
+            ],
+            cp_tech_friday: [
+              {
+                id: 'sgw_ring_light',
+                campaignId: 'cp_tech_friday',
+                title: 'Creator Ring Light Kit',
+                imageUrl: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=500&h=500&q=60',
+                notes: 'Supplier-approved creator kit giveaway.',
+                quantity: 2,
+                claimedCount: 1
+              },
+              {
+                id: 'sgw_gift_card',
+                campaignId: 'cp_tech_friday',
+                title: 'Tech Friday Gift Card',
+                imageUrl: 'https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=500&h=500&q=60',
+                notes: 'Digital voucher for live-session winners.',
+                quantity: 4,
+                claimedCount: 3
+              }
+            ],
+            cp_wellness: [
+              {
+                id: 'sgw_consult_credit',
+                campaignId: 'cp_wellness',
+                title: 'Wellness Consultation Credit',
+                imageUrl: 'https://images.unsplash.com/photo-1515378791036-0648a814c963?auto=format&fit=crop&w=500&h=500&q=60',
+                notes: 'Supplier-set service credit for booked attendees.',
+                quantity: 3,
+                claimedCount: 1
+              }
+            ]
+          }
+        }
+      },
+      {
         userId: users.sellerUser.id,
         recordType: 'account_approval',
         recordKey: 'main',
@@ -1772,14 +2201,75 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         id: 'live_session_launch',
         title: 'Autumn Beauty Live',
         status: 'idle',
-        products: [{ id: 'prod_1', name: 'Vitamin C Serum', price: 22 }],
-        coHosts: [{ id: 'cohost_1', name: 'Nina', role: 'Moderator', active: true }],
-        scenes: [{ id: 'scene_1', title: 'Opening CTA' }],
-        runOfShow: [{ id: 'shot_1', title: 'Intro', durationSec: 90 }],
-        scriptCues: ['Welcome viewers', 'Highlight serum benefits'],
-        qaItems: [{ id: 'qa_1', q: 'Is it suitable for sensitive skin?', a: 'Yes, with patch test.' }],
-        viewers: [{ id: 'viewer_1', name: 'Amina K.', spent: 120 }],
-        aiPrompts: ['Mention limited stock', 'Invite questions']
+        products: [
+          { id: 'P-101', name: 'Glow Serum', price: '$24.99', stock: '150 left', tag: 'Best Seller' },
+          { id: 'P-102', name: 'Matte Lipstick', price: '$18.50', stock: '85 left', tag: 'Low Stock' },
+          { id: 'P-103', name: 'Setting Spray', price: '$22.00', stock: '200 left', tag: 'New' }
+        ],
+        coHosts: [
+          { id: 1, name: 'Jessica M.', status: 'Ready' },
+          { id: 2, name: 'David K.', status: 'Off-air' }
+        ],
+        attachments: [
+          { id: 1, from: '@Sarah99', type: 'image', label: 'Viewer Look', status: 'Pending' },
+          { id: 2, from: '@MikeD', type: 'question', label: 'Product Q', status: 'Pending' }
+        ],
+        scenes: [
+          { id: 'intro', label: 'Intro Card', desc: 'Title + Music' },
+          { id: 'main', label: 'Main Cam', desc: 'Full screen' },
+          { id: 'split', label: 'Split View', desc: 'Cam + Screen' },
+          { id: 'product', label: 'Product Focus', desc: 'Pip Overlay' }
+        ],
+        runOfShow: [
+          { id: 's1', label: 'Welcome', window: '0:00', scene: 'intro' },
+          { id: 's2', label: 'Product Reveal', window: '2:00', scene: 'main' },
+          { id: 's3', label: 'Demo', window: '5:00', scene: 'split' }
+        ],
+        scriptCues: [
+          'Welcome everyone to the stream!',
+          'Today we are reviewing the new collection.',
+          "Don't forget to use code FLASH20.",
+          "Let's bring in our special guest."
+        ],
+        commerceGoal: {
+          soldUnits: 42,
+          targetUnits: 100,
+          cartCount: 15,
+          last5MinSales: 8
+        },
+        salesEvents: [
+          { id: 1, label: '@Sarah purchased Glow Serum', time: '2s ago' },
+          { id: 2, label: '@Mike purchased Lipstick', time: '12s ago' },
+          { id: 3, label: '@Jen purchased Bundle', time: '45s ago' }
+        ],
+        chatMessages: [
+          { id: 1, from: 'System', body: 'Welcome to the stream!', time: '10:00', system: true },
+          { id: 2, from: 'Sarah_99', body: "Can't wait to see the new products!", time: '10:01' },
+          { id: 3, from: 'MikeDe', body: 'Is audio working?', time: '10:02' }
+        ],
+        qaItems: [
+          { id: 1, question: 'Is this vegan?', from: '@VeganGal', status: 'pinned' },
+          { id: 2, question: 'Shipping to CA?', from: '@MapleLeaf', status: 'waiting' }
+        ],
+        viewers: [
+          { id: 1, name: 'Sarah_99', tag: 'Super Fan' },
+          { id: 2, name: 'MikeDe', tag: 'New' }
+        ],
+        aiPrompts: [
+          'Mention the flash deal (ending soon)',
+          'Greet new huge donor @TechGiant',
+          'Ask viewers to share the stream'
+        ],
+        giveaways: [
+          {
+            id: 'gw_studio_1',
+            linkedItemId: 'P-101',
+            title: 'Glow Serum Giveaway',
+            imageUrl: '',
+            quantity: 2,
+            showOnPromo: true
+          }
+        ]
       }
     }
   });
