@@ -12,7 +12,7 @@ export class RealtimePublisher implements OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {
     // guard against missing service (shouldn't happen if ConfigModule is imported)
     const cfg =
-      this.configService ?? ({ get: () => undefined } as ConfigService);
+      this.configService ?? ({ get: () => undefined } as unknown as ConfigService);
 
     this.enabled = !["0", "false", "no", "off"].includes(
       String(cfg.get("realtime.enabled") ?? "true").toLowerCase(),
