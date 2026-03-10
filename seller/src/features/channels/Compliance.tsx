@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { useRolePageContent } from "../../data/pageContent";
 import type { ComplianceDoc, ComplianceDocStatus, ComplianceQueueItem } from "../../data/pageTypes";
+import { useMockState } from "../../mocks";
 
 // Seller — Compliance Center (EVzone) v2 — JS only
 // Route: /compliance
@@ -58,14 +59,22 @@ export default function SellerComplianceCenterEVzoneV2() {
     return content.queue;
   };
 
-  const [docs, setDocs] = useState<ComplianceDoc[]>(loadDocs());
-  const [queue, _setQueue] = useState<ComplianceQueueItem[]>(loadQueue());
+  const [docs, setDocs] = useMockState<ComplianceDoc[]>(`${role}.compliance.docs`, loadDocs());
+  const [queue, setQueue] = useMockState<ComplianceQueueItem[]>(`${role}.compliance.queue`, loadQueue());
   useEffect(() => {
-    setDocs(loadDocs());
-    _setQueue(loadQueue());
-  }, [DOCS_KEY, Q_KEY, role]);
-  useEffect(() => { try { localStorage.setItem(DOCS_KEY, JSON.stringify(docs)); } catch { } }, [docs]);
-  useEffect(() => { try { localStorage.setItem(Q_KEY, JSON.stringify(queue)); } catch { } }, [queue]);
+    try {
+      localStorage.setItem(DOCS_KEY, JSON.stringify(docs));
+    } catch {
+      // ignore
+    }
+  }, [DOCS_KEY, docs]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(Q_KEY, JSON.stringify(queue));
+    } catch {
+      // ignore
+    }
+  }, [Q_KEY, queue]);
 
   // ---- Helpers ----
   const today = () => new Date().toISOString().slice(0, 10);

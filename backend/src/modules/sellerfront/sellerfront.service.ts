@@ -75,20 +75,20 @@ export class SellerfrontService {
     return payload;
   }
 
-  async updateMockDb(userId: string, payload: Record<string, unknown>) {
+  async updateMockDb(userId: string | null, payload: Record<string, unknown>) {
     const jsonPayload = asJson(payload);
     const record = await this.prisma.appRecord.upsert({
       where: { id: SELLERFRONT_LIVE_RECORD_ID },
       update: {
-        userId,
+        ...(userId ? { userId } : {}),
         payload: jsonPayload
       },
       create: {
         id: SELLERFRONT_LIVE_RECORD_ID,
-        userId,
         domain: 'sellerfront',
         entityType: 'mock_db',
         entityId: 'live',
+        ...(userId ? { userId } : {}),
         payload: jsonPayload
       }
     });

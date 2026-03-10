@@ -18,9 +18,10 @@ export class SellerfrontController {
   }
 
   @Put('mock-db')
+  @Public()
   @RateLimit({ limit: 120, windowMs: 60_000 })
-  updateMockDb(@CurrentUser() user: RequestUser, @Body() payload: Record<string, unknown>) {
-    return this.sellerfrontService.updateMockDb(user.sub, payload);
+  updateMockDb(@CurrentUser() user: RequestUser | undefined, @Body() payload: Record<string, unknown>) {
+    return this.sellerfrontService.updateMockDb(user?.sub ?? null, payload);
   }
 
   @Post('mock-db/reset')

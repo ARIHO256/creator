@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useMockState } from "../../../mocks";
 
 /**
  * SupplierSettingsSafetyPage.jsx
@@ -582,8 +583,8 @@ function policyAllSeen(form) {
 
 /* ------------------------- Default form (Supplier) ------------------------- */
 
-function defaultForm() {
-  return {
+export function seedSupplierSettingsForm() {
+  const base = {
     profile: {
       businessName: "",
       handle: "",
@@ -707,6 +708,18 @@ function defaultForm() {
       scrolledToBottom: false
     }
   };
+
+  if (typeof window === "undefined") {
+    return base;
+  }
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+    if (!raw) return base;
+    return deepMerge(base, JSON.parse(raw));
+  } catch {
+    return base;
+  }
 }
 
 /* ------------------------- Main page ------------------------- */
@@ -714,7 +727,7 @@ function defaultForm() {
 export default function SupplierSettingsSafetyPage() {
   const { toasts, push } = useToasts();
 
-  const [form, setForm] = useState(() => defaultForm());
+  const [form, setForm] = useMockState("supplier.settings.form", seedSupplierSettingsForm());
   const [saved, setSaved] = useState(true);
 
   const [openPolicy, setOpenPolicy] = useState(null); // platform | content | payout | full | null
@@ -746,22 +759,7 @@ export default function SupplierSettingsSafetyPage() {
     return { done, total, pct: Math.round((done / total) * 100) };
   }, [form, primarySocial]);
 
-  // Load from onboarding storage
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setForm(deepMerge(defaultForm(), parsed));
-        push("Settings loaded from onboarding.", "success");
-      }
-    } catch {
-      // ignore
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Autosave
+  // Autosave + legacy mirror for older pages that still read this key directly.
   useEffect(() => {
     setSaved(false);
     const t = setTimeout(() => {
@@ -915,7 +913,7 @@ export default function SupplierSettingsSafetyPage() {
     } catch {
       // ignore
     }
-    setForm(defaultForm());
+    setForm(seedSupplierSettingsForm());
     addAudit("Settings reset", "Restored defaults");
     push("Settings reset to defaults.", "success");
     setConfirmReset(false);

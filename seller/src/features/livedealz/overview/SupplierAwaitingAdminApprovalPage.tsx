@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useMockState } from "../../../mocks";
 
 /**
  * SupplierAwaitingAdminApprovalPremium.tsx (Previewable Canvas)
@@ -131,6 +132,91 @@ function safeJsonParse<T>(s: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function readApprovalQueryParams(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  return Object.fromEntries(new URLSearchParams(window.location.search).entries());
+}
+
+export function seedSupplierAwaitingAdminApprovalSubmission(): CampaignSubmission {
+  const qp = readApprovalQueryParams();
+  if (typeof window !== "undefined") {
+    for (const key of SUBMISSION_KEYS_TO_TRY) {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = safeJsonParse<CampaignSubmission | null>(raw, null);
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    }
+  }
+
+  return {
+    campaignId: qp.campaignId || "S-203",
+    campaignTitle: qp.title || "Supplier-only Promo Sprint",
+    promoType: qp.promoType || "Discount + Limited Stock",
+    surfaces: (qp.surfaces || "SHOPPABLE_ADZ").split(",").filter(Boolean),
+    region: qp.region || "East Africa",
+    currency: qp.currency || "USD",
+    plannedBudget: Number(qp.plannedBudget || 800),
+    creatorUsageDecision:
+      (qp.creatorPlan as CampaignSubmission["creatorUsageDecision"]) || "I will NOT use a Creator",
+    collabMode: (qp.collabMode as CampaignSubmission["collabMode"]) || "—",
+    contentApprovalMode: (qp.approvalMode as CampaignSubmission["contentApprovalMode"]) || "Auto",
+    supplierApprovalComplete: qp.supplierApprovalComplete === "1" ? true : true,
+    submittedAt:
+      (typeof window !== "undefined" && localStorage.getItem("mldz_supplier_admin_approval_submittedAt")) ||
+      nowIso(),
+    itemsCount: Number(qp.itemsCount || 2),
+    landingLinks: [
+      { label: "Campaign page", url: `https://mylivedealz.com/a/${encodeURIComponent(qp.slug || "supplier-only-promo-sprint")}` },
+      { label: "Catalog", url: "https://mylivedealz.com/catalog" }
+    ]
+  };
+}
+
+export function seedSupplierAwaitingAdminApprovalStatus(): ApprovalStatus {
+  const qp = readApprovalQueryParams();
+  if (typeof window === "undefined") return "UnderReview";
+  return (qp.status as ApprovalStatus) || (localStorage.getItem(STORAGE_STATUS_KEY) as ApprovalStatus) || "UnderReview";
+}
+
+export function seedSupplierAwaitingAdminApprovalEtaMin() {
+  const qp = readApprovalQueryParams();
+  if (typeof window === "undefined") return 90;
+  const value = Number(qp.etaMin || localStorage.getItem("mldz_supplier_admin_approval_etaMin") || 90);
+  return Number.isFinite(value) ? value : 90;
+}
+
+export function seedSupplierAwaitingAdminApprovalReason() {
+  const qp = readApprovalQueryParams();
+  if (typeof window === "undefined") return "";
+  return qp.reason || localStorage.getItem("mldz_supplier_admin_approval_reason") || "";
+}
+
+export function seedSupplierAwaitingAdminApprovalDocs(): AdminDoc[] {
+  if (typeof window === "undefined") return [];
+  return safeJsonParse<AdminDoc[]>(localStorage.getItem("mldz_supplier_admin_approval_docs") || "[]", []);
+}
+
+export function seedSupplierAwaitingAdminApprovalItems(): ChecklistItem[] {
+  const qp = readApprovalQueryParams();
+  if (typeof window !== "undefined") {
+    const cached = safeJsonParse<ChecklistItem[]>(localStorage.getItem("mldz_supplier_admin_approval_items") || "[]", []);
+    if (Array.isArray(cached) && cached.length) return cached;
+  }
+
+  return (qp.items || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((text, index) => ({ id: `item-${index}`, text, done: false }));
+}
+
+export function seedSupplierAwaitingAdminApprovalNote() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("mldz_supplier_admin_approval_note") || seedSupplierAwaitingAdminApprovalSubmission().notes || "";
 }
 
 function formatEta(mins: number): string {
@@ -683,87 +769,43 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const go = (path: string) => goTo(navigate, path);
   const { toasts, push } = useToasts();
 
-  const qp = useMemo<Record<string, string>>(() => {
-    if (typeof window === "undefined") return {};
-    return Object.fromEntries(new URLSearchParams(window.location.search).entries());
-  }, []);
-
-  // Pull submission snapshot if available
-  const submission = useMemo<CampaignSubmission>(() => {
-    if (typeof window === "undefined") return {};
-
-    for (const k of SUBMISSION_KEYS_TO_TRY) {
-      const raw = localStorage.getItem(k);
-      if (raw) {
-        const parsed = safeJsonParse<CampaignSubmission | null>(raw, null);
-        if (parsed && typeof parsed === "object") return parsed;
-      }
-    }
-
-    // fallback preview payload (complete enough to avoid forced send-back)
-    return {
-      campaignId: qp.campaignId || "S-203",
-      campaignTitle: qp.title || "Supplier-only Promo Sprint",
-      promoType: qp.promoType || "Discount + Limited Stock",
-      surfaces: (qp.surfaces || "SHOPPABLE_ADZ").split(",").filter(Boolean),
-      region: qp.region || "East Africa",
-      currency: qp.currency || "USD",
-      plannedBudget: Number(qp.plannedBudget || 800),
-      creatorUsageDecision: (qp.creatorPlan as CampaignSubmission["creatorUsageDecision"]) || "I will NOT use a Creator",
-      collabMode: (qp.collabMode as CampaignSubmission["collabMode"]) || "—",
-      contentApprovalMode: (qp.approvalMode as CampaignSubmission["contentApprovalMode"]) || "Auto",
-      supplierApprovalComplete: qp.supplierApprovalComplete === "1" ? true : true,
-      submittedAt: localStorage.getItem("mldz_supplier_admin_approval_submittedAt") || nowIso(),
-      itemsCount: Number(qp.itemsCount || 2),
-      landingLinks: [
-        { label: "Campaign page", url: `https://mylivedealz.com/a/${encodeURIComponent(qp.slug || "supplier-only-promo-sprint")}` },
-        { label: "Catalog", url: "https://mylivedealz.com/catalog" }
-      ]
-    };
-  }, [qp]);
+  const qp = useMemo<Record<string, string>>(() => readApprovalQueryParams(), []);
+  const [submission] = useMockState<CampaignSubmission>(
+    "supplier.awaitingAdminApproval.submission",
+    seedSupplierAwaitingAdminApprovalSubmission()
+  );
 
   const displayTitle = submission?.campaignTitle || "Campaign";
   const campaignId = submission?.campaignId || "pending";
   const submittedAt = submission?.submittedAt || nowIso();
 
   // status
-  const [status, setStatus] = useState<ApprovalStatus>(() => {
-    if (typeof window === "undefined") return "UnderReview";
-    return (qp.status as ApprovalStatus) || (localStorage.getItem(STORAGE_STATUS_KEY) as ApprovalStatus) || "UnderReview";
-  });
-
-  const [etaMin, setEtaMin] = useState(() => {
-    const v = Number(qp.etaMin || localStorage.getItem("mldz_supplier_admin_approval_etaMin") || 90);
-    return Number.isFinite(v) ? v : 90;
-  });
-
-  // Admin feedback and checklist (used for SendBack)
-  const [adminReason, setAdminReason] = useState(() => {
-    return qp.reason || localStorage.getItem("mldz_supplier_admin_approval_reason") || "";
-  });
-
-  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(() => {
-    if (typeof window === "undefined") return [];
-    return safeJsonParse<AdminDoc[]>(localStorage.getItem("mldz_supplier_admin_approval_docs") || "[]", []);
-  });
-
-  const [items, setItems] = useState<ChecklistItem[]>(() => {
-    if (typeof window === "undefined") return [];
-
-    const cached = safeJsonParse<ChecklistItem[]>(localStorage.getItem("mldz_supplier_admin_approval_items") || "[]", []);
-    if (Array.isArray(cached) && cached.length) return cached;
-
-    const itemsFromQ = (qp.items || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((t, i) => ({ id: `item-${i}`, text: t, done: false }));
-
-    return itemsFromQ;
-  });
+  const [status, setStatus] = useMockState<ApprovalStatus>(
+    "supplier.awaitingAdminApproval.status",
+    seedSupplierAwaitingAdminApprovalStatus()
+  );
+  const [etaMin, setEtaMin] = useMockState<number>(
+    "supplier.awaitingAdminApproval.etaMin",
+    seedSupplierAwaitingAdminApprovalEtaMin()
+  );
+  const [adminReason, setAdminReason] = useMockState<string>(
+    "supplier.awaitingAdminApproval.adminReason",
+    seedSupplierAwaitingAdminApprovalReason()
+  );
+  const [adminDocs, setAdminDocs] = useMockState<AdminDoc[]>(
+    "supplier.awaitingAdminApproval.adminDocs",
+    seedSupplierAwaitingAdminApprovalDocs()
+  );
+  const [items, setItems] = useMockState<ChecklistItem[]>(
+    "supplier.awaitingAdminApproval.items",
+    seedSupplierAwaitingAdminApprovalItems()
+  );
 
   const [newItem, setNewItem] = useState("");
-  const [note, setNote] = useState(() => localStorage.getItem("mldz_supplier_admin_approval_note") || submission?.notes || "");
+  const [note, setNote] = useMockState<string>(
+    "supplier.awaitingAdminApproval.note",
+    seedSupplierAwaitingAdminApprovalNote()
+  );
   const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
 
@@ -815,7 +857,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
     }
   }, [status, adminReason, items.length, adminDocs.length]);
 
-  // Persist (status + draft)
+  // Persist legacy storage keys as a compatibility mirror while backend-backed state becomes the source of truth.
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {

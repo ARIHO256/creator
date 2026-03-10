@@ -631,6 +631,33 @@ async function upsertModuleRecord(writer: RecordWriter, key: string, payload: un
   });
 }
 
+async function upsertComplianceModules(writer: RecordWriter) {
+  const records = await writer.appRecord.findMany({
+    where: {
+      domain: 'sellerfront_page_content',
+      entityType: 'compliance',
+      entityId: { in: ['seller', 'provider'] }
+    },
+    select: {
+      entityId: true,
+      payload: true
+    }
+  });
+
+  for (const record of records) {
+    const role = record.entityId;
+    const payload = (record.payload || {}) as { docs?: unknown; queue?: unknown };
+    if (role === 'seller' || role === 'provider') {
+      if (payload.docs !== undefined) {
+        await upsertModuleRecord(writer, `${role}.compliance.docs`, payload.docs);
+      }
+      if (payload.queue !== undefined) {
+        await upsertModuleRecord(writer, `${role}.compliance.queue`, payload.queue);
+      }
+    }
+  }
+}
+
 async function main() {
   const files = await collectFeatureFiles(featuresRoot);
   const candidates = [] as Array<{
@@ -713,6 +740,10 @@ async function main() {
     summaries.push(summary);
   }
 
+  await prisma.$transaction(async (tx) => {
+    await upsertComplianceModules(tx);
+  });
+
   console.log('\nFeature seed summary');
   summaries.forEach((summary) => {
     console.log(`\n${summary.file}`);
@@ -722,6 +753,7 @@ async function main() {
   });
 
   console.log(`\nArchived files: ${summaries.length}`);
+  console.log('Seeded compliance runtime modules: seller.compliance.docs, seller.compliance.queue, provider.compliance.docs, provider.compliance.queue');
 }
 
 main()

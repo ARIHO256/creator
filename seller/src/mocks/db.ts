@@ -6,6 +6,7 @@ const DEFAULT_API_BASE = "http://localhost:3000/api";
 
 let cached: MockDB | null = null;
 let hydration: Promise<MockDB> | null = null;
+let persistTimer: number | null = null;
 
 const broadcast = () => {
   if (typeof window === "undefined") return;
@@ -53,6 +54,32 @@ const isMockDb = (value: unknown): value is MockDB =>
 
 const normalizeDb = (value: unknown) => (isMockDb(value) ? value : emptyDb());
 
+const persistDb = async (db: MockDB) => {
+  try {
+    await fetch(`${getApiBase()}/sellerfront/mock-db`, {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(db),
+    });
+  } catch {
+    // keep local compatibility state even if the backend is temporarily unavailable
+  }
+};
+
+const schedulePersist = (db: MockDB) => {
+  if (typeof window === "undefined") return;
+  if (persistTimer) {
+    window.clearTimeout(persistTimer);
+  }
+  persistTimer = window.setTimeout(() => {
+    persistTimer = null;
+    void persistDb(db);
+  }, 150);
+};
+
 export const hydrateDb = async (force = false): Promise<MockDB> => {
   if (hydration && !force) {
     return hydration;
@@ -74,7 +101,7 @@ export const hydrateDb = async (force = false): Promise<MockDB> => {
         throw new Error(`Failed to fetch seller mock DB: ${response.status}`);
       }
       const payload = normalizeDb(await response.json());
-      saveDb(payload);
+      saveDb(payload, { persist: false });
       return payload;
     } catch {
       return loadDb();
@@ -93,10 +120,13 @@ export const loadDb = (): MockDB => {
   return cached;
 };
 
-export const saveDb = (db: MockDB) => {
+export const saveDb = (db: MockDB, options?: { persist?: boolean }) => {
   cached = db;
   writeStorage(db);
   broadcast();
+  if (options?.persist !== false) {
+    schedulePersist(db);
+  }
 };
 
 export const updateDb = (fn: (current: MockDB) => MockDB) => {
