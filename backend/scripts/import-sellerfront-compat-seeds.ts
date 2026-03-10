@@ -2,8 +2,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import vm from 'vm';
 import { PrismaClient, type Prisma } from '@prisma/client';
-import sellerfrontSeedModule from '../../sellerfront/src/mocks/seed.ts';
-import type { MockDB } from '../../sellerfront/src/mocks/types.ts';
+import sellerfrontSeedModule from '../../seller/src/mocks/seed.ts';
+import type { MockDB } from '../../seller/src/mocks/types.ts';
 
 const prisma = new PrismaClient();
 const repoRoot = path.resolve(process.cwd(), '..');
@@ -231,7 +231,7 @@ async function mergeSnapshotModules(
 }
 
 async function main() {
-  const sellerDir = path.join(repoRoot, 'sellerfront', 'src', 'features', 'livedealz');
+  const sellerDir = path.join(repoRoot, 'seller', 'src', 'features', 'livedealz');
 
   const adzDashboard = await loadSeedMap(path.join(sellerDir, 'adz', 'SupplierAdzDashboardPage.tsx'), [
     'SAMPLE_VIDEO',

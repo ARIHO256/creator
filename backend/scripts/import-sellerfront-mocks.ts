@@ -1,9 +1,9 @@
 import bcrypt from 'bcrypt';
 import { PrismaClient, type Prisma, type UserRole } from '@prisma/client';
-import sellerfrontSeedModule from '../../sellerfront/src/mocks/seed.ts';
-import type { MockDB } from '../../sellerfront/src/mocks/types.ts';
-import catalogTaxonomyModule from '../../sellerfront/src/mocks/catalogTaxonomy.ts';
-import providerListingWizardModule from '../../sellerfront/src/mock/provider/listingWizard.ts';
+import sellerfrontSeedModule from '../../seller/src/mocks/seed.ts';
+import type { MockDB } from '../../seller/src/mocks/types.ts';
+import catalogTaxonomyModule from '../../seller/src/mocks/catalogTaxonomy.ts';
+import providerListingWizardModule from '../../seller/src/mock/provider/listingWizard.ts';
 import {
   createDefaultOnboardingState,
   prepareSubmittedOnboarding,

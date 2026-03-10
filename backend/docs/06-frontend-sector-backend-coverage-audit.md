@@ -3,8 +3,8 @@
 Date: 2026-03-09
 
 Scope:
-- Creator frontend: `frontend/src/App.tsx`
-- Seller frontend: `sellerfront/src/app/routes.tsx`
+- Creator frontend: `creator/src/App.tsx`
+- Seller frontend: `seller/src/app/routes.tsx`
 - Backend modules: `backend/src/modules/*`
 
 Statement:
@@ -101,4 +101,4 @@ Current status:
 - breadth: high
 - production-grade strictness by sector: mixed
 - strongest areas: auth, seller/creator shared domains, commerce, collaboration, file handling, platform hardening
-- weakest areas: compatibility-heavy sellerfront/provider/live/adz/support/onboarding sectors
+- weakest areas: compatibility-heavy seller/provider/live/adz/support/onboarding sectors

@@ -4,10 +4,10 @@
 **No frontend code was changed.**
 
 ## What was inspected
-- Router map: `frontend/src/App.tsx`
-- Auth/access gating: `frontend/src/utils/accessControl.ts`
-- Shared state: `frontend/src/contexts/CreatorContext.tsx`
-- Creator pages under `frontend/src/pages/creator/*`
+- Router map: `creator/src/App.tsx`
+- Auth/access gating: `creator/src/utils/accessControl.ts`
+- Shared state: `creator/src/contexts/CreatorContext.tsx`
+- Creator pages under `creator/src/pages/creator/*`
 
 ## Observed frontend runtime pattern
 - Current UI is mostly demo/local-state driven.

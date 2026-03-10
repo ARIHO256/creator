@@ -153,7 +153,7 @@ async function upsertGlobalModule(app: string, key: string, payload: unknown) {
 }
 
 async function main() {
-  const creatorDir = path.join(repoRoot, 'frontend', 'src', 'pages', 'creator');
+  const creatorDir = path.join(repoRoot, 'creator', 'src', 'pages', 'creator');
 
   const adzDashboard = await loadSeedMap(path.join(creatorDir, 'AdzDashboard.tsx'), [
     'SAMPLE_VIDEO',

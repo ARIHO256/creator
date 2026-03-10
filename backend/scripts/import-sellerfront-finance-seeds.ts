@@ -124,7 +124,7 @@ async function seedModule(app: string, key: string, payload: unknown) {
 }
 
 async function main() {
-  const financeDir = path.join(repoRoot, 'sellerfront', 'src', 'features', 'finance');
+  const financeDir = path.join(repoRoot, 'seller', 'src', 'features', 'finance');
   const modules = {
     'finance.home': await evaluateSeedFunction(path.join(financeDir, 'finance_home.tsx'), 'seedFinance'),
     'finance.invoices': await evaluateSeedFunction(path.join(financeDir, 'finance_invoices_previewable.tsx'), 'seedInvoices'),
