@@ -102,6 +102,74 @@ function extractInitializer(source: string, constName: string) {
   throw new Error(`Unable to parse initializer for ${constName}`);
 }
 
+function extractFunctionBlock(source: string, functionName: string) {
+  const signature = new RegExp(`function\\s+${functionName}\\b`);
+  const match = signature.exec(source);
+  if (!match) {
+    throw new Error(`Unable to locate function ${functionName}`);
+  }
+
+  let index = match.index;
+  while (index < source.length && source[index] !== '{') {
+    index += 1;
+  }
+  if (source[index] !== '{') {
+    throw new Error(`Unable to locate body for function ${functionName}`);
+  }
+
+  const bodyStart = index;
+  let depthBrace = 0;
+  let inSingle = false;
+  let inDouble = false;
+  let inTemplate = false;
+  let escaped = false;
+
+  for (; index < source.length; index += 1) {
+    const ch = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (inSingle) {
+      if (ch === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (ch === '"') inDouble = false;
+      continue;
+    }
+    if (inTemplate) {
+      if (ch === '`') inTemplate = false;
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      continue;
+    }
+    if (ch === '"') {
+      inDouble = true;
+      continue;
+    }
+    if (ch === '`') {
+      inTemplate = true;
+      continue;
+    }
+    if (ch === '{') depthBrace += 1;
+    if (ch === '}') {
+      depthBrace -= 1;
+      if (depthBrace === 0) {
+        return source.slice(match.index, index + 1).trim();
+      }
+    }
+  }
+
+  throw new Error(`Unable to parse function ${functionName}`);
+}
+
 function extractHookFallback(source: string, key: string) {
   const pattern = new RegExp(
     `useCreatorCompat(?:State|Value)(?:<[^)]*>)?\\(\\s*["'\`]${escapeRegExp(key)}["'\`]\\s*,`,
@@ -206,6 +274,43 @@ function evaluateTsExpression(expression: string, context: Record<string, unknow
   return (sandbox.module as { exports: unknown }).exports;
 }
 
+function evaluateTsProgram(
+  declarations: string[],
+  expression: string,
+  context: Record<string, unknown>
+) {
+  const transpiled = ts.transpileModule(
+    `${declarations.join('\n')}\nmodule.exports = (${expression});`,
+    {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.CommonJS,
+        jsx: ts.JsxEmit.React
+      }
+    }
+  );
+
+  const sandbox = {
+    module: { exports: undefined as unknown },
+    exports: {},
+    Date,
+    Math,
+    JSON,
+    Array,
+    Object,
+    Number,
+    String,
+    Boolean,
+    Set,
+    Map,
+    useMemo: (factory: () => unknown) => factory(),
+    ...context
+  };
+
+  vm.runInNewContext(transpiled.outputText, sandbox, { timeout: 2000 });
+  return (sandbox.module as { exports: unknown }).exports;
+}
+
 async function upsertGlobalModule(app: string, key: string, payload: unknown) {
   const id = `frontend_state_module_${sanitize(app)}_${sanitize(key)}_global`;
   await prisma.appRecord.upsert({
@@ -226,6 +331,31 @@ async function upsertGlobalModule(app: string, key: string, payload: unknown) {
   });
 }
 
+async function upsertGlobalStorageEntry(
+  app: string,
+  storageType: 'local' | 'session',
+  key: string,
+  value: string
+) {
+  const id = `frontend_state_storage_${sanitize(app)}_${storageType}_${sanitize(key)}_global`;
+  await prisma.appRecord.upsert({
+    where: { id },
+    update: {
+      domain: 'frontend_state_storage',
+      entityType: `${app}:${storageType}`,
+      entityId: key,
+      payload: asJson({ value })
+    },
+    create: {
+      id,
+      domain: 'frontend_state_storage',
+      entityType: `${app}:${storageType}`,
+      entityId: key,
+      payload: asJson({ value })
+    }
+  });
+}
+
 async function main() {
   const repoRoot = path.resolve(process.cwd(), '..');
   const creatorRoot = path.join(repoRoot, 'creator', 'src');
@@ -240,6 +370,9 @@ async function main() {
   const awaitingApprovalModule = await import(
     path.join(creatorRoot, 'pages', 'creator', 'creator_awaiting_approval.tsx')
   );
+  const creatorCompatSeedsModule = await import(
+    path.join(creatorRoot, 'data', 'creatorCompatSeeds.ts')
+  );
 
   const contracts = contractsModule.CONTRACTS as unknown[];
   const rawNotifications = notificationsModule.DEMO_NOTIFICATIONS as Array<Record<string, unknown>>;
@@ -248,6 +381,20 @@ async function main() {
   const proposalTerms = proposalModule.PROPOSAL_ROOM_BASE_TERMS;
   const proposalMessages = proposalModule.PROPOSAL_ROOM_INITIAL_MESSAGES as unknown[];
   const awaitingApproval = awaitingApprovalModule.seedSubmissions() as unknown[];
+  const audienceNotificationsConfig = creatorCompatSeedsModule.buildAudienceNotificationConfig();
+  const audienceNotificationsTemplatePacks =
+    creatorCompatSeedsModule.audienceNotificationTemplatePacks;
+  const audienceNotificationsChannels = creatorCompatSeedsModule.audienceNotificationChannels;
+  const audienceNotificationsReminders = creatorCompatSeedsModule.audienceNotificationReminders;
+  const safetyModerationSession = creatorCompatSeedsModule.buildSafetyModerationSession();
+  const safetyModerationDestinations = creatorCompatSeedsModule.safetyModerationDestinations;
+  const safetyModerationMessages = creatorCompatSeedsModule.buildSafetyModerationMessages();
+  const safetyModerationKeywordRules = creatorCompatSeedsModule.safetyModerationKeywordRules;
+  const safetyModerationControls = creatorCompatSeedsModule.safetyModerationControls;
+  const awaitingAdminApprovalOnboarding =
+    creatorCompatSeedsModule.creatorAwaitingApprovalOnboarding;
+  const awaitingAdminApprovalReview =
+    creatorCompatSeedsModule.buildCreatorAwaitingApprovalReviewState();
   const creatorLinkHubSource = await fs.readFile(
     path.join(pagesRoot, 'CreatorLinkHub.tsx'),
     'utf8'
@@ -266,6 +413,14 @@ async function main() {
   );
   const streamToPlatformsSource = await fs.readFile(
     path.join(pagesRoot, 'StreamToPlatforms.tsx'),
+    'utf8'
+  );
+  const onboardingV2Source = await fs.readFile(
+    path.join(pagesRoot, 'creator_onboarding_v_2.tsx'),
+    'utf8'
+  );
+  const settingsSafetySource = await fs.readFile(
+    path.join(pagesRoot, 'CreatorSettingsSafetyPage.tsx'),
     'utf8'
   );
 
@@ -327,6 +482,20 @@ async function main() {
     extractHookFallback(streamToPlatformsSource, 'creator.streamPlatforms.destinations'),
     { DEFAULT_TITLE: 'GlowUp Hub: Autumn Beauty Flash Live' }
   );
+  const onboardingDefaultForm = evaluateTsProgram(
+    [extractFunctionBlock(onboardingV2Source, 'defaultForm')],
+    'defaultForm()',
+    {}
+  );
+  const settingsDefaultForm = evaluateTsProgram(
+    [
+      extractFunctionBlock(settingsSafetySource, 'nowLabel'),
+      extractFunctionBlock(settingsSafetySource, 'defaultSettings'),
+      extractFunctionBlock(settingsSafetySource, 'defaultForm')
+    ],
+    'defaultForm()',
+    {}
+  );
 
   const notifications: CompatNotification[] = rawNotifications.map((entry, index) => {
     const rawType = String(entry.type || '').toLowerCase();
@@ -365,6 +534,10 @@ async function main() {
     ['creator.proposalRoom.messages', proposalMessages],
     ['creator.proposalRoom.appliedSuggestions', []],
     ['creator.awaitingApproval.submissions', awaitingApproval],
+    ['creator.audienceNotifications.config', audienceNotificationsConfig],
+    ['creator.audienceNotifications.templatePacks', audienceNotificationsTemplatePacks],
+    ['creator.audienceNotifications.channels', audienceNotificationsChannels],
+    ['creator.audienceNotifications.reminders', audienceNotificationsReminders],
     ['creator.linkHub.items', linkHubItems],
     ['creator.linkHub.pinnedIds', linkHubPinnedIds],
     ['creator.liveAlerts.session', liveAlertsSession],
@@ -378,13 +551,45 @@ async function main() {
     ['creator.postLive.enabledChannels', postLiveEnabledChannels],
     ['creator.overlays.session', overlaysSession],
     ['creator.overlays.products', overlaysProducts],
+    ['creator.safetyModeration.session', safetyModerationSession],
+    ['creator.safetyModeration.destinations', safetyModerationDestinations],
+    ['creator.safetyModeration.messages', safetyModerationMessages],
+    ['creator.safetyModeration.keywordRules', safetyModerationKeywordRules],
+    ['creator.safetyModeration.controls', safetyModerationControls],
     ['creator.streamPlatforms.profile', streamProfile],
-    ['creator.streamPlatforms.destinations', streamDestinations]
+    ['creator.streamPlatforms.destinations', streamDestinations],
+    ['creator.awaitingAdminApprovalPremium.onboarding', awaitingAdminApprovalOnboarding],
+    ['creator.awaitingAdminApprovalPremium.review', awaitingAdminApprovalReview]
   ];
 
   for (const [key, payload] of modules) {
     await upsertGlobalModule('creatorfront', key, payload);
   }
+
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz_creator_onboarding_v2_4',
+    JSON.stringify(onboardingDefaultForm)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz_creator_onboarding_v2_3',
+    JSON.stringify(onboardingDefaultForm)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz_creator_settings_safety_v1',
+    JSON.stringify(settingsDefaultForm)
+  );
+  await upsertGlobalStorageEntry(
+    'creatorfront',
+    'local',
+    'mldz_creator_approval_status',
+    String(awaitingAdminApprovalReview.status)
+  );
 
   console.log(
     [
@@ -394,10 +599,13 @@ async function main() {
       'promo=1',
       `proposalMessages=${proposalMessages.length}`,
       `awaitingApproval=${awaitingApproval.length}`,
+      `audienceTemplatePacks=${Array.isArray(audienceNotificationsTemplatePacks) ? audienceNotificationsTemplatePacks.length : 0}`,
       `linkHubItems=${Array.isArray(linkHubItems) ? linkHubItems.length : 0}`,
       `liveAlertsChannels=${Array.isArray(liveAlertsChannels) ? liveAlertsChannels.length : 0}`,
       `postLiveClips=${Array.isArray(postLiveClips) ? postLiveClips.length : 0}`,
-      `streamDestinations=${Array.isArray(streamDestinations) ? streamDestinations.length : 0}`
+      `safetyMessages=${Array.isArray(safetyModerationMessages) ? safetyModerationMessages.length : 0}`,
+      `streamDestinations=${Array.isArray(streamDestinations) ? streamDestinations.length : 0}`,
+      `onboardingStorageKeys=4`
     ].join(' ')
   );
 }
