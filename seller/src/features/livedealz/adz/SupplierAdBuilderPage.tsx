@@ -2,7 +2,14 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMockState } from "../../../mocks";
+import { backendApi } from "../../../lib/backendApi";
+import {
+  buildAdzBuilderPayload,
+  buildDefaultAdzBuilder,
+  mapAdzBuilderScope,
+  mapBackendAdzBuilder,
+  mapMediaAssetToAdBuilderAsset,
+} from "./runtime";
 
 /**
  * Dependency-free stubs for China-CDN safety and simple drop-in.
@@ -252,7 +259,7 @@ const AlertTriangle = __makeIcon(
  * - Tracking includes short links + UTM presets library
  * - Schedule time selection uses a scrollable time list (vertical scroll)
  * - Shows explicit "Ad ends" time
- * - Asset Library wiring: opens /supplier/deliverables/assets in picker mode and restores state via sessionStorage
+ * - Asset Library wiring: opens /supplier/deliverables/assets in picker mode and restores state via backend draft persistence
  *
  * Notes:
  * - This file is self-contained UI demo (TailwindCSS + lucide-react).
@@ -265,9 +272,7 @@ const ORANGE = "#f77f00";
 const HERO_IMAGE_REQUIRED = { width: 1920, height: 1080 } as const;
 const ITEM_POSTER_REQUIRED = { width: 500, height: 500 } as const;
 
-// Storage keys for Asset Library picker round-trip
-const BUILDER_DRAFT_KEY = "mldz:adBuilder:builderDraft:v1";
-const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
+const SELLER_ADZ_BUILDER_ID = "seller_adz_builder_default";
 
 type ViewerMode = "fullscreen" | "modal";
 type MediaKind = "image" | "video";
@@ -459,8 +464,8 @@ function parseLocalDateTime(dateStr: string, timeStr: string) {
  * Mock backend validation call.
  * In a real system, this would be an async API call.
  */
-function mockValidateSchedule(campaignId: string, start: Date, end: Date) {
-  const campaign = CAMPAIGNS.find((c) => c.id === campaignId);
+function mockValidateSchedule(campaignId: string, start: Date, end: Date, campaigns: Campaign[]) {
+  const campaign = campaigns.find((c) => c.id === campaignId);
   if (!campaign) return { ok: false, error: "Invalid campaign selected" };
 
   const campStart = new Date(campaign.startsAtISO);
@@ -1810,10 +1815,20 @@ export default function AdBuilder({
     { key: "schedule", label: "Schedule", desc: "Start + End times (scroll picker)" },
     { key: "review", label: "Review", desc: "Preflight + submit" },
   ];
-  const [step, setStep] = useMockState<BuilderStep>(
-    "supplier.adBuilder.step",
-    seedSupplierAdBuilderStepValue()
-  );
+  const [step, setStep] = useState<BuilderStep>(seedSupplierAdBuilderStepValue());
+  const [runtimeLoading, setRuntimeLoading] = useState(true);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [scope, setScope] = useState<{
+    suppliers: Supplier[];
+    campaigns: Campaign[];
+    offers: Offer[];
+  }>({
+    suppliers: [],
+    campaigns: [],
+    offers: [],
+  });
+  const [assetLibraryAssets, setAssetLibraryAssets] = useState<Asset[]>([]);
+  const persistHashRef = useRef("");
 
   const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
 
@@ -1833,8 +1848,7 @@ export default function AdBuilder({
     }
   };
 
-  const [approvalState, setApprovalState] = useMockState<"Draft" | "Submitted" | "Approved">(
-    "supplier.adBuilder.approvalState",
+  const [approvalState, setApprovalState] = useState<"Draft" | "Submitted" | "Approved">(
     seedSupplierAdBuilderApprovalStateValue()
   );
   const isSubmitted = approvalState !== "Draft";
@@ -1844,46 +1858,46 @@ export default function AdBuilder({
   // Preflight is collapsible and collapsed by default (per requirement)
   const [preflightOpen, setPreflightOpen] = useState(false);
 
-  const defaultSupplierId = SUPPLIERS[0]?.id || "p1";
-  const defaultCampaignId = CAMPAIGNS.find((c) => c.supplierId === defaultSupplierId)?.id || CAMPAIGNS[0]?.id || "c1";
-
-  // default schedule: tomorrow 18:00-19:00
-  const defaultStart = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(18, 0, 0, 0);
-    return d;
-  }, []);
-  const defaultEnd = useMemo(() => {
-    const d = new Date(defaultStart);
-    d.setHours(d.getHours() + 1);
-    return d;
-  }, [defaultStart]);
-
-  const [builder, setBuilder] = useMockState<BuilderState>(
-    "supplier.adBuilder.builder",
-    seedSupplierAdBuilderStateValue()
-  );
+  const [builder, setBuilder] = useState<BuilderState>(seedSupplierAdBuilderStateValue());
 
   // External assets from Asset Library picker roundtrip
-  const [externalAssets, setExternalAssets] = useMockState<Record<string, Asset>>(
-    "supplier.adBuilder.externalAssets",
+  const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>(
     seedSupplierAdBuilderExternalAssetsValue()
   );
 
-  const supplier = useMemo(() => SUPPLIERS.find((p) => p.id === builder.supplierId) || SUPPLIERS[0], [builder.supplierId]);
-  const campaignOptions = useMemo(() => CAMPAIGNS.filter((c) => c.supplierId === builder.supplierId), [builder.supplierId]);
-  const campaign = useMemo(() => CAMPAIGNS.find((c) => c.id === builder.campaignId) || campaignOptions[0], [builder.campaignId, campaignOptions]);
+  const supplier = useMemo(
+    () => scope.suppliers.find((p) => p.id === builder.supplierId) || scope.suppliers[0],
+    [builder.supplierId, scope.suppliers]
+  );
+  const campaignOptions = useMemo(
+    () => scope.campaigns.filter((c) => c.supplierId === builder.supplierId),
+    [builder.supplierId, scope.campaigns]
+  );
+  const campaign = useMemo(
+    () => scope.campaigns.find((c) => c.id === builder.campaignId) || campaignOptions[0],
+    [builder.campaignId, campaignOptions, scope.campaigns]
+  );
 
-  const scopedOffers = useMemo(() => OFFERS.filter((o) => o.supplierId === builder.supplierId && o.campaignId === builder.campaignId), [builder.supplierId, builder.campaignId]);
-  const selectedOffers = useMemo(() => builder.selectedOfferIds.map((id) => scopedOffers.find((o) => o.id === id) || OFFERS.find((o) => o.id === id)).filter(Boolean) as Offer[], [builder.selectedOfferIds, scopedOffers]);
+  const scopedOffers = useMemo(
+    () =>
+      scope.offers.filter(
+        (o) => o.supplierId === builder.supplierId && o.campaignId === builder.campaignId
+      ),
+    [builder.campaignId, builder.supplierId, scope.offers]
+  );
+  const selectedOffers = useMemo(
+    () =>
+      builder.selectedOfferIds
+        .map(
+          (id) => scopedOffers.find((o) => o.id === id) || scope.offers.find((o) => o.id === id)
+        )
+        .filter(Boolean) as Offer[],
+    [builder.selectedOfferIds, scope.offers, scopedOffers]
+  );
   const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
 
   // Cart state (shared between the preview cards and the fullscreen viewer)
-  const [cart, setCart] = useMockState<Record<string, number>>(
-    "supplier.adBuilder.cart",
-    seedSupplierAdBuilderCartValue()
-  );
+  const [cart, setCart] = useState<Record<string, number>>(seedSupplierAdBuilderCartValue());
   // Keep cart clean if selected offers change (e.g., creator edits selection)
   useEffect(() => {
     setCart((prev) => {
@@ -1898,19 +1912,129 @@ export default function AdBuilder({
 
   // Approved assets: base + external
   const approvedAssets = useMemo(() => {
-    const base = ASSETS.filter((a) => a.status === "approved");
+    const base = assetLibraryAssets.filter((a) => a.status === "approved");
     const ext = Object.values(externalAssets).filter((a) => a.status === "approved");
     const map = new Map<string, Asset>();
     [...base, ...ext].forEach((a) => map.set(a.id, a));
     return Array.from(map.values());
-  }, [externalAssets]);
+  }, [assetLibraryAssets, externalAssets]);
   console.log("Approved assets:", approvedAssets.length); // Use it or remove it (using it for now to avoid lint error if needed elsewhere)
 
   const assetById = useMemo(() => {
     const map = new Map<string, Asset>();
-    [...ASSETS, ...Object.values(externalAssets)].forEach((a) => map.set(a.id, a));
+    [...assetLibraryAssets, ...Object.values(externalAssets)].forEach((a) => map.set(a.id, a));
     return map;
-  }, [externalAssets]);
+  }, [assetLibraryAssets, externalAssets]);
+
+  const adzBuilderPayload = useMemo(
+    () =>
+      buildAdzBuilderPayload({
+        id: SELLER_ADZ_BUILDER_ID,
+        step,
+        approvalState,
+        builder: builder as unknown as Record<string, unknown>,
+        cart,
+        externalAssets: externalAssets as unknown as Record<string, unknown>,
+      }),
+    [approvalState, builder, cart, externalAssets, step]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRuntime() {
+      setRuntimeLoading(true);
+      setRuntimeError(null);
+
+      try {
+        const [campaignRecords, mediaAssets, builderRecord] = await Promise.all([
+          backendApi.getAdzCampaigns(),
+          backendApi.getMediaAssets(),
+          backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID).catch(() => null),
+        ]);
+
+        if (cancelled) return;
+
+        const mappedScope = mapAdzBuilderScope(campaignRecords);
+        const mappedAssets = mediaAssets
+          .map((entry) => mapMediaAssetToAdBuilderAsset(entry))
+          .filter((entry) => entry.id && entry.url) as Asset[];
+
+        setScope({
+          suppliers: mappedScope.suppliers as Supplier[],
+          campaigns: mappedScope.campaigns as Campaign[],
+          offers: mappedScope.offers as Offer[],
+        });
+        setAssetLibraryAssets(mappedAssets);
+
+        if (builderRecord) {
+          const mappedBuilder = mapBackendAdzBuilder(builderRecord);
+          if (mappedBuilder.step) setStep(mappedBuilder.step as BuilderStep);
+          if (
+            mappedBuilder.approvalState === "Draft" ||
+            mappedBuilder.approvalState === "Submitted" ||
+            mappedBuilder.approvalState === "Approved"
+          ) {
+            setApprovalState(mappedBuilder.approvalState as "Draft" | "Submitted" | "Approved");
+          }
+          if (mappedBuilder.builder && Object.keys(mappedBuilder.builder).length) {
+            setBuilder(mappedBuilder.builder as unknown as BuilderState);
+          } else {
+            setBuilder(buildDefaultAdzBuilder(campaignRecords, mappedAssets) as BuilderState);
+          }
+          setCart(mappedBuilder.cart as Record<string, number>);
+          setExternalAssets(mappedBuilder.externalAssets as Record<string, Asset>);
+          persistHashRef.current = JSON.stringify(
+            buildAdzBuilderPayload({
+              id: mappedBuilder.id,
+              step: mappedBuilder.step,
+              approvalState: mappedBuilder.approvalState,
+              builder: mappedBuilder.builder,
+              cart: mappedBuilder.cart,
+              externalAssets: mappedBuilder.externalAssets,
+            })
+          );
+        } else {
+          setBuilder(buildDefaultAdzBuilder(campaignRecords, mappedAssets) as BuilderState);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setRuntimeError(error instanceof Error ? error.message : "Unable to load ad builder");
+        setToast("Unable to load Ad Builder from backend.");
+      } finally {
+        if (!cancelled) {
+          setRuntimeLoading(false);
+        }
+      }
+    }
+
+    void loadRuntime();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (runtimeLoading) return;
+    const nextHash = JSON.stringify(adzBuilderPayload);
+    if (nextHash === persistHashRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void backendApi
+        .saveAdzBuilder(adzBuilderPayload)
+        .then(() => {
+          persistHashRef.current = nextHash;
+        })
+        .catch(() => {
+          setToast("Unable to persist ad builder draft.");
+        });
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [adzBuilderPayload, runtimeLoading]);
 
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);
@@ -2068,20 +2192,9 @@ export default function AdBuilder({
   }
 
   // Asset library picker wiring (independent page)
-  function persistDraftForPicker() {
-    try {
-      sessionStorage.setItem(
-        BUILDER_DRAFT_KEY,
-        JSON.stringify({
-          ts: Date.now(),
-          step,
-          builder,
-          externalAssets,
-        }),
-      );
-    } catch {
-      // ignore
-    }
+  async function persistDraftForPicker() {
+    await backendApi.saveAdzBuilder(adzBuilderPayload);
+    persistHashRef.current = JSON.stringify(adzBuilderPayload);
   }
 
   function buildReturnToUrl() {
@@ -2096,14 +2209,14 @@ export default function AdBuilder({
 
   function openAssetLibraryPicker(applyTo: string) {
     if (typeof window === "undefined") return;
-    persistDraftForPicker();
-    const picker = new URL("/supplier/deliverables/assets", window.location.origin);
-    picker.searchParams.set("mode", "picker");
-    picker.searchParams.set("target", "shoppable");
-    picker.searchParams.set("applyTo", applyTo);
-    picker.searchParams.set("returnTo", buildReturnToUrl());
-    // Mini-step exists inside picker mode, so this is treated as "suggested applyTo"
-    go(`${picker.pathname}?${picker.searchParams.toString()}`);
+    void persistDraftForPicker().then(() => {
+      const picker = new URL("/supplier/deliverables/assets", window.location.origin);
+      picker.searchParams.set("mode", "picker");
+      picker.searchParams.set("target", "shoppable");
+      picker.searchParams.set("applyTo", applyTo);
+      picker.searchParams.set("returnTo", buildReturnToUrl());
+      go(`${picker.pathname}?${picker.searchParams.toString()}`);
+    });
   }
 
   function coerceAssetFromPickerPayload(payload: Record<string, unknown>): Asset | null {
@@ -2164,47 +2277,62 @@ export default function AdBuilder({
     const assetId = sp.get("assetId") || "";
     const applyTo = sp.get("applyTo") || "";
 
-    if (shouldRestore) {
-      try {
-        const raw = sessionStorage.getItem(BUILDER_DRAFT_KEY);
-        if (raw) {
-          const saved = JSON.parse(raw);
-          if (saved?.builder) setBuilder(saved.builder);
-          if (saved?.step) setStep(saved.step);
-          if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (assetId) {
-      try {
-        const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
-        if (pickRaw) {
-          const parsed = JSON.parse(pickRaw);
-          const payload = parsed?.payload || parsed;
-          if (payload?.id === assetId) {
-            const a = coerceAssetFromPickerPayload(payload);
-            if (a) applyPickedAssetToBuilder(a, applyTo || "");
+    void (async () => {
+        if (shouldRestore) {
+          const saved = await backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID).catch(() => null);
+          if (saved) {
+            const mapped = mapBackendAdzBuilder(saved);
+          if (mapped.builder && Object.keys(mapped.builder).length) {
+            setBuilder(mapped.builder as unknown as BuilderState);
+          }
+          if (mapped.step) {
+            setStep(mapped.step as BuilderStep);
+          }
+          setExternalAssets(mapped.externalAssets as Record<string, Asset>);
+          if (
+            mapped.approvalState === "Draft" ||
+            mapped.approvalState === "Submitted" ||
+            mapped.approvalState === "Approved"
+          ) {
+            setApprovalState(mapped.approvalState as "Draft" | "Submitted" | "Approved");
           }
         }
-      } catch {
-        // ignore
       }
-      // Clean query params to prevent re-apply on refresh
-      const clean = new URL(window.location.href);
-      clean.searchParams.delete("assetId");
-      clean.searchParams.delete("applyTo");
-      clean.searchParams.delete("restore");
-      clean.searchParams.delete("step");
-      window.history.replaceState({}, "", clean.pathname + (clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : ""));
-    }
-  }, []);
+
+      if (assetId) {
+        const rawAssets = await backendApi.getMediaAssets().catch(() => []);
+        const picked = rawAssets.find((entry) => String(entry.id || "") === assetId);
+        if (picked) {
+          const asset = coerceAssetFromPickerPayload({
+            id: picked.id,
+            title: picked.name,
+            owner: "Supplier",
+            mediaType: picked.kind,
+            status: "approved",
+            previewUrl: picked.url,
+            thumbnailUrl:
+              typeof picked.metadata === "object" && picked.metadata && !Array.isArray(picked.metadata)
+                ? (picked.metadata as Record<string, unknown>).posterUrl
+                : undefined,
+          });
+          if (asset) {
+            applyPickedAssetToBuilder(asset, applyTo || "");
+          }
+        }
+
+        const clean = new URL(window.location.href);
+        clean.searchParams.delete("assetId");
+        clean.searchParams.delete("applyTo");
+        clean.searchParams.delete("restore");
+        clean.searchParams.delete("step");
+        window.history.replaceState({}, "", clean.pathname + (clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : ""));
+      }
+    })();
+  }, [adzBuilderPayload]);
 
   // Supplier -> campaign resets offers
   function resetScope(nextSupplierId: string, nextCampaignId: string) {
-    const offers = OFFERS.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
+    const offers = scope.offers.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
     const ids = offers.slice(0, 2).map((o) => o.id);
     const primary = ids[0] || offers[0]?.id || "";
     setBuilder((prev) => ({
@@ -2282,12 +2410,12 @@ export default function AdBuilder({
     issues.push({ label: "End date/time set", ok: !!builder.endDate && !!builder.endTime });
     issues.push({ label: "End after start", ok: endsAt.getTime() > startsAt.getTime(), fix: "Adjust schedule." });
 
-    const scheduleValidation = mockValidateSchedule(builder.campaignId, startsAt, endsAt);
+    const scheduleValidation = mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns);
     issues.push({ label: "Schedule within campaign window", ok: scheduleValidation.ok, fix: scheduleValidation.error });
 
     const ok = issues.every((i) => i.ok);
     return { ok, issues };
-  }, [builder, selectedOffers, startsAt, endsAt, assetById]);
+  }, [assetById, builder, scope.campaigns, selectedOffers, startsAt, endsAt]);
 
   const statusLabel = isApproved ? "Approved" : isSubmitted ? "Awaiting Admin" : preflight.ok ? "Ready" : "Draft";
   const statusTone: "good" | "warn" = isApproved ? "good" : isSubmitted ? "warn" : preflight.ok ? "good" : "warn";
@@ -2353,8 +2481,25 @@ export default function AdBuilder({
     navigate(-1);
   }
 
+  if (runtimeLoading) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-gray-50 dark:bg-slate-950 text-neutral-900 dark:text-slate-100">
+        <div className="rounded-3xl bg-white dark:bg-slate-900 px-6 py-5 ring-1 ring-neutral-200 dark:ring-slate-800 text-sm font-bold">
+          Loading Ad Builder…
+        </div>
+      </div>
+    );
+  }
+
   const content = (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 transition-colors">
+      {runtimeError ? (
+        <div className="mx-auto max-w-7xl px-4 pt-4 md:px-6 lg:px-8">
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+            {runtimeError}
+          </div>
+        </div>
+      ) : null}
       {/* Header */}
       <div className="relative xl:sticky xl:top-0 z-40 border-b border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur transition-colors">
         <div className="flex flex-col gap-3 px-[0.55%] py-5 md:flex-row md:items-center md:justify-between">
@@ -2530,11 +2675,14 @@ export default function AdBuilder({
                       value={builder.supplierId}
                       onChange={(e) => {
                         const nextSupplier = e.target.value;
-                        const nextCampaign = CAMPAIGNS.find((c) => c.supplierId === nextSupplier)?.id || CAMPAIGNS[0]?.id;
+                        const nextCampaign =
+                          scope.campaigns.find((c) => c.supplierId === nextSupplier)?.id ||
+                          scope.campaigns[0]?.id ||
+                          "";
                         resetScope(nextSupplier, nextCampaign);
                       }}
                     >
-                      {SUPPLIERS.map((p) => (
+                      {scope.suppliers.map((p) => (
                         <option key={p.id} value={p.id} className="dark:bg-slate-800">
                           {p.name}
                         </option>
@@ -3168,7 +3316,7 @@ export default function AdBuilder({
                 </div>
 
                 {(() => {
-                  const val = mockValidateSchedule(builder.campaignId, startsAt, endsAt);
+                  const val = mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns);
                   if (!val.ok) {
                     return (
                       <div className="mt-4 flex items-start gap-2 rounded-2xl bg-rose-50 dark:bg-rose-900/20 p-3 text-xs text-rose-900 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800 transition-colors">
@@ -3192,8 +3340,8 @@ export default function AdBuilder({
                   tone="primary"
                   onClick={handleNext}
                   right={<ChevronRight className="h-4 w-4" />}
-                  disabled={!mockValidateSchedule(builder.campaignId, startsAt, endsAt).ok}
-                  title={!mockValidateSchedule(builder.campaignId, startsAt, endsAt).ok ? "Fix schedule issues" : undefined}
+                  disabled={!mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns).ok}
+                  title={!mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns).ok ? "Fix schedule issues" : undefined}
                 >
                   Next: Review
                 </Btn>
@@ -3273,15 +3421,32 @@ export default function AdBuilder({
                       tone="primary"
                       disabled={!preflight.ok}
                       onClick={() => {
-                        if (isApproved) {
-                          // Updating an approved ad typically requires re-approval.
-                          setApprovalState("Submitted");
-                          setToast("Update submitted for Admin re-approval.");
-                        } else {
-                          setApprovalState("Submitted");
-                          setToast(isSubmitted ? "Update resubmitted to Admin." : "Submitted for Admin approval.");
-                        }
-                        setShowSharePanel(true);
+                        const nextApprovalState: "Submitted" = "Submitted";
+                        const nextPayload = buildAdzBuilderPayload({
+                          id: SELLER_ADZ_BUILDER_ID,
+                          step,
+                          approvalState: nextApprovalState,
+                          builder: builder as unknown as Record<string, unknown>,
+                          cart,
+                          externalAssets: externalAssets as unknown as Record<string, unknown>,
+                        });
+                        void backendApi
+                          .publishAdzBuilder(SELLER_ADZ_BUILDER_ID, nextPayload)
+                          .then(() => {
+                            persistHashRef.current = JSON.stringify(nextPayload);
+                            setApprovalState(nextApprovalState);
+                            setToast(
+                              isApproved
+                                ? "Update submitted for Admin re-approval."
+                                : isSubmitted
+                                  ? "Update resubmitted to Admin."
+                                  : "Submitted for Admin approval."
+                            );
+                            setShowSharePanel(true);
+                          })
+                          .catch(() => {
+                            setToast("Unable to submit Ad Builder to backend.");
+                          });
                       }}
                       left={<BadgeCheck className="h-4 w-4" />}
                       className="w-full"
@@ -3392,7 +3557,7 @@ export default function AdBuilder({
                 ctaHelperText={builder.ctaText}
                 primaryCtaLabel={builder.primaryCtaLabel}
                 secondaryCtaLabel={builder.secondaryCtaLabel}
-                heroImageUrl={heroImageAsset?.url || ASSETS[0].url}
+                heroImageUrl={heroImageAsset?.url || assetLibraryAssets[0]?.url || ""}
                 heroIntroVideo={heroVideoAsset?.kind === "video" ? { url: heroVideoAsset.url, poster: heroVideoAsset.posterUrl } : undefined}
                 offers={selectedOffers}
                 primaryOfferId={builder.primaryOfferId}

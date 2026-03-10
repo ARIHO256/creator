@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { CampaignStatus, Prisma } from '@prisma/client';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateAssetDto } from './dto/create-asset.dto.js';
@@ -48,6 +48,107 @@ export class CollaborationService {
       createdAt: campaign.createdAt,
       updatedAt: campaign.updatedAt
     }));
+  }
+
+  async campaignWorkspace(userId: string) {
+    const [campaigns, catalog] = await Promise.all([
+      this.prisma.campaign.findMany({
+        where: this.workspaceAccessClause(userId),
+        include: {
+          seller: true,
+          creator: {
+            include: {
+              creatorProfile: true
+            }
+          }
+        },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.prisma.workspaceSetting.findUnique({
+        where: {
+          userId_key: {
+            userId,
+            key: 'seller_campaign_catalog'
+          }
+        }
+      })
+    ]);
+
+    return {
+      campaigns: campaigns.map((campaign: any) => this.serializeWorkspaceCampaign(campaign)),
+      catalogItems: this.extractCatalogItems(catalog?.payload)
+    };
+  }
+
+  async createCampaign(userId: string, payload: Record<string, unknown>) {
+    const actor = await this.loadActor(userId);
+    if (!actor.sellerProfile) {
+      throw new ForbiddenException('Seller campaign creation is only available to seller workspaces');
+    }
+
+    const metadata = this.normalizeCampaignMetadata(payload.metadata);
+    const title = this.resolveCampaignTitle(payload, metadata);
+    const status = this.normalizeCampaignStatus(payload.status, metadata);
+    const campaign = await this.prisma.campaign.create({
+      data: {
+        id: typeof payload.id === 'string' && payload.id.trim() ? payload.id.trim() : randomUUID(),
+        sellerId: actor.sellerProfile.id,
+        creatorId: typeof payload.creatorId === 'string' && payload.creatorId.trim() ? payload.creatorId.trim() : null,
+        createdByUserId: userId,
+        title,
+        description: typeof payload.description === 'string' ? payload.description : null,
+        status,
+        budget: this.resolveCampaignBudget(payload, metadata),
+        currency: this.resolveCampaignCurrency(payload, metadata),
+        metadata: metadata as Prisma.InputJsonValue,
+        startAt: this.resolveCampaignStart(payload, metadata),
+        endAt: this.resolveCampaignEnd(payload, metadata)
+      },
+      include: {
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        }
+      }
+    });
+
+    await this.syncCampaignGiveaways(campaign.id, metadata);
+    return this.serializeWorkspaceCampaign(campaign);
+  }
+
+  async updateCampaign(userId: string, id: string, payload: Record<string, unknown>) {
+    const existing = await this.ensureCampaignAccess(userId, id);
+    const currentMetadata = this.normalizeCampaignMetadata(existing.metadata);
+    const nextMetadata = payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+      ? this.deepMerge(currentMetadata, this.normalizeCampaignMetadata(payload.metadata))
+      : currentMetadata;
+
+    const updated = await this.prisma.campaign.update({
+      where: { id: existing.id },
+      data: {
+        title: this.resolveCampaignTitle(payload, nextMetadata, existing.title),
+        description: typeof payload.description === 'string' ? payload.description : existing.description,
+        status: this.normalizeCampaignStatus(payload.status, nextMetadata, existing.status),
+        budget: this.resolveCampaignBudget(payload, nextMetadata, existing.budget),
+        currency: this.resolveCampaignCurrency(payload, nextMetadata, existing.currency),
+        metadata: nextMetadata as Prisma.InputJsonValue,
+        startAt: this.resolveCampaignStart(payload, nextMetadata, existing.startAt),
+        endAt: this.resolveCampaignEnd(payload, nextMetadata, existing.endAt)
+      },
+      include: {
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        }
+      }
+    });
+
+    await this.syncCampaignGiveaways(updated.id, nextMetadata);
+    return this.serializeWorkspaceCampaign(updated);
   }
 
   async proposals(userId: string) {
@@ -572,5 +673,190 @@ export class CollaborationService {
       createdAt: proposal.createdAt,
       updatedAt: proposal.updatedAt
     };
+  }
+
+  private serializeWorkspaceCampaign(campaign: any) {
+    const metadata = this.normalizeCampaignMetadata(campaign.metadata);
+    return {
+      id: campaign.id,
+      title: campaign.title,
+      description: campaign.description,
+      status: campaign.status,
+      budget: campaign.budget,
+      currency: campaign.currency,
+      seller: campaign.seller?.displayName ?? null,
+      creator: campaign.creator?.creatorProfile?.name ?? campaign.creator?.email ?? null,
+      startAt: campaign.startAt?.toISOString?.() ?? campaign.startAt ?? null,
+      endAt: campaign.endAt?.toISOString?.() ?? campaign.endAt ?? null,
+      createdAt: campaign.createdAt?.toISOString?.() ?? campaign.createdAt ?? null,
+      updatedAt: campaign.updatedAt?.toISOString?.() ?? campaign.updatedAt ?? null,
+      metadata,
+      ...metadata
+    };
+  }
+
+  private extractCatalogItems(payload: unknown) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return [];
+    }
+    const items = (payload as Record<string, unknown>).catalogItems;
+    return Array.isArray(items) ? items : [];
+  }
+
+  private normalizeCampaignMetadata(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? sanitizePayload(value, { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }) as Record<string, unknown>
+      : {};
+  }
+
+  private resolveCampaignTitle(
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+    fallback = 'Untitled campaign'
+  ) {
+    if (typeof payload.title === 'string' && payload.title.trim()) {
+      return payload.title.trim();
+    }
+    if (typeof metadata.name === 'string' && metadata.name.trim()) {
+      return metadata.name.trim();
+    }
+    return fallback;
+  }
+
+  private resolveCampaignBudget(
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+    fallback: number | null = null
+  ) {
+    const raw = typeof payload.budget === 'number' ? payload.budget : metadata.estValue;
+    return typeof raw === 'number' && Number.isFinite(raw) ? raw : fallback;
+  }
+
+  private resolveCampaignCurrency(
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+    fallback = 'USD'
+  ) {
+    if (typeof payload.currency === 'string' && payload.currency.trim()) {
+      return payload.currency.trim();
+    }
+    if (typeof metadata.currency === 'string' && metadata.currency.trim()) {
+      return metadata.currency.trim();
+    }
+    return fallback;
+  }
+
+  private resolveCampaignStart(
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+    fallback: Date | null = null
+  ) {
+    if (typeof payload.startAt === 'string') {
+      const parsed = new Date(payload.startAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    if (typeof metadata.startDate === 'string' && metadata.startDate.trim()) {
+      const parsed = new Date(`${metadata.startDate}T00:00:00.000Z`);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return fallback;
+  }
+
+  private resolveCampaignEnd(
+    payload: Record<string, unknown>,
+    metadata: Record<string, unknown>,
+    fallback: Date | null = null
+  ) {
+    if (typeof payload.endAt === 'string') {
+      const parsed = new Date(payload.endAt);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    if (typeof metadata.endDate === 'string' && metadata.endDate.trim()) {
+      const parsed = new Date(`${metadata.endDate}T23:59:59.000Z`);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return fallback;
+  }
+
+  private normalizeCampaignStatus(
+    raw: unknown,
+    metadata: Record<string, unknown>,
+    fallback: CampaignStatus = CampaignStatus.DRAFT
+  ) {
+    if (typeof raw === 'string' && raw.trim()) {
+      const direct = raw.trim().toUpperCase();
+      if (direct in CampaignStatus) {
+        return CampaignStatus[direct as keyof typeof CampaignStatus];
+      }
+    }
+
+    const stage = String(metadata.stage || '').toLowerCase();
+    if (stage === 'execution') {
+      return CampaignStatus.ACTIVE;
+    }
+    if (stage === 'terminated') {
+      return CampaignStatus.CANCELLED;
+    }
+    if (stage === 'completed') {
+      return CampaignStatus.COMPLETED;
+    }
+    if (stage === 'collabs' || stage === 'draft') {
+      return CampaignStatus.DRAFT;
+    }
+    return fallback;
+  }
+
+  private async syncCampaignGiveaways(campaignId: string, metadata: Record<string, unknown>) {
+    const giveaways = Array.isArray(metadata.giveaways) ? metadata.giveaways : [];
+    await this.prisma.liveCampaignGiveaway.deleteMany({
+      where: { campaignId }
+    });
+    if (!giveaways.length) {
+      return;
+    }
+    await this.prisma.liveCampaignGiveaway.createMany({
+      data: giveaways.map((giveaway, index) => {
+        const entry = giveaway && typeof giveaway === 'object' && !Array.isArray(giveaway)
+          ? giveaway as Record<string, unknown>
+          : {};
+        return {
+          id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : `${campaignId}_gw_${index + 1}`,
+          campaignId,
+          status: 'active',
+          title: typeof entry.title === 'string' ? entry.title : null,
+          data: entry as Prisma.InputJsonValue
+        };
+      })
+    });
+  }
+
+  private deepMerge(
+    base: Record<string, unknown>,
+    patch: Record<string, unknown>
+  ): Record<string, unknown> {
+    const next: Record<string, unknown> = { ...base };
+    for (const [key, value] of Object.entries(patch)) {
+      if (
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        next[key] &&
+        typeof next[key] === 'object' &&
+        !Array.isArray(next[key])
+      ) {
+        next[key] = this.deepMerge(next[key] as Record<string, unknown>, value as Record<string, unknown>);
+        continue;
+      }
+      next[key] = value;
+    }
+    return next;
   }
 }

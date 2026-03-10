@@ -270,8 +270,32 @@ export const sellerBackendApi = {
   getProviderPortfolio: () => request<Record<string, unknown>>("/api/provider/portfolio"),
   getProviderReviews: () => request<Record<string, unknown>>("/api/provider/reviews"),
   getProviderDisputes: () => request<Record<string, unknown>>("/api/provider/disputes"),
+  getCampaignWorkspace: () => request<Record<string, unknown>>("/api/campaigns/workspace"),
+  getCampaigns: () => request<Array<Record<string, unknown>>>("/api/campaigns"),
+  createCampaign: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/campaigns", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchCampaign: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/campaigns/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getWholesaleRfqs: () => request<Record<string, unknown>>("/api/wholesale/rfqs"),
   getWholesaleQuotes: () => request<Record<string, unknown>>("/api/wholesale/quotes"),
+  getLiveBuilder: (id: string) =>
+    request<Record<string, unknown>>(`/api/live/builder/${encodeURIComponent(id)}`),
+  saveLiveBuilder: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/live/builder/save", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  publishLiveBuilder: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/live/builder/${encodeURIComponent(id)}/publish`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getAdzCampaigns: () => request<Array<Record<string, unknown>>>("/api/adz/campaigns"),
   getAdzCampaign: (id: string) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}`),

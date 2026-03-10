@@ -229,6 +229,9 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     cartCount: 0,
     last5MinSales: 0,
   });
+  const [scenes, setScenes] = useState<Scene[]>([]);
+  const [runOfShow, setRunOfShow] = useState<Shot[]>([]);
+  const [scriptCues, setScriptCues] = useState<string[]>([]);
   const [salesEvents, setSalesEvents] = useState<SalesEvent[]>([]);
   const [momentMarkers, setMomentMarkers] = useState<MomentMarker[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -277,6 +280,9 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
         setCoHosts(asArray<CoHost>(payload.coHosts));
         setStoredLiveDraft({ giveaways: nextGiveaways, products: nextProducts });
         setAttachments(asArray<Attachment>(payload.attachments));
+        setScenes(asArray<Scene>(payload.scenes));
+        setRunOfShow(asArray<Shot>(payload.runOfShow));
+        setScriptCues(asArray<string>(payload.scriptCues));
         setCommerceGoal({
           soldUnits: Number(asObject(payload.commerceGoal).soldUnits || 0),
           targetUnits: Number(asObject(payload.commerceGoal).targetUnits || 0),
@@ -396,29 +402,6 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
   // File attachment dialog
   const [attachDialogOpen, setAttachDialogOpen] = useState(false);
-
-  // Scenes mock
-  const scenes: Scene[] = [
-    { id: "intro", label: "Intro Card", desc: "Title + Music" },
-    { id: "main", label: "Main Cam", desc: "Full screen" },
-    { id: "split", label: "Split View", desc: "Cam + Screen" },
-    { id: "product", label: "Product Focus", desc: "Pip Overlay" },
-  ];
-
-  // Run of show
-  const runOfShow: Shot[] = [
-    { id: "s1", label: "Welcome", window: "0:00", scene: "intro" },
-    { id: "s2", label: "Product Reveal", window: "2:00", scene: "main" },
-    { id: "s3", label: "Demo", window: "5:00", scene: "split" },
-  ];
-
-  // Script cues
-  const scriptCues = [
-    "Welcome everyone to the stream!",
-    "Today we are reviewing the new collection.",
-    "Don't forget to use code FLASH20.",
-    "Let's bring in our special guest.",
-  ];
 
   // Chat/QA state
   const [chatDraft, setChatDraft] = useState("");

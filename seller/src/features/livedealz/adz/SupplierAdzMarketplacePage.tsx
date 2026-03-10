@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useSellerCompatState } from "../../../lib/frontendState";
+import { sellerBackendApi } from "../../../lib/backendApi";
+import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzMarketplacePage.jsx
@@ -1330,6 +1331,7 @@ const DEMO_ADS = [
 
 export default function SupplierAdzMarketplacePage() {
   const navigate = useNavigate();
+  const [syncedAds, setSyncedAds] = useState<Record<string, string>>({});
   const safeNav = (url) => {
     if (!url) return;
     const target = /^https?:\/\//i.test(url) ? url : url.startsWith("/") ? url : `/${url}`;
@@ -1349,8 +1351,37 @@ export default function SupplierAdzMarketplacePage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useSellerCompatState("supplier.adzMarketplace.ads", DEMO_ADS);
+  const [ads, setAds] = useState(DEMO_ADS);
   const [selectedId, setSelectedId] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+
+    void sellerBackendApi
+      .getAdzMarketplace()
+      .then((payload) => {
+        if (cancelled) return;
+        const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
+        if (nextAds.length) {
+          setAds(nextAds as typeof DEMO_ADS);
+          setSyncedAds(Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)])));
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    ads.forEach((ad) => {
+      const nextHash = hashAdzCampaign(ad);
+      if (syncedAds[String(ad.id)] === nextHash) return;
+      setSyncedAds((prev) => ({ ...prev, [String(ad.id)]: nextHash }));
+      void sellerBackendApi.patchAdzCampaign(String(ad.id), buildAdzCampaignPayload(ad));
+    });
+  }, [ads, syncedAds]);
+
   useEffect(() => {
     if (!ads.length) return;
     if (!ads.find((ad) => ad.id === selectedId)) {

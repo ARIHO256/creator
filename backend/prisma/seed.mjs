@@ -596,6 +596,169 @@ async function seedCollaboration(users, sellerProfiles) {
         },
         startAt: daysAgo(4),
         endAt: daysFromNow(9)
+      },
+      {
+        id: 'S-201',
+        sellerId: sellerProfiles.seller.id,
+        createdByUserId: users.sellerUser.id,
+        title: 'Beauty Flash Week (Combo)',
+        description: 'Seller campaign record for MyLiveDealz campaigns workspace.',
+        status: 'ACTIVE',
+        budget: 2400,
+        currency: 'USD',
+        metadata: {
+          id: 'S-201',
+          name: 'Beauty Flash Week (Combo)',
+          stage: 'Execution',
+          approvalStatus: 'Approved',
+          creatorUsageDecision: 'I will use a Creator',
+          collabMode: 'Open for Collabs',
+          approvalMode: 'Manual',
+          offerScope: 'Products',
+          promoType: 'Discount',
+          promoArrangement: 'PercentOff',
+          currency: 'USD',
+          estValue: 2400,
+          region: 'East Africa',
+          type: 'Live + Shoppables.',
+          startDate: '2026-02-10',
+          durationDays: 14,
+          endDate: '2026-02-23',
+          items: [
+            {
+              id: 'P-1003',
+              kind: 'Product',
+              title: 'Vitamin C Serum Bundle',
+              category: 'Beauty',
+              price: 18,
+              region: 'East Africa',
+              subtitle: 'Brightening + hydration',
+              sku: 'BC-VC',
+              avatar: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2272%22 height=%2272%22 viewBox=%220 0 72 72%22%3E%3Crect width=%2272%22 height=%2272%22 rx=%2216%22 fill=%22%23f77f00%22/%3E%3Ctext x=%2236%22 y=%2239%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22white%22%3EP-1003%3C/text%3E%3C/svg%3E',
+              plannedQty: 40,
+              discount: { mode: 'percent', value: 15 },
+              discountedPrice: 15.3,
+              discountLabel: '15% off'
+            },
+            {
+              id: 'P-1004',
+              kind: 'Product',
+              title: 'Men’s Sneakers (2026)',
+              category: 'Fashion',
+              price: 34,
+              region: 'Global',
+              subtitle: 'Lightweight, breathable',
+              sku: 'SN-26',
+              avatar: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2272%22 height=%2272%22 viewBox=%220 0 72 72%22%3E%3Crect width=%2272%22 height=%2272%22 rx=%2216%22 fill=%22%23f77f00%22/%3E%3Ctext x=%2236%22 y=%2239%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22white%22%3EP-1004%3C/text%3E%3C/svg%3E',
+              plannedQty: 25,
+              discount: { mode: 'amount', value: 5 },
+              discountedPrice: 29,
+              discountLabel: 'USD 5 off'
+            }
+          ],
+          creatorsCount: 2,
+          pitchesCount: 7,
+          invitesSent: 0,
+          invitesAccepted: 0,
+          proposalsCount: 2,
+          contractCount: 1,
+          pendingSupplierApproval: true,
+          pendingAdminApproval: false,
+          adminRejected: false,
+          creatorRejected: false,
+          renegotiation: false,
+          health: 'on-track',
+          nextAction: 'Approve Creator Clip #3',
+          lastActivity: 'Assets submitted · 2h',
+          lastActivityAt: Date.now() - 2 * 60 * 60 * 1000
+        },
+        startAt: new Date('2026-02-10T00:00:00.000Z'),
+        endAt: new Date('2026-02-23T23:59:59.000Z')
+      },
+      {
+        id: 'S-202',
+        sellerId: sellerProfiles.seller.id,
+        createdByUserId: users.sellerUser.id,
+        title: 'Tech Friday Mega Live',
+        description: 'Pending seller campaign record for MyLiveDealz campaigns workspace.',
+        status: 'DRAFT',
+        budget: 3100,
+        currency: 'USD',
+        metadata: {
+          id: 'S-202',
+          name: 'Tech Friday Mega Live',
+          stage: 'Draft',
+          approvalStatus: 'Pending',
+          creatorUsageDecision: 'I will use a Creator',
+          collabMode: 'Invite-only',
+          approvalMode: 'Manual',
+          offerScope: 'Products',
+          promoType: 'Coupon',
+          promoArrangement: 'InfluencerCode',
+          promoCode: 'TECHFRIDAY',
+          currency: 'USD',
+          estValue: 3100,
+          region: 'Africa / Asia',
+          type: 'Live Sessionz',
+          startDate: '2026-02-25',
+          durationDays: 10,
+          endDate: '2026-03-06',
+          items: [
+            {
+              id: 'P-1002',
+              kind: 'Product',
+              title: 'Wireless Earbuds Pro',
+              category: 'Electronics',
+              price: 29,
+              region: 'Africa / Asia',
+              subtitle: 'Noise reduction, 24h battery',
+              sku: 'EB-PRO',
+              avatar: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2272%22 height=%2272%22 viewBox=%220 0 72 72%22%3E%3Crect width=%2272%22 height=%2272%22 rx=%2216%22 fill=%22%23f77f00%22/%3E%3Ctext x=%2236%22 y=%2239%22 text-anchor=%22middle%22 font-family=%22Arial%22 font-size=%2212%22 fill=%22white%22%3EP-1002%3C/text%3E%3C/svg%3E',
+              plannedQty: 60,
+              discount: { mode: 'percent', value: 10 },
+              discountedPrice: 26.1,
+              discountLabel: '10% off'
+            }
+          ],
+          creatorsCount: 0,
+          pitchesCount: 0,
+          invitesSent: 0,
+          invitesAccepted: 0,
+          proposalsCount: 0,
+          contractCount: 0,
+          pendingSupplierApproval: false,
+          pendingAdminApproval: true,
+          adminRejected: false,
+          creatorRejected: false,
+          renegotiation: false,
+          health: 'at-risk',
+          nextAction: 'Await Admin approval',
+          lastActivity: 'Submitted for approval · 1d',
+          lastActivityAt: Date.now() - 1 * 24 * 60 * 60 * 1000,
+          queuedStageAfterApproval: 'Collabs',
+          queuedNextActionAfterApproval: 'Invite creators'
+        },
+        startAt: new Date('2026-02-25T00:00:00.000Z'),
+        endAt: new Date('2026-03-06T23:59:59.000Z')
+      }
+    ]
+  });
+
+  await prisma.liveCampaignGiveaway.createMany({
+    data: [
+      {
+        id: 'seller_campaign_gw_1',
+        campaignId: 'S-201',
+        status: 'active',
+        title: 'Featured serum bundle',
+        data: {
+          id: 'seller_campaign_gw_1',
+          source: 'featured',
+          linkedItemId: 'P-1003',
+          quantity: 2,
+          title: 'Featured serum bundle',
+          imageUrl: ''
+        }
       }
     ]
   });
@@ -2196,6 +2359,102 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
       },
       {
         userId: users.sellerUser.id,
+        key: 'seller_campaign_catalog',
+        payload: {
+          catalogItems: [
+            {
+              id: 'P-1001',
+              kind: 'Product',
+              title: 'LED Ring Light Kit',
+              category: 'Electronics',
+              price: 45,
+              region: 'Global',
+              subtitle: 'Tripod + phone holder + carry bag',
+              sku: 'RL-01',
+              avatar: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=60'
+            },
+            {
+              id: 'P-1002',
+              kind: 'Product',
+              title: 'Wireless Earbuds Pro',
+              category: 'Electronics',
+              price: 29,
+              region: 'Africa / Asia',
+              subtitle: 'Noise reduction, 24h battery',
+              sku: 'EB-PRO',
+              avatar: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70'
+            },
+            {
+              id: 'P-1003',
+              kind: 'Product',
+              title: 'Vitamin C Serum Bundle',
+              category: 'Beauty',
+              price: 18,
+              region: 'East Africa',
+              subtitle: 'Brightening + hydration',
+              sku: 'BC-VC',
+              avatar: 'https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=1920&h=1080&q=70'
+            },
+            {
+              id: 'P-1004',
+              kind: 'Product',
+              title: 'Men’s Sneakers (2026)',
+              category: 'Fashion',
+              price: 34,
+              region: 'Global',
+              subtitle: 'Lightweight, breathable',
+              sku: 'SN-26',
+              avatar: 'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=1200&q=60'
+            },
+            {
+              id: 'S-2001',
+              kind: 'Service',
+              title: 'WhatsApp Catalog Setup',
+              category: 'Services',
+              price: 120,
+              region: 'Africa',
+              subtitle: 'Upload items + tags + pricing',
+              sku: 'SV-WA',
+              avatar: 'https://images.unsplash.com/photo-1557682250-33bd709cbe85?auto=format&fit=crop&w=1200&q=60'
+            },
+            {
+              id: 'S-2002',
+              kind: 'Service',
+              title: 'Influencer Script Writing',
+              category: 'Creative',
+              price: 80,
+              region: 'Global',
+              subtitle: 'Hooks + CTA + objections',
+              sku: 'SV-SCR',
+              avatar: 'https://images.unsplash.com/photo-1518441902117-f0a80e5b0c17?auto=format&fit=crop&w=1200&q=60'
+            },
+            {
+              id: 'S-2003',
+              kind: 'Service',
+              title: 'Product Photography',
+              category: 'Creative',
+              price: 150,
+              region: 'East Africa',
+              subtitle: '10 edits, studio lighting',
+              sku: 'SV-PH',
+              avatar: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=60'
+            },
+            {
+              id: 'S-2004',
+              kind: 'Service',
+              title: 'Adz Media Buying',
+              category: 'Marketing',
+              price: 220,
+              region: 'Global',
+              subtitle: 'Setup + optimization',
+              sku: 'SV-ADS',
+              avatar: 'https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=60'
+            }
+          ]
+        }
+      },
+      {
+        userId: users.sellerUser.id,
         key: 'security',
         payload: {
           twoFactor: true,
@@ -3179,6 +3438,62 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
           usageCount: 1,
           tags: ['portfolio']
         }
+      },
+      {
+        id: 'seller_hero_image_1',
+        userId: users.sellerUser.id,
+        name: 'Hero (Supplier Approved) — 1920x1080',
+        kind: 'image',
+        url: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop',
+        metadata: {
+          roleHint: 'hero_image',
+          status: 'approved',
+          owner: 'Supplier',
+          width: 1920,
+          height: 1080
+        }
+      },
+      {
+        id: 'seller_hero_video_1',
+        userId: users.sellerUser.id,
+        name: 'Intro Opener (Supplier)',
+        kind: 'video',
+        url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        metadata: {
+          roleHint: 'hero_video',
+          status: 'approved',
+          owner: 'Supplier',
+          posterUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop',
+          desktopMode: 'fullscreen'
+        }
+      },
+      {
+        id: 'seller_item_poster_1',
+        userId: users.sellerUser.id,
+        name: 'Item Poster — 500x500',
+        kind: 'image',
+        url: 'https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop',
+        metadata: {
+          roleHint: 'item_poster',
+          status: 'approved',
+          owner: 'Supplier',
+          width: 500,
+          height: 500
+        }
+      },
+      {
+        id: 'seller_item_video_1',
+        userId: users.sellerUser.id,
+        name: 'Product Demo Clip (Supplier)',
+        kind: 'video',
+        url: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        metadata: {
+          roleHint: 'item_video',
+          status: 'approved',
+          owner: 'Supplier',
+          posterUrl: 'https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop',
+          desktopMode: 'modal'
+        }
       }
     ]
   });
@@ -3470,6 +3785,262 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
     });
   }
 
+  const sellerAdzCampaigns = [
+    {
+      id: 'ADZ-2201',
+      status: 'Generated',
+      title: 'Valentine Glow Week',
+      budget: 1200,
+      currency: 'UGX',
+      isMarketplace: true,
+      data: {
+        id: 'ADZ-2201',
+        name: 'Valentine Glow Week',
+        campaignName: 'Valentine Glow Week',
+        campaignSubtitle: 'GlowUp Hub · Limited-time drops',
+        supplier: {
+          name: 'GlowUp Hub',
+          category: 'Beauty',
+          logoUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=256&auto=format&fit=crop'
+        },
+        creator: {
+          name: 'Amina K.',
+          handle: '@amina.dealz',
+          avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop',
+          verified: true
+        },
+        hostRole: 'Creator',
+        creatorUsage: 'I will use a Creator',
+        collabMode: 'Open for Collabs',
+        approvalMode: 'Manual',
+        status: 'Generated',
+        platforms: ['Instagram', 'TikTok'],
+        startISO: daysFromNow(1).toISOString(),
+        endISO: daysFromNow(2).toISOString(),
+        timezone: 'Africa/Kampala',
+        heroImageUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop',
+        heroIntroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        heroIntroVideoPosterUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop',
+        ctaPrimaryLabel: 'Buy now',
+        ctaSecondaryLabel: 'Add to cart',
+        generated: true,
+        hasBrokenLink: false,
+        lowStock: false,
+        lock: { locked: false, label: '', reason: '' },
+        impressions: 410000,
+        clicks: 14800,
+        orders: 920,
+        earnings: 34500000,
+        earningsCurrency: 'UGX',
+        currency: 'UGX',
+        offers: [
+          {
+            id: 'O-100',
+            type: 'PRODUCT',
+            name: 'Glow Serum (30ml)',
+            currency: 'UGX',
+            price: 38000,
+            basePrice: 52000,
+            stockLeft: 12,
+            sold: 86,
+            posterUrl: 'https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop',
+            videoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+            desktopMode: 'modal',
+            sellingModes: ['RETAIL', 'WHOLESALE'],
+            defaultSellingMode: 'RETAIL',
+            wholesale: {
+              moq: 10,
+              step: 5,
+              leadTimeLabel: 'Ships in 3–5 days',
+              tiers: [
+                { minQty: 10, unitPrice: 32000 },
+                { minQty: 25, unitPrice: 29500 },
+                { minQty: 50, unitPrice: 27000 }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      id: 'ADZ-2202',
+      status: 'Live',
+      title: 'Back-to-Work Essentials',
+      budget: 1500,
+      currency: 'UGX',
+      isMarketplace: true,
+      data: {
+        id: 'ADZ-2202',
+        name: 'Back-to-Work Essentials',
+        campaignName: 'Back-to-Work Essentials',
+        campaignSubtitle: 'Urban Supply · Bags & Accessories',
+        supplier: {
+          name: 'Urban Supply',
+          category: 'Accessories',
+          logoUrl: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop'
+        },
+        creator: {
+          name: 'Chris M.',
+          handle: '@chris.finds',
+          avatarUrl: 'https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=256&auto=format&fit=crop',
+          verified: false
+        },
+        hostRole: 'Creator',
+        creatorUsage: 'I will use a Creator',
+        collabMode: 'Invite-Only',
+        approvalMode: 'Manual',
+        status: 'Live',
+        platforms: ['Instagram'],
+        startISO: daysAgo(1).toISOString(),
+        endISO: daysFromNow(1).toISOString(),
+        timezone: 'Africa/Kampala',
+        heroImageUrl: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop',
+        heroIntroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        heroIntroVideoPosterUrl: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop',
+        ctaPrimaryLabel: 'Buy now',
+        ctaSecondaryLabel: 'Add to cart',
+        generated: true,
+        hasBrokenLink: false,
+        lowStock: true,
+        lock: { locked: false, label: '', reason: '' },
+        impressions: 92000,
+        clicks: 3200,
+        orders: 188,
+        earnings: 9200000,
+        earningsCurrency: 'UGX',
+        currency: 'UGX',
+        offers: [
+          {
+            id: 'O-110',
+            type: 'PRODUCT',
+            name: 'Laptop Backpack',
+            currency: 'UGX',
+            price: 180000,
+            basePrice: 220000,
+            stockLeft: 18,
+            sold: 51,
+            posterUrl: 'https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=900&auto=format&fit=crop',
+            videoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+            desktopMode: 'modal',
+            sellingModes: ['RETAIL', 'WHOLESALE'],
+            defaultSellingMode: 'RETAIL',
+            wholesale: {
+              moq: 5,
+              step: 1,
+              leadTimeLabel: 'Ships in 2–4 days',
+              tiers: [
+                { minQty: 5, unitPrice: 155000 },
+                { minQty: 10, unitPrice: 149000 }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      id: 'ADZ-2203',
+      status: 'Draft',
+      title: 'Home Essentials Drop',
+      budget: 980,
+      currency: 'UGX',
+      isMarketplace: true,
+      data: {
+        id: 'ADZ-2203',
+        name: 'Home Essentials Drop',
+        campaignName: 'Home Essentials Drop',
+        campaignSubtitle: 'HomePro · Kitchen upgrade bundles',
+        supplier: {
+          name: 'HomePro',
+          category: 'Home',
+          logoUrl: 'https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop'
+        },
+        creator: {
+          name: '(Supplier-hosted)',
+          handle: '@homepro',
+          avatarUrl: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=256&auto=format&fit=crop',
+          verified: true
+        },
+        hostRole: 'Supplier',
+        creatorUsage: 'I will NOT use a Creator',
+        collabMode: '(n/a)',
+        approvalMode: 'Manual',
+        status: 'Draft',
+        platforms: ['TikTok'],
+        startISO: daysFromNow(3).toISOString(),
+        endISO: daysFromNow(4).toISOString(),
+        timezone: 'Africa/Kampala',
+        heroImageUrl: 'https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop',
+        heroIntroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+        heroIntroVideoPosterUrl: 'https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop',
+        ctaPrimaryLabel: 'Buy now',
+        ctaSecondaryLabel: 'Add to cart',
+        generated: false,
+        hasBrokenLink: false,
+        lowStock: false,
+        lock: { locked: false, label: '', reason: '' },
+        impressions: 12400,
+        clicks: 420,
+        orders: 18,
+        earnings: 860000,
+        earningsCurrency: 'UGX',
+        currency: 'UGX',
+        offers: [
+          {
+            id: 'O-120',
+            type: 'PRODUCT',
+            name: '6-Speed Blender',
+            currency: 'UGX',
+            price: 240000,
+            basePrice: 290000,
+            stockLeft: 18,
+            sold: 21,
+            posterUrl: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop',
+            videoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+            desktopMode: 'modal',
+            sellingModes: ['RETAIL', 'WHOLESALE'],
+            defaultSellingMode: 'WHOLESALE',
+            wholesale: {
+              moq: 3,
+              step: 1,
+              leadTimeLabel: 'Ships in 3–6 days',
+              tiers: [
+                { minQty: 3, unitPrice: 210000 },
+                { minQty: 6, unitPrice: 199000 }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ];
+
+  for (const campaign of sellerAdzCampaigns) {
+    await prisma.adzCampaign.create({
+      data: {
+        id: campaign.id,
+        userId: users.sellerUser.id,
+        status: campaign.status,
+        title: campaign.title,
+        budget: campaign.budget,
+        currency: campaign.currency,
+        isMarketplace: campaign.isMarketplace,
+        data: campaign.data
+      }
+    });
+
+    await prisma.adzPerformance.create({
+      data: {
+        campaignId: campaign.id,
+        clicks: Number(campaign.data.clicks ?? 0),
+        purchases: Number(campaign.data.orders ?? 0),
+        earnings: Number(campaign.data.earnings ?? 0),
+        data: {
+          impressions: campaign.data.impressions ?? 0
+        }
+      }
+    });
+  }
+
   await prisma.adzBuilder.create({
     data: {
       id: 'adz_builder_default',
@@ -3505,6 +4076,51 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
           landingUrl: '',
           shortDomain: 'mldz.link',
           shortSlug: 'autumn-beauty-flash',
+          utmPresetId: 'utm1',
+          utmCustom: {},
+          startDate: daysFromNow(1).toISOString().slice(0, 10),
+          startTime: '18:00',
+          endDate: daysFromNow(1).toISOString().slice(0, 10),
+          endTime: '19:00'
+        }
+      }
+    }
+  });
+
+  await prisma.adzBuilder.create({
+    data: {
+      id: 'seller_adz_builder_default',
+      userId: users.sellerUser.id,
+      status: 'draft',
+      data: {
+        step: 'offer',
+        approvalState: 'Draft',
+        saved: false,
+        cart: {},
+        externalAssets: {},
+        builder: {
+          supplierId: 'seller_glowup_hub',
+          campaignId: 'ADZ-2201',
+          selectedOfferIds: ['O-100'],
+          primaryOfferId: 'O-100',
+          platforms: ['Instagram'],
+          platformOtherList: [],
+          platformOtherDraft: '',
+          heroImageAssetId: 'seller_hero_image_1',
+          heroIntroVideoAssetId: 'seller_hero_video_1',
+          itemPosterByOfferId: {
+            'O-100': 'seller_item_poster_1'
+          },
+          itemVideoByOfferId: {
+            'O-100': 'seller_item_video_1'
+          },
+          ctaText: 'Shop the featured dealz before they end.',
+          primaryCtaLabel: 'Buy now',
+          secondaryCtaLabel: 'Add to cart',
+          landingBehavior: 'Checkout',
+          landingUrl: '',
+          shortDomain: 'mldz.link',
+          shortSlug: 'valentine-glow-week',
           utmPresetId: 'utm1',
           utmCustom: {},
           startDate: daysFromNow(1).toISOString().slice(0, 10),
@@ -3553,6 +4169,70 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
         seller: 'GlowUp Hub',
         campaign: 'Autumn Beauty Flash',
         host: 'Ronald M'
+      }
+    }
+  });
+
+  await prisma.liveBuilder.create({
+    data: {
+      id: 'seller_campaign_builder_default',
+      userId: users.sellerUser.id,
+      sessionId: 'seller_campaign_builder_default',
+      status: 'draft',
+      data: {
+        id: 'seller_campaign_builder_default',
+        builderStep: 1,
+        builder: {
+          name: '',
+          type: 'Shoppable Adz',
+          region: 'East Africa',
+          currency: 'USD',
+          estValue: 1000,
+          internalReference: '',
+          commerceMode: 'Retail',
+          bundleMode: 'Single item',
+          startDate: new Date().toISOString().slice(0, 10),
+          durationDays: 7,
+          startTime: '09:00',
+          endTime: '21:00',
+          timezone: 'Africa/Kampala',
+          flashWindows: '',
+          marketRegions: ['East Africa'],
+          shippingConstraints: [],
+          contentLanguages: ['English'],
+          promoType: 'Discount',
+          promoArrangement: 'PercentOff',
+          promoCode: '',
+          shippingThreshold: 0,
+          giftNote: '',
+          offerScope: 'Products',
+          defaultDiscountMode: 'percent',
+          defaultDiscountValue: 10,
+          items: [],
+          hasGiveaways: false,
+          giveaways: [],
+          regulatedDocsConfirmed: false,
+          regulatedDisclaimersAccepted: false,
+          regulatedDeskNotes: '',
+          creatorUsageDecision: 'I will use a Creator',
+          collabMode: 'Open for Collabs',
+          approvalMode: 'Manual',
+          allowMultiCreators: true,
+          notes: '',
+          internalOwner: 'Supplier Manager'
+        },
+        giveawayUi: {
+          giveawayAddMode: 'featured',
+          featuredGiveawayItemId: '',
+          featuredGiveawayQuantity: '1',
+          customGiveawayDraft: {
+            title: '',
+            quantity: '1',
+            imageUrl: '',
+            posterAssetId: '',
+            assetName: ''
+          }
+        }
       }
     }
   });
@@ -3776,6 +4456,129 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
           { id: 2, label: '@Mike purchased Lipstick', time: '12s ago' },
           { id: 3, label: '@Jen purchased Bundle', time: '45s ago' }
         ],
+        chatMessages: [
+          { id: 1, from: 'System', body: 'Welcome to the stream!', time: '10:00', system: true },
+          { id: 2, from: 'Sarah_99', body: "Can't wait to see the new products!", time: '10:01' },
+          { id: 3, from: 'MikeDe', body: 'Is audio working?', time: '10:02' }
+        ],
+        qaItems: [
+          { id: 1, question: 'Is this vegan?', from: '@VeganGal', status: 'pinned' },
+          { id: 2, question: 'Shipping to CA?', from: '@MapleLeaf', status: 'waiting' }
+        ],
+        viewers: [
+          { id: 1, name: 'Sarah_99', tag: 'Super Fan' },
+          { id: 2, name: 'MikeDe', tag: 'New' }
+        ],
+        aiPrompts: [
+          'Mention the flash deal (ending soon)',
+          'Greet new huge donor @TechGiant',
+          'Ask viewers to share the stream'
+        ],
+        giveaways: [
+          {
+            id: 'gw_studio_1',
+            linkedItemId: 'P-101',
+            title: 'Glow Serum Giveaway',
+            imageUrl: '',
+            quantity: 2,
+            showOnPromo: true
+          }
+        ]
+      }
+    }
+  });
+
+  const sellerDefaultStudioSessionId = `default-${users.sellerUser.id}`;
+
+  await prisma.liveSession.create({
+    data: {
+      id: sellerDefaultStudioSessionId,
+      userId: users.sellerUser.id,
+      status: 'scheduled',
+      title: 'EV Hub Flash Dealz Live',
+      scheduledAt: daysFromNow(1),
+      data: {
+        id: sellerDefaultStudioSessionId,
+        title: 'EV Hub Flash Dealz Live',
+        campaign: 'EV Charger Flash Dealz',
+        seller: 'EV Hub Commerce',
+        supplierId: sellerProfiles.seller.id,
+        campaignId: 'seller_live_evhub_flash',
+        scheduledFor: daysFromNow(1).toISOString(),
+        scheduledAt: daysFromNow(1).toISOString(),
+        weekday: 'Thu',
+        dateLabel: 'Thu 12 Mar',
+        time: '18:00-19:00',
+        location: 'Remote studio',
+        simulcast: ['TikTok Live', 'MyLiveDealz'],
+        platforms: ['TikTok Live', 'MyLiveDealz'],
+        status: 'scheduled',
+        role: 'Host',
+        durationMin: 60,
+        scriptsReady: true,
+        assetsReady: true,
+        productsCount: 3,
+        workloadScore: 2,
+        conflict: false,
+        desktopMode: 'fullscreen',
+        heroImageUrl: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=1200&auto=format&fit=crop',
+        heroVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+      }
+    }
+  });
+
+  await prisma.liveStudio.create({
+    data: {
+      id: sellerDefaultStudioSessionId,
+      userId: users.sellerUser.id,
+      sessionId: sellerDefaultStudioSessionId,
+      status: 'idle',
+      data: {
+        id: sellerDefaultStudioSessionId,
+        title: 'EV Hub Flash Dealz Live',
+        status: 'idle',
+        products: [
+          { id: 'P-101', name: 'Glow Serum', price: '$24.99', stock: '150 left', tag: 'Best Seller' },
+          { id: 'P-102', name: 'Matte Lipstick', price: '$18.50', stock: '85 left', tag: 'Low Stock' },
+          { id: 'P-103', name: 'Setting Spray', price: '$22.00', stock: '200 left', tag: 'New' }
+        ],
+        coHosts: [
+          { id: 1, name: 'Jessica M.', status: 'Ready' },
+          { id: 2, name: 'David K.', status: 'Off-air' }
+        ],
+        attachments: [
+          { id: 1, from: '@Sarah99', type: 'image', label: 'Viewer Look', status: 'Pending' },
+          { id: 2, from: '@MikeD', type: 'question', label: 'Product Q', status: 'Pending' }
+        ],
+        scenes: [
+          { id: 'intro', label: 'Intro Card', desc: 'Title + Music' },
+          { id: 'main', label: 'Main Cam', desc: 'Full screen' },
+          { id: 'split', label: 'Split View', desc: 'Cam + Screen' },
+          { id: 'product', label: 'Product Focus', desc: 'Pip Overlay' }
+        ],
+        runOfShow: [
+          { id: 's1', label: 'Welcome', window: '0:00', scene: 'intro' },
+          { id: 's2', label: 'Product Reveal', window: '2:00', scene: 'main' },
+          { id: 's3', label: 'Demo', window: '5:00', scene: 'split' }
+        ],
+        scriptCues: [
+          'Welcome everyone to the stream!',
+          'Today we are reviewing the new collection.',
+          "Don't forget to use code FLASH20.",
+          "Let's bring in our special guest."
+        ],
+        commerceGoal: {
+          soldUnits: 42,
+          targetUnits: 100,
+          cartCount: 15,
+          last5MinSales: 8
+        },
+        salesEvents: [
+          { id: 1, label: '@Sarah purchased Glow Serum', time: '2s ago' },
+          { id: 2, label: '@Mike purchased Lipstick', time: '12s ago' },
+          { id: 3, label: '@Jen purchased Bundle', time: '45s ago' }
+        ],
+        moments: [],
         chatMessages: [
           { id: 1, from: 'System', body: 'Welcome to the stream!', time: '10:00', system: true },
           { id: 2, from: 'Sarah_99', body: "Can't wait to see the new products!", time: '10:01' },

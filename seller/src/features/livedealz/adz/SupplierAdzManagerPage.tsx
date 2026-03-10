@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useSellerCompatState } from "../../../lib/frontendState";
+import { sellerBackendApi } from "../../../lib/backendApi";
+import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzManagerPage.jsx
@@ -505,6 +506,7 @@ function MiniTrend({ title, subtitle, seriesA, seriesB }) {
 export default function SupplierAdzManagerPage() {
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
+  const [syncedAds, setSyncedAds] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2600);
@@ -521,8 +523,37 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useSellerCompatState("supplier.adzManager.ads", DEMO_ADS);
+  const [ads, setAds] = useState(DEMO_ADS);
   const [selectedId, setSelectedId] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+
+    void sellerBackendApi
+      .getAdzCampaigns()
+      .then((payload) => {
+        if (cancelled) return;
+        const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
+        if (nextAds.length) {
+          setAds(nextAds as typeof DEMO_ADS);
+          setSyncedAds(Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)])));
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    ads.forEach((ad) => {
+      const nextHash = hashAdzCampaign(ad);
+      if (syncedAds[String(ad.id)] === nextHash) return;
+      setSyncedAds((prev) => ({ ...prev, [String(ad.id)]: nextHash }));
+      void sellerBackendApi.patchAdzCampaign(String(ad.id), buildAdzCampaignPayload(ad));
+    });
+  }, [ads, syncedAds]);
+
   useEffect(() => {
     if (!ads.length) return;
     if (!ads.find((ad) => ad.id === selectedId)) {
