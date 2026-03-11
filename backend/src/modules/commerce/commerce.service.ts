@@ -316,6 +316,27 @@ export class CommerceService {
     return order;
   }
 
+  async expressRiders(userId: string) {
+    await this.ensureSeller(userId);
+    const record = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key: 'express_riders'
+        }
+      }
+    });
+
+    const payload =
+      record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+        ? (record.payload as Record<string, unknown>)
+        : {};
+
+    return {
+      riders: Array.isArray(payload.riders) ? payload.riders : []
+    };
+  }
+
   async printInvoice(userId: string, id: string) {
     const payload = await this.buildPrintPayload(userId, id);
     return { ...payload, printType: 'invoice' };
@@ -462,6 +483,10 @@ export class CommerceService {
   }
 
   async financeWallets(userId: string) {
+    const seeded = await this.loadWorkspaceSetting(userId, 'finance_home_ui');
+    if (seeded && Array.isArray((seeded as Record<string, unknown>).balances)) {
+      return seeded;
+    }
     const seller = await this.ensureSeller(userId);
     const totals = await this.prisma.transaction.groupBy({
       by: ['currency', 'status'],
@@ -489,6 +514,10 @@ export class CommerceService {
   }
 
   async financeHolds(userId: string) {
+    const seeded = await this.loadWorkspaceSetting(userId, 'finance_holds_ui');
+    if (seeded && Array.isArray((seeded as Record<string, unknown>).holds)) {
+      return seeded;
+    }
     const seller = await this.ensureSeller(userId);
     const holds = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id, status: TransactionStatus.PENDING },
@@ -511,6 +540,10 @@ export class CommerceService {
   }
 
   async financeInvoices(userId: string) {
+    const seeded = await this.loadWorkspaceSetting(userId, 'finance_invoices_ui');
+    if (seeded && Array.isArray((seeded as Record<string, unknown>).invoices)) {
+      return seeded;
+    }
     const seller = await this.ensureSeller(userId);
     const orders = await this.prisma.order.findMany({
       where: { sellerId: seller.id },
@@ -533,6 +566,10 @@ export class CommerceService {
   }
 
   async financeStatements(userId: string) {
+    const seeded = await this.loadWorkspaceSetting(userId, 'finance_statements_ui');
+    if (seeded && Array.isArray((seeded as Record<string, unknown>).statements)) {
+      return seeded;
+    }
     const seller = await this.ensureSeller(userId);
     const transactions = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id },
@@ -555,6 +592,10 @@ export class CommerceService {
   }
 
   async financeTaxReports(userId: string) {
+    const seeded = await this.loadWorkspaceSetting(userId, 'finance_tax_reports_ui');
+    if (seeded && Array.isArray((seeded as Record<string, unknown>).reports)) {
+      return seeded;
+    }
     const seller = await this.ensureSeller(userId);
     const transactions = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id },
@@ -574,6 +615,36 @@ export class CommerceService {
     }
 
     return { reports: Array.from(reports.values()).sort((a, b) => (a.year < b.year ? 1 : -1)) };
+  }
+
+  async financeHome(userId: string) {
+    const seeded = await this.loadWorkspaceSetting(userId, 'finance_home_ui');
+    if (seeded) {
+      return seeded;
+    }
+    return this.financeWallets(userId);
+  }
+
+  async updateFinanceInvoice(userId: string, id: string, patch: Record<string, unknown>) {
+    const payload = (await this.loadWorkspaceSetting(userId, 'finance_invoices_ui')) ?? { invoices: [] };
+    const invoices = Array.isArray((payload as Record<string, unknown>).invoices)
+      ? (((payload as Record<string, unknown>).invoices as unknown[]) as Record<string, unknown>[])
+      : [];
+    const next = invoices.map((invoice) =>
+      String(invoice.id) === id ? { ...invoice, ...patch, updatedAt: new Date().toISOString() } : invoice
+    );
+    await this.upsertWorkspaceSetting(userId, 'finance_invoices_ui', { invoices: next });
+    return next.find((invoice) => String(invoice.id) === id) ?? null;
+  }
+
+  async removeFinanceHold(userId: string, id: string) {
+    const payload = (await this.loadWorkspaceSetting(userId, 'finance_holds_ui')) ?? { holds: [] };
+    const holds = Array.isArray((payload as Record<string, unknown>).holds)
+      ? (((payload as Record<string, unknown>).holds as unknown[]) as Record<string, unknown>[])
+      : [];
+    const next = holds.filter((hold) => String(hold.id) !== id);
+    await this.upsertWorkspaceSetting(userId, 'finance_holds_ui', { holds: next });
+    return { deleted: true };
   }
 
   async createWarehouse(userId: string, payload: CreateWarehouseDto) {
@@ -1113,6 +1184,21 @@ export class CommerceService {
 
     return this.prisma.sellerWarehouse.findFirst({
       where: { sellerId, isDefault: true }
+    });
+  }
+
+  private async loadWorkspaceSetting(userId: string, key: string) {
+    const setting = await this.prisma.workspaceSetting.findUnique({
+      where: { userId_key: { userId, key } }
+    });
+    return (setting?.payload as Record<string, unknown> | null) ?? null;
+  }
+
+  private async upsertWorkspaceSetting(userId: string, key: string, payload: Record<string, unknown>) {
+    return this.prisma.workspaceSetting.upsert({
+      where: { userId_key: { userId, key } },
+      update: { payload: payload as Prisma.InputJsonValue },
+      create: { userId, key, payload: payload as Prisma.InputJsonValue }
     });
   }
 }

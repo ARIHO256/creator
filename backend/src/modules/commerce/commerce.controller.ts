@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
@@ -136,9 +136,17 @@ export class CommerceController {
   @Post('listings/bulk/commit') commitListings(@CurrentUser() user: RequestUser, @Body() payload: BulkListingCommitDto) {
     return this.service.commitBulkListings(user.sub, payload);
   }
+  @Get('finance/home') financeHome(@CurrentUser() user: RequestUser) { return this.service.financeHome(user.sub); }
   @Get('finance/wallets') wallets(@CurrentUser() user: RequestUser) { return this.service.financeWallets(user.sub); }
   @Get('finance/holds') holds(@CurrentUser() user: RequestUser) { return this.service.financeHolds(user.sub); }
   @Get('finance/invoices') invoices(@CurrentUser() user: RequestUser) { return this.service.financeInvoices(user.sub); }
   @Get('finance/statements') statements(@CurrentUser() user: RequestUser) { return this.service.financeStatements(user.sub); }
   @Get('finance/tax-reports') taxReports(@CurrentUser() user: RequestUser) { return this.service.financeTaxReports(user.sub); }
+  @Patch('finance/invoices/:id')
+  updateInvoice(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: Record<string, unknown>) {
+    return this.service.updateFinanceInvoice(user.sub, id, payload);
+  }
+  @Delete('finance/holds/:id') removeHold(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.service.removeFinanceHold(user.sub, id);
+  }
 }

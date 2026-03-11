@@ -39,27 +39,49 @@ export class WholesaleService {
   }
 
   async priceLists(userId: string) {
-    const priceLists = await this.prisma.wholesalePriceList.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return { priceLists: priceLists.map((entry) => this.serializePriceList(entry)) };
+    const [priceLists, versions] = await Promise.all([
+      this.prisma.wholesalePriceList.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'wholesale_price_list_versions')
+    ]);
+    return {
+      priceLists: priceLists.map((entry) => this.serializePriceList(entry)),
+      versions: Array.isArray((versions as Record<string, unknown> | null)?.versions)
+        ? ((versions as Record<string, unknown>).versions as unknown[])
+        : []
+    };
   }
 
   async rfqs(userId: string) {
-    const rfqs = await this.prisma.wholesaleRfq.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return { rfqs: rfqs.map((entry) => this.serializeRfq(entry)) };
+    const [rfqs, drafts] = await Promise.all([
+      this.prisma.wholesaleRfq.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'wholesale_rfq_drafts')
+    ]);
+    return {
+      rfqs: rfqs.map((entry) => this.serializeRfq(entry)),
+      drafts: ((drafts as Record<string, unknown> | null)?.drafts as Record<string, unknown> | undefined) ?? {}
+    };
   }
 
   async quotes(userId: string) {
-    const quotes = await this.prisma.wholesaleQuote.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return { quotes: quotes.map((entry) => this.serializeQuote(entry)) };
+    const [quotes, templates] = await Promise.all([
+      this.prisma.wholesaleQuote.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'wholesale_quote_templates')
+    ]);
+    return {
+      quotes: quotes.map((entry) => this.serializeQuote(entry)),
+      templates: Array.isArray((templates as Record<string, unknown> | null)?.templates)
+        ? ((templates as Record<string, unknown>).templates as unknown[])
+        : []
+    };
   }
 
   async quote(userId: string, id: string) {
@@ -283,5 +305,17 @@ export class WholesaleService {
     if (!allowed.includes(nextStatus)) {
       throw new BadRequestException('Invalid quote status transition');
     }
+  }
+
+  private async loadSetting(userId: string, key: string) {
+    const setting = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    return (setting?.payload as Record<string, unknown> | null) ?? null;
   }
 }

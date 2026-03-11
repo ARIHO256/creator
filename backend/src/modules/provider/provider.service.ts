@@ -18,10 +18,11 @@ export class ProviderService {
   ) {}
 
   async serviceCommand(userId: string) {
-    const [openQuotes, activeBookings, totalQuotes] = await Promise.all([
+    const [openQuotes, activeBookings, totalQuotes, extras] = await Promise.all([
       this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
       this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } }),
-      this.prisma.providerQuote.count({ where: { userId } })
+      this.prisma.providerQuote.count({ where: { userId } }),
+      this.loadSetting(userId, 'provider_service_command')
     ]);
     return {
       queues: [
@@ -30,7 +31,13 @@ export class ProviderService {
       ],
       kpis: [
         { key: 'quotes_total', label: 'Total Quotes', value: totalQuotes }
-      ]
+      ],
+      schedule: Array.isArray((extras as Record<string, unknown> | null)?.schedule)
+        ? ((extras as Record<string, unknown>).schedule as unknown[])
+        : [],
+      queue: Array.isArray((extras as Record<string, unknown> | null)?.queue)
+        ? ((extras as Record<string, unknown>).queue as unknown[])
+        : []
     };
   }
   async quotes(userId: string) {
@@ -102,6 +109,37 @@ export class ProviderService {
     });
     return this.serializeQuote(quote);
   }
+  async updateJointQuote(userId: string, id: string, body: CreateProviderQuoteDto) {
+    const quote = await this.prisma.providerQuote.findFirst({
+      where: { id, userId }
+    });
+    if (!quote || !(quote.data as any)?.isJoint) {
+      throw new NotFoundException('Joint quote not found');
+    }
+    const sanitized = this.ensurePayload(body);
+    const data = sanitized.data && typeof sanitized.data === 'object' ? sanitized.data : sanitized;
+    const updated = await this.prisma.providerQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: typeof sanitized.status === 'string' ? sanitized.status : undefined,
+        title: typeof sanitized.title === 'string' ? sanitized.title : undefined,
+        buyer: typeof sanitized.buyer === 'string' ? sanitized.buyer : undefined,
+        amount: typeof sanitized.amount === 'number' ? sanitized.amount : undefined,
+        currency: typeof sanitized.currency === 'string' ? sanitized.currency : undefined,
+        data: { ...(quote.data as Record<string, unknown>), ...(data as Record<string, unknown>), isJoint: true } as Prisma.InputJsonValue
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'provider.joint_quote_updated',
+      entityType: 'provider_quote',
+      entityId: updated.id,
+      route: `/api/provider/joint-quotes/${id}`,
+      method: 'PATCH',
+      statusCode: 200
+    });
+    return this.serializeQuote(updated);
+  }
   async consultations(userId: string) {
     const consultations = await this.prisma.providerConsultation.findMany({
       where: { userId },
@@ -110,12 +148,20 @@ export class ProviderService {
     return { consultations: consultations.map((entry) => this.serializeConsultation(entry)) };
   }
   async bookings(userId: string) {
-    const bookings = await this.prisma.providerBooking.findMany({
-      where: { userId },
-      include: { fulfillment: true },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return { bookings: bookings.map((entry) => this.serializeBooking(entry)) };
+    const [bookings, templates] = await Promise.all([
+      this.prisma.providerBooking.findMany({
+        where: { userId },
+        include: { fulfillment: true },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'provider_booking_templates')
+    ]);
+    return {
+      bookings: bookings.map((entry) => this.serializeBooking(entry)),
+      templates: Array.isArray((templates as Record<string, unknown> | null)?.templates)
+        ? ((templates as Record<string, unknown>).templates as unknown[])
+        : []
+    };
   }
   async booking(userId: string, id: string) {
     const booking = await this.prisma.providerBooking.findFirst({
@@ -220,11 +266,19 @@ export class ProviderService {
     return updated;
   }
   async portfolio(userId: string) {
-    const items = await this.prisma.providerPortfolioItem.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return { items: items.map((entry) => this.serializePortfolio(entry)) };
+    const [items, caseStudies] = await Promise.all([
+      this.prisma.providerPortfolioItem.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.loadSetting(userId, 'provider_portfolio_case_studies')
+    ]);
+    return {
+      items: items.map((entry) => this.serializePortfolio(entry)),
+      caseStudies: Array.isArray((caseStudies as Record<string, unknown> | null)?.caseStudies)
+        ? ((caseStudies as Record<string, unknown>).caseStudies as unknown[])
+        : []
+    };
   }
   async reviews(userId: string) {
     const reviews = await this.prisma.review.findMany({
@@ -338,6 +392,18 @@ export class ProviderService {
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString()
     };
+  }
+
+  private async loadSetting(userId: string, key: string) {
+    const setting = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    return (setting?.payload as Record<string, unknown> | null) ?? null;
   }
 
   private normalizeStatus(status: string) {

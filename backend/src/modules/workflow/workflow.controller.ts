@@ -49,6 +49,20 @@ export class WorkflowController {
     return this.service.recordAccountApprovalDecision(user.sub, body);
   }
 
+  @Get('workflow/screen-state/:key')
+  screenState(@CurrentUser() user: RequestUser, @Param('key') key: string) {
+    return this.service.screenState(user.sub, key);
+  }
+  @Patch('workflow/screen-state/:key')
+  @RateLimit({ limit: 40, windowMs: 60_000 })
+  patchScreenState(
+    @CurrentUser() user: RequestUser,
+    @Param('key') key: string,
+    @Body() body: Record<string, unknown>
+  ) {
+    return this.service.patchScreenState(user.sub, key, body);
+  }
+
   @Get('content-approvals') contentApprovals(@CurrentUser() user: RequestUser) { return this.service.contentApprovals(user.sub); }
   @Get('content-approvals/:id') contentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.contentApproval(user.sub, id); }
   @Post('content-approvals')

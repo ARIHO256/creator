@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
@@ -40,6 +40,12 @@ export class CatalogController {
   @Patch('catalog/templates/:id')
   updateTemplate(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: UpdateCatalogTemplateDto) {
     return this.service.updateTemplate(user.sub, id, body);
+  }
+
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Delete('catalog/templates/:id')
+  deleteTemplate(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.service.deleteTemplate(user.sub, id);
   }
 
   @RateLimit({ limit: 10, windowMs: 60_000 })

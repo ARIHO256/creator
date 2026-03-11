@@ -5,6 +5,7 @@ import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
+import { RecoverAccountDto } from './dto/recover-account.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { SwitchRoleDto } from './dto/switch-role.dto.js';
@@ -32,6 +33,13 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() payload: RefreshTokenDto) {
     return this.authService.refresh(payload);
+  }
+
+  @Public()
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  @Post('recovery')
+  recovery(@Body() payload: RecoverAccountDto) {
+    return this.authService.recovery(payload);
   }
 
   @Post('logout')

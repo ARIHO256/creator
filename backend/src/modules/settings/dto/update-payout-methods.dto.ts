@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsObject, IsOptional, ValidateNested } from 'class-validator';
 import { PayoutMethodDto } from './payout-method.dto.js';
 
 export class UpdatePayoutMethodsDto {
@@ -8,4 +8,8 @@ export class UpdatePayoutMethodsDto {
   @ValidateNested({ each: true })
   @Type(() => PayoutMethodDto)
   methods!: PayoutMethodDto[];
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }

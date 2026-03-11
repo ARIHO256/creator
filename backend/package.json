@@ -14,6 +14,14 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
     "prisma:seed:loadtest": "node prisma/seed-loadtest.mjs",
+    "creator:import-compat": "node --env-file=.env --import tsx scripts/import-creator-compat-seeds.ts",
+    "creator:seed-feature-mocks": "node --env-file=.env --import tsx scripts/seed-creator-feature-mocks.ts",
+    "seller:import-mocks": "node --env-file=.env --import tsx scripts/import-sellerfront-mocks.ts",
+    "seller:import-compat": "node --env-file=.env --import tsx scripts/import-sellerfront-compat-seeds.ts",
+    "seller:import-finance": "node --env-file=.env --import tsx scripts/import-sellerfront-finance-seeds.ts",
+    "seller:import-provider-service-taxonomy": "node --env-file=.env --import tsx scripts/import-provider-service-taxonomy.ts",
+    "seller:seed-src-mock": "node --env-file=.env --import tsx scripts/seed-seller-src-mock.ts",
+    "seller:seed-feature-mocks": "node --env-file=.env --import tsx scripts/seed-seller-feature-mocks.ts",
     "test": "tsx --test test/**/*.test.ts"
   },
   "dependencies": {

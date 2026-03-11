@@ -544,11 +544,13 @@ export class TaxonomyService {
     type: string;
     name: string;
     description: string | null;
+    metadata: Prisma.JsonValue | null;
     children: Array<{
       id: string;
       type: string;
       name: string;
       description: string | null;
+      metadata: Prisma.JsonValue | null;
       children: any[];
     }>;
   } {
@@ -557,6 +559,7 @@ export class TaxonomyService {
       type: node.type,
       name: node.name,
       description: node.description,
+      metadata: node.metadata ?? null,
       children: node.children.map((child) => this.serializeListingNode(child))
     };
   }

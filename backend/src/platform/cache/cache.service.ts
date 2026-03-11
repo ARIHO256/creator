@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import { MetricsService } from '../metrics/metrics.service.js';
@@ -22,8 +22,8 @@ export class CacheService {
   private readonly instanceId = `${process.pid}-${Math.random().toString(16).slice(2)}`;
 
   constructor(
-    private readonly configService: ConfigService,
-    @Optional() private readonly metrics?: MetricsService
+    @Inject(ConfigService) private readonly configService: ConfigService,
+    @Optional() @Inject(MetricsService) private readonly metrics?: MetricsService
   ) {
     this.defaultTtlMs = Number(this.configService.get('cache.defaultTtlMs') ?? 15_000);
     this.maxEntries = Number(this.configService.get('cache.maxEntries') ?? 5_000);

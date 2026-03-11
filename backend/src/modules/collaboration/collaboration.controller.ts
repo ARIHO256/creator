@@ -20,7 +20,15 @@ import { UpdateTaskDto } from './dto/update-task.dto.js';
 export class CollaborationController {
   constructor(private readonly service: CollaborationService) {}
 
+  @Get('campaigns/workspace') campaignWorkspace(@CurrentUser() user: RequestUser) { return this.service.campaignWorkspace(user.sub); }
+  @Get('campaigns/legacy-marketplace') legacyMarketplace(@CurrentUser() user: RequestUser) { return this.service.legacyMarketplace(user.sub); }
   @Get('campaigns') campaigns(@CurrentUser() user: RequestUser) { return this.service.campaigns(user.sub); }
+  @Post('campaigns')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  createCampaign(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.createCampaign(user.sub, body); }
+  @Patch('campaigns/:id')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  updateCampaign(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.updateCampaign(user.sub, id, body); }
   @Get('proposals') proposals(@CurrentUser() user: RequestUser) { return this.service.proposals(user.sub); }
   @Post('proposals')
   @RateLimit({ limit: 20, windowMs: 60_000 })

@@ -1,6 +1,6 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Redis = require('ioredis');
+import { Redis } from 'ioredis';
 import { RealtimeStreamService } from './realtime.stream.service.js';
 
 @Injectable()
@@ -11,25 +11,27 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
   private readonly prefix: string;
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly streamService: RealtimeStreamService
+    private readonly streamService: RealtimeStreamService,
+    @Optional() @Inject(ConfigService) private readonly configService?: ConfigService
   ) {
     this.enabled = !['0', 'false', 'no', 'off'].includes(
-      String(this.configService.get('realtime.enabled') ?? 'true').toLowerCase()
+      String(this.readConfig('realtime.enabled', 'false')).toLowerCase()
     );
-    this.prefix = String(this.configService.get('realtime.channelPrefix') ?? 'mldz:realtime:');
+    this.prefix = String(this.readConfig('realtime.channelPrefix', 'mldz:realtime:'));
   }
 
   onModuleInit() {
     const redisUrl =
-      this.configService.get<string>('realtime.redisUrl') ??
-      this.configService.get<string>('cache.redisUrl') ??
+      this.readConfig<string>('realtime.redisUrl', '') ??
+      this.readConfig<string>('cache.redisUrl', '') ??
       '';
     if (!this.enabled || !redisUrl) {
+      if (!this.configService) {
+        this.logger.debug('Realtime subscriber disabled because ConfigService is unavailable.');
+      }
       return;
     }
-    const RedisClient = (Redis as any).default ?? (Redis as any);
-    this.client = new RedisClient(redisUrl, { maxRetriesPerRequest: 2 });
+    this.client = new Redis(redisUrl, { maxRetriesPerRequest: 2 });
     this.client.on('error', (error: Error) => {
       this.logger.warn(`Realtime subscriber Redis error: ${error.message}`);
     });
@@ -57,5 +59,9 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
       await this.client.quit();
       this.client = null;
     }
+  }
+
+  private readConfig<T = string>(key: string, fallback: T): T {
+    return (this.configService?.get<T>(key) ?? fallback) as T;
   }
 }

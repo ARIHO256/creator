@@ -28,6 +28,11 @@ export class ExpressmartController {
     return this.service.orderDetail(user.sub, id, 'ExpressMart');
   }
 
+  @Get('riders')
+  riders(@CurrentUser() user: RequestUser) {
+    return this.service.expressRiders(user.sub);
+  }
+
   @Patch('orders/:id')
   @RateLimit({ limit: 30, windowMs: 60_000 })
   updateOrder(

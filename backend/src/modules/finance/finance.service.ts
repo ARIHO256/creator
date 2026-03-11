@@ -305,32 +305,49 @@ export class FinanceService {
     if (!existing) {
       return { plan: 'basic', cycle: 'monthly', status: 'inactive' };
     }
+    const metadata =
+      existing.metadata && typeof existing.metadata === 'object'
+        ? (existing.metadata as Record<string, unknown>)
+        : {};
     return {
       plan: existing.plan,
       cycle: existing.cycle,
       status: existing.status,
-      metadata: existing.metadata
+      metadata,
+      ...metadata
     };
   }
 
-  updateSubscription(userId: string, body: UpdateSubscriptionDto) {
+  async updateSubscription(userId: string, body: UpdateSubscriptionDto) {
     const plan = String(body.plan ?? 'basic');
     const cycle = String(body.cycle ?? 'monthly');
     const status = String(body.status ?? 'active');
+    const existing = await this.prisma.userSubscription.findUnique({
+      where: { userId }
+    });
+    const existingMetadata =
+      existing?.metadata && typeof existing.metadata === 'object'
+        ? (existing.metadata as Record<string, unknown>)
+        : {};
+    const nextMetadata = {
+      ...existingMetadata,
+      ...((body.metadata ?? {}) as Record<string, unknown>)
+    };
+
     return this.prisma.userSubscription.upsert({
       where: { userId },
       update: {
         plan,
         cycle,
         status,
-        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
+        metadata: nextMetadata as Prisma.InputJsonValue
       },
       create: {
         userId,
         plan,
         cycle,
         status,
-        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
+        metadata: nextMetadata as Prisma.InputJsonValue
       }
     });
   }

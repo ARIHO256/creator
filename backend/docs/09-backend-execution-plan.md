@@ -15,7 +15,7 @@ Legend for status:
 1. Full Page-by-Page Backend Parity Matrix
 ------------------------------------------------------------------------------
 
-Creator App Routes (from `frontend/src/App.tsx`)
+Creator App Routes (from `creator/src/App.tsx`)
 
 Columns: Route | Page | Feature Area | Actions | Data Required | Status | Backend Module | Existing Endpoints | Missing Pieces | Risks | Required Backend Action
 
@@ -71,7 +71,7 @@ Columns: Route | Page | Feature Area | Actions | Data Required | Status | Backen
 | /Stream-platform | StreamToPlatformsPage | Live Tools | configure streaming | destinations, keys | READY | live/tools | /api/tools/streaming | None | Low | Keep |
 | /safety-moderation | SafetyModerationPage | Live Tools | manage safety | moderation rules | READY | live/tools | /api/tools/safety | None | Low | Keep |
 
-Seller App Routes (from `sellerfront/src/app/routes.tsx`)
+Seller App Routes (from `seller/src/app/routes.tsx`)
 
 | Route | Page | Feature Area | Actions | Data Required | Status | Backend Module | Existing Endpoints | Missing Pieces | Risks | Required Backend Action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -465,4 +465,3 @@ Phase 5: Production hardening
 After executing this plan (with infra):
 - Backend parity: 98-100%
 - Production readiness: 85-90%
-
