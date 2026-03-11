@@ -355,6 +355,29 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getReviewsSummary: () => request<Record<string, unknown>>("/api/reviews/summary"),
+  getReviews: (scope?: "received" | "authored") =>
+    request<Array<Record<string, unknown>>>(
+      `/api/reviews${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`
+    ),
+  getReviewInsights: (query?: Record<string, string | number | undefined | null>) => {
+    const params = new URLSearchParams();
+    Object.entries(query ?? {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") return;
+      params.set(key, String(value));
+    });
+    const suffix = params.toString();
+    return request<Record<string, unknown>>(`/api/reviews/insights${suffix ? `?${suffix}` : ""}`);
+  },
+  patchReview: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/reviews/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  replyReview: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/reviews/${encodeURIComponent(id)}/replies`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getRegulatoryDesks: () => request<Record<string, unknown>>("/api/regulatory/desks"),
   getRegulatoryOverview: () => request<Record<string, unknown>>("/api/regulatory/overview"),
   patchRegulatoryOverview: (body: Record<string, unknown>) =>

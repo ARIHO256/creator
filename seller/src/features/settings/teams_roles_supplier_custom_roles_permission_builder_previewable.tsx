@@ -1797,8 +1797,8 @@ export default function TeamsRolesSupplierPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setPolicies(seedPolicies());
-                    pushToast({ title: "Reset", message: "Policies reset to defaults.", tone: "default" });
+                    setPolicies(mapBackendPolicies(null));
+                    pushToast({ title: "Reset", message: "Policies reset to current backend baseline.", tone: "default" });
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
                 >

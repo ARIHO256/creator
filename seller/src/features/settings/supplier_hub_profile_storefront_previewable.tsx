@@ -17,7 +17,7 @@ import {
 import { TreeItem, TreeView } from '@mui/lab';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLocalization } from '../../localization/LocalizationProvider';
-import { readSellerTaxonomy, useSellerTaxonomy } from '../../data/taxonomy';
+import { useSellerTaxonomy } from '../../data/taxonomy';
 import { readSession } from '../../auth/session';
 import { sellerBackendApi } from '../../lib/backendApi';
 import type { ListingTaxonomyNode } from '../../data/pageTypes';
@@ -365,65 +365,29 @@ function Ring({ value, label }) {
   );
 }
 
-function seed() {
-  const now = Date.now();
-  const ago = (m) => new Date(now - m * 60_000).toISOString();
-
+function createEmptyProfileState() {
   return {
     identity: {
-      displayName: 'EV World Store',
-      legalName: 'EV World (Wuxi) Business Technology Co., Ltd.',
-      handle: 'evworld',
-      email: 'support@evzonecharging.com',
-      phone: '+86 177 6831 9897',
-      website: 'https://www.evzonecharging.com',
-      category: 'EV Charging Stations',
+      displayName: '',
+      legalName: '',
+      handle: '',
+      email: '',
+      phone: '',
+      website: '',
+      category: '',
     },
     branding: {
-      tagline: 'Premium EV charging and accessories',
-      description:
-        'We design and supply EV charging solutions, accessories, and installation services. We prioritize quality, safety, and reliable delivery timelines.',
+      tagline: '',
+      description: '',
       primary: TOKENS.green,
       accent: TOKENS.orange,
-      logoName: 'logo.png',
-      coverName: 'cover.jpg',
+      logoName: '',
+      coverName: '',
     },
-    addresses: [
-      {
-        id: 'ADDR-1',
-        label: 'Registered office',
-        type: 'Office',
-        line1: 'Room 265, No. 3 Gaolang East Road',
-        city: 'Wuxi',
-        region: 'Jiangsu',
-        country: 'China',
-        isDefault: true,
-        updatedAt: ago(160),
-      },
-      {
-        id: 'ADDR-2',
-        label: 'Kampala correspondence',
-        type: 'Office',
-        line1: 'Millennium House, Nsambya Road 472',
-        city: 'Kampala',
-        region: 'Central',
-        country: 'Uganda',
-        isDefault: false,
-        updatedAt: ago(680),
-      },
-    ],
-    stores: [
-      { id: 'STORE-1', name: 'Main Store', handle: 'evworld', region: 'Global', status: 'Active' },
-      {
-        id: 'STORE-2',
-        name: 'China Hub',
-        handle: 'evworld-cn',
-        region: 'China',
-        status: 'Planned',
-      },
-    ],
-    regions: ['UG', 'KE', 'TZ', 'RW'],
-    supportHours: 'Mon-Fri 09:00-17:00 (EAT)',
+    addresses: [],
+    stores: [],
+    regions: [],
+    supportHours: '',
     socials: {
       facebook: '',
       instagram: '',
@@ -433,20 +397,7 @@ function seed() {
       tiktok: '',
     },
     customSocials: [],
-    productLines: (() => {
-      const seeds: Array<{ id: string; status: 'active' | 'suspended' }> = [
-        { id: 'category-dc-fast-chargers', status: 'active' },
-        { id: 'category-desktops', status: 'active' },
-        { id: 'category-women-shoes', status: 'suspended' },
-      ];
-      const taxonomy = readSellerTaxonomy();
-      const uniqueLines = new Map();
-      seeds.forEach((seed) => {
-        const line = buildLine(taxonomy, seed.id, seed.status);
-        if (line?.nodeId) uniqueLines.set(line.nodeId, line);
-      });
-      return Array.from(uniqueLines.values());
-    })(),
+    productLines: [],
   };
 }
 
@@ -1345,16 +1296,16 @@ export default function SupplierHubProfileStorefrontPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const seeded = useMemo(() => seed(), []);
-  const [identity, setIdentity] = useState(seeded.identity);
-  const [branding, setBranding] = useState(seeded.branding);
-  const [addresses, setAddresses] = useState(seeded.addresses);
-  const [stores, setStores] = useState(seeded.stores);
-  const [productLines, setProductLines] = useState(seeded.productLines);
-  const [regions, setRegions] = useState(seeded.regions);
-  const [supportHours, setSupportHours] = useState(seeded.supportHours);
-  const [socials, setSocials] = useState(seeded.socials);
-  const [customSocials, setCustomSocials] = useState<CustomSocial[]>(seeded.customSocials || []);
+  const emptyState = useMemo(() => createEmptyProfileState(), []);
+  const [identity, setIdentity] = useState(emptyState.identity);
+  const [branding, setBranding] = useState(emptyState.branding);
+  const [addresses, setAddresses] = useState(emptyState.addresses);
+  const [stores, setStores] = useState(emptyState.stores);
+  const [productLines, setProductLines] = useState(emptyState.productLines);
+  const [regions, setRegions] = useState(emptyState.regions);
+  const [supportHours, setSupportHours] = useState(emptyState.supportHours);
+  const [socials, setSocials] = useState(emptyState.socials);
+  const [customSocials, setCustomSocials] = useState<CustomSocial[]>(emptyState.customSocials || []);
   const [loading, setLoading] = useState(true);
   const [showCustomSocialForm, setShowCustomSocialForm] = useState(false);
   const [newSocialName, setNewSocialName] = useState('');
@@ -1483,15 +1434,15 @@ export default function SupplierHubProfileStorefrontPage() {
         const profile = (payload.profile as Record<string, unknown> | undefined) ?? null;
         if (!profile || cancelled) return;
         const nextSnapshot = {
-          identity: (profile.identity as typeof seeded.identity | undefined) ?? seeded.identity,
-          branding: (profile.branding as typeof seeded.branding | undefined) ?? seeded.branding,
-          addresses: (Array.isArray(profile.addresses) ? profile.addresses : seeded.addresses) as typeof seeded.addresses,
-          stores: (Array.isArray(profile.stores) ? profile.stores : seeded.stores) as typeof seeded.stores,
-          productLines: (Array.isArray(profile.productLines) ? profile.productLines : seeded.productLines) as typeof seeded.productLines,
-          regions: (Array.isArray(profile.regions) ? profile.regions : seeded.regions) as typeof seeded.regions,
-          supportHours: (profile.supportHours as typeof seeded.supportHours | undefined) ?? seeded.supportHours,
-          socials: (profile.socials as typeof seeded.socials | undefined) ?? seeded.socials,
-          customSocials: (Array.isArray(profile.customSocials) ? profile.customSocials : seeded.customSocials || []) as CustomSocial[],
+          identity: (profile.identity as typeof emptyState.identity | undefined) ?? emptyState.identity,
+          branding: (profile.branding as typeof emptyState.branding | undefined) ?? emptyState.branding,
+          addresses: (Array.isArray(profile.addresses) ? profile.addresses : emptyState.addresses) as typeof emptyState.addresses,
+          stores: (Array.isArray(profile.stores) ? profile.stores : emptyState.stores) as typeof emptyState.stores,
+          productLines: (Array.isArray(profile.productLines) ? profile.productLines : emptyState.productLines) as typeof emptyState.productLines,
+          regions: (Array.isArray(profile.regions) ? profile.regions : emptyState.regions) as typeof emptyState.regions,
+          supportHours: (profile.supportHours as typeof emptyState.supportHours | undefined) ?? emptyState.supportHours,
+          socials: (profile.socials as typeof emptyState.socials | undefined) ?? emptyState.socials,
+          customSocials: (Array.isArray(profile.customSocials) ? profile.customSocials : emptyState.customSocials || []) as CustomSocial[],
         };
         setIdentity(nextSnapshot.identity);
         setBranding(nextSnapshot.branding);
@@ -1504,7 +1455,26 @@ export default function SupplierHubProfileStorefrontPage() {
         setCustomSocials(nextSnapshot.customSocials);
         setSavedSnapshot(JSON.parse(JSON.stringify(nextSnapshot)));
       } catch {
-        // keep seeded UI
+        setIdentity(emptyState.identity);
+        setBranding(emptyState.branding);
+        setAddresses(emptyState.addresses);
+        setStores(emptyState.stores);
+        setProductLines(emptyState.productLines);
+        setRegions(emptyState.regions);
+        setSupportHours(emptyState.supportHours);
+        setSocials(emptyState.socials);
+        setCustomSocials(emptyState.customSocials);
+        setSavedSnapshot(JSON.parse(JSON.stringify({
+          identity: emptyState.identity,
+          branding: emptyState.branding,
+          addresses: emptyState.addresses,
+          stores: emptyState.stores,
+          productLines: emptyState.productLines,
+          regions: emptyState.regions,
+          supportHours: emptyState.supportHours,
+          socials: emptyState.socials,
+          customSocials: emptyState.customSocials,
+        })));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1513,7 +1483,7 @@ export default function SupplierHubProfileStorefrontPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [emptyState]);
 
   const saveAll = async () => {
     try {

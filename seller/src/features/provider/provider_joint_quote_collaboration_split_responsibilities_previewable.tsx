@@ -295,82 +295,55 @@ function StepPill({ active, label, hint, icon: Icon, onClick, tone }) {
   );
 }
 
-function seedQuote() {
+function createEmptyQuote() {
   const now = Date.now();
   return {
-    id: "JQ-2008",
+    id: makeId("jq"),
     status: "Draft",
-    createdAt: new Date(now - 1000 * 60 * 28).toISOString(),
-    updatedAt: new Date(now - 1000 * 60 * 7).toISOString(),
+    createdAt: new Date(now).toISOString(),
+    updatedAt: new Date(now).toISOString(),
     currency: "USD",
-    title: "Warehouse-to-port logistics setup (collab quote)",
+    title: "",
     buyer: {
-      org: "Kampala Mobility Co.",
-      contact: "Procurement Desk",
-      email: "procurement@example.com",
-      location: "Kampala, Uganda",
+      org: "",
+      contact: "",
+      email: "",
+      location: "",
     },
-    scope:
-      "End-to-end logistics planning and execution from warehouse to port, including documentation checklist, timelines, and shipment handover.",
-    collaborators: [
-      { id: "p1", name: "Lead Provider", email: "lead@provider.com", role: "Lead", status: "Active" },
-      { id: "p2", name: "Partner Provider", email: "partner@provider.com", role: "Partner", status: "Invited" },
-    ],
-    deliverables: [
-      {
-        id: "d1",
-        title: "Route plan + timeline",
-        ownerId: "p1",
-        sharePct: 55,
-        dueAt: new Date(now + 1000 * 60 * 60 * 24 * 3).toISOString(),
-        acceptance: "Signed timeline, milestone dates confirmed.",
-      },
-      {
-        id: "d2",
-        title: "Docs checklist + exporter readiness",
-        ownerId: "p2",
-        sharePct: 45,
-        dueAt: new Date(now + 1000 * 60 * 60 * 24 * 4).toISOString(),
-        acceptance: "Complete checklist, buyer acknowledges readiness items.",
-      },
-    ],
-    milestones: [
-      { id: "m1", title: "Kickoff and planning", dueAt: new Date(now + 1000 * 60 * 60 * 24 * 2).toISOString(), amount: 60, ownerId: "p1", status: "Draft" },
-      { id: "m2", title: "Handover and dispatch", dueAt: new Date(now + 1000 * 60 * 60 * 24 * 6).toISOString(), amount: 40, ownerId: "p2", status: "Draft" },
-    ],
+    scope: "",
+    collaborators: [],
+    deliverables: [],
+    milestones: [],
     pricing: {
-      base: 190,
-      platformFeePct: 4,
+      base: 0,
+      platformFeePct: 0,
       taxesPct: 0,
-      notes: "Price includes planning, coordination, and docs guidance. Carrier charges paid separately.",
+      notes: "",
     },
     approvals: {
-      internal: [
-        { id: "a1", label: "Lead provider approval", actorId: "p1", status: "Pending" },
-        { id: "a2", label: "Partner provider approval", actorId: "p2", status: "Pending" },
-      ],
+      internal: [],
       buyer: { id: "a3", label: "Buyer approval", status: "Not requested" },
       lastActionAt: null,
     },
-    message: "Hello, we prepared a joint quote with split responsibilities. Please review and approve.",
+    message: "",
   };
 }
 
 function mapBackendJointQuote(raw: Record<string, unknown>) {
-  const seeded = seedQuote();
+  const emptyQuote = createEmptyQuote();
   const data = raw.data && typeof raw.data === "object" ? (raw.data as Record<string, unknown>) : {};
   return {
     quote: {
-      ...seeded,
+      ...emptyQuote,
       ...data,
-      id: String(raw.id || data.id || seeded.id),
-      status: String(data.status || raw.status || seeded.status),
-      title: String(data.title || raw.title || seeded.title),
-      currency: String(raw.currency || data.currency || seeded.currency),
-      updatedAt: String(raw.updatedAt || data.updatedAt || seeded.updatedAt),
-      createdAt: String(raw.createdAt || data.createdAt || seeded.createdAt),
+      id: String(raw.id || data.id || emptyQuote.id),
+      status: String(data.status || raw.status || emptyQuote.status),
+      title: String(data.title || raw.title || emptyQuote.title),
+      currency: String(raw.currency || data.currency || emptyQuote.currency),
+      updatedAt: String(raw.updatedAt || data.updatedAt || emptyQuote.updatedAt),
+      createdAt: String(raw.createdAt || data.createdAt || emptyQuote.createdAt),
     },
-    sowText: typeof data.sowText === "string" ? data.sowText : buildSowText({ ...seeded, ...data }),
+    sowText: typeof data.sowText === "string" ? data.sowText : buildSowText({ ...emptyQuote, ...data }),
     versions: Array.isArray(data.versions) ? data.versions : [],
   };
 }
@@ -451,18 +424,13 @@ export default function ProviderJointQuotePage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [step, setStep] = useState("Overview");
-  const [quote, setQuote] = useState(seedQuote());
+  const [quote, setQuote] = useState(() => createEmptyQuote());
   const [dirty, setDirty] = useState(false);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const persistedRef = useRef(false);
 
-  const [versions, setVersions] = useState(() => {
-    const q = seedQuote();
-    return [
-      { id: makeId("ver"), at: new Date().toISOString(), actor: "System", note: "Initial draft", snapshot: JSON.parse(JSON.stringify(q)) },
-    ];
-  });
+  const [versions, setVersions] = useState<any[]>([]);
 
   const completeness = useMemo(() => calcCompleteness(quote), [quote]);
 
@@ -662,11 +630,11 @@ export default function ProviderJointQuotePage() {
     pushToast({ title: "Milestone added", tone: "success" });
   };
 
-  const [sowText, setSowText] = useState(buildSowText(seedQuote()));
+  const [sowText, setSowText] = useState(() => buildSowText(createEmptyQuote()));
   useEffect(() => {
     setSowText(buildSowText(quote));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quote.id]);
+  }, [quote]);
 
   useEffect(() => {
     let cancelled = false;
@@ -687,7 +655,10 @@ export default function ProviderJointQuotePage() {
           persistedRef.current = true;
         }
       } catch {
-        pushToast({ title: "Backend unavailable", message: "Loaded seeded joint quote.", tone: "warning" });
+        setQuote(createEmptyQuote());
+        setVersions([]);
+        setSowText(buildSowText(createEmptyQuote()));
+        pushToast({ title: "Backend unavailable", message: "Could not fetch joint quote.", tone: "warning" });
       } finally {
         if (!cancelled) setLoading(false);
       }

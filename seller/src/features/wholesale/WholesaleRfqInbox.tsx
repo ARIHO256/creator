@@ -921,17 +921,6 @@ export default function WholesaleRFQsSignalsAndDraftTotalsPreviewable() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const seededRfqs = useMemo(
-    () =>
-      seedRFQs().map((r) => ({
-        ...r,
-        buyerName: r.buyerType === "Organization" ? `${r.buyerType} Buyer` : "Personal Buyer",
-        competitorPressure: r.origin === "Wholesale" ? "High" : "Medium",
-        paymentRisk: r.paymentRail === "CorporatePay" ? "Low" : "Medium",
-        marginPotential: r.paymentRail === "CorporatePay" ? 72 : 55,
-      })),
-    []
-  );
   const [rfqs, setRfqs] = useState<Rfq[]>([]);
 
   const [search, setSearch] = useState("");
