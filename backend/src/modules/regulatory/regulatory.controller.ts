@@ -35,6 +35,12 @@ export class RegulatoryController {
     return this.service.updateComplianceItem(user.sub, id, body);
   }
   @Get('regulatory/desks') desks(@CurrentUser() user: RequestUser) { return this.service.desks(user.sub); }
+  @Get('regulatory/overview') overview(@CurrentUser() user: RequestUser) { return this.service.overview(user.sub); }
+  @Patch('regulatory/overview')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  updateOverview(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updateOverview(user.sub, body);
+  }
   @Post('regulatory/desks')
   @RateLimit({ limit: 10, windowMs: 60_000 })
   createDesk(@CurrentUser() user: RequestUser, @Body() body: CreateRegulatoryDeskDto) {

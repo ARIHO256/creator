@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { readSellerPageContent } from "../lib/frontendState";
 import type { ListingTaxonomyNode } from "./pageTypes";
 
 const DEFAULT_API_BASE = "http://localhost:3000/api";
@@ -76,8 +75,7 @@ const transformTree = (
   }));
 
 export const readSellerTaxonomy = () => {
-  const listingWizard = readSellerPageContent<{ taxonomy?: unknown }>("listingWizard", "seller", {});
-  return normalizeTree(listingWizard.taxonomy || []);
+  return [];
 };
 
 async function fetchTaxonomyTree(slug: string, kind: "seller" | "provider") {

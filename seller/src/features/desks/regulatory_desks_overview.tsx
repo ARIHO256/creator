@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   Check,
@@ -579,7 +579,39 @@ function ProgressBar({ pct, tone }: { pct: number; tone: "green" | "orange" | "d
 
 export default function RegulatoryDesksHome() {
   const navigate = useNavigate();
-  const [data, setData] = useSellerCompatState("desks.regulatory.overview", seedData());
+  const [data, setData] = useState(seedData());
+  const [loading, setLoading] = useState(true);
+  const didHydrateRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getRegulatoryOverview();
+        if (!cancelled && payload && typeof payload === "object") {
+          setData(payload as typeof data);
+        }
+      } catch {
+        // keep seeded overview
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      return;
+    }
+    void sellerBackendApi.patchRegulatoryOverview(data);
+  }, [data, loading]);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -877,6 +909,7 @@ export default function RegulatoryDesksHome() {
                 <Badge tone="slate">/regulatory</Badge>
                 <Badge tone="slate">Seller-facing</Badge>
                 <Badge tone="orange">Super premium</Badge>
+                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Manage regulated submissions and compliance evidence across desks.</div>
             </div>

@@ -13,15 +13,53 @@ export class RegulatoryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async compliance(userId: string) {
-    const items = await this.prisma.regulatoryComplianceItem.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
+    const [items, page] = await Promise.all([
+      this.prisma.regulatoryComplianceItem.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.prisma.appRecord.findFirst({
+        where: {
+          userId,
+          domain: 'seller_workspace',
+          entityType: 'compliance',
+          entityId: 'main'
+        },
+        orderBy: { updatedAt: 'desc' }
+      })
+    ]);
+    const pagePayload = (page?.payload as Record<string, unknown> | null) ?? {};
     return {
+      primaryChannel:
+        typeof pagePayload.primaryChannel === 'string' ? pagePayload.primaryChannel : 'EVmart',
+      defaultDocType:
+        typeof pagePayload.defaultDocType === 'string'
+          ? pagePayload.defaultDocType
+          : 'Business License',
+      heroSubtitle:
+        typeof pagePayload.heroSubtitle === 'string'
+          ? pagePayload.heroSubtitle
+          : 'Compliance center for listings and marketplace requirements.',
+      channelOptions: Array.isArray(pagePayload.channelOptions)
+        ? pagePayload.channelOptions
+        : ['EVmart'],
+      autoDefault: Array.isArray(pagePayload.autoDefault) ? pagePayload.autoDefault : [],
       docs: items.filter((entry) => entry.itemType === 'DOC').map((entry) => this.serializeCompliance(entry)),
       queue: items.filter((entry) => entry.itemType === 'QUEUE').map((entry) => this.serializeCompliance(entry)),
       autoRules: items.filter((entry) => entry.itemType === 'RULE').map((entry) => this.serializeCompliance(entry))
     };
+  }
+
+  async overview(userId: string) {
+    const record = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key: 'regulatory_overview_page'
+        }
+      }
+    });
+    return (record?.payload as Record<string, unknown> | null) ?? { submissions: [], policies: [], tasks: [] };
   }
 
   async desks(userId: string) {
@@ -149,6 +187,26 @@ export class RegulatoryService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+  }
+
+  async updateOverview(userId: string, payload: Record<string, unknown>) {
+    const record = await this.prisma.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key: 'regulatory_overview_page'
+        }
+      },
+      update: {
+        payload: payload as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        key: 'regulatory_overview_page',
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+    return record.payload as Record<string, unknown>;
   }
 
   private serializeDesk(desk: {

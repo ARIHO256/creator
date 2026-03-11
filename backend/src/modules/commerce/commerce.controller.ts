@@ -42,6 +42,15 @@ export class CommerceController {
   @Get('listings') listings(@CurrentUser() user: RequestUser, @Query() query: SellerListingsQueryDto) { return this.service.listings(user.sub, query); }
   @Get('listings/:id') listing(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.listingDetail(user.sub, id); }
   @Get('listing-wizard') listingWizard(@CurrentUser() user: RequestUser) { return this.service.listingWizard(user.sub); }
+  @Get('cart') cart(@CurrentUser() user: RequestUser) { return this.service.cart(user.sub); }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  @Post('cart/items')
+  addCartItem(
+    @CurrentUser() user: RequestUser,
+    @Body() body: { listingId?: string; qty?: number }
+  ) {
+    return this.service.addCartItem(user.sub, body);
+  }
   @Get('orders') orders(@CurrentUser() user: RequestUser, @Query() query: SellerOrdersQueryDto) { return this.service.orders(user.sub, query); }
   @Get('orders/:id') order(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.orderDetail(user.sub, id); }
   @Get('orders/:id/print/invoice') printInvoice(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printInvoice(user.sub, id); }

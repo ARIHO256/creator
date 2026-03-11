@@ -222,6 +222,16 @@ export class CommerceService {
 
   async listingWizard(userId: string) {
     const taxonomy = await this.taxonomyService.listingWizardTaxonomy();
+    const page = await this.prisma.appRecord.findFirst({
+      where: {
+        userId,
+        domain: 'seller_workspace',
+        entityType: 'listing_wizard',
+        entityId: 'main'
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+    const pagePayload = (page?.payload as Record<string, unknown> | null) ?? {};
     let baseLines: unknown = [];
     try {
       baseLines = await this.taxonomyService.listingWizardLines(userId);
@@ -231,8 +241,36 @@ export class CommerceService {
     return {
       taxonomy,
       baseLines,
-      copy: {}
+      copy: (pagePayload.copy as Record<string, unknown> | undefined) ?? {}
     };
+  }
+
+  async cart(userId: string) {
+    const current = await this.loadWorkspaceSetting(userId, 'seller_cart');
+    return this.normalizeCart(current);
+  }
+
+  async addCartItem(userId: string, body: { listingId?: string; qty?: number }) {
+    const listingId = typeof body?.listingId === 'string' ? body.listingId.trim() : '';
+    if (!listingId) {
+      throw new BadRequestException('listingId is required');
+    }
+
+    const qty = Number.isFinite(body?.qty) ? Math.max(1, Math.floor(Number(body.qty))) : 1;
+    const current = this.normalizeCart(await this.loadWorkspaceSetting(userId, 'seller_cart'));
+    const existing = current.items.find((item) => item.listingId === listingId);
+    const next = {
+      ...current,
+      items: existing
+        ? current.items.map((item) =>
+            item.listingId === listingId ? { ...item, qty: item.qty + qty } : item
+          )
+        : [...current.items, { listingId, qty }],
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.upsertWorkspaceSetting(userId, 'seller_cart', next);
+    return next;
   }
 
   private parseDateRange(from?: string, to?: string) {
@@ -295,7 +333,27 @@ export class CommerceService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    return { orders, returns: [], disputes: [] };
+    const page = await this.prisma.appRecord.findFirst({
+      where: {
+        userId,
+        domain: 'seller_workspace',
+        entityType: 'orders',
+        entityId: 'main'
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+    const pagePayload = (page?.payload as Record<string, unknown> | null) ?? {};
+
+    return {
+      headline: typeof pagePayload.headline === 'string' ? pagePayload.headline : 'Orders',
+      subhead:
+        typeof pagePayload.subhead === 'string'
+          ? pagePayload.subhead
+          : 'Orders and operations preview',
+      orders,
+      returns: [],
+      disputes: []
+    };
   }
 
   async orderDetail(userId: string, id: string, channel?: string) {
@@ -1200,5 +1258,27 @@ export class CommerceService {
       update: { payload: payload as Prisma.InputJsonValue },
       create: { userId, key, payload: payload as Prisma.InputJsonValue }
     });
+  }
+
+  private normalizeCart(payload: Record<string, unknown> | null) {
+    const items = Array.isArray(payload?.items)
+      ? payload.items
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const input = item as Record<string, unknown>;
+            const listingId = typeof input.listingId === 'string' ? input.listingId : '';
+            if (!listingId) return null;
+            const qty = Number.isFinite(input.qty) ? Math.max(1, Math.floor(Number(input.qty))) : 1;
+            return { listingId, qty };
+          })
+          .filter(Boolean)
+      : [];
+
+    return {
+      id: typeof payload?.id === 'string' ? payload.id : 'cart_default',
+      items,
+      updatedAt:
+        typeof payload?.updatedAt === 'string' ? payload.updatedAt : new Date().toISOString()
+    };
   }
 }

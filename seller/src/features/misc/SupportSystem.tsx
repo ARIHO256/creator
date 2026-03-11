@@ -428,8 +428,8 @@ export default function SupportSystemStatusPage() {
   };
   const dismissToast = (id) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [providers, setProviders] = useState(() => seedProviders());
-  const [incidents, setIncidents] = useState(() => seedIncidents());
+  const [providers, setProviders] = useState<any[]>([]);
+  const [incidents, setIncidents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -442,7 +442,9 @@ export default function SupportSystemStatusPage() {
         if (Array.isArray(payload.incidents)) setIncidents(payload.incidents as any);
       } catch {
         if (!cancelled) {
-          pushToast({ title: "Backend unavailable", message: "Loaded seeded system status.", tone: "warning" });
+          setProviders([]);
+          setIncidents([]);
+          pushToast({ title: "Backend unavailable", message: "Could not fetch system status.", tone: "warning" });
         }
       } finally {
         if (!cancelled) setLoading(false);

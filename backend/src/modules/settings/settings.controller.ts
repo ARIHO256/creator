@@ -85,6 +85,9 @@ export class SettingsController {
   @Patch('notifications/:id/read')
   @RateLimit({ limit: 60, windowMs: 60_000 })
   notificationRead(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationRead(user.sub, id); }
+  @Patch('notifications/:id/unread')
+  @RateLimit({ limit: 60, windowMs: 60_000 })
+  notificationUnread(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationUnread(user.sub, id); }
   @Post('notifications/read-all')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   notificationReadAll(@CurrentUser() user: RequestUser) { return this.service.notificationReadAll(user.sub); }
@@ -114,6 +117,10 @@ export class SettingsController {
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Roles('CREATOR', 'SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
   updateMember(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: UpdateMemberDto) { return this.service.updateMember(user.sub, id, body); }
+  @Delete('roles/members/:id')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Roles('CREATOR', 'SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
+  deleteMember(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.deleteMember(user.sub, id); }
 
   @Get('crew') crew(@CurrentUser() user: RequestUser) { return this.service.crew(user.sub); }
   @Patch('crew/sessions/:id')

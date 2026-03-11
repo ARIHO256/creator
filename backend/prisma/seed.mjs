@@ -6663,6 +6663,37 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
             ]
           }
         }
+      },
+      {
+        id: 'desk_faithmart',
+        userId: sellerUserId,
+        slug: 'faithmart',
+        title: 'FaithMart Desk',
+        status: 'active',
+        metadata: {
+          pageData: {
+            categories: [
+              { id: 'books', label: 'Books & Study' },
+              { id: 'music', label: 'Music & Media' },
+              { id: 'apparel', label: 'Apparel & Accessories' },
+              { id: 'home', label: 'Home & Decor' },
+              { id: 'events', label: 'Events & Tickets' },
+              { id: 'services', label: 'Services' },
+              { id: 'community', label: 'Community' }
+            ],
+            orgs: [
+              { id: 'org1', name: 'BrightPath Publishers', type: 'Publisher', verified: true, focus: 'Books, study guides, educational content' },
+              { id: 'org2', name: 'Harmony Choir Studio', type: 'Media', verified: true, focus: 'Music, audio sessions, digital albums' },
+              { id: 'org3', name: 'Community Care Network', type: 'Charity', verified: false, focus: 'Community support, donations, outreach' }
+            ],
+            items: [
+              { id: 'FM-1001', kind: 'Product', category: 'Books & Study', title: 'Faith Study Journal (Hardcover)', vendor: 'BrightPath Publishers', verified: true, retail: 16.5, wholesale: 12, moq: 10, currency: 'USD', tags: ['journal', 'study'], desc: 'Premium hardcover journal designed for study notes, reflections, and group sessions.' },
+              { id: 'FM-1002', kind: 'Digital', category: 'Music & Media', title: 'Guided Audio Session Pack', vendor: 'Harmony Choir Studio', verified: true, retail: 9.99, wholesale: 7.5, moq: 5, currency: 'USD', tags: ['audio', 'download'], desc: 'Curated guided audio sessions with instant access after payment.' },
+              { id: 'FM-1003', kind: 'Service', category: 'Services', title: 'Counselling Session (Online)', vendor: 'Community Care Network', verified: false, retail: 25, wholesale: 22, moq: 1, currency: 'USD', tags: ['session', 'support'], desc: 'A private session with a qualified counsellor.' },
+              { id: 'FM-1004', kind: 'Event', category: 'Events & Tickets', title: 'Community Music Night Ticket', vendor: 'Harmony Choir Studio', verified: true, retail: 5, wholesale: 4, moq: 20, currency: 'USD', tags: ['ticket', 'community'], desc: 'Entry ticket for a community music night with QR check-in.' }
+            ]
+          }
+        }
       }
     ]
   });
@@ -7197,6 +7228,30 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
               resolvedAt: ago(2100),
               summary: 'Delayed supplier settlements for one payout cycle.'
             }
+          ],
+          playbooks: [
+            {
+              id: 'PB-ORD-01',
+              title: 'Orders: Missing tracking after shipped',
+              category: 'Orders',
+              level: 'P1',
+              goal: 'Prevent disputes by updating tracking and uploading proofs.',
+              triggers: ['Order Shipped status set', 'Tracking blank', 'Buyer asks for tracking'],
+              checklist: ['Confirm carrier and tracking number', 'Upload shipping label as proof', 'Send buyer an ETA update', 'If tracking invalid: verify label generation and resubmit'],
+              escalateWhen: ['Buyer opens dispute', 'Carrier cannot find tracking after 24h'],
+              templates: ['Update: Your order has shipped. Tracking: {tracking}. ETA: {eta}.']
+            },
+            {
+              id: 'PB-PAY-01',
+              title: 'Payments: Charge captured but order not created',
+              category: 'Payments',
+              level: 'P0',
+              goal: 'Recover order state or initiate refund safely.',
+              triggers: ['Buyer reports charge', 'No order record', 'Webhook delay'],
+              checklist: ['Ask for payment reference', 'Check payment events timeline', 'If captured: create manual order or refund', 'If pending: wait for auto-reversal window'],
+              escalateWhen: ['Captured with no reconciliation', 'Multiple failures for same buyer'],
+              templates: ['Thanks. Please share the payment reference and time. We will reconcile and respond shortly.']
+            }
           ]
         }
       },
@@ -7262,6 +7317,457 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
               { id: 'VH-2', at: ago(22 * 24 * 60), tier: 'Verified', result: 'Approved', reviewer: 'Compliance' }
             ]
           }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'profile',
+        payload: {
+          profile: {
+            identity: {
+              displayName: 'EV Hub Supplier',
+              legalName: 'EV Hub Supplier Ltd',
+              handle: 'evhub-supplier',
+              email: 'seller@evhub.com',
+              phone: '+256700000001',
+              website: 'https://seller.evhub.com'
+            },
+            branding: {
+              logoName: 'evhub-logo.png',
+              coverName: 'evhub-cover.png',
+              description: 'EV Hub Supplier delivers chargers, accessories, field installs, and regulated marketplace support across East Africa.',
+              tagline: 'EV commerce with compliant fulfillment',
+              primaryColor: '#03CD8C',
+              accentColor: '#F77F00'
+            },
+            addresses: [
+              { id: 'ADDR-1001', label: 'HQ', type: 'Office', line1: 'Millennium House, Nsambya Road', city: 'Kampala', region: 'Central', country: 'UG', isDefault: true, updatedAt: ago(320) },
+              { id: 'ADDR-1002', label: 'Warehouse', type: 'Warehouse', line1: 'Mbalwa Industrial Park', city: 'Kampala', region: 'Central', country: 'UG', isDefault: false, updatedAt: ago(860) }
+            ],
+            stores: [
+              { id: 'store_global', name: 'EV Hub Global', handle: 'evhub-global', region: 'Global', status: 'Active' },
+              { id: 'store_ea', name: 'EV Hub East Africa', handle: 'evhub-ea', region: 'East Africa', status: 'Planned' }
+            ],
+            productLines: [
+              {
+                id: 'category-dc-fast-chargers-1',
+                nodeId: 'category-dc-fast-chargers',
+                path: [
+                  { id: 'marketplace-ev', name: 'EVmart', type: 'Marketplace' },
+                  { id: 'family-chargers', name: 'Chargers', type: 'Family' },
+                  { id: 'category-dc-fast-chargers', name: 'DC Fast Chargers', type: 'Category' }
+                ],
+                status: 'active'
+              },
+              {
+                id: 'category-desktops-1',
+                nodeId: 'category-desktops',
+                path: [
+                  { id: 'marketplace-tech', name: 'TechMart', type: 'Marketplace' },
+                  { id: 'family-computers', name: 'Computers', type: 'Family' },
+                  { id: 'category-desktops', name: 'Desktops', type: 'Category' }
+                ],
+                status: 'active'
+              }
+            ],
+            regions: ['UG', 'KE', 'TZ', 'RW'],
+            supportHours: {
+              weekdays: '08:00-18:00',
+              saturday: '09:00-14:00',
+              sunday: 'Closed'
+            },
+            socials: {
+              facebook: 'evhubsupplier',
+              instagram: 'evhubsupplier',
+              twitter: 'evhubsupplier',
+              youtube: '',
+              linkedin: 'company/evhub-supplier',
+              tiktok: ''
+            },
+            customSocials: [{ id: 'social_1', name: 'WhatsApp', handle: '+256700000001' }]
+          }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'seller_cart',
+        payload: {
+          id: 'cart_default',
+          items: [],
+          updatedAt: ago(5)
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'analytics_page',
+        payload: {
+          marketplaceOptions: ['All', 'EVmart', 'MyLiveDealz'],
+          overviewKpis: [
+            { label: 'Gross sales', value: '$18.9k', delta: '+14.2%', hint: 'All tracked channels' },
+            { label: 'Conversion', value: '3.8%', delta: '+0.6%', hint: 'Sessions to purchase' },
+            { label: 'ROAS', value: '4.6x', delta: '+0.4x', hint: 'Paid campaign efficiency' },
+          ],
+          attributionRows: [
+            { channel: 'Organic search', share: 34, roas: 5.2, note: 'Strong charger category demand' },
+            { channel: 'Creator campaigns', share: 28, roas: 6.1, note: 'MyLiveDealz traffic converted best' },
+            { channel: 'WhatsApp re-orders', share: 18, roas: 4.3, note: 'Repeat customers retained' },
+          ],
+          highlights: {
+            topDriver: 'Creator campaigns lifted converter traffic on EVmart chargers.',
+            risk: 'Conversion softens when stock falls below safety threshold.',
+            recommendation: 'Shift ad spend toward bundles that keep margin above 24%.'
+          },
+          cohort: {
+            subtitle: 'Repeat buyers stay strongest after creator-assisted launches.',
+            bullets: [
+              'Week-1 retention holds above 62% for creator-campaign cohorts.',
+              'Wholesale-origin traffic has the highest repeat basket size.',
+              'Low-stock weeks correlate with weaker conversion recovery.'
+            ]
+          },
+          alertRules: [
+            { id: 'rule_conv_drop', name: 'Conversion drop', metric: 'Conversion', condition: 'drops', threshold: 12, window: '7D', enabled: true },
+            { id: 'rule_roas_spike', name: 'ROAS spike', metric: 'ROAS', condition: 'rises', threshold: 20, window: '30D', enabled: true }
+          ],
+          metricOptions: ['Conversion', 'ROAS', 'Gross sales', 'Sessions', 'Average order value']
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'roles',
+        payload: {
+          roles: [
+            {
+              id: 'role_owner',
+              name: 'Owner',
+              badge: 'System',
+              description: 'Full access, can manage billing, teams and security.',
+              perms: {
+                'roles.manage': true,
+                'admin.manage_roles': true,
+                'admin.manage_team': true,
+                'admin.audit': true,
+                'orders.view': true,
+                'orders.edit': true,
+                'orders.fulfill': true,
+                'orders.refund': true,
+                'orders.export': true,
+                'listings.view': true,
+                'listings.create': true,
+                'listings.edit': true,
+                'listings.publish': true,
+                'listings.delete': true,
+                'listings.compliance': true,
+                'wholesale.rfq.view': true,
+                'wholesale.rfq.reply': true,
+                'wholesale.quotes.create': true,
+                'wholesale.quotes.send': true,
+                'wholesale.pricing.manage': true,
+                'finance.view': true,
+                'finance.payouts.manage': true,
+                'finance.payouts.initiate': true,
+                'finance.invoices.manage': true,
+                'finance.reports.export': true,
+                'mldz.view': true,
+                'mldz.live.manage': true,
+                'mldz.adz.manage': true,
+                'mldz.deliverables.manage': true,
+                'mldz.contracts.manage': true,
+                'support.messages': true,
+                'support.disputes': true,
+                'support.returns': true,
+                'compliance.desks': true,
+                'compliance.holds': true,
+                'settings.view': true,
+                'settings.teams.manage': true,
+                'settings.integrations.manage': true,
+                'settings.security.manage': true,
+                'settings.audit.view': true
+              }
+            },
+            {
+              id: 'role_ops',
+              name: 'Operations',
+              badge: 'System',
+              description: 'Fulfillment, listings compliance, returns and disputes.',
+              perms: {
+                'orders.view': true,
+                'orders.edit': true,
+                'orders.fulfill': true,
+                'orders.export': true,
+                'listings.view': true,
+                'listings.edit': true,
+                'listings.publish': true,
+                'listings.compliance': true,
+                'support.disputes': true,
+                'support.returns': true,
+                'compliance.desks': true,
+                'settings.view': true
+              }
+            },
+            {
+              id: 'role_sales',
+              name: 'Sales',
+              badge: 'System',
+              description: 'Listings, light orders view, MyLiveDealz promotions.',
+              perms: {
+                'orders.view': true,
+                'orders.export': true,
+                'listings.view': true,
+                'listings.create': true,
+                'listings.edit': true,
+                'listings.publish': true,
+                'mldz.view': true,
+                'mldz.adz.manage': true,
+                'support.messages': true,
+                'settings.view': true
+              }
+            },
+            {
+              id: 'role_finance',
+              name: 'Finance',
+              badge: 'System',
+              description: 'Wallets, invoices, reporting. Payout initiation optional.',
+              perms: {
+                'finance.view': true,
+                'finance.payouts.manage': true,
+                'finance.invoices.manage': true,
+                'finance.reports.export': true,
+                'orders.view': true,
+                'orders.export': true,
+                'settings.view': true
+              }
+            },
+            {
+              id: 'role_viewer',
+              name: 'Viewer',
+              badge: 'System',
+              description: 'Read-only access across key areas.',
+              perms: {
+                'orders.view': true,
+                'listings.view': true,
+                'wholesale.rfq.view': true,
+                'finance.view': true,
+                'mldz.view': true,
+                'support.messages': true,
+                'settings.view': true,
+                'settings.audit.view': true
+              }
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'members',
+        payload: {
+          members: [
+            { id: 'member_owner', name: 'Seller Owner', email: 'seller@evhub.com', roleId: 'role_owner', status: 'active', seat: 'Owner', createdAt: ago(6000), updatedAt: ago(12) },
+            { id: 'member_ops', name: 'Amina K.', email: 'ops@supplier.com', roleId: 'role_ops', status: 'active', seat: 'Team', createdAt: ago(4200), updatedAt: ago(80) },
+            { id: 'member_sales', name: 'Kato S.', email: 'sales@supplier.com', roleId: 'role_sales', status: 'invited', seat: 'Team', createdAt: ago(3000), updatedAt: ago(999) },
+            { id: 'member_finance', name: 'Sarah T.', email: 'finance@supplier.com', roleId: 'role_finance', status: 'active', seat: 'Finance', createdAt: ago(2400), updatedAt: ago(320) },
+            { id: 'member_viewer', name: 'Chen L.', email: 'viewer@supplier.com', roleId: 'role_viewer', status: 'suspended', seat: 'Viewer', createdAt: ago(1800), updatedAt: ago(6000) }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'role_invites',
+        payload: {
+          invites: [
+            { id: 'member_sales', name: 'Kato S.', email: 'sales@supplier.com', roleId: 'role_sales', status: 'invited', seat: 'Team', createdAt: ago(3000) }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'roles_security',
+        payload: {
+          require2FA: true,
+          allowExternalInvites: false,
+          supplierGuestExpiryHours: 24,
+          inviteDomainAllowlist: ['evhub.com', 'supplier.com'],
+          requireApprovalForPayouts: true,
+          payoutApprovalThresholdUsd: 500,
+          restrictSensitiveExports: true,
+          sessionTimeoutMins: 60
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'ops_overview_page',
+        payload: {
+          kpis: {
+            ordersRisk: { value: 7, delta: 9, spark: [4, 5, 6, 4, 7, 8, 7] },
+            pendingRmas: { value: 3, delta: -12, spark: [6, 5, 5, 4, 3, 3, 3] },
+            openDisputes: { value: 2, delta: 0, spark: [2, 2, 3, 2, 2, 2, 2] },
+            lowStock: { value: 11, delta: 6, spark: [8, 9, 9, 10, 11, 11, 11] },
+            exportJobs: { value: 1, delta: -50, spark: [3, 2, 2, 2, 1, 1, 1] },
+            complianceDue: { value: 4, delta: 14, spark: [2, 2, 3, 3, 4, 4, 4] }
+          },
+          dailyCommand: [
+            { id: 'cmd1', title: 'Resolve SLA risks', detail: '3 orders are within 2 hours of SLA breach', priority: 'High', cta: 'Open orders' },
+            { id: 'cmd2', title: 'Approve pending RMAs', detail: '2 RMAs waiting on decision', priority: 'Normal', cta: 'Review returns' },
+            { id: 'cmd3', title: 'Restock low stock SKUs', detail: '5 SKUs below threshold in Kampala warehouse', priority: 'High', cta: 'Open inventory' },
+            { id: 'cmd4', title: 'Compliance tasks due', detail: '2 tasks due within 7 days', priority: 'Normal', cta: 'Open compliance' }
+          ],
+          queues: {
+            Orders: [
+              { id: 'ORD-10512', status: 'Packed', sla: '1h 40m', risk: 'High', warehouse: 'Kampala', total: 'UGX 1,240,000' },
+              { id: 'ORD-10508', status: 'Confirmed', sla: '4h 10m', risk: 'Watch', warehouse: 'Wuxi', total: 'USD 840' }
+            ],
+            Returns: [
+              { id: 'RMA-2401', reason: 'Damaged', stage: 'Awaiting approval', amount: 'USD 120', age: '6h' }
+            ],
+            Disputes: [
+              { id: 'DSP-901', type: 'Chargeback', risk: 86, next: 'Upload evidence', due: 'Today' }
+            ],
+            Inventory: [
+              { sku: 'CHG-7KW-WBX', available: 7, reserved: 4, cover: '3d', action: 'Restock' }
+            ],
+            Compliance: [
+              { task: 'Update KYB document expiry', desk: 'Compliance Center', due: '7 days', status: 'Action needed' }
+            ]
+          },
+          alerts: [
+            { id: 'al1', title: 'Low stock risk', message: '5 SKUs below threshold in Kampala', tone: 'orange' },
+            { id: 'al2', title: 'SLA breach risk', message: '2 orders are within 2 hours of SLA', tone: 'danger' }
+          ],
+          health: [
+            { service: 'Warehouse sync', status: 'Operational', last: ago(11) },
+            { service: 'Messaging', status: 'Degraded', last: ago(22) }
+          ],
+          activity: [
+            { at: ago(12), who: 'System', what: 'Inventory adjustment recorded', ref: 'SKU CHG-7KW-WBX' },
+            { at: ago(35), who: 'Ops', what: 'Order moved to Packed', ref: 'ORD-10512' }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'ops_inventory_page',
+        payload: {
+          items: [
+            {
+              id: 'SKU-1001',
+              sku: 'CHG-7KW-WBX',
+              name: 'EV Wallbox Charger 7kW',
+              category: 'Chargers',
+              unit: 'pcs',
+              reorderPoint: 8,
+              leadDays: 18,
+              velocityPerDay: 0.55,
+              warehouses: [
+                { id: 'wh1', name: 'Main Warehouse', onHand: 22, reserved: 3 },
+                { id: 'wh2', name: 'Kampala Hub', onHand: 8, reserved: 1 }
+              ],
+              updatedAt: ago(22)
+            },
+            {
+              id: 'SKU-1002',
+              sku: 'BAT-48V-20AH',
+              name: 'E-Bike Battery Pack 48V 20Ah',
+              category: 'Batteries',
+              unit: 'pcs',
+              reorderPoint: 15,
+              leadDays: 25,
+              velocityPerDay: 1.9,
+              warehouses: [
+                { id: 'wh1', name: 'Main Warehouse', onHand: 36, reserved: 6 },
+                { id: 'wh3', name: 'Nairobi Hub', onHand: 14, reserved: 3 }
+              ],
+              updatedAt: ago(75)
+            },
+            {
+              id: 'SKU-1003',
+              sku: 'CAB-T2-5M',
+              name: 'Type 2 Charging Cable 5m',
+              category: 'Accessories',
+              unit: 'pcs',
+              reorderPoint: 80,
+              leadDays: 14,
+              velocityPerDay: 8.5,
+              warehouses: [{ id: 'wh1', name: 'Main Warehouse', onHand: 160, reserved: 22 }],
+              updatedAt: ago(145)
+            }
+          ],
+          activeSku: 'CHG-7KW-WBX',
+          audit: [
+            { id: 'AUD-2003', sku: 'PLUG-CCS2', warehouse: 'Main Warehouse', deltaOnHand: -6, deltaReserved: 0, reason: 'Damage write-off', actor: 'Ops', createdAt: ago(34) },
+            { id: 'AUD-2002', sku: 'RFID-CARD', warehouse: 'Kampala Hub', deltaOnHand: 120, deltaReserved: 0, reason: 'Restock arrival', actor: 'Ops', createdAt: ago(98) },
+            { id: 'AUD-2001', sku: 'BAT-48V-20AH', warehouse: 'Nairobi Hub', deltaOnHand: 0, deltaReserved: 4, reason: 'Order reservations', actor: 'System', createdAt: ago(190) }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'ops_compliance_page',
+        payload: {
+          cases: [
+            {
+              id: 'CMP-90021',
+              subjectType: 'Listing',
+              subjectId: 'L-1002',
+              subjectTitle: 'E-Bike Battery Pack 48V 20Ah',
+              marketplace: 'EVmart',
+              category: 'Documents',
+              desk: 'HealthMart',
+              severity: 'High',
+              status: 'Awaiting Docs',
+              createdAt: ago(384),
+              dueAt: soon(300),
+              issues: ['Missing MSDS upload', 'Warranty terms not set'],
+              requiredDocs: ['MSDS', 'Warranty terms'],
+              evidence: 1,
+              notes: 'Battery listings require MSDS and warranty statement.',
+              timeline: [{ at: ago(384), who: 'System', event: 'Flagged missing required documents' }]
+            },
+            {
+              id: 'CMP-90020',
+              subjectType: 'Account',
+              subjectId: 'KYB',
+              subjectTitle: 'KYB verification',
+              marketplace: 'SupplierHub',
+              category: 'Verification',
+              desk: 'General',
+              severity: 'Medium',
+              status: 'Open',
+              createdAt: ago(1080),
+              dueAt: soon(1440),
+              issues: ['Missing company registration certificate', 'Director ID not uploaded'],
+              requiredDocs: ['Company registration', 'Director ID'],
+              evidence: 0,
+              notes: 'Complete KYB to prevent payout delays.',
+              timeline: [{ at: ago(1080), who: 'System', event: 'KYB incomplete' }]
+            }
+          ],
+          docs: [
+            { id: 'DOC-201', name: 'Company registration certificate', type: 'KYB', status: 'Missing', updatedAt: null, versions: [] },
+            { id: 'DOC-202', name: 'Director ID', type: 'KYB', status: 'Uploaded', updatedAt: ago(2880), versions: [{ at: ago(2880), note: 'Initial upload' }] },
+            { id: 'DOC-203', name: 'MSDS (Batteries)', type: 'Safety', status: 'Missing', updatedAt: null, versions: [] }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'regulatory_overview_page',
+        payload: {
+          submissions: [
+            { id: 'SUB-22091', desk: 'healthmart', subdesk: 'Pharmacy', type: 'Product', itemName: 'OTC Pain Reliever Pack (Retail)', status: 'Needs changes', risk: 72, docsCompletePct: 64, dueAt: soon(2880), updatedAt: ago(90), notesCount: 2, evidenceReady: false, signals: ['Restricted category', 'Labeling'] },
+            { id: 'SUB-22088', desk: 'healthmart', subdesk: 'Logistics', type: 'Service', itemName: 'Cold-chain delivery service', status: 'Under review', risk: 44, docsCompletePct: 86, dueAt: soon(7200), updatedAt: ago(45), notesCount: 1, evidenceReady: true, signals: ['License present', 'Route coverage'] },
+            { id: 'SUB-22080', desk: 'edumart', type: 'Content', itemName: 'Children STEM video course', status: 'Submitted', risk: 38, docsCompletePct: 78, dueAt: soon(10080), updatedAt: ago(240), notesCount: 0, evidenceReady: false, signals: ['Child-safe', 'Age gating'] },
+            { id: 'SUB-22072', desk: 'faithmart', type: 'Content', itemName: 'Community event poster pack', status: 'Approved', risk: 12, docsCompletePct: 100, dueAt: soon(43200), updatedAt: ago(1440), notesCount: 1, evidenceReady: true, signals: ['Policy match'] }
+          ],
+          policies: [
+            { id: 'POL-901', desk: 'healthmart', at: ago(320), title: 'HealthMart: Updated labeling rules', summary: 'Add batch/expiry fields on packaging photos for pharmacy items.' },
+            { id: 'POL-902', desk: 'edumart', at: ago(980), title: 'EduMart: Child content review checklist', summary: 'Add age rating, content outline, and instructor bio for courses.' },
+            { id: 'POL-903', desk: 'faithmart', at: ago(1600), title: 'FaithMart: Community guideline reminder', summary: 'No hate speech, no harassment, and respect local community rules.' }
+          ],
+          tasks: [
+            { id: 'TSK-101', desk: 'healthmart', dueAt: soon(2880), tone: 'danger', title: 'Upload missing product license (Pharmacy)', cta: 'Upload docs' },
+            { id: 'TSK-201', desk: 'edumart', dueAt: soon(10080), tone: 'orange', title: 'Add age rating + outline for course', cta: 'Update submission' },
+            { id: 'TSK-301', desk: 'faithmart', dueAt: soon(14400), tone: 'slate', title: 'Add community moderation contact', cta: 'Add details' }
+          ]
         }
       },
       {

@@ -318,20 +318,23 @@ export default function SupplierHubKycKybPage() {
   const hydratedRef = useRef(false);
   useEffect(() => {
     let active = true;
-    const defaults = seedDocs();
     (async () => {
       try {
         const payload = await sellerBackendApi.getKycSettings();
         if (!active) return;
         const incoming = Array.isArray(payload.documents) ? payload.documents as Array<Record<string, unknown>> : [];
         const nextDocs = incoming.map((doc, index) => {
-          const fallback = defaults.find((entry) => entry.id === doc.id || entry.title === doc.title) || defaults[index % defaults.length];
           return {
-            ...fallback,
             ...doc,
-            required: doc.required ?? fallback?.required ?? true,
-            fileName: (doc.fileName as string | null | undefined) ?? fallback?.fileName ?? null,
-            history: Array.isArray(doc.history) ? doc.history as DocHistory[] : fallback?.history ?? [],
+            id: String(doc.id ?? `doc_${index + 1}`),
+            title: String(doc.title ?? "Document"),
+            required: Boolean(doc.required ?? true),
+            status: String(doc.status ?? "Required") as DocStatus,
+            fileName: (doc.fileName as string | null | undefined) ?? null,
+            uploadedAt: (doc.uploadedAt as string | null | undefined) ?? null,
+            expiresAt: (doc.expiresAt as string | null | undefined) ?? null,
+            reason: (doc.reason as string | undefined) ?? undefined,
+            history: Array.isArray(doc.history) ? doc.history as DocHistory[] : [],
           } as KycDoc;
         });
         setDocs(nextDocs);
@@ -339,6 +342,7 @@ export default function SupplierHubKycKybPage() {
         hydratedRef.current = true;
       } catch {
         if (!active) return;
+        setDocs([]);
         pushToast({ title: "KYC unavailable", message: "Could not load KYC documents.", tone: "warning" });
       }
     })();
