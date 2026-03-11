@@ -862,203 +862,6 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
   return <div className={cx("rounded-2xl bg-white dark:bg-slate-900/80 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors", className)}>{children}</div>;
 }
 
-/** ------------------------------ Demo Data ------------------------------ */
-
-const CREATOR = {
-  name: "Amina K.",
-  handle: "@supplier.creator",
-  avatarUrl:
-    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=512&auto=format&fit=crop",
-  badge: "Supplier (Creator)",
-};
-
-const SUPPLIERS: Supplier[] = [
-  {
-    id: "p1",
-    name: "Kampala Beauty Hub",
-    avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=512&auto=format&fit=crop",
-    category: "Beauty",
-  },
-  {
-    id: "p2",
-    name: "City Fitness Lab",
-    avatarUrl: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=512&auto=format&fit=crop",
-    category: "Wellness",
-  },
-  {
-    id: "p3",
-    name: "Gourmet Basket UG",
-    avatarUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=512&auto=format&fit=crop",
-    category: "Food",
-  },
-];
-
-const CAMPAIGNS: Campaign[] = [
-  {
-    id: "c1",
-    supplierId: "p1",
-    name: "Valentine Glow Week",
-    status: "Active",
-    startsAtISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "c2",
-    supplierId: "p1",
-    name: "Weekend Flash Dealz",
-    status: "Active",
-    startsAtISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "c3",
-    supplierId: "p2",
-    name: "New Year Fitness Push",
-    status: "Paused",
-    startsAtISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "c4",
-    supplierId: "p3",
-    name: "Basket Bonanza",
-    status: "Active",
-    startsAtISO: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 9 * 3600 * 1000).toISOString(),
-  },
-];
-
-const OFFERS: Offer[] = [
-  {
-    id: "o1",
-    supplierId: "p1",
-    campaignId: "c1",
-    type: "PRODUCT",
-    name: "Glow Serum (30ml)",
-    price: 38000,
-    basePrice: 52000,
-    currency: "UGX",
-    stockLeft: 12,
-    sold: 86,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o2",
-    supplierId: "p1",
-    campaignId: "c1",
-    type: "PRODUCT",
-    name: "Hydra Cleanser",
-    price: 24000,
-    basePrice: 32000,
-    currency: "UGX",
-    stockLeft: 3,
-    sold: 44,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1612817152414-857f7b8872d9?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o3",
-    supplierId: "p1",
-    campaignId: "c1",
-    type: "SERVICE",
-    name: "Facial Session (45min)",
-    price: 60000,
-    basePrice: 80000,
-    currency: "UGX",
-    stockLeft: -1,
-    sold: 18,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1582095133179-bfd08e2fc6b3?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o4",
-    supplierId: "p3",
-    campaignId: "c4",
-    type: "PRODUCT",
-    name: "Gourmet Snack Box",
-    price: 95000,
-    basePrice: 120000,
-    currency: "UGX",
-    stockLeft: 0,
-    sold: 31,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o5",
-    supplierId: "p3",
-    campaignId: "c4",
-    type: "PRODUCT",
-    name: "Fruit Basket (Large)",
-    price: 65000,
-    basePrice: 78000,
-    currency: "UGX",
-    stockLeft: 9,
-    sold: 57,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-];
-
-const ASSETS: Asset[] = [
-  {
-    id: "a_hero_img_1",
-    title: "Hero (Supplier Approved) — 1920×1080",
-    owner: "Supplier",
-    kind: "image",
-    status: "approved",
-    roleHint: "hero_image",
-    width: 1920,
-    height: 1080,
-    url: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-  },
-  {
-    id: "a_hero_vid_1",
-    title: "Intro Opener (Supplier)",
-    owner: "Supplier",
-    kind: "video",
-    status: "approved",
-    roleHint: "hero_video",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    posterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    desktopMode: "fullscreen",
-  },
-  {
-    id: "a_item_poster_1",
-    title: "Item Poster — 500×500 (Supplier)",
-    owner: "Supplier",
-    kind: "image",
-    status: "approved",
-    roleHint: "item_poster",
-    width: 500,
-    height: 500,
-    url: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-  },
-  {
-    id: "a_item_vid_1",
-    title: "Product Demo Clip (Supplier)",
-    owner: "Supplier",
-    kind: "video",
-    status: "approved",
-    roleHint: "item_video",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-    desktopMode: "modal",
-  },
-  {
-    id: "a_pending_1",
-    title: "New Upload — Pending Review",
-    owner: "Supplier",
-    kind: "video",
-    status: "pending",
-    roleHint: "item_video",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    posterUrl: "https://images.unsplash.com/photo-1582095133179-bfd08e2fc6b3?q=80&w=900&auto=format&fit=crop",
-    desktopMode: "fullscreen",
-  },
-];
-
 /** UTM presets library (premium) */
 const UTM_PRESETS: UTMTemplate[] = [
   {
@@ -1810,10 +1613,12 @@ export default function AdBuilder({
     suppliers: Supplier[];
     campaigns: Campaign[];
     offers: Offer[];
+    campaignCreators: Record<string, { name: string; handle: string }>;
   }>({
     suppliers: [],
     campaigns: [],
     offers: [],
+    campaignCreators: {},
   });
   const [assetLibraryAssets, setAssetLibraryAssets] = useState<Asset[]>([]);
   const persistHashRef = useRef("");
@@ -1864,6 +1669,10 @@ export default function AdBuilder({
   const campaign = useMemo(
     () => scope.campaigns.find((c) => c.id === builder.campaignId) || campaignOptions[0],
     [builder.campaignId, campaignOptions, scope.campaigns]
+  );
+  const campaignCreator = useMemo(
+    () => scope.campaignCreators[builder.campaignId] || { name: "Supplier-hosted", handle: "" },
+    [builder.campaignId, scope.campaignCreators]
   );
 
   const scopedOffers = useMemo(
@@ -1952,6 +1761,23 @@ export default function AdBuilder({
           suppliers: mappedScope.suppliers as Supplier[],
           campaigns: mappedScope.campaigns as Campaign[],
           offers: mappedScope.offers as Offer[],
+          campaignCreators: Object.fromEntries(
+            campaignRecords.map((entry) => {
+              const payload = entry.data && typeof entry.data === "object" && !Array.isArray(entry.data)
+                ? (entry.data as Record<string, unknown>)
+                : entry;
+              const creator = payload.creator && typeof payload.creator === "object" && !Array.isArray(payload.creator)
+                ? (payload.creator as Record<string, unknown>)
+                : {};
+              return [
+                String(entry.id || payload.id || ""),
+                {
+                  name: String(creator.name || "Supplier-hosted"),
+                  handle: String(creator.handle || ""),
+                },
+              ];
+            })
+          ),
         });
         setAssetLibraryAssets(mappedAssets);
 
@@ -3539,7 +3365,7 @@ export default function AdBuilder({
             <div className="mt-3">
               <ShoppableAdPreview
                 title={campaign?.name ? `${campaign.name}` : "Shoppable Adz"}
-                sharedByCreatorLabel={`Shared by Supplier (Creator) ${CREATOR.handle} · Platforms: ${effectivePlatforms.length ? effectivePlatforms.join(" · ") : "—"}`}
+                sharedByCreatorLabel={`Shared by Supplier (Creator) ${campaignCreator.handle || campaignCreator.name} · Platforms: ${effectivePlatforms.length ? effectivePlatforms.join(" · ") : "—"}`}
                 supplierName={supplier?.name}
                 campaignStatus={campaign?.status}
                 ctaHelperText={builder.ctaText}

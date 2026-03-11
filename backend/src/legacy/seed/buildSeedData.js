@@ -1,6 +1,6 @@
 import { scryptSync } from "node:crypto";
 
-function seedHashPassword(password) {
+function hashPassword(password) {
   const salt = "mldzseed";
   const hash = scryptSync(password, salt, 64).toString("hex");
   return `${salt}:${hash}`;
@@ -2410,7 +2410,7 @@ export function buildSeedData() {
       {
         id: userId,
         email: "creator@mylivedealz.com",
-        passwordHash: seedHashPassword("Password123!"),
+        passwordHash: hashPassword("Password123!"),
         roles: ["creator", "seller", "buyer", "provider"],
         currentRole: "Creator",
         approvalStatus: "APPROVED",

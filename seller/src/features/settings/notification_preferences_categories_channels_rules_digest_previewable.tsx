@@ -87,8 +87,6 @@ type PrefsState = {
   rules: Rule[];
 };
 
-const STORAGE_KEY = "evzone_notification_preferences_demo_v1";
-
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
 }

@@ -32,22 +32,16 @@ export class CommunicationsService {
   ) {}
 
   async messages(userId: string) {
-    const [threads, templatesRecord, seedRecord] = await Promise.all([
+    const [threads, templatesRecord] = await Promise.all([
       this.prisma.messageThread.findMany({
         where: { userId },
         orderBy: { updatedAt: 'desc' }
       }),
       this.prisma.workspaceSetting.findUnique({
         where: { userId_key: { userId, key: 'messages_page' } }
-      }),
-      this.prisma.appRecord.findFirst({
-        where: { userId, domain: 'seller_workspace', entityType: 'messages', entityId: 'main' },
-        orderBy: { updatedAt: 'desc' }
       })
     ]);
 
-    const seedPayload =
-      ((seedRecord?.payload as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
     const templatesPayload =
       ((templatesRecord?.payload as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
     const threadIds = threads.map((thread) => thread.id);
@@ -60,16 +54,12 @@ export class CommunicationsService {
 
     const mappedThreads = threads.length
       ? threads.map((thread) => this.serializeInboxThread(thread, messages))
-      : this.readArray(seedPayload.threads);
+      : [];
     const mappedMessages = messages.length
       ? messages.map((message) => this.serializeChatMessage(message))
-      : this.readArray(seedPayload.messages);
-    const templates = this.readArray(
-      templatesPayload.templates ?? seedPayload.templates
-    );
-    const tagOptions = this.readStringArray(
-      templatesPayload.tagOptions ?? seedPayload.tagOptions
-    );
+      : [];
+    const templates = this.readArray(templatesPayload.templates);
+    const tagOptions = this.readStringArray(templatesPayload.tagOptions);
 
     return {
       tagOptions:
@@ -179,14 +169,9 @@ export class CommunicationsService {
     const current = await this.prisma.workspaceSetting.findUnique({
       where: { userId_key: { userId, key: 'messages_page' } }
     });
-    const seed = await this.prisma.appRecord.findFirst({
-      where: { userId, domain: 'seller_workspace', entityType: 'messages', entityId: 'main' },
-      orderBy: { updatedAt: 'desc' }
-    });
     const currentPayload = (current?.payload as Record<string, unknown> | null) ?? {};
-    const seedPayload = (seed?.payload as Record<string, unknown> | null) ?? {};
     const next = {
-      tagOptions: this.readStringArray(currentPayload.tagOptions ?? seedPayload.tagOptions),
+      tagOptions: this.readStringArray(currentPayload.tagOptions),
       templates
     };
 

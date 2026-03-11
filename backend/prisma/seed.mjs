@@ -1969,18 +1969,6 @@ async function seedDashboardAndCompatibility(users, sellerProfiles) {
     {
       userId: users.sellerUser.id,
       domain: 'seller_workspace',
-      entityType: 'messages',
-      entityId: 'main',
-      payload: {
-        tagOptions: ['Order', 'RFQ', 'Proposal', 'Support'],
-        threads: [{ id: 'thread_1', title: 'ORD-10512 shipment update', participants: [{ name: 'Amina K.', role: 'buyer' }], lastMessage: 'Please confirm dispatch.', lastAt: new Date().toISOString(), unreadCount: 1, tags: ['Order'], customerLang: 'en', myLang: 'en' }],
-        messages: [{ id: 'msg_1', threadId: 'thread_1', sender: 'other', text: 'Please confirm dispatch.', lang: 'en', at: new Date().toISOString() }],
-        templates: [{ id: 'tpl_1', title: 'Dispatch confirmed', category: 'Shipping', body: 'Your order has been dispatched.', pinned: true }]
-      }
-    },
-    {
-      userId: users.sellerUser.id,
-      domain: 'seller_workspace',
       entityType: 'help_support',
       entityId: 'main',
       payload: {
@@ -7331,6 +7319,22 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
               }
             ]
           }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'messages_page',
+        payload: {
+          tagOptions: ['Order', 'RFQ', 'Proposal', 'Support'],
+          templates: [
+            {
+              id: 'tpl_1',
+              title: 'Dispatch confirmed',
+              category: 'Shipping',
+              body: 'Your order has been dispatched.',
+              pinned: true
+            }
+          ]
         }
       },
       {
