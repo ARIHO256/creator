@@ -12,7 +12,7 @@ import { registerLiveRoutes } from '../src/legacy/routes/live.routes.js';
 import { registerReviewsRoutes } from '../src/legacy/routes/reviews.routes.js';
 import { registerSettingsRoutes } from '../src/legacy/routes/settings.routes.js';
 import { registerWorkflowRoutes } from '../src/legacy/routes/workflow.routes.js';
-import { buildSeedData } from '../src/legacy/seed/buildSeedData.js';
+import { buildSeedData } from '../prisma/seed.mjs';
 
 function createStore() {
   const db = buildSeedData();
