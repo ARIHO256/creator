@@ -1,4 +1,4 @@
-import { readSellerModule, writeSellerModule } from "./frontendState";
+import { sellerBackendApi } from "./backendApi";
 
 export type SellerCartItem = {
   listingId: string;
@@ -20,24 +20,50 @@ const emptyCart = (): SellerCart => ({
   updatedAt: new Date().toISOString(),
 });
 
-const readCart = () => readSellerModule<SellerCart>(CART_KEY, emptyCart());
-
 export async function getSellerCart() {
-  return readCart();
+  const payload = await sellerBackendApi.getSellerCart().catch(() => null);
+  if (!payload) {
+    return emptyCart();
+  }
+  const items = Array.isArray(payload.items)
+    ? payload.items
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const entry = item as Record<string, unknown>;
+          const listingId = typeof entry.listingId === "string" ? entry.listingId : "";
+          if (!listingId) return null;
+          const qty = Number.isFinite(entry.qty) ? Math.max(1, Math.floor(Number(entry.qty))) : 1;
+          return { listingId, qty };
+        })
+        .filter(Boolean) as SellerCartItem[]
+    : [];
+  return {
+    id: typeof payload.id === "string" ? payload.id : CART_KEY,
+    items,
+    updatedAt: typeof payload.updatedAt === "string" ? payload.updatedAt : new Date().toISOString(),
+  };
 }
 
 export async function addSellerCartItem(listingId: string, qty = 1) {
-  const cart = readCart();
-  const existing = cart.items.find((item) => item.listingId === listingId);
-  const next: SellerCart = {
-    ...cart,
-    items: existing
-      ? cart.items.map((item) =>
-          item.listingId === listingId ? { ...item, qty: item.qty + qty } : item
-        )
-      : [...cart.items, { listingId, qty }],
-    updatedAt: new Date().toISOString(),
+  const payload = await sellerBackendApi.addSellerCartItem({ listingId, qty }).catch(() => null);
+  if (!payload) {
+    return getSellerCart();
+  }
+  const items = Array.isArray(payload.items)
+    ? payload.items
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const entry = item as Record<string, unknown>;
+          const id = typeof entry.listingId === "string" ? entry.listingId : "";
+          if (!id) return null;
+          const count = Number.isFinite(entry.qty) ? Math.max(1, Math.floor(Number(entry.qty))) : 1;
+          return { listingId: id, qty: count };
+        })
+        .filter(Boolean) as SellerCartItem[]
+    : [];
+  return {
+    id: typeof payload.id === "string" ? payload.id : CART_KEY,
+    items,
+    updatedAt: typeof payload.updatedAt === "string" ? payload.updatedAt : new Date().toISOString(),
   };
-  await writeSellerModule(CART_KEY, next);
-  return next;
 }

@@ -22,6 +22,11 @@ export class CommunicationsController {
   @Post('messages/:threadId/reply') reply(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string, @Body() body: SendMessageDto) { return this.service.sendMessage(user.sub, threadId, body); }
   @RateLimit({ limit: 60, windowMs: 60_000 })
   @Patch('messages/:threadId/read') markRead(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string) { return this.service.markThreadRead(user.sub, threadId); }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Patch('messages/templates')
+  updateTemplates(@CurrentUser() user: RequestUser, @Body() body: { templates?: unknown[] }) {
+    return this.service.updateTemplates(user.sub, body.templates ?? []);
+  }
   @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('messages/read-all') readAll(@CurrentUser() user: RequestUser) { return this.service.markAllRead(user.sub); }
   @Get('help-support/content') helpSupport(@CurrentUser() user: RequestUser) { return this.service.helpSupport(user.sub); }

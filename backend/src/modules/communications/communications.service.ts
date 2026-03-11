@@ -32,24 +32,61 @@ export class CommunicationsService {
   ) {}
 
   async messages(userId: string) {
-    const threads = await this.prisma.messageThread.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
+    const [threads, templatesRecord, seedRecord] = await Promise.all([
+      this.prisma.messageThread.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.prisma.workspaceSetting.findUnique({
+        where: { userId_key: { userId, key: 'messages_page' } }
+      }),
+      this.prisma.appRecord.findFirst({
+        where: { userId, domain: 'seller_workspace', entityType: 'messages', entityId: 'main' },
+        orderBy: { updatedAt: 'desc' }
+      })
+    ]);
+
+    const seedPayload =
+      ((seedRecord?.payload as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
+    const templatesPayload =
+      ((templatesRecord?.payload as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
     const threadIds = threads.map((thread) => thread.id);
     const messages = threadIds.length
       ? await this.prisma.message.findMany({
           where: { threadId: { in: threadIds } },
-          orderBy: { createdAt: 'desc' },
-          take: 200
+          orderBy: { createdAt: 'asc' }
         })
       : [];
 
+    const mappedThreads = threads.length
+      ? threads.map((thread) => this.serializeInboxThread(thread, messages))
+      : this.readArray(seedPayload.threads);
+    const mappedMessages = messages.length
+      ? messages.map((message) => this.serializeChatMessage(message))
+      : this.readArray(seedPayload.messages);
+    const templates = this.readArray(
+      templatesPayload.templates ?? seedPayload.templates
+    );
+    const tagOptions = this.readStringArray(
+      templatesPayload.tagOptions ?? seedPayload.tagOptions
+    );
+
     return {
-      tagOptions: [],
-      threads: threads.map((thread) => this.serializeThread(thread)),
-      messages: messages.map((message) => this.serializeMessage(message)),
-      templates: []
+      tagOptions:
+        tagOptions.length > 0
+          ? tagOptions
+          : Array.from(
+              new Set(
+                mappedThreads.flatMap((thread) =>
+                  Array.isArray((thread as Record<string, unknown>).tags)
+                    ? ((thread as Record<string, unknown>).tags as string[])
+                    : []
+                )
+              )
+            ),
+      threads: mappedThreads,
+      messages: mappedMessages,
+      templates
     };
   }
 
@@ -136,6 +173,30 @@ export class CommunicationsService {
       data: { lastReadAt: new Date() }
     });
     return { updated: true };
+  }
+
+  async updateTemplates(userId: string, templates: unknown[]) {
+    const current = await this.prisma.workspaceSetting.findUnique({
+      where: { userId_key: { userId, key: 'messages_page' } }
+    });
+    const seed = await this.prisma.appRecord.findFirst({
+      where: { userId, domain: 'seller_workspace', entityType: 'messages', entityId: 'main' },
+      orderBy: { updatedAt: 'desc' }
+    });
+    const currentPayload = (current?.payload as Record<string, unknown> | null) ?? {};
+    const seedPayload = (seed?.payload as Record<string, unknown> | null) ?? {};
+    const next = {
+      tagOptions: this.readStringArray(currentPayload.tagOptions ?? seedPayload.tagOptions),
+      templates
+    };
+
+    const record = await this.prisma.workspaceSetting.upsert({
+      where: { userId_key: { userId, key: 'messages_page' } },
+      update: { payload: next as Prisma.InputJsonValue },
+      create: { userId, key: 'messages_page', payload: next as Prisma.InputJsonValue }
+    });
+
+    return record.payload as Record<string, unknown>;
   }
 
   async notifications(userId: string) {
@@ -405,6 +466,90 @@ export class CommunicationsService {
       createdAt: thread.createdAt.toISOString(),
       updatedAt: thread.updatedAt.toISOString()
     };
+  }
+
+  private serializeInboxThread(
+    thread: {
+      id: string;
+      subject: string | null;
+      status: string;
+      channel: string | null;
+      priority: string | null;
+      lastMessageAt: Date | null;
+      lastMessageFromRole: string | null;
+      lastReadAt: Date | null;
+      metadata: unknown;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    messages: Array<{
+      id: string;
+      threadId: string;
+      senderUserId: string | null;
+      senderRole: string | null;
+      body: string;
+      lang: string | null;
+      metadata: unknown;
+      createdAt: Date;
+    }>
+  ) {
+    const base = this.serializeThread(thread);
+    const meta = (thread.metadata as Record<string, unknown> | null) ?? {};
+    const lastMessage =
+      messages.filter((entry) => entry.threadId === thread.id).slice(-1)[0]?.body ??
+      (typeof meta.lastMessage === 'string' ? meta.lastMessage : '') ??
+      '';
+    const participants = Array.isArray(meta.participants) ? meta.participants : [];
+    const tags = Array.isArray(meta.tags) ? meta.tags.map((entry) => String(entry)) : [];
+
+    return {
+      id: thread.id,
+      title: typeof meta.title === 'string' ? meta.title : base.subject ?? `Thread ${thread.id}`,
+      participants,
+      lastMessage,
+      lastAt: base.lastMessageAt ?? base.updatedAt,
+      unreadCount: base.hasUnread ? 1 : 0,
+      tags,
+      customerLang: typeof meta.customerLang === 'string' ? meta.customerLang : 'en',
+      myLang: typeof meta.myLang === 'string' ? meta.myLang : 'en',
+      responseSlaDueAt:
+        typeof meta.responseSlaDueAt === 'string' ? meta.responseSlaDueAt : undefined,
+      priority:
+        base.priority === 'high' || base.priority === 'normal'
+          ? base.priority
+          : (typeof meta.priority === 'string' ? meta.priority : 'normal')
+    };
+  }
+
+  private serializeChatMessage(message: {
+    id: string;
+    threadId: string;
+    senderUserId: string | null;
+    senderRole: string | null;
+    body: string;
+    lang: string | null;
+    metadata: unknown;
+    createdAt: Date;
+  }) {
+    const base = this.serializeMessage(message);
+    const meta = (message.metadata as Record<string, unknown> | null) ?? {};
+    return {
+      id: base.id,
+      threadId: base.threadId,
+      sender: base.senderRole === 'owner' ? 'me' : 'other',
+      text: base.body,
+      lang: base.lang,
+      at: base.createdAt,
+      attachments: Array.isArray(meta.attachments) ? meta.attachments : undefined
+    };
+  }
+
+  private readArray(value: unknown) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  private readStringArray(value: unknown) {
+    return Array.isArray(value) ? value.map((entry) => String(entry)) : [];
   }
 
   private serializeMessage(message: {

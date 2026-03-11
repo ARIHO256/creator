@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useRolePageContent } from "../../data/pageContent";
 import type { NotifCategory, NotifItem, NotifPriority, Watch } from "../../data/pageTypes";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * SupplierHub Notifications Page (Premium)
@@ -249,7 +250,7 @@ function priorityTone(p: NotifPriority) {
 }
 
 export default function NotificationsPage({ onNavigate }: { onNavigate?: NavigateFn }) {
-  const { role, content, updateContent } = useRolePageContent("notifications");
+  const { role, content } = useRolePageContent("notifications");
 
   const mapRoleRoute = (to: string) => {
     if (role !== "provider") return to;
@@ -304,16 +305,12 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
   const [watches, setWatches] = useState<Watch[]>(content.watches);
   const setItemsPersist = (updater: ((prev: NotifItem[]) => NotifItem[]) | NotifItem[]) => {
     setItems((prev) => {
-      const next = typeof updater === "function" ? (updater as (prev: NotifItem[]) => NotifItem[])(prev) : updater;
-      updateContent((current) => ({ ...current, items: next }));
-      return next;
+      return typeof updater === "function" ? (updater as (prev: NotifItem[]) => NotifItem[])(prev) : updater;
     });
   };
   const setWatchesPersist = (updater: ((prev: Watch[]) => Watch[]) | Watch[]) => {
     setWatches((prev) => {
-      const next = typeof updater === "function" ? (updater as (prev: Watch[]) => Watch[])(prev) : updater;
-      updateContent((current) => ({ ...current, watches: next }));
-      return next;
+      return typeof updater === "function" ? (updater as (prev: Watch[]) => Watch[])(prev) : updater;
     });
   };
 
@@ -380,6 +377,11 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
   const markSelected = (unread: boolean) => {
     if (!selectedIds.length) return;
     setItemsPersist((s) => s.map((n) => (selectedIds.includes(n.id) ? { ...n, unread } : n)));
+    void Promise.all(
+      selectedIds.map((id) =>
+        unread ? sellerBackendApi.markNotificationUnread(id) : sellerBackendApi.markNotificationRead(id)
+      )
+    ).catch(() => undefined);
     pushToast({
       title: unread ? "Marked as unread" : "Marked as read",
       message: `${selectedIds.length} updated.`,
@@ -403,6 +405,7 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
 
   const markAllRead = () => {
     setItemsPersist((s) => s.map((n) => ({ ...n, unread: false })));
+    void sellerBackendApi.markAllNotificationsRead().catch(() => undefined);
     pushToast({ title: "All caught up", message: "All notifications marked as read.", tone: "success" });
   };
 
@@ -675,6 +678,7 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
                         type="button"
                         onClick={() => {
                           setItemsPersist((s) => s.map((x) => (x.id === n.id ? { ...x, unread: false } : x)));
+                          void sellerBackendApi.markNotificationRead(n.id).catch(() => undefined);
                         }}
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                       >
@@ -733,7 +737,11 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
                       <button
                         type="button"
                         onClick={() => {
-                          setWatchesPersist((s) => s.map((x) => (x.id === w.id ? { ...x, enabled: !x.enabled } : x)));
+                          setWatchesPersist((s) => {
+                            const next = s.map((x) => (x.id === w.id ? { ...x, enabled: !x.enabled } : x));
+                            void sellerBackendApi.patchNotificationPreferences({ watches: next }).catch(() => undefined);
+                            return next;
+                          });
                           pushToast({ title: w.enabled ? "Watch paused" : "Watch enabled", message: w.name, tone: "default" });
                         }}
                         className={cx(
@@ -822,6 +830,7 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
                   type="button"
                   onClick={() => {
                     setItemsPersist((s) => s.map((x) => (x.id === detail.id ? { ...x, unread: false } : x)));
+                    void sellerBackendApi.markNotificationRead(detail.id).catch(() => undefined);
                     if (detail.route) navigate(detail.route);
                     setDetail(null);
                   }}
@@ -850,7 +859,15 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
             <button
               type="button"
               onClick={() => {
-                setItemsPersist((s) => s.map((x) => (x.id === detail.id ? { ...x, unread: !x.unread } : x)));
+                setItemsPersist((s) => {
+                  const current = s.find((x) => x.id === detail.id);
+                  const nextUnread = !current?.unread;
+                  void (nextUnread
+                    ? sellerBackendApi.markNotificationUnread(detail.id)
+                    : sellerBackendApi.markNotificationRead(detail.id)
+                  ).catch(() => undefined);
+                  return s.map((x) => (x.id === detail.id ? { ...x, unread: nextUnread } : x));
+                });
                 pushToast({ title: "Updated", message: "Read state changed.", tone: "success" });
               }}
               className="flex w-full items-center justify-between rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-3 text-left text-sm font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"

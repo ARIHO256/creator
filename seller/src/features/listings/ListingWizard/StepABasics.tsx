@@ -14,7 +14,6 @@ import {
 } from '@mui/material';
 import { TreeView, TreeItem } from '@mui/lab';
 import { useNavigate } from 'react-router-dom';
-import { loadCatalogLines } from '../catalogEntryStore';
 import { useLocalization } from '../../../localization/LocalizationProvider';
 import { useRolePageContent } from '../../../data/pageContent';
 import type { ListingLineSeed, ListingTaxonomyNode } from '../../../data/pageTypes';
@@ -190,20 +189,9 @@ export default function ProductListingFromProductLinesPage() {
   const buildBaseLines = (seeds: ListingLineSeed[], tree: TaxonomyNode[]) =>
     seeds.map((line) => buildLine(tree, line.nodeId, line.status));
 
-  const [productLines, setProductLines] = useState<CatalogLine[]>(() => {
-    const baseLines = buildBaseLines(content.baseLines, taxonomy);
-    const persisted = loadCatalogLines();
-    const uniqueLines = new Map();
-    baseLines.forEach((line) => {
-      if (line?.nodeId) uniqueLines.set(line.nodeId, line);
-    });
-    persisted.forEach((line) => {
-      if (line?.nodeId && Array.isArray(line.path)) {
-        uniqueLines.set(line.nodeId, line);
-      }
-    });
-    return Array.from(uniqueLines.values());
-  });
+  const [productLines, setProductLines] = useState<CatalogLine[]>(() =>
+    buildBaseLines(content.baseLines, taxonomy)
+  );
 
   const [query, setQuery] = useState('');
   const isProvider = role === 'provider';
@@ -220,17 +208,7 @@ export default function ProductListingFromProductLinesPage() {
 
   useEffect(() => {
     const baseLines = buildBaseLines(content.baseLines, taxonomy);
-    const persisted = loadCatalogLines();
-    const uniqueLines = new Map();
-    baseLines.forEach((line) => {
-      if (line?.nodeId) uniqueLines.set(line.nodeId, line);
-    });
-    persisted.forEach((line) => {
-      if (line?.nodeId && Array.isArray(line.path)) {
-        uniqueLines.set(line.nodeId, line);
-      }
-    });
-    setProductLines(Array.from(uniqueLines.values()));
+    setProductLines(baseLines);
     setSelectedLineId('');
     setSelectedTaxonomyNodeId('');
     setExpandedNodes([]);

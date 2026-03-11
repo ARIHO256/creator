@@ -7390,6 +7390,50 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
       },
       {
         userId: sellerUserId,
+        key: 'seller_cart',
+        payload: {
+          id: 'cart_default',
+          items: [],
+          updatedAt: ago(5)
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'analytics_page',
+        payload: {
+          marketplaceOptions: ['All', 'EVmart', 'MyLiveDealz'],
+          overviewKpis: [
+            { label: 'Gross sales', value: '$18.9k', delta: '+14.2%', hint: 'All tracked channels' },
+            { label: 'Conversion', value: '3.8%', delta: '+0.6%', hint: 'Sessions to purchase' },
+            { label: 'ROAS', value: '4.6x', delta: '+0.4x', hint: 'Paid campaign efficiency' },
+          ],
+          attributionRows: [
+            { channel: 'Organic search', share: 34, roas: 5.2, note: 'Strong charger category demand' },
+            { channel: 'Creator campaigns', share: 28, roas: 6.1, note: 'MyLiveDealz traffic converted best' },
+            { channel: 'WhatsApp re-orders', share: 18, roas: 4.3, note: 'Repeat customers retained' },
+          ],
+          highlights: {
+            topDriver: 'Creator campaigns lifted converter traffic on EVmart chargers.',
+            risk: 'Conversion softens when stock falls below safety threshold.',
+            recommendation: 'Shift ad spend toward bundles that keep margin above 24%.'
+          },
+          cohort: {
+            subtitle: 'Repeat buyers stay strongest after creator-assisted launches.',
+            bullets: [
+              'Week-1 retention holds above 62% for creator-campaign cohorts.',
+              'Wholesale-origin traffic has the highest repeat basket size.',
+              'Low-stock weeks correlate with weaker conversion recovery.'
+            ]
+          },
+          alertRules: [
+            { id: 'rule_conv_drop', name: 'Conversion drop', metric: 'Conversion', condition: 'drops', threshold: 12, window: '7D', enabled: true },
+            { id: 'rule_roas_spike', name: 'ROAS spike', metric: 'ROAS', condition: 'rises', threshold: 20, window: '30D', enabled: true }
+          ],
+          metricOptions: ['Conversion', 'ROAS', 'Gross sales', 'Sessions', 'Average order value']
+        }
+      },
+      {
+        userId: sellerUserId,
         key: 'roles',
         payload: {
           roles: [

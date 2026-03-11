@@ -85,6 +85,9 @@ export class SettingsController {
   @Patch('notifications/:id/read')
   @RateLimit({ limit: 60, windowMs: 60_000 })
   notificationRead(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationRead(user.sub, id); }
+  @Patch('notifications/:id/unread')
+  @RateLimit({ limit: 60, windowMs: 60_000 })
+  notificationUnread(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationUnread(user.sub, id); }
   @Post('notifications/read-all')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   notificationReadAll(@CurrentUser() user: RequestUser) { return this.service.notificationReadAll(user.sub); }

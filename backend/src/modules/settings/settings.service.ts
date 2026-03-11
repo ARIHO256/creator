@@ -176,6 +176,18 @@ export class SettingsService {
       data: { readAt: new Date() }
     });
   }
+  async notificationUnread(userId: string, id: string) {
+    const existing = await this.prisma.notification.findFirst({
+      where: { id, userId }
+    });
+    if (!existing) {
+      throw new NotFoundException('Notification not found');
+    }
+    return this.prisma.notification.update({
+      where: { id },
+      data: { readAt: null }
+    });
+  }
   async notificationReadAll(userId: string) {
     return this.prisma.notification.updateMany({
       where: { userId, readAt: null },

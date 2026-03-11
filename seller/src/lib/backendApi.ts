@@ -42,10 +42,12 @@ export const sellerBackendApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  getSellerDashboard: () => request<Record<string, unknown>>("/api/seller/dashboard"),
   getSellerOrders: () =>
     request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
       "/api/seller/orders"
     ),
+  getSellerListingWizard: () => request<Record<string, unknown>>("/api/seller/listing-wizard"),
   getSellerOrderDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}`),
   getSellerReturns: () => request<Array<Record<string, unknown>>>("/api/seller/returns"),
@@ -74,11 +76,28 @@ export const sellerBackendApi = {
     request<Record<string, unknown>>(`/api/messages/${encodeURIComponent(threadId)}/read`, {
       method: "PATCH",
     }),
+  patchMessageTemplates: (body: { templates: unknown[] }) =>
+    request<Record<string, unknown>>("/api/messages/templates", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   markAllMessagesRead: () =>
     request<Record<string, unknown>>("/api/messages/read-all", {
       method: "POST",
     }),
   getNotifications: () => request<Array<Record<string, unknown>>>("/api/notifications"),
+  markNotificationRead: (id: string) =>
+    request<Record<string, unknown>>(`/api/notifications/${encodeURIComponent(id)}/read`, {
+      method: "PATCH",
+    }),
+  markNotificationUnread: (id: string) =>
+    request<Record<string, unknown>>(`/api/notifications/${encodeURIComponent(id)}/unread`, {
+      method: "PATCH",
+    }),
+  markAllNotificationsRead: () =>
+    request<Record<string, unknown>>("/api/notifications/read-all", {
+      method: "POST",
+    }),
   getPreferences: () => request<Record<string, unknown>>("/api/settings/preferences"),
   patchPreferences: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/settings/preferences", {
@@ -146,6 +165,12 @@ export const sellerBackendApi = {
   getNotificationPreferences: () => request<Record<string, unknown>>("/api/settings/notification-preferences"),
   patchNotificationPreferences: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/settings/notification-preferences", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getAnalyticsPage: () => request<Record<string, unknown>>("/api/analytics/page"),
+  patchAnalyticsPage: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/analytics/page", {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -246,6 +271,12 @@ export const sellerBackendApi = {
   patchSellerWorkspaceListing: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/sellers/me/listings/${encodeURIComponent(id)}`, {
       method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getSellerCart: () => request<Record<string, unknown>>("/api/seller/cart"),
+  addSellerCartItem: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/seller/cart/items", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   getShippingProfiles: () => request<Record<string, unknown>>("/api/seller/shipping-profiles"),

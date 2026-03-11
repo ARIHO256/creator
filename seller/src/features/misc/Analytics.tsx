@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { UserRole } from "../../types/roles";
 import { useRolePageContent } from "../../data/pageContent";
 import type { AlertRuleConfig, AnalyticsAttributionRow, AnalyticsCohortContent, AnalyticsHighlights, AnalyticsKpi } from "../../data/pageTypes";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -477,6 +478,10 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
   const [rules, setRules] = useState<AlertRule[]>(() => defaultRules);
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState<AlertRule>(() => defaultDraft);
+  const persistRules = (next: AlertRule[]) => {
+    setRules(next);
+    void sellerBackendApi.patchAnalyticsPage({ alertRules: next }).catch(() => undefined);
+  };
   useEffect(() => {
     setRules(defaultRules);
     setDraft(defaultDraft);
@@ -810,7 +815,7 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
                         <button
                           type="button"
                           onClick={() => {
-                            setRules((s) => s.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)));
+                            persistRules(rules.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)));
                             pushToast({ title: "Rule updated", message: r.name, tone: "success" });
                           }}
                           className={cx(
@@ -834,8 +839,8 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
                           type="button"
                           onClick={() => {
                             const prev = rules;
-                            setRules((s) => s.filter((x) => x.id !== r.id));
-                            pushToast({ title: "Rule deleted", tone: "warning", action: { label: "Undo", onClick: () => setRules(prev) } });
+                            persistRules(rules.filter((x) => x.id !== r.id));
+                            pushToast({ title: "Rule deleted", tone: "warning", action: { label: "Undo", onClick: () => persistRules(prev) } });
                           }}
                           className="ml-auto rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700"
                         >
@@ -1009,11 +1014,11 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
               onClick={() => {
                 const name = draft.name.trim() || `${draft.metric} ${draft.condition}`;
                 if (draft.id) {
-                  setRules((s) => s.map((x) => (x.id === draft.id ? { ...draft, name } : x)));
+                  persistRules(rules.map((x) => (x.id === draft.id ? { ...draft, name } : x)));
                   pushToast({ title: "Rule updated", message: name, tone: "success" });
                 } else {
                   const next = { ...draft, id: makeId("rule"), name };
-                  setRules((s) => [next, ...s]);
+                  persistRules([next, ...rules]);
                   pushToast({ title: "Rule created", message: name, tone: "success" });
                 }
                 setAddOpen(false);

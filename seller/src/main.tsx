@@ -5,7 +5,6 @@ import App from "./App";
 import { ToastProvider } from "./components/ui/ToastProvider";
 import { LocalizationProvider } from "./localization/LocalizationProvider";
 import { AppThemeProvider } from "./theme/AppThemeProvider";
-import { bootstrapSellerFrontendState, initSellerStorageSync } from "./lib/frontendState";
 import "./styles/theme.css";
 import "./index.css";
 
@@ -30,33 +29,4 @@ const renderApp = () => {
   );
 };
 
-void bootstrapSellerFrontendState()
-  .catch(() => undefined)
-  .finally(() => {
-    initSellerStorageSync({
-      localPrefixes: [
-        "session",
-        "theme",
-        "ev_",
-        "evz_",
-        "evzone_",
-        "seller.",
-        "seller_",
-        "provider_",
-        "serviceListing.",
-        "shipping_",
-        "catalog_",
-        "passkeys",
-        "onboarding_status_",
-        "mldz_",
-        "channels_",
-        "signup.",
-      ],
-      sessionPrefixes: [
-        "seller_",
-        "catalog_",
-        "mldz_",
-      ],
-    });
-    renderApp();
-  });
+renderApp();
