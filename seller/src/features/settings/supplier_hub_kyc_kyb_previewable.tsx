@@ -1,5 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -20,6 +19,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * SupplierHub Settings
@@ -313,7 +313,43 @@ export default function SupplierHubKycKybPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [docs, setDocs] = useSellerCompatState<KycDoc[]>("settings.kyc.docs", seedDocs());
+  const [docs, setDocs] = useState<KycDoc[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    let active = true;
+    const defaults = seedDocs();
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getKycSettings();
+        if (!active) return;
+        const incoming = Array.isArray(payload.documents) ? payload.documents as Array<Record<string, unknown>> : [];
+        const nextDocs = incoming.map((doc, index) => {
+          const fallback = defaults.find((entry) => entry.id === doc.id || entry.title === doc.title) || defaults[index % defaults.length];
+          return {
+            ...fallback,
+            ...doc,
+            required: doc.required ?? fallback?.required ?? true,
+            fileName: (doc.fileName as string | null | undefined) ?? fallback?.fileName ?? null,
+            history: Array.isArray(doc.history) ? doc.history as DocHistory[] : fallback?.history ?? [],
+          } as KycDoc;
+        });
+        setDocs(nextDocs);
+        setHistory(Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.history) ? ((payload.metadata as Record<string, unknown>).history as any[]) : []);
+        hydratedRef.current = true;
+      } catch {
+        if (!active) return;
+        pushToast({ title: "KYC unavailable", message: "Could not load KYC documents.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    void sellerBackendApi.patchKycSettings({ status: deriveTier(docs), documents: docs, metadata: { history } });
+  }, [docs, history]);
   const tier = useMemo(() => deriveTier(docs), [docs]);
 
   const [q, setQ] = useState("");
@@ -355,14 +391,6 @@ export default function SupplierHubKycKybPage() {
       .sort((a, b) => (a.days ?? 99999) - (b.days ?? 99999))
       .slice(0, 6);
   }, [docs]);
-
-  const history = useMemo(() => {
-    return [
-      { id: "VH-1", at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 120).toISOString(), tier: "Basic", result: "Approved", reviewer: "Compliance" },
-      { id: "VH-2", at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 22).toISOString(), tier: "Verified", result: "Approved", reviewer: "Compliance" },
-      { id: "VH-3", at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 9).toISOString(), tier: "Enhanced", result: "Rejected", reviewer: "Compliance" },
-    ];
-  }, []);
 
   const bg =
     "radial-gradient(1200px 520px at 18% -10%, rgba(3,205,140,0.18) 0%, rgba(3,205,140,0.0) 55%), radial-gradient(900px 420px at 110% 0%, rgba(247,127,0,0.08) 0%, rgba(247,127,0,0.0) 55%), var(--page-gradient-base)";

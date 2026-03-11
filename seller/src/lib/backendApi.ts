@@ -311,6 +311,11 @@ export const sellerBackendApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  patchProviderJointQuote: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/provider/joint-quotes/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getProviderConsultations: () => request<Record<string, unknown>>("/api/provider/consultations"),
   getProviderBookings: () => request<Record<string, unknown>>("/api/provider/bookings"),
   getProviderPortfolio: () => request<Record<string, unknown>>("/api/provider/portfolio"),

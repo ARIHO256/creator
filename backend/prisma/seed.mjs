@@ -2257,6 +2257,8 @@ async function seedAnalytics(users) {
 }
 
 async function seedFrontendReplacementData(users, sellerProfiles) {
+  const now = Date.now();
+  const ago = (minutes) => new Date(now - minutes * 60_000).toISOString();
   await prisma.userSetting.createMany({
     data: [
       {
@@ -2529,7 +2531,43 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
               status: 'Resolved',
               tags: ['2FA', 'trusted device']
             }
-          ]
+          ],
+          metadata: {
+            policies: {
+              requireTrustedForFinance: true,
+              stepUpOnNewDevice: true,
+              autoTrustAfter2FA: false,
+              maxTrustedDevices: 5,
+              allowHighRiskCountries: false
+            },
+            settingsSessions: [
+              { id: 'SES-01', device: 'desktop', label: 'Chrome on Windows', location: 'Wuxi, CN', ip: '10.11.2.33', lastSeen: ago(4), current: true, risk: 'ok' },
+              { id: 'SES-02', device: 'mobile', label: 'Safari on iPhone', location: 'Kampala, UG', ip: '41.210.9.12', lastSeen: ago(180), current: false, risk: 'watch' },
+              { id: 'SES-03', device: 'desktop', label: 'Edge on Windows', location: 'Nairobi, KE', ip: '197.248.7.21', lastSeen: ago(1400), current: false, risk: 'ok' }
+            ],
+            settingsDevices: [
+              { id: 'DEV-1001', name: 'Office Desktop', type: 'desktop', trusted: true, trustedAt: ago(18 * 24 * 60), lastSeen: ago(0.2 * 24 * 60), note: 'Finance approvals' },
+              { id: 'DEV-1002', name: 'iPhone 13', type: 'mobile', trusted: true, trustedAt: ago(40 * 24 * 60), lastSeen: ago(1.2 * 24 * 60), note: '2FA device' },
+              { id: 'DEV-1003', name: 'Unknown Windows', type: 'desktop', trusted: false, trustedAt: null, lastSeen: ago(0.1 * 24 * 60), note: 'Flagged' }
+            ],
+            settingsAlerts: [
+              { id: 'AL-901', title: 'New device sign-in', reason: 'New device fingerprint', risk: 78, createdAt: ago(18), location: 'Nairobi, KE', ip: '197.248.7.21', status: 'Needs review', tags: ['new device', 'new IP'] },
+              { id: 'AL-900', title: 'Unusual location', reason: 'Sign-in from an uncommon country', risk: 64, createdAt: ago(110), location: 'Dubai, AE', ip: '185.33.21.9', status: 'Needs review', tags: ['unusual location'] },
+              { id: 'AL-899', title: 'Impossible travel', reason: 'Rapid location change', risk: 92, createdAt: ago(540), location: 'Nairobi, KE', ip: '197.248.7.21', status: 'Resolved', tags: ['impossible travel'] }
+            ],
+            sessionRoster: [
+              { id: 'SES-90021', deviceType: 'desktop', deviceName: 'MacBook Pro', os: 'macOS', browser: 'Chrome', ip: '41.210.9.12', location: 'Kampala, UG', firstSeenAt: ago(1200), lastSeenAt: ago(2), current: true, trusted: true, risk: 'ok', signals: ['2FA pending'] },
+              { id: 'SES-90020', deviceType: 'mobile', deviceName: 'iPhone 15', os: 'iOS', browser: 'Safari', ip: '10.11.2.33', location: 'Wuxi, CN', firstSeenAt: ago(210), lastSeenAt: ago(12), current: false, trusted: false, risk: 'risk', anomaly: { type: 'New country', reason: 'Sign-in from a new country not seen before.', severity: 'High' }, signals: ['New country', 'New device'] },
+              { id: 'SES-90019', deviceType: 'desktop', deviceName: 'Windows PC', os: 'Windows', browser: 'Edge', ip: '197.239.12.9', location: 'Nairobi, KE', firstSeenAt: ago(8400), lastSeenAt: ago(900), current: false, trusted: true, risk: 'ok', signals: ['Trusted'] },
+              { id: 'SES-90018', deviceType: 'mobile', deviceName: 'Android', os: 'Android', browser: 'Chrome', ip: '102.88.44.21', location: 'Lagos, NG', firstSeenAt: ago(90), lastSeenAt: ago(18), current: false, trusted: false, risk: 'watch', anomaly: { type: 'Impossible travel', reason: 'Sign-in location changed too quickly based on recent activity.', severity: 'Medium' }, signals: ['Impossible travel'] }
+            ],
+            geoAlerts: {
+              enabled: true,
+              newCountry: true,
+              impossibleTravel: true,
+              sensitivity: 70
+            }
+          }
         }
       },
       {
@@ -2547,7 +2585,12 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
               accountNumberMasked: '****8821',
               isDefault: true
             }
-          ]
+          ],
+          metadata: {
+            kycState: 'Verified',
+            payoutSchedule: 'Weekly',
+            minThreshold: 50
+          }
         }
       },
       {

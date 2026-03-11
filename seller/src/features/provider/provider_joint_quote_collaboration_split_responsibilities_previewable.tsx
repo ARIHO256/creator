@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -25,6 +24,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Provider · Joint Quote
@@ -356,6 +356,25 @@ function seedQuote() {
   };
 }
 
+function mapBackendJointQuote(raw: Record<string, unknown>) {
+  const seeded = seedQuote();
+  const data = raw.data && typeof raw.data === "object" ? (raw.data as Record<string, unknown>) : {};
+  return {
+    quote: {
+      ...seeded,
+      ...data,
+      id: String(raw.id || data.id || seeded.id),
+      status: String(data.status || raw.status || seeded.status),
+      title: String(data.title || raw.title || seeded.title),
+      currency: String(raw.currency || data.currency || seeded.currency),
+      updatedAt: String(raw.updatedAt || data.updatedAt || seeded.updatedAt),
+      createdAt: String(raw.createdAt || data.createdAt || seeded.createdAt),
+    },
+    sowText: typeof data.sowText === "string" ? data.sowText : buildSowText({ ...seeded, ...data }),
+    versions: Array.isArray(data.versions) ? data.versions : [],
+  };
+}
+
 function calcCompleteness(q) {
   let score = 0;
   score += q.title?.trim()?.length >= 10 ? 15 : 5;
@@ -432,9 +451,11 @@ export default function ProviderJointQuotePage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [step, setStep] = useState("Overview");
-  const [quote, setQuote] = useSellerCompatState("provider.jointQuote.quote", seedQuote());
+  const [quote, setQuote] = useState(seedQuote());
   const [dirty, setDirty] = useState(false);
   const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const persistedRef = useRef(false);
 
   const [versions, setVersions] = useState(() => {
     const q = seedQuote();
@@ -493,9 +514,35 @@ export default function ProviderJointQuotePage() {
     setDirty(true);
   };
 
-  const save = () => {
+  const save = async () => {
     const snapshot = JSON.parse(JSON.stringify({ ...quote, status: "Draft" }));
-    setVersions((v) => [{ id: makeId("ver"), at: new Date().toISOString(), actor: "Provider", note: "Saved changes", snapshot }, ...v].slice(0, 30));
+    const nextVersions = [{ id: makeId("ver"), at: new Date().toISOString(), actor: "Provider", note: "Saved changes", snapshot }, ...versions].slice(0, 30);
+    setVersions(nextVersions);
+    try {
+      const payload = {
+        status: String(quote.status || "draft").toLowerCase().replace(/\s+/g, "_"),
+        title: quote.title,
+        buyer: typeof quote.buyer?.org === "string" ? quote.buyer.org : undefined,
+        currency: quote.currency,
+        amount: Number(quote.pricing?.base || 0),
+        data: {
+          ...quote,
+          sowText,
+          versions: nextVersions,
+        },
+      };
+      const saved = persistedRef.current
+        ? await sellerBackendApi.patchProviderJointQuote(quote.id, payload)
+        : await sellerBackendApi.createProviderJointQuote(payload);
+      const normalized = mapBackendJointQuote(saved);
+      setQuote(normalized.quote as any);
+      setVersions(normalized.versions.length ? (normalized.versions as any) : nextVersions);
+      setSowText(normalized.sowText);
+      persistedRef.current = true;
+    } catch {
+      pushToast({ title: "Save failed", message: "Could not persist joint quote.", tone: "danger" });
+      return;
+    }
     setDirty(false);
     pushToast({ title: "Saved", message: "Joint quote updated.", tone: "success" });
   };
@@ -615,11 +662,40 @@ export default function ProviderJointQuotePage() {
     pushToast({ title: "Milestone added", tone: "success" });
   };
 
-  const [sowText, setSowText] = useSellerCompatState("provider.jointQuote.sowText", buildSowText(seedQuote()));
+  const [sowText, setSowText] = useState(buildSowText(seedQuote()));
   useEffect(() => {
     setSowText(buildSowText(quote));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quote.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getProviderJointQuotes();
+        if (cancelled) return;
+        const rows = Array.isArray(payload.jointQuotes) ? payload.jointQuotes : [];
+        if (rows[0]) {
+          const normalized = mapBackendJointQuote(rows[0] as Record<string, unknown>);
+          setQuote(normalized.quote as any);
+          setVersions(
+            normalized.versions.length
+              ? (normalized.versions as any)
+              : [{ id: makeId("ver"), at: new Date().toISOString(), actor: "System", note: "Initial draft", snapshot: JSON.parse(JSON.stringify(normalized.quote)) }]
+          );
+          setSowText(normalized.sowText);
+          persistedRef.current = true;
+        }
+      } catch {
+        pushToast({ title: "Backend unavailable", message: "Loaded seeded joint quote.", tone: "warning" });
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [autosaveAt, setAutosaveAt] = useState<string | null>(null);
   const autosaveRef = useRef<number | null>(null);
@@ -661,6 +737,7 @@ export default function ProviderJointQuotePage() {
                 <Badge tone={quote.status === "Approved" ? "green" : quote.status === "In Review" ? "orange" : quote.status === "Changes Requested" ? "danger" : "slate"}>
                   {quote.status}
                 </Badge>
+                {loading ? <Badge tone="slate">Loading backend</Badge> : null}
                 <span className="ml-auto" />
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Collaboration builder with split responsibilities, approvals, versioning and SOW.</div>

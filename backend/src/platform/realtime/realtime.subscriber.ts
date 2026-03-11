@@ -11,8 +11,8 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
   private readonly prefix: string;
 
   constructor(
-    @Optional() @Inject(ConfigService) private readonly configService?: ConfigService,
-    private readonly streamService: RealtimeStreamService
+    private readonly streamService: RealtimeStreamService,
+    @Optional() @Inject(ConfigService) private readonly configService?: ConfigService
   ) {
     this.enabled = !['0', 'false', 'no', 'off'].includes(
       String(this.readConfig('realtime.enabled', 'false')).toLowerCase()

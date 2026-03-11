@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -21,6 +20,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Tax Hub (Previewable)
@@ -356,9 +356,11 @@ export default function TaxHubPreviewable() {
   const [tab, setTab] = useState("VAT Profiles");
   const [region, setRegion] = useState("All");
 
-  const [profiles, setProfiles] = useSellerCompatState("settings.tax.vatProfiles", seedVatProfiles());
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [packHistory, setPackHistory] = useState<any[]>([]);
+  const hydratedRef = useRef(false);
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -496,6 +498,29 @@ export default function TaxHubPreviewable() {
     enableCreditNotes: true,
     enableEinvoicing: false,
   });
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getTaxSettings();
+        if (!active) return;
+        setProfiles(Array.isArray(payload.profiles) ? payload.profiles as any[] : []);
+        setPackHistory(Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.packHistory) ? ((payload.metadata as Record<string, unknown>).packHistory as any[]) : Array.isArray(payload.reports) ? payload.reports as any[] : []);
+        setInvoiceCfg((current) => ({ ...current, ...(((payload.metadata as Record<string, unknown> | undefined)?.invoiceCfg as Record<string, unknown> | undefined) ?? {}) }));
+        hydratedRef.current = true;
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Tax settings unavailable", message: "Could not load tax settings.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    void sellerBackendApi.patchTaxSettings({ profiles, reports: packHistory, metadata: { packHistory, invoiceCfg } });
+  }, [profiles, packHistory, invoiceCfg]);
 
   const complianceSignals = useMemo(() => {
     const issues: string[] = [];
@@ -552,7 +577,6 @@ export default function TaxHubPreviewable() {
   };
 
   // Compliance pack
-  const [packHistory, setPackHistory] = useSellerCompatState("settings.tax.packHistory", seedPackHistory());
   const [packBusy, setPackBusy] = useState(false);
 
   const packItems = useMemo(

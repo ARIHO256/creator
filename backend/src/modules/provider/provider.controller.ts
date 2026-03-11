@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
@@ -27,6 +27,11 @@ export class ProviderController {
   @Get('joint-quotes/:id') jointQuote(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.jointQuote(user.sub, id); }
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('joint-quotes') createJointQuote(@CurrentUser() user: RequestUser, @Body() body: CreateProviderQuoteDto) { return this.service.createJointQuote(user.sub, body); }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Patch('joint-quotes/:id')
+  updateJointQuote(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: CreateProviderQuoteDto) {
+    return this.service.updateJointQuote(user.sub, id, body);
+  }
   @Get('consultations') consultations(@CurrentUser() user: RequestUser) { return this.service.consultations(user.sub); }
   @Get('bookings') bookings(@CurrentUser() user: RequestUser) { return this.service.bookings(user.sub); }
   @Get('bookings/:id') booking(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.booking(user.sub, id); }

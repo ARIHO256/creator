@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -20,6 +19,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * System Status (Previewable)
@@ -428,8 +428,30 @@ export default function SupportSystemStatusPage() {
   };
   const dismissToast = (id) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [providers, setProviders] = useSellerCompatState("support.system.providers", seedProviders());
-  const [incidents, setIncidents] = useSellerCompatState("support.system.incidents", seedIncidents());
+  const [providers, setProviders] = useState(() => seedProviders());
+  const [incidents, setIncidents] = useState(() => seedIncidents());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getStatusCenter();
+        if (cancelled) return;
+        if (Array.isArray(payload.providers)) setProviders(payload.providers as any);
+        if (Array.isArray(payload.incidents)) setIncidents(payload.incidents as any);
+      } catch {
+        if (!cancelled) {
+          pushToast({ title: "Backend unavailable", message: "Loaded seeded system status.", tone: "warning" });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Filters
   const [query, setQuery] = useState("");
@@ -477,22 +499,18 @@ export default function SupportSystemStatusPage() {
 
   // “Refresh” demo
   const refresh = async () => {
-    pushToast({ title: "Refreshing", message: "Fetching latest provider health and incidents (demo).", tone: "default" });
-    await new Promise((r) => setTimeout(r, 550));
-
-    // tiny demo drift
-    setProviders((prev) =>
-      prev.map((p) => {
-        if (p.id === "p_pay") {
-          const nextLatency = clamp((p.latencyMs || 0) + (Math.random() > 0.5 ? -40 : 35), 180, 1200);
-          const nextErr = Math.max(0, Math.round(((p.errorRate || 0) + (Math.random() > 0.6 ? -0.1 : 0.08)) * 10) / 10);
-          return { ...p, latencyMs: nextLatency, errorRate: nextErr, lastCheckAt: new Date().toISOString() };
-        }
-        return { ...p, lastCheckAt: new Date().toISOString() };
-      })
-    );
-
-    pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
+    pushToast({ title: "Refreshing", message: "Fetching latest provider health and incidents.", tone: "default" });
+    setLoading(true);
+    try {
+      const payload = await sellerBackendApi.getStatusCenter();
+      if (Array.isArray(payload.providers)) setProviders(payload.providers as any);
+      if (Array.isArray(payload.incidents)) setIncidents(payload.incidents as any);
+      pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
+    } catch {
+      pushToast({ title: "Refresh failed", message: "Could not fetch status center.", tone: "danger" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Close drawer if incident removed
@@ -515,6 +533,7 @@ export default function SupportSystemStatusPage() {
                 <div className="text-2xl font-black tracking-tight text-slate-900 md:text-3xl">System Status</div>
                 <Badge tone="slate">/support/status</Badge>
                 <Badge tone="orange">Super premium</Badge>
+                {loading ? <Badge tone="slate">Loading backend</Badge> : null}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Outages, incidents and provider health. Timeline and postmortems are included as premium placeholders.</div>
             </div>

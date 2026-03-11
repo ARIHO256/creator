@@ -19,7 +19,7 @@ import { sellerBackendApi } from '../../lib/backendApi'
 
 export default function ServiceListingApprovalPending() {
   const { t } = useLocalization();
-  // Query params / localStorage (service context)
+  // Query params (service context)
   const qp = useMemo(
     () => (typeof window === 'undefined'
       ? {}

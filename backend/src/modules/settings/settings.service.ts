@@ -510,7 +510,10 @@ export class SettingsService {
     if (!hasDefault && normalized.length > 0) {
       normalized[0].isDefault = true;
     }
-    const record = await this.upsertWorkspaceSetting(userId, 'payout_methods', { methods: normalized });
+    const record = await this.upsertWorkspaceSetting(userId, 'payout_methods', {
+      methods: normalized,
+      ...(body.metadata ? { metadata: body.metadata } : {})
+    });
     await this.audit.log({
       userId,
       action: 'settings.payout_methods_updated',
@@ -547,7 +550,8 @@ export class SettingsService {
       ...(body.sessions ? { sessions: body.sessions } : {}),
       ...(body.passkeys ? { passkeys: body.passkeys } : {}),
       ...(body.trustedDevices ? { trustedDevices: body.trustedDevices } : {}),
-      ...(body.alerts ? { alerts: body.alerts } : {})
+      ...(body.alerts ? { alerts: body.alerts } : {}),
+      ...(body.metadata ? { metadata: this.deepMerge(((current as Record<string, unknown>).metadata as Record<string, unknown> | undefined) ?? {}, body.metadata) } : {})
     };
     const record = await this.upsertWorkspaceSetting(userId, 'security', next);
     await this.audit.log({

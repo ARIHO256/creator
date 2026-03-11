@@ -59,4 +59,8 @@ export class UpdateSecuritySettingsDto {
   @IsArray()
   @IsObject({ each: true })
   alerts?: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }

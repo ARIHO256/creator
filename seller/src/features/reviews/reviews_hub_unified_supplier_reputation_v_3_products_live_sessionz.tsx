@@ -659,10 +659,6 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [reviews, setReviews] = useState<Review[]>(() => seeded);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem("seller.reviews.count", String(reviews.length));
-  }, [reviews]);
 
   // Filters
   const [role, setRole] = useState<Role | "All">("All");

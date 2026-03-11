@@ -109,6 +109,37 @@ export class ProviderService {
     });
     return this.serializeQuote(quote);
   }
+  async updateJointQuote(userId: string, id: string, body: CreateProviderQuoteDto) {
+    const quote = await this.prisma.providerQuote.findFirst({
+      where: { id, userId }
+    });
+    if (!quote || !(quote.data as any)?.isJoint) {
+      throw new NotFoundException('Joint quote not found');
+    }
+    const sanitized = this.ensurePayload(body);
+    const data = sanitized.data && typeof sanitized.data === 'object' ? sanitized.data : sanitized;
+    const updated = await this.prisma.providerQuote.update({
+      where: { id: quote.id },
+      data: {
+        status: typeof sanitized.status === 'string' ? sanitized.status : undefined,
+        title: typeof sanitized.title === 'string' ? sanitized.title : undefined,
+        buyer: typeof sanitized.buyer === 'string' ? sanitized.buyer : undefined,
+        amount: typeof sanitized.amount === 'number' ? sanitized.amount : undefined,
+        currency: typeof sanitized.currency === 'string' ? sanitized.currency : undefined,
+        data: { ...(quote.data as Record<string, unknown>), ...(data as Record<string, unknown>), isJoint: true } as Prisma.InputJsonValue
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'provider.joint_quote_updated',
+      entityType: 'provider_quote',
+      entityId: updated.id,
+      route: `/api/provider/joint-quotes/${id}`,
+      method: 'PATCH',
+      statusCode: 200
+    });
+    return this.serializeQuote(updated);
+  }
   async consultations(userId: string) {
     const consultations = await this.prisma.providerConsultation.findMany({
       where: { userId },

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -19,6 +18,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Device Sessions (Previewable)
@@ -579,7 +579,8 @@ export default function DeviceSessionsPage() {
   const dismissToast = (id: string) =>
     setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [sessions, setSessions] = useSellerCompatState<Session[]>("settings.security.sessions", seedSessions());
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const hydratedRef = useRef(false);
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("All"); // All | Current | Trusted | Untrusted | Flagged
@@ -705,6 +706,43 @@ export default function DeviceSessionsPage() {
   const [alertNewCountry, setAlertNewCountry] = useState(true);
   const [alertImpossibleTravel, setAlertImpossibleTravel] = useState(true);
   const [sensitivity, setSensitivity] = useState(70); // 0-100
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getSecuritySettings();
+        if (!active) return;
+        const metadata = (payload.metadata as Record<string, unknown> | undefined) ?? {};
+        setSessions(Array.isArray(metadata.sessionRoster) ? metadata.sessionRoster as Session[] : []);
+        const geo = (metadata.geoAlerts as Record<string, unknown> | undefined) ?? {};
+        setGeoAlertsOn(Boolean(geo.enabled ?? true));
+        setAlertNewCountry(Boolean(geo.newCountry ?? true));
+        setAlertImpossibleTravel(Boolean(geo.impossibleTravel ?? true));
+        setSensitivity(Number(geo.sensitivity ?? 70));
+        hydratedRef.current = true;
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Sessions unavailable", message: "Could not load device sessions.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    void sellerBackendApi.patchSecuritySettings({
+      metadata: {
+        sessionRoster: sessions,
+        geoAlerts: {
+          enabled: geoAlertsOn,
+          newCountry: alertNewCountry,
+          impossibleTravel: alertImpossibleTravel,
+          sensitivity,
+        },
+      },
+    });
+  }, [sessions, geoAlertsOn, alertNewCountry, alertImpossibleTravel, sensitivity]);
 
   const anomalies = useMemo(() => {
     if (!geoAlertsOn) return [];
