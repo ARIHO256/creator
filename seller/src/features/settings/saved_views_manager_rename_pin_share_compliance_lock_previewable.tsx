@@ -899,13 +899,16 @@ export default function SavedViewsManagerPage() {
               <button
                 type="button"
                 onClick={() => {
-                  try {
-                    setViews(normalizeViews(seedViews()));
-                    setSelected({});
-                    pushToast({ title: "Reset", message: "Demo data restored.", tone: "success" });
-                  } catch {
-                    pushToast({ title: "Reset failed", message: "Local storage blocked.", tone: "warning" });
-                  }
+                  setSelected({});
+                  void sellerBackendApi
+                    .getSavedViews()
+                    .then((payload) => {
+                      setViews(normalizeViews(Array.isArray(payload.views) ? payload.views : []));
+                      pushToast({ title: "Reset", message: "Saved views reloaded from backend.", tone: "success" });
+                    })
+                    .catch(() => {
+                      pushToast({ title: "Reset failed", message: "Could not reload saved views.", tone: "warning" });
+                    });
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >

@@ -635,8 +635,7 @@ export default function TeamsRolesSupplierPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const seededRoles = useMemo(() => seedRoles(), []);
-  const [roles, setRoles] = useState<Role[]>(seededRoles);
+  const [roles, setRoles] = useState<Role[]>([]);
 
   const roleIdMap = useMemo(() => {
     const byName: Record<string, string> = {};
@@ -651,11 +650,11 @@ export default function TeamsRolesSupplierPage() {
     };
   }, [roles]);
 
-  const [members, setMembers] = useState<Member[]>(seedMembers(roleIdMap));
+  const [members, setMembers] = useState<Member[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
-  const [policies, setPolicies] = useState<PolicyState>(seedPolicies());
+  const [policies, setPolicies] = useState<PolicyState>(mapBackendPolicies(null));
   const [loading, setLoading] = useState(true);
-  const rolesRef = useRef<Role[]>(seededRoles);
+  const rolesRef = useRef<Role[]>([]);
 
   useEffect(() => {
     rolesRef.current = roles;
@@ -680,19 +679,19 @@ export default function TeamsRolesSupplierPage() {
           sellerBackendApi.getAuditLogs(),
         ]);
         if (cancelled) return;
-        setRoles(Array.isArray(workspace.roles) ? workspace.roles.map((entry) => mapBackendRole(entry as Record<string, unknown>)) : seededRoles);
+        setRoles(Array.isArray(workspace.roles) ? workspace.roles.map((entry) => mapBackendRole(entry as Record<string, unknown>)) : []);
         setMembers(
           Array.isArray(workspace.members)
             ? workspace.members.map((entry) => mapBackendMember(entry as Record<string, unknown>))
-            : seedMembers(roleIdMap)
+            : []
         );
         setPolicies(mapBackendPolicies((workspace.workspaceSecurity as Record<string, unknown> | undefined) ?? null));
         setAudit(Array.isArray(logs) ? logs.map(mapBackendAudit) : []);
       } catch {
         if (cancelled) return;
-        setRoles(seededRoles);
-        setMembers(seedMembers(roleIdMap));
-        setPolicies(seedPolicies());
+        setRoles([]);
+        setMembers([]);
+        setPolicies(mapBackendPolicies(null));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -701,7 +700,7 @@ export default function TeamsRolesSupplierPage() {
     return () => {
       cancelled = true;
     };
-  }, [seededRoles]);
+  }, []);
 
   // Tabs
   const [tab, setTab] = useState<"Members" | "Roles" | "Policies" | "Audit">("Roles");

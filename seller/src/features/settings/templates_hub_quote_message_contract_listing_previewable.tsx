@@ -573,8 +573,8 @@ export default function TemplatesHubPage() {
         setTemplates(rows.map((row) => mapBackendTemplate(row as Record<string, unknown>)));
       } catch {
         if (!cancelled) {
-          setTemplates(seedTemplates());
-          pushToast({ title: "Backend unavailable", message: "Loaded seeded templates.", tone: "warning" });
+          setTemplates([]);
+          pushToast({ title: "Backend unavailable", message: "Could not load templates.", tone: "warning" });
         }
       } finally {
         if (!cancelled) setLoading(false);

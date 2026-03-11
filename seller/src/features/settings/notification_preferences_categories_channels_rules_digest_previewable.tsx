@@ -340,137 +340,38 @@ function ToastCenter({ toasts, dismiss }) {
 }
 
 function seedDefaults(): PrefsState {
-  const globalChannels: ChannelMap = {
-    inApp: true,
-    email: true,
-    sms: false,
-    whatsapp: true,
+  return {
+    globalChannels: {
+      inApp: false,
+      email: false,
+      sms: false,
+      whatsapp: false,
+    },
+    categories: [],
+    channelProfiles: {
+      email: { enabled: false, address: "", verified: false },
+      sms: { enabled: false, number: "", verified: false },
+      whatsapp: { enabled: false, number: "", verified: false },
+      inApp: { enabled: false },
+    },
+    quietHours: {
+      enabled: false,
+      start: "22:00",
+      end: "07:00",
+      days: [],
+      bypassCritical: false,
+    },
+    digest: {
+      enabled: false,
+      mode: "Daily",
+      time: "18:00",
+      channels: { email: false, inApp: false, whatsapp: false, sms: false },
+      includeCategories: [],
+      includePreview: false,
+      instantForCritical: false,
+    },
+    rules: [],
   };
-
-  const categories: Category[] = [
-    {
-      key: "mentions",
-      label: "Mentions",
-      desc: "Direct mentions, replies and assignments",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "orders",
-      label: "Orders",
-      desc: "New orders, SLA risk, cancellations",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "rfqs",
-      label: "RFQs",
-      desc: "New RFQs, clarifications, buyer messages",
-      critical: false,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "quotes",
-      label: "Quotes",
-      desc: "Quote approved, rejected, revised",
-      critical: false,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: false },
-    },
-    {
-      key: "finance",
-      label: "Finance",
-      desc: "Payouts, holds, settlements, invoices",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "mldz",
-      label: "MyLiveDealz",
-      desc: "Live Sessionz, Adz, creator collabs",
-      critical: false,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: false },
-    },
-    {
-      key: "system",
-      label: "System",
-      desc: "Security, policy, incidents and maintenance",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: true, whatsapp: true },
-    },
-  ];
-
-  const channelProfiles: ChannelProfiles = {
-    email: { enabled: true, address: "seller@evzone.example", verified: true },
-    sms: { enabled: false, number: "+256700000000", verified: false },
-    whatsapp: { enabled: true, number: "+256700000000", verified: true },
-    inApp: { enabled: true },
-  };
-
-  const quietHours: QuietHours = {
-    enabled: true,
-    start: "22:00",
-    end: "07:00",
-    days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    bypassCritical: true,
-  };
-
-  const digest: DigestSettings = {
-    enabled: true,
-    mode: "Daily",
-    time: "18:00",
-    channels: { email: true, inApp: true, whatsapp: false, sms: false },
-    includeCategories: ["rfqs", "quotes", "mldz"],
-    includePreview: true,
-    instantForCritical: true,
-  };
-
-  const rules: Rule[] = [
-    {
-      id: "r_sla",
-      enabled: true,
-      name: "Order SLA risk",
-      priority: "High",
-      trigger: { category: "orders", event: "sla_risk" },
-      conditions: { severity: "High", keyword: "" },
-      action: { delivery: "Instant", channels: { inApp: true, whatsapp: true, email: false, sms: false }, throttleMins: 20, bypassQuietHours: true },
-    },
-    {
-      id: "r_rfq",
-      enabled: true,
-      name: "Urgent RFQ",
-      priority: "Normal",
-      trigger: { category: "rfqs", event: "new_urgent" },
-      conditions: { severity: "Any", keyword: "urgent" },
-      action: { delivery: "Instant", channels: { inApp: true, whatsapp: false, email: true, sms: false }, throttleMins: 60, bypassQuietHours: false },
-    },
-    {
-      id: "r_payout",
-      enabled: true,
-      name: "Payout scheduled",
-      priority: "Low",
-      trigger: { category: "finance", event: "payout_scheduled" },
-      conditions: { severity: "Any", keyword: "" },
-      action: { delivery: "Digest", channels: { inApp: true, whatsapp: false, email: true, sms: false }, throttleMins: 0, bypassQuietHours: false },
-    },
-    {
-      id: "r_security",
-      enabled: true,
-      name: "Security alert",
-      priority: "High",
-      trigger: { category: "system", event: "security_alert" },
-      conditions: { severity: "High", keyword: "" },
-      action: { delivery: "Instant", channels: { inApp: true, whatsapp: true, email: true, sms: true }, throttleMins: 0, bypassQuietHours: true },
-    },
-  ];
-
-  return { globalChannels, categories, channelProfiles, quietHours, digest, rules };
 }
 
 function summarizeRule(r: Rule) {

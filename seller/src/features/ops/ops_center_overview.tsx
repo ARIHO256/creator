@@ -310,70 +310,26 @@ function MiniRow({ label, value, tone = "slate" }) {
 }
 
 function seedData() {
-  const now = Date.now();
-  const ago = (m) => new Date(now - m * 60_000).toISOString();
-
   return {
     kpis: {
-      ordersRisk: { value: 7, delta: 9, spark: [4, 5, 6, 4, 7, 8, 7] },
-      pendingRmas: { value: 3, delta: -12, spark: [6, 5, 5, 4, 3, 3, 3] },
-      openDisputes: { value: 2, delta: 0, spark: [2, 2, 3, 2, 2, 2, 2] },
-      lowStock: { value: 11, delta: 6, spark: [8, 9, 9, 10, 11, 11, 11] },
-      exportJobs: { value: 1, delta: -50, spark: [3, 2, 2, 2, 1, 1, 1] },
-      complianceDue: { value: 4, delta: 14, spark: [2, 2, 3, 3, 4, 4, 4] },
+      ordersRisk: { value: 0, delta: 0, spark: [] },
+      pendingRmas: { value: 0, delta: 0, spark: [] },
+      openDisputes: { value: 0, delta: 0, spark: [] },
+      lowStock: { value: 0, delta: 0, spark: [] },
+      exportJobs: { value: 0, delta: 0, spark: [] },
+      complianceDue: { value: 0, delta: 0, spark: [] },
     },
-    dailyCommand: [
-      { id: "cmd1", title: "Resolve SLA risks", detail: "3 orders are within 2 hours of SLA breach", priority: "High", cta: "Open orders" },
-      { id: "cmd2", title: "Approve pending RMAs", detail: "2 RMAs waiting on decision", priority: "Normal", cta: "Review returns" },
-      { id: "cmd3", title: "Restock low stock SKUs", detail: "5 SKUs below threshold in Kampala warehouse", priority: "High", cta: "Open inventory" },
-      { id: "cmd4", title: "Compliance tasks due", detail: "2 tasks due within 7 days", priority: "Normal", cta: "Open compliance" },
-    ],
+    dailyCommand: [],
     queues: {
-      Orders: [
-        { id: "ORD-10512", status: "Packed", sla: "1h 40m", risk: "High", warehouse: "Kampala", total: "UGX 1,240,000" },
-        { id: "ORD-10508", status: "Confirmed", sla: "4h 10m", risk: "Watch", warehouse: "Wuxi", total: "USD 840" },
-        { id: "ORD-10501", status: "Shipped", sla: "OK", risk: "OK", warehouse: "Nairobi", total: "KES 92,000" },
-        { id: "ORD-10498", status: "Confirmed", sla: "2h 05m", risk: "High", warehouse: "Kampala", total: "USD 120" },
-      ],
-      Returns: [
-        { id: "RMA-2401", reason: "Damaged", stage: "Awaiting approval", amount: "USD 120", age: "6h" },
-        { id: "RMA-2399", reason: "Wrong item", stage: "Awaiting pickup", amount: "UGX 240,000", age: "1d" },
-        { id: "RMA-2397", reason: "Not as described", stage: "Inspection", amount: "USD 60", age: "2d" },
-      ],
-      Disputes: [
-        { id: "DSP-901", type: "Chargeback", risk: 86, next: "Upload evidence", due: "Today" },
-        { id: "DSP-896", type: "Delivery", risk: 42, next: "Respond to buyer", due: "Tomorrow" },
-      ],
-      Inventory: [
-        { sku: "CHG-7KW-WBX", available: 7, reserved: 4, cover: "3d", action: "Restock" },
-        { sku: "EVBATT-60V", available: 2, reserved: 1, cover: "1d", action: "Restock" },
-        { sku: "CABLE-T2-5M", available: 18, reserved: 6, cover: "12d", action: "OK" },
-        { sku: "HELMET-S", available: 0, reserved: 2, cover: "0d", action: "Pause listings" },
-      ],
-      Compliance: [
-        { task: "Update KYB document expiry", desk: "Compliance Center", due: "7 days", status: "Action needed" },
-        { task: "Upload import certificate", desk: "HealthMart Desk", due: "3 days", status: "Action needed" },
-        { task: "Renew tax profile", desk: "Tax Hub", due: "14 days", status: "Scheduled" },
-        { task: "Webhook signing enabled", desk: "Integrations", due: "Now", status: "Recommended" },
-      ],
+      Orders: [],
+      Returns: [],
+      Disputes: [],
+      Inventory: [],
+      Compliance: [],
     },
-    alerts: [
-      { id: "al1", title: "Low stock risk", message: "5 SKUs below threshold in Kampala", tone: "orange" },
-      { id: "al2", title: "SLA breach risk", message: "2 orders are within 2 hours of SLA", tone: "danger" },
-      { id: "al3", title: "Compliance task due", message: "HealthMart certificate due in 3 days", tone: "orange" },
-    ],
-    health: [
-      { service: "Warehouse sync", status: "Operational", last: ago(11) },
-      { service: "Webhooks", status: "Operational", last: ago(9) },
-      { service: "Messaging", status: "Degraded", last: ago(22) },
-      { service: "Exports", status: "Operational", last: ago(17) },
-    ],
-    activity: [
-      { at: ago(12), who: "System", what: "Inventory adjustment recorded", ref: "SKU CHG-7KW-WBX" },
-      { at: ago(35), who: "Ops", what: "Order moved to Packed", ref: "ORD-10512" },
-      { at: ago(68), who: "Support", what: "Dispute evidence requested", ref: "DSP-901" },
-      { at: ago(95), who: "Finance", what: "Payout hold released", ref: "HOLD-1190" },
-    ],
+    alerts: [],
+    health: [],
+    activity: [],
   };
 }
 
@@ -397,7 +353,7 @@ export default function OpsCenterOverview() {
           setData(payload as typeof data);
         }
       } catch {
-        // keep seeded view
+        setData(seedData());
       } finally {
         if (!cancelled) setLoading(false);
       }

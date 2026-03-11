@@ -486,8 +486,8 @@ export default function ComplianceCenterPreviewable() {
 
   const [tab, setTab] = useState("Overview");
 
-  const [cases, setCases] = useState(seedCases());
-  const [docs, setDocs] = useState(seedDocs());
+  const [cases, setCases] = useState<any[]>([]);
+  const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const didHydrateRef = useRef(false);
 
@@ -501,7 +501,8 @@ export default function ComplianceCenterPreviewable() {
         if (Array.isArray(payload.cases)) setCases(payload.cases as typeof cases);
         if (Array.isArray(payload.docs)) setDocs(payload.docs as typeof docs);
       } catch {
-        // keep seeded UI
+        setCases([]);
+        setDocs([]);
       } finally {
         if (!cancelled) setLoading(false);
       }

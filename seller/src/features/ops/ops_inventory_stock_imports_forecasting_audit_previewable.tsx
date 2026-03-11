@@ -454,7 +454,7 @@ export default function OpsInventoryPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [items, setItems] = useState(seedInventory());
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState("");
@@ -504,7 +504,7 @@ export default function OpsInventoryPage() {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [items, query, warehouse, category, status]);
 
-  const [activeSku, setActiveSku] = useState(seedInventory()[0]?.sku);
+  const [activeSku, setActiveSku] = useState<string | undefined>(undefined);
   useEffect(() => {
     if (!filtered.find((x) => x.sku === activeSku)) setActiveSku(filtered[0]?.sku);
   }, [filtered]);
@@ -522,42 +522,7 @@ export default function OpsInventoryPage() {
   }, [items]);
 
   // -------------------- Adjustment audit --------------------
-  const [audit, setAudit] = useState(() => {
-    const now = Date.now();
-    const ago = (m) => new Date(now - m * 60_000).toISOString();
-    return [
-      {
-        id: "AUD-2003",
-        sku: "PLUG-CCS2",
-        warehouse: "Main Warehouse",
-        deltaOnHand: -6,
-        deltaReserved: 0,
-        reason: "Damage write-off",
-        actor: "Ops",
-        createdAt: ago(34),
-      },
-      {
-        id: "AUD-2002",
-        sku: "RFID-CARD",
-        warehouse: "Kampala Hub",
-        deltaOnHand: +120,
-        deltaReserved: 0,
-        reason: "Restock arrival",
-        actor: "Ops",
-        createdAt: ago(98),
-      },
-      {
-        id: "AUD-2001",
-        sku: "BAT-48V-20AH",
-        warehouse: "Nairobi Hub",
-        deltaOnHand: 0,
-        deltaReserved: +4,
-        reason: "Order reservations",
-        actor: "System",
-        createdAt: ago(190),
-      },
-    ];
-  });
+  const [audit, setAudit] = useState<any[]>([]);
   const didHydrateRef = useRef(false);
 
   const persistPage = async (nextItems = items, nextAudit = audit, nextActiveSku = activeSku) => {
@@ -583,7 +548,8 @@ export default function OpsInventoryPage() {
         if (Array.isArray(payload.audit)) setAudit(payload.audit as typeof audit);
         if (typeof payload.activeSku === "string") setActiveSku(payload.activeSku);
       } catch {
-        // keep seeded inventory
+        setItems([]);
+        setAudit([]);
       } finally {
         if (!cancelled) setLoading(false);
       }

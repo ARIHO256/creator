@@ -751,10 +751,10 @@ export default function SupportCenterPage() {
   };
   const dismissToast = (id) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [status, setStatus] = useState(seedStatus());
-  const [tickets, setTickets] = useState(seedTickets());
-  const [articles, setArticles] = useState(seedArticles());
-  const [playbooks, setPlaybooks] = useState(seedPlaybooks());
+  const [status, setStatus] = useState({ overall: "Operational", services: [], incidents: [] });
+  const [tickets, setTickets] = useState([]);
+  const [articles, setArticles] = useState([]);
+  const [playbooks, setPlaybooks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -791,7 +791,7 @@ export default function SupportCenterPage() {
                   status: String(entry.status ?? "Operational"),
                   updatedAt: String(entry.lastCheckAt ?? new Date().toISOString()),
                 }))
-              : seedStatus().services,
+              : [],
             incidents: Array.isArray(statusPayload.incidents)
               ? statusPayload.incidents.map((entry) => ({
                   id: String(entry.id ?? makeId("inc")),
@@ -801,7 +801,7 @@ export default function SupportCenterPage() {
                   status: String(entry.status ?? "Investigating"),
                   summary: String(entry.summary ?? ""),
                 }))
-              : seedStatus().incidents,
+              : [],
           });
         }
         if (Array.isArray(contentPayload.kb)) {
@@ -839,7 +839,10 @@ export default function SupportCenterPage() {
           setPlaybooks(helpPayload.playbooks);
         }
       } catch {
-        // keep seeded content
+        setStatus({ overall: "Operational", services: [], incidents: [] });
+        setTickets([]);
+        setArticles([]);
+        setPlaybooks([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1269,8 +1272,76 @@ export default function SupportCenterPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setStatus(seedStatus());
-                  pushToast({ title: "Refreshed", message: "Latest status loaded (demo).", tone: "success" });
+                  void Promise.all([
+                    sellerBackendApi.getStatusCenter(),
+                    sellerBackendApi.getHelpSupportContent(),
+                    sellerBackendApi.getSettingsHelp(),
+                  ])
+                    .then(([statusPayload, contentPayload, helpPayload]) => {
+                      setStatus({
+                        overall:
+                          Array.isArray(statusPayload.incidents) &&
+                          statusPayload.incidents.some((entry) => String(entry.status).toLowerCase() !== "resolved")
+                            ? "Degraded"
+                            : "Operational",
+                        services: Array.isArray(statusPayload.providers)
+                          ? statusPayload.providers.map((entry) => ({
+                              key: String(entry.id ?? entry.name ?? makeId("svc")),
+                              name: String(entry.name ?? "Service"),
+                              status: String(entry.status ?? "Operational"),
+                              updatedAt: String(entry.lastCheckAt ?? new Date().toISOString()),
+                            }))
+                          : [],
+                        incidents: Array.isArray(statusPayload.incidents)
+                          ? statusPayload.incidents.map((entry) => ({
+                              id: String(entry.id ?? makeId("inc")),
+                              title: String(entry.title ?? "Incident"),
+                              severity: String(entry.severity ?? "Minor"),
+                              startedAt: String(entry.updatedAt ?? new Date().toISOString()),
+                              status: String(entry.status ?? "Investigating"),
+                              summary: String(entry.summary ?? ""),
+                            }))
+                          : [],
+                      });
+                      if (Array.isArray(contentPayload.kb)) {
+                        setArticles(
+                          contentPayload.kb.map((entry) => ({
+                            id: String(entry.id ?? makeId("kb")),
+                            title: String(entry.title ?? "Article"),
+                            category: String(entry.metadata?.category ?? entry.metadata?.module ?? "General"),
+                            tags: Array.isArray(entry.metadata?.tags) ? entry.metadata.tags : [],
+                            excerpt: String(entry.metadata?.excerpt ?? entry.body ?? ""),
+                            updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
+                            body: String(entry.body ?? ""),
+                          }))
+                        );
+                      }
+                      if (Array.isArray(contentPayload.tickets)) {
+                        setTickets(
+                          contentPayload.tickets.map((entry) => ({
+                            id: String(entry.id ?? makeId("SUP")),
+                            subject: String(entry.subject ?? "Support ticket"),
+                            category: String(entry.category ?? "Support"),
+                            priority: mapSeverity(entry.severity),
+                            status: mapTicketStatus(entry.status),
+                            createdAt: String(entry.createdAt ?? new Date().toISOString()),
+                            updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
+                            channel: String(entry.marketplace ?? "Portal"),
+                            slaDueAt: String(entry.lastResponseAt ?? entry.updatedAt ?? new Date().toISOString()),
+                            last: String(entry.ref ?? entry.subject ?? ""),
+                            conversation: [],
+                            meta: { org: "EVzone Supplier", region: "Global", product: entry.category ?? "Support" },
+                          }))
+                        );
+                      }
+                      if (Array.isArray(helpPayload.playbooks)) {
+                        setPlaybooks(helpPayload.playbooks);
+                      }
+                      pushToast({ title: "Refreshed", message: "Latest support data loaded.", tone: "success" });
+                    })
+                    .catch(() => {
+                      pushToast({ title: "Refresh failed", message: "Could not reload support data.", tone: "warning" });
+                    });
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
