@@ -320,7 +320,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
 
 // -------------------- Data + helpers --------------------
 
-function seedRFQs(): Rfq[] {
+function buildRFQs(): Rfq[] {
   const now = Date.now();
   const agoH = (h: number) => new Date(now - h * 3600_000).toISOString();
   const inH = (h: number) => new Date(now + h * 3600_000).toISOString();

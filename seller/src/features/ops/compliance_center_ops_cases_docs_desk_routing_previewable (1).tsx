@@ -269,7 +269,7 @@ function slaLabel(dueAt, status) {
   return { label: "On track", tone: "green" };
 }
 
-function seedCases() {
+function buildCases() {
   const now = Date.now();
   const agoH = (h) => new Date(now - h * 3600_000).toISOString();
   const inH = (h) => new Date(now + h * 3600_000).toISOString();
@@ -361,7 +361,7 @@ function seedCases() {
   ];
 }
 
-function seedDocs() {
+function buildDocs() {
   const now = Date.now();
   const agoD = (d) => new Date(now - d * 24 * 3600_000).toISOString();
   return [

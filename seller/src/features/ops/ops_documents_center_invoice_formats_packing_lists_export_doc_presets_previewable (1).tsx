@@ -259,7 +259,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function seedTemplates(): Template[] {
+function buildTemplates(): Template[] {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 

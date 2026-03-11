@@ -320,7 +320,7 @@ function severityTone(s: EscalationSeverity): BadgeTone {
   return "slate";
 }
 
-function seedLicenses(): License[] {
+function buildLicenses(): License[] {
   const now = Date.now();
   const agoH = (h: number) => new Date(now - h * 3600_000).toISOString();
   const inD = (d: number) => new Date(now + d * 24 * 3600_000).toISOString();
@@ -400,7 +400,7 @@ function restrictionTone(k: RestrictionKey): BadgeTone {
   return "slate";
 }
 
-function seedRestrictedItems(): RestrictedItem[] {
+function buildRestrictedItems(): RestrictedItem[] {
   const now = Date.now();
   const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
 
@@ -452,7 +452,7 @@ function seedRestrictedItems(): RestrictedItem[] {
   ];
 }
 
-function seedRules(): PolicyRule[] {
+function buildRules(): PolicyRule[] {
   return [
     {
       id: "RULE-01",
@@ -481,7 +481,7 @@ function seedRules(): PolicyRule[] {
   ];
 }
 
-function seedCases(): EscalationCase[] {
+function buildCases(): EscalationCase[] {
   const now = Date.now();
   const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
   return [

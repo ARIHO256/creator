@@ -398,7 +398,7 @@ function Modal({
   );
 }
 
-function seedMedia(): MediaItem[] {
+function buildMedia(): MediaItem[] {
   const base = Date.now();
   const ago = (m) => new Date(base - m * 60_000).toISOString();
   return [
@@ -494,7 +494,7 @@ function seedMedia(): MediaItem[] {
   ];
 }
 
-function seedCaseStudies(): CaseStudy[] {
+function buildCaseStudies(): CaseStudy[] {
   const base = Date.now();
   const ago = (h) => new Date(base - h * 3600_000).toISOString();
   return [

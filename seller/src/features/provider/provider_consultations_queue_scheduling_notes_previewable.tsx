@@ -372,7 +372,7 @@ function EmptyState({ title, message, action }: { title: string; message: string
   );
 }
 
-function seedConsultations(): Consult[] {
+function buildConsultations(): Consult[] {
   const now = Date.now();
   const minsAgo = (m: number) => new Date(now - m * 60_000).toISOString();
   const inMins = (m: number) => new Date(now + m * 60_000).toISOString();

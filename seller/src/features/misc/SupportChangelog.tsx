@@ -249,7 +249,7 @@ function impactTone(i: ChangelogItem["impact"]): "green" | "orange" | "danger" |
   return "green";
 }
 
-function seedChangelog(): ChangelogItem[] {
+function buildChangelog(): ChangelogItem[] {
   const now = Date.now();
   const agoH = (h: number) => new Date(now - h * 3600_000).toISOString();
   const agoD = (d: number) => new Date(now - d * 86_400_000).toISOString();

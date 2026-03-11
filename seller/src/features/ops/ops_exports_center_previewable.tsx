@@ -308,7 +308,7 @@ function Drawer({ open, title, subtitle, onClose, children }) {
   );
 }
 
-function seedJobs(): ExportJob[] {
+function buildJobs(): ExportJob[] {
   const now = Date.now();
   const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
 
@@ -381,7 +381,7 @@ function seedJobs(): ExportJob[] {
   ];
 }
 
-function seedTemplates(): ExportTemplate[] {
+function buildTemplates(): ExportTemplate[] {
   return [
     {
       id: "TPL-1001",
@@ -413,7 +413,7 @@ function seedTemplates(): ExportTemplate[] {
   ];
 }
 
-function seedSchedules(): ExportSchedule[] {
+function buildSchedules(): ExportSchedule[] {
   const now = Date.now();
   const inM = (m: number) => new Date(now + m * 60_000).toISOString();
   return [

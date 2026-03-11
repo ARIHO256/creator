@@ -371,7 +371,7 @@ function renderSample(templateBody: string) {
   return out;
 }
 
-function seedTemplates(): Template[] {
+function buildTemplates(): Template[] {
   const now = Date.now();
   const ago = (m: number) => new Date(now - m * 60_000).toISOString();
 

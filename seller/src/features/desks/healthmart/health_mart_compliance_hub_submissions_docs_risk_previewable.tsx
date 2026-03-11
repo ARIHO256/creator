@@ -307,7 +307,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function seedSubmissions(): Submission[] {
+function buildSubmissions(): Submission[] {
   const now = Date.now();
   const ago = (mins: number) => new Date(now - mins * 60_000).toISOString();
   const dueIn = (mins: number) => new Date(now + mins * 60_000).toISOString();
@@ -438,7 +438,7 @@ function seedSubmissions(): Submission[] {
   ];
 }
 
-function seedDocLibrary(): DocLibraryItem[] {
+function buildDocLibrary(): DocLibraryItem[] {
   return [
     { key: "business_license", label: "Business Registration", appliesTo: "All", state: "Uploaded" },
     { key: "tax_certificate", label: "Tax Certificate", appliesTo: "All", state: "Uploaded" },

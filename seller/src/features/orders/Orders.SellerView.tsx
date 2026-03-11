@@ -148,7 +148,7 @@ function withRisk(rows) {
   return rows.map((o) => ({ ...o, ...riskMeta(o.slaDueAt) }));
 }
 
-function seedOrders() {
+function buildOrders() {
   const now = Date.now();
   const hoursAgo = (h) => new Date(now - h * 3600_000).toISOString();
   const dueIn = (m) => new Date(Date.now() + m * 60_000).toISOString();
@@ -241,7 +241,7 @@ function seedOrders() {
   ].map((o) => ({ ...o, ...riskMeta(o.slaDueAt) }));
 }
 
-function seedReturns() {
+function buildReturns() {
   const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
   return [
     {
@@ -277,7 +277,7 @@ function seedReturns() {
   ];
 }
 
-function seedDisputes() {
+function buildDisputes() {
   const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
   return [
     {

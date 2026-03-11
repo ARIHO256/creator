@@ -299,7 +299,7 @@ function Toggle({ on, setOn, label }) {
 
 // ------------------------ Seed data ------------------------
 
-function seedWarehouses(): Warehouse[] {
+function buildWarehouses(): Warehouse[] {
   return [
     {
       id: "WH-UG-KLA",
@@ -349,7 +349,7 @@ function seedWarehouses(): Warehouse[] {
   ];
 }
 
-function seedRules(): RoutingRule[] {
+function buildRules(): RoutingRule[] {
   return [
     {
       id: "RR-1",
@@ -381,7 +381,7 @@ function seedRules(): RoutingRule[] {
   ];
 }
 
-function seedBuyerPrefs(): BuyerPref[] {
+function buildBuyerPrefs(): BuyerPref[] {
   const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
   return [
     { id: "B-1001", name: "Amina K.", preferredWarehouseId: "WH-UG-KLA", lastOrderAt: ago(320), note: "Fast pickup" },

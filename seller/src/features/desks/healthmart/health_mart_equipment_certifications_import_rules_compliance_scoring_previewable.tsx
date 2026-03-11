@@ -310,7 +310,7 @@ function computeComplianceScore(s: EquipmentSubmission) {
   return { score, tone: scoreTone(score) as "green" | "orange" | "danger", breakdown, missingDocs, suggestions };
 }
 
-function seedSubmissions(): EquipmentSubmission[] {
+function buildSubmissions(): EquipmentSubmission[] {
   const now = Date.now();
   const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
   return [

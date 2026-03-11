@@ -246,7 +246,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function seedKb(): KbArticle[] {
+function buildKb(): KbArticle[] {
   const now = Date.now();
   const ago = (mins: number) => new Date(now - mins * 60_000).toISOString();
 
@@ -304,7 +304,7 @@ function seedKb(): KbArticle[] {
   ];
 }
 
-function seedIncidents(): Incident[] {
+function buildIncidents(): Incident[] {
   const now = Date.now();
   const ago = (mins: number) => new Date(now - mins * 60_000).toISOString();
 

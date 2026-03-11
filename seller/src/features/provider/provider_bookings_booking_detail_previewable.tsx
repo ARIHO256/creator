@@ -267,7 +267,7 @@ function computeSlaMeta(b: Booking, nowMs: number): SlaMeta | null {
   return { state: "ok", label: "On track", mins: null };
 }
 
-function seedTemplates(): ChecklistTemplate[] {
+function buildTemplates(): ChecklistTemplate[] {
   return [
     {
       id: "tpl_install",
@@ -308,7 +308,7 @@ function seedTemplates(): ChecklistTemplate[] {
   ];
 }
 
-function seedBookings(nowMs: number): Booking[] {
+function buildBookings(nowMs: number): Booking[] {
   const now = nowMs || Date.now();
   const inMins = (m) => new Date(now + m * 60_000).toISOString();
   const agoMins = (m) => new Date(now - m * 60_000).toISOString();

@@ -515,7 +515,7 @@ function buildTrend(reviews: Review[]): TrendPoint[] {
     }));
 }
 
-function seedReviews() {
+function buildReviews() {
   const now = Date.now();
   const agoH = (h: number) => new Date(now - h * 3600_000).toISOString();
 
