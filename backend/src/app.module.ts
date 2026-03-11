@@ -50,7 +50,6 @@ import { TrustModule } from './modules/trust/trust.module.js';
 import { ApprovalsModule } from './modules/approvals/approvals.module.js';
 import { ExportsModule } from './modules/exports/exports.module.js';
 import { SearchModule } from './modules/search/search.module.js';
-import { FrontendStateModule } from './modules/frontend-state/frontend-state.module.js';
 
 @Module({
   imports: [
@@ -81,7 +80,6 @@ import { FrontendStateModule } from './modules/frontend-state/frontend-state.mod
     CatalogModule,
     ExportsModule,
     SearchModule,
-    FrontendStateModule,
     TrustModule,
     ApprovalsModule,
     DealsModule,

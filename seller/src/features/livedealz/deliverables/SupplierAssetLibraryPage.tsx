@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierAssetLibraryPage.jsx
@@ -316,6 +317,66 @@ const seedAssets = [
     restrictions: "Catalog license applies." 
   }
 ];
+
+function mapBackendAsset(asset) {
+  const metadata = asset?.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const tags = Array.isArray(metadata.tags) ? metadata.tags.map((tag) => String(tag)) : [];
+  const width = Number(metadata.width);
+  const height = Number(metadata.height);
+  const previewKind = String(metadata.previewKind || (asset.kind === "video" ? "video" : "image"));
+  return {
+    id: String(asset.id || ""),
+    creatorScope: String(metadata.creatorScope || "all"),
+    title: String(asset.name || "Untitled asset"),
+    subtitle: String(metadata.subtitle || ""),
+    campaignId: String(metadata.campaignId || ""),
+    supplierId: String(metadata.supplierId || ""),
+    brand: String(metadata.brand || ""),
+    tags,
+    mediaType: String(asset.kind || metadata.mediaType || "image"),
+    source: String(metadata.source || "supplier"),
+    ownerLabel: String(metadata.ownerLabel || `Owner: ${metadata.owner || "Supplier"}`),
+    status: String(metadata.status || "draft"),
+    lastUpdatedLabel: `Last updated: ${new Date(asset.updatedAt || asset.createdAt || Date.now()).toLocaleString()}`,
+    thumbnailUrl: String(metadata.thumbnailUrl || metadata.posterUrl || asset.url || ""),
+    previewUrl: String(asset.url || metadata.previewUrl || metadata.posterUrl || ""),
+    previewKind,
+    dimensions:
+      Number.isFinite(width) && Number.isFinite(height)
+        ? { width, height }
+        : undefined,
+    role: typeof metadata.role === "string" ? metadata.role : undefined,
+    aspect: typeof metadata.aspect === "string" ? metadata.aspect : undefined,
+    desktopMode: typeof metadata.desktopMode === "string" ? metadata.desktopMode : undefined,
+    usageNotes: typeof metadata.usageNotes === "string" ? metadata.usageNotes : "",
+    restrictions: typeof metadata.restrictions === "string" ? metadata.restrictions : "",
+  };
+}
+
+function buildAssetMetadata(asset, note) {
+  return {
+    creatorScope: asset.creatorScope || "all",
+    subtitle: asset.subtitle || "",
+    campaignId: asset.campaignId || "",
+    supplierId: asset.supplierId || "",
+    brand: asset.brand || "",
+    tags: Array.isArray(asset.tags) ? asset.tags : [],
+    source: asset.source || "supplier",
+    ownerLabel: asset.ownerLabel || "Owner: Supplier",
+    status: asset.status || "draft",
+    previewKind: asset.previewKind || (asset.mediaType === "video" ? "video" : "image"),
+    thumbnailUrl: asset.thumbnailUrl || "",
+    posterUrl: asset.thumbnailUrl || "",
+    role: asset.role || null,
+    aspect: asset.aspect || null,
+    desktopMode: asset.desktopMode || null,
+    usageNotes: asset.usageNotes || "",
+    restrictions: asset.restrictions || "",
+    width: asset.dimensions?.width ?? null,
+    height: asset.dimensions?.height ?? null,
+    reviewNote: typeof note === "string" ? note : "",
+  };
+}
 
 const smartPacks = [
   {
@@ -915,7 +976,7 @@ export default function SupplierAssetLibraryPage() {
   const pickerMode = mode === "picker";
   const pickerTarget = target === "live" ? "live" : "shoppable";
 
-  const [assets, setAssets] = useState(seedAssets);
+  const [assets, setAssets] = useState([]);
 
   const [selectedCreatorId, setSelectedCreatorId] = useState(creators[0]?.id || "");
   const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || "");
@@ -930,7 +991,7 @@ export default function SupplierAssetLibraryPage() {
   const [filterStatus, setFilterStatus] = useState("all"); // includes "pending" alias
   const [filterSource, setFilterSource] = useState("all");
 
-  const [activeAssetId, setActiveAssetId] = useState(seedAssets[0]?.id || null);
+  const [activeAssetId, setActiveAssetId] = useState(null);
 
   const [toast, setToast] = useState(null);
 
@@ -943,6 +1004,33 @@ export default function SupplierAssetLibraryPage() {
   const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) || creators[0], [selectedCreatorId]);
   const selectedSupplier = useMemo(() => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0], [selectedSupplierId]);
   const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0], [selectedCampaignId, campaignsForSupplier]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const payload = await sellerBackendApi.getMediaAssets();
+        if (cancelled) return;
+        const rows = Array.isArray(payload) ? payload : [];
+        setAssets(rows.map(mapBackendAsset));
+      } catch {
+        if (!cancelled) {
+          setAssets([]);
+          setToast({ title: "Backend unavailable", body: "Could not fetch media assets." });
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeAssetId && assets[0]?.id) {
+      setActiveAssetId(assets[0].id);
+    }
+  }, [activeAssetId, assets]);
 
   // Auto-select first campaign when supplier changes
   useEffect(() => {
@@ -987,25 +1075,39 @@ export default function SupplierAssetLibraryPage() {
     if (typeof window !== "undefined" && window.innerWidth < 1024) setIsMobilePreviewOpen(true);
   }
 
-  function setStatus(assetId, status, note) {
-    setAssets((prev) => prev.map((a) => (a.id === assetId ? { ...a, status } : a)));
+  async function setStatus(assetId, status, note) {
+    const current = assets.find((asset) => asset.id === assetId);
+    if (!current) return;
+    const nextAsset = { ...current, status };
+    try {
+      await sellerBackendApi.patchMediaAsset(assetId, {
+        name: nextAsset.title,
+        kind: nextAsset.mediaType,
+        url: nextAsset.previewUrl,
+        metadata: buildAssetMetadata(nextAsset, note),
+      });
+    } catch {
+      setToast({ title: "Update failed", body: "Could not persist asset review status." });
+      return;
+    }
+    setAssets((prev) => prev.map((a) => (a.id === assetId ? nextAsset : a)));
     if (note != null) setReviewNotes((prev) => ({ ...prev, [assetId]: note }));
   }
 
   function supplierApprove(asset) {
     // Supplier approves a creator submission: move to Admin review.
     const next = supplierAutoApprove ? "pending_admin" : "pending_admin";
-    setStatus(asset.id, next, activeReviewNote);
+    void setStatus(asset.id, next, activeReviewNote);
     setToast({ title: "Approved", body: "Sent to Admin review (demo)." });
   }
 
   function supplierRequestChanges(asset) {
-    setStatus(asset.id, "changes_requested", activeReviewNote);
+    void setStatus(asset.id, "changes_requested", activeReviewNote);
     setToast({ title: "Changes requested", body: "The creator must update and resubmit." });
   }
 
   function supplierReject(asset) {
-    setStatus(asset.id, "rejected", activeReviewNote);
+    void setStatus(asset.id, "rejected", activeReviewNote);
     setToast({ title: "Rejected", body: "Submission rejected. Creator can submit a new version." });
   }
 
@@ -1126,7 +1228,7 @@ export default function SupplierAssetLibraryPage() {
     }
   }
 
-  function submitForReview() {
+  async function submitForReview() {
     const missingRights = !submitDraft.rightsConfirmed || !submitDraft.noCopyrightedMusicConfirmed;
     const hasAnyMedia =
       submitDraft.mediaType === "link" ? Boolean((submitDraft.linkUrl || "").trim()) : submitDraft.files.length > 0 || Boolean((submitDraft.postUrl || "").trim());
@@ -1197,31 +1299,43 @@ export default function SupplierAssetLibraryPage() {
 
     const dims = submitImageMeta ? { width: submitImageMeta.width, height: submitImageMeta.height } : undefined;
 
-    setAssets((prev) => [
-      {
-        id,
-        creatorScope: "all",
-        title: submitDraft.title || "Untitled submission",
-        subtitle: `${selectedCampaign?.name || "Campaign"} · ${selectedSupplier?.brand || selectedSupplier?.name}`,
-        campaignId: submitDraft.campaignId,
-        supplierId: selectedSupplierId,
-        brand: selectedSupplier?.brand || selectedSupplier?.name,
-        tags,
-        mediaType: submitDraft.mediaType,
-        source: "supplier",
-        ownerLabel: "Owner: Supplier",
-        status: finalStatus,
-        lastUpdatedLabel: "Last updated: Just now",
-        thumbnailUrl: previewKind === "image" ? previewUrl : undefined,
-        previewUrl,
-        previewKind,
-        dimensions: dims,
-        role: submitDraft.role || undefined,
-        usageNotes: submitDraft.notes,
-        restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required"
-      },
-      ...prev
-    ]);
+    const nextAsset = {
+      id,
+      creatorScope: "all",
+      title: submitDraft.title || "Untitled submission",
+      subtitle: `${selectedCampaign?.name || "Campaign"} · ${selectedSupplier?.brand || selectedSupplier?.name}`,
+      campaignId: submitDraft.campaignId,
+      supplierId: selectedSupplierId,
+      brand: selectedSupplier?.brand || selectedSupplier?.name,
+      tags,
+      mediaType: submitDraft.mediaType,
+      source: "supplier",
+      ownerLabel: "Owner: Supplier",
+      status: finalStatus,
+      lastUpdatedLabel: "Last updated: Just now",
+      thumbnailUrl: previewKind === "image" ? previewUrl : undefined,
+      previewUrl,
+      previewKind,
+      dimensions: dims,
+      role: submitDraft.role || undefined,
+      usageNotes: submitDraft.notes,
+      restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required"
+    };
+
+    try {
+      const created = await sellerBackendApi.createMediaAsset({
+        name: nextAsset.title,
+        kind: nextAsset.mediaType,
+        url: nextAsset.previewUrl,
+        isPublic: false,
+        metadata: buildAssetMetadata(nextAsset, ""),
+      });
+      setAssets((prev) => [mapBackendAsset(created), ...prev]);
+      setActiveAssetId(String(created.id || nextAsset.id));
+    } catch {
+      setToast({ title: "Submit failed", body: "Could not persist the media asset." });
+      return;
+    }
 
     setToast({ title: "Submitted", body: "Supplier content submitted for Admin review (demo)." });
     setIsSubmitOpen(false);

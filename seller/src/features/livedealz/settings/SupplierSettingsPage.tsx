@@ -580,8 +580,8 @@ function policyAllSeen(form) {
 
 /* ------------------------- Default form (Supplier) ------------------------- */
 
-export function seedSupplierSettingsForm() {
-  const base = {
+function createEmptySupplierSettingsForm() {
+  return {
     profile: {
       businessName: "",
       handle: "",
@@ -705,8 +705,6 @@ export function seedSupplierSettingsForm() {
       scrolledToBottom: false
     }
   };
-
-  return base;
 }
 
 /* ------------------------- Main page ------------------------- */
@@ -714,7 +712,7 @@ export function seedSupplierSettingsForm() {
 export default function SupplierSettingsSafetyPage() {
   const { toasts, push } = useToasts();
 
-  const [form, setForm] = useState(seedSupplierSettingsForm());
+  const [form, setForm] = useState(createEmptySupplierSettingsForm());
   const [saved, setSaved] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
@@ -761,11 +759,12 @@ export default function SupplierSettingsSafetyPage() {
           typeof payload.profile === "object" &&
           (payload.profile as { supplierSettings?: unknown }).supplierSettings &&
           typeof (payload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
-            ? deepMerge(seedSupplierSettingsForm(), (payload.profile as { supplierSettings: unknown }).supplierSettings)
-            : seedSupplierSettingsForm();
+            ? deepMerge(createEmptySupplierSettingsForm(), (payload.profile as { supplierSettings: unknown }).supplierSettings)
+            : createEmptySupplierSettingsForm();
         setForm(nextForm);
       } catch {
         if (!cancelled) {
+          setForm(createEmptySupplierSettingsForm());
           push("Could not load supplier settings from the backend.", "error");
         }
       } finally {
@@ -934,8 +933,8 @@ export default function SupplierSettingsSafetyPage() {
   }
 
   function resetAll() {
-    setForm(seedSupplierSettingsForm());
-    addAudit("Settings reset", "Restored defaults");
+    setForm(createEmptySupplierSettingsForm());
+    addAudit("Settings reset", "Restored backend baseline");
     push("Settings reset to defaults.", "success");
     setConfirmReset(false);
   }
