@@ -78,7 +78,6 @@ type ChecklistSection = { id: string; title: string; items: ChecklistItem[] };
 type Rule = { id: string; name: string; enabled: boolean; severity: "High" | "Medium" | "Low"; when: string; then: string; evidence: string };
 type AuditEntry = { id: string; at: string; actor: string; action: string; detail: string };
 type Finding = { id: string; severity: "High" | "Medium" | "Low"; title: string; message: string; action: ToastAction };
-type SeedData = { licenses: License[]; checklist: ChecklistSection[]; rules: Rule[]; audit: AuditEntry[] };
 type PackSelect = { licenses: Record<string, boolean>; checks: Record<string, boolean> };
 type EvidencePackManifest = {
   packId: string;
@@ -333,253 +332,6 @@ function ToastCenter({ toasts, dismiss }: ToastCenterProps) {
   );
 }
 
-function seedData(): SeedData {
-  const now = Date.now();
-  const inDays = (d: number) => new Date(now + d * 86_400_000).toISOString();
-  const agoDays = (d: number) => new Date(now - d * 86_400_000).toISOString();
-
-  const licenses: License[] = [
-    {
-      id: "LIC-1001",
-      name: "GDP Certificate (Good Distribution Practice)",
-      issuer: "Regulator",
-      number: "GDP-UG-88219",
-      issuedAt: agoDays(340),
-      expiresAt: inDays(25),
-      required: true,
-      scope: "National distribution",
-      verifiedAt: agoDays(10),
-      docs: [
-        { id: "doc1", name: "gdp_certificate.pdf", type: "PDF", uploadedAt: agoDays(340) },
-      ],
-      tags: ["distribution", "GDP"],
-    },
-    {
-      id: "LIC-1002",
-      name: "Warehouse Storage Permit",
-      issuer: "Local Authority",
-      number: "WHS-44190",
-      issuedAt: agoDays(210),
-      expiresAt: inDays(120),
-      required: true,
-      scope: "Storage and handling",
-      verifiedAt: agoDays(25),
-      docs: [{ id: "doc2", name: "warehouse_permit.pdf", type: "PDF", uploadedAt: agoDays(210) }],
-      tags: ["warehouse"],
-    },
-    {
-      id: "LIC-1003",
-      name: "Cold Chain Compliance Certificate",
-      issuer: "Certification Body",
-      number: "CCC-19022",
-      issuedAt: agoDays(360),
-      expiresAt: inDays(9),
-      required: true,
-      scope: "Temperature-controlled logistics",
-      verifiedAt: agoDays(18),
-      docs: [{ id: "doc3", name: "cold_chain_certificate.pdf", type: "PDF", uploadedAt: agoDays(360) }],
-      tags: ["cold-chain"],
-    },
-    {
-      id: "LIC-1004",
-      name: "Vehicle Roadworthiness",
-      issuer: "Transport Authority",
-      number: "VR-88311",
-      issuedAt: agoDays(370),
-      expiresAt: agoDays(5),
-      required: true,
-      scope: "Fleet vehicles",
-      verifiedAt: agoDays(80),
-      docs: [{ id: "doc4", name: "roadworthy_inspection.pdf", type: "PDF", uploadedAt: agoDays(370) }],
-      tags: ["vehicles"],
-    },
-    {
-      id: "LIC-1005",
-      name: "Cargo Insurance",
-      issuer: "Insurance Provider",
-      number: "",
-      issuedAt: null,
-      expiresAt: null,
-      required: true,
-      scope: "In-transit coverage",
-      verifiedAt: null,
-      docs: [],
-      tags: ["insurance"],
-    },
-    {
-      id: "LIC-1006",
-      name: "Driver Medical Clearance",
-      issuer: "Medical Facility",
-      number: "DMC-55210",
-      issuedAt: agoDays(30),
-      expiresAt: inDays(220),
-      required: false,
-      scope: "Drivers",
-      verifiedAt: agoDays(7),
-      docs: [{ id: "doc6", name: "driver_clearance.pdf", type: "PDF", uploadedAt: agoDays(30) }],
-      tags: ["drivers"],
-    },
-  ];
-
-  const checklist: ChecklistSection[] = [
-    {
-      id: "SEC-OPS",
-      title: "Company and operations",
-      items: [
-        {
-          id: "CHK-001",
-          title: "Business registration verified",
-          requirement: "Registration documents are valid and match the logistics operator identity.",
-          status: "pass",
-          required: true,
-          owner: "Compliance Desk",
-          updatedAt: agoDays(12),
-          evidence: [{ id: "ev1", name: "business_registration.pdf", type: "PDF", uploadedAt: agoDays(180) }],
-        },
-        {
-          id: "CHK-002",
-          title: "Insurance coverage uploaded",
-          requirement: "Cargo and liability coverage is present for regulated deliveries.",
-          status: "fail",
-          required: true,
-          owner: "Finance",
-          updatedAt: agoDays(2),
-          evidence: [],
-        },
-        {
-          id: "CHK-003",
-          title: "SOP: Incident reporting",
-          requirement: "Defined escalation and incident reporting procedure.",
-          status: "pending",
-          required: true,
-          owner: "Ops",
-          updatedAt: agoDays(6),
-          evidence: [{ id: "ev3", name: "incident_sop.docx", type: "DOC", uploadedAt: agoDays(60) }],
-        },
-      ],
-    },
-    {
-      id: "SEC-WHS",
-      title: "Storage and warehousing",
-      items: [
-        {
-          id: "CHK-010",
-          title: "Temperature mapping report",
-          requirement: "Temperature mapping completed for cold chain storage areas.",
-          status: "warn",
-          required: true,
-          owner: "Warehouse",
-          updatedAt: agoDays(20),
-          evidence: [{ id: "ev10", name: "temp_mapping_report.pdf", type: "PDF", uploadedAt: agoDays(120) }],
-        },
-        {
-          id: "CHK-011",
-          title: "Pest control logs",
-          requirement: "Routine pest control logs are available for the last 90 days.",
-          status: "pass",
-          required: true,
-          owner: "Warehouse",
-          updatedAt: agoDays(3),
-          evidence: [{ id: "ev11", name: "pest_control_log.xlsx", type: "XLSX", uploadedAt: agoDays(3) }],
-        },
-        {
-          id: "CHK-012",
-          title: "Access control for regulated inventory",
-          requirement: "Restricted access with staff list and access logs.",
-          status: "pending",
-          required: true,
-          owner: "Security",
-          updatedAt: agoDays(1),
-          evidence: [],
-        },
-      ],
-    },
-    {
-      id: "SEC-TRN",
-      title: "Transport and handling",
-      items: [
-        {
-          id: "CHK-020",
-          title: "Vehicle sanitation protocol",
-          requirement: "Sanitation process documented and followed for each trip.",
-          status: "pass",
-          required: true,
-          owner: "Fleet",
-          updatedAt: agoDays(8),
-          evidence: [{ id: "ev20", name: "vehicle_sanitation_sop.pdf", type: "PDF", uploadedAt: agoDays(90) }],
-        },
-        {
-          id: "CHK-021",
-          title: "Tamper-evident packaging",
-          requirement: "Packaging method and seal controls documented.",
-          status: "warn",
-          required: true,
-          owner: "Ops",
-          updatedAt: agoDays(14),
-          evidence: [],
-        },
-        {
-          id: "CHK-022",
-          title: "Proof of delivery workflow",
-          requirement: "Capture signed proof of delivery with time and location.",
-          status: "pass",
-          required: true,
-          owner: "Ops",
-          updatedAt: agoDays(4),
-          evidence: [{ id: "ev22", name: "pod_workflow.pdf", type: "PDF", uploadedAt: agoDays(45) }],
-        },
-      ],
-    },
-  ];
-
-  const rules: Rule[] = [
-    {
-      id: "R-001",
-      name: "Block dispatch if roadworthiness expired",
-      enabled: true,
-      severity: "High",
-      when: "Vehicle Roadworthiness expires or is missing",
-      then: "Block dispatch and open an incident",
-      evidence: "Roadworthiness certificate",
-    },
-    {
-      id: "R-002",
-      name: "Warn if cold chain certificate expires within 30 days",
-      enabled: true,
-      severity: "Medium",
-      when: "Cold Chain Compliance Certificate has < 30 days",
-      then: "Create renewal task and show warning",
-      evidence: "Certificate + renewal receipt",
-    },
-    {
-      id: "R-003",
-      name: "Require cargo insurance for cross-border shipments",
-      enabled: true,
-      severity: "High",
-      when: "Cross-border delivery flag is ON",
-      then: "Require Cargo Insurance document",
-      evidence: "Insurance policy",
-    },
-    {
-      id: "R-004",
-      name: "Require SOP evidence for tamper-evident packaging",
-      enabled: true,
-      severity: "Low",
-      when: "Packaging item is not Pass",
-      then: "Request evidence pack",
-      evidence: "Packaging SOP",
-    },
-  ];
-
-  const audit: AuditEntry[] = [
-    { id: "A-001", at: agoDays(2), actor: "Compliance Desk", action: "Checklist updated", detail: "Insurance coverage marked Fail" },
-    { id: "A-002", at: agoDays(10), actor: "Compliance Desk", action: "License verified", detail: "GDP Certificate verified" },
-    { id: "A-003", at: agoDays(1), actor: "System", action: "Auto validation", detail: "Cold chain certificate expiring soon" },
-  ];
-
-  return { licenses, checklist, rules, audit };
-}
-
 function checklistTone(status: ChecklistItem["status"]): BadgeTone {
   if (status === "pass") return "green";
   if (status === "warn") return "orange";
@@ -617,8 +369,6 @@ function collectEvidenceForLicense(lic: License): EvidenceEntry[] {
 }
 
 export default function HealthMartLogisticsPage() {
-  const seed = useMemo(() => seedData(), []);
-
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
     const id = makeId("toast");
@@ -754,11 +504,18 @@ export default function HealthMartLogisticsPage() {
     return { high, med, low, total: autoFindings.length };
   }, [autoFindings]);
 
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
-    const map: Record<string, boolean> = {};
-    seed.checklist.forEach((s) => (map[s.id] = true));
-    return map;
-  });
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    setOpenSections((prev) => {
+      const next = { ...prev };
+      checklist.forEach((section) => {
+        if (!(section.id in next)) {
+          next[section.id] = true;
+        }
+      });
+      return next;
+    });
+  }, [checklist]);
 
   const setChecklistStatus = (itemId: string, nextStatus: ChecklistItem["status"]) => {
     setChecklist((prev) =>
