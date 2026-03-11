@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import { RealtimeStreamService } from './realtime.stream.service.js';
@@ -11,21 +11,24 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
   private readonly prefix: string;
 
   constructor(
-    private readonly configService: ConfigService,
+    @Optional() @Inject(ConfigService) private readonly configService?: ConfigService,
     private readonly streamService: RealtimeStreamService
   ) {
     this.enabled = !['0', 'false', 'no', 'off'].includes(
-      String(this.configService.get('realtime.enabled') ?? 'true').toLowerCase()
+      String(this.readConfig('realtime.enabled', 'false')).toLowerCase()
     );
-    this.prefix = String(this.configService.get('realtime.channelPrefix') ?? 'mldz:realtime:');
+    this.prefix = String(this.readConfig('realtime.channelPrefix', 'mldz:realtime:'));
   }
 
   onModuleInit() {
     const redisUrl =
-      this.configService.get<string>('realtime.redisUrl') ??
-      this.configService.get<string>('cache.redisUrl') ??
+      this.readConfig<string>('realtime.redisUrl', '') ??
+      this.readConfig<string>('cache.redisUrl', '') ??
       '';
     if (!this.enabled || !redisUrl) {
+      if (!this.configService) {
+        this.logger.debug('Realtime subscriber disabled because ConfigService is unavailable.');
+      }
       return;
     }
     this.client = new Redis(redisUrl, { maxRetriesPerRequest: 2 });
@@ -56,5 +59,9 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
       await this.client.quit();
       this.client = null;
     }
+  }
+
+  private readConfig<T = string>(key: string, fallback: T): T {
+    return (this.configService?.get<T>(key) ?? fallback) as T;
   }
 }
