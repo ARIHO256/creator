@@ -342,7 +342,7 @@ function Drawer({
   );
 }
 
-function seedReviews(): Review[] {
+function buildReviews(): Review[] {
   const now = Date.now();
   const ago = (mins: number) => new Date(now - mins * 60_000).toISOString();
 

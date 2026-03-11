@@ -176,6 +176,56 @@ type Deal = {
   notes?: string;
 };
 
+type LegacyMarketplaceTemplates = {
+  shoppable: ShoppableAd;
+  live: LiveInvite;
+};
+
+function createEmptySupplier(): Supplier {
+  return { name: "", category: "", logoUrl: "" };
+}
+
+function createEmptyCreator(): Creator {
+  return { name: "", handle: "", avatarUrl: "", verified: false };
+}
+
+function createEmptyShoppableTemplate(): ShoppableAd {
+  return {
+    id: "",
+    status: "Draft",
+    campaignName: "New Campaign",
+    campaignSubtitle: "New deal draft",
+    supplier: createEmptySupplier(),
+    creator: createEmptyCreator(),
+    platforms: ["Instagram", "TikTok"],
+    startISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
+    heroImageUrl: "",
+    offers: [],
+    ctaPrimaryLabel: "Shop now",
+    ctaSecondaryLabel: "View details",
+    kpis: []
+  };
+}
+
+function createEmptyLiveTemplate(): LiveInvite {
+  return {
+    id: "",
+    status: "Draft",
+    title: "New Campaign Live",
+    description: "Draft live session created from Dealz Marketplace. Add run-of-show, featured items, and destinations in Live Builder.",
+    host: createEmptyCreator(),
+    supplier: createEmptySupplier(),
+    platforms: ["Instagram", "TikTok"],
+    startISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
+    timezoneLabel: "GMT+3",
+    promoLink: "",
+    heroImageUrl: "",
+    featured: []
+  };
+}
+
 function money(currency: string, amount: number) {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
@@ -240,7 +290,7 @@ const CREATORS: Creator[] = [
   { name: "John Smith", handle: "@john", avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" }
 ];
 
-const DEALZ_SEED: Deal[] = [
+const LEGACY_MARKETPLACE_FIXTURE_DELETEME = [
   {
     id: "deal_1",
     type: "Shoppable Adz",
@@ -676,39 +726,6 @@ const DEALZ_SEED: Deal[] = [
     }
   }
 ];
-
-export function seedSupplierDealzMarketplaceDeals() {
-  return JSON.parse(JSON.stringify(DEALZ_SEED));
-}
-
-export function seedSupplierDealzMarketplaceSelectedId() {
-  return DEALZ_SEED[0]?.id || "";
-}
-
-export function seedSupplierDealzMarketplaceCart() {
-  return {} as Record<string, number>;
-}
-
-const seedSupplierDealzMarketplaceDealsValue = seedSupplierDealzMarketplaceDeals();
-const seedSupplierDealzMarketplaceSelectedIdValue = seedSupplierDealzMarketplaceSelectedId();
-const seedSupplierDealzMarketplaceCartValue = seedSupplierDealzMarketplaceCart();
-
-const shoppable1 = DEALZ_SEED[0].shoppable!;
-const live1: LiveInvite = {
-  id: "live_1",
-  status: "Draft",
-  title: "Summer Sale Live",
-  description: "Join us for the summer sale live event!",
-  supplier: SUPPLIERS[0],
-  host: CREATORS[0],
-  platforms: ["Instagram", "TikTok"],
-  startISO: new Date().toISOString(),
-  endISO: new Date(Date.now() + 3600000).toISOString(),
-  heroImageUrl: "https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=800&q=80",
-  promoLink: "https://example.com/live/1",
-  timezoneLabel: "GMT+3",
-  featured: []
-};
 
 function Pill({
   tone = "neutral",
@@ -2106,11 +2123,17 @@ type WizardType = DealType | "";
 function NewDealzWizard({
   open,
   onClose,
-  onCreate
+  onCreate,
+  suppliers,
+  creators,
+  templates
 }: {
   open: boolean;
   onClose: () => void;
   onCreate: (d: Deal, behavior: "open-builder" | "stay") => void;
+  suppliers: Supplier[];
+  creators: Creator[];
+  templates: LegacyMarketplaceTemplates;
 }) {
   const [step, setStep] = useState(0);
   const [type, setType] = useState<WizardType>("");
@@ -2146,10 +2169,10 @@ function NewDealzWizard({
   }
 
   function create(behavior: "open-builder" | "stay") {
-    if (!type) return;
+    if (!type || !suppliers.length || !creators.length) return;
 
-    const supplier = SUPPLIERS[supplierIdx];
-    const creator = CREATORS[creatorIdx];
+    const supplier = suppliers[supplierIdx] || suppliers[0];
+    const creator = creators[creatorIdx] || creators[0];
     const id = `dz_${Math.floor(Date.now() / 1000)}`;
 
     const base: Deal = {
@@ -2169,7 +2192,7 @@ function NewDealzWizard({
         ? {
           ...base,
           shoppable: {
-            ...shoppable1,
+            ...templates.shoppable,
             id: `ad_${id}`,
             status: "Draft",
             supplier,
@@ -2188,7 +2211,7 @@ function NewDealzWizard({
         ? {
           ...withShoppable,
           live: {
-            ...live1,
+            ...templates.live,
             id: `live_${id}`,
             status: "Draft",
             title: type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
@@ -2206,8 +2229,8 @@ function NewDealzWizard({
     onClose();
   }
 
-  const supplier = SUPPLIERS[supplierIdx];
-  const creator = CREATORS[creatorIdx];
+  const supplier = suppliers[supplierIdx] || suppliers[0] || createEmptySupplier();
+  const creator = creators[creatorIdx] || creators[0] || createEmptyCreator();
 
   return (
     <Drawer
@@ -2298,7 +2321,7 @@ function NewDealzWizard({
             <div>
               <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Select supplier</div>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {SUPPLIERS.map((s, i) => (
+                {suppliers.map((s, i) => (
                   <button
                     key={s.name}
                     type="button"
@@ -2374,6 +2397,13 @@ export default function SupplierDealzMarketplace() {
 
   const [dealz, setDealz] = useState<Deal[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [creators, setCreators] = useState<Creator[]>([]);
+  const [templates, setTemplates] = useState<LegacyMarketplaceTemplates>({
+    shoppable: createEmptyShoppableTemplate(),
+    live: createEmptyLiveTemplate()
+  });
+  const [marketplaceReady, setMarketplaceReady] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 
@@ -2413,12 +2443,39 @@ export default function SupplierDealzMarketplace() {
       setSelectedId(String((payload as { selectedId?: unknown }).selectedId ?? ""));
       setCart((((payload as { cart?: unknown }).cart ?? {}) as Record<string, number>));
       setLiveCart((((payload as { liveCart?: unknown }).liveCart ?? {}) as Record<string, number>));
+      setSuppliers(Array.isArray((payload as { suppliers?: unknown[] }).suppliers) ? ((payload as { suppliers?: Supplier[] }).suppliers ?? []) : []);
+      setCreators(Array.isArray((payload as { creators?: unknown[] }).creators) ? ((payload as { creators?: Creator[] }).creators ?? []) : []);
+      const templatePayload = (payload as { templates?: Record<string, unknown> }).templates;
+      setTemplates({
+        shoppable:
+          templatePayload?.shoppable && typeof templatePayload.shoppable === "object"
+            ? ({ ...createEmptyShoppableTemplate(), ...(templatePayload.shoppable as Partial<ShoppableAd>) })
+            : createEmptyShoppableTemplate(),
+        live:
+          templatePayload?.live && typeof templatePayload.live === "object"
+            ? ({ ...createEmptyLiveTemplate(), ...(templatePayload.live as Partial<LiveInvite>) })
+            : createEmptyLiveTemplate()
+      });
+      setMarketplaceReady(true);
     });
 
     return () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!marketplaceReady) return;
+    void sellerBackendApi.patchLegacyDealzMarketplace({
+      deals: dealz,
+      selectedId,
+      cart,
+      liveCart,
+      suppliers,
+      creators,
+      templates
+    }).catch(() => {});
+  }, [cart, creators, dealz, liveCart, marketplaceReady, selectedId, suppliers, templates]);
 
   function safeNav(url: string) {
     navigate(url);
@@ -3245,6 +3302,9 @@ export default function SupplierDealzMarketplace() {
       <NewDealzWizard
         open={newOpen}
         onClose={() => setNewOpen(false)}
+        suppliers={suppliers}
+        creators={creators}
+        templates={templates}
         onCreate={(d, behavior) => {
           setDealz((prev) => [d, ...prev]);
           setSelectedId(d.id);

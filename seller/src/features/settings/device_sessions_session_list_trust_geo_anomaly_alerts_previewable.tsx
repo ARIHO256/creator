@@ -438,7 +438,7 @@ function riskLabel(risk: SessionRisk) {
   return "OK";
 }
 
-function seedSessions(): Session[] {
+function buildSessions(): Session[] {
   const now = Date.now();
   const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
 

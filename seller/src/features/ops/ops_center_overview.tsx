@@ -309,7 +309,7 @@ function MiniRow({ label, value, tone = "slate" }) {
   );
 }
 
-function seedData() {
+function createEmptyOverviewData() {
   return {
     kpis: {
       ordersRisk: { value: 0, delta: 0, spark: [] },
@@ -340,7 +340,7 @@ function toneFromHealth(status: string) {
 }
 
 export default function OpsCenterOverview() {
-  const [data, setData] = useState(seedData());
+  const [data, setData] = useState(createEmptyOverviewData());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -353,7 +353,7 @@ export default function OpsCenterOverview() {
           setData(payload as typeof data);
         }
       } catch {
-        setData(seedData());
+        setData(createEmptyOverviewData());
       } finally {
         if (!cancelled) setLoading(false);
       }

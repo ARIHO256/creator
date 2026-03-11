@@ -392,7 +392,7 @@ function Drawer({
   );
 }
 
-function seedPriceLists(): PriceList[] {
+function buildPriceLists(): PriceList[] {
   const base = Date.now();
   const ago = (m: number) => new Date(base - m * 60_000).toISOString();
   return [

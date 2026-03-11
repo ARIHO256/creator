@@ -424,7 +424,7 @@ function calcTotals(lines: LineItem[], discount: number, shipping: number, taxRa
   return { subtotal, tax, total };
 }
 
-function seedTemplates(): QuoteTemplate[] {
+function buildTemplates(): QuoteTemplate[] {
   return [
     {
       id: "TPL-CHARGERS-STD",
@@ -473,7 +473,7 @@ function seedTemplates(): QuoteTemplate[] {
   ];
 }
 
-function seedQuotes(): Quote[] {
+function buildQuotes(): Quote[] {
   const now = Date.now();
   const ago = (m: number) => new Date(now - m * 60_000).toISOString();
   const inM = (m: number) => new Date(Date.now() + m * 60_000).toISOString();

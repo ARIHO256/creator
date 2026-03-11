@@ -389,7 +389,7 @@ function Sparkline({ points }) {
   );
 }
 
-function seedSchedule(): ScheduleItem[] {
+function buildSchedule(): ScheduleItem[] {
   const now = Date.now();
   const at = (mins: number) => new Date(now + mins * 60000).toISOString();
 
@@ -430,7 +430,7 @@ function seedSchedule(): ScheduleItem[] {
   ].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 }
 
-function seedQueue(): QueueItem[] {
+function buildQueue(): QueueItem[] {
   const now = Date.now();
   const due = (mins: number) => new Date(now + mins * 60000).toISOString();
 

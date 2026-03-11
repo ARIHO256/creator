@@ -380,7 +380,7 @@ function toneForOutcome(outcome: AuditOutcome) {
   return "slate";
 }
 
-function seedAudit(): AuditEvent[] {
+function buildAuditSnapshot(): AuditEvent[] {
   const now = Date.now();
   const agoMin = (m: number) => new Date(now - m * 60_000).toISOString();
 

@@ -7016,8 +7016,191 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
       },
       {
         userId: sellerUserId,
+        key: 'seller_asset_library_context',
+        payload: {
+          creators: [
+            {
+              id: 'cr_1',
+              name: 'Amina K.',
+              handle: '@amina.dealz',
+              avatarUrl: 'https://i.pravatar.cc/120?img=32'
+            },
+            {
+              id: 'cr_2',
+              name: 'Chris M.',
+              handle: '@chris.finds',
+              avatarUrl: 'https://i.pravatar.cc/120?img=12'
+            },
+            {
+              id: 'cr_3',
+              name: 'Luna Ade',
+              handle: '@lunaade',
+              avatarUrl: 'https://i.pravatar.cc/120?img=7'
+            }
+          ],
+          suppliers: [
+            {
+              id: 'sp_1',
+              name: 'GlowUp Hub',
+              kind: 'Seller',
+              brand: 'GlowUp'
+            },
+            {
+              id: 'sp_2',
+              name: 'Urban Supply',
+              kind: 'Seller',
+              brand: 'Urban'
+            },
+            {
+              id: 'sp_3',
+              name: 'EV World Store',
+              kind: 'Seller',
+              brand: 'EV World'
+            }
+          ],
+          campaigns: [
+            {
+              id: 'cp_1',
+              supplierId: 'sp_1',
+              name: 'Valentine Glow Week',
+              brand: 'GlowUp',
+              status: 'Active',
+              supplierReviewMode: 'Manual'
+            },
+            {
+              id: 'cp_2',
+              supplierId: 'sp_2',
+              name: 'Back-to-Work Essentials',
+              brand: 'Urban',
+              status: 'Active',
+              supplierReviewMode: 'Manual'
+            },
+            {
+              id: 'cp_3',
+              supplierId: 'sp_3',
+              name: 'EV Charger Flash Drop',
+              brand: 'EV World',
+              status: 'Paused',
+              supplierReviewMode: 'Auto'
+            }
+          ],
+          deliverables: [
+            {
+              id: 'dv_1',
+              campaignId: 'cp_1',
+              label: 'Hero intro video',
+              dueDateLabel: 'Tomorrow'
+            },
+            {
+              id: 'dv_2',
+              campaignId: 'cp_1',
+              label: 'Featured item poster',
+              dueDateLabel: 'In 2 days'
+            },
+            {
+              id: 'dv_3',
+              campaignId: 'cp_2',
+              label: 'Unboxing clip',
+              dueDateLabel: 'In 3 days'
+            },
+            {
+              id: 'dv_4',
+              campaignId: 'cp_3',
+              label: 'Live opener',
+              dueDateLabel: 'Today'
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
         key: 'seller_dealz_marketplace_legacy',
         payload: {
+          suppliers: [
+            {
+              name: 'EV Hub Supplier',
+              category: 'Retail',
+              logoUrl: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop'
+            },
+            {
+              name: 'Global Traders',
+              category: 'Wholesale',
+              logoUrl: 'https://images.unsplash.com/photo-1554774853-719586f8c277?w=100&h=100&fit=crop'
+            }
+          ],
+          creators: [
+            {
+              name: 'Asha K',
+              handle: '@asha',
+              avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
+              verified: true
+            },
+            {
+              name: 'John Smith',
+              handle: '@john',
+              avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop'
+            }
+          ],
+          templates: {
+            shoppable: {
+              status: 'Draft',
+              campaignName: 'New Campaign',
+              campaignSubtitle: 'New deal draft',
+              supplier: {
+                name: 'EV Hub Supplier',
+                category: 'Retail',
+                logoUrl: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop'
+              },
+              creator: {
+                name: 'Asha K',
+                handle: '@asha',
+                avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
+                verified: true
+              },
+              platforms: ['Instagram', 'TikTok'],
+              startISO: soon(1440),
+              endISO: soon(1500),
+              heroImageUrl: 'https://images.unsplash.com/photo-1511919884226-fd3cad34687c?q=80&w=1200&auto=format&fit=crop',
+              ctaPrimaryLabel: 'Shop now',
+              ctaSecondaryLabel: 'View details',
+              offers: [
+                {
+                  id: 'offer_template_1',
+                  type: 'PRODUCT',
+                  name: 'Featured offer',
+                  price: 120,
+                  currency: 'USD',
+                  stockLeft: 25,
+                  sold: 0,
+                  posterUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=500&h=500&q=70'
+                }
+              ],
+              kpis: []
+            },
+            live: {
+              status: 'Draft',
+              title: 'New Campaign Live',
+              description: 'Draft live session created from Dealz Marketplace. Add run-of-show, featured items, and destinations in Live Builder.',
+              host: {
+                name: 'Asha K',
+                handle: '@asha',
+                avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop',
+                verified: true
+              },
+              supplier: {
+                name: 'EV Hub Supplier',
+                category: 'Retail',
+                logoUrl: 'https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop'
+              },
+              platforms: ['Instagram', 'TikTok'],
+              startISO: soon(1440),
+              endISO: soon(1500),
+              timezoneLabel: 'GMT+3',
+              promoLink: 'https://mldz.link/live_template',
+              heroImageUrl: 'https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=800&q=80',
+              featured: []
+            }
+          },
           deals: [
             {
               id: 'deal_legacy_1',

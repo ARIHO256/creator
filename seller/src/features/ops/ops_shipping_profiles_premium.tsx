@@ -316,7 +316,7 @@ function ToastCenter({ toasts, dismiss }) {
 
 // ------------------------ Data ------------------------
 
-function seedWarehouses() {
+function buildWarehouses() {
   return [
     {
       id: "WH-UG-KLA",
@@ -360,7 +360,7 @@ function seedWarehouses() {
   ];
 }
 
-function seedProfiles(warehouses: Array<{ id: string }>): ShippingProfile[] {
+function buildProfiles(warehouses: Array<{ id: string }>): ShippingProfile[] {
   const whUG = warehouses.find((w) => w.id === "WH-UG-KLA");
   const whKE = warehouses.find((w) => w.id === "WH-KE-NBO");
   const whCN = warehouses.find((w) => w.id === "WH-CN-WUXI");

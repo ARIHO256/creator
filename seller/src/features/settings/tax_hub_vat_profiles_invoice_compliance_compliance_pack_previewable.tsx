@@ -289,7 +289,7 @@ const COUNTRIES = [
   { code: "CN", name: "China" },
 ];
 
-function seedVatProfiles() {
+function buildVatProfiles() {
   const now = Date.now();
   const ago = (mins) => new Date(now - mins * 60_000).toISOString();
 
@@ -333,7 +333,7 @@ function seedVatProfiles() {
   ];
 }
 
-function seedPackHistory() {
+function buildPackHistory() {
   const now = Date.now();
   const ago = (mins) => new Date(now - mins * 60_000).toISOString();
 

@@ -136,61 +136,47 @@ function readApprovalQueryParams(): Record<string, string> {
   return Object.fromEntries(new URLSearchParams(window.location.search).entries());
 }
 
-export function seedSupplierAwaitingAdminApprovalSubmission(): CampaignSubmission {
-  const qp = readApprovalQueryParams();
+function createEmptySupplierAwaitingAdminApprovalSubmission(): CampaignSubmission {
   return {
-    campaignId: qp.campaignId || "S-203",
-    campaignTitle: qp.title || "Supplier-only Promo Sprint",
-    promoType: qp.promoType || "Discount + Limited Stock",
-    surfaces: (qp.surfaces || "SHOPPABLE_ADZ").split(",").filter(Boolean),
-    region: qp.region || "East Africa",
-    currency: qp.currency || "USD",
-    plannedBudget: Number(qp.plannedBudget || 800),
-    creatorUsageDecision:
-      (qp.creatorPlan as CampaignSubmission["creatorUsageDecision"]) || "I will NOT use a Creator",
-    collabMode: (qp.collabMode as CampaignSubmission["collabMode"]) || "—",
-    contentApprovalMode: (qp.approvalMode as CampaignSubmission["contentApprovalMode"]) || "Auto",
-    supplierApprovalComplete: qp.supplierApprovalComplete === "1" ? true : true,
-    submittedAt: nowIso(),
-    itemsCount: Number(qp.itemsCount || 2),
-    landingLinks: [
-      { label: "Campaign page", url: `https://mylivedealz.com/a/${encodeURIComponent(qp.slug || "supplier-only-promo-sprint")}` },
-      { label: "Catalog", url: "https://mylivedealz.com/catalog" }
-    ]
+    campaignId: "",
+    campaignTitle: "",
+    promoType: "",
+    surfaces: [],
+    region: "",
+    currency: "",
+    plannedBudget: 0,
+    creatorUsageDecision: "I will NOT use a Creator",
+    collabMode: "—",
+    contentApprovalMode: "Auto",
+    supplierApprovalComplete: false,
+    submittedAt: "",
+    itemsCount: 0,
+    landingLinks: [],
   };
 }
 
-export function seedSupplierAwaitingAdminApprovalStatus(): ApprovalStatus {
-  const qp = readApprovalQueryParams();
-  return (qp.status as ApprovalStatus) || "UnderReview";
+function createInitialSupplierAwaitingAdminApprovalStatus(): ApprovalStatus {
+  return "UnderReview";
 }
 
-export function seedSupplierAwaitingAdminApprovalEtaMin() {
-  const qp = readApprovalQueryParams();
-  const value = Number(qp.etaMin || 90);
-  return Number.isFinite(value) ? value : 90;
+function createInitialSupplierAwaitingAdminApprovalEtaMin() {
+  return 90;
 }
 
-export function seedSupplierAwaitingAdminApprovalReason() {
-  const qp = readApprovalQueryParams();
-  return qp.reason || "";
+function createInitialSupplierAwaitingAdminApprovalReason() {
+  return "";
 }
 
-export function seedSupplierAwaitingAdminApprovalDocs(): AdminDoc[] {
+function createEmptySupplierAwaitingAdminApprovalDocs(): AdminDoc[] {
   return [];
 }
 
-export function seedSupplierAwaitingAdminApprovalItems(): ChecklistItem[] {
-  const qp = readApprovalQueryParams();
-  return (qp.items || "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((text, index) => ({ id: `item-${index}`, text, done: false }));
+function createEmptySupplierAwaitingAdminApprovalItems(): ChecklistItem[] {
+  return [];
 }
 
-export function seedSupplierAwaitingAdminApprovalNote() {
-  return seedSupplierAwaitingAdminApprovalSubmission().notes || "";
+function createInitialSupplierAwaitingAdminApprovalNote() {
+  return "";
 }
 
 function formatEta(mins: number): string {
@@ -745,7 +731,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
 
   const qp = useMemo<Record<string, string>>(() => readApprovalQueryParams(), []);
   const [submission, setSubmission] = useState<CampaignSubmission>(
-    seedSupplierAwaitingAdminApprovalSubmission()
+    createEmptySupplierAwaitingAdminApprovalSubmission()
   );
 
   const displayTitle = submission?.campaignTitle || "Campaign";
@@ -753,14 +739,14 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const submittedAt = submission?.submittedAt || nowIso();
 
   // status
-  const [status, setStatus] = useState<ApprovalStatus>(seedSupplierAwaitingAdminApprovalStatus());
-  const [etaMin, setEtaMin] = useState<number>(seedSupplierAwaitingAdminApprovalEtaMin());
-  const [adminReason, setAdminReason] = useState<string>(seedSupplierAwaitingAdminApprovalReason());
-  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(seedSupplierAwaitingAdminApprovalDocs());
-  const [items, setItems] = useState<ChecklistItem[]>(seedSupplierAwaitingAdminApprovalItems());
+  const [status, setStatus] = useState<ApprovalStatus>(createInitialSupplierAwaitingAdminApprovalStatus());
+  const [etaMin, setEtaMin] = useState<number>(createInitialSupplierAwaitingAdminApprovalEtaMin());
+  const [adminReason, setAdminReason] = useState<string>(createInitialSupplierAwaitingAdminApprovalReason());
+  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(createEmptySupplierAwaitingAdminApprovalDocs());
+  const [items, setItems] = useState<ChecklistItem[]>(createEmptySupplierAwaitingAdminApprovalItems());
 
   const [newItem, setNewItem] = useState("");
-  const [note, setNote] = useState<string>(seedSupplierAwaitingAdminApprovalNote());
+  const [note, setNote] = useState<string>(createInitialSupplierAwaitingAdminApprovalNote());
   const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [hydrated, setHydrated] = useState(false);

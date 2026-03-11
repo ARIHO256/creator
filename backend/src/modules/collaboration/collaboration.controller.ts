@@ -22,6 +22,11 @@ export class CollaborationController {
 
   @Get('campaigns/workspace') campaignWorkspace(@CurrentUser() user: RequestUser) { return this.service.campaignWorkspace(user.sub); }
   @Get('campaigns/legacy-marketplace') legacyMarketplace(@CurrentUser() user: RequestUser) { return this.service.legacyMarketplace(user.sub); }
+  @Patch('campaigns/legacy-marketplace')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  updateLegacyMarketplace(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updateLegacyMarketplace(user.sub, body);
+  }
   @Get('campaigns') campaigns(@CurrentUser() user: RequestUser) { return this.service.campaigns(user.sub); }
   @Post('campaigns')
   @RateLimit({ limit: 20, windowMs: 60_000 })

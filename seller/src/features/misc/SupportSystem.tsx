@@ -241,7 +241,7 @@ function severityTone(sev) {
   return "slate";
 }
 
-function seedProviders() {
+function buildProviders() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   return [
@@ -298,7 +298,7 @@ function seedProviders() {
   ];
 }
 
-function seedIncidents() {
+function buildIncidents() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 

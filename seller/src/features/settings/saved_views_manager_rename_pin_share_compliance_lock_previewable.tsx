@@ -66,7 +66,7 @@ function safeCopy(text) {
   }
 }
 
-function seedViews() {
+function buildViews() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 

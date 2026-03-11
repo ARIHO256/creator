@@ -309,7 +309,7 @@ function Sparkline({ points }) {
 
 // ---------------- Data seeders ----------------
 
-function seedApps(): AppIntegration[] {
+function buildApps(): AppIntegration[] {
   const now = Date.now();
   const agoM = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -367,7 +367,7 @@ function seedApps(): AppIntegration[] {
   ];
 }
 
-function seedApiKeys(): ApiKey[] {
+function buildApiKeys(): ApiKey[] {
   const now = Date.now();
   const agoD = (d) => new Date(now - d * 24 * 3600_000).toISOString();
 
@@ -393,7 +393,7 @@ function seedApiKeys(): ApiKey[] {
   ];
 }
 
-function seedWebhooks(): WebhookEndpoint[] {
+function buildWebhooks(): WebhookEndpoint[] {
   const now = Date.now();
   const agoM = (m) => new Date(now - m * 60_000).toISOString();
   return [
@@ -427,7 +427,7 @@ function seedWebhooks(): WebhookEndpoint[] {
   ];
 }
 
-function seedWebhookLogs(endpoints: WebhookEndpoint[]): WebhookLog[] {
+function buildWebhookLogs(endpoints: WebhookEndpoint[]): WebhookLog[] {
   const now = Date.now();
   const agoS = (s) => new Date(now - s * 1000).toISOString();
 

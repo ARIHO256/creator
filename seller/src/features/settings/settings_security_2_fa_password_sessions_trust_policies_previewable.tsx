@@ -266,7 +266,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
 
 // -------------------- Demo data --------------------
 
-function seedSessions() {
+function buildSessions() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   return [
@@ -276,7 +276,7 @@ function seedSessions() {
   ];
 }
 
-function seedDevices() {
+function buildDevices() {
   const now = Date.now();
   const agoD = (d) => new Date(now - d * 24 * 3600_000).toISOString();
   return [
@@ -286,7 +286,7 @@ function seedDevices() {
   ];
 }
 
-function seedAlerts() {
+function buildAlerts() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   return [

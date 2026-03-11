@@ -400,7 +400,7 @@ function recomputeCompliance(l: EduListing): EduListing {
   };
 }
 
-function seedEduListings(): EduListing[] {
+function buildEduListings(): EduListing[] {
   const base = Date.now();
   const ago = (m: number) => new Date(base - m * 60_000).toISOString();
 

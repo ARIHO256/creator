@@ -224,18 +224,35 @@ export class AuthService {
     return { ok: true };
   }
 
-  async logout(userId: string, payload: RefreshTokenDto) {
-    const records = await this.prisma.refreshToken.findMany({ where: { userId, revokedAt: null } });
+  async logout(payload: RefreshTokenDto) {
+    const refreshToken = payload.refreshToken?.trim();
+    if (!refreshToken) {
+      return { loggedOut: true };
+    }
 
-    for (const record of records) {
-      const match = await compare(payload.refreshToken, record.tokenHash).catch(() => false);
-      if (match) {
-        await this.prisma.refreshToken.update({
-          where: { id: record.id },
-          data: { revokedAt: new Date() }
-        });
-        return { loggedOut: true };
-      }
+    const refreshSecret = this.configService.get<string>('auth.refreshSecret')!;
+    let decoded: { sub: string; tokenId: string };
+
+    try {
+      decoded = this.jwtService.verify(refreshToken, { secret: refreshSecret });
+    } catch {
+      return { loggedOut: true };
+    }
+
+    const record = await this.prisma.refreshToken.findUnique({
+      where: { id: decoded.tokenId }
+    });
+
+    if (!record || record.revokedAt) {
+      return { loggedOut: true };
+    }
+
+    const match = await compare(refreshToken, record.tokenHash).catch(() => false);
+    if (match) {
+      await this.prisma.refreshToken.update({
+        where: { id: record.id },
+        data: { revokedAt: new Date() }
+      });
     }
 
     return { loggedOut: true };

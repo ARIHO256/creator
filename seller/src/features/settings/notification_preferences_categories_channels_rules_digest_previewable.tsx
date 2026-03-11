@@ -339,7 +339,7 @@ function ToastCenter({ toasts, dismiss }) {
   );
 }
 
-function seedDefaults(): PrefsState {
+function createDefaultPreferencesState(): PrefsState {
   return {
     globalChannels: {
       inApp: false,
@@ -434,7 +434,7 @@ export default function NotificationPreferencesPage() {
 
   const [dirty, setDirty] = useState(false);
 
-  const [prefs, setAll] = useState<PrefsState>(seedDefaults());
+  const [prefs, setAll] = useState<PrefsState>(createDefaultPreferencesState());
   const { globalChannels, categories, channelProfiles, quietHours, digest, rules } = prefs;
   useEffect(() => {
     let active = true;
@@ -443,15 +443,16 @@ export default function NotificationPreferencesPage() {
         const payload = await sellerBackendApi.getNotificationPreferences();
         if (!active) return;
         const next = (payload.metadata || payload) as Partial<PrefsState>;
+        const defaults = createDefaultPreferencesState();
         setAll({
-          ...seedDefaults(),
+          ...defaults,
           ...next,
-          globalChannels: { ...seedDefaults().globalChannels, ...(next.globalChannels || {}) },
-          channelProfiles: { ...seedDefaults().channelProfiles, ...(next.channelProfiles || {}) },
-          quietHours: { ...seedDefaults().quietHours, ...(next.quietHours || {}) },
-          digest: { ...seedDefaults().digest, ...(next.digest || {}) },
-          categories: Array.isArray(next.categories) ? next.categories as PrefsState["categories"] : seedDefaults().categories,
-          rules: Array.isArray(next.rules) ? next.rules as PrefsState["rules"] : seedDefaults().rules,
+          globalChannels: { ...defaults.globalChannels, ...(next.globalChannels || {}) },
+          channelProfiles: { ...defaults.channelProfiles, ...(next.channelProfiles || {}) },
+          quietHours: { ...defaults.quietHours, ...(next.quietHours || {}) },
+          digest: { ...defaults.digest, ...(next.digest || {}) },
+          categories: Array.isArray(next.categories) ? next.categories as PrefsState["categories"] : defaults.categories,
+          rules: Array.isArray(next.rules) ? next.rules as PrefsState["rules"] : defaults.rules,
         });
       } catch {
         if (!active) return;
@@ -485,7 +486,7 @@ export default function NotificationPreferencesPage() {
   };
 
   const restoreDefaults = () => {
-    const next = seedDefaults();
+    const next = createDefaultPreferencesState();
     setAll(next);
     setDirty(true);
     pushToast({ title: "Defaults restored", message: "Review and save to apply.", tone: "default" });

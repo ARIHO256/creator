@@ -221,7 +221,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function seedDocs(): KycDoc[] {
+function buildDocs(): KycDoc[] {
   const now = Date.now();
   const ago = (d) => new Date(now - d * 24 * 3600_000).toISOString();
   const inDays = (d) => new Date(now + d * 24 * 3600_000).toISOString();

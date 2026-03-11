@@ -443,6 +443,11 @@ export const sellerBackendApi = {
   getWholesalePriceLists: () => request<Record<string, unknown>>("/api/wholesale/price-lists"),
   getWholesaleIncoterms: () => request<Record<string, unknown>>("/api/wholesale/incoterms"),
   getLegacyDealzMarketplace: () => request<Record<string, unknown>>("/api/campaigns/legacy-marketplace"),
+  patchLegacyDealzMarketplace: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/campaigns/legacy-marketplace", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getCampaignWorkspace: () => request<Record<string, unknown>>("/api/campaigns/workspace"),
   getCampaigns: () => request<Array<Record<string, unknown>>>("/api/campaigns"),
   createCampaign: (body: Record<string, unknown>) =>
@@ -517,6 +522,7 @@ export const sellerBackendApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  getMediaWorkspace: () => request<Record<string, unknown>>("/api/media/workspace"),
   getMarketplaceListings: () => request<Array<Record<string, unknown>>>("/api/marketplace/listings"),
   getListingDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/listings/${encodeURIComponent(id)}`),

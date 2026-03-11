@@ -244,7 +244,7 @@ function severityTone(sev) {
   return "slate";
 }
 
-function seedProviders() {
+function buildProviders() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   return [
@@ -301,7 +301,7 @@ function seedProviders() {
   ];
 }
 
-function seedIncidents() {
+function buildIncidents() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -431,13 +431,13 @@ export default function SupportSystemStatusPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [providers, setProviders] = useState<ReturnType<typeof seedProviders>>([]);
-  const [incidents, setIncidents] = useState<ReturnType<typeof seedIncidents>>([]);
+  const [providers, setProviders] = useState<ReturnType<typeof buildProviders>>([]);
+  const [incidents, setIncidents] = useState<ReturnType<typeof buildIncidents>>([]);
   const loadStatus = async (quiet = false) => {
     try {
       const payload = await sellerBackendApi.getStatusCenter();
-      setProviders(Array.isArray(payload.providers) ? (payload.providers as ReturnType<typeof seedProviders>) : []);
-      setIncidents(Array.isArray(payload.incidents) ? (payload.incidents as ReturnType<typeof seedIncidents>) : []);
+      setProviders(Array.isArray(payload.providers) ? (payload.providers as ReturnType<typeof buildProviders>) : []);
+      setIncidents(Array.isArray(payload.incidents) ? (payload.incidents as ReturnType<typeof buildIncidents>) : []);
       if (!quiet) {
         pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
       }

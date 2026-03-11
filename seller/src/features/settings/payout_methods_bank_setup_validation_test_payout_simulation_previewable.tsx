@@ -290,7 +290,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function seedMethods(): PayoutMethod[] {
+function buildMethods(): PayoutMethod[] {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 

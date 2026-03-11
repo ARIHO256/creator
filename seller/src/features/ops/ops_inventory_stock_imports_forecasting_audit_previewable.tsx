@@ -271,7 +271,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
 
 // -------------------- Inventory logic --------------------
 
-function seedInventory() {
+function buildInventory() {
   const now = Date.now();
   const agoM = (m) => new Date(now - m * 60_000).toISOString();
 

@@ -461,80 +461,7 @@ function applyTemplate(tpl: RoleTemplateKey) {
   }
 }
 
-function seedRoles(): Role[] {
-  const now = new Date().toISOString();
-  return [
-    {
-      id: "role_owner",
-      name: "Owner",
-      description: "Full access, can manage billing, teams and security.",
-      template: "OWNER",
-      system: true,
-      permissions: applyTemplate("OWNER"),
-      updatedAt: now,
-    },
-    {
-      id: "role_admin",
-      name: "Admin",
-      description: "Full access except protected ownership actions.",
-      template: "ADMIN",
-      system: true,
-      permissions: applyTemplate("ADMIN"),
-      updatedAt: now,
-    },
-    {
-      id: "role_ops",
-      name: "Operations",
-      description: "Fulfillment, listings compliance, returns and disputes.",
-      template: "OPS",
-      system: true,
-      permissions: applyTemplate("OPS"),
-      updatedAt: now,
-    },
-    {
-      id: "role_sales",
-      name: "Sales",
-      description: "Listings, light orders view, MyLiveDealz promotions.",
-      template: "SALES",
-      system: true,
-      permissions: applyTemplate("SALES"),
-      updatedAt: now,
-    },
-    {
-      id: "role_finance",
-      name: "Finance",
-      description: "Wallets, invoices, reporting. Payout initiation optional.",
-      template: "FINANCE",
-      system: true,
-      permissions: applyTemplate("FINANCE"),
-      updatedAt: now,
-    },
-    {
-      id: "role_viewer",
-      name: "Viewer",
-      description: "Read-only access across key areas.",
-      template: "VIEWER",
-      system: true,
-      permissions: applyTemplate("VIEWER"),
-      updatedAt: now,
-    },
-  ];
-}
-
-function seedMembers(roleIds: { owner: string; admin: string; ops: string; sales: string; finance: string; viewer: string }): Member[] {
-  const now = Date.now();
-  const ago = (mins: number) => new Date(now - mins * 60_000).toISOString();
-  return [
-    { id: "m1", name: "Ronald Isabirye", email: "owner@supplier.com", roleId: roleIds.owner, status: "Active", lastActiveAt: ago(11) },
-    { id: "m2", name: "Amina K.", email: "ops@supplier.com", roleId: roleIds.ops, status: "Active", lastActiveAt: ago(80) },
-    { id: "m3", name: "Kato S.", email: "sales@supplier.com", roleId: roleIds.sales, status: "Invited", lastActiveAt: ago(999) },
-    { id: "m4", name: "Sarah T.", email: "finance@supplier.com", roleId: roleIds.finance, status: "Active", lastActiveAt: ago(320) },
-    { id: "m5", name: "Chen L.", email: "viewer@supplier.com", roleId: roleIds.viewer, status: "Suspended", lastActiveAt: ago(6000) },
-    { id: "m6", name: "Joy A.", email: "admin@supplier.com", roleId: roleIds.admin, status: "Active", lastActiveAt: ago(35) },
-  ];
-}
-
-function seedPolicies(): PolicyState {
+function createDefaultPolicies(): PolicyState {
   return {
     require2faForAdmins: true,
     requireApprovalForPayouts: true,
@@ -581,7 +508,7 @@ function mapBackendMember(member: Record<string, unknown>): Member {
 }
 
 function mapBackendPolicies(payload: Record<string, unknown> | null | undefined): PolicyState {
-  const base = seedPolicies();
+  const base = createDefaultPolicies();
   if (!payload) return base;
   return {
     require2faForAdmins: payload.require2FA === undefined ? base.require2faForAdmins : Boolean(payload.require2FA),

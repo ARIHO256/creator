@@ -262,7 +262,7 @@ function priorityTone(p) {
   return "slate";
 }
 
-function seedStatus() {
+function buildStatus() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -296,7 +296,7 @@ function seedStatus() {
   };
 }
 
-function seedArticles() {
+function buildArticles() {
   const now = Date.now();
   const ago = (h) => new Date(now - h * 3600_000).toISOString();
 
@@ -354,7 +354,7 @@ function seedArticles() {
   ];
 }
 
-function seedPlaybooks() {
+function buildPlaybooks() {
   return [
     {
       id: "PB-ORD-01",
@@ -435,7 +435,7 @@ function seedPlaybooks() {
   ];
 }
 
-function seedTickets() {
+function buildTickets() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   const inM = (m) => new Date(now + m * 60_000).toISOString();

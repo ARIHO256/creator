@@ -366,60 +366,48 @@ type BuilderState = {
   endTime: string;
 };
 
-export function seedSupplierAdBuilderStepValue() {
+function createInitialSupplierAdBuilderStep() {
   return "offer" as BuilderStep;
 }
 
-export function seedSupplierAdBuilderApprovalStateValue() {
+function createInitialSupplierAdBuilderApprovalState() {
   return "Draft" as "Draft" | "Submitted" | "Approved";
 }
 
-export function seedSupplierAdBuilderStateValue(): BuilderState {
-  const defaultSupplierId = SUPPLIERS[0]?.id || "p1";
-  const defaultCampaignId =
-    CAMPAIGNS.find((c) => c.supplierId === defaultSupplierId)?.id || CAMPAIGNS[0]?.id || "c1";
-  const defaultStart = new Date();
-  defaultStart.setDate(defaultStart.getDate() + 1);
-  defaultStart.setHours(18, 0, 0, 0);
-  const defaultEnd = new Date(defaultStart);
-  defaultEnd.setHours(defaultEnd.getHours() + 1);
-
+function createEmptySupplierAdBuilderState(): BuilderState {
   return {
-    supplierId: defaultSupplierId,
-    campaignId: defaultCampaignId,
-    selectedOfferIds: [
-      OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1",
-    ].filter(Boolean),
-    primaryOfferId:
-      OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1",
-    platforms: ["Instagram"],
+    supplierId: "",
+    campaignId: "",
+    selectedOfferIds: [],
+    primaryOfferId: "",
+    platforms: [],
     platformOtherList: [],
     platformOtherDraft: "",
-    heroImageAssetId: ASSETS.find((a) => a.roleHint === "hero_image" && a.status === "approved")?.id,
-    heroIntroVideoAssetId: ASSETS.find((a) => a.roleHint === "hero_video" && a.status === "approved")?.id,
+    heroImageAssetId: undefined,
+    heroIntroVideoAssetId: undefined,
     itemPosterByOfferId: {},
     itemVideoByOfferId: {},
-    ctaText: "Shop the featured dealz before they end.",
-    primaryCtaLabel: "Buy now",
-    secondaryCtaLabel: "Add to cart",
+    ctaText: "",
+    primaryCtaLabel: "",
+    secondaryCtaLabel: "",
     landingBehavior: "Checkout",
     landingUrl: "",
-    shortDomain: "mldz.link",
-    shortSlug: "adz-" + Math.random().toString(36).slice(2, 7),
-    utmPresetId: UTM_PRESETS[0].id,
+    shortDomain: "",
+    shortSlug: "",
+    utmPresetId: "",
     utmCustom: {},
-    startDate: toDateInputValue(defaultStart),
-    startTime: toTimeInputValue(defaultStart),
-    endDate: toDateInputValue(defaultEnd),
-    endTime: toTimeInputValue(defaultEnd),
+    startDate: "",
+    startTime: "",
+    endDate: "",
+    endTime: "",
   };
 }
 
-export function seedSupplierAdBuilderExternalAssetsValue() {
+function createEmptySupplierAdBuilderExternalAssets() {
   return {} as Record<string, Asset>;
 }
 
-export function seedSupplierAdBuilderCartValue() {
+function createEmptySupplierAdBuilderCart() {
   return {} as Record<string, number>;
 }
 
@@ -1815,7 +1803,7 @@ export default function AdBuilder({
     { key: "schedule", label: "Schedule", desc: "Start + End times (scroll picker)" },
     { key: "review", label: "Review", desc: "Preflight + submit" },
   ];
-  const [step, setStep] = useState<BuilderStep>(seedSupplierAdBuilderStepValue());
+  const [step, setStep] = useState<BuilderStep>(createInitialSupplierAdBuilderStep());
   const [runtimeLoading, setRuntimeLoading] = useState(true);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [scope, setScope] = useState<{
@@ -1849,7 +1837,7 @@ export default function AdBuilder({
   };
 
   const [approvalState, setApprovalState] = useState<"Draft" | "Submitted" | "Approved">(
-    seedSupplierAdBuilderApprovalStateValue()
+    createInitialSupplierAdBuilderApprovalState()
   );
   const isSubmitted = approvalState !== "Draft";
   const isApproved = approvalState === "Approved";
@@ -1858,11 +1846,11 @@ export default function AdBuilder({
   // Preflight is collapsible and collapsed by default (per requirement)
   const [preflightOpen, setPreflightOpen] = useState(false);
 
-  const [builder, setBuilder] = useState<BuilderState>(seedSupplierAdBuilderStateValue());
+  const [builder, setBuilder] = useState<BuilderState>(createEmptySupplierAdBuilderState());
 
   // External assets from Asset Library picker roundtrip
   const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>(
-    seedSupplierAdBuilderExternalAssetsValue()
+    createEmptySupplierAdBuilderExternalAssets()
   );
 
   const supplier = useMemo(
@@ -1897,7 +1885,7 @@ export default function AdBuilder({
   const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
 
   // Cart state (shared between the preview cards and the fullscreen viewer)
-  const [cart, setCart] = useState<Record<string, number>>(seedSupplierAdBuilderCartValue());
+  const [cart, setCart] = useState<Record<string, number>>(createEmptySupplierAdBuilderCart());
   // Keep cart clean if selected offers change (e.g., creator edits selection)
   useEffect(() => {
     setCart((prev) => {
