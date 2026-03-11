@@ -1229,10 +1229,6 @@ const INIT_CAMPAIGNS = [
   },
 ];
 
-export function seedSupplierCampaigns() {
-  return JSON.parse(JSON.stringify(INIT_CAMPAIGNS));
-}
-
 export function createEmptySupplierCampaignBuilder() {
   return {
     name: '',

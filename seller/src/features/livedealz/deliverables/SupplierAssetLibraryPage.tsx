@@ -154,169 +154,12 @@ function mediaEmoji(mt) {
   }
 }
 
-/* --------------------------------- Mock ---------------------------------- */
-
-const creators = [
-  { id: "cr_1", name: "Amina K.", handle: "@amina.dealz", avatarUrl: "https://i.pravatar.cc/120?img=32" },
-  { id: "cr_2", name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
-  { id: "cr_3", name: "Luna Ade", handle: "@lunaade", avatarUrl: "https://i.pravatar.cc/120?img=7" }
-];
-
-const suppliers = [
-  { id: "sp_1", name: "GlowUp Hub", kind: "Seller", brand: "GlowUp" },
-  { id: "sp_2", name: "Urban Supply", kind: "Seller", brand: "Urban" },
-  { id: "sp_3", name: "EV World Store", kind: "Seller", brand: "EV World" }
-];
-
-const campaigns = [
-  {
-    id: "cp_1",
-    supplierId: "sp_1",
-    name: "Valentine Glow Week",
-    brand: "GlowUp",
-    status: "Active",
-    // Supplier review control (asset-level): Manual means creators go to pending_supplier.
-    supplierReviewMode: "Manual"
-  },
-  {
-    id: "cp_2",
-    supplierId: "sp_2",
-    name: "Back-to-Work Essentials",
-    brand: "Urban",
-    status: "Active",
-    supplierReviewMode: "Manual"
-  },
-  {
-    id: "cp_3",
-    supplierId: "sp_3",
-    name: "EV Charger Flash Drop",
-    brand: "EV World",
-    status: "Paused",
-    supplierReviewMode: "Auto"
-  }
-];
-
-const deliverables = [
-  { id: "dv_1", campaignId: "cp_1", label: "Hero intro video", dueDateLabel: "Tomorrow" },
-  { id: "dv_2", campaignId: "cp_1", label: "Featured item poster", dueDateLabel: "In 2 days" },
-  { id: "dv_3", campaignId: "cp_2", label: "Unboxing clip", dueDateLabel: "In 3 days" },
-  { id: "dv_4", campaignId: "cp_3", label: "Live opener", dueDateLabel: "Today" }
-];
-
-const seedAssets = [
-  {
-    id: "as_1",
-    creatorScope: "cr_3",
-    title: "Hero intro (vertical)",
-    subtitle: "EV Charger Flash Drop · EV World",
-    campaignId: "cp_3",
-    supplierId: "sp_3",
-    brand: "EV World",
-    tags: ["hero", "intro", "vertical"],
-    mediaType: "video",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "pending_admin", // auto campaign
-    lastUpdatedLabel: "Last updated: 2h ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "hero",
-    aspect: "vertical",
-    desktopMode: "fullscreen",
-    usageNotes: "Best for TikTok / Shorts. Add price overlay at 00:05.",
-    restrictions: "No third-party logos."
-  },
-  {
-    id: "as_2",
-    creatorScope: "cr_1",
-    title: "Featured item poster (500×500)",
-    subtitle: "Valentine Glow Week · GlowUp",
-    campaignId: "cp_1",
-    supplierId: "sp_1",
-    brand: "GlowUp",
-    tags: ["poster", "product", "square"],
-    mediaType: "image",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "pending_supplier",
-    lastUpdatedLabel: "Last updated: Yesterday",
-    thumbnailUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=1200&auto=format&fit=crop",
-    previewKind: "image",
-    dimensions: { width: 500, height: 500 },
-    role: "item_poster",
-    aspect: "horizontal",
-    desktopMode: "modal",
-    usageNotes: "Use as poster behind play icon.",
-    restrictions: "Must show disclaimer: results may vary."
-  },
-  {
-    id: "as_3",
-    creatorScope: "cr_2",
-    title: "Unboxing clip (30s)",
-    subtitle: "Back-to-Work Essentials · Urban",
-    campaignId: "cp_2",
-    supplierId: "sp_2",
-    brand: "Urban",
-    tags: ["unboxing", "clip", "hook"],
-    mediaType: "video",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "changes_requested",
-    lastUpdatedLabel: "Last updated: 3 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "offer",
-    aspect: "horizontal",
-    desktopMode: "modal",
-    usageNotes: "Need stronger hook in first 2 seconds.",
-    restrictions: "No music unless licensed."
-  },
-  {
-    id: "as_4",
-    creatorScope: "all",
-    title: "Brand overlay: Price drop frame",
-    subtitle: "Reusable overlay pack",
-    campaignId: "cp_1",
-    supplierId: "sp_1",
-    brand: "GlowUp",
-    tags: ["overlay", "price"],
-    mediaType: "overlay",
-    source: "supplier",
-    ownerLabel: "Owner: Supplier",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 5 days ago",
-    previewKind: "image",
-    previewUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1200&auto=format&fit=crop",
-    dimensions: { width: 1920, height: 1080 },
-    role: "overlay",
-    usageNotes: "Use with countdown badge.",
-    restrictions: "Do not alter logo." 
-  },
-  {
-    id: "as_5",
-    creatorScope: "all",
-    title: "Catalog hero image (1920×1080)",
-    subtitle: "Catalog media · auto-imported",
-    campaignId: "cp_2",
-    supplierId: "sp_2",
-    brand: "Urban",
-    tags: ["hero", "catalog"],
-    mediaType: "image",
-    source: "catalog",
-    ownerLabel: "Owner: Catalog",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 1 week ago",
-    previewKind: "image",
-    previewUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    dimensions: { width: 1920, height: 1080 },
-    role: "hero",
-    usageNotes: "Recommended hero for the campaign.",
-    restrictions: "Catalog license applies." 
-  }
-];
+const EMPTY_ASSET_LIBRARY_CONTEXT = {
+  creators: [],
+  suppliers: [],
+  campaigns: [],
+  deliverables: []
+};
 
 function mapBackendAsset(asset) {
   const metadata = asset?.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
@@ -977,14 +820,16 @@ export default function SupplierAssetLibraryPage() {
   const pickerTarget = target === "live" ? "live" : "shoppable";
 
   const [assets, setAssets] = useState([]);
+  const [workspace, setWorkspace] = useState(EMPTY_ASSET_LIBRARY_CONTEXT);
 
-  const [selectedCreatorId, setSelectedCreatorId] = useState(creators[0]?.id || "");
-  const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || "");
+  const creators = Array.isArray(workspace.creators) ? workspace.creators : [];
+  const suppliers = Array.isArray(workspace.suppliers) ? workspace.suppliers : [];
+  const campaigns = Array.isArray(workspace.campaigns) ? workspace.campaigns : [];
+  const deliverables = Array.isArray(workspace.deliverables) ? workspace.deliverables : [];
 
-  const [selectedCampaignId, setSelectedCampaignId] = useState(() => {
-    const first = campaigns.find((c) => c.supplierId === suppliers[0]?.id);
-    return first?.id || campaigns[0]?.id || "";
-  });
+  const [selectedCreatorId, setSelectedCreatorId] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
 
   const [search, setSearch] = useState("");
   const [filterMedia, setFilterMedia] = useState("all");
@@ -1009,12 +854,22 @@ export default function SupplierAssetLibraryPage() {
     let cancelled = false;
     const load = async () => {
       try {
-        const payload = await sellerBackendApi.getMediaAssets();
+        const [workspacePayload, assetPayload] = await Promise.all([
+          sellerBackendApi.getMediaWorkspace(),
+          sellerBackendApi.getMediaAssets()
+        ]);
         if (cancelled) return;
-        const rows = Array.isArray(payload) ? payload : [];
+        const rows = Array.isArray(assetPayload) ? assetPayload : [];
+        setWorkspace({
+          creators: Array.isArray(workspacePayload?.creators) ? workspacePayload.creators : [],
+          suppliers: Array.isArray(workspacePayload?.suppliers) ? workspacePayload.suppliers : [],
+          campaigns: Array.isArray(workspacePayload?.campaigns) ? workspacePayload.campaigns : [],
+          deliverables: Array.isArray(workspacePayload?.deliverables) ? workspacePayload.deliverables : []
+        });
         setAssets(rows.map(mapBackendAsset));
       } catch {
         if (!cancelled) {
+          setWorkspace(EMPTY_ASSET_LIBRARY_CONTEXT);
           setAssets([]);
           setToast({ title: "Backend unavailable", body: "Could not fetch media assets." });
         }
@@ -1027,6 +882,18 @@ export default function SupplierAssetLibraryPage() {
   }, []);
 
   useEffect(() => {
+    if (!selectedCreatorId && creators[0]?.id) {
+      setSelectedCreatorId(creators[0].id);
+    }
+  }, [creators, selectedCreatorId]);
+
+  useEffect(() => {
+    if (!selectedSupplierId && suppliers[0]?.id) {
+      setSelectedSupplierId(suppliers[0].id);
+    }
+  }, [selectedSupplierId, suppliers]);
+
+  useEffect(() => {
     if (!activeAssetId && assets[0]?.id) {
       setActiveAssetId(assets[0].id);
     }
@@ -1035,8 +902,14 @@ export default function SupplierAssetLibraryPage() {
   // Auto-select first campaign when supplier changes
   useEffect(() => {
     const first = campaigns.find((c) => c.supplierId === selectedSupplierId);
-    if (first && first.id !== selectedCampaignId) setSelectedCampaignId(first.id);
-  }, [selectedSupplierId]);
+    if (first && first.id !== selectedCampaignId) {
+      setSelectedCampaignId(first.id);
+      return;
+    }
+    if (!first && selectedCampaignId) {
+      setSelectedCampaignId("");
+    }
+  }, [campaigns, selectedCampaignId, selectedSupplierId]);
 
   const pendingSupplierCount = useMemo(
     () => assets.filter((a) => a.campaignId === selectedCampaignId && a.status === "pending_supplier").length,

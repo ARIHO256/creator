@@ -95,6 +95,33 @@ export class CollaborationService {
     return (record?.payload as Record<string, unknown>) ?? { deals: [], selectedId: '', cart: {}, liveCart: {} };
   }
 
+  async updateLegacyMarketplace(userId: string, payload: Record<string, unknown>) {
+    const current = await this.legacyMarketplace(userId);
+    const next = this.sanitizeLegacyMarketplacePayload({
+      ...current,
+      ...payload
+    });
+
+    await this.prisma.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key: 'seller_dealz_marketplace_legacy'
+        }
+      },
+      update: {
+        payload: next as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        key: 'seller_dealz_marketplace_legacy',
+        payload: next as Prisma.InputJsonValue
+      }
+    });
+
+    return next;
+  }
+
   async createCampaign(userId: string, payload: Record<string, unknown>) {
     const actor = await this.loadActor(userId);
     if (!actor.sellerProfile) {
@@ -722,6 +749,20 @@ export class CollaborationService {
     return value && typeof value === 'object' && !Array.isArray(value)
       ? sanitizePayload(value, { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }) as Record<string, unknown>
       : {};
+  }
+
+  private sanitizeLegacyMarketplacePayload(value: Record<string, unknown>) {
+    const safe = sanitizePayload(value, { maxDepth: 8, maxArrayLength: 500, maxKeys: 500 }) as Record<string, unknown>;
+
+    return {
+      deals: Array.isArray(safe.deals) ? safe.deals : [],
+      selectedId: typeof safe.selectedId === 'string' ? safe.selectedId : '',
+      cart: safe.cart && typeof safe.cart === 'object' && !Array.isArray(safe.cart) ? safe.cart : {},
+      liveCart: safe.liveCart && typeof safe.liveCart === 'object' && !Array.isArray(safe.liveCart) ? safe.liveCart : {},
+      suppliers: Array.isArray(safe.suppliers) ? safe.suppliers : [],
+      creators: Array.isArray(safe.creators) ? safe.creators : [],
+      templates: safe.templates && typeof safe.templates === 'object' && !Array.isArray(safe.templates) ? safe.templates : {}
+    };
   }
 
   private resolveCampaignTitle(

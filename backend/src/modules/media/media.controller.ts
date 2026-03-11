@@ -16,6 +16,11 @@ export class MediaController {
     return this.mediaService.list(user.sub);
   }
 
+  @Get('workspace')
+  workspace(@CurrentUser() user: RequestUser) {
+    return this.mediaService.workspace(user.sub);
+  }
+
   @Get('upload-sessions')
   uploadSessions(@CurrentUser() user: RequestUser) {
     return this.mediaService.listUploadSessions(user.sub);

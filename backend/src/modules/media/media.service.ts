@@ -21,6 +21,24 @@ export class MediaService {
     return this.prisma.mediaAsset.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } });
   }
 
+  async workspace(userId: string) {
+    const record = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key: 'seller_asset_library_context'
+        }
+      }
+    });
+
+    return (record?.payload as Record<string, unknown>) ?? {
+      creators: [],
+      suppliers: [],
+      campaigns: [],
+      deliverables: []
+    };
+  }
+
   async listUploadSessions(userId: string) {
     return this.prisma.uploadSession.findMany({
       where: { userId },
