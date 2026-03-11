@@ -260,12 +260,30 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getOpsOverview: () => request<Record<string, unknown>>("/api/ops/overview"),
+  getOpsOverviewPage: () => request<Record<string, unknown>>("/api/ops/overview-page"),
+  patchOpsOverviewPage: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/ops/overview-page", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getOpsInventory: () => request<Record<string, unknown>>("/api/ops/inventory"),
+  getOpsInventoryPage: () => request<Record<string, unknown>>("/api/ops/inventory-page"),
+  patchOpsInventoryPage: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/ops/inventory-page", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getOpsShipping: () => request<Record<string, unknown>>("/api/ops/shipping"),
   getOpsWarehouses: () => request<Record<string, unknown>>("/api/ops/warehouses"),
   getOpsDocuments: () => request<Record<string, unknown>>("/api/ops/documents"),
   getOpsExports: () => request<Record<string, unknown>>("/api/ops/exports"),
   getOpsExceptions: () => request<Record<string, unknown>>("/api/ops/exceptions"),
+  getOpsCompliancePage: () => request<Record<string, unknown>>("/api/ops/compliance-page"),
+  patchOpsCompliancePage: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/ops/compliance-page", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getFinanceHome: () => request<Record<string, unknown>>("/api/seller/finance/home"),
   getFinanceWallets: () => request<Record<string, unknown>>("/api/seller/finance/wallets"),
   getFinanceHolds: () => request<Record<string, unknown>>("/api/seller/finance/holds"),
@@ -282,9 +300,15 @@ export const sellerBackendApi = {
       method: "DELETE",
     }),
   getHelpSupportContent: () => request<Record<string, unknown>>("/api/help-support/content"),
+  getSettingsHelp: () => request<Record<string, unknown>>("/api/settings/help"),
   createHelpSupportTicket: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/help-support/tickets", {
       method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchSupportTicket: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/support/tickets/${encodeURIComponent(id)}`, {
+      method: "PATCH",
       body: JSON.stringify(body),
     }),
   getSystemStatus: () => request<Record<string, unknown>>("/api/system-status"),
@@ -301,6 +325,12 @@ export const sellerBackendApi = {
     }),
   getReviewsSummary: () => request<Record<string, unknown>>("/api/reviews/summary"),
   getRegulatoryDesks: () => request<Record<string, unknown>>("/api/regulatory/desks"),
+  getRegulatoryOverview: () => request<Record<string, unknown>>("/api/regulatory/overview"),
+  patchRegulatoryOverview: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/regulatory/overview", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getRegulatoryDesk: (slug: string) =>
     request<Record<string, unknown>>(`/api/regulatory/desks/${encodeURIComponent(slug)}`),
   getProviderServiceCommand: () => request<Record<string, unknown>>("/api/provider/service-command"),
@@ -350,6 +380,10 @@ export const sellerBackendApi = {
     request<Record<string, unknown>>(`/api/roles/members/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(body),
+    }),
+  deleteRoleMember: (id: string) =>
+    request<{ deleted?: boolean }>(`/api/roles/members/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     }),
   getAuditLogs: () => request<Array<Record<string, unknown>>>("/api/audit-logs"),
   getWholesalePriceLists: () => request<Record<string, unknown>>("/api/wholesale/price-lists"),

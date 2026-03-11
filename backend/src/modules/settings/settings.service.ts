@@ -32,7 +32,11 @@ const DEFAULT_WORKSPACE_SECURITY = {
   require2FA: true,
   allowExternalInvites: false,
   supplierGuestExpiryHours: 24,
-  inviteDomainAllowlist: DEFAULT_INVITE_DOMAIN_ALLOWLIST
+  inviteDomainAllowlist: DEFAULT_INVITE_DOMAIN_ALLOWLIST,
+  requireApprovalForPayouts: true,
+  payoutApprovalThresholdUsd: 500,
+  restrictSensitiveExports: true,
+  sessionTimeoutMins: 60
 };
 const DEFAULT_SECURITY_SETTINGS = {
   twoFactor: false,
@@ -194,6 +198,14 @@ export class SettingsService {
       ...(body.allowExternalInvites !== undefined ? { allowExternalInvites: body.allowExternalInvites } : {}),
       ...(body.supplierGuestExpiryHours !== undefined
         ? { supplierGuestExpiryHours: Math.max(1, Math.min(168, Math.round(body.supplierGuestExpiryHours))) }
+        : {}),
+      ...(body.requireApprovalForPayouts !== undefined ? { requireApprovalForPayouts: body.requireApprovalForPayouts } : {}),
+      ...(body.payoutApprovalThresholdUsd !== undefined
+        ? { payoutApprovalThresholdUsd: Math.max(0, Math.round(body.payoutApprovalThresholdUsd)) }
+        : {}),
+      ...(body.restrictSensitiveExports !== undefined ? { restrictSensitiveExports: body.restrictSensitiveExports } : {}),
+      ...(body.sessionTimeoutMins !== undefined
+        ? { sessionTimeoutMins: Math.max(5, Math.min(1440, Math.round(body.sessionTimeoutMins))) }
         : {}),
       ...(body.inviteDomainAllowlist !== undefined
         ? { inviteDomainAllowlist: body.inviteDomainAllowlist.map((entry) => entry.trim().toLowerCase()).filter(Boolean) }
@@ -403,6 +415,34 @@ export class SettingsService {
       metadata: { email: updated.email }
     });
     return updated;
+  }
+
+  async deleteMember(userId: string, id: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    this.ensureWorkspaceRoleManager(workspace);
+
+    const existing = workspace.members.find((entry) => entry.id === id);
+    if (!existing) {
+      throw new NotFoundException('Member not found');
+    }
+
+    const nextMembers = workspace.members.filter((entry) => entry.id !== id);
+    const nextInvites = workspace.invites.filter((entry) => entry.id !== id);
+    await Promise.all([
+      this.upsertWorkspaceSetting(userId, 'members', { members: nextMembers }),
+      this.upsertWorkspaceSetting(userId, 'role_invites', { invites: nextInvites })
+    ]);
+    await this.audit.log({
+      userId,
+      action: 'workspace.member_deleted',
+      entityType: 'workspace_member',
+      entityId: id,
+      route: `/api/roles/members/${id}`,
+      method: 'DELETE',
+      statusCode: 200,
+      metadata: { email: existing.email }
+    });
+    return { deleted: true };
   }
 
   async crew(userId: string) {
@@ -919,7 +959,21 @@ export class SettingsService {
       require2FA: current.require2FA === undefined ? DEFAULT_WORKSPACE_SECURITY.require2FA : Boolean(current.require2FA),
       allowExternalInvites: current.allowExternalInvites === undefined ? DEFAULT_WORKSPACE_SECURITY.allowExternalInvites : Boolean(current.allowExternalInvites),
       supplierGuestExpiryHours,
-      inviteDomainAllowlist: allowlist.length ? allowlist : DEFAULT_INVITE_DOMAIN_ALLOWLIST
+      inviteDomainAllowlist: allowlist.length ? allowlist : DEFAULT_INVITE_DOMAIN_ALLOWLIST,
+      requireApprovalForPayouts:
+        current.requireApprovalForPayouts === undefined
+          ? DEFAULT_WORKSPACE_SECURITY.requireApprovalForPayouts
+          : Boolean(current.requireApprovalForPayouts),
+      payoutApprovalThresholdUsd: Number.isFinite(Number(current.payoutApprovalThresholdUsd))
+        ? Math.max(0, Number(current.payoutApprovalThresholdUsd))
+        : DEFAULT_WORKSPACE_SECURITY.payoutApprovalThresholdUsd,
+      restrictSensitiveExports:
+        current.restrictSensitiveExports === undefined
+          ? DEFAULT_WORKSPACE_SECURITY.restrictSensitiveExports
+          : Boolean(current.restrictSensitiveExports),
+      sessionTimeoutMins: Number.isFinite(Number(current.sessionTimeoutMins))
+        ? Math.max(5, Math.min(1440, Number(current.sessionTimeoutMins)))
+        : DEFAULT_WORKSPACE_SECURITY.sessionTimeoutMins
     };
   }
 

@@ -114,6 +114,10 @@ export class SettingsController {
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Roles('CREATOR', 'SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
   updateMember(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: UpdateMemberDto) { return this.service.updateMember(user.sub, id, body); }
+  @Delete('roles/members/:id')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Roles('CREATOR', 'SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
+  deleteMember(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.deleteMember(user.sub, id); }
 
   @Get('crew') crew(@CurrentUser() user: RequestUser) { return this.service.crew(user.sub); }
   @Patch('crew/sessions/:id')

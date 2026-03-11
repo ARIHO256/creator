@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import { addSellerCartItem } from "../../../lib/cartApi";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   Calendar,
   Check,
@@ -446,7 +446,30 @@ function ItemCard({ item, mode, onOpen }) {
 }
 
 export default function FaithMartMarketplacePage() {
-  const [seeded] = useSellerCompatState("desks.faithmart.marketplace", seedData());
+  const [seeded, setSeeded] = useState(seedData());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getRegulatoryDesk("faithmart");
+        const pageData = payload?.pageData;
+        if (!cancelled && pageData && typeof pageData === "object") {
+          setSeeded(pageData as typeof seeded);
+        }
+      } catch {
+        // keep seeded marketplace
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [mode, setMode] = useState("retail");
   const [tab, setTab] = useState("All");
@@ -541,6 +564,7 @@ export default function FaithMartMarketplacePage() {
               <div className="text-sm font-black text-white">FaithMart</div>
               <div className="text-[11px] font-semibold text-white/80">Books, media, services and community</div>
             </div>
+            {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
           </div>
 
           <div className="flex items-center gap-2">

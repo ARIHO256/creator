@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
@@ -61,6 +62,10 @@ export class OpsService {
     });
   }
 
+  async overviewPage(userId: string) {
+    return this.loadSetting(userId, 'ops_overview_page');
+  }
+
   async inventory(userId: string) {
     const seller = await this.sellersService.ensureSellerProfile(userId);
     const rows = await this.prisma.marketplaceListing.findMany({
@@ -69,6 +74,10 @@ export class OpsService {
       orderBy: { updatedAt: 'desc' }
     });
     return { rows };
+  }
+
+  async inventoryPage(userId: string) {
+    return this.loadSetting(userId, 'ops_inventory_page');
   }
 
   async shipping(userId: string) {
@@ -155,6 +164,22 @@ export class OpsService {
     return { returns, disputes };
   }
 
+  async compliancePage(userId: string) {
+    return this.loadSetting(userId, 'ops_compliance_page');
+  }
+
+  async updateOverviewPage(userId: string, body: Record<string, unknown>) {
+    return this.upsertSetting(userId, 'ops_overview_page', body);
+  }
+
+  async updateInventoryPage(userId: string, body: Record<string, unknown>) {
+    return this.upsertSetting(userId, 'ops_inventory_page', body);
+  }
+
+  async updateCompliancePage(userId: string, body: Record<string, unknown>) {
+    return this.upsertSetting(userId, 'ops_compliance_page', body);
+  }
+
   private parseDateRange(from?: string, to?: string) {
     if (!from && !to) return null;
     const start = from ? this.parseDate(from, 'from') : undefined;
@@ -183,5 +208,26 @@ export class OpsService {
       }
     });
     return (setting?.payload as Record<string, unknown> | null) ?? null;
+  }
+
+  private async upsertSetting(userId: string, key: string, body: Record<string, unknown>) {
+    const sanitized = body as Prisma.InputJsonValue;
+    const record = await this.prisma.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      },
+      update: {
+        payload: sanitized
+      },
+      create: {
+        userId,
+        key,
+        payload: sanitized
+      }
+    });
+    return record.payload as Record<string, unknown>;
   }
 }

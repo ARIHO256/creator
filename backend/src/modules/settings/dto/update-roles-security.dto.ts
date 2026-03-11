@@ -19,4 +19,23 @@ export class UpdateRolesSecurityDto {
   @IsArray()
   @IsString({ each: true })
   inviteDomainAllowlist?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  requireApprovalForPayouts?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  payoutApprovalThresholdUsd?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  restrictSensitiveExports?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(5)
+  @Max(1440)
+  sessionTimeoutMins?: number;
 }

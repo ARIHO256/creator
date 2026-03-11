@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -454,7 +454,8 @@ export default function OpsInventoryPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [items, setItems] = useSellerCompatState("ops.inventory.items", seedInventory());
+  const [items, setItems] = useState(seedInventory());
+  const [loading, setLoading] = useState(true);
 
   const [query, setQuery] = useState("");
   const [warehouse, setWarehouse] = useState("All");
@@ -503,7 +504,7 @@ export default function OpsInventoryPage() {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [items, query, warehouse, category, status]);
 
-  const [activeSku, setActiveSku] = useSellerCompatState("ops.inventory.activeSku", seedInventory()[0]?.sku);
+  const [activeSku, setActiveSku] = useState(seedInventory()[0]?.sku);
   useEffect(() => {
     if (!filtered.find((x) => x.sku === activeSku)) setActiveSku(filtered[0]?.sku);
   }, [filtered]);
@@ -557,6 +558,50 @@ export default function OpsInventoryPage() {
       },
     ];
   });
+  const didHydrateRef = useRef(false);
+
+  const persistPage = async (nextItems = items, nextAudit = audit, nextActiveSku = activeSku) => {
+    try {
+      await sellerBackendApi.patchOpsInventoryPage({
+        items: nextItems,
+        audit: nextAudit,
+        activeSku: nextActiveSku,
+      });
+    } catch {
+      // keep page responsive if persistence fails
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getOpsInventoryPage();
+        if (cancelled || !payload || typeof payload !== "object") return;
+        if (Array.isArray(payload.items)) setItems(payload.items as typeof items);
+        if (Array.isArray(payload.audit)) setAudit(payload.audit as typeof audit);
+        if (typeof payload.activeSku === "string") setActiveSku(payload.activeSku);
+      } catch {
+        // keep seeded inventory
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      return;
+    }
+    void persistPage(items, audit, activeSku);
+  }, [activeSku, audit, items, loading]);
 
   const auditForActive = useMemo(() => {
     if (!active) return [];
@@ -921,6 +966,7 @@ export default function OpsInventoryPage() {
                 <Badge tone="slate">/ops/inventory</Badge>
                 <Badge tone="slate">Ops</Badge>
                 <Badge tone="orange">Super premium</Badge>
+                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Stock list, reserved vs available, imports, forecasting, alerts, and adjustment audit.</div>
             </div>

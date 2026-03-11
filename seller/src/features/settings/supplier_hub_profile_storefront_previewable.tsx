@@ -17,9 +17,9 @@ import {
 import { TreeItem, TreeView } from '@mui/lab';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLocalization } from '../../localization/LocalizationProvider';
-import { loadCatalogLines, persistCatalogLines } from '../listings/catalogEntryStore';
 import { readSellerTaxonomy, useSellerTaxonomy } from '../../data/taxonomy';
-import { useSellerCompatState } from '../../lib/frontendState';
+import { readSession } from '../../auth/session';
+import { sellerBackendApi } from '../../lib/backendApi';
 import type { ListingTaxonomyNode } from '../../data/pageTypes';
 import {
   AlertTriangle,
@@ -440,16 +440,10 @@ function seed() {
         { id: 'category-women-shoes', status: 'suspended' },
       ];
       const taxonomy = readSellerTaxonomy();
-      const persisted = loadCatalogLines();
       const uniqueLines = new Map();
       seeds.forEach((seed) => {
         const line = buildLine(taxonomy, seed.id, seed.status);
         if (line?.nodeId) uniqueLines.set(line.nodeId, line);
-      });
-      persisted.forEach((line) => {
-        if (line?.nodeId && Array.isArray(line.path)) {
-          uniqueLines.set(line.nodeId, line);
-        }
       });
       return Array.from(uniqueLines.values());
     })(),
@@ -543,7 +537,7 @@ function ProductLinesManagerFullPage({
   const { t } = useLocalization();
   const [isProvider] = useState(() => {
     try {
-      const session = JSON.parse(localStorage.getItem("session") || "null");
+      const session = readSession();
       if (!session) return false;
       if (session.role === "provider") return true;
       if (Array.isArray(session.roles) && session.roles.includes("provider")) return true;
@@ -1352,27 +1346,21 @@ export default function SupplierHubProfileStorefrontPage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const seeded = useMemo(() => seed(), []);
-  const [identity, setIdentity] = useSellerCompatState("settings.profile.identity", seeded.identity);
-  const [branding, setBranding] = useSellerCompatState("settings.profile.branding", seeded.branding);
-  const [addresses, setAddresses] = useSellerCompatState("settings.profile.addresses", seeded.addresses);
-  const [stores, setStores] = useSellerCompatState("settings.profile.stores", seeded.stores);
-  const [productLines, setProductLines] = useSellerCompatState("settings.profile.productLines", seeded.productLines);
-  const [regions, setRegions] = useSellerCompatState("settings.profile.regions", seeded.regions);
-  const [supportHours, setSupportHours] = useSellerCompatState("settings.profile.supportHours", seeded.supportHours);
-  const [socials, setSocials] = useSellerCompatState("settings.profile.socials", seeded.socials);
-  const [customSocials, setCustomSocials] = useSellerCompatState<CustomSocial[]>(
-    "settings.profile.customSocials",
-    seeded.customSocials || []
-  );
+  const [identity, setIdentity] = useState(seeded.identity);
+  const [branding, setBranding] = useState(seeded.branding);
+  const [addresses, setAddresses] = useState(seeded.addresses);
+  const [stores, setStores] = useState(seeded.stores);
+  const [productLines, setProductLines] = useState(seeded.productLines);
+  const [regions, setRegions] = useState(seeded.regions);
+  const [supportHours, setSupportHours] = useState(seeded.supportHours);
+  const [socials, setSocials] = useState(seeded.socials);
+  const [customSocials, setCustomSocials] = useState<CustomSocial[]>(seeded.customSocials || []);
+  const [loading, setLoading] = useState(true);
   const [showCustomSocialForm, setShowCustomSocialForm] = useState(false);
   const [newSocialName, setNewSocialName] = useState('');
   const [newSocialHandle, setNewSocialHandle] = useState('');
   const updateProductLines = (updater) => {
-    setProductLines((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      persistCatalogLines(next);
-      return next;
-    });
+    setProductLines((prev) => (typeof updater === 'function' ? updater(prev) : updater));
   };
 
   const snapshot = useMemo(
@@ -1486,9 +1474,57 @@ export default function SupplierHubProfileStorefrontPage() {
 
   const [newStore, setNewStore] = useState({ name: '', handle: '', region: 'Global' });
 
-  const saveAll = () => {
-    setSavedSnapshot(JSON.parse(JSON.stringify(snapshot)));
-    pushToast({ title: 'Saved', message: 'Profile and storefront updated.', tone: 'success' });
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getSettings();
+        const profile = (payload.profile as Record<string, unknown> | undefined) ?? null;
+        if (!profile || cancelled) return;
+        const nextSnapshot = {
+          identity: (profile.identity as typeof seeded.identity | undefined) ?? seeded.identity,
+          branding: (profile.branding as typeof seeded.branding | undefined) ?? seeded.branding,
+          addresses: (Array.isArray(profile.addresses) ? profile.addresses : seeded.addresses) as typeof seeded.addresses,
+          stores: (Array.isArray(profile.stores) ? profile.stores : seeded.stores) as typeof seeded.stores,
+          productLines: (Array.isArray(profile.productLines) ? profile.productLines : seeded.productLines) as typeof seeded.productLines,
+          regions: (Array.isArray(profile.regions) ? profile.regions : seeded.regions) as typeof seeded.regions,
+          supportHours: (profile.supportHours as typeof seeded.supportHours | undefined) ?? seeded.supportHours,
+          socials: (profile.socials as typeof seeded.socials | undefined) ?? seeded.socials,
+          customSocials: (Array.isArray(profile.customSocials) ? profile.customSocials : seeded.customSocials || []) as CustomSocial[],
+        };
+        setIdentity(nextSnapshot.identity);
+        setBranding(nextSnapshot.branding);
+        setAddresses(nextSnapshot.addresses);
+        setStores(nextSnapshot.stores);
+        setProductLines(nextSnapshot.productLines);
+        setRegions(nextSnapshot.regions);
+        setSupportHours(nextSnapshot.supportHours);
+        setSocials(nextSnapshot.socials);
+        setCustomSocials(nextSnapshot.customSocials);
+        setSavedSnapshot(JSON.parse(JSON.stringify(nextSnapshot)));
+      } catch {
+        // keep seeded UI
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveAll = async () => {
+    try {
+      await sellerBackendApi.patchSettings({
+        profile: snapshot,
+      });
+      setSavedSnapshot(JSON.parse(JSON.stringify(snapshot)));
+      pushToast({ title: 'Saved', message: 'Profile and storefront updated.', tone: 'success' });
+    } catch (error) {
+      pushToast({ title: 'Save failed', message: error instanceof Error ? error.message : 'Unable to save profile', tone: 'danger' });
+    }
   };
 
   const setDefaultAddress = (id) => {

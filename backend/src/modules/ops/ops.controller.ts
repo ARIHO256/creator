@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -15,9 +15,29 @@ export class OpsController {
     return this.service.overview(user.sub, query);
   }
 
+  @Get('overview-page')
+  overviewPage(@CurrentUser() user: RequestUser) {
+    return this.service.overviewPage(user.sub);
+  }
+
+  @Patch('overview-page')
+  updateOverviewPage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updateOverviewPage(user.sub, body);
+  }
+
   @Get('inventory')
   inventory(@CurrentUser() user: RequestUser) {
     return this.service.inventory(user.sub);
+  }
+
+  @Get('inventory-page')
+  inventoryPage(@CurrentUser() user: RequestUser) {
+    return this.service.inventoryPage(user.sub);
+  }
+
+  @Patch('inventory-page')
+  updateInventoryPage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updateInventoryPage(user.sub, body);
   }
 
   @Get('shipping')
@@ -43,5 +63,15 @@ export class OpsController {
   @Get('exceptions')
   exceptions(@CurrentUser() user: RequestUser) {
     return this.service.exceptions(user.sub);
+  }
+
+  @Get('compliance-page')
+  compliancePage(@CurrentUser() user: RequestUser) {
+    return this.service.compliancePage(user.sub);
+  }
+
+  @Patch('compliance-page')
+  updateCompliancePage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updateCompliancePage(user.sub, body);
   }
 }

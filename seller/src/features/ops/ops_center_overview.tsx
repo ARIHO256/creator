@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -384,7 +384,29 @@ function toneFromHealth(status: string) {
 }
 
 export default function OpsCenterOverview() {
-  const [data] = useSellerCompatState("ops.centerOverview", seedData());
+  const [data, setData] = useState(seedData());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getOpsOverviewPage();
+        if (!cancelled && payload && typeof payload === "object") {
+          setData(payload as typeof data);
+        }
+      } catch {
+        // keep seeded view
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -429,6 +451,7 @@ export default function OpsCenterOverview() {
                 <Badge tone="slate">/ops</Badge>
                 <Badge tone="slate">Operations</Badge>
                 <Badge tone="orange">Premium</Badge>
+                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">
                 Daily command, queue summaries, alerts and drilldowns.

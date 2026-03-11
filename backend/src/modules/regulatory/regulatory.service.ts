@@ -24,6 +24,18 @@ export class RegulatoryService {
     };
   }
 
+  async overview(userId: string) {
+    const record = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key: 'regulatory_overview_page'
+        }
+      }
+    });
+    return (record?.payload as Record<string, unknown> | null) ?? { submissions: [], policies: [], tasks: [] };
+  }
+
   async desks(userId: string) {
     const desks = await this.prisma.regulatoryDesk.findMany({
       where: { userId },
@@ -149,6 +161,26 @@ export class RegulatoryService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+  }
+
+  async updateOverview(userId: string, payload: Record<string, unknown>) {
+    const record = await this.prisma.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key: 'regulatory_overview_page'
+        }
+      },
+      update: {
+        payload: payload as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        key: 'regulatory_overview_page',
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+    return record.payload as Record<string, unknown>;
   }
 
   private serializeDesk(desk: {

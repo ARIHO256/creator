@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   Building2,
@@ -486,8 +486,40 @@ export default function ComplianceCenterPreviewable() {
 
   const [tab, setTab] = useState("Overview");
 
-  const [cases, setCases] = useSellerCompatState("ops.compliance.cases", seedCases());
-  const [docs, setDocs] = useSellerCompatState("ops.compliance.docs", seedDocs());
+  const [cases, setCases] = useState(seedCases());
+  const [docs, setDocs] = useState(seedDocs());
+  const [loading, setLoading] = useState(true);
+  const didHydrateRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getOpsCompliancePage();
+        if (cancelled || !payload || typeof payload !== "object") return;
+        if (Array.isArray(payload.cases)) setCases(payload.cases as typeof cases);
+        if (Array.isArray(payload.docs)) setDocs(payload.docs as typeof docs);
+      } catch {
+        // keep seeded UI
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      return;
+    }
+    void sellerBackendApi.patchOpsCompliancePage({ cases, docs });
+  }, [cases, docs, loading]);
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
@@ -689,6 +721,7 @@ export default function ComplianceCenterPreviewable() {
                 <Badge tone="slate">/ops/compliance</Badge>
                 <Badge tone="slate">Ops</Badge>
                 <Badge tone="orange">Premium</Badge>
+                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Cases, documents, desk routing and policy controls.</div>
             </div>
