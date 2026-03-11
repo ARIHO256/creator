@@ -4,6 +4,7 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
 import { RequestUser } from '../types/request-user.type.js';
+import { ACCESS_TOKEN_COOKIE_NAME, parseCookieHeader } from '../../modules/auth/auth.cookies.js';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -37,14 +38,20 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const authHeader = request.headers.authorization;
+    let token = '';
 
-    if (!authHeader) {
-      throw new UnauthorizedException('Missing Authorization header');
-    }
-
-    const [scheme, token] = authHeader.split(' ');
-    if (scheme?.toLowerCase() !== 'bearer' || !token) {
-      throw new UnauthorizedException('Invalid authorization format');
+    if (authHeader) {
+      const [scheme, bearerToken] = authHeader.split(' ');
+      if (scheme?.toLowerCase() !== 'bearer' || !bearerToken) {
+        throw new UnauthorizedException('Invalid authorization format');
+      }
+      token = bearerToken;
+    } else {
+      const cookies = parseCookieHeader(request.headers.cookie);
+      token = cookies[ACCESS_TOKEN_COOKIE_NAME] || '';
+      if (!token) {
+        throw new UnauthorizedException('Missing Authorization header');
+      }
     }
 
     try {
