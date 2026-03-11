@@ -162,7 +162,34 @@ export class SettingsService {
     return this.prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' }
-    });
+    }).then((rows) =>
+      rows.map((row) => {
+        const metadata =
+          row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+            ? (row.metadata as Record<string, unknown>)
+            : {};
+        return {
+          id: row.id,
+          type: typeof metadata.type === 'string'
+            ? metadata.type
+            : row.kind === 'collaboration_invite'
+              ? 'invite'
+              : row.kind === 'collaboration_invite_response'
+                ? 'proposal'
+                : 'system',
+          title: row.title,
+          message: row.body,
+          kind: row.kind,
+          read: Boolean(row.readAt),
+          readAt: row.readAt,
+          brand: typeof metadata.sellerName === 'string' ? metadata.sellerName : typeof metadata.brand === 'string' ? metadata.brand : null,
+          campaign: typeof metadata.campaignTitle === 'string' ? metadata.campaignTitle : null,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+          metadata
+        };
+      })
+    );
   }
   async notificationRead(userId: string, id: string) {
     const existing = await this.prisma.notification.findFirst({

@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Logger, RequestMethod, ValidationPipe } from '@nestjs/common';
+import { RequestMethod, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
@@ -21,10 +21,14 @@ async function bootstrap() {
     !loadTestEnabled &&
     !['0', 'false', 'no', 'off'].includes(String(process.env.FASTIFY_LOGGER ?? 'true').toLowerCase());
 
+  console.info(`[bootstrap] creating Nest app on ${host}:${port}`);
+
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: fastifyLogger, bodyLimit })
+    new FastifyAdapter({ logger: fastifyLogger, bodyLimit }),
+    { logger: ['error', 'warn'] }
   );
+  app.useLogger(['error', 'warn']);
 
   app.enableCors({ origin: true, credentials: true });
   app.enableShutdownHooks();
@@ -66,19 +70,37 @@ async function bootstrap() {
     fastify.addHook('onResponse', (request: any, reply: any, done: () => void) => {
       const startedAt = request.requestStartedAt ?? process.hrtime.bigint();
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-      request.log.info(
-        {
-          requestId: request.id,
-          method: request.method,
-          url: request.url,
-          statusCode: reply.statusCode,
-          durationMs: Number(durationMs.toFixed(1))
-        },
-        'request completed'
-      );
+      const logPayload = {
+        requestId: request.id,
+        method: request.method,
+        url: request.url,
+        statusCode: reply.statusCode,
+        durationMs: Number(durationMs.toFixed(1))
+      };
+      if (reply.statusCode >= 500) {
+        request.log.error(logPayload, 'request failed');
+      } else if (reply.statusCode >= 400) {
+        request.log.warn(logPayload, 'request completed with client error');
+      } else {
+        request.log.info(logPayload, 'request completed successfully');
+      }
       done();
     });
   }
+  fastify.addHook('onError', (request: any, _reply: any, error: Error, done: (err?: Error) => void) => {
+    request.log.error(
+      {
+        requestId: request.id,
+        method: request.method,
+        url: request.url,
+        errorName: error?.name,
+        errorMessage: error?.message,
+        stack: error?.stack
+      },
+      'request raised an unhandled error'
+    );
+    done();
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -96,10 +118,14 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new HttpExceptionFilter());
 
+  console.info('[bootstrap] Nest app configured, starting HTTP listener');
   await app.listen(port, host);
 
-  const logger = new Logger('Bootstrap');
-  logger.log(`MyLiveDealz Creator backend listening on ${await app.getUrl()}`);
+  console.info(`[bootstrap] MyLiveDealz Creator backend listening on ${await app.getUrl()}`);
 }
 
-bootstrap();
+bootstrap().catch((error) => {
+  console.error('[bootstrap] fatal startup error');
+  console.error(error);
+  process.exit(1);
+});

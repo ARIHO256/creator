@@ -120,7 +120,13 @@ export class AuthController {
   }
 
   @Post('switch-role')
-  switchRole(@CurrentUser() user: RequestUser, @Body() payload: SwitchRoleDto) {
-    return this.authService.switchRole(user.sub, payload);
+  async switchRole(
+    @CurrentUser() user: RequestUser,
+    @Body() payload: SwitchRoleDto,
+    @Res({ passthrough: true }) reply: FastifyReply
+  ) {
+    const tokens = await this.authService.switchRole(user.sub, payload);
+    this.applyAuthCookies(reply, tokens);
+    return tokens;
   }
 }

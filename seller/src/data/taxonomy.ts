@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ListingTaxonomyNode } from "./pageTypes";
 
-const DEFAULT_API_BASE = "http://localhost:3000/api";
+const DEFAULT_API_BASE = "";
 
 type TaxonomyTreeResponse = {
   id: string;
@@ -14,7 +14,19 @@ type TaxonomyNodesResponse = {
   nodes?: unknown;
 };
 
+type ApiEnvelope<T> = {
+  success?: boolean;
+  data?: T;
+};
+
 const getApiBase = () => String(import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE).replace(/\/+$/, "");
+
+const unwrapEnvelope = <T>(value: unknown): T => {
+  if (value && typeof value === "object" && "data" in (value as Record<string, unknown>)) {
+    return ((value as ApiEnvelope<T>).data ?? value) as T;
+  }
+  return value as T;
+};
 
 const normalizeNode = (value: unknown): ListingTaxonomyNode | null => {
   if (!value || typeof value !== "object") return null;
@@ -85,7 +97,7 @@ async function fetchTaxonomyTree(slug: string, kind: "seller" | "provider") {
   if (!nodesResponse.ok) {
     throw new Error(`Failed to load taxonomy nodes for ${slug}: ${nodesResponse.status}`);
   }
-  const payload = (await nodesResponse.json()) as TaxonomyNodesResponse;
+  const payload = unwrapEnvelope<TaxonomyNodesResponse>(await nodesResponse.json());
   return transformTree(normalizeTree(payload.nodes), kind);
 }
 
@@ -99,7 +111,7 @@ export async function fetchSellerTaxonomy(): Promise<ListingTaxonomyNode[]> {
     if (!treesResponse.ok) {
       throw new Error(`Failed to load taxonomy trees: ${treesResponse.status}`);
     }
-    const trees = (await treesResponse.json()) as TaxonomyTreeResponse[];
+    const trees = unwrapEnvelope<TaxonomyTreeResponse[]>(await treesResponse.json());
     const tree =
       trees.find((item) => item.slug === "sellerfront-catalog-taxonomy") ||
       trees.find((item) => item.status === "ACTIVE") ||

@@ -5,8 +5,8 @@
   "type": "module",
   "description": "NestJS + Prisma + MySQL backend for the MyLiveDealz Creator App",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
+    "dev": "/bin/bash -lc 'npm run build && trap \"kill 0\" EXIT; tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch dist/main.js'",
+    "start": "npm run build && node dist/main.js",
     "build": "tsc -p tsconfig.build.json",
     "start:prod": "node dist/main.js",
     "prisma:generate": "prisma generate",

@@ -8,6 +8,8 @@ import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
+import { PROVIDER_SERVICE_TAXONOMY_TREE_SLUG } from '../taxonomy/provider-service-taxonomy.js';
+import { SELLER_CATALOG_TAXONOMY_TREE_SLUG } from '../taxonomy/seller-catalog-taxonomy.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
 import { UpdateAccountApprovalDecisionDto } from './dto/update-account-approval-decision.dto.js';
@@ -20,6 +22,95 @@ import {
   RESERVED_SELLER_SLUGS,
   sellerSlugToHandle
 } from './onboarding-state.js';
+
+const DEFAULT_ONBOARDING_LOOKUPS = {
+  payoutMethods: [
+    {
+      value: 'bank_account',
+      label: 'Bank account',
+      helper: 'Local or international bank settlement.'
+    },
+    {
+      value: 'mobile_money',
+      label: 'Mobile money',
+      helper: 'MTN, Airtel and other wallet providers.'
+    },
+    {
+      value: 'alipay',
+      label: 'Alipay',
+      helper: 'For payouts to Mainland China or Hong Kong.'
+    },
+    {
+      value: 'wechat_pay',
+      label: 'WeChat Pay (Weixin Pay)',
+      helper: 'For payouts to WeChat wallets.'
+    },
+    {
+      value: 'other_local',
+      label: 'Other payout method',
+      helper: 'Cheque, local wallet or regional solution.'
+    }
+  ],
+  payoutCurrencies: ['USD', 'EUR', 'CNY', 'UGX', 'KES', 'TZS', 'RWF', 'ZAR'],
+  payoutRhythms: [
+    { value: 'daily', label: 'Daily', helper: 'Payouts generated every business day.' },
+    { value: 'weekly', label: 'Weekly', helper: 'Payouts grouped once per week.' },
+    { value: 'monthly', label: 'Monthly', helper: 'Payouts grouped at month end.' },
+    {
+      value: 'on_threshold',
+      label: 'When balance reaches a threshold',
+      helper: 'We pay out once your balance reaches a minimum amount.'
+    }
+  ],
+  mobileMoneyProviders: [
+    { value: 'MTN Mobile Money', label: 'MTN Mobile Money' },
+    { value: 'Airtel Money', label: 'Airtel Money' },
+    { value: 'M-Pesa', label: 'M-Pesa' },
+    { value: 'Safaricom', label: 'Safaricom' },
+    { value: 'Orange Money', label: 'Orange Money' },
+    { value: 'Wave', label: 'Wave' }
+  ],
+  mobileIdTypes: [
+    { value: 'national_id', label: 'National ID' },
+    { value: 'passport', label: 'Passport' },
+    { value: 'drivers_license', label: "Driver's License" },
+    { value: 'tax_id', label: 'Tax ID' },
+    { value: 'residence_permit', label: 'Residence Permit' },
+    { value: 'voter_id', label: 'Voter ID' }
+  ],
+  payoutRegions: {
+    alipay: [
+      { value: 'mainland', label: 'Mainland China' },
+      { value: 'hong_kong', label: 'Hong Kong SAR' },
+      { value: 'other', label: 'Other region' }
+    ],
+    wechat: [
+      { value: 'mainland', label: 'Mainland China' },
+      { value: 'hong_kong', label: 'Hong Kong SAR' },
+      { value: 'other', label: 'Other region' }
+    ]
+  },
+  policyPresets: [
+    {
+      id: 'standard',
+      label: 'Standard',
+      desc: 'Balanced defaults for most sellers.',
+      patch: { returnsDays: '7', warrantyDays: '90', handlingTimeDays: '2' }
+    },
+    {
+      id: 'fast',
+      label: 'Fast',
+      desc: 'Optimized for high conversion (quick dispatch).',
+      patch: { returnsDays: '7', warrantyDays: '30', handlingTimeDays: '1' }
+    },
+    {
+      id: 'strict',
+      label: 'Strict',
+      desc: 'Lower returns risk (use carefully by category).',
+      patch: { returnsDays: '3', warrantyDays: '0', handlingTimeDays: '3' }
+    }
+  ]
+};
 
 @Injectable()
 export class WorkflowService {
@@ -82,6 +173,51 @@ export class WorkflowService {
     return payload
       ? normalizeStoredOnboardingState(payload, profileType)
       : createDefaultOnboardingState(profileType);
+  }
+
+  async onboardingLookups() {
+    const existing = await this.prisma.systemContent.findUnique({
+      where: { key: 'onboarding_lookups' }
+    });
+    const payload =
+      existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
+        ? (existing.payload as Record<string, unknown>)
+        : {};
+    const payoutRegions =
+      payload.payoutRegions && typeof payload.payoutRegions === 'object' && !Array.isArray(payload.payoutRegions)
+        ? (payload.payoutRegions as Record<string, unknown>)
+        : {};
+
+    return {
+      ...DEFAULT_ONBOARDING_LOOKUPS,
+      ...payload,
+      payoutMethods: Array.isArray(payload.payoutMethods)
+        ? payload.payoutMethods
+        : DEFAULT_ONBOARDING_LOOKUPS.payoutMethods,
+      payoutCurrencies: Array.isArray(payload.payoutCurrencies)
+        ? payload.payoutCurrencies
+        : DEFAULT_ONBOARDING_LOOKUPS.payoutCurrencies,
+      payoutRhythms: Array.isArray(payload.payoutRhythms)
+        ? payload.payoutRhythms
+        : DEFAULT_ONBOARDING_LOOKUPS.payoutRhythms,
+      mobileMoneyProviders: Array.isArray(payload.mobileMoneyProviders)
+        ? payload.mobileMoneyProviders
+        : DEFAULT_ONBOARDING_LOOKUPS.mobileMoneyProviders,
+      mobileIdTypes: Array.isArray(payload.mobileIdTypes)
+        ? payload.mobileIdTypes
+        : DEFAULT_ONBOARDING_LOOKUPS.mobileIdTypes,
+      payoutRegions: {
+        alipay: Array.isArray(payoutRegions.alipay)
+          ? payoutRegions.alipay
+          : DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.alipay,
+        wechat: Array.isArray(payoutRegions.wechat)
+          ? payoutRegions.wechat
+          : DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.wechat
+      },
+      policyPresets: Array.isArray(payload.policyPresets)
+        ? payload.policyPresets
+        : DEFAULT_ONBOARDING_LOOKUPS.policyPresets
+    };
   }
 
   async slugAvailability(userId: string, slug: string) {
@@ -364,7 +500,11 @@ export class WorkflowService {
     if (nodeIds.length === 0) {
       return;
     }
-    await this.taxonomyService.assertNodesInActiveTree(nodeIds);
+    const treeIdentifier =
+      onboarding.profileType === 'PROVIDER'
+        ? PROVIDER_SERVICE_TAXONOMY_TREE_SLUG
+        : SELLER_CATALOG_TAXONOMY_TREE_SLUG;
+    await this.taxonomyService.assertNodesInTree(treeIdentifier, nodeIds);
   }
 
   private async syncTaxonomySelections(userId: string, onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
@@ -380,8 +520,12 @@ export class WorkflowService {
         ? (onboarding.taxonomySelection as any).nodeId
         : null;
     const primaryNodeId = selectionNodeId ?? nodeIds[0];
-    await this.taxonomyService.syncSellerCoverage(userId, nodeIds);
-    await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId);
+    const treeIdentifier =
+      onboarding.profileType === 'PROVIDER'
+        ? PROVIDER_SERVICE_TAXONOMY_TREE_SLUG
+        : SELLER_CATALOG_TAXONOMY_TREE_SLUG;
+    await this.taxonomyService.syncSellerCoverage(userId, nodeIds, treeIdentifier);
+    await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId, treeIdentifier);
   }
 
   private async syncAccountApprovalFromOnboarding(

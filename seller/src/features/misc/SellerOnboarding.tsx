@@ -4,6 +4,7 @@ import { clearSession, useSession } from "../../auth/session";
 import { recordOnboardingStatus } from "./onboardingStatus";
 import { sellerBackendApi } from "../../lib/backendApi";
 import { authClient } from "../../lib/authApi";
+import { useSellerTaxonomy } from "../../data/taxonomy";
 import SellerOnboardingTaxonomyNavigator from "./SellerOnboardingTaxonomyNavigator";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { useThemeMode } from "../../theme/themeMode";
@@ -228,6 +229,29 @@ type CountryDialOption = {
   search: string;
 };
 type ShippingProfile = { id: string; name: string; isDefault?: boolean; archived?: boolean };
+type LabeledValueOption = { value: string; label: string; helper?: string };
+type PolicyPresetOption = {
+  id: string;
+  label: string;
+  desc: string;
+  patch: {
+    returnsDays: string;
+    warrantyDays: string;
+    handlingTimeDays: string;
+  };
+};
+type OnboardingLookups = {
+  payoutMethods: LabeledValueOption[];
+  payoutCurrencies: string[];
+  payoutRhythms: LabeledValueOption[];
+  mobileMoneyProviders: LabeledValueOption[];
+  mobileIdTypes: LabeledValueOption[];
+  payoutRegions: {
+    alipay: LabeledValueOption[];
+    wechat: LabeledValueOption[];
+  };
+  policyPresets: PolicyPresetOption[];
+};
 type ToastState = { tone?: "success" | "error" | "info"; title: string; message?: string };
 
 export const COUNTRY_DIAL_CODES = [
@@ -581,7 +605,7 @@ const IconSparkles = () => <IconShell>✨</IconShell>;
 const IconCheck = () => <IconShell>✅</IconShell>;
 const IconWarn = () => <IconShell>⚠️</IconShell>;
 
-const PAYOUT_METHODS = [
+const DEFAULT_PAYOUT_METHODS: LabeledValueOption[] = [
   {
     value: "bank_account",
     label: "Bank account",
@@ -614,9 +638,9 @@ const PAYOUT_METHODS = [
   },
 ];
 
-const PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "ZAR"];
+const DEFAULT_PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "RWF", "ZAR"];
 
-const PAYOUT_RHYTHMS = [
+const DEFAULT_PAYOUT_RHYTHMS: LabeledValueOption[] = [
   { value: "daily", label: "Daily", helper: "Payouts generated every business day." },
   { value: "weekly", label: "Weekly", helper: "Payouts grouped once per week." },
   { value: "monthly", label: "Monthly", helper: "Payouts grouped at month end." },
@@ -635,6 +659,14 @@ const PAYOUT_METHOD_LABELS = {
   other_local: "Other method",
 };
 
+const PAYOUT_METHOD_ICONS: Record<string, React.ReactNode> = {
+  bank_account: <IconBank />,
+  mobile_money: <IconWallet />,
+  alipay: <IconGlobe />,
+  wechat_pay: <IconGlobe />,
+  other_local: <IconWallet />,
+};
+
 const LEGACY_PAYOUT_METHOD_MAP = {
   bank: "bank_account",
   mobile: "mobile_money",
@@ -642,7 +674,7 @@ const LEGACY_PAYOUT_METHOD_MAP = {
   wechat: "wechat_pay",
 };
 
-const POLICY_PRESETS = [
+const DEFAULT_POLICY_PRESETS: PolicyPresetOption[] = [
   {
     id: "standard",
     label: "Standard",
@@ -675,6 +707,41 @@ const POLICY_PRESETS = [
   },
 ];
 
+const DEFAULT_ONBOARDING_LOOKUPS: OnboardingLookups = {
+  payoutMethods: DEFAULT_PAYOUT_METHODS,
+  payoutCurrencies: DEFAULT_PAYOUT_CURRENCIES,
+  payoutRhythms: DEFAULT_PAYOUT_RHYTHMS,
+  mobileMoneyProviders: [
+    { value: "MTN Mobile Money", label: "MTN Mobile Money" },
+    { value: "Airtel Money", label: "Airtel Money" },
+    { value: "M-Pesa", label: "M-Pesa" },
+    { value: "Safaricom", label: "Safaricom" },
+    { value: "Orange Money", label: "Orange Money" },
+    { value: "Wave", label: "Wave" },
+  ],
+  mobileIdTypes: [
+    { value: "national_id", label: "National ID" },
+    { value: "passport", label: "Passport" },
+    { value: "drivers_license", label: "Driver's License" },
+    { value: "tax_id", label: "Tax ID" },
+    { value: "residence_permit", label: "Residence Permit" },
+    { value: "voter_id", label: "Voter ID" },
+  ],
+  payoutRegions: {
+    alipay: [
+      { value: "mainland", label: "Mainland China" },
+      { value: "hong_kong", label: "Hong Kong SAR" },
+      { value: "other", label: "Other region" },
+    ],
+    wechat: [
+      { value: "mainland", label: "Mainland China" },
+      { value: "hong_kong", label: "Hong Kong SAR" },
+      { value: "other", label: "Other region" },
+    ],
+  },
+  policyPresets: DEFAULT_POLICY_PRESETS,
+};
+
 function safeJsonParse(str) {
   if (!str) return null;
   try {
@@ -682,6 +749,38 @@ function safeJsonParse(str) {
   } catch {
     return null;
   }
+}
+
+function readStoredDraft(key) {
+  if (typeof window === "undefined") return null;
+  return safeJsonParse(window.localStorage.getItem(key));
+}
+
+function writeStoredDraft(key, value) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function clearStoredDraft(keys) {
+  if (typeof window === "undefined") return;
+  keys.forEach((key) => {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // ignore storage failures
+    }
+  });
+}
+
+function draftMatchesActiveUser(draft, activeUserId) {
+  if (!draft || typeof draft !== "object") return false;
+  if (!activeUserId) return true;
+  const owner = String(draft.owner || draft.email || "").toLowerCase();
+  return !owner || owner === activeUserId;
 }
 
 function clamp(n, a, b) {
@@ -700,6 +799,70 @@ function isEmail(v) {
   const s = String(v || "").trim();
   if (!s) return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+}
+
+function sanitizeEmail(v) {
+  const s = String(v || "").trim();
+  return isEmail(s) ? s : undefined;
+}
+
+function isBackendUrl(v) {
+  const s = String(v || "").trim();
+  if (!s || s.startsWith("blob:")) return false;
+  try {
+    const url = new URL(s);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeBackendUrl(v) {
+  const s = String(v || "").trim();
+  return isBackendUrl(s) ? s : undefined;
+}
+
+function findTaxonomyPath(tree, id, path = []) {
+  if (!id) return [];
+  for (const node of tree || []) {
+    const currentPath = [...path, node];
+    if (node.id === id) return currentPath;
+    if (Array.isArray(node.children) && node.children.length) {
+      const childPath = findTaxonomyPath(node.children, id, currentPath);
+      if (childPath.length) return childPath;
+    }
+  }
+  return [];
+}
+
+function normalizeSelectionsAgainstTaxonomy(selections, taxonomyTree) {
+  const rows = Array.isArray(selections) ? selections : [];
+  if (!Array.isArray(taxonomyTree) || taxonomyTree.length === 0) return rows;
+
+  return rows
+    .map((entry, index) => {
+      const nodeId = String(entry?.nodeId || "");
+      if (!nodeId) return null;
+      const pathNodes = findTaxonomyPath(taxonomyTree, nodeId);
+      if (!pathNodes.length) return null;
+      const normalizedPathNodes = pathNodes.map((node) => ({
+        id: String(node.id),
+        name: String(node.name),
+        type: String(node.type),
+      }));
+      const marketplaceNode = normalizedPathNodes[0];
+      return {
+        id: entry?.id ? String(entry.id) : `${nodeId}-${index}`,
+        nodeId,
+        label: typeof entry?.label === "string" ? entry.label : normalizedPathNodes[normalizedPathNodes.length - 1]?.name,
+        path: normalizedPathNodes.map((node) => node.name),
+        pathNodes: normalizedPathNodes,
+        marketplace: marketplaceNode?.name || "",
+        marketplaceId: marketplaceNode?.id || "",
+        slug: typeof entry?.slug === "string" ? entry.slug : undefined,
+      };
+    })
+    .filter(Boolean);
 }
 
 function isExpired(expiry) {
@@ -1043,6 +1206,196 @@ function toWorkflowOnboardingStatus(value: unknown) {
   return normalized === "submitted" || normalized === "resubmitted" ? "submitted" : "draft";
 }
 
+function compactValue<T>(value: T): T | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return (trimmed ? trimmed : undefined) as T | undefined;
+  }
+  if (Array.isArray(value)) {
+    const next = value
+      .map((entry) => compactValue(entry))
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+    return (next.length ? next : undefined) as T | undefined;
+  }
+  if (typeof value === "object") {
+    const next = Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, entry]) => [key, compactValue(entry)])
+        .filter(([, entry]) => entry !== undefined)
+    );
+    return (Object.keys(next).length ? next : undefined) as T | undefined;
+  }
+  return value;
+}
+
+function parseOptionalInt(value: string) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return undefined;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseOptionalNumber(value: string) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toOnboardingDocsPayload(docs: DocItem[]) {
+  return {
+    list: docs.map((doc) => ({
+      id: doc.id,
+      type: doc.type,
+      name: doc.name,
+      file: doc.file,
+      fileUrl: sanitizeBackendUrl(doc.fileUrl),
+      status: doc.status,
+      expiry: doc.expiry,
+      uploadedAt: doc.uploadedAt,
+      notes: doc.notes,
+    })),
+  };
+}
+
+function toOnboardingPayload(form: SellerForm, taxonomyTree = []) {
+  const normalizedTaxonomySelections = normalizeSelectionsAgainstTaxonomy(
+    form.taxonomySelections,
+    taxonomyTree
+  );
+  const normalizedTaxonomySelection =
+    form.taxonomySelection?.nodeId && Array.isArray(taxonomyTree) && taxonomyTree.length > 0
+      ? normalizeSelectionsAgainstTaxonomy([form.taxonomySelection], taxonomyTree)[0]
+      : form.taxonomySelection;
+
+  return compactValue({
+    owner: form.owner,
+    profileType: "SELLER",
+    status: toWorkflowOnboardingStatus(form.status),
+    storeName: form.storeName,
+    storeSlug: form.storeSlug,
+    email: sanitizeEmail(form.email),
+    phone: form.phone,
+    website: sanitizeBackendUrl(form.website),
+    about: form.about,
+    brandColor: form.brandColor,
+    logoUrl: sanitizeBackendUrl(form.logoUrl),
+    coverUrl: sanitizeBackendUrl(form.coverUrl),
+    support: {
+      whatsapp: form.support.whatsapp,
+      email: sanitizeEmail(form.support.email),
+      phone: form.support.phone,
+    },
+    shipFrom: {
+      country: form.shipFrom.country,
+      province: form.shipFrom.province,
+      city: form.shipFrom.city,
+      address1: form.shipFrom.address1,
+      address2: form.shipFrom.address2,
+      postalCode: form.shipFrom.postalCode,
+    },
+    channels: form.channels,
+    languages: form.languages,
+    taxonomySelection: normalizedTaxonomySelection?.nodeId
+      ? {
+          nodeId: normalizedTaxonomySelection.nodeId,
+          label:
+            typeof normalizedTaxonomySelection.label === "string"
+              ? normalizedTaxonomySelection.label
+              : undefined,
+          path: Array.isArray(normalizedTaxonomySelection.path)
+            ? normalizedTaxonomySelection.path.map(String)
+            : undefined,
+          slug:
+            typeof normalizedTaxonomySelection.slug === "string"
+              ? normalizedTaxonomySelection.slug
+              : undefined,
+          pathNodes: Array.isArray(normalizedTaxonomySelection.pathNodes)
+            ? normalizedTaxonomySelection.pathNodes
+                .filter((entry) => entry?.id && entry?.name && entry?.type)
+                .map((entry) => ({ id: String(entry.id), name: String(entry.name), type: String(entry.type) }))
+            : undefined,
+        }
+      : undefined,
+    taxonomySelections: Array.isArray(normalizedTaxonomySelections)
+      ? normalizedTaxonomySelections
+          .filter((entry) => entry?.nodeId)
+          .map((entry) => ({
+            nodeId: String(entry.nodeId),
+            label: typeof entry.label === "string" ? entry.label : undefined,
+            path: Array.isArray(entry.path) ? entry.path.map(String) : undefined,
+            slug: typeof entry.slug === "string" ? entry.slug : undefined,
+            pathNodes: Array.isArray(entry.pathNodes)
+              ? entry.pathNodes
+                  .filter((node) => node?.id && node?.name && node?.type)
+                  .map((node) => ({ id: String(node.id), name: String(node.name), type: String(node.type) }))
+              : undefined,
+          }))
+      : undefined,
+    docs: toOnboardingDocsPayload(form.docs.list),
+    shipping: {
+      profileId: form.shipping.profileId,
+      expressReady: form.shipping.expressReady,
+      handlingTimeDays: parseOptionalInt(form.shipping.handlingTimeDays),
+    },
+    policies: {
+      returnsDays: parseOptionalInt(form.policies.returnsDays),
+      warrantyDays: parseOptionalInt(form.policies.warrantyDays),
+      termsUrl: sanitizeBackendUrl(form.policies.termsUrl),
+      privacyUrl: sanitizeBackendUrl(form.policies.privacyUrl),
+      policyNotes: form.policies.policyNotes,
+    },
+    payout: {
+      method: form.payout.method,
+      currency: form.payout.currency,
+      rhythm: form.payout.rhythm,
+      thresholdAmount: parseOptionalNumber(form.payout.thresholdAmount),
+      bankName: form.payout.bankName,
+      bankCountry: form.payout.bankCountry,
+      bankBranch: form.payout.bankBranch,
+      accountName: form.payout.accountName,
+      accountNo: form.payout.accountNo,
+      swiftBic: form.payout.swiftBic,
+      iban: form.payout.iban,
+      mobileProvider: form.payout.mobileProvider,
+      mobileCountryCode: form.payout.mobileCountryCode,
+      mobileNo: form.payout.mobileNo,
+      mobileIdType: form.payout.mobileIdType,
+      mobileIdNumber: form.payout.mobileIdNumber,
+      alipayRegion: form.payout.alipayRegion,
+      alipayLogin: form.payout.alipayLogin,
+      wechatRegion: form.payout.wechatRegion,
+      wechatId: form.payout.wechatId,
+      otherMethod: form.payout.otherMethod,
+      otherProvider: form.payout.otherProvider,
+      otherCountry: form.payout.otherCountry,
+      otherNotes: form.payout.otherNotes,
+      notificationsEmail: sanitizeEmail(form.payout.notificationsEmail),
+      notificationsWhatsApp: form.payout.notificationsWhatsApp,
+      confirmDetails: form.payout.confirmDetails,
+      otherDetails: form.payout.otherDetails,
+      otherDescription: form.payout.otherDescription,
+    },
+    tax: {
+      taxpayerType: form.tax.taxpayerType,
+      legalName: form.tax.legalName,
+      taxCountry: form.tax.taxCountry,
+      taxId: form.tax.taxId,
+      vatNumber: form.tax.vatNumber,
+      legalAddress: form.tax.legalAddress,
+      contact: form.tax.contact,
+      contactEmail: sanitizeEmail(form.tax.contactEmail),
+      contactSameAsOwner: form.tax.contactSameAsOwner,
+    },
+    acceptance: {
+      sellerTerms: form.acceptance.sellerTerms,
+      contentPolicy: form.acceptance.contentPolicy,
+      dataProcessing: form.acceptance.dataProcessing,
+    },
+  }) ?? {};
+}
+
 function normalizeSellerFormPayload(
   payload: Record<string, unknown> | null | undefined,
   base: SellerForm,
@@ -1141,12 +1494,101 @@ function normalizeShippingProfiles(payload: Record<string, unknown> | null | und
   }));
 }
 
+function normalizeLabeledValueOptions(
+  value: unknown,
+  fallback: LabeledValueOption[]
+): LabeledValueOption[] {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const item = entry as Record<string, unknown>;
+      const optionValue = String(item.value || "").trim();
+      const label = String(item.label || optionValue || "").trim();
+      if (!optionValue || !label) return null;
+      return {
+        value: optionValue,
+        label,
+        helper: item.helper ? String(item.helper) : undefined,
+      };
+    })
+    .filter((entry): entry is LabeledValueOption => Boolean(entry));
+  return rows.length ? rows : fallback;
+}
+
+function normalizeStringOptions(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => String(entry || "").trim().toUpperCase())
+    .filter(Boolean);
+  return rows.length ? rows : fallback;
+}
+
+function normalizePolicyPresets(value: unknown, fallback: PolicyPresetOption[]): PolicyPresetOption[] {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const item = entry as Record<string, unknown>;
+      const patch =
+        item.patch && typeof item.patch === "object" && !Array.isArray(item.patch)
+          ? (item.patch as Record<string, unknown>)
+          : {};
+      const id = String(item.id || "").trim();
+      const label = String(item.label || id || "").trim();
+      if (!id || !label) return null;
+      return {
+        id,
+        label,
+        desc: String(item.desc || "").trim(),
+        patch: {
+          returnsDays: String(patch.returnsDays || ""),
+          warrantyDays: String(patch.warrantyDays || ""),
+          handlingTimeDays: String(patch.handlingTimeDays || ""),
+        },
+      };
+    })
+    .filter((entry): entry is PolicyPresetOption => Boolean(entry));
+  return rows.length ? rows : fallback;
+}
+
+function normalizeOnboardingLookups(payload: Record<string, unknown> | null | undefined): OnboardingLookups {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const payoutRegions =
+    source.payoutRegions && typeof source.payoutRegions === "object" && !Array.isArray(source.payoutRegions)
+      ? (source.payoutRegions as Record<string, unknown>)
+      : {};
+
+  return {
+    payoutMethods: normalizeLabeledValueOptions(source.payoutMethods, DEFAULT_ONBOARDING_LOOKUPS.payoutMethods),
+    payoutCurrencies: normalizeStringOptions(source.payoutCurrencies, DEFAULT_ONBOARDING_LOOKUPS.payoutCurrencies),
+    payoutRhythms: normalizeLabeledValueOptions(source.payoutRhythms, DEFAULT_ONBOARDING_LOOKUPS.payoutRhythms),
+    mobileMoneyProviders: normalizeLabeledValueOptions(
+      source.mobileMoneyProviders,
+      DEFAULT_ONBOARDING_LOOKUPS.mobileMoneyProviders
+    ),
+    mobileIdTypes: normalizeLabeledValueOptions(source.mobileIdTypes, DEFAULT_ONBOARDING_LOOKUPS.mobileIdTypes),
+    payoutRegions: {
+      alipay: normalizeLabeledValueOptions(
+        payoutRegions.alipay,
+        DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.alipay
+      ),
+      wechat: normalizeLabeledValueOptions(
+        payoutRegions.wechat,
+        DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.wechat
+      ),
+    },
+    policyPresets: normalizePolicyPresets(source.policyPresets, DEFAULT_ONBOARDING_LOOKUPS.policyPresets),
+  };
+}
+
 export default function SellerOnboardingProV4_JS() {
   const { t, language, setLanguage } = useLocalization();
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
   const sessionUser = useSession();
+  const sellerTaxonomy = useSellerTaxonomy();
 
   const [ui, setUi] = useState(() => ({
     theme: "light",
@@ -1367,6 +1809,15 @@ export default function SellerOnboardingProV4_JS() {
   );
 
   const [profiles, setProfiles] = useState<ShippingProfile[]>([]);
+  const [lookups, setLookups] = useState<OnboardingLookups>(DEFAULT_ONBOARDING_LOOKUPS);
+  const payoutMethodLabels = useMemo(
+    () =>
+      lookups.payoutMethods.reduce<Record<string, string>>((acc, method) => {
+        acc[method.value] = method.label;
+        return acc;
+      }, { ...PAYOUT_METHOD_LABELS }),
+    [lookups.payoutMethods]
+  );
   useEffect(() => {
     if (!profiles.length || form.shipping?.profileId) return;
     const fallback = profiles.find((profile) => profile.isDefault)?.id || profiles[0]?.id || "";
@@ -1380,8 +1831,12 @@ export default function SellerOnboardingProV4_JS() {
 
     const hydrate = async () => {
       try {
-        const [onboarding, screenState, shippingPayload, accountApproval] = await Promise.all([
+        const storedForm = readStoredDraft(STORAGE.form);
+        const storedUi = readStoredDraft(STORAGE.ui);
+        const storedReview = readStoredDraft(STORAGE.review);
+        const [onboarding, lookupPayload, screenState, shippingPayload, accountApproval] = await Promise.all([
           sellerBackendApi.getOnboarding().catch(() => null),
+          sellerBackendApi.getOnboardingLookups().catch(() => null),
           sellerBackendApi.getWorkflowScreenState("seller-onboarding").catch(() => null),
           sellerBackendApi.getShippingProfiles().catch(() => null),
           sellerBackendApi.getAccountApproval().catch(() => null),
@@ -1395,7 +1850,14 @@ export default function SellerOnboardingProV4_JS() {
           base,
           activeUserId
         );
+        const normalizedLookups = normalizeOnboardingLookups(
+          lookupPayload as Record<string, unknown> | null
+        );
         const normalizedScreen = normalizeScreenUi(screenState as Record<string, unknown> | null);
+        const normalizedStoredScreen = normalizeScreenUi({
+          ui: storedUi && typeof storedUi === "object" ? storedUi : {},
+          review: storedReview && typeof storedReview === "object" ? storedReview : {},
+        });
         const approvalPayload =
           accountApproval && typeof accountApproval === "object"
             ? (accountApproval as Record<string, unknown>)
@@ -1414,10 +1876,39 @@ export default function SellerOnboardingProV4_JS() {
         const nextProfiles = normalizeShippingProfiles(
           shippingPayload as Record<string, unknown> | null
         ).filter((profile) => !profile.archived);
+        const resolvedForm = draftMatchesActiveUser(storedForm, activeUserId)
+          ? normalizeSellerFormPayload(
+              storedForm as Record<string, unknown>,
+              normalizedForm,
+              activeUserId
+            )
+          : normalizedForm;
+        const resolvedUi =
+          storedUi && typeof storedUi === "object"
+            ? { ...normalizedScreen.ui, ...normalizedStoredScreen.ui }
+            : normalizedScreen.ui;
+        const resolvedReview =
+          storedReview && typeof storedReview === "object"
+            ? { ...normalizedScreen.review, ...normalizedStoredScreen.review }
+            : normalizedScreen.review;
+        if (
+          String(approvalPayload?.status || "").toLowerCase() === "approved" &&
+          !resolvedReview.approvedAt
+        ) {
+          resolvedReview.inReviewAt = null;
+          resolvedReview.approvedAt =
+            String(
+              approvalPayload?.approvedAt ||
+                approvalPayload?.submittedAt ||
+                resolvedForm.updatedAt ||
+                ""
+            ) || null;
+        }
 
-        setForm(normalizedForm);
-        setUi(normalizedScreen.ui);
-        setReview(normalizedScreen.review);
+        setForm(resolvedForm);
+        setLookups(normalizedLookups);
+        setUi(resolvedUi);
+        setReview(resolvedReview);
         setProfiles(nextProfiles);
       } catch {
         if (!cancelled) {
@@ -1444,14 +1935,17 @@ export default function SellerOnboardingProV4_JS() {
   }, [activeUserId, createEmptyForm, hydrated]);
 
   useEffect(() => {
+    if (!hydrated) return;
+    writeStoredDraft(STORAGE.form, form);
+    writeStoredDraft(STORAGE.ui, ui);
+    writeStoredDraft(STORAGE.review, review);
+  }, [form, hydrated, review, ui]);
+
+  useEffect(() => {
     if (!hydrated || !saveReadyRef.current) return;
     const timeoutId = window.setTimeout(() => {
       void sellerBackendApi
-        .patchOnboarding({
-          ...form,
-          profileType: "SELLER",
-          status: toWorkflowOnboardingStatus(form.status),
-        })
+        .patchOnboarding(toOnboardingPayload(form, sellerTaxonomy))
         .then(() => setLastSaved(ts()))
         .catch(() => {
           setToast({
@@ -1463,7 +1957,34 @@ export default function SellerOnboardingProV4_JS() {
     }, 450);
 
     return () => window.clearTimeout(timeoutId);
-  }, [form, hydrated]);
+  }, [form, hydrated, sellerTaxonomy]);
+
+  useEffect(() => {
+    if (!hydrated || !sellerTaxonomy.length) return;
+    setF((prev) => {
+      const normalizedSelections = normalizeSelectionsAgainstTaxonomy(prev.taxonomySelections, sellerTaxonomy);
+      const normalizedCurrent = prev.taxonomySelection?.nodeId
+        ? normalizeSelectionsAgainstTaxonomy([prev.taxonomySelection], sellerTaxonomy)[0] || null
+        : null;
+      const nextCurrent =
+        normalizedCurrent ||
+        normalizedSelections.find((entry) => entry.nodeId === prev.taxonomySelection?.nodeId) ||
+        normalizedSelections[normalizedSelections.length - 1] ||
+        null;
+
+      const sameSelections =
+        JSON.stringify(normalizedSelections) === JSON.stringify(prev.taxonomySelections || []);
+      const sameCurrent =
+        JSON.stringify(nextCurrent) === JSON.stringify(prev.taxonomySelection || null);
+
+      if (sameSelections && sameCurrent) return null;
+
+      return {
+        taxonomySelections: normalizedSelections,
+        taxonomySelection: nextCurrent,
+      };
+    });
+  }, [hydrated, sellerTaxonomy]);
 
   useEffect(() => {
     if (!hydrated || !saveReadyRef.current) return;
@@ -1835,6 +2356,7 @@ export default function SellerOnboardingProV4_JS() {
     if (!activeUserId) return;
     const owner = String(form.owner || form.email || "").toLowerCase();
     if (owner && owner !== activeUserId) {
+      clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
       const fresh = createEmptyForm();
       setForm(fresh);
       const id = activeUserId || form.email || form.storeName || "";
@@ -1887,11 +2409,12 @@ export default function SellerOnboardingProV4_JS() {
   };
 
   const resetDraft = async () => {
-    if (!window.confirm("Reset this onboarding draft? This clears your local draft on this device.")) return;
+    if (!window.confirm("Reset this onboarding draft? This clears the saved draft on this device and the backend draft.")) return;
     const fresh = createEmptyForm();
     setForm(fresh);
     setReview(DEFAULT_REVIEW_STATE);
     setStep(1);
+    clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
     try {
       await Promise.all([
         sellerBackendApi.resetOnboarding(),
@@ -2065,9 +2588,8 @@ export default function SellerOnboardingProV4_JS() {
     try {
       await Promise.all([
         sellerBackendApi.submitOnboarding({
-          ...nextState,
-          docs: { list: submittedDocs },
-          profileType: "SELLER",
+          ...toOnboardingPayload(nextState, sellerTaxonomy),
+          docs: toOnboardingDocsPayload(submittedDocs),
           status: "submitted",
         }),
         sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
@@ -2145,7 +2667,7 @@ export default function SellerOnboardingProV4_JS() {
   };
 
   const applyPolicyPreset = (presetId) => {
-    const p = POLICY_PRESETS.find((x) => x.id === presetId);
+    const p = lookups.policyPresets.find((x) => x.id === presetId);
     if (!p || isLocked) return;
     setF((prev) => ({
       shipping: { ...prev.shipping, handlingTimeDays: p.patch.handlingTimeDays },
@@ -2529,7 +3051,7 @@ export default function SellerOnboardingProV4_JS() {
               </div>
             </div>
             <div className="mt-2 text-xs text-[var(--ev-subtle)]">
-              {t("Track detailed approvals in")} <span onClick={() => navigate("/compliance")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Compliance Center")}</span>.
+              {t("Approval tracking becomes available after you submit onboarding.")}
             </div>
           </div>
         </div>
@@ -3002,6 +3524,7 @@ export default function SellerOnboardingProV4_JS() {
                     <SellerOnboardingTaxonomyNavigator
                       selections={form.taxonomySelections || []}
                       onChange={handleTaxonomySelectionsUpdate}
+                      taxonomyData={sellerTaxonomy}
                       disabled={isLocked}
                     />
                     <div className="mt-2 text-xs text-[var(--ev-subtle)]">
@@ -3176,9 +3699,7 @@ export default function SellerOnboardingProV4_JS() {
                   />
 
                   <div className="flex items-center gap-2 text-xs text-[var(--ev-subtle)] flex-wrap">
-                    <span onClick={() => navigate("/compliance")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Track approvals in Compliance Center")}</span>
-                    <span className="text-[var(--ev-muted)]">•</span>
-                    <span onClick={() => navigate("/market-panel/approvals")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Market Panel (Admin)")}</span>
+                    <span>{t("Approval and admin review screens unlock after submission.")}</span>
                   </div>
                 </div>
               </Section>
@@ -3213,7 +3734,7 @@ export default function SellerOnboardingProV4_JS() {
                         ))}
                       </select>
                       <div className="mt-2 text-xs text-[var(--ev-subtle)]">
-                        {t("Edit detailed rates in")} <span onClick={() => navigate("/shipping")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Settings -> Shipping Profiles")}</span>.
+                        {t("Starter shipping profiles are provisioned automatically. Detailed rate editing unlocks after onboarding approval.")}
                       </div>
                     </Field>
 
@@ -3261,7 +3782,7 @@ export default function SellerOnboardingProV4_JS() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {POLICY_PRESETS.map((p) => (
+                      {lookups.policyPresets.map((p) => (
                         <button
                           type="button"
                           key={p.id}
@@ -3364,6 +3885,7 @@ export default function SellerOnboardingProV4_JS() {
                   form={form}
                   setF={setF}
                   isLocked={isLocked}
+                  lookups={lookups}
                   ownerContactName={ownerContactName}
                   ownerContactEmail={ownerContactEmail}
                   payoutErrors={payoutErrors}
@@ -3472,7 +3994,7 @@ export default function SellerOnboardingProV4_JS() {
                         </button>
                       </div>
                       <div className="mt-2 text-xs text-[var(--ev-subtle)]">
-                        {t("Payout")}: <b className="text-[var(--ev-text)]">{t(PAYOUT_METHOD_LABELS[form.payout?.method] || "N/A")}</b>
+                        {t("Payout")}: <b className="text-[var(--ev-text)]">{t(payoutMethodLabels[form.payout?.method] || "N/A")}</b>
                       </div>
                       <div className="mt-1 text-xs text-[var(--ev-subtle)]">
                         {t("Currency")}: <b className="text-[var(--ev-text)]">{form.payout?.currency || "N/A"}</b>
@@ -3650,7 +4172,7 @@ export default function SellerOnboardingProV4_JS() {
                 <li>{t("Once approved, listings, promos, wholesale and payouts unlock.")}</li>
               </ol>
               <div className="mt-3 text-xs">
-                <span onClick={() => navigate("/compliance")} className="underline font-bold cursor-pointer text-blue-600 hover:text-blue-800">{t("Compliance Center")}</span>
+                {t("Approval tracking unlocks after submission.")}
               </div>
             </div>
           </aside>
@@ -3664,6 +4186,7 @@ function PayoutTaxStep({
   form,
   setF,
   isLocked,
+  lookups,
   ownerContactName,
   ownerContactEmail,
   payoutErrors,
@@ -3773,15 +4296,22 @@ function PayoutTaxStep({
             <Stack direction="column" spacing={2}>
               <TextField
                 label={t("Wallet provider")}
+                select
                 fullWidth
                 size="small"
                 value={payout.mobileProvider}
                 onChange={(e) => updatePayout({ mobileProvider: e.target.value })}
-                placeholder={t("e.g. MTN, Airtel")}
                 disabled={isLocked}
                 error={showPayoutErrors && !!payoutErrors.mobileProvider}
                 helperText={showPayoutErrors && payoutErrors.mobileProvider ? payoutErrors.mobileProvider : ""}
-              />
+              >
+                <MenuItem value="">{t("Select wallet provider")}</MenuItem>
+                {lookups.mobileMoneyProviders.map((provider) => (
+                  <MenuItem key={provider.value} value={provider.value}>
+                    {t(provider.label)}
+                  </MenuItem>
+                ))}
+              </TextField>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
                 <Box sx={{ minWidth: 180, width: "100%" }}>
                   <CountryCodeAutocomplete
@@ -3814,12 +4344,11 @@ function PayoutTaxStep({
                 disabled={isLocked}
               >
                 <MenuItem value="">{t("Select ID type")}</MenuItem>
-                <MenuItem value="national_id">{t("National ID")}</MenuItem>
-                <MenuItem value="passport">{t("Passport")}</MenuItem>
-                <MenuItem value="drivers_license">{t("Driver's License")}</MenuItem>
-                <MenuItem value="tax_id">{t("Tax ID")}</MenuItem>
-                <MenuItem value="residence_permit">{t("Residence Permit")}</MenuItem>
-                <MenuItem value="voter_id">{t("Voter ID")}</MenuItem>
+                {lookups.mobileIdTypes.map((item) => (
+                  <MenuItem key={item.value} value={item.value}>
+                    {t(item.label)}
+                  </MenuItem>
+                ))}
               </TextField>
               <TextField
                 label={t("ID number")}
@@ -3855,9 +4384,11 @@ function PayoutTaxStep({
               onChange={(e) => updatePayout({ alipayRegion: e.target.value })}
               disabled={isLocked}
             >
-              <MenuItem value="mainland">{t("Mainland China")}</MenuItem>
-              <MenuItem value="hong_kong">{t("Hong Kong SAR")}</MenuItem>
-              <MenuItem value="other">{t("Other region")}</MenuItem>
+              {lookups.payoutRegions.alipay.map((region) => (
+                <MenuItem key={region.value} value={region.value}>
+                  {t(region.label)}
+                </MenuItem>
+              ))}
             </TextField>
             <TextField
               label={t("Alipay login (phone or email)")}
@@ -3902,9 +4433,11 @@ function PayoutTaxStep({
               onChange={(e) => updatePayout({ wechatRegion: e.target.value })}
               disabled={isLocked}
             >
-              <MenuItem value="mainland">{t("Mainland China")}</MenuItem>
-              <MenuItem value="hong_kong">{t("Hong Kong SAR")}</MenuItem>
-              <MenuItem value="other">{t("Other region")}</MenuItem>
+              {lookups.payoutRegions.wechat.map((region) => (
+                <MenuItem key={region.value} value={region.value}>
+                  {t(region.label)}
+                </MenuItem>
+              ))}
             </TextField>
             <TextField
               label={t("WeChat ID")}
@@ -4032,7 +4565,7 @@ function PayoutTaxStep({
           </Typography>
 
           <Stack spacing={1.2}>
-            {PAYOUT_METHODS.map((method) => {
+            {lookups.payoutMethods.map((method) => {
               const selected = payout.method === method.value;
               return (
                 <Paper
@@ -4055,7 +4588,7 @@ function PayoutTaxStep({
                       size="small"
                       disabled={isLocked}
                     />
-                    {method.icon}
+                    {PAYOUT_METHOD_ICONS[method.value] || <IconWallet />}
                     <Box className="flex flex-col flex-1 min-w-0">
                       <Typography variant="body2" sx={{ color: EV_COLORS.textMain, fontWeight: selected ? 800 : 600 }}>
                         {t(method.label)}
@@ -4069,7 +4602,7 @@ function PayoutTaxStep({
                           overflow: "hidden",
                         }}
                       >
-                        {t(method.helper)}
+                        {t(method.helper || "")}
                       </Typography>
                     </Box>
                   </Box>
@@ -4097,7 +4630,7 @@ function PayoutTaxStep({
             <MenuItem value="">
               <em>{t("Choose currency")}</em>
             </MenuItem>
-            {PAYOUT_CURRENCIES.map((cur) => (
+            {lookups.payoutCurrencies.map((cur) => (
               <MenuItem key={cur} value={cur}>
                 {cur}
               </MenuItem>
@@ -4251,7 +4784,7 @@ function PayoutTaxStep({
         </Typography>
 
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "flex-start" }}>
-          {PAYOUT_RHYTHMS.map((rhythm) => {
+          {lookups.payoutRhythms.map((rhythm) => {
             const selected = payout.rhythm === rhythm.value;
             return (
               <Paper

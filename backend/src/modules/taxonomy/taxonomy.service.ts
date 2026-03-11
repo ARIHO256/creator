@@ -8,6 +8,18 @@ import { CreateTaxonomyTreeDto } from './dto/create-taxonomy-tree.dto.js';
 import { UpdateTaxonomyCoverageDto } from './dto/update-taxonomy-coverage.dto.js';
 import { UpdateTaxonomyNodeDto } from './dto/update-taxonomy-node.dto.js';
 import { UpdateTaxonomyTreeDto } from './dto/update-taxonomy-tree.dto.js';
+import {
+  PROVIDER_SERVICE_TAXONOMY,
+  PROVIDER_SERVICE_TAXONOMY_TREE_ID,
+  PROVIDER_SERVICE_TAXONOMY_TREE_NAME,
+  PROVIDER_SERVICE_TAXONOMY_TREE_SLUG
+} from './provider-service-taxonomy.js';
+import {
+  SELLER_CATALOG_TAXONOMY,
+  SELLER_CATALOG_TAXONOMY_TREE_ID,
+  SELLER_CATALOG_TAXONOMY_TREE_NAME,
+  SELLER_CATALOG_TAXONOMY_TREE_SLUG
+} from './seller-catalog-taxonomy.js';
 
 type TaxonomyNodeView = {
   id: string;
@@ -26,14 +38,39 @@ type TaxonomyNodeView = {
   children: TaxonomyNodeView[];
 };
 
+type SeedTaxonomyNode = {
+  id: string;
+  type: string;
+  name: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+  children: SeedTaxonomyNode[];
+};
+
+type FlatSeedTaxonomyNode = {
+  id: string;
+  parentId: string | null;
+  name: string;
+  slug: string;
+  kind: 'MARKETPLACE' | 'FAMILY' | 'CATEGORY' | 'SUBCATEGORY' | 'LINE';
+  description: string | null;
+  path: string;
+  depth: number;
+  sortOrder: number;
+  metadata: Prisma.InputJsonValue;
+};
+
 @Injectable()
 export class TaxonomyService {
+  private defaultTreesPromise: Promise<void> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sellersService: SellersService
   ) {}
 
   async listTrees() {
+    await this.ensureDefaultTaxonomyTrees();
     return this.prisma.taxonomyTree.findMany({ orderBy: { name: 'asc' } });
   }
 
@@ -229,10 +266,15 @@ export class TaxonomyService {
   }
 
   async listingWizardTaxonomy() {
-    const tree = await this.prisma.taxonomyTree.findFirst({
-      where: { status: 'ACTIVE' },
-      orderBy: { createdAt: 'asc' }
-    });
+    await this.ensureDefaultTaxonomyTrees();
+    const tree =
+      (await this.prisma.taxonomyTree.findFirst({
+        where: { slug: SELLER_CATALOG_TAXONOMY_TREE_SLUG }
+      })) ??
+      (await this.prisma.taxonomyTree.findFirst({
+        where: { status: 'ACTIVE' },
+        orderBy: { createdAt: 'asc' }
+      }));
 
     if (!tree) {
       return [];
@@ -255,6 +297,7 @@ export class TaxonomyService {
   }
 
   async assertNodesExist(nodeIds: string[]) {
+    await this.ensureDefaultTaxonomyTrees();
     if (nodeIds.length === 0) {
       return;
     }
@@ -269,10 +312,20 @@ export class TaxonomyService {
   }
 
   async assertNodesInActiveTree(nodeIds: string[]) {
+    await this.ensureDefaultTaxonomyTrees();
     if (nodeIds.length === 0) {
       return;
     }
     const tree = await this.getActiveTree();
+    return this.assertNodesInTree(tree.id, nodeIds);
+  }
+
+  async assertNodesInTree(treeIdentifier: string, nodeIds: string[]) {
+    await this.ensureDefaultTaxonomyTrees();
+    if (nodeIds.length === 0) {
+      return;
+    }
+    const tree = await this.resolveTree(treeIdentifier);
     const nodes = await this.prisma.taxonomyNode.findMany({
       where: { id: { in: nodeIds }, isActive: true },
       select: { id: true, treeId: true }
@@ -305,7 +358,12 @@ export class TaxonomyService {
     );
   }
 
-  async syncSellerCoverage(userId: string, nodeIds: string[]) {
+  async syncSellerCoverage(userId: string, nodeIds: string[], treeIdentifier?: string) {
+    if (treeIdentifier) {
+      await this.assertNodesInTree(treeIdentifier, nodeIds);
+    } else {
+      await this.assertNodesInActiveTree(nodeIds);
+    }
     const seller = await this.sellersService.ensureSellerProfile(userId);
     const existing = await this.prisma.sellerTaxonomyCoverage.findMany({
       where: { sellerId: seller.id }
@@ -364,9 +422,19 @@ export class TaxonomyService {
     }
   }
 
-  async syncStorefrontTaxonomy(userId: string, nodeIds: string[], primaryNodeId?: string) {
+  async syncStorefrontTaxonomy(
+    userId: string,
+    nodeIds: string[],
+    primaryNodeId?: string,
+    treeIdentifier?: string
+  ) {
     if (primaryNodeId && !nodeIds.includes(primaryNodeId)) {
       throw new BadRequestException('Primary taxonomy node must be included in taxonomyNodeIds');
+    }
+    if (treeIdentifier) {
+      await this.assertNodesInTree(treeIdentifier, nodeIds);
+    } else {
+      await this.assertNodesInActiveTree(nodeIds);
     }
     const seller = await this.sellersService.ensureSellerProfile(userId);
     const storefront =
@@ -434,6 +502,7 @@ export class TaxonomyService {
   }
 
   private async getActiveTree() {
+    await this.ensureDefaultTaxonomyTrees();
     const tree = await this.prisma.taxonomyTree.findFirst({
       where: { status: 'ACTIVE' },
       orderBy: { createdAt: 'asc' }
@@ -445,6 +514,7 @@ export class TaxonomyService {
   }
 
   private async resolveTree(identifier: string) {
+    await this.ensureDefaultTaxonomyTrees();
     const tree = await this.prisma.taxonomyTree.findFirst({
       where: { OR: [{ id: identifier }, { slug: identifier }] }
     });
@@ -650,5 +720,139 @@ export class TaxonomyService {
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '') || 'taxonomy'
     );
+  }
+
+  private async ensureDefaultTaxonomyTrees() {
+    if (this.defaultTreesPromise) {
+      return this.defaultTreesPromise;
+    }
+
+    this.defaultTreesPromise = (async () => {
+      await this.ensureSeededTree({
+        treeId: SELLER_CATALOG_TAXONOMY_TREE_ID,
+        slug: SELLER_CATALOG_TAXONOMY_TREE_SLUG,
+        name: SELLER_CATALOG_TAXONOMY_TREE_NAME,
+        description: 'Seller catalog taxonomy used by seller onboarding and listing workflows.',
+        nodes: SELLER_CATALOG_TAXONOMY as SeedTaxonomyNode[]
+      });
+      await this.ensureSeededTree({
+        treeId: PROVIDER_SERVICE_TAXONOMY_TREE_ID,
+        slug: PROVIDER_SERVICE_TAXONOMY_TREE_SLUG,
+        name: PROVIDER_SERVICE_TAXONOMY_TREE_NAME,
+        description: 'Provider service taxonomy used by provider onboarding.',
+        nodes: PROVIDER_SERVICE_TAXONOMY as SeedTaxonomyNode[]
+      });
+    })().catch((error) => {
+      this.defaultTreesPromise = null;
+      throw error;
+    });
+
+    return this.defaultTreesPromise;
+  }
+
+  private async ensureSeededTree(config: {
+    treeId: string;
+    slug: string;
+    name: string;
+    description: string;
+    nodes: SeedTaxonomyNode[];
+  }) {
+    await this.prisma.taxonomyTree.upsert({
+      where: { id: config.treeId },
+      update: {
+        slug: config.slug,
+        name: config.name,
+        description: config.description,
+        status: 'ACTIVE'
+      },
+      create: {
+        id: config.treeId,
+        slug: config.slug,
+        name: config.name,
+        description: config.description,
+        status: 'ACTIVE'
+      }
+    });
+
+    const flatNodes = this.flattenSeedNodes(config.nodes);
+    for (const node of flatNodes) {
+      await this.prisma.taxonomyNode.upsert({
+        where: { id: node.id },
+        update: {
+          treeId: config.treeId,
+          parentId: node.parentId,
+          name: node.name,
+          slug: node.slug,
+          kind: node.kind,
+          description: node.description,
+          path: node.path,
+          depth: node.depth,
+          sortOrder: node.sortOrder,
+          isActive: true,
+          metadata: node.metadata
+        },
+        create: {
+          id: node.id,
+          treeId: config.treeId,
+          parentId: node.parentId,
+          name: node.name,
+          slug: node.slug,
+          kind: node.kind,
+          description: node.description,
+          path: node.path,
+          depth: node.depth,
+          sortOrder: node.sortOrder,
+          isActive: true,
+          metadata: node.metadata
+        }
+      });
+    }
+  }
+
+  private flattenSeedNodes(
+    nodes: SeedTaxonomyNode[],
+    parentId: string | null = null,
+    parentPath = '',
+    depth = 0
+  ): FlatSeedTaxonomyNode[] {
+    return nodes.flatMap((node, index) => {
+      const slug = this.normalizeSlug(node.name);
+      const path = parentPath ? `${parentPath}/${slug}` : `/${slug}`;
+      const current: FlatSeedTaxonomyNode = {
+        id: node.id,
+        parentId,
+        name: node.name,
+        slug,
+        kind: this.kindForSeedNode(node.type),
+        description: node.description || null,
+        path,
+        depth,
+        sortOrder: index,
+        metadata: (node.metadata || {}) as Prisma.InputJsonValue
+      };
+
+      return [current, ...this.flattenSeedNodes(node.children || [], node.id, path, depth + 1)];
+    });
+  }
+
+  private kindForSeedNode(type: string): FlatSeedTaxonomyNode['kind'] {
+    switch (type) {
+      case 'Marketplace':
+      case 'Service Marketplace':
+        return 'MARKETPLACE';
+      case 'Product Family':
+      case 'Service Family':
+        return 'FAMILY';
+      case 'Category':
+      case 'Service Category':
+        return 'CATEGORY';
+      case 'Sub-Category':
+      case 'Service':
+        return 'SUBCATEGORY';
+      case 'Line':
+        return 'LINE';
+      default:
+        return 'CATEGORY';
+    }
   }
 }

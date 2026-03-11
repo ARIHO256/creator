@@ -6,6 +6,11 @@ const API_BASE_URL =
 
 const toUrl = (path: string) => `${API_BASE_URL}${path}`;
 
+type BackendRequestError = Error & {
+  status?: number;
+  payload?: unknown;
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   const session = readSession();
@@ -23,9 +28,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
-    throw new Error(
+    const error = new Error(
       payload?.error?.message || payload?.message || `Request failed with status ${response.status}`
-    );
+    ) as BackendRequestError;
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
 
   if (payload && typeof payload === "object" && "data" in payload && "success" in payload) {
@@ -190,6 +198,7 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getOnboarding: () => request<Record<string, unknown>>("/api/onboarding"),
+  getOnboardingLookups: () => request<Record<string, unknown>>("/api/onboarding/lookups"),
   patchOnboarding: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/onboarding", {
       method: "PATCH",
@@ -199,6 +208,14 @@ export const sellerBackendApi = {
     request<Record<string, unknown>>("/api/onboarding/submit", {
       method: "POST",
       body: JSON.stringify(body),
+    }).catch((error: BackendRequestError) => {
+      if (error?.status === 404) {
+        return request<Record<string, unknown>>("/api/onboarding", {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      }
+      throw error;
     }),
   resetOnboarding: () =>
     request<Record<string, unknown>>("/api/onboarding/reset", {

@@ -5168,8 +5168,29 @@ export default function EVzoneSupplierHubAppShellV9({
         next === 'provider'
           ? Array.from(new Set([...currentRoles.filter((r) => r !== 'seller'), 'provider']))
           : currentRoles.filter((r) => r !== 'provider');
-      void sellerBackendApi.switchAuthRole({ role: String(next).toUpperCase() }).catch(() => undefined);
-      updateSession({ role: next, roles: nextRoles as Role[] });
+      void sellerBackendApi
+        .switchAuthRole({ role: String(next).toUpperCase() })
+        .then((payload) => {
+          updateSession({
+            role: next,
+            roles: nextRoles as Role[],
+            accessToken:
+              typeof payload.accessToken === 'string' && payload.accessToken.trim()
+                ? payload.accessToken
+                : current.accessToken,
+            refreshToken:
+              typeof payload.refreshToken === 'string' && payload.refreshToken.trim()
+                ? payload.refreshToken
+                : current.refreshToken,
+            token:
+              typeof payload.accessToken === 'string' && payload.accessToken.trim()
+                ? payload.accessToken
+                : current.token
+          });
+        })
+        .catch(() => {
+          updateSession({ role: next, roles: nextRoles as Role[] });
+        });
     },
     []
   );

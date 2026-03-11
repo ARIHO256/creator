@@ -276,14 +276,10 @@ export class AuthService {
 
     const updated = await this.prisma.user.update({
       where: { id: userId },
-        data: { role: payload.role as UserRole }
+      data: { role: payload.role as UserRole }
     });
 
-    return {
-      id: updated.id,
-      role: updated.role,
-      roles
-    };
+    return this.issueTokens(updated.id, user.email, updated.role, roles);
   }
 
   private async issueTokens(

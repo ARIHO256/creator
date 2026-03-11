@@ -29,9 +29,9 @@ export class JwtAuthGuard implements CanActivate {
 
     if (authDisabled) {
       request.user = {
-        sub: this.configService.get<string>('auth.devUserId') ?? 'user_ronald',
-        role: this.configService.get<string>('auth.devUserRole') ?? 'CREATOR',
-        roles: [this.configService.get<string>('auth.devUserRole') ?? 'CREATOR'],
+        sub: this.configService.get<string>('auth.devUserId') ?? 'user_seller_evhub',
+        role: this.configService.get<string>('auth.devUserRole') ?? 'SELLER',
+        roles: [this.configService.get<string>('auth.devUserRole') ?? 'SELLER'],
         email: null
       };
       return true;
@@ -49,9 +49,10 @@ export class JwtAuthGuard implements CanActivate {
     } else {
       const cookies = parseCookieHeader(request.headers.cookie);
       token = cookies[ACCESS_TOKEN_COOKIE_NAME] || '';
-      if (!token) {
-        throw new UnauthorizedException('Missing Authorization header');
-      }
+    }
+
+    if (!token) {
+      throw new UnauthorizedException('Missing Authorization header');
     }
 
     try {
