@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   ArrowRight,
   BadgeCheck,
@@ -95,6 +95,19 @@ type ZoneDraft = {
   pricing?: ZonePricing;
   lead?: ZoneLead;
   notes?: string;
+};
+
+type Warehouse = {
+  id: string;
+  name: string;
+  code?: string;
+  country: string;
+  city: string;
+  active: boolean;
+  cutOffLocal: string;
+  processingDays: number;
+  capabilities: Record<string, boolean>;
+  constraints: Record<string, boolean>;
 };
 
 function cx(...classes) {
@@ -467,6 +480,62 @@ function computeZoneCost(zone, weightKg, items) {
   return Math.max(0, Number(p.base || 0) + w * Number(p.perKg || 0));
 }
 
+function mapWarehouse(entry: Record<string, any>): Warehouse {
+  const metadata = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
+  const address = entry.address && typeof entry.address === "object" ? entry.address : {};
+  return {
+    id: String(entry.id || ""),
+    name: String(entry.name || "Warehouse"),
+    code: typeof entry.code === "string" ? entry.code : undefined,
+    country: String(address.country || ""),
+    city: String(address.city || ""),
+    active: String(entry.status || "").toUpperCase() !== "INACTIVE",
+    cutOffLocal: String(metadata.cutOffLocal || "17:00"),
+    processingDays: Number(metadata.processingDays || 1),
+    capabilities: (metadata.capabilities as Record<string, boolean>) || {},
+    constraints: (metadata.constraints as Record<string, boolean>) || {},
+  };
+}
+
+function mapShippingProfile(entry: Record<string, any>): ShippingProfile {
+  const metadata = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
+  return {
+    id: String(entry.id || ""),
+    name: String(entry.name || "Shipping profile"),
+    status: String(entry.status || "ACTIVE").toUpperCase() === "INACTIVE" ? "Inactive" : "Active",
+    currency: String(metadata.currency || entry.currency || "USD"),
+    serviceType: String(metadata.serviceType || entry.serviceLevel || "Parcel"),
+    updatedAt: String(entry.updatedAt || new Date().toISOString()),
+    zones: Array.isArray(metadata.zones) ? (metadata.zones as ShippingZone[]) : [],
+    policy:
+      metadata.policy && typeof metadata.policy === "object"
+        ? (metadata.policy as ShippingPolicy)
+        : { mode: "auto", fallbackWarehouseId: null, rules: [] },
+  };
+}
+
+function toShippingProfilePayload(profile: ShippingProfile) {
+  const countries = Array.from(new Set(profile.zones.flatMap((zone) => zone.countries || [])));
+  return {
+    name: profile.name,
+    description: `${profile.serviceType} shipping profile`,
+    status: profile.status === "Inactive" ? "INACTIVE" : "ACTIVE",
+    carrier: "EV Hub Logistics",
+    serviceLevel: profile.serviceType,
+    handlingTimeDays: Math.max(
+      1,
+      ...profile.zones.map((zone) => Number(zone.lead?.minDays || 0)).filter((value) => Number.isFinite(value))
+    ),
+    regions: countries,
+    metadata: {
+      currency: profile.currency,
+      serviceType: profile.serviceType,
+      zones: profile.zones,
+      policy: profile.policy,
+    },
+  };
+}
+
 function selectWarehouse(profile, ctx) {
   const { zone, country, weightKg, items, buyerPreferredWarehouseId, warehouses } = ctx;
   const policy = profile?.policy;
@@ -623,9 +692,38 @@ export default function OpsShippingProfilesPremium() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [role, setRole] = useState("seller");
+  const [loading, setLoading] = useState(true);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [profiles, setProfiles] = useState<ShippingProfile[]>([]);
 
-  const [warehouses] = useSellerCompatState("ops.shipping.warehouses", seedWarehouses());
-  const [profiles, setProfiles] = useMockState<ShippingProfile[]>("ops.shipping.profiles", seedProfiles(warehouses));
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    Promise.all([sellerBackendApi.getOpsWarehouses(), sellerBackendApi.getShippingProfiles()])
+      .then(([warehousePayload, profilePayload]) => {
+        if (!mounted) return;
+        setWarehouses(
+          Array.isArray(warehousePayload?.warehouses)
+            ? (warehousePayload.warehouses as Array<Record<string, any>>).map(mapWarehouse)
+            : []
+        );
+        setProfiles(
+          Array.isArray(profilePayload?.profiles)
+            ? (profilePayload.profiles as Array<Record<string, any>>).map(mapShippingProfile)
+            : []
+        );
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Shipping profiles unavailable", message: "Could not load shipping data.", tone: "danger" });
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
@@ -730,7 +828,7 @@ export default function OpsShippingProfilesPremium() {
     setEditorOpen(true);
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
     const cleanedName = String(draft.name || "").trim();
     if (!cleanedName) {
       pushToast({ title: "Name required", message: "Add a profile name to continue.", tone: "warning" });
@@ -740,15 +838,23 @@ export default function OpsShippingProfilesPremium() {
 
     const now = new Date().toISOString();
     const next = { ...draft, name: cleanedName, updatedAt: now };
-
-    setProfiles((prev) => {
-      if (editorMode === "edit") return prev.map((x) => (x.id === next.id ? next : x));
-      return [next, ...prev];
-    });
-
-    setActiveId(next.id);
-    setEditorOpen(false);
-    pushToast({ title: "Saved", message: "Shipping profile updated.", tone: "success" });
+    try {
+      const payload = toShippingProfilePayload(next);
+      const response =
+        editorMode === "edit"
+          ? await sellerBackendApi.patchShippingProfile(next.id, payload)
+          : await sellerBackendApi.createShippingProfile(payload);
+      const saved = mapShippingProfile(response as Record<string, any>);
+      setProfiles((prev) => {
+        if (editorMode === "edit") return prev.map((item) => (item.id === saved.id ? saved : item));
+        return [saved, ...prev];
+      });
+      setActiveId(saved.id);
+      setEditorOpen(false);
+      pushToast({ title: "Saved", message: "Shipping profile updated.", tone: "success" });
+    } catch {
+      pushToast({ title: "Save failed", message: "Could not persist shipping profile.", tone: "danger" });
+    }
   };
 
   // Zone editor inside drawer

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -23,6 +22,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Integrations (Previewable)
@@ -479,10 +479,39 @@ export default function SettingsIntegrationsPage() {
 
   const [tab, setTab] = useState<"Apps" | "API keys" | "Webhooks">("Apps");
 
-  const [apps, setApps] = useSellerCompatState<AppIntegration[]>("settings.integrations.apps", seedApps());
-  const [keys, setKeys] = useSellerCompatState<ApiKey[]>("settings.integrations.keys", seedApiKeys());
-  const [endpoints, setEndpoints] = useSellerCompatState<WebhookEndpoint[]>("settings.integrations.endpoints", seedWebhooks());
-  const [logs, setLogs] = useSellerCompatState<WebhookLog[]>("settings.integrations.logs", seedWebhookLogs(seedWebhooks()));
+  const [apps, setApps] = useState<AppIntegration[]>([]);
+  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [endpoints, setEndpoints] = useState<WebhookEndpoint[]>([]);
+  const [logs, setLogs] = useState<WebhookLog[]>([]);
+  const persistIntegrations = async (
+    nextApps: AppIntegration[],
+    nextKeys: ApiKey[],
+    nextEndpoints: WebhookEndpoint[],
+    nextLogs: WebhookLog[]
+  ) => {
+    await sellerBackendApi.patchIntegrations({
+      integrations: nextApps,
+      webhooks: nextEndpoints,
+      metadata: { keys: nextKeys, logs: nextLogs },
+    });
+  };
+  const loadIntegrations = async (quiet = false) => {
+    try {
+      const payload = await sellerBackendApi.getIntegrations();
+      setApps(Array.isArray(payload.integrations) ? (payload.integrations as AppIntegration[]) : []);
+      setEndpoints(Array.isArray(payload.webhooks) ? (payload.webhooks as WebhookEndpoint[]) : []);
+      setKeys(Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.keys) ? ((payload.metadata as Record<string, unknown>).keys as ApiKey[]) : []);
+      setLogs(Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.logs) ? ((payload.metadata as Record<string, unknown>).logs as WebhookLog[]) : []);
+      if (!quiet) {
+        pushToast({ title: "Refreshed", message: "Latest integration status loaded.", tone: "success" });
+      }
+    } catch {
+      pushToast({ title: "Integrations unavailable", message: "Could not load integrations.", tone: "warning" });
+    }
+  };
+  useEffect(() => {
+    void loadIntegrations(true);
+  }, []);
 
   // ---------------- KPIs ----------------
   const kpis = useMemo(() => {
@@ -519,23 +548,30 @@ export default function SettingsIntegrationsPage() {
 
   const [connectOpen, setConnectOpen] = useState(false);
   const [connectAppId, setConnectAppId] = useState(apps[0]?.id);
+  useEffect(() => {
+    if (!connectAppId && apps[0]?.id) {
+      setConnectAppId(apps[0].id);
+    }
+  }, [apps, connectAppId]);
   const connectApp = () => {
     const app = apps.find((a) => a.id === connectAppId);
     if (!app) return;
-    setApps((prev) =>
-      prev.map((a) =>
-        a.id === connectAppId
-          ? { ...a, status: "Connected", lastSyncAt: new Date().toISOString() }
-          : a
-      )
+    const nextApps = apps.map((a) =>
+      a.id === connectAppId
+        ? { ...a, status: "Connected", lastSyncAt: new Date().toISOString() }
+        : a
     );
+    setApps(nextApps);
+    void persistIntegrations(nextApps, keys, endpoints, logs);
     setConnectOpen(false);
     pushToast({ title: "Connected", message: `${app.name} is now connected.`, tone: "success" });
   };
 
   const disconnectApp = (id) => {
     const app = apps.find((a) => a.id === id);
-    setApps((prev) => prev.map((a) => (a.id === id ? { ...a, status: "Disconnected", lastSyncAt: null } : a)));
+    const nextApps = apps.map((a) => (a.id === id ? { ...a, status: "Disconnected", lastSyncAt: null } : a));
+    setApps(nextApps);
+    void persistIntegrations(nextApps, keys, endpoints, logs);
     pushToast({ title: "Disconnected", message: app ? app.name : "App disconnected", tone: "default" });
   };
 
@@ -570,7 +606,7 @@ export default function SettingsIntegrationsPage() {
     const prefix = `sk_live_${Math.random().toString(36).slice(2, 5)}`;
     const id = `key_${Math.random().toString(16).slice(2, 8)}`;
 
-    setKeys((s) => [
+    const nextKeys = [
       {
         id,
         name,
@@ -581,8 +617,10 @@ export default function SettingsIntegrationsPage() {
         scopes: keyScopes.length ? keyScopes : ["orders:read"],
         expiresAt: new Date(Date.now() + Number(keyExpiryDays || 0) * 24 * 3600_000).toISOString(),
       },
-      ...s,
-    ]);
+      ...keys,
+    ];
+    setKeys(nextKeys);
+    void persistIntegrations(apps, nextKeys, endpoints, logs);
 
     setNewKeyOpen(false);
     pushToast({
@@ -600,7 +638,9 @@ export default function SettingsIntegrationsPage() {
   };
 
   const revokeKey = (id) => {
-    setKeys((s) => s.map((k) => (k.id === id ? { ...k, status: "Revoked" } : k)));
+    const nextKeys = keys.map((k) => (k.id === id ? { ...k, status: "Revoked" } : k));
+    setKeys(nextKeys);
+    void persistIntegrations(apps, nextKeys, endpoints, logs);
     pushToast({ title: "Key revoked", message: id, tone: "warning" });
   };
 
@@ -656,7 +696,9 @@ export default function SettingsIntegrationsPage() {
       latencyMs: Math.max(120, Math.round(Number(ev.latencyMs || 240) * 0.6)),
       payloadPreview: ev.payloadPreview,
     };
-    setLogs((s) => [replay, ...s]);
+    const nextLogs = [replay, ...logs];
+    setLogs(nextLogs);
+    void persistIntegrations(apps, keys, endpoints, nextLogs);
     pushToast({ title: "Replay queued", message: `${ev.eventType} sent again (demo).`, tone: "success" });
   };
 
@@ -682,7 +724,7 @@ export default function SettingsIntegrationsPage() {
       return;
     }
     const id = `wh_${Math.random().toString(16).slice(2, 6)}`;
-    setEndpoints((s) => [
+    const nextEndpoints = [
       {
         id,
         url,
@@ -692,24 +734,28 @@ export default function SettingsIntegrationsPage() {
         signing: endpointSigning ? "Enabled" : "Disabled",
         events: endpointEvents.length ? endpointEvents : ["order.created"],
       },
-      ...s,
-    ]);
+      ...endpoints,
+    ];
+    setEndpoints(nextEndpoints);
+    void persistIntegrations(apps, keys, nextEndpoints, logs);
     setAddEndpointOpen(false);
     pushToast({ title: "Endpoint added", message: "Webhook endpoint created.", tone: "success" });
   };
 
   const toggleEndpoint = (id) => {
-    setEndpoints((s) =>
-      s.map((e) => {
-        if (e.id !== id) return e;
-        const next = e.status === "Paused" ? "Active" : "Paused";
-        return { ...e, status: next };
-      })
-    );
+    const nextEndpoints = endpoints.map((e) => {
+      if (e.id !== id) return e;
+      const next = e.status === "Paused" ? "Active" : "Paused";
+      return { ...e, status: next };
+    });
+    setEndpoints(nextEndpoints);
+    void persistIntegrations(apps, keys, nextEndpoints, logs);
   };
 
   const removeEndpoint = (id) => {
-    setEndpoints((s) => s.filter((e) => e.id !== id));
+    const nextEndpoints = endpoints.filter((e) => e.id !== id);
+    setEndpoints(nextEndpoints);
+    void persistIntegrations(apps, keys, nextEndpoints, logs);
     pushToast({ title: "Endpoint removed", message: id, tone: "default" });
   };
 
@@ -729,7 +775,9 @@ export default function SettingsIntegrationsPage() {
       tries: 2,
       payloadPreview: JSON.stringify({ id: makeId("payload"), type: "inventory.updated", demo: true }).slice(0, 72),
     };
-    setLogs((s) => [entry, ...s]);
+    const nextLogs = [entry, ...logs];
+    setLogs(nextLogs);
+    void persistIntegrations(apps, keys, endpoints, nextLogs);
     pushToast({ title: "Failure simulated", message: "A failed delivery was added to logs.", tone: "warning" });
   };
 
@@ -752,7 +800,7 @@ export default function SettingsIntegrationsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest integration status loaded (demo).", tone: "success" })}
+                onClick={() => void loadIntegrations()}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />

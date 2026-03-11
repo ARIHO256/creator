@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   AlertTriangle,
@@ -381,7 +381,7 @@ function KpiCard({ icon: Icon, label, value, delta, tone = "slate", spark, onCli
   );
 }
 
-function seedFinance() {
+function financeDemoData() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   const inM = (m) => new Date(now + m * 60_000).toISOString();
@@ -483,6 +483,26 @@ function seedFinance() {
   };
 }
 
+const emptyFinanceData = {
+  fx: {},
+  balances: [],
+  availableUsd: 0,
+  pendingUsd: 0,
+  holdsUsd: 0,
+  invoices: [],
+  transactions: [],
+  holds: [],
+  payout: { nextAt: new Date().toISOString(), method: "", currency: "USD", estimate: "", cadence: "", holdsActive: 0 },
+  reconciliation: { state: "Needs review", matchedPct: 0, unmatched: 0, note: "" },
+  alerts: [],
+  kpis: {
+    available: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+    pending: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+    holds: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+    invoicesDue: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+  },
+};
+
 function progressLabel(pct: number): { label: string; tone: BadgeTone } {
   const v = clamp(Number(pct || 0), 0, 100);
   if (v >= 95) return { label: "Excellent", tone: "green" };
@@ -520,7 +540,7 @@ function exportCsv(rows: Array<Record<string, unknown>>) {
 
 export default function FinanceHomeOverview() {
   const { resolvedMode } = useThemeMode();
-  const [data] = useSellerCompatState("finance.home", seedFinance());
+  const [data, setData] = useState<Record<string, any>>(emptyFinanceData);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -529,6 +549,23 @@ export default function FinanceHomeOverview() {
     window.setTimeout(() => setToasts((s) => s.filter((x) => x.id !== id)), 4600);
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
+
+  useEffect(() => {
+    let mounted = true;
+    void sellerBackendApi
+      .getFinanceHome()
+      .then((payload) => {
+        if (!mounted) return;
+        setData({ ...emptyFinanceData, ...(payload as Record<string, any>) });
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Finance unavailable", message: "Could not load finance overview.", tone: "danger" });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [range, setRange] = useState("7d");
   const [channel, setChannel] = useState("All");

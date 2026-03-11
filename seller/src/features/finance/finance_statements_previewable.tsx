@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   ArrowDownRight,
@@ -268,7 +268,7 @@ function KpiCard({ icon: Icon, label, value, hint, tone = "slate" }: KpiCardProp
   );
 }
 
-function seedStatements() {
+function statementDemoRows() {
   const now = Date.now();
   const daysAgo = (d) => new Date(now - d * 24 * 3600_000).toISOString();
 
@@ -709,7 +709,24 @@ export default function FinanceStatementsPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [rows] = useSellerCompatState("finance.statements", seedStatements());
+  const [rows, setRows] = useState<any[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    void sellerBackendApi
+      .getFinanceStatements()
+      .then((payload) => {
+        if (!mounted) return;
+        setRows(Array.isArray((payload as Record<string, any>)?.statements) ? ((payload as Record<string, any>).statements as any[]) : []);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Statements unavailable", message: "Could not load statements.", tone: "danger" });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [q, setQ] = useState("");
   const [currency, setCurrency] = useState("All");

@@ -3500,16 +3500,56 @@ async function seedFrontendReplacementData(users, sellerProfiles) {
 
   await prisma.shippingProfile.create({
     data: {
-      id: 'ship_profile_evhub_main',
+      id: 'SHIP-STD-AFR',
       sellerId: sellerProfiles.seller.id,
-      name: 'Main Warehouse Standard',
+      name: 'Standard Parcel Africa',
       status: 'ACTIVE',
-      handlingTimeDays: 2,
-      regions: ['UG', 'KE'],
+      carrier: 'EV Hub Logistics',
+      serviceLevel: 'Parcel',
+      handlingTimeDays: 1,
+      regions: ['Uganda', 'Kenya', 'Tanzania', 'Rwanda'],
       isDefault: true,
       metadata: {
-        city: 'Kampala',
-        serviceLevel: 'Standard'
+        currency: 'USD',
+        serviceType: 'Parcel',
+        zones: [
+          {
+            id: 'Z-UG',
+            name: 'Uganda',
+            countries: ['Uganda'],
+            pricing: { mode: 'weight', base: 3.5, perKg: 0.6, perItem: 0 },
+            lead: { minDays: 1, maxDays: 3 },
+            notes: 'Local delivery'
+          },
+          {
+            id: 'Z-EA',
+            name: 'East Africa',
+            countries: ['Kenya', 'Tanzania', 'Rwanda'],
+            pricing: { mode: 'weight', base: 6.0, perKg: 0.9, perItem: 0 },
+            lead: { minDays: 2, maxDays: 5 },
+            notes: 'Regional'
+          }
+        ],
+        policy: {
+          mode: 'auto',
+          fallbackWarehouseId: 'wh_kla_main',
+          rules: [
+            {
+              id: 'R-1',
+              priority: 10,
+              title: 'Kenya uses Nairobi',
+              when: { zoneId: 'Z-EA', country: 'Kenya', maxWeightKg: 35 },
+              then: { warehouseId: 'wh_nbo_hub' }
+            },
+            {
+              id: 'R-2',
+              priority: 30,
+              title: 'Uganda uses Kampala',
+              when: { zoneId: 'Z-UG' },
+              then: { warehouseId: 'wh_kla_main' }
+            }
+          ]
+        }
       }
     }
   });
@@ -6081,6 +6121,64 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
     ]
   });
 
+  await prisma.shippingProfile.createMany({
+    data: [
+      {
+        id: 'SHIP-EXP-INTL',
+        sellerId,
+        name: 'Express International',
+        status: 'ACTIVE',
+        carrier: 'EV Hub Logistics',
+        serviceLevel: 'Express',
+        handlingTimeDays: 2,
+        regions: ['Uganda', 'Kenya', 'Nigeria', 'Ghana', 'South Africa', 'China', 'United States', 'United Kingdom', 'Germany', 'France'],
+        isDefault: false,
+        metadata: {
+          currency: 'USD',
+          serviceType: 'Express',
+          zones: [
+            {
+              id: 'Z-AFR',
+              name: 'Africa',
+              countries: ['Uganda', 'Kenya', 'Nigeria', 'Ghana', 'South Africa'],
+              pricing: { mode: 'weight', base: 14, perKg: 3.5, perItem: 0 },
+              lead: { minDays: 3, maxDays: 7 },
+              notes: 'Air express'
+            },
+            {
+              id: 'Z-GLB',
+              name: 'Global',
+              countries: ['China', 'United States', 'United Kingdom', 'Germany', 'France'],
+              pricing: { mode: 'weight', base: 18, perKg: 4.2, perItem: 0 },
+              lead: { minDays: 4, maxDays: 9 },
+              notes: 'Air express'
+            }
+          ],
+          policy: {
+            mode: 'buyer_preferred',
+            fallbackWarehouseId: 'wh_wux_main',
+            rules: [
+              {
+                id: 'R-3',
+                priority: 10,
+                title: 'Africa ships from Kampala if available',
+                when: { zoneId: 'Z-AFR', maxWeightKg: 20 },
+                then: { warehouseId: 'wh_kla_main' }
+              },
+              {
+                id: 'R-4',
+                priority: 20,
+                title: 'Global ships from Wuxi',
+                when: { zoneId: 'Z-GLB' },
+                then: { warehouseId: 'wh_wux_main' }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  });
+
   await prisma.providerPortfolioItem.createMany({
     data: [
       {
@@ -6161,6 +6259,25 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
           capabilities: { ship: true, pickup: false, returns: true },
           constraints: { hazmat: true, batteries: true },
           serviceCountries: ['KE', 'TZ'],
+          blockedCountries: []
+        }
+      },
+      {
+        id: 'wh_wux_main',
+        sellerId,
+        name: 'Wuxi Main',
+        code: 'WUX-MAIN',
+        type: 'WAREHOUSE',
+        status: 'ACTIVE',
+        isDefault: false,
+        address: { country: 'CN', city: 'Wuxi' },
+        contact: { name: 'Lin', phone: '+865101111111' },
+        metadata: {
+          cutOffLocal: '18:00',
+          processingDays: 2,
+          capabilities: { ship: true, pickup: false, returns: false },
+          constraints: { hazmat: false, batteries: true },
+          serviceCountries: ['CN', 'US', 'GB', 'DE', 'FR'],
           blockedCountries: []
         }
       }
@@ -6667,6 +6784,104 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
       },
       {
         userId: sellerUserId,
+        key: 'provider_service_command',
+        payload: {
+          schedule: [
+            {
+              id: 'SCH-2201',
+              title: 'Site Survey: EV charger installation',
+              customer: 'Kampala Logistics Ltd',
+              service: 'Installation',
+              startAt: soon(20),
+              endAt: soon(80),
+              channel: 'EVzone',
+              location: 'Nsambya, Kampala',
+              status: 'Upcoming'
+            },
+            {
+              id: 'SCH-2200',
+              title: 'Consultation: Fleet charging strategy',
+              customer: 'GreenRide Fleet',
+              service: 'Consultation',
+              startAt: soon(105),
+              endAt: soon(165),
+              channel: 'Video Call',
+              location: 'Online',
+              status: 'Upcoming'
+            },
+            {
+              id: 'SCH-2199',
+              title: 'Maintenance follow-up: Wallbox diagnostics',
+              customer: 'Amina K.',
+              service: 'Maintenance',
+              startAt: ago(90),
+              endAt: ago(30),
+              channel: 'WhatsApp',
+              location: 'Online',
+              status: 'Completed'
+            }
+          ],
+          queue: [
+            {
+              id: 'Q-4107',
+              customer: 'Ibrahim H.',
+              request: 'Urgent booking: charger installation',
+              service: 'Installation',
+              status: 'New',
+              priority: 'High',
+              channel: 'WhatsApp',
+              slaDueAt: soon(18),
+              score: 92
+            },
+            {
+              id: 'Q-4106',
+              customer: 'Chen L.',
+              request: 'Request quote: 12-port charging station',
+              service: 'Quotation',
+              status: 'Awaiting',
+              priority: 'Medium',
+              channel: 'API',
+              slaDueAt: soon(120),
+              score: 68
+            },
+            {
+              id: 'Q-4105',
+              customer: 'Sarah T.',
+              request: 'Support: OCPP connectivity troubleshooting',
+              service: 'Support',
+              status: 'In progress',
+              priority: 'High',
+              channel: 'EVzone',
+              slaDueAt: ago(5),
+              score: 88
+            },
+            {
+              id: 'Q-4104',
+              customer: 'Moses N.',
+              request: 'Reschedule consultation',
+              service: 'Consultation',
+              status: 'New',
+              priority: 'Low',
+              channel: 'EVzone',
+              slaDueAt: soon(360),
+              score: 41
+            },
+            {
+              id: 'Q-4103',
+              customer: 'Joy A.',
+              request: 'Dispute: service scope mismatch',
+              service: 'Support',
+              status: 'Escalated',
+              priority: 'High',
+              channel: 'EVzone',
+              slaDueAt: soon(45),
+              score: 97
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
         key: 'ops_warehouses_page',
         payload: {
           rules: [
@@ -6764,6 +6979,598 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
           cart: {},
           liveCart: {}
         }
+      },
+      {
+        userId: sellerUserId,
+        key: 'integrations',
+        payload: {
+          integrations: [
+            {
+              id: 'app_shopify',
+              name: 'Shopify',
+              category: 'Commerce',
+              status: 'Connected',
+              description: 'Catalog and order sync',
+              lastSyncAt: ago(18),
+              health: 98
+            },
+            {
+              id: 'app_meta',
+              name: 'Meta Ads',
+              category: 'Marketing',
+              status: 'Disconnected',
+              description: 'Campaign reporting',
+              lastSyncAt: ago(2880),
+              health: 64
+            }
+          ],
+          webhooks: [
+            {
+              id: 'wh_orders',
+              url: 'https://seller.evhub.com/hooks/orders',
+              status: 'Active',
+              lastDeliveryAt: ago(11),
+              successRate24h: 99,
+              signing: 'Enabled',
+              events: ['order.created', 'order.paid']
+            },
+            {
+              id: 'wh_inventory',
+              url: 'https://seller.evhub.com/hooks/inventory',
+              status: 'Paused',
+              lastDeliveryAt: ago(320),
+              successRate24h: 92,
+              signing: 'Enabled',
+              events: ['inventory.updated']
+            }
+          ],
+          metadata: {
+            keys: [
+              {
+                id: 'key_2fd1ab',
+                name: 'Operations API',
+                prefix: 'sk_live_ops',
+                createdAt: ago(90 * 24 * 60),
+                lastUsedAt: ago(45),
+                status: 'Active',
+                scopes: ['orders:read', 'inventory:read', 'webhooks:read'],
+                expiresAt: soon(90 * 24 * 60)
+              },
+              {
+                id: 'key_73ac90',
+                name: 'Legacy webhook relay',
+                prefix: 'sk_live_rel',
+                createdAt: ago(220 * 24 * 60),
+                lastUsedAt: ago(14 * 24 * 60),
+                status: 'Revoked',
+                scopes: ['webhooks:write'],
+                expiresAt: soon(7 * 24 * 60)
+              }
+            ],
+            logs: [
+              {
+                id: 'evt_1001',
+                at: ago(14),
+                endpointId: 'wh_orders',
+                endpointUrl: 'https://seller.evhub.com/hooks/orders',
+                eventType: 'order.created',
+                result: 'Success',
+                httpStatus: '200',
+                latencyMs: 182,
+                tries: 1,
+                payloadPreview: '{"id":"ORD-10512","type":"order.created"}'
+              },
+              {
+                id: 'evt_1002',
+                at: ago(74),
+                endpointId: 'wh_inventory',
+                endpointUrl: 'https://seller.evhub.com/hooks/inventory',
+                eventType: 'inventory.updated',
+                result: 'Timeout',
+                httpStatus: '504',
+                latencyMs: 980,
+                tries: 2,
+                payloadPreview: '{"id":"INV-77","type":"inventory.updated"}'
+              }
+            ]
+          }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'notification_preferences',
+        payload: {
+          metadata: {
+            globalChannels: { inApp: true, email: true, sms: false, whatsapp: true },
+            categories: [
+              { key: 'mentions', label: 'Mentions', desc: 'Direct mentions, replies and assignments', critical: true, enabled: true, channels: { inApp: true, email: true, sms: false, whatsapp: true } },
+              { key: 'orders', label: 'Orders', desc: 'New orders, SLA risk, cancellations', critical: true, enabled: true, channels: { inApp: true, email: true, sms: false, whatsapp: true } },
+              { key: 'finance', label: 'Finance', desc: 'Payouts, holds, settlements, invoices', critical: true, enabled: true, channels: { inApp: true, email: true, sms: false, whatsapp: true } },
+              { key: 'system', label: 'System', desc: 'Security, policy, incidents and maintenance', critical: true, enabled: true, channels: { inApp: true, email: true, sms: true, whatsapp: true } }
+            ],
+            channelProfiles: {
+              email: { enabled: true, address: 'seller@evhub.com', verified: true },
+              sms: { enabled: false, address: '+256700000001', verified: false },
+              whatsapp: { enabled: true, address: '+256700000001', verified: true },
+              inApp: { enabled: true, address: 'Seller workspace', verified: true }
+            },
+            quietHours: { enabled: true, start: '22:00', end: '07:00', days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu'], bypassCritical: true },
+            digest: {
+              enabled: true,
+              mode: 'Daily',
+              time: '07:30',
+              channels: { inApp: true, email: true, sms: false, whatsapp: false },
+              includeCategories: ['orders', 'finance', 'system'],
+              instantForCritical: true
+            },
+            rules: [
+              {
+                id: 'rule_orders_critical',
+                enabled: true,
+                name: 'Critical order exceptions',
+                priority: 'High',
+                trigger: { category: 'orders', event: 'at_risk' },
+                conditions: { severity: 'Critical', keyword: '' },
+                action: {
+                  delivery: 'Instant',
+                  channels: { inApp: true, email: true, sms: false, whatsapp: true },
+                  throttleMins: 15,
+                  bypassQuietHours: true
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'help',
+        payload: {
+          kb: [
+            {
+              id: 'kb_payouts_1',
+              category: 'Finance',
+              title: 'Why payouts can be delayed',
+              tags: ['payout', 'holds', 'kyb'],
+              views: 420,
+              body: 'Payouts can pause when KYB expires, disputes spike, or settlement windows are still open.'
+            },
+            {
+              id: 'kb_webhooks_1',
+              category: 'Integrations',
+              title: 'Troubleshoot webhook delivery failures',
+              tags: ['webhooks', 'integrations'],
+              views: 260,
+              body: 'Confirm the endpoint is reachable, secrets are current, and retries are not being rate-limited.'
+            }
+          ],
+          incidents: [
+            {
+              id: 'inc_hist_1',
+              title: 'Express settlement lag',
+              status: 'Resolved',
+              components: ['Express payouts'],
+              startedAt: ago(2200),
+              resolvedAt: ago(2100),
+              summary: 'Delayed supplier settlements for one payout cycle.'
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'status_center',
+        payload: {
+          providers: [
+            { id: 'p_pay', name: 'Payout Rail', status: 'operational', latencyMs: 190, errorRate: 0.1, lastCheckAt: ago(4), region: 'UG' },
+            { id: 'p_msg', name: 'Messaging Gateway', status: 'degraded', latencyMs: 480, errorRate: 1.8, lastCheckAt: ago(6), region: 'EA' },
+            { id: 'p_web', name: 'Webhook Relay', status: 'operational', latencyMs: 210, errorRate: 0.2, lastCheckAt: ago(5), region: 'Global' }
+          ],
+          incidents: [
+            { id: 'inc_201', title: 'Messaging delays', status: 'investigating', severity: 'major', affected: ['Messaging Gateway'], summary: 'Outbound notifications are delayed for some regions.', updatedAt: ago(8) },
+            { id: 'inc_200', title: 'Payout lag resolved', status: 'resolved', severity: 'minor', affected: ['Payout Rail'], summary: 'Settlement catch-up finished.', updatedAt: ago(1440) }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'tax',
+        payload: {
+          profiles: [
+            { id: 'VAT-UG-101', profileName: 'Uganda Standard VAT', country: 'UG', vatId: 'UGX-778811', standardRate: 18, reducedRate: 0, status: 'Active', isDefault: true, notes: 'Primary seller entity', updatedAt: ago(320) },
+            { id: 'VAT-KE-204', profileName: 'Kenya B2B VAT', country: 'KE', vatId: 'KRA-55821', standardRate: 16, reducedRate: 0, status: 'Active', isDefault: false, notes: 'Cross-border B2B invoicing', updatedAt: ago(920) }
+          ],
+          reports: [
+            { id: 'PACK-102', scope: 'All regions', status: 'Ready', createdAt: ago(290), items: 14, size: '6.8 MB' },
+            { id: 'PACK-101', scope: 'UG only', status: 'Ready', createdAt: ago(940), items: 11, size: '5.2 MB' }
+          ],
+          metadata: {
+            packHistory: [
+              { id: 'PACK-102', scope: 'All regions', status: 'Ready', createdAt: ago(290), items: 14, size: '6.8 MB' },
+              { id: 'PACK-101', scope: 'UG only', status: 'Ready', createdAt: ago(940), items: 11, size: '5.2 MB' }
+            ],
+            invoiceCfg: {
+              legalName: 'EVzone Marketplace',
+              legalAddress: 'Millennium House, Nsambya Road 472, Kampala, Uganda',
+              invoiceSeries: 'EVZ-INV',
+              nextNumber: 12039,
+              includeVatId: true,
+              requireBuyerTaxIdForB2B: true,
+              showPaymentRail: true,
+              enableCreditNotes: true,
+              enableEinvoicing: false
+            }
+          }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'kyc',
+        payload: {
+          status: 'Verified',
+          documents: [
+            { id: 'KYC-1001', title: 'Certificate of Incorporation', status: 'Approved', uploadedAt: ago(80 * 24 * 60), expiresAt: null, note: 'Core company registration' },
+            { id: 'KYC-1002', title: 'TIN Certificate', status: 'Approved', uploadedAt: ago(65 * 24 * 60), expiresAt: null, note: 'Tax registration confirmed' },
+            { id: 'KYC-1003', title: 'Trading License', status: 'Expiring', uploadedAt: ago(320 * 24 * 60), expiresAt: soon(22 * 24 * 60), note: 'Renewal needed this month' }
+          ],
+          metadata: {
+            history: [
+              { id: 'VH-1', at: ago(120 * 24 * 60), tier: 'Basic', result: 'Approved', reviewer: 'Compliance' },
+              { id: 'VH-2', at: ago(22 * 24 * 60), tier: 'Verified', result: 'Approved', reviewer: 'Compliance' }
+            ]
+          }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'finance_home_ui',
+        payload: {
+          fx: { UGX_to_USD: 1 / 3800, KES_to_USD: 1 / 145, CNY_to_USD: 1 / 7.2 },
+          balances: [
+            { currency: 'UGX', available: 6240000, pending: 1180000, reserved: 420000, holds: 0 },
+            { currency: 'USD', available: 1840.25, pending: 320, reserved: 120, holds: 210.5 },
+            { currency: 'CNY', available: 9200, pending: 1500, reserved: 0, holds: 0 },
+            { currency: 'KES', available: 92000, pending: 11000, reserved: 6000, holds: 0 }
+          ],
+          availableUsd: 5394.62,
+          pendingUsd: 914.72,
+          holdsUsd: 210.5,
+          invoices: [
+            { id: 'INV-12091', buyer: 'CorporatePay Org', amount: 'USD 840.00', status: 'Due', dueAt: soon(4320), channel: 'SupplierHub' },
+            { id: 'INV-12088', buyer: 'Amina K.', amount: 'UGX 240,000', status: 'Sent', dueAt: soon(10080), channel: 'ExpressMart' },
+            { id: 'INV-12072', buyer: 'Kato S.', amount: 'USD 120.00', status: 'Paid', dueAt: ago(2880), channel: 'MyLiveDealz' }
+          ],
+          transactions: [
+            { id: 'TX-88901', at: ago(22), type: 'Sale', channel: 'SupplierHub', amount: '+USD 840.00', status: 'Settled', ref: 'ORD-10512' },
+            { id: 'TX-88900', at: ago(58), type: 'Fee', channel: 'SupplierHub', amount: '-USD 12.50', status: 'Settled', ref: 'Commission' },
+            { id: 'TX-88898', at: ago(130), type: 'Refund', channel: 'ExpressMart', amount: '-UGX 120,000', status: 'Pending', ref: 'RMA-2399' },
+            { id: 'TX-88896', at: ago(210), type: 'Payout', channel: 'SupplierHub', amount: '-USD 250.00', status: 'Processing', ref: 'PAY-441' },
+            { id: 'TX-88892', at: ago(460), type: 'Sale', channel: 'MyLiveDealz', amount: '+USD 120.00', status: 'Settled', ref: 'ADZ-501' }
+          ],
+          holds: [
+            { id: 'HOLD-1190', reason: 'KYB expiry soon', amount: 'USD 210.50', status: 'Active', howToFix: 'Upload renewed KYB document' }
+          ],
+          payout: {
+            nextAt: soon(2880),
+            method: 'Bank transfer',
+            currency: 'USD',
+            estimate: 'USD 520.00',
+            cadence: 'Weekly',
+            holdsActive: 1
+          },
+          reconciliation: {
+            state: 'Needs review',
+            matchedPct: 92,
+            unmatched: 3,
+            note: '3 transactions need matching. Review refunds and fees.'
+          },
+          alerts: [
+            { id: 'al1', tone: 'orange', title: 'Payout hold active', message: 'KYB renewal required to release USD holds.' },
+            { id: 'al2', tone: 'slate', title: 'Multi-currency balances', message: 'Consider FX conversion before next payout.' },
+            { id: 'al3', tone: 'orange', title: 'Refund pending', message: '1 refund pending confirmation (ExpressMart).' }
+          ],
+          kpis: {
+            available: { value: 5394.62, delta: 4, spark: [72, 74, 73, 76, 79, 81, 84] },
+            pending: { value: 914.72, delta: -2, spark: [18, 17, 16, 16, 15, 15, 14] },
+            holds: { value: 210.5, delta: 9, spark: [2, 2, 3, 4, 5, 5, 6] },
+            invoicesDue: { value: 2, delta: 0, spark: [1, 2, 2, 2, 2, 2, 2] }
+          }
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'finance_invoices_ui',
+        payload: {
+          invoices: [
+            {
+              id: 'INV-24019',
+              customer: 'Kampala City Logistics Ltd',
+              orderId: 'ORD-10512',
+              currency: 'USD',
+              status: 'Sent',
+              createdAt: ago(8 * 24 * 60),
+              dueAt: soon(4 * 24 * 60),
+              paymentRail: 'CorporatePay',
+              lines: [
+                { name: 'EV Wallbox 7kW', qty: 4, unit: 620 },
+                { name: 'Installation + commissioning', qty: 4, unit: 260 }
+              ],
+              taxRate: 0.02,
+              notes: 'Includes onsite commissioning and OCPP configuration.',
+              subtotal: 3520,
+              tax: 70.4,
+              total: 3590.4
+            },
+            {
+              id: 'INV-24018',
+              customer: 'Amina K.',
+              orderId: 'ORD-10511',
+              currency: 'USD',
+              status: 'Paid',
+              createdAt: ago(22 * 24 * 60),
+              dueAt: ago(7 * 24 * 60),
+              paidAt: ago(6 * 24 * 60),
+              paymentRail: 'EVzone Pay Wallet',
+              lines: [{ name: 'EV charging installation', qty: 1, unit: 320 }],
+              taxRate: 0,
+              notes: 'Paid via wallet.',
+              subtotal: 320,
+              tax: 0,
+              total: 320
+            },
+            {
+              id: 'INV-24017',
+              customer: 'Nairobi Fleet Services',
+              orderId: 'ORD-10510',
+              currency: 'USD',
+              status: 'Overdue',
+              createdAt: ago(40 * 24 * 60),
+              dueAt: ago(6 * 24 * 60),
+              paymentRail: 'Standard Checkout',
+              lines: [
+                { name: 'Type 2 charging cables 5m', qty: 120, unit: 28 },
+                { name: 'Packaging + docs', qty: 1, unit: 120 }
+              ],
+              taxRate: 0,
+              notes: 'Buyer requested revised delivery window.',
+              subtotal: 3480,
+              tax: 0,
+              total: 3480
+            },
+            {
+              id: 'INV-24016',
+              customer: 'Moses N.',
+              orderId: 'ORD-10509',
+              currency: 'USD',
+              status: 'Draft',
+              createdAt: ago(2 * 24 * 60),
+              dueAt: soon(14 * 24 * 60),
+              paymentRail: 'EVzone Pay Wallet',
+              lines: [{ name: 'E-bike battery pack 48V 20Ah', qty: 6, unit: 248 }],
+              taxRate: 0,
+              notes: 'Draft waiting for final freight cost.',
+              subtotal: 1488,
+              tax: 0,
+              total: 1488
+            },
+            {
+              id: 'INV-24015',
+              customer: 'Chen L.',
+              orderId: 'ORD-10508',
+              currency: 'CNY',
+              status: 'Sent',
+              createdAt: ago(12 * 24 * 60),
+              dueAt: soon(24 * 60),
+              paymentRail: 'Standard Checkout',
+              lines: [
+                { name: 'Bulk e-bike batteries', qty: 30, unit: 1750 },
+                { name: 'Export docs', qty: 1, unit: 480 }
+              ],
+              taxRate: 0,
+              notes: 'FOB Shanghai. Export docs included.',
+              subtotal: 52980,
+              tax: 0,
+              total: 52980
+            },
+            {
+              id: 'INV-24014',
+              customer: 'Sarah T.',
+              orderId: 'ORD-10507',
+              currency: 'USD',
+              status: 'Void',
+              createdAt: ago(65 * 24 * 60),
+              dueAt: ago(50 * 24 * 60),
+              paymentRail: 'CorporatePay',
+              lines: [{ name: 'Warehouse to port logistics setup', qty: 1, unit: 190 }],
+              taxRate: 0,
+              notes: 'Voided due to duplicate billing.',
+              subtotal: 190,
+              tax: 0,
+              total: 190
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'finance_holds_ui',
+        payload: {
+          holds: [
+            {
+              id: 'HOLD-9012',
+              type: 'KYC_PENDING',
+              title: 'Identity verification required',
+              reason: 'KYC/KYB is incomplete. Settlements cannot be released until verification is approved.',
+              severity: 'High',
+              status: 'Active',
+              currency: 'USD',
+              blockedAmount: 14820.5,
+              affectedWallet: 'Payout Wallet',
+              createdAt: ago(18 * 60),
+              updatedAt: ago(2 * 60),
+              evidence: [
+                { id: 'ev1', name: 'passport_scan.jpg', status: 'Missing' },
+                { id: 'ev2', name: 'proof_of_address.pdf', status: 'Required' }
+              ],
+              steps: [
+                { id: 's1', label: 'Upload identity document', state: 'todo' },
+                { id: 's2', label: 'Upload proof of address', state: 'todo' },
+                { id: 's3', label: 'Wait for review', state: 'blocked' }
+              ]
+            },
+            {
+              id: 'HOLD-9007',
+              type: 'CHARGEBACK_RISK',
+              title: 'Chargeback risk hold',
+              reason: 'A dispute is under review. Funds are held until the case is resolved.',
+              severity: 'Medium',
+              status: 'Active',
+              currency: 'USD',
+              blockedAmount: 920,
+              affectedWallet: 'Sales Wallet',
+              createdAt: ago(60 * 60),
+              updatedAt: ago(6 * 60),
+              evidence: [{ id: 'ev3', name: 'shipping_label.pdf', status: 'Uploaded' }],
+              steps: [
+                { id: 's1', label: 'Upload proof of delivery', state: 'todo' },
+                { id: 's2', label: 'Respond to dispute', state: 'todo' },
+                { id: 's3', label: 'Wait for decision', state: 'blocked' }
+              ]
+            },
+            {
+              id: 'HOLD-8999',
+              type: 'TAX_PROFILE',
+              title: 'Tax profile missing',
+              reason: 'Tax settings are required for payouts in this region. Add VAT/TIN and invoice template.',
+              severity: 'Low',
+              status: 'Active',
+              currency: 'KES',
+              blockedAmount: 184500,
+              affectedWallet: 'Payout Wallet',
+              createdAt: ago(120 * 60),
+              updatedAt: ago(24 * 60),
+              evidence: [{ id: 'ev4', name: 'vat_certificate.pdf', status: 'Missing' }],
+              steps: [
+                { id: 's1', label: 'Add tax ID (VAT/TIN)', state: 'todo' },
+                { id: 's2', label: 'Upload tax certificate', state: 'todo' },
+                { id: 's3', label: 'Confirm invoice format', state: 'todo' }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'finance_statements_ui',
+        payload: {
+          statements: [
+            {
+              id: 'STM-2026-02',
+              periodStart: ago(16 * 24 * 60),
+              periodEnd: ago(24 * 60),
+              currency: 'USD',
+              openingBalance: 1250,
+              closingBalance: 1895.4,
+              inflow: 1120.2,
+              outflow: 474.8,
+              generatedAt: ago(24 * 60),
+              status: 'Ready',
+              lines: [
+                { id: 't1', at: ago(12 * 24 * 60), type: 'Credit', source: 'Invoice Payment', ref: 'INV-24018', amount: 326.4, note: 'Paid' },
+                { id: 't2', at: ago(10 * 24 * 60), type: 'Debit', source: 'Payout', ref: 'PO-77411', amount: -180, note: 'Weekly settlement' },
+                { id: 't3', at: ago(8 * 24 * 60), type: 'Credit', source: 'Order', ref: 'ORD-10512', amount: 560, note: 'Delivered' },
+                { id: 't4', at: ago(6 * 24 * 60), type: 'Debit', source: 'Fee', ref: 'FEE-2091', amount: -24.8, note: 'Processing' },
+                { id: 't5', at: ago(3 * 24 * 60), type: 'Credit', source: 'Partial Payment', ref: 'INV-24016', amount: 233.8, note: 'Partial' }
+              ]
+            },
+            {
+              id: 'STM-2026-01',
+              periodStart: ago(46 * 24 * 60),
+              periodEnd: ago(18 * 24 * 60),
+              currency: 'USD',
+              openingBalance: 820,
+              closingBalance: 1250,
+              inflow: 690,
+              outflow: 260,
+              generatedAt: ago(18 * 24 * 60),
+              status: 'Ready',
+              lines: [
+                { id: 't6', at: ago(40 * 24 * 60), type: 'Credit', source: 'Invoice Payment', ref: 'INV-24012', amount: 420, note: 'Paid' },
+                { id: 't7', at: ago(33 * 24 * 60), type: 'Debit', source: 'Chargeback Reserve', ref: 'RES-113', amount: -80, note: 'Hold' },
+                { id: 't8', at: ago(26 * 24 * 60), type: 'Credit', source: 'Release Reserve', ref: 'RES-113', amount: 80, note: 'Released' },
+                { id: 't9', at: ago(22 * 24 * 60), type: 'Debit', source: 'Payout', ref: 'PO-77001', amount: -180, note: 'Weekly settlement' }
+              ]
+            },
+            {
+              id: 'STM-2025-12',
+              periodStart: ago(76 * 24 * 60),
+              periodEnd: ago(47 * 24 * 60),
+              currency: 'CNY',
+              openingBalance: 8620,
+              closingBalance: 8620,
+              inflow: 0,
+              outflow: 0,
+              generatedAt: ago(46 * 24 * 60),
+              status: 'Ready',
+              lines: [
+                { id: 't10', at: ago(60 * 24 * 60), type: 'Credit', source: 'Order', ref: 'ORD-10506', amount: 8620, note: 'Delivered' }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
+        key: 'finance_tax_reports_ui',
+        payload: {
+          reports: [
+            {
+              id: 'TAX-2026-01-UG-VAT',
+              period: 'Jan 2026',
+              region: 'Uganda',
+              taxType: 'VAT',
+              currency: 'UGX',
+              grossSales: 184000000,
+              taxableSales: 122000000,
+              vatCollected: 21960000,
+              exports: 41000000,
+              status: 'Draft',
+              createdAt: ago(12 * 24 * 60),
+              updatedAt: ago(2 * 24 * 60),
+              readiness: { rules: 'Ready', invoices: 'Warning', fx: 'Ready', evidence: 'Warning' }
+            },
+            {
+              id: 'TAX-2025-Q4-KE-VAT',
+              period: 'Q4 2025',
+              region: 'Kenya',
+              taxType: 'VAT',
+              currency: 'KES',
+              grossSales: 9820000,
+              taxableSales: 7210000,
+              vatCollected: 1153600,
+              exports: 1020000,
+              status: 'Filed',
+              createdAt: ago(64 * 24 * 60),
+              updatedAt: ago(46 * 24 * 60),
+              readiness: { rules: 'Ready', invoices: 'Ready', fx: 'Ready', evidence: 'Ready' }
+            },
+            {
+              id: 'TAX-2025-12-CN-EXPORT',
+              period: 'Dec 2025',
+              region: 'China',
+              taxType: 'Export summary',
+              currency: 'CNY',
+              grossSales: 2840000,
+              taxableSales: 0,
+              vatCollected: 0,
+              exports: 2840000,
+              status: 'Ready',
+              createdAt: ago(38 * 24 * 60),
+              updatedAt: ago(7 * 24 * 60),
+              readiness: { rules: 'Ready', invoices: 'Ready', fx: 'Warning', evidence: 'Ready' }
+            }
+          ]
+        }
       }
     ]
   });
@@ -6853,6 +7660,7 @@ async function clearDatabase() {
   await prisma.notification.deleteMany();
   await prisma.auditEvent.deleteMany();
   await prisma.workflowRecord.deleteMany();
+  await prisma.supportContent.deleteMany();
   await prisma.workspaceSetting.deleteMany();
   await prisma.userSetting.deleteMany();
   await prisma.userSubscription.deleteMany();

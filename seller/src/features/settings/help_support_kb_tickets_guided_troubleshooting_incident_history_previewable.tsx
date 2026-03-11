@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
+import { useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -19,6 +19,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Help & Support (Previewable)
@@ -390,8 +391,25 @@ export default function HelpSupportPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [kb] = useSellerCompatState("settings.help.kb", seedKb());
-  const [incidents] = useSellerCompatState("settings.help.incidents", seedIncidents());
+  const [kb, setKb] = useState<any[]>([]);
+  const [incidents, setIncidents] = useState<any[]>([]);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getHelpSettings();
+        if (!active) return;
+        setKb(Array.isArray(payload.kb) ? payload.kb as any[] : []);
+        setIncidents(Array.isArray(payload.incidents) ? payload.incidents as any[] : []);
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Help unavailable", message: "Could not load help content.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const tabs = useMemo(
     () => [
@@ -446,14 +464,25 @@ export default function HelpSupportPage() {
 
   const updateTicket = (patch: Partial<TicketDraft>) => setTicket((s) => ({ ...s, ...patch }));
 
-  const submitTicket = () => {
+  const submitTicket = async () => {
     if (!ticket.subject.trim() || !ticket.message.trim()) {
       pushToast({ title: "Missing details", message: "Add a subject and message before submitting.", tone: "warning" });
       return;
     }
     const id = `TCK-${Math.floor(1000 + Math.random() * 9000)}`;
-    pushToast({ title: "Ticket submitted", message: `${id} created. SLA: ${estSla(ticket.priority)}.`, tone: "success" });
-    setTicket({ subject: "", area: ticket.area, priority: "Normal", message: "", attachments: [] });
+    try {
+      await sellerBackendApi.createHelpSupportTicket({
+        id,
+        category: ticket.area,
+        severity: String(ticket.priority || "Normal").toLowerCase(),
+        subject: ticket.subject,
+        ref: ticket.attachments[0]?.name || null,
+      });
+      pushToast({ title: "Ticket submitted", message: `${id} created. SLA: ${estSla(ticket.priority)}.`, tone: "success" });
+      setTicket({ subject: "", area: ticket.area, priority: "Normal", message: "", attachments: [] });
+    } catch {
+      pushToast({ title: "Submit failed", message: "Could not create support ticket.", tone: "danger" });
+    }
   };
 
   // Guided troubleshooting

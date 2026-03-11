@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -20,6 +19,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * System Status (Previewable)
@@ -431,8 +431,23 @@ export default function SupportSystemStatusPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [providers, setProviders] = useSellerCompatState<ReturnType<typeof seedProviders>>("settings.systemStatus.providers", seedProviders());
-  const [incidents, setIncidents] = useSellerCompatState<ReturnType<typeof seedIncidents>>("settings.systemStatus.incidents", seedIncidents());
+  const [providers, setProviders] = useState<ReturnType<typeof seedProviders>>([]);
+  const [incidents, setIncidents] = useState<ReturnType<typeof seedIncidents>>([]);
+  const loadStatus = async (quiet = false) => {
+    try {
+      const payload = await sellerBackendApi.getStatusCenter();
+      setProviders(Array.isArray(payload.providers) ? (payload.providers as ReturnType<typeof seedProviders>) : []);
+      setIncidents(Array.isArray(payload.incidents) ? (payload.incidents as ReturnType<typeof seedIncidents>) : []);
+      if (!quiet) {
+        pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
+      }
+    } catch {
+      pushToast({ title: "Status center unavailable", message: "Could not load provider health.", tone: "warning" });
+    }
+  };
+  useEffect(() => {
+    void loadStatus(true);
+  }, []);
 
   // Filters
   const [query, setQuery] = useState("");
@@ -480,22 +495,8 @@ export default function SupportSystemStatusPage() {
 
   // “Refresh” demo
   const refresh = async () => {
-    pushToast({ title: "Refreshing", message: "Fetching latest provider health and incidents (demo).", tone: "default" });
-    await new Promise((r) => setTimeout(r, 550));
-
-    // tiny demo drift
-    setProviders((prev) =>
-      prev.map((p) => {
-        if (p.id === "p_pay") {
-          const nextLatency = clamp((p.latencyMs || 0) + (Math.random() > 0.5 ? -40 : 35), 180, 1200);
-          const nextErr = Math.max(0, Math.round(((p.errorRate || 0) + (Math.random() > 0.6 ? -0.1 : 0.08)) * 10) / 10);
-          return { ...p, latencyMs: nextLatency, errorRate: nextErr, lastCheckAt: new Date().toISOString() };
-        }
-        return { ...p, lastCheckAt: new Date().toISOString() };
-      })
-    );
-
-    pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
+    pushToast({ title: "Refreshing", message: "Fetching latest provider health and incidents.", tone: "default" });
+    await loadStatus(true);
   };
 
   // Close drawer if incident removed

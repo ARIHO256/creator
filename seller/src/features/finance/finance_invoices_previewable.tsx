@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   AlertTriangle,
@@ -242,7 +242,7 @@ function statusTone(s) {
   return "slate";
 }
 
-function seedInvoices() {
+function invoiceDemoRows() {
   const now = Date.now();
   const agoD = (d) => new Date(now - d * 24 * 3600_000).toISOString();
   const inD = (d) => new Date(now + d * 24 * 3600_000).toISOString();
@@ -385,7 +385,24 @@ export default function FinanceInvoicesPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [rows, setRows] = useSellerCompatState("finance.invoices", seedInvoices());
+  const [rows, setRows] = useState<any[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    void sellerBackendApi
+      .getFinanceInvoices()
+      .then((payload) => {
+        if (!mounted) return;
+        setRows(Array.isArray((payload as Record<string, any>)?.invoices) ? ((payload as Record<string, any>).invoices as any[]) : []);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Invoices unavailable", message: "Could not load invoices.", tone: "danger" });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("All");
@@ -451,58 +468,60 @@ export default function FinanceInvoicesPage() {
     setSelected(next);
   };
 
-  const sendInvoice = (id) => {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              status: r.status === "Draft" ? "Sent" : r.status,
-              sentAt: new Date().toISOString(),
-            }
-          : r
-      )
-    );
-    pushToast({ title: "Invoice sent", message: `${id} sent to customer (demo).`, tone: "success" });
+  const sendInvoice = async (id) => {
+    const invoice = rows.find((row) => row.id === id);
+    const next =
+      invoice?.status === "Draft"
+        ? { status: "Sent", sentAt: new Date().toISOString() }
+        : { sentAt: new Date().toISOString() };
+    const updated = await sellerBackendApi.patchFinanceInvoice(id, next);
+    setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...(updated as Record<string, unknown>) } : row)));
+    pushToast({ title: "Invoice sent", message: `${id} sent to customer.`, tone: "success" });
   };
 
-  const markPaid = (id) => {
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === id
-          ? {
-              ...r,
-              status: "Paid",
-              paidAt: new Date().toISOString(),
-            }
-          : r
-      )
-    );
+  const markPaid = async (id) => {
+    const updated = await sellerBackendApi.patchFinanceInvoice(id, {
+      status: "Paid",
+      paidAt: new Date().toISOString(),
+    });
+    setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...(updated as Record<string, unknown>) } : row)));
     pushToast({ title: "Marked as paid", message: `${id} updated to Paid.`, tone: "success" });
   };
 
-  const bulkMarkPaid = () => {
+  const bulkMarkPaid = async () => {
     if (!selectedIds.length) return;
-    setRows((prev) => prev.map((r) => (selectedIds.includes(r.id) ? { ...r, status: "Paid", paidAt: new Date().toISOString() } : r)));
+    const paidAt = new Date().toISOString();
+    await Promise.all(selectedIds.map((id) => sellerBackendApi.patchFinanceInvoice(id, { status: "Paid", paidAt })));
+    setRows((prev) => prev.map((row) => (selectedIds.includes(row.id) ? { ...row, status: "Paid", paidAt } : row)));
     setSelected({});
     pushToast({ title: "Bulk update", message: `${selectedIds.length} invoice(s) marked as paid.`, tone: "success" });
   };
 
-  const bulkSend = () => {
+  const bulkSend = async () => {
     if (!selectedIds.length) return;
+    const sentAt = new Date().toISOString();
+    await Promise.all(
+      selectedIds.map((id) => {
+        const row = rows.find((item) => item.id === id);
+        return sellerBackendApi.patchFinanceInvoice(id, {
+          status: row?.status === "Draft" ? "Sent" : row?.status,
+          sentAt,
+        });
+      })
+    );
     setRows((prev) =>
       prev.map((r) =>
         selectedIds.includes(r.id)
           ? {
               ...r,
               status: r.status === "Draft" ? "Sent" : r.status,
-              sentAt: new Date().toISOString(),
+              sentAt,
             }
           : r
       )
     );
     setSelected({});
-    pushToast({ title: "Bulk send", message: `${selectedIds.length} invoice(s) queued to send (demo).`, tone: "success" });
+    pushToast({ title: "Bulk send", message: `${selectedIds.length} invoice(s) queued to send.`, tone: "success" });
   };
 
   const download = (id) => {

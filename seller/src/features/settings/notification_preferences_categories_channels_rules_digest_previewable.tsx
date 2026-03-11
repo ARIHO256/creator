@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -24,6 +23,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Notification Preferences (Previewable)
@@ -533,8 +533,34 @@ export default function NotificationPreferencesPage() {
 
   const [dirty, setDirty] = useState(false);
 
-  const [prefs, setAll] = useSellerCompatState<PrefsState>("settings.notificationPrefs", seedDefaults());
+  const [prefs, setAll] = useState<PrefsState>(seedDefaults());
   const { globalChannels, categories, channelProfiles, quietHours, digest, rules } = prefs;
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getNotificationPreferences();
+        if (!active) return;
+        const next = (payload.metadata || payload) as Partial<PrefsState>;
+        setAll({
+          ...seedDefaults(),
+          ...next,
+          globalChannels: { ...seedDefaults().globalChannels, ...(next.globalChannels || {}) },
+          channelProfiles: { ...seedDefaults().channelProfiles, ...(next.channelProfiles || {}) },
+          quietHours: { ...seedDefaults().quietHours, ...(next.quietHours || {}) },
+          digest: { ...seedDefaults().digest, ...(next.digest || {}) },
+          categories: Array.isArray(next.categories) ? next.categories as PrefsState["categories"] : seedDefaults().categories,
+          rules: Array.isArray(next.rules) ? next.rules as PrefsState["rules"] : seedDefaults().rules,
+        });
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Notifications unavailable", message: "Could not load notification preferences.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const snapshotRef = useRef<string | null>(null);
   useEffect(() => {
@@ -544,12 +570,17 @@ export default function NotificationPreferencesPage() {
 
   const markDirty = () => setDirty(true);
 
-  const saveAll = () => {
+  const saveAll = async () => {
     const payload = { globalChannels, categories, channelProfiles, quietHours, digest, rules };
-    setAll(payload);
-    snapshotRef.current = JSON.stringify(payload);
-    setDirty(false);
-    pushToast({ title: "Preferences saved", message: "Your notification settings were updated.", tone: "success" });
+    try {
+      await sellerBackendApi.patchNotificationPreferences({ metadata: payload });
+      setAll(payload);
+      snapshotRef.current = JSON.stringify(payload);
+      setDirty(false);
+      pushToast({ title: "Preferences saved", message: "Your notification settings were updated.", tone: "success" });
+    } catch {
+      pushToast({ title: "Save failed", message: "Could not update notification preferences.", tone: "danger" });
+    }
   };
 
   const restoreDefaults = () => {

@@ -103,9 +103,27 @@ export const sellerBackendApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  getIntegrations: () => request<Record<string, unknown>>("/api/settings/integrations"),
+  patchIntegrations: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/settings/integrations", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getSecuritySettings: () => request<Record<string, unknown>>("/api/settings/security"),
   patchSecuritySettings: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/settings/security", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getTaxSettings: () => request<Record<string, unknown>>("/api/settings/tax"),
+  patchTaxSettings: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/settings/tax", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getKycSettings: () => request<Record<string, unknown>>("/api/settings/kyc"),
+  patchKycSettings: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/settings/kyc", {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -120,6 +138,14 @@ export const sellerBackendApi = {
   getSavedViews: () => request<Record<string, unknown>>("/api/settings/saved-views"),
   patchSavedViews: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/settings/saved-views", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getHelpSettings: () => request<Record<string, unknown>>("/api/settings/help"),
+  getStatusCenter: () => request<Record<string, unknown>>("/api/settings/status-center"),
+  getNotificationPreferences: () => request<Record<string, unknown>>("/api/settings/notification-preferences"),
+  patchNotificationPreferences: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/settings/notification-preferences", {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -223,6 +249,16 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getShippingProfiles: () => request<Record<string, unknown>>("/api/seller/shipping-profiles"),
+  createShippingProfile: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/seller/shipping-profiles", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchShippingProfile: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/seller/shipping-profiles/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getOpsOverview: () => request<Record<string, unknown>>("/api/ops/overview"),
   getOpsInventory: () => request<Record<string, unknown>>("/api/ops/inventory"),
   getOpsShipping: () => request<Record<string, unknown>>("/api/ops/shipping"),
@@ -230,11 +266,21 @@ export const sellerBackendApi = {
   getOpsDocuments: () => request<Record<string, unknown>>("/api/ops/documents"),
   getOpsExports: () => request<Record<string, unknown>>("/api/ops/exports"),
   getOpsExceptions: () => request<Record<string, unknown>>("/api/ops/exceptions"),
+  getFinanceHome: () => request<Record<string, unknown>>("/api/seller/finance/home"),
   getFinanceWallets: () => request<Record<string, unknown>>("/api/seller/finance/wallets"),
   getFinanceHolds: () => request<Record<string, unknown>>("/api/seller/finance/holds"),
   getFinanceInvoices: () => request<Record<string, unknown>>("/api/seller/finance/invoices"),
   getFinanceStatements: () => request<Record<string, unknown>>("/api/seller/finance/statements"),
   getFinanceTaxReports: () => request<Record<string, unknown>>("/api/seller/finance/tax-reports"),
+  patchFinanceInvoice: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/seller/finance/invoices/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteFinanceHold: (id: string) =>
+    request<{ deleted?: boolean }>(`/api/seller/finance/holds/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
   getHelpSupportContent: () => request<Record<string, unknown>>("/api/help-support/content"),
   createHelpSupportTicket: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/help-support/tickets", {
@@ -270,6 +316,37 @@ export const sellerBackendApi = {
   getProviderPortfolio: () => request<Record<string, unknown>>("/api/provider/portfolio"),
   getProviderReviews: () => request<Record<string, unknown>>("/api/provider/reviews"),
   getProviderDisputes: () => request<Record<string, unknown>>("/api/provider/disputes"),
+  getRoles: () => request<Record<string, unknown>>("/api/roles"),
+  patchRolesSecurity: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/roles/security", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  createRole: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/roles", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchRole: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/roles/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteRole: (id: string) =>
+    request<{ deleted?: boolean }>(`/api/roles/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  createRoleInvite: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/roles/invites", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchRoleMember: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/roles/members/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getAuditLogs: () => request<Array<Record<string, unknown>>>("/api/audit-logs"),
   getWholesalePriceLists: () => request<Record<string, unknown>>("/api/wholesale/price-lists"),
   getWholesaleIncoterms: () => request<Record<string, unknown>>("/api/wholesale/incoterms"),
   getLegacyDealzMarketplace: () => request<Record<string, unknown>>("/api/campaigns/legacy-marketplace"),

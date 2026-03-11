@@ -18,10 +18,11 @@ export class ProviderService {
   ) {}
 
   async serviceCommand(userId: string) {
-    const [openQuotes, activeBookings, totalQuotes] = await Promise.all([
+    const [openQuotes, activeBookings, totalQuotes, extras] = await Promise.all([
       this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
       this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } }),
-      this.prisma.providerQuote.count({ where: { userId } })
+      this.prisma.providerQuote.count({ where: { userId } }),
+      this.loadSetting(userId, 'provider_service_command')
     ]);
     return {
       queues: [
@@ -30,7 +31,13 @@ export class ProviderService {
       ],
       kpis: [
         { key: 'quotes_total', label: 'Total Quotes', value: totalQuotes }
-      ]
+      ],
+      schedule: Array.isArray((extras as Record<string, unknown> | null)?.schedule)
+        ? ((extras as Record<string, unknown>).schedule as unknown[])
+        : [],
+      queue: Array.isArray((extras as Record<string, unknown> | null)?.queue)
+        ? ((extras as Record<string, unknown>).queue as unknown[])
+        : []
     };
   }
   async quotes(userId: string) {

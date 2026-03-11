@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useSellerCompatState } from "../../lib/frontendState";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   AlertTriangle,
@@ -251,7 +251,7 @@ function ToastCenter({ toasts, dismiss }) {
   );
 }
 
-function seedHolds() {
+function payoutHoldDemoRows() {
   const now = Date.now();
   const agoH = (h) => new Date(now - h * 3600_000).toISOString();
 
@@ -630,7 +630,24 @@ export default function FinancePayoutHoldsPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [holds, setHolds] = useSellerCompatState<ReturnType<typeof seedHolds>>("finance.payoutHolds", seedHolds());
+  const [holds, setHolds] = useState<any[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    void sellerBackendApi
+      .getFinanceHolds()
+      .then((payload) => {
+        if (!mounted) return;
+        setHolds(Array.isArray((payload as Record<string, any>)?.holds) ? ((payload as Record<string, any>).holds as any[]) : []);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Holds unavailable", message: "Could not load payout holds.", tone: "danger" });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [q, setQ] = useState("");
   const [sev, setSev] = useState("All");
@@ -1025,7 +1042,8 @@ export default function FinancePayoutHoldsPage() {
                     hold={active}
                     pushToast={pushToast}
                     logAudit={logAudit}
-                    onResolved={() => {
+                    onResolved={async () => {
+                      await sellerBackendApi.deleteFinanceHold(active.id);
                       setHolds((prev) => prev.filter((h) => h.id !== active.id));
                       setDrawerOpen(false);
                     }}
