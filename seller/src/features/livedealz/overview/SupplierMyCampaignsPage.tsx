@@ -1233,7 +1233,7 @@ export function seedSupplierCampaigns() {
   return JSON.parse(JSON.stringify(INIT_CAMPAIGNS));
 }
 
-export function seedSupplierCampaignBuilder() {
+export function createEmptySupplierCampaignBuilder() {
   return {
     name: '',
     type: 'Shoppable Adz',
@@ -1275,8 +1275,8 @@ export function seedSupplierCampaignBuilder() {
   };
 }
 
-const seedSupplierCampaignBuilderValue = seedSupplierCampaignBuilder();
-const seedSupplierCampaignBuilderStep = 1;
+const emptySupplierCampaignBuilderValue = createEmptySupplierCampaignBuilder();
+const emptySupplierCampaignBuilderStep = 1;
 
 /* ------------------------- main component ------------------------- */
 
@@ -1303,8 +1303,8 @@ export default function SupplierMyCampaignsPage() {
   const [catalogKind, setCatalogKind] = useState('Product');
   const overlayOpen = builderOpen || detailsOpen || catalogOpen;
 
-  const [builderStep, setBuilderStep] = useState(seedSupplierCampaignBuilderStep);
-  const [builder, setBuilder] = useState<any>(seedSupplierCampaignBuilderValue);
+  const [builderStep, setBuilderStep] = useState(emptySupplierCampaignBuilderStep);
+  const [builder, setBuilder] = useState<any>(emptySupplierCampaignBuilderValue);
   const builderHashRef = useRef('');
 
   const giveawaysSupported = useMemo(

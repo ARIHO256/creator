@@ -317,7 +317,7 @@ function ToastCenter({ toasts, dismiss }: ToastCenterProps) {
 
 // ---------------- Data ----------------
 
-function seedData(): { submissions: Submission[]; policies: PolicyUpdate[]; tasks: Task[] } {
+function createEmptyOverviewData(): { submissions: Submission[]; policies: PolicyUpdate[]; tasks: Task[] } {
   const now = Date.now();
   const ago = (m: number) => new Date(now - m * 60_000).toISOString();
   const inD = (d: number) => new Date(now + d * 24 * 60_000).toISOString();
@@ -579,7 +579,7 @@ function ProgressBar({ pct, tone }: { pct: number; tone: "green" | "orange" | "d
 
 export default function RegulatoryDesksHome() {
   const navigate = useNavigate();
-  const [data, setData] = useState(seedData());
+  const [data, setData] = useState(createEmptyOverviewData());
   const [loading, setLoading] = useState(true);
   const didHydrateRef = useRef(false);
 
@@ -593,7 +593,9 @@ export default function RegulatoryDesksHome() {
           setData(payload as typeof data);
         }
       } catch {
-        // keep seeded overview
+        if (!cancelled) {
+          setData(createEmptyOverviewData());
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
