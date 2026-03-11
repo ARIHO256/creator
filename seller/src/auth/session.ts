@@ -3,12 +3,25 @@ import type { Session } from "../types/session";
 import type { UserRole } from "../types/roles";
 
 const SESSION_EVENT = "session-changed";
+const STORAGE_KEY = "session";
 
 type SessionListener = () => void;
 
 const VALID_ROLES: UserRole[] = ["seller", "provider"];
 
 let inMemorySession: Session | null = null;
+
+const readStoredSession = (): Session | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Session | null;
+    return isValidSession(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
 
 export const isValidSession = (session: Session | null | undefined): session is Session => {
   if (!session || typeof session !== "object") return false;
@@ -32,7 +45,7 @@ export const isValidSession = (session: Session | null | undefined): session is 
 
 export const readSession = (): Session | null => {
   if (!isValidSession(inMemorySession)) {
-    inMemorySession = null;
+    inMemorySession = readStoredSession();
   }
   return inMemorySession;
 };
@@ -41,6 +54,11 @@ export const writeSession = (session: Session | null) => {
   inMemorySession = session && isValidSession(session) ? session : null;
   if (typeof window !== "undefined") {
     try {
+      if (inMemorySession) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(inMemorySession));
+      } else {
+        window.localStorage.removeItem(STORAGE_KEY);
+      }
       window.dispatchEvent(new Event(SESSION_EVENT));
     } catch {
       // ignore dispatch errors

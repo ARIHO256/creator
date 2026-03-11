@@ -8,5 +8,7 @@ export type Session = {
   role?: UserRole;
   roles?: UserRole[];
   onboardingRequired?: boolean;
+  onboardingCompleted?: boolean;
+  approvalStatus?: string;
   [key: string]: unknown;
 };

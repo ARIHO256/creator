@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { needsOnboarding, onboardingPathForRole, recordOnboardingStatus, readOnboardingStatus, nextOnboardingRoute } from "./onboardingStatus";
+import { needsOnboarding, onboardingPathForRole, recordOnboardingStatus } from "./onboardingStatus";
 import { useLocalization } from '../../localization/LocalizationProvider';
 import type { Session } from "../../types/session";
 import type { UserRole } from "../../types/roles";
@@ -146,25 +146,31 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   const resolvePostAuthRedirect = (user: Session | null, redirectPath?: string) => {
     if (redirectPath) return redirectPath;
     const role = getCurrentRole(user);
-    const status = readOnboardingStatus(role, user);
-    const override = nextOnboardingRoute(role, status);
-    if (override) return override;
-    if (needsOnboarding(role, user)) return onboardingPathForRole(role);
-    // Role-specific landings: provider -> provider workspace, seller -> seller workspace
-    return role === "provider" ? "/provider/onboarding" : "/dashboard";
+    if (needsOnboarding(role, user)) {
+      return onboardingPathForRole(role);
+    }
+    return "/dashboard";
   };
 
-  const handleAuthSuccess = (user: Session, message?: string, redirectPath = "/dashboard") => {
+  const handleAuthSuccess = (
+    user: Session,
+    message?: string,
+    options: { redirectPath?: string; onboardingRequired?: boolean } = {}
+  ) => {
     const persistSecurityState = async () => {
-      saveSession(user);
+      const sessionUser = {
+        ...user,
+        onboardingRequired: Boolean(options.onboardingRequired),
+      };
+      saveSession(sessionUser);
       const security = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
-      const nextSession = buildAuthSecuritySession(user, Boolean(user.remember));
+      const nextSession = buildAuthSecuritySession(sessionUser, Boolean(sessionUser.remember));
       const sessions = Array.isArray(security.sessions) ? security.sessions.filter((entry) => entry?.id !== nextSession.id) : [];
       const nextSecurity: Record<string, unknown> = {
         ...security,
         sessions: [nextSession, ...sessions].slice(0, 20),
       };
-      if (user.remember) {
+      if (sessionUser.remember) {
         const trustedDevices = Array.isArray(security.trustedDevices) ? security.trustedDevices : [];
         nextSecurity.trustedDevices = [
           {
@@ -181,7 +187,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
       setSecurityState(persisted as AuthSecurityState);
       if (message) say(message);
       if (typeof onClose === "function") onClose();
-      const target = resolvePostAuthRedirect(user, redirectPath);
+      const target = resolvePostAuthRedirect(sessionUser, options.redirectPath);
       setTimeout(() => {
         if (typeof window !== "undefined") {
           window.location.href = target;
@@ -365,7 +371,10 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
           onDone={(u) => handleAuthSuccess(
             u,
             t('Account created'),
-            userType === 'seller' ? '/seller/onboarding' : '/provider/onboarding'
+            {
+              redirectPath: userType === 'seller' ? '/seller/onboarding' : '/provider/onboarding',
+              onboardingRequired: true,
+            }
           )}
           onSocial={handleSocial}
         />
@@ -592,19 +601,7 @@ function SignIn({ userType, onDone, onFail, needCaptcha, onCaptchaPass, hasWebAu
     if (!identifier) { setError(t("Enter email")); onFail(); return; }
     setError("");
     try {
-      const inferredEmail = identifier.includes("@") ? identifier : `${identifier.replace(/\s+/g, "")}@demo.evzone`;
-      const inferredPhone = identifier.includes("@") ? undefined : identifier;
-      const session = await authClient
-        .signIn({ identifier, password: pwd, role: userType })
-        .catch(() =>
-          authClient.signUp({
-            name: inferredEmail.split("@")[0] || "User",
-            email: inferredEmail,
-            phone: inferredPhone,
-            password: pwd,
-            role: userType,
-          })
-        );
+      const session = await authClient.signIn({ identifier, password: pwd, role: userType });
       onDone({ ...session, remember });
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Sign in failed");

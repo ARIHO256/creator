@@ -86,6 +86,11 @@ export const sellerBackendApi = {
       method: "POST",
     }),
   getNotifications: () => request<Array<Record<string, unknown>>>("/api/notifications"),
+  createCreatorInvite: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/invites", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   markNotificationRead: (id: string) =>
     request<Record<string, unknown>>(`/api/notifications/${encodeURIComponent(id)}/read`, {
       method: "PATCH",

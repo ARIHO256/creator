@@ -93,6 +93,17 @@ export const clearOnboardingStatus = (role: UserRole = "seller", userInput: Sess
 };
 
 export const needsOnboarding = (role: UserRole = "seller", userInput: Session | null = null) => {
+  const user = userInput || {};
+  if (typeof user.onboardingCompleted === "boolean") {
+    return !user.onboardingCompleted;
+  }
+  const approvalStatus = String(user.approvalStatus || "").toUpperCase();
+  if (approvalStatus === "APPROVED") {
+    return false;
+  }
+  if (approvalStatus) {
+    return true;
+  }
   const status = readOnboardingStatus(role, userInput || {});
   return !STATUS_DONE.includes(status || "");
 };

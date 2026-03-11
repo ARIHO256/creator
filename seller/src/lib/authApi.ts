@@ -18,6 +18,8 @@ type MeResponse = {
   phone?: string | null;
   role?: string | null;
   roles?: string[] | null;
+  approvalStatus?: string | null;
+  onboardingCompleted?: boolean | null;
   sellerProfile?: {
     displayName?: string | null;
     name?: string | null;
@@ -39,6 +41,9 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const payload = text ? JSON.parse(text) : null;
   if (!response.ok) {
     throw new Error(payload?.error?.message || payload?.message || `Request failed with status ${response.status}`);
+  }
+  if (payload && typeof payload === "object" && "data" in payload && "success" in payload) {
+    return (payload as { data: T }).data;
   }
   return payload as T;
 };
@@ -75,6 +80,8 @@ function mapSession(tokens: LoginResponse, profile: MeResponse): Session {
       profile.creatorProfile?.name ||
       profile.email ||
       profile.id,
+    approvalStatus: profile.approvalStatus || undefined,
+    onboardingCompleted: Boolean(profile.onboardingCompleted),
     role,
     roles,
     accessToken: tokens.accessToken,

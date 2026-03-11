@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierCreatorProfilePage.jsx
@@ -616,26 +617,58 @@ function InviteDrawer({ open, onClose, creator, campaigns, onInviteSent, toast }
     // Permission note (RBAC): In production, only Supplier Owner/Collabs Manager can send invites.
 
     setPending(true);
-    await sleep(900);
+    try {
+      const response = await sellerBackendApi.createCreatorInvite({
+        creatorHandle: creator?.handle,
+        campaignId: selectedCampaign.id,
+        campaignTitle: selectedCampaign.name,
+        title: `Invite to collaborate on ${selectedCampaign.name}`,
+        message,
+        type: pack.name,
+        category: creator?.categories?.[0] || "General",
+        region: creator?.region || "Global",
+        baseFee: fee,
+        currency: "USD",
+        commissionPct: commission,
+        estimatedValue: fee,
+        fitScore: creator?.fitScore || 80,
+        fitReason: creator?.fitReason || "Strong campaign and audience alignment.",
+        messageShort: `Invitation from supplier for ${selectedCampaign.name}.`,
+        supplierDescription: "Seller invite from MyLiveDealz supplier workspace.",
+        metadata: {
+          collabMode,
+          approvalMode,
+          creatorUsageDecision: selectedCampaign.creatorUsageDecision,
+          paymentSplit,
+          exclusivityDays,
+          usageRightsDays,
+          packId: pack.id,
+          packName: pack.name,
+          attachments
+        }
+      });
 
-    const record = {
-      id: `INV-${Math.random().toString(16).slice(2, 7).toUpperCase()}`,
-      campaignId: selectedCampaign.id,
-      campaignName: selectedCampaign.name,
-      status: "Pending acceptance",
-      sentAt: new Date().toLocaleString(),
-      collabMode,
-      approvalMode,
-      packName: pack.name,
-      fee,
-      commission
-    };
+      const record = {
+        id: String(response?.id || ""),
+        campaignId: selectedCampaign.id,
+        campaignName: selectedCampaign.name,
+        status: "Pending acceptance",
+        sentAt: new Date().toLocaleString(),
+        collabMode,
+        approvalMode,
+        packName: pack.name,
+        fee,
+        commission
+      };
 
-    setInviteRecord(record);
-    setPending(false);
-
-    onInviteSent?.(record);
-    toast?.("Invite sent. Waiting for creator to accept.", "success");
+      setInviteRecord(record);
+      onInviteSent?.(record);
+      toast?.("Invite sent. Waiting for creator to accept.", "success");
+    } catch (error) {
+      toast?.(error instanceof Error ? error.message : "Failed to send invite.", "error");
+    } finally {
+      setPending(false);
+    }
   };
 
   const markAccepted = () => {
