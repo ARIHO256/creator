@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useSession } from '../../auth/session';
+import { clearSession, useSession } from '../../auth/session';
 import { recordOnboardingStatus } from '../misc/onboardingStatus';
 import { sellerBackendApi } from '../../lib/backendApi';
+import { authClient } from '../../lib/authApi';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { useThemeMode } from '../../theme/themeMode';
 import { useProviderServiceTaxonomy } from '../../data/taxonomy';
@@ -2869,7 +2870,10 @@ export default function ProviderOnboardingProV4_JS() {
 
     const hydrate = async () => {
       try {
-        const payload = await sellerBackendApi.getWorkflowScreenState('provider-onboarding');
+        const [payload, accountApproval] = await Promise.all([
+          sellerBackendApi.getWorkflowScreenState('provider-onboarding').catch(() => null),
+          sellerBackendApi.getAccountApproval().catch(() => null),
+        ]);
         if (cancelled || !payload || typeof payload !== 'object') return;
 
         const nextProfile =
@@ -2883,6 +2887,10 @@ export default function ProviderOnboardingProV4_JS() {
         const nextReview =
           payload.review && typeof payload.review === 'object'
             ? payload.review
+            : null;
+        const approvalPayload =
+          accountApproval && typeof accountApproval === 'object'
+            ? (accountApproval as Record<string, unknown>)
             : null;
 
         if (nextProfile) {
@@ -2910,7 +2918,16 @@ export default function ProviderOnboardingProV4_JS() {
           setUi({ step: Number(nextUi.step || 1) || 1 });
         }
         if (nextReview && typeof nextReview === 'object') {
-          setReview((prev) => ({ ...prev, ...(nextReview as object) }));
+          const normalizedReview = { ...(nextReview as object) } as Record<string, unknown>;
+          if (
+            String(approvalPayload?.status || '').toLowerCase() === 'approved' &&
+            !normalizedReview.approvedAt
+          ) {
+            normalizedReview.inReviewAt = null;
+            normalizedReview.approvedAt =
+              String(approvalPayload?.approvedAt || approvalPayload?.submittedAt || new Date().toISOString()) || null;
+          }
+          setReview((prev) => ({ ...prev, ...(normalizedReview as object) }));
         }
       } catch {
         if (!cancelled) {
@@ -3725,8 +3742,8 @@ export default function ProviderOnboardingProV4_JS() {
           review: {
             ...review,
             submittedAt,
-            inReviewAt: submittedAt,
-            approvedAt: null,
+            inReviewAt: null,
+            approvedAt: submittedAt,
           },
         }),
       ]);
@@ -3746,8 +3763,8 @@ export default function ProviderOnboardingProV4_JS() {
     setReview((r) => ({
       ...r,
       submittedAt,
-      inReviewAt: submittedAt,
-      approvedAt: null,
+      inReviewAt: null,
+      approvedAt: submittedAt,
     }));
     recordOnboardingStatus(
       'provider',
@@ -3761,9 +3778,14 @@ export default function ProviderOnboardingProV4_JS() {
     setToast({
       tone: 'success',
       title: t('Submitted'),
-      message: t('Your onboarding has been submitted for review.'),
+      message: t('Your onboarding is active. Please sign in again to continue.'),
     });
-    navigate('/provider/onboarding');
+    await authClient.signOut(
+      typeof sessionUser?.refreshToken === 'string' ? sessionUser.refreshToken : undefined,
+      typeof sessionUser?.accessToken === 'string' ? sessionUser.accessToken : undefined
+    );
+    clearSession();
+    navigate('/auth?intent=signin', { replace: true, state: { defaultTab: 'signin' } });
   };
 
   const asideTips = useMemo(() => {

@@ -131,6 +131,7 @@ export class WorkflowService {
     await this.upsertRecord(userId, 'onboarding', 'main', submitted);
     await this.syncSellerProfile(userId, submitted);
     await this.syncTaxonomySelections(userId, submitted);
+    await this.syncUserAccessFromOnboarding(userId, submitted);
     await this.syncAccountApprovalFromOnboarding(userId, submitted);
     await this.jobsService.enqueue({
       queue: 'workflow',
@@ -387,6 +388,7 @@ export class WorkflowService {
     userId: string,
     onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
   ) {
+    const autoApproved = this.shouldAutoApproveSubmittedOnboarding(onboarding.profileType);
     const current = await this.getRecordPayload(userId, 'account_approval', 'main');
     const documents = Array.isArray(onboarding.docs?.list)
       ? onboarding.docs.list.map((doc: Record<string, unknown>, index: number) => ({
@@ -402,7 +404,12 @@ export class WorkflowService {
     const metadata = {
       ...((current?.metadata as Record<string, unknown> | undefined) ?? {}),
       source: 'onboarding',
-      uiStatus: current?.status === 'approved' ? 'Approved' : 'Submitted',
+      uiStatus:
+        current?.status === 'approved' || autoApproved
+          ? 'Approved'
+          : current?.status === 'rejected'
+            ? 'Rejected'
+            : 'Submitted',
       profileType: onboarding.profileType,
       submissionSnapshot: {
         owner: onboarding.owner,
@@ -420,15 +427,52 @@ export class WorkflowService {
 
     await this.upsertRecord(userId, 'account_approval', 'main', {
       ...(current ?? {}),
-      status: current?.status === 'approved' ? 'approved' : current?.status === 'rejected' ? 'rejected' : 'pending',
-      progressPercent:
-        typeof current?.progressPercent === 'number' ? current.progressPercent : onboarding.status === 'submitted' ? 15 : 5,
+      status: autoApproved
+        ? 'approved'
+        : current?.status === 'approved'
+          ? 'approved'
+          : current?.status === 'rejected'
+            ? 'rejected'
+            : 'pending',
+      progressPercent: autoApproved
+        ? 100
+        : typeof current?.progressPercent === 'number'
+          ? current.progressPercent
+          : onboarding.status === 'submitted'
+            ? 15
+            : 5,
       submittedAt:
         typeof current?.submittedAt === 'string' && current.submittedAt ? current.submittedAt : onboarding.submittedAt ?? new Date().toISOString(),
       reviewNotes: typeof current?.reviewNotes === 'string' ? current.reviewNotes : '',
       requiredActions,
       documents,
+      approvedAt: autoApproved
+        ? (typeof current?.approvedAt === 'string' && current.approvedAt
+            ? current.approvedAt
+            : onboarding.submittedAt ?? new Date().toISOString())
+        : (current?.approvedAt ?? null),
       metadata
+    });
+  }
+
+  private shouldAutoApproveSubmittedOnboarding(profileType: string) {
+    return profileType === 'SELLER' || profileType === 'PROVIDER';
+  }
+
+  private async syncUserAccessFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (!this.shouldAutoApproveSubmittedOnboarding(onboarding.profileType)) {
+      return;
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        approvalStatus: 'APPROVED',
+        onboardingCompleted: true
+      }
     });
   }
 

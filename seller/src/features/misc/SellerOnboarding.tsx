@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useSession } from "../../auth/session";
+import { clearSession, useSession } from "../../auth/session";
 import { recordOnboardingStatus } from "./onboardingStatus";
 import { sellerBackendApi } from "../../lib/backendApi";
+import { authClient } from "../../lib/authApi";
 import SellerOnboardingTaxonomyNavigator from "./SellerOnboardingTaxonomyNavigator";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { useThemeMode } from "../../theme/themeMode";
@@ -1379,10 +1380,11 @@ export default function SellerOnboardingProV4_JS() {
 
     const hydrate = async () => {
       try {
-        const [onboarding, screenState, shippingPayload] = await Promise.all([
+        const [onboarding, screenState, shippingPayload, accountApproval] = await Promise.all([
           sellerBackendApi.getOnboarding().catch(() => null),
           sellerBackendApi.getWorkflowScreenState("seller-onboarding").catch(() => null),
           sellerBackendApi.getShippingProfiles().catch(() => null),
+          sellerBackendApi.getAccountApproval().catch(() => null),
         ]);
 
         if (cancelled) return;
@@ -1394,6 +1396,21 @@ export default function SellerOnboardingProV4_JS() {
           activeUserId
         );
         const normalizedScreen = normalizeScreenUi(screenState as Record<string, unknown> | null);
+        const approvalPayload =
+          accountApproval && typeof accountApproval === "object"
+            ? (accountApproval as Record<string, unknown>)
+            : null;
+        if (
+          String(approvalPayload?.status || "").toLowerCase() === "approved" &&
+          !normalizedScreen.review.approvedAt
+        ) {
+          normalizedScreen.review = {
+            ...normalizedScreen.review,
+            inReviewAt: null,
+            approvedAt:
+              String(approvalPayload?.approvedAt || approvalPayload?.submittedAt || normalizedForm.updatedAt || "") || null,
+          };
+        }
         const nextProfiles = normalizeShippingProfiles(
           shippingPayload as Record<string, unknown> | null
         ).filter((profile) => !profile.archived);
@@ -2058,8 +2075,8 @@ export default function SellerOnboardingProV4_JS() {
           review: {
             ...review,
             submittedAt,
-            inReviewAt: submittedAt,
-            approvedAt: null,
+            inReviewAt: null,
+            approvedAt: submittedAt,
           },
         }),
       ]);
@@ -2076,7 +2093,7 @@ export default function SellerOnboardingProV4_JS() {
       status: "SUBMITTED",
       docs: { list: submittedDocs },
     });
-    setReview((r) => ({ ...r, submittedAt, inReviewAt: submittedAt, approvedAt: null }));
+    setReview((r) => ({ ...r, submittedAt, inReviewAt: null, approvedAt: submittedAt }));
     recordOnboardingStatus(
       "seller",
       sessionUser || { userId: activeUserId || form.email, email: activeUserId || form.email },
@@ -2086,10 +2103,14 @@ export default function SellerOnboardingProV4_JS() {
     setToast({
       tone: "success",
       title: "Submitted",
-      message: "Your onboarding has been submitted for review.",
+      message: "Your onboarding is active. Please sign in again to continue.",
     });
-
-    navigate("/seller/onboarding");
+    await authClient.signOut(
+      typeof sessionUser?.refreshToken === "string" ? sessionUser.refreshToken : undefined,
+      typeof sessionUser?.accessToken === "string" ? sessionUser.accessToken : undefined
+    );
+    clearSession();
+    navigate("/auth?intent=signin", { replace: true, state: { defaultTab: "signin" } });
   };
 
   const storefrontUrl = useMemo(() => {

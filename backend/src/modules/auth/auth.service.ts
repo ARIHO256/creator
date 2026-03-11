@@ -150,12 +150,20 @@ export class AuthService {
       });
     }
 
-    return this.issueTokens(user.id, user.email, user.role, this.getAssignedRoles(user));
+    const normalizedUser = await this.autoApproveSubmittedSellerProvider(user);
+
+    return this.issueTokens(
+      normalizedUser.id,
+      normalizedUser.email,
+      normalizedUser.role,
+      this.getAssignedRoles(normalizedUser)
+    );
   }
 
   async me(userId: string) {
     const user = await this.findUserOrThrow(userId);
-    return this.serializeUser(user);
+    const normalizedUser = await this.autoApproveSubmittedSellerProvider(user);
+    return this.serializeUser(normalizedUser);
   }
 
   async refresh(payload: RefreshTokenDto) {
@@ -344,6 +352,96 @@ export class AuthService {
     return user;
   }
 
+  private async autoApproveSubmittedSellerProvider(user: AuthUserRecord) {
+    if (user.approvalStatus === 'APPROVED' && user.onboardingCompleted) {
+      return user;
+    }
+
+    const assignedRoles = this.getAssignedRoles(user);
+    const sellerSide = assignedRoles.includes(UserRole.SELLER) || assignedRoles.includes(UserRole.PROVIDER);
+    if (!sellerSide) {
+      return user;
+    }
+
+    const onboardingRecord = await this.prisma.workflowRecord.findUnique({
+      where: {
+        userId_recordType_recordKey: {
+          userId: user.id,
+          recordType: 'onboarding',
+          recordKey: 'main'
+        }
+      }
+    });
+
+    const onboarding = onboardingRecord?.payload as Record<string, unknown> | null;
+    const profileType = String(onboarding?.profileType || '').toUpperCase();
+    const onboardingStatus = String(onboarding?.status || '').toLowerCase();
+    const submitted = onboardingStatus === 'submitted';
+    const sellerOrProvider = profileType === 'SELLER' || profileType === 'PROVIDER';
+
+    if (!submitted || !sellerOrProvider) {
+      return user;
+    }
+
+    const approvedAt = String(onboarding?.submittedAt || new Date().toISOString());
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          approvalStatus: 'APPROVED',
+          onboardingCompleted: true
+        }
+      }),
+      this.prisma.workflowRecord.upsert({
+        where: {
+          userId_recordType_recordKey: {
+            userId: user.id,
+            recordType: 'account_approval',
+            recordKey: 'main'
+          }
+        },
+        update: {
+          payload: {
+            status: 'approved',
+            progressPercent: 100,
+            requiredActions: [],
+            documents: [],
+            submittedAt: approvedAt,
+            approvedAt,
+            reviewNotes: '',
+            metadata: {
+              source: 'onboarding',
+              uiStatus: 'Approved',
+              profileType
+            }
+          } as Prisma.InputJsonValue
+        },
+        create: {
+          userId: user.id,
+          recordType: 'account_approval',
+          recordKey: 'main',
+          payload: {
+            status: 'approved',
+            progressPercent: 100,
+            requiredActions: [],
+            documents: [],
+            submittedAt: approvedAt,
+            approvedAt,
+            reviewNotes: '',
+            metadata: {
+              source: 'onboarding',
+              uiStatus: 'Approved',
+              profileType
+            }
+          } as Prisma.InputJsonValue
+        }
+      })
+    ]);
+
+    return this.findUserOrThrow(user.id);
+  }
+
   private serializeUser(user: AuthUserRecord) {
     const roles = this.getAssignedRoles(user);
 
@@ -355,6 +453,7 @@ export class AuthService {
       activeRole: user.role,
       roles,
       approvalStatus: user.approvalStatus,
+      onboardingCompleted: user.onboardingCompleted,
       creatorProfile: user.creatorProfile,
       sellerProfile: user.sellerProfile
     };
