@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, SellerKind, UserRole } from '@prisma/client';
 import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
 import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
@@ -332,7 +332,10 @@ export class DiscoveryService {
         kind: 'collaboration_invite',
         title: `New invite from ${sellerName}`,
         body: `${sellerName} invited you to collaborate on ${campaignTitle}.`,
-        metadata: metadata
+        metadata: {
+          ...(metadata as Record<string, unknown>),
+          workspaceRole: 'CREATOR'
+        } as Prisma.InputJsonValue
       }
     });
 
@@ -432,7 +435,12 @@ export class DiscoveryService {
             creatorName,
             creatorHandle:
               invite.recipient.creatorProfile?.handle ? `@${invite.recipient.creatorProfile.handle}` : null,
-            status: nextStatus
+            status: nextStatus,
+            workspaceRole: this.resolveNotificationRole({
+              role: invite.sender.role ?? undefined,
+              creatorProfileId: invite.sender.creatorProfile?.id ?? null,
+              sellerKind: invite.sender.sellerProfile?.kind ?? null
+            })
           },
           { maxDepth: 6, maxArrayLength: 50, maxKeys: 50 }
         ) as Prisma.InputJsonValue
@@ -443,6 +451,24 @@ export class DiscoveryService {
       ...this.serializeInvite(updatedInvite),
       proposalId: proposal?.id ?? null
     };
+  }
+
+  private resolveNotificationRole(params: {
+    role?: UserRole | string | null;
+    creatorProfileId?: string | null;
+    sellerKind?: SellerKind | string | null;
+  }) {
+    const explicitRole = String(params.role || '').toUpperCase();
+    if (explicitRole) {
+      return explicitRole;
+    }
+    if (params.creatorProfileId) {
+      return 'CREATOR';
+    }
+    if (String(params.sellerKind || '').toUpperCase() === 'PROVIDER') {
+      return 'PROVIDER';
+    }
+    return 'SELLER';
   }
 
   async search(userId: string, query?: SearchQueryDto) {

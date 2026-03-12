@@ -130,7 +130,7 @@ export const authClient = {
         phone,
         password: password || "demo1234",
         role: backendRole,
-        roles: role === "provider" ? ["PROVIDER", "SELLER"] : ["SELLER"],
+        roles: [backendRole],
         sellerKind: backendRole,
         sellerDisplayName: name,
       }),

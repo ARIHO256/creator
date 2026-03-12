@@ -147,155 +147,7 @@ function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, confirm
 
 /* ------------------------------- Data ----------------------------------- */
 
-const INITIAL_MY_CREATORS = [
-  {
-    id: 1,
-    name: "Amina K.",
-    initials: "AK",
-    handle: "@amina.dealz",
-    tagline: "Beauty dealz, live routines, and product-first hooks.",
-    categories: ["Beauty", "Skincare"],
-    relationship: "Active collab", // Active collab | Past collab
-
-    lifetimeRevenue: 4800,
-    currentValue: 1400,
-    avgConversion: 4.8,
-    campaignsCount: 4,
-    lastCampaign: "Autumn Beauty Flash",
-    lastResult: "500 units sold in 45 mins",
-    openProposals: 1,
-    activeContracts: 1,
-    rating: 4.8,
-    trustBadges: ["Verified", "On-time delivery"],
-    primaryContact: "Amina · WhatsApp",
-
-    nextLive: "Today · 18:30",
-    nextAction: "Approve caption + pin the hero offer",
-
-    following: true,
-    favourite: true,
-
-    // Supplier-specific operational context
-    queues: {
-      pendingSupplier: 2,
-      pendingAdmin: 1,
-      changesRequested: 1
-    },
-
-    activeCampaigns: [
-      { id: "CAMP-21", name: "GlowUp Serum Promo", type: "Shoppable Adz", stage: "Supplier Review", approvalMode: "Manual" },
-      { id: "CAMP-11", name: "Beauty Flash Dealz", type: "Live Sessionz", stage: "Scheduled", approvalMode: "Manual" }
-    ]
-  },
-  {
-    id: 2,
-    name: "Chris M.",
-    initials: "CM",
-    handle: "@chris.finds",
-    tagline: "Tech demos, unboxings, and bundle-driven closes.",
-    categories: ["Tech", "Gadgets"],
-    relationship: "Active collab",
-
-    lifetimeRevenue: 3900,
-    currentValue: 2100,
-    avgConversion: 4.2,
-    campaignsCount: 3,
-    lastCampaign: "Tech Friday Mega Live",
-    lastResult: "Bundle upsells performed best",
-    openProposals: 0,
-    activeContracts: 2,
-    rating: 4.7,
-    trustBadges: ["Verified", "Low disputes"],
-    primaryContact: "Chris · Telegram",
-
-    nextLive: "Fri · 19:00",
-    nextAction: "Review product order + delivery schedule",
-
-    following: true,
-    favourite: false,
-
-    queues: {
-      pendingSupplier: 1,
-      pendingAdmin: 2,
-      changesRequested: 0
-    },
-
-    activeCampaigns: [
-      { id: "CAMP-07", name: "Tech Friday Mega", type: "Live Sessionz", stage: "Admin Review", approvalMode: "Auto" },
-      { id: "CAMP-31", name: "Gadget Unboxing Marathon", type: "Shoppable Adz", stage: "Content Submission", approvalMode: "Manual" }
-    ]
-  },
-  {
-    id: 3,
-    name: "Grace W.",
-    initials: "GW",
-    handle: "@gracefaithwellness",
-    tagline: "Faith-compatible wellness. Calm and trust-first storytelling.",
-    categories: ["Faith", "Wellness"],
-    relationship: "Past collab",
-
-    lifetimeRevenue: 1200,
-    currentValue: 0,
-    avgConversion: 3.9,
-    campaignsCount: 2,
-    lastCampaign: "Faith & Wellness Morning Dealz",
-    lastResult: "High trust; slower close",
-    openProposals: 0,
-    activeContracts: 0,
-    rating: 4.9,
-    trustBadges: ["High trust"],
-    primaryContact: "Grace · WhatsApp",
-
-    nextLive: "Not scheduled",
-    nextAction: "Invite for Q2 campaign",
-
-    following: false,
-    favourite: false,
-
-    queues: {
-      pendingSupplier: 0,
-      pendingAdmin: 0,
-      changesRequested: 0
-    },
-
-    activeCampaigns: []
-  },
-  {
-    id: 4,
-    name: "Ama S.",
-    initials: "AS",
-    handle: "@stylebyama",
-    tagline: "Try-ons and fashion haul lives. Strong hooks, faster edits.",
-    categories: ["Fashion"],
-    relationship: "Active collab",
-
-    lifetimeRevenue: 980,
-    currentValue: 680,
-    avgConversion: 2.7,
-    campaignsCount: 1,
-    lastCampaign: "Style Haul Weekend",
-    lastResult: "High engagement; moderate conversion",
-    openProposals: 1,
-    activeContracts: 1,
-    rating: 4.4,
-    trustBadges: [],
-    primaryContact: "Ama · Instagram DM",
-
-    nextLive: "Sat · 16:00",
-    nextAction: "Approve clip selection + add region links",
-
-    following: false,
-    favourite: false,
-
-    queues: {
-      pendingSupplier: 3,
-      pendingAdmin: 0,
-      changesRequested: 2
-    },
-
-    activeCampaigns: [{ id: "CAMP-44", name: "Style Bundle Promo", type: "Shoppable Adz", stage: "Supplier Review", approvalMode: "Manual" }]
-  }
-];
+const INITIAL_MY_CREATORS = [];
 
 /* ---------------------------- Invite Drawer ------------------------------ */
 
@@ -942,22 +794,14 @@ export default function SupplierMyCreatorsPage() {
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All | Active collab | Past collab
   const [viewTab, setViewTab] = useState("all"); // all | active | past
 
-  const [selectedCreatorId, setSelectedCreatorId] = useState(INITIAL_MY_CREATORS[0]?.id ?? null);
+  const [selectedCreatorId, setSelectedCreatorId] = useState(null);
   const [expandedCreatorId, setExpandedCreatorId] = useState(null);
 
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteRecipient, setInviteRecipient] = useState(null);
 
-  const supplierCampaigns = useMemo(
-    () => [
-      { id: "CAMP-11", name: "Beauty Flash Dealz" },
-      { id: "CAMP-07", name: "Tech Friday Mega" },
-      { id: "CAMP-21", name: "GlowUp Serum Promo" },
-      { id: "CAMP-33", name: "Repair Booking Offer" }
-    ],
-    []
-  );
+  const supplierCampaigns = useMemo(() => [], []);
 
   const stats = useMemo(() => {
     const active = myCreators.filter((c) => c.relationship === "Active collab");

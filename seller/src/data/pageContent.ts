@@ -396,6 +396,8 @@ async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {
     orders,
     returns,
     disputes,
+    offlineNotice:
+      typeof payload.offlineNotice === "string" ? payload.offlineNotice : undefined,
   };
 }
 

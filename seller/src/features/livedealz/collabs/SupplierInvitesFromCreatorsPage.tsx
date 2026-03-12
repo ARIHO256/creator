@@ -131,101 +131,7 @@ function PageHeader({ pageTitle, badge, right }) {
 
 /* ------------------------------- Data ----------------------------------- */
 
-const INVITES = [
-  {
-    id: "INV-C101",
-    creator: "Lilian Beauty Plug",
-    initials: "LB",
-    campaign: "GlowUp Serum Promo",
-    inviteType: "Live + Shoppable Adz",
-    category: "Beauty",
-    region: "East Africa",
-    baseFee: 320,
-    currency: "USD",
-    commissionPct: 4,
-    estimatedValue: 950,
-    status: "New",
-    daysAgo: 0,
-    expiresIn: "3 days",
-    fitScore: 92,
-    fitReason: "Your Beauty products align with my audience. I convert strongly on skincare routines.",
-    messageShort: "I’d love to host a 60 min Beauty Flash live and run 2 shoppable ad creatives for your serum.",
-    lastActivity: "New invite · 2h ago",
-    creatorBio:
-      "Beauty creator focused on live tutorials and routine-based storytelling. Strong conversion when offers are pinned early.",
-    creatorRating: 4.8,
-    avatarUrl: ""
-  },
-  {
-    id: "INV-C102",
-    creator: "TechWithBrian",
-    initials: "TB",
-    campaign: "Tech Friday Mega",
-    inviteType: "Live series (3 episodes)",
-    category: "Tech",
-    region: "Africa / Asia",
-    baseFee: 900,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 1600,
-    status: "In discussion",
-    daysAgo: 1,
-    expiresIn: "5 days",
-    fitScore: 86,
-    fitReason: "I have a proven format for mid-ticket gadgets and bundle closes.",
-    messageShort: "I can host a 3-episode Tech Friday series if we align on products + delivery timeline.",
-    lastActivity: "Countered terms · Yesterday",
-    creatorBio: "Tech creator specializing in live demos, unboxings and bundle-driven closes.",
-    creatorRating: 4.7,
-    avatarUrl: ""
-  },
-  {
-    id: "INV-C103",
-    creator: "Grace Faith Wellness",
-    initials: "GW",
-    campaign: "Faith & Wellness Morning Dealz",
-    inviteType: "Morning lives",
-    category: "Faith-compatible",
-    region: "Africa",
-    baseFee: 260,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 520,
-    status: "Accepted",
-    daysAgo: 3,
-    expiresIn: "Starts next week",
-    fitScore: 88,
-    fitReason: "Your offers align with faith-based values. My audience responds well to trust-first messaging.",
-    messageShort: "Thanks for accepting. Let’s finalise dates, deliverables and CTA phrasing.",
-    lastActivity: "Accepted · 3 days ago",
-    creatorBio: "Faith-compatible wellness creator with calm, trust-first delivery.",
-    creatorRating: 4.9,
-    avatarUrl: ""
-  },
-  {
-    id: "INV-C104",
-    creator: "EV Gadgets Daily",
-    initials: "EG",
-    campaign: "EV Accessories Launch",
-    inviteType: "Live + Shoppables.",
-    category: "EV",
-    region: "Global",
-    baseFee: 300,
-    currency: "USD",
-    commissionPct: 3,
-    estimatedValue: 640,
-    status: "Declined",
-    daysAgo: 7,
-    expiresIn: "Expired",
-    fitScore: 70,
-    fitReason: "Good niche fit, but your current campaigns are scheduled for other categories.",
-    messageShort: "Thanks for considering. Happy to revisit next quarter.",
-    lastActivity: "Declined · 7 days ago",
-    creatorBio: "EV accessory creator with a focus on charging, interior tech and practical demos.",
-    creatorRating: 4.3,
-    avatarUrl: ""
-  }
-];
+const INVITES = [];
 
 const TABS = [
   { id: "all", label: "All" },
@@ -704,7 +610,7 @@ export default function SupplierInvitesFromCreatorsPage() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [minBudget, setMinBudget] = useState("");
 
-  const [selectedInviteId, setSelectedInviteId] = useState(INVITES[0]?.id ?? null);
+  const [selectedInviteId, setSelectedInviteId] = useState(null);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerInvite, setDrawerInvite] = useState(null);

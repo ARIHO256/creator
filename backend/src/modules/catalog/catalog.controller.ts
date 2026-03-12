@@ -16,7 +16,7 @@ import { UpdateCatalogPresetDto } from './dto/update-catalog-preset.dto.js';
 import { UpdateCatalogTemplateDto } from './dto/update-catalog-template.dto.js';
 
 @Controller()
-@Roles('SELLER', 'PROVIDER', 'ADMIN')
+@Roles('SELLER', 'ADMIN')
 export class CatalogController {
   constructor(private readonly service: CatalogService) {}
 

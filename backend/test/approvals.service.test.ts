@@ -28,7 +28,7 @@ test('ApprovalsService.create schedules SLA check', async () => {
   };
   const service = new ApprovalsService(prisma as any, configService as any, jobsService as any);
 
-  const result = await service.create('user-1', { entityType: 'listing', entityId: 'l-1' } as any);
+  const result = await service.create('user-1', 'SELLER', { entityType: 'listing', entityId: 'l-1' } as any);
 
   assert.ok(createdPayload.slaDueAt instanceof Date);
   assert.equal(createdPayload.slaStatus, 'ON_TIME');

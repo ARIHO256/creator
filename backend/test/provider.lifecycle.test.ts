@@ -9,9 +9,8 @@ test('ProviderService.transitionQuote enforces transitions', async () => {
       async update({ data }: any) { return { id: 'q1', status: data.status, data: data.data, createdAt: new Date(), updatedAt: new Date() }; }
     }
   };
-  const sellersService = { async ensureSellerProfile() { return { id: 's1' }; } };
   const audit = { async log() {} };
-  const service = new ProviderService(prisma as any, sellersService as any, audit as any);
+  const service = new ProviderService(prisma as any, audit as any);
 
   const updated = await service.transitionQuote('u1', 'q1', { status: 'sent' } as any);
   assert.equal(updated.status, 'sent');
@@ -43,9 +42,8 @@ test('ProviderService.transitionBooking enforces transitions', async () => {
       async update() { return { id: 'f1', status: 'OPEN' }; }
     }
   };
-  const sellersService = { async ensureSellerProfile() { return { id: 's1' }; } };
   const audit = { async log() {} };
-  const service = new ProviderService(prisma as any, sellersService as any, audit as any);
+  const service = new ProviderService(prisma as any, audit as any);
 
   const updated = await service.transitionBooking('u1', 'b1', { status: 'confirmed' } as any);
   assert.equal(updated.status, 'confirmed');

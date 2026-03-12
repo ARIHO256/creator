@@ -6,7 +6,7 @@ import { OpsSummaryQueryDto } from './dto/ops-summary-query.dto.js';
 import { OpsService } from './ops.service.js';
 
 @Controller('ops')
-@Roles('SELLER', 'PROVIDER', 'ADMIN')
+@Roles('SELLER', 'ADMIN')
 export class OpsController {
   constructor(private readonly service: OpsService) {}
 

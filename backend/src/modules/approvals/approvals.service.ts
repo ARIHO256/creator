@@ -47,11 +47,15 @@ export class ApprovalsService {
     return approval;
   }
 
-  async create(userId: string, body: CreateMarketApprovalDto) {
+  async create(userId: string, role: string, body: CreateMarketApprovalDto) {
     if (!body.entityType.trim() || !body.entityId.trim()) {
       throw new BadRequestException('entityType and entityId are required');
     }
     const slaDueAt = this.computeSlaDueAt();
+    const metadata = {
+      ...((body.metadata as Record<string, unknown> | undefined) ?? {}),
+      requestedWorkspaceRole: String(role || '').toUpperCase()
+    };
     const approval = await this.prisma.marketApprovalRequest.create({
       data: {
         entityType: body.entityType.trim(),
@@ -61,7 +65,7 @@ export class ApprovalsService {
         slaDueAt,
         slaStatus: 'ON_TIME',
         requestedByUserId: userId,
-        metadata: (body.metadata ?? {}) as Prisma.InputJsonValue
+        metadata: metadata as Prisma.InputJsonValue
       }
     });
     await this.scheduleSlaCheck(approval.id, slaDueAt);

@@ -31,20 +31,21 @@ export class CommunicationsService {
     private readonly jobsService: JobsService
   ) {}
 
-  async messages(userId: string) {
+  async messages(userId: string, role: string) {
     const [threads, templatesRecord] = await Promise.all([
       this.prisma.messageThread.findMany({
         where: { userId },
         orderBy: { updatedAt: 'desc' }
       }),
       this.prisma.workspaceSetting.findUnique({
-        where: { userId_key: { userId, key: 'messages_page' } }
+        where: { userId_key: { userId, key: this.scopedKey(role, 'messages_page') } }
       })
     ]);
+    const scopedThreads = threads.filter((thread) => this.matchesRoleMetadata(thread.metadata, role));
 
     const templatesPayload =
       ((templatesRecord?.payload as Record<string, unknown> | null) ?? {}) as Record<string, unknown>;
-    const threadIds = threads.map((thread) => thread.id);
+    const threadIds = scopedThreads.map((thread) => thread.id);
     const messages = threadIds.length
       ? await this.prisma.message.findMany({
           where: { threadId: { in: threadIds } },
@@ -52,8 +53,8 @@ export class CommunicationsService {
         })
       : [];
 
-    const mappedThreads = threads.length
-      ? threads.map((thread) => this.serializeInboxThread(thread, messages))
+    const mappedThreads = scopedThreads.length
+      ? scopedThreads.map((thread) => this.serializeInboxThread(thread, messages))
       : [];
     const mappedMessages = messages.length
       ? messages.map((message) => this.serializeChatMessage(message))
@@ -80,11 +81,11 @@ export class CommunicationsService {
     };
   }
 
-  async messageThread(userId: string, threadId: string) {
+  async messageThread(userId: string, role: string, threadId: string) {
     const thread = await this.prisma.messageThread.findFirst({
       where: { id: threadId, userId }
     });
-    if (!thread) {
+    if (!thread || !this.matchesRoleMetadata(thread.metadata, role)) {
       throw new NotFoundException('Thread not found');
     }
     const messages = await this.prisma.message.findMany({
@@ -94,14 +95,16 @@ export class CommunicationsService {
     return { thread: this.serializeThread(thread), messages: messages.map((message) => this.serializeMessage(message)) };
   }
 
-  async sendMessage(userId: string, threadId: string, body: SendMessageDto) {
+  async sendMessage(userId: string, role: string, threadId: string, body: SendMessageDto) {
+    const existingThread = await this.prisma.messageThread.findFirst({ where: { id: threadId, userId } });
     const thread =
-      (await this.prisma.messageThread.findFirst({ where: { id: threadId, userId } })) ??
+      (existingThread && this.matchesRoleMetadata(existingThread.metadata, role) ? existingThread : null) ??
       (await this.prisma.messageThread.create({
         data: {
           id: threadId,
           userId,
-          status: 'open'
+          status: 'open',
+          metadata: { workspaceRole: String(role || '').toUpperCase() } as Prisma.InputJsonValue
         }
       }));
 
@@ -138,14 +141,14 @@ export class CommunicationsService {
       createdAt: message.createdAt.toISOString()
     });
 
-    return this.messageThread(userId, thread.id);
+    return this.messageThread(userId, role, thread.id);
   }
 
-  async markThreadRead(userId: string, threadId: string) {
+  async markThreadRead(userId: string, role: string, threadId: string) {
     const thread = await this.prisma.messageThread.findFirst({
       where: { id: threadId, userId }
     });
-    if (!thread) {
+    if (!thread || !this.matchesRoleMetadata(thread.metadata, role)) {
       throw new NotFoundException('Thread not found');
     }
 
@@ -154,20 +157,29 @@ export class CommunicationsService {
       data: { lastReadAt: new Date() }
     });
 
-    return this.messageThread(userId, thread.id);
+    return this.messageThread(userId, role, thread.id);
   }
 
-  async markAllRead(userId: string) {
-    await this.prisma.messageThread.updateMany({
+  async markAllRead(userId: string, role: string) {
+    const threads = await this.prisma.messageThread.findMany({
       where: { userId },
-      data: { lastReadAt: new Date() }
+      select: { id: true, metadata: true }
     });
+    const ids = threads
+      .filter((thread) => this.matchesRoleMetadata(thread.metadata, role))
+      .map((thread) => thread.id);
+    if (ids.length > 0) {
+      await this.prisma.messageThread.updateMany({
+        where: { id: { in: ids } },
+        data: { lastReadAt: new Date() }
+      });
+    }
     return { updated: true };
   }
 
-  async updateTemplates(userId: string, templates: unknown[]) {
+  async updateTemplates(userId: string, role: string, templates: unknown[]) {
     const current = await this.prisma.workspaceSetting.findUnique({
-      where: { userId_key: { userId, key: 'messages_page' } }
+      where: { userId_key: { userId, key: this.scopedKey(role, 'messages_page') } }
     });
     const currentPayload = (current?.payload as Record<string, unknown> | null) ?? {};
     const next = {
@@ -176,9 +188,9 @@ export class CommunicationsService {
     };
 
     const record = await this.prisma.workspaceSetting.upsert({
-      where: { userId_key: { userId, key: 'messages_page' } },
+      where: { userId_key: { userId, key: this.scopedKey(role, 'messages_page') } },
       update: { payload: next as Prisma.InputJsonValue },
-      create: { userId, key: 'messages_page', payload: next as Prisma.InputJsonValue }
+      create: { userId, key: this.scopedKey(role, 'messages_page'), payload: next as Prisma.InputJsonValue }
     });
 
     return record.payload as Record<string, unknown>;
@@ -191,7 +203,7 @@ export class CommunicationsService {
     return (preferences?.payload as Record<string, unknown>) ?? { watches: [] };
   }
 
-  async helpSupport(userId: string) {
+  async helpSupport(userId: string, role: string) {
     const [kb, faq, status, updates, tickets] = await Promise.all([
       this.prisma.supportContent.findMany({ where: { contentType: 'KB' }, orderBy: { updatedAt: 'desc' } }),
       this.prisma.supportContent.findMany({ where: { contentType: 'FAQ' }, orderBy: { updatedAt: 'desc' } }),
@@ -199,17 +211,18 @@ export class CommunicationsService {
       this.prisma.supportContent.findMany({ where: { contentType: 'CHANGELOG' }, orderBy: { updatedAt: 'desc' } }),
       this.prisma.supportTicket.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } })
     ]);
+    const scopedTickets = tickets.filter((ticket) => this.matchesRoleMetadata(ticket.metadata, role));
 
     return {
       kb: kb.map((entry) => this.serializeSupportContent(entry)),
       faq: faq.map((entry) => this.serializeSupportContent(entry)),
       status: status.map((entry) => this.serializeSupportContent(entry)),
       updates: updates.map((entry) => this.serializeSupportContent(entry)),
-      tickets: tickets.map((ticket) => this.serializeSupportTicket(ticket))
+      tickets: scopedTickets.map((ticket) => this.serializeSupportTicket(ticket))
     };
   }
 
-  async createTicket(userId: string, body: CreateSupportTicketDto) {
+  async createTicket(userId: string, role: string, body: CreateSupportTicketDto) {
     const ticket = await this.prisma.supportTicket.create({
       data: {
         id: body.id,
@@ -219,7 +232,8 @@ export class CommunicationsService {
         category: body.category ?? 'Support',
         subject: body.subject ?? 'Untitled',
         severity: body.severity ?? 'medium',
-        ref: body.ref
+        ref: body.ref,
+        metadata: { workspaceRole: String(role || '').toUpperCase() } as Prisma.InputJsonValue
       }
     });
     await this.prisma.messageThread.create({
@@ -228,7 +242,8 @@ export class CommunicationsService {
         userId,
         status: 'open',
         subject: ticket.subject ?? 'Support ticket',
-        priority: ticket.severity ?? 'normal'
+        priority: ticket.severity ?? 'normal',
+        metadata: { workspaceRole: String(role || '').toUpperCase() } as Prisma.InputJsonValue
       }
     }).catch(() => undefined);
     await this.prisma.supportTicket.update({
@@ -259,11 +274,11 @@ export class CommunicationsService {
     return this.serializeSupportTicket(ticket);
   }
 
-  async supportTicket(userId: string, id: string) {
+  async supportTicket(userId: string, role: string, id: string) {
     const ticket = await this.prisma.supportTicket.findFirst({
       where: { id, userId }
     });
-    if (!ticket) {
+    if (!ticket || !this.matchesRoleMetadata(ticket.metadata, role)) {
       throw new NotFoundException('Support ticket not found');
     }
     return this.serializeSupportTicket(ticket);
@@ -418,6 +433,18 @@ export class CommunicationsService {
       orderBy: { updatedAt: 'desc' }
     });
     return { services: status.map((entry) => this.serializeSupportContent(entry)) };
+  }
+
+  private scopedKey(role: string, key: string) {
+    return `${String(role || 'seller').toLowerCase()}:${key}`;
+  }
+
+  private matchesRoleMetadata(metadata: unknown, role: string) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return false;
+    }
+    const workspaceRole = (metadata as Record<string, unknown>).workspaceRole;
+    return String(workspaceRole || '').toUpperCase() === String(role || '').toUpperCase();
   }
 
   private serializeThread(thread: {

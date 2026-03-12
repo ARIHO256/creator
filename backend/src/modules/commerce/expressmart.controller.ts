@@ -9,7 +9,7 @@ import { UpdateOrderDto } from './dto/update-order.dto.js';
 import { CommerceService } from './commerce.service.js';
 
 @Controller('expressmart')
-@Roles('SELLER', 'PROVIDER', 'ADMIN')
+@Roles('SELLER', 'ADMIN')
 export class ExpressmartController {
   constructor(private readonly service: CommerceService) {}
 

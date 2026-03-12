@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 import { Prisma, ProviderFulfillmentStatus } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
-import { SellersService } from '../sellers/sellers.service.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
 import { ProviderTransitionDto } from './dto/provider-transition.dto.js';
@@ -13,7 +12,6 @@ import { ProviderFulfillmentTransitionDto } from './dto/provider-fulfillment-tra
 export class ProviderService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sellersService: SellersService,
     private readonly audit: AuditService
   ) {}
 
@@ -282,18 +280,13 @@ export class ProviderService {
   }
   async reviews(userId: string) {
     const reviews = await this.prisma.review.findMany({
-      where: { subjectUserId: userId, subjectType: { in: ['SELLER', 'PROVIDER'] } },
+      where: { subjectUserId: userId, subjectType: 'PROVIDER' },
       orderBy: { createdAt: 'desc' }
     });
     return { reviews };
   }
-  async disputes(userId: string) {
-    const seller = await this.sellersService.ensureSellerProfile(userId);
-    const disputes = await this.prisma.sellerDispute.findMany({
-      where: { sellerId: seller.id },
-      orderBy: { openedAt: 'desc' }
-    });
-    return { disputes };
+  async disputes(_userId: string) {
+    return { disputes: [] };
   }
 
   private ensurePayload(payload: unknown) {

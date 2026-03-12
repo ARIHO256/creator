@@ -28,7 +28,7 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 import { CommerceService } from './commerce.service.js';
 
 @Controller('seller')
-@Roles('SELLER', 'PROVIDER', 'ADMIN')
+@Roles('SELLER', 'ADMIN')
 export class CommerceController {
   constructor(private readonly service: CommerceService) {}
 

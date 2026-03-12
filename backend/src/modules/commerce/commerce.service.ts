@@ -682,10 +682,6 @@ export class CommerceService {
   }
 
   async financeWallets(userId: string) {
-    const seeded = await this.loadWorkspaceSetting(userId, 'finance_home_ui');
-    if (seeded && Array.isArray((seeded as Record<string, unknown>).balances)) {
-      return seeded;
-    }
     const seller = await this.ensureSeller(userId);
     const totals = await this.prisma.transaction.groupBy({
       by: ['currency', 'status'],
@@ -713,10 +709,6 @@ export class CommerceService {
   }
 
   async financeHolds(userId: string) {
-    const seeded = await this.loadWorkspaceSetting(userId, 'finance_holds_ui');
-    if (seeded && Array.isArray((seeded as Record<string, unknown>).holds)) {
-      return seeded;
-    }
     const seller = await this.ensureSeller(userId);
     const holds = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id, status: TransactionStatus.PENDING },
@@ -739,10 +731,6 @@ export class CommerceService {
   }
 
   async financeInvoices(userId: string) {
-    const seeded = await this.loadWorkspaceSetting(userId, 'finance_invoices_ui');
-    if (seeded && Array.isArray((seeded as Record<string, unknown>).invoices)) {
-      return seeded;
-    }
     const seller = await this.ensureSeller(userId);
     const orders = await this.prisma.order.findMany({
       where: { sellerId: seller.id },
@@ -765,10 +753,6 @@ export class CommerceService {
   }
 
   async financeStatements(userId: string) {
-    const seeded = await this.loadWorkspaceSetting(userId, 'finance_statements_ui');
-    if (seeded && Array.isArray((seeded as Record<string, unknown>).statements)) {
-      return seeded;
-    }
     const seller = await this.ensureSeller(userId);
     const transactions = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id },
@@ -791,10 +775,6 @@ export class CommerceService {
   }
 
   async financeTaxReports(userId: string) {
-    const seeded = await this.loadWorkspaceSetting(userId, 'finance_tax_reports_ui');
-    if (seeded && Array.isArray((seeded as Record<string, unknown>).reports)) {
-      return seeded;
-    }
     const seller = await this.ensureSeller(userId);
     const transactions = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id },
@@ -817,10 +797,6 @@ export class CommerceService {
   }
 
   async financeHome(userId: string) {
-    const seeded = await this.loadWorkspaceSetting(userId, 'finance_home_ui');
-    if (seeded) {
-      return seeded;
-    }
     return this.financeWallets(userId);
   }
 

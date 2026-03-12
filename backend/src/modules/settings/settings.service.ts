@@ -158,12 +158,14 @@ export class SettingsService {
     return { signedOutAll: true };
   }
 
-  notifications(userId: string) {
+  notifications(userId: string, role: string) {
     return this.prisma.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' }
     }).then((rows) =>
-      rows.map((row) => {
+      rows
+        .filter((row) => this.matchesRoleMetadata(row.metadata, role))
+        .map((row) => {
         const metadata =
           row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
             ? (row.metadata as Record<string, unknown>)
@@ -188,14 +190,14 @@ export class SettingsService {
           updatedAt: row.updatedAt,
           metadata
         };
-      })
+        })
     );
   }
-  async notificationRead(userId: string, id: string) {
+  async notificationRead(userId: string, role: string, id: string) {
     const existing = await this.prisma.notification.findFirst({
       where: { id, userId }
     });
-    if (!existing) {
+    if (!existing || !this.matchesRoleMetadata(existing.metadata, role)) {
       throw new NotFoundException('Notification not found');
     }
     return this.prisma.notification.update({
@@ -203,11 +205,11 @@ export class SettingsService {
       data: { readAt: new Date() }
     });
   }
-  async notificationUnread(userId: string, id: string) {
+  async notificationUnread(userId: string, role: string, id: string) {
     const existing = await this.prisma.notification.findFirst({
       where: { id, userId }
     });
-    if (!existing) {
+    if (!existing || !this.matchesRoleMetadata(existing.metadata, role)) {
       throw new NotFoundException('Notification not found');
     }
     return this.prisma.notification.update({
@@ -215,9 +217,19 @@ export class SettingsService {
       data: { readAt: null }
     });
   }
-  async notificationReadAll(userId: string) {
-    return this.prisma.notification.updateMany({
+  async notificationReadAll(userId: string, role: string) {
+    const notifications = await this.prisma.notification.findMany({
       where: { userId, readAt: null },
+      select: { id: true, metadata: true }
+    });
+    const ids = notifications
+      .filter((row) => this.matchesRoleMetadata(row.metadata, role))
+      .map((row) => row.id);
+    if (ids.length === 0) {
+      return { count: 0 };
+    }
+    return this.prisma.notification.updateMany({
+      where: { id: { in: ids } },
       data: { readAt: new Date() }
     });
   }
@@ -528,16 +540,16 @@ export class SettingsService {
     });
   }
 
-  preferences(userId: string) { return this.getWorkspaceSetting(userId, 'preferences', { locale: 'en', currency: 'USD' }); }
-  async updatePreferences(userId: string, body: UpdatePreferencesDto) {
-    const current = await this.preferences(userId);
+  preferences(userId: string, role: string) { return this.getWorkspaceSetting(userId, this.scopedKey(role, 'preferences'), { locale: 'en', currency: 'USD' }); }
+  async updatePreferences(userId: string, role: string, body: UpdatePreferencesDto) {
+    const current = await this.preferences(userId, role);
     const next = {
       ...current,
       ...(body.locale ? { locale: body.locale } : {}),
       ...(body.currency ? { currency: body.currency } : {}),
       ...(body.timezone ? { timezone: body.timezone } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, 'preferences', next);
+    const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(role, 'preferences'), next);
     await this.audit.log({
       userId,
       action: 'settings.preferences_updated',
@@ -549,8 +561,8 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
-  uiState(userId: string) {
-    return this.getUserSetting(userId, 'ui_state', {
+  uiState(userId: string, role: string) {
+    return this.getUserSetting(userId, this.scopedKey(role, 'ui_state'), {
       theme: null,
       locale: null,
       currency: null,
@@ -561,10 +573,10 @@ export class SettingsService {
       channels: {}
     });
   }
-  async updateUiState(userId: string, body: Record<string, unknown>) {
-    const current = await this.uiState(userId);
+  async updateUiState(userId: string, role: string, body: Record<string, unknown>) {
+    const current = await this.uiState(userId, role);
     const next = this.deepMerge(current, body);
-    const record = await this.upsertUserSetting(userId, 'ui_state', next);
+    const record = await this.upsertUserSetting(userId, this.scopedKey(role, 'ui_state'), next);
     await this.audit.log({
       userId,
       action: 'settings.ui_state_updated',
@@ -707,15 +719,15 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
-  savedViews(userId: string) { return this.getWorkspaceSetting(userId, 'saved_views', { views: [] }); }
-  async updateSavedViews(userId: string, body: UpdateSavedViewsDto) {
-    const current = await this.savedViews(userId);
+  savedViews(userId: string, role: string) { return this.getWorkspaceSetting(userId, this.scopedKey(role, 'saved_views'), { views: [] }); }
+  async updateSavedViews(userId: string, role: string, body: UpdateSavedViewsDto) {
+    const current = await this.savedViews(userId, role);
     const next = {
       ...current,
       ...(body.views ? { views: body.views } : {}),
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, 'saved_views', next);
+    const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(role, 'saved_views'), next);
     await this.audit.log({
       userId,
       action: 'settings.saved_views_updated',
@@ -729,15 +741,15 @@ export class SettingsService {
   }
   help(userId: string) { return this.getWorkspaceSetting(userId, 'help', { links: [] }); }
   statusCenter(userId: string) { return this.getWorkspaceSetting(userId, 'status_center', { services: [] }); }
-  notificationPreferences(userId: string) { return this.getWorkspaceSetting(userId, 'notification_preferences', { watches: [] }); }
-  async updateNotificationPreferences(userId: string, body: UpdateNotificationPreferencesDto) {
-    const current = await this.notificationPreferences(userId);
+  notificationPreferences(userId: string, role: string) { return this.getWorkspaceSetting(userId, this.scopedKey(role, 'notification_preferences'), { watches: [] }); }
+  async updateNotificationPreferences(userId: string, role: string, body: UpdateNotificationPreferencesDto) {
+    const current = await this.notificationPreferences(userId, role);
     const next = {
       ...current,
       ...(body.watches ? { watches: body.watches } : {}),
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, 'notification_preferences', next);
+    const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(role, 'notification_preferences'), next);
     await this.audit.log({
       userId,
       action: 'settings.notifications_updated',
@@ -904,6 +916,18 @@ export class SettingsService {
     if (!this.canManageWorkspaceRoles(workspace)) {
       throw new ForbiddenException('You do not have permission to manage workspace roles');
     }
+  }
+
+  private scopedKey(role: string, key: string) {
+    return `${String(role || 'seller').toLowerCase()}:${key}`;
+  }
+
+  private matchesRoleMetadata(metadata: unknown, role: string) {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return false;
+    }
+    const workspaceRole = (metadata as Record<string, unknown>).workspaceRole;
+    return String(workspaceRole || '').toUpperCase() === String(role || '').toUpperCase();
   }
 
   private async ensureWorkspaceSeed(userId: string) {

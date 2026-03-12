@@ -13,17 +13,17 @@ export class ReviewsController {
 
   @Get('reviews/dashboard')
   dashboard(@CurrentUser() user: RequestUser) {
-    return this.service.dashboard(user.sub);
+    return this.service.dashboard(user.sub, user.role);
   }
 
   @Get('reviews/summary')
   summary(@CurrentUser() user: RequestUser) {
-    return this.service.summary(user.sub);
+    return this.service.summary(user.sub, user.role);
   }
 
   @Get('reviews')
   list(@CurrentUser() user: RequestUser, @Query('scope') scope?: 'received' | 'authored') {
-    return this.service.list(user.sub, scope);
+    return this.service.list(user.sub, user.role, scope);
   }
 
   @Get('reviews/insights')
@@ -39,7 +39,7 @@ export class ReviewsController {
     @Query('since') since?: string
   ) {
     const parsedMin = minRating ? Number(minRating) : undefined;
-    return this.service.insights(user.sub, {
+    return this.service.insights(user.sub, user.role, {
       channel,
       marketplace,
       mldzSurface,

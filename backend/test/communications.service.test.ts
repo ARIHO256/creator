@@ -9,7 +9,8 @@ test('CommunicationsService creates thread and message', async () => {
   const prisma = {
     messageThread: {
       async findFirst({ where }: any) {
-        return threads.get(where.id) ?? null;
+        const existing = threads.get(where.id);
+        return existing && existing.userId === where.userId ? existing : null;
       },
       async create({ data }: any) {
         const record = { ...data, createdAt: new Date(), updatedAt: new Date(), lastMessageAt: null };
@@ -45,11 +46,12 @@ test('CommunicationsService creates thread and message', async () => {
   const realtime = { async publishUserEvent() {} };
   const jobsService = { async enqueue() {} };
   const service = new CommunicationsService(prisma as any, audit as any, realtime as any, jobsService as any);
-  const response = await service.sendMessage('user-1', 'thread-1', { text: 'hello', lang: 'en' });
+  const response = await service.sendMessage('user-1', 'SELLER', 'thread-1', { text: 'hello', lang: 'en' });
 
   assert.equal(response.thread.id, 'thread-1');
   assert.equal(response.messages.length, 1);
   assert.equal(response.messages[0].body, 'hello');
+  assert.equal(threads.get('thread-1').metadata.workspaceRole, 'SELLER');
 });
 
 test('CommunicationsService marks thread as read', async () => {
@@ -61,6 +63,7 @@ test('CommunicationsService marks thread as read', async () => {
         id: 'thread-1',
         userId: 'user-1',
         status: 'open',
+        metadata: { workspaceRole: 'SELLER' },
         lastMessageAt: now,
         lastMessageFromRole: 'seller',
         lastReadAt: null,
@@ -114,9 +117,32 @@ test('CommunicationsService marks thread as read', async () => {
   const realtime = { async publishUserEvent() {} };
   const jobsService = { async enqueue() {} };
   const service = new CommunicationsService(prisma as any, audit as any, realtime as any, jobsService as any);
-  const response = await service.markThreadRead('user-1', 'thread-1');
+  const response = await service.markThreadRead('user-1', 'SELLER', 'thread-1');
 
   const updated = threads.get('thread-1');
   assert.ok(updated.lastReadAt instanceof Date);
   assert.equal(response.thread.id, 'thread-1');
+});
+
+test('CommunicationsService hides threads from other workspace roles', async () => {
+  const now = new Date();
+  const prisma = {
+    messageThread: {
+      async findMany() {
+        return [
+          { id: 'seller-thread', userId: 'user-1', metadata: { workspaceRole: 'SELLER' }, createdAt: now, updatedAt: now, status: 'open', lastMessageAt: null, lastMessageFromRole: null, lastReadAt: null, subject: null, channel: null, priority: null },
+          { id: 'provider-thread', userId: 'user-1', metadata: { workspaceRole: 'PROVIDER' }, createdAt: now, updatedAt: now, status: 'open', lastMessageAt: null, lastMessageFromRole: null, lastReadAt: null, subject: null, channel: null, priority: null }
+        ];
+      }
+    },
+    message: { async findMany() { return []; } },
+    supportContent: { async findMany() { return []; } },
+    supportTicket: { async findMany() { return []; } },
+    workspaceSetting: { async findUnique() { return null; } }
+  };
+
+  const service = new CommunicationsService(prisma as any, { async log() {} } as any, { async publishUserEvent() {} } as any, { async enqueue() {} } as any);
+  const response = await service.messages('user-1', 'SELLER');
+
+  assert.deepEqual(response.threads.map((thread: any) => thread.id), ['seller-thread']);
 });

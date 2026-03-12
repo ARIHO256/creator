@@ -12,13 +12,13 @@ import { StorefrontService } from './storefront.service.js';
 export class StorefrontController {
   constructor(private readonly storefrontService: StorefrontService) {}
 
-  @Roles('SELLER', 'PROVIDER', 'ADMIN')
+  @Roles('SELLER', 'ADMIN')
   @Get('me')
   me(@CurrentUser() user: RequestUser) {
     return this.storefrontService.getMyStorefront(user.sub);
   }
 
-  @Roles('SELLER', 'PROVIDER', 'ADMIN')
+  @Roles('SELLER', 'ADMIN')
   @Patch('me')
   @RateLimit({ limit: 10, windowMs: 60_000 })
   updateMe(@CurrentUser() user: RequestUser, @Body() payload: UpdateStorefrontDto) {

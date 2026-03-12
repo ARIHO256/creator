@@ -479,10 +479,6 @@ export class AuthService {
       requested.add(UserRole.CREATOR);
     }
 
-    if (requested.has(UserRole.PROVIDER) && !requested.has(UserRole.SELLER)) {
-      requested.add(UserRole.SELLER);
-    }
-
     return Array.from(requested);
   }
 

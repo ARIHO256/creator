@@ -16,24 +16,24 @@ import { CommunicationsService } from './communications.service.js';
 export class CommunicationsController {
   constructor(private readonly service: CommunicationsService) {}
 
-  @Get('messages') messages(@CurrentUser() user: RequestUser) { return this.service.messages(user.sub); }
-  @Get('messages/:threadId') thread(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string) { return this.service.messageThread(user.sub, threadId); }
+  @Get('messages') messages(@CurrentUser() user: RequestUser) { return this.service.messages(user.sub, user.role); }
+  @Get('messages/:threadId') thread(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string) { return this.service.messageThread(user.sub, user.role, threadId); }
   @RateLimit({ limit: 60, windowMs: 60_000 })
-  @Post('messages/:threadId/reply') reply(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string, @Body() body: SendMessageDto) { return this.service.sendMessage(user.sub, threadId, body); }
+  @Post('messages/:threadId/reply') reply(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string, @Body() body: SendMessageDto) { return this.service.sendMessage(user.sub, user.role, threadId, body); }
   @RateLimit({ limit: 60, windowMs: 60_000 })
-  @Patch('messages/:threadId/read') markRead(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string) { return this.service.markThreadRead(user.sub, threadId); }
+  @Patch('messages/:threadId/read') markRead(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string) { return this.service.markThreadRead(user.sub, user.role, threadId); }
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Patch('messages/templates')
   updateTemplates(@CurrentUser() user: RequestUser, @Body() body: { templates?: unknown[] }) {
-    return this.service.updateTemplates(user.sub, body.templates ?? []);
+    return this.service.updateTemplates(user.sub, user.role, body.templates ?? []);
   }
   @RateLimit({ limit: 30, windowMs: 60_000 })
-  @Post('messages/read-all') readAll(@CurrentUser() user: RequestUser) { return this.service.markAllRead(user.sub); }
-  @Get('help-support/content') helpSupport(@CurrentUser() user: RequestUser) { return this.service.helpSupport(user.sub); }
+  @Post('messages/read-all') readAll(@CurrentUser() user: RequestUser) { return this.service.markAllRead(user.sub, user.role); }
+  @Get('help-support/content') helpSupport(@CurrentUser() user: RequestUser) { return this.service.helpSupport(user.sub, user.role); }
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  @Post('help-support/tickets') createTicket(@CurrentUser() user: RequestUser, @Body() body: CreateSupportTicketDto) { return this.service.createTicket(user.sub, body); }
+  @Post('help-support/tickets') createTicket(@CurrentUser() user: RequestUser, @Body() body: CreateSupportTicketDto) { return this.service.createTicket(user.sub, user.role, body); }
   @Get('help-support/tickets/:id')
-  supportTicket(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.supportTicket(user.sub, id); }
+  supportTicket(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.supportTicket(user.sub, user.role, id); }
   @Get('system-status') systemStatus(@CurrentUser() user: RequestUser) { return this.service.systemStatus(user.sub); }
 
   @Roles('SUPPORT', 'ADMIN')

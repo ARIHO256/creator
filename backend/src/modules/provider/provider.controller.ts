@@ -9,7 +9,7 @@ import { ProviderFulfillmentTransitionDto } from './dto/provider-fulfillment-tra
 import { ProviderService } from './provider.service.js';
 
 @Controller('provider')
-@Roles('SELLER', 'PROVIDER', 'ADMIN')
+@Roles('PROVIDER', 'ADMIN')
 export class ProviderController {
   constructor(private readonly service: ProviderService) {}
 

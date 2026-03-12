@@ -744,7 +744,7 @@ function OrdersTable({ rows, selected, setSelected, toggleAll, allVisibleSelecte
   );
 }
 
-function OrdersList({ orders, openOrder, pushToast }) {
+function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
   const [view, setView] = useState('list');
   const [grouped, setGrouped] = useState(true);
 
@@ -923,6 +923,12 @@ function OrdersList({ orders, openOrder, pushToast }) {
           </>
         }
       />
+
+      {offlineNotice ? (
+        <div className="mt-4 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+          {offlineNotice}
+        </div>
+      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-12">
         <div className="lg:col-span-5">
@@ -2672,7 +2678,12 @@ export default function OrdersOpsPreviewableV4({ initialScreen = 'orders' }) {
             transition={{ duration: 0.16 }}
           >
             {screen === 'orders' ? (
-              <OrdersList orders={orders} openOrder={openOrder} pushToast={pushToast} />
+              <OrdersList
+                orders={orders}
+                openOrder={openOrder}
+                pushToast={pushToast}
+                offlineNotice={content.offlineNotice}
+              />
             ) : null}
             {screen === 'orderDetail' ? (
               <OrderDetail

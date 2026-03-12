@@ -328,6 +328,7 @@ export type OrdersContent = {
   stages?: ProviderBookingStage[];
   headline: string;
   subhead: string;
+  offlineNotice?: string;
 };
 
 export type ListingInventorySlot = {

@@ -146,62 +146,11 @@ function createDefaultTenantData(): TenantData {
       },
     },
     notifications: [
-      {
-        id: "notif_order_delay",
-        title: "Order SLA at risk",
-        body: "Order ORD-24018 is nearing the warehouse SLA.",
-        kind: "order",
-        createdAt: nowIso(),
-        readAt: null,
-        metadata: {
-          category: "Orders",
-          priority: "high",
-          route: "/orders",
-        },
-      },
-      {
-        id: "notif_review",
-        title: "New review posted",
-        body: "A buyer left a 4-star review for your latest order.",
-        kind: "system",
-        createdAt: nowIso(),
-        readAt: null,
-        metadata: {
-          category: "System",
-          priority: "medium",
-          route: "/reviews",
-        },
-      },
     ],
     messages: {
       tagOptions: ["Order", "Support", "MyLiveDealz"],
-      threads: [
-        {
-          id: "thread_order_24018",
-          title: "Order ORD-24018",
-          participants: [
-            { name: "Amina Buyer", role: "buyer" },
-            { name: "You", role: "you" },
-          ],
-          lastMessage: "Please confirm dispatch before 5 PM.",
-          lastAt: nowIso(),
-          unreadCount: 1,
-          tags: ["Order"],
-          customerLang: "en",
-          myLang: "en",
-          priority: "high",
-        },
-      ],
-      messages: [
-        {
-          id: "msg_order_24018_1",
-          threadId: "thread_order_24018",
-          sender: "other",
-          text: "Please confirm dispatch before 5 PM.",
-          lang: "en",
-          at: nowIso(),
-        },
-      ],
+      threads: [],
+      messages: [],
       templates: [
         {
           id: "tpl_shipping_eta",
@@ -213,31 +162,8 @@ function createDefaultTenantData(): TenantData {
       ],
     },
     seller: {
-      orders: [
-        {
-          id: "ORD-24018",
-          buyer: { name: "Amina Buyer" },
-          channel: "EVmart",
-          items: [{ sku: "EV-001", name: "Charging Cable", qty: 2 }],
-          totalAmount: 128,
-          currency: "USD",
-          status: "At Risk",
-          fulfillment: {
-            warehouseName: "Kampala DC",
-            slaDueAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-          },
-          updatedAt: nowIso(),
-        },
-      ],
-      returns: [
-        {
-          id: "RET-102",
-          orderId: "ORD-24018",
-          status: "Requested",
-          buyer: { name: "Amina Buyer" },
-          createdAt: nowIso(),
-        },
-      ],
+      orders: [],
+      returns: [],
       disputes: [],
     },
     provider: {
@@ -251,25 +177,11 @@ function createDefaultTenantData(): TenantData {
 }
 
 function createDefaultStore(): DevApiStore {
-
-  const sellerUser: DevUser = {
-    id: "seller_demo",
-    email: "seller@demo.evzone",
-    phone: "+256700000001",
-    name: "Demo Seller",
-    role: "seller",
-    roles: ["seller", "provider"],
-    onboardingCompleted: true,
-    approvalStatus: "APPROVED",
-  };
-
   return {
     v: 2,
-    users: [sellerUser],
-    currentUserId: sellerUser.id,
-    tenants: {
-      [sellerUser.id]: createDefaultTenantData(),
-    },
+    users: [],
+    currentUserId: "",
+    tenants: {},
   };
 }
 
@@ -278,6 +190,29 @@ function currentUser(store: DevApiStore) {
     store.users.find((entry) => entry.id === store.currentUserId) ??
     store.users[0]
   );
+}
+
+function ensureCurrentUser(store: DevApiStore) {
+  const existing = currentUser(store);
+  if (existing) {
+    return existing;
+  }
+
+  const created: DevUser = {
+    id: makeId("local"),
+    email: `${makeId("local")}@local.dev`,
+    name: "Local User",
+    role: "seller",
+    roles: ["seller"],
+    onboardingCompleted: true,
+    approvalStatus: "APPROVED",
+  };
+
+  store.users.unshift(created);
+  store.currentUserId = created.id;
+  store.tenants[created.id] = createDefaultTenantData();
+  writeStore(store);
+  return created;
 }
 
 function normalizeIdentifier(body: Record<string, unknown>) {
@@ -337,15 +272,31 @@ export async function handleDevApiMock<T>(
   init?: RequestInit
 ): Promise<T> {
   const store = readStore();
-  if (!store.tenants[store.currentUserId]) {
-    store.tenants[store.currentUserId] = createDefaultTenantData();
-    writeStore(store);
-  }
-  const tenant = store.tenants[store.currentUserId];
   const method = String(init?.method || "GET").toUpperCase();
   const body = parseBody(init);
   const url = new URL(path, "http://localhost");
   const pathname = url.pathname;
+
+  if (
+    pathname !== "/health" &&
+    pathname !== "/api/auth/login" &&
+    pathname !== "/api/auth/register" &&
+    pathname !== "/api/auth/recovery"
+  ) {
+    const user = ensureCurrentUser(store);
+    if (!store.tenants[user.id]) {
+      store.tenants[user.id] = createDefaultTenantData();
+      writeStore(store);
+    }
+  }
+
+  if (store.currentUserId && !store.tenants[store.currentUserId]) {
+    store.tenants[store.currentUserId] = createDefaultTenantData();
+    writeStore(store);
+  }
+  const tenant =
+    (store.currentUserId ? store.tenants[store.currentUserId] : undefined) ??
+    createDefaultTenantData();
 
   if (pathname === "/health" && method === "GET") {
     return ok({ status: "mock" }) as T;
@@ -353,11 +304,28 @@ export async function handleDevApiMock<T>(
 
   if (pathname === "/api/auth/login" && method === "POST") {
     const { email, phone } = normalizeIdentifier(body);
-    const found =
+    const found: DevUser =
       store.users.find((entry) => email && entry.email === email) ??
       store.users.find((entry) => phone && entry.phone === phone) ??
-      currentUser(store);
+      (email || phone
+        ? {
+            id: makeId("user"),
+            email: email || `${makeId("user")}@local.dev`,
+            phone: phone || undefined,
+            name: String(body.name || email || phone || "Local User"),
+            role: normalizeRole(body.role),
+            roles: [normalizeRole(body.role)],
+            onboardingCompleted: true,
+            approvalStatus: "APPROVED",
+          }
+        : ensureCurrentUser(store));
+    if (!store.users.find((entry) => entry.id === found.id)) {
+      store.users.unshift(found);
+    }
     store.currentUserId = found.id;
+    if (!store.tenants[found.id]) {
+      store.tenants[found.id] = createDefaultTenantData();
+    }
     writeStore(store);
     return ok(buildTokens(found)) as T;
   }
@@ -371,7 +339,7 @@ export async function handleDevApiMock<T>(
       phone: phone || undefined,
       name: String(body.name || email || "Demo User"),
       role,
-      roles: role === "provider" ? ["provider", "seller"] : ["seller"],
+      roles: [role],
       onboardingCompleted: true,
       approvalStatus: "APPROVED",
     };
@@ -382,7 +350,7 @@ export async function handleDevApiMock<T>(
   }
 
   if (pathname === "/api/auth/me" && method === "GET") {
-    return ok(buildProfile(currentUser(store))) as T;
+    return ok(buildProfile(ensureCurrentUser(store))) as T;
   }
 
   if (pathname === "/api/auth/logout" && method === "POST") {
@@ -394,7 +362,7 @@ export async function handleDevApiMock<T>(
   }
 
   if (pathname === "/api/auth/switch-role" && method === "POST") {
-    const user = currentUser(store);
+    const user = ensureCurrentUser(store);
     user.role = normalizeRole(body.role);
     if (!user.roles.includes(user.role)) {
       user.roles = [...user.roles, user.role];
@@ -582,14 +550,19 @@ export async function handleDevApiMock<T>(
   }
 
   if (pathname === "/api/seller/orders" && method === "GET") {
-    return ok(tenant.seller) as T;
+    return ok({
+      headline: "Orders",
+      subhead: "Backend unavailable. Start the API server to load this seller's real orders.",
+      offlineNotice:
+        "Backend unavailable. No database orders are being shown in this view.",
+      orders: [],
+      returns: [],
+      disputes: [],
+    }) as T;
   }
 
   if (/^\/api\/seller\/orders\/[^/]+$/.test(pathname) && method === "GET") {
-    const id = decodeURIComponent(pathname.split("/").pop() || "");
-    return ok(
-      tenant.seller.orders.find((entry) => String(entry.id) === id) || null
-    ) as T;
+    return ok(null) as T;
   }
 
   if (pathname === "/api/seller/returns" && method === "GET") {

@@ -314,83 +314,11 @@ function BarList({ items }) {
 
 /* ---------------------------------- Seed ---------------------------------- */
 
-const suppliersSeed = [
-  {
-    id: "sp_evworld",
-    name: "EV World Store",
-    kind: "Seller",
-    avatarUrl: "https://images.unsplash.com/photo-1603791440384-56cd371ee9a7?auto=format&fit=crop&w=120&q=60"
-  },
-  {
-    id: "sp_glowup",
-    name: "GlowUp Hub",
-    kind: "Seller",
-    avatarUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?auto=format&fit=crop&w=120&q=60"
-  },
-  {
-    id: "sp_grace",
-    name: "Grace Living Studio",
-    kind: "Provider",
-    avatarUrl: "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=120&q=60"
-  }
-];
+const suppliersSeed = [];
 
-const campaignsSeed = [
-  {
-    id: "cp_ev_flash",
-    supplierId: "sp_evworld",
-    name: "EV Charger Flash Drop",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual"
-  },
-  {
-    id: "cp_tech_friday",
-    supplierId: "sp_evworld",
-    name: "Tech Friday Supplier-Hosted",
-    creatorUsage: "I will NOT use a Creator",
-    collabMode: "(n/a)",
-    approvalMode: "Manual"
-  },
-  {
-    id: "cp_wellness",
-    supplierId: "sp_grace",
-    name: "Wellness Booking Sprint",
-    creatorUsage: "I am NOT SURE yet",
-    collabMode: "Open for Collabs",
-    approvalMode: "Auto"
-  }
-];
+const campaignsSeed = [];
 
-const hostsSeed = [
-  {
-    id: "cr_1",
-    name: "Luna Ade",
-    handle: "@lunaade",
-    followers: "410k",
-    verified: true,
-    role: "Creator",
-    avatarUrl: "https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=256&q=60"
-  },
-  {
-    id: "cr_2",
-    name: "Noah K.",
-    handle: "@noahknows",
-    followers: "680k",
-    verified: true,
-    role: "Creator",
-    avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=60"
-  },
-  {
-    id: "sp_host_1",
-    name: "EV World Host Team",
-    handle: "@evworld",
-    followers: "—",
-    verified: true,
-    role: "Supplier",
-    avatarUrl: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=256&q=60"
-  }
-];
+const hostsSeed = [];
 
 function isoNowPlus(ms) {
   return new Date(Date.now() + ms).toISOString();
@@ -398,86 +326,7 @@ function isoNowPlus(ms) {
 
 const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const sessionsSeed = [
-  {
-    id: "ls_9001",
-    title: "EV Charger Flash Live: bundles + install tips",
-    status: "Scheduled",
-    supplierId: "sp_evworld",
-    campaignId: "cp_ev_flash",
-    hostId: "cr_1",
-    hostRole: "Creator",
-    platforms: ["TikTok Live", "Instagram Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1615906655593-ad0386982aef?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_1,
-    desktopMode: "modal",
-    startISO: isoNowPlus(1000 * 60 * 60 * 3),
-    endISO: isoNowPlus(1000 * 60 * 60 * 4),
-    peakViewers: 12400,
-    avgWatchMin: 11.2,
-    chatRate: 180,
-    gmv: 32840,
-    crewConflicts: 2
-  },
-  {
-    id: "ls_9002",
-    title: "Supplier-hosted Tech Friday: gadgets under $50",
-    status: "Draft",
-    supplierId: "sp_evworld",
-    campaignId: "cp_tech_friday",
-    hostId: "sp_host_1",
-    hostRole: "Supplier",
-    platforms: ["YouTube Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1518441902117-f0a80e5b0c17?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_1,
-    desktopMode: "fullscreen",
-    startISO: isoNowPlus(1000 * 60 * 60 * 28),
-    endISO: isoNowPlus(1000 * 60 * 60 * 29),
-    peakViewers: 0,
-    avgWatchMin: 0,
-    chatRate: 0,
-    gmv: 0,
-    crewConflicts: 0
-  },
-  {
-    id: "ls_9003",
-    title: "Wellness booking live: before/after + Q&A",
-    status: "Live",
-    supplierId: "sp_grace",
-    campaignId: "cp_wellness",
-    hostId: "cr_2",
-    hostRole: "Creator",
-    platforms: ["Instagram Live", "Facebook Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_1,
-    desktopMode: "modal",
-    startISO: isoNowPlus(-1000 * 60 * 15),
-    endISO: isoNowPlus(1000 * 60 * 45),
-    peakViewers: 3100,
-    avgWatchMin: 7.4,
-    chatRate: 92,
-    gmv: 5400
-  },
-  {
-    id: "ls_9004",
-    title: "Replay: pricing breakdown + honest Q&A",
-    status: "Ended",
-    supplierId: "sp_evworld",
-    campaignId: "cp_ev_flash",
-    hostId: "cr_1",
-    hostRole: "Creator",
-    platforms: ["TikTok Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_1,
-    desktopMode: "modal",
-    startISO: isoNowPlus(-1000 * 60 * 60 * 36),
-    endISO: isoNowPlus(-1000 * 60 * 60 * 35),
-    peakViewers: 11200,
-    avgWatchMin: 9.8,
-    chatRate: 150,
-    gmv: 27900
-  }
-];
+const sessionsSeed = [];
 
 /* ------------------------------ UI primitives ------------------------------ */
 
@@ -1397,7 +1246,7 @@ export default function SupplierLiveDashboardPage() {
   const [builderSessionId, setBuilderSessionId] = useState(undefined);
 
   // Pro hub context
-  const [toolSessionId, setToolSessionId] = useState(sessionsSeed[0]?.id || "");
+  const [toolSessionId, setToolSessionId] = useState("");
 
   // Active path highlight (mirrors isActivePath behavior)
   const [pathname, setPathname] = useState("");
@@ -1487,7 +1336,12 @@ export default function SupplierLiveDashboardPage() {
     return { live, upcoming, drafts, gmv };
   }, [sessions]);
 
-  const viewersTrend = useMemo(() => [9, 12, 14, 11, 15, 18, 16, 17, 20, 18, 22, 19, 24, 21], []);
+  const viewersTrend = useMemo(() => {
+    if (!sessions.length) return Array.from({ length: 14 }, () => 0);
+    const total = sessions.reduce((sum, session) => sum + Number(session.peakViewers || 0), 0);
+    const average = Math.round(total / Math.max(1, sessions.length));
+    return Array.from({ length: 14 }, (_, index) => Math.max(0, Math.round((average * (index + 1)) / 14)));
+  }, [sessions]);
 
   const byPlatform = useMemo(() => {
     const m = new Map();

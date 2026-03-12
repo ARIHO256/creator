@@ -132,179 +132,7 @@ function ConfirmModal({ isOpen, title, message, confirmText = "Confirm", confirm
 
 const CONTRACT_FILTERS = ["All", "Active", "Upcoming", "Completed", "Terminated"];
 
-const MOCK_CONTRACTS = [
-  {
-    id: "SC-201",
-    creator: "Lilian Beauty Plug",
-    campaign: "GlowUp Serum Promo",
-    period: "Feb 25 – Mar 20, 2026",
-    status: "Active",
-    currency: "USD",
-    value: 1200,
-    remainingTasks: 2,
-    totalTasks: 7,
-    payoutStatus: "Milestone 1 paid · Milestone 2 pending",
-    health: "On track",
-    healthScore: 84,
-
-    // Supplier campaign-level context
-    approvalMode: "Manual", // Manual | Auto
-    collabMode: "Open for Collabs",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: true,
-
-    deliverables: [
-      { id: "D-01", label: "Product brief sync call", due: "Feb 25", status: "Approved" },
-      { id: "D-02", label: "Live outline + CTA plan", due: "Feb 27", status: "Approved" },
-      { id: "D-03", label: "Clip #1 (hook + offer)", due: "Feb 29", status: "Submitted" },
-      { id: "D-04", label: "Clip #2 (routine demo)", due: "Mar 02", status: "Changes Requested" },
-      { id: "D-05", label: "Live session (60–75 mins)", due: "Mar 05", status: "Pending" },
-      { id: "D-06", label: "Replay captions + timestamps", due: "Mar 06", status: "Pending" },
-      { id: "D-07", label: "Performance report (48h post-live)", due: "Mar 08", status: "Pending" }
-    ],
-
-    schedule: [
-      { label: "Brief", start: 4, end: 18 },
-      { label: "Asset build", start: 18, end: 44 },
-      { label: "Live", start: 44, end: 56 },
-      { label: "Post", start: 56, end: 70 },
-      { label: "Reporting", start: 70, end: 86 }
-    ],
-
-    timeline: [
-      { date: "Feb 24", label: "Proposal accepted" },
-      { date: "Feb 25", label: "Contract signed + kickoff" },
-      { date: "Feb 27", label: "Outline approved" },
-      { date: "Feb 29", label: "Clip #1 submitted" },
-      { date: "Mar 02", label: "Changes requested on Clip #2" },
-      { date: "Mar 05", label: "Live scheduled" }
-    ]
-  },
-  {
-    id: "SC-202",
-    creator: "TechWithBrian",
-    campaign: "Tech Friday Mega",
-    period: "Mar 01 – Apr 05, 2026",
-    status: "Upcoming",
-    currency: "USD",
-    value: 1600,
-    remainingTasks: 5,
-    totalTasks: 9,
-    payoutStatus: "Deposit pending",
-    health: "At risk",
-    healthScore: 63,
-
-    approvalMode: "Auto",
-    collabMode: "Invite-Only",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: false,
-
-    deliverables: [
-      { id: "D-11", label: "Product list confirmation", due: "Mar 01", status: "Pending" },
-      { id: "D-12", label: "Episode #1 run-sheet", due: "Mar 03", status: "Pending" },
-      { id: "D-13", label: "Episode #1 live", due: "Mar 06", status: "Pending" },
-      { id: "D-14", label: "Episode #2 live", due: "Mar 13", status: "Pending" },
-      { id: "D-15", label: "Episode #3 live", due: "Mar 20", status: "Pending" },
-      { id: "D-16", label: "Series recap clip", due: "Mar 22", status: "Pending" },
-      { id: "D-17", label: "Final performance report", due: "Mar 25", status: "Pending" }
-    ],
-
-    schedule: [
-      { label: "Prep", start: 8, end: 28 },
-      { label: "Series", start: 28, end: 74 },
-      { label: "Recap", start: 74, end: 84 }
-    ],
-
-    timeline: [
-      { date: "Feb 20", label: "Invite accepted" },
-      { date: "Feb 22", label: "Contract drafted" },
-      { date: "Feb 25", label: "Awaiting deposit" }
-    ]
-  },
-  {
-    id: "SC-203",
-    creator: "Amina K.",
-    campaign: "Beauty Flash Dealz",
-    period: "Feb 10 – Feb 18, 2026",
-    status: "Completed",
-    currency: "USD",
-    value: 950,
-    remainingTasks: 0,
-    totalTasks: 6,
-    payoutStatus: "Fully paid",
-    health: "On track",
-    healthScore: 96,
-
-    approvalMode: "Manual",
-    collabMode: "Invite-Only",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: false,
-
-    deliverables: [
-      { id: "D-21", label: "Kickoff call", due: "Feb 10", status: "Approved" },
-      { id: "D-22", label: "Live outline", due: "Feb 11", status: "Approved" },
-      { id: "D-23", label: "Live session", due: "Feb 12", status: "Approved" },
-      { id: "D-24", label: "Clip #1", due: "Feb 13", status: "Approved" },
-      { id: "D-25", label: "Clip #2", due: "Feb 14", status: "Approved" },
-      { id: "D-26", label: "Final report", due: "Feb 16", status: "Approved" }
-    ],
-
-    schedule: [
-      { label: "Prep", start: 10, end: 30 },
-      { label: "Live", start: 30, end: 45 },
-      { label: "Post", start: 45, end: 70 },
-      { label: "Report", start: 70, end: 85 }
-    ],
-
-    timeline: [
-      { date: "Feb 09", label: "Proposal accepted" },
-      { date: "Feb 10", label: "Contract signed" },
-      { date: "Feb 12", label: "Live executed" },
-      { date: "Feb 16", label: "Report delivered" },
-      { date: "Feb 18", label: "Payout settled" }
-    ]
-  },
-  {
-    id: "SC-204",
-    creator: "EV Gadgets Daily",
-    campaign: "EV Accessories Launch",
-    period: "Jan 20 – Feb 01, 2026",
-    status: "Terminated",
-    currency: "USD",
-    value: 600,
-    remainingTasks: 0,
-    totalTasks: 5,
-    payoutStatus: "Partial pay · Dispute resolved",
-    health: "Terminated",
-    healthScore: 28,
-
-    approvalMode: "Manual",
-    collabMode: "Open for Collabs",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: true,
-
-    deliverables: [
-      { id: "D-31", label: "Kickoff", due: "Jan 20", status: "Approved" },
-      { id: "D-32", label: "Ad Creative #1", due: "Jan 22", status: "Rejected" },
-      { id: "D-33", label: "Ad Creative #2", due: "Jan 24", status: "Rejected" },
-      { id: "D-34", label: "Live demo", due: "Jan 28", status: "Pending" },
-      { id: "D-35", label: "Close-out report", due: "Jan 30", status: "Pending" }
-    ],
-
-    schedule: [
-      { label: "Prep", start: 6, end: 26 },
-      { label: "Assets", start: 26, end: 48 },
-      { label: "Live", start: 48, end: 60 }
-    ],
-
-    timeline: [
-      { date: "Jan 19", label: "Contract signed" },
-      { date: "Jan 22", label: "Creative rejected" },
-      { date: "Jan 25", label: "Renegotiation started" },
-      { date: "Jan 31", label: "Termination resolved" }
-    ]
-  }
-];
+const MOCK_CONTRACTS = [];
 
 /* ----------------------------- Subcomponents ---------------------------- */
 
@@ -921,7 +749,7 @@ function ContractDetail({ contract, onUpdateContract }) {
 
 export default function SupplierContractsPage() {
   const [activeFilter, setActiveFilter] = useState("Active");
-  const [selectedContractId, setSelectedContractId] = useState("SC-201");
+  const [selectedContractId, setSelectedContractId] = useState("");
 
   const [dataState, setDataState] = useState("ready"); // ready | loading | error
 
@@ -1099,7 +927,7 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
 
   assert(cx("a", false && "b", "c") === "a c", "cx joins truthy");
-  assert(Array.isArray(MOCK_CONTRACTS) && MOCK_CONTRACTS.length > 0, "mock contracts exist");
+  assert(Array.isArray(MOCK_CONTRACTS), "contracts seed is an array");
 
   console.log("✅ SupplierContractsPage self-tests passed");
 }

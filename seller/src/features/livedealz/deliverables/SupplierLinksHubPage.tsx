@@ -1462,15 +1462,13 @@ export default function SupplierLinksHubPage() {
   const [groupBy, setGroupBy] = useState("Campaign");
   const [supplierTypeFilter, setSupplierTypeFilter] = useState("All");
   const [selectedId, setSelectedId] = useState(null);
-  const [pinnedIds, setPinnedIds] = useState(["LIVE-102", "SHOP-311"]);
+  const [pinnedIds, setPinnedIds] = useState([]);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
 
   const [items, setItems] = useState(INITIAL_ITEMS);
 
   // Review note per link
-  const [reviewNotes, setReviewNotes] = useState({
-    "LIVE-102": "Please verify UTM campaign, ensure WhatsApp caption includes the correct CTA, and confirm region variants."
-  });
+  const [reviewNotes, setReviewNotes] = useState({});
 
   // Effective supplier filter when groupBy=Provider (mirror behavior)
   useEffect(() => {

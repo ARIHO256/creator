@@ -28,7 +28,7 @@ export class ApprovalsController {
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('market-approvals')
   create(@CurrentUser() user: RequestUser, @Body() body: CreateMarketApprovalDto) {
-    return this.service.create(user.sub, body);
+    return this.service.create(user.sub, user.role, body);
   }
 
   @Roles('SUPPORT', 'ADMIN')
