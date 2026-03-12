@@ -52,7 +52,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useRolePageContent } from '../../data/pageContent';
-import type { DashboardQuickAction } from '../../data/pageTypes';
+import type { DashboardQuickAction, DashboardContent } from '../../data/pageTypes';
 import type { UserRole } from '../../types/roles';
 import { sellerBackendApi } from '../../lib/backendApi';
 
@@ -1019,7 +1019,7 @@ export default function SupplierHubDashboardPage({
         : [];
       setCustomViews(safeCustom);
 
-      const savedDefault = String((uiStatePayload.dashboard as { defaultViewId?: string } | undefined)?.defaultViewId || 'all');
+      const savedDefault = String(((uiStatePayload as Record<string, any>)?.dashboard as { defaultViewId?: string } | undefined)?.defaultViewId || 'all');
       const universe = [...PRESET_VIEWS, ...safeCustom];
       const resolvedDefault =
         savedDefault && universe.some((v) => v.id === savedDefault) ? savedDefault : 'all';
@@ -1120,34 +1120,37 @@ export default function SupplierHubDashboardPage({
       'new-booking': CalendarRange,
     };
 
-    const quickActions = content.quickActions.map((action: DashboardQuickAction) => ({
+    const quickActions = (content.quickActions || []).map((action: DashboardQuickAction) => ({
       ...action,
       icon: quickActionIconByKey[action.key] ?? Plus,
     }));
 
     // HERO
+    const heroContent = content.hero || {} as DashboardContent['hero'];
+    const featuredContent = content.featured || {} as DashboardContent['featured'];
+    const basesContent = content.bases || { revenueBase: 0, ordersBase: 0, trustBase: 0 };
     const hero = {
       title: 'Congratulations',
-      name: content.hero.name,
-      sub: content.hero.sub,
-      cta: { label: content.hero.ctaLabel, to: content.hero.ctaTo },
+      name: heroContent.name || '',
+      sub: heroContent.sub || '',
+      cta: { label: heroContent.ctaLabel || '', to: heroContent.ctaTo || '' },
       miniBar: generateSeries(6, 10 * scale, 1.2, 2.4, seriesSeedBase + 11).map((n) => Math.round(n)),
       chip: {
         label: 'MyLiveDealz',
-        value: filterMeta.hasMLDZ ? content.hero.chipWhenMLDZ : content.hero.chipWhenNoMLDZ,
+        value: filterMeta.hasMLDZ ? (heroContent.chipWhenMLDZ || '') : (heroContent.chipWhenNoMLDZ || ''),
       },
     };
 
     const featured = {
-      title: content.featured.title,
-      sub: content.featured.sub,
-      cta: { label: content.featured.ctaLabel, to: content.featured.ctaTo },
+      title: featuredContent.title || '',
+      sub: featuredContent.sub || '',
+      cta: { label: featuredContent.ctaLabel || '', to: featuredContent.ctaTo || '' },
     };
 
     // KPI values that actually move with controls
-    const revenueBase = content.bases.revenueBase;
-    const ordersBase = content.bases.ordersBase;
-    const trustBase = content.bases.trustBase;
+    const revenueBase = basesContent.revenueBase || 0;
+    const ordersBase = basesContent.ordersBase || 0;
+    const trustBase = basesContent.trustBase || 0;
 
     const revenueRaw = revenueBase * scale;
     const ordersRaw = Math.max(

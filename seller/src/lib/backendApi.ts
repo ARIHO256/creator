@@ -1,10 +1,6 @@
 import { readSession } from "../auth/session";
-
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ??
-  "";
-
-const toUrl = (path: string) => `${API_BASE_URL}${path}`;
+import { resolveApiUrl } from "./apiRuntime";
+import { handleDevApiMock } from "./devApiMock";
 
 type BackendRequestError = Error & {
   status?: number;
@@ -23,7 +19,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(toUrl(path), { ...init, headers });
+  const url = await resolveApiUrl(path);
+  if (!url) {
+    return handleDevApiMock<T>(path, { ...init, headers });
+  }
+  const response = await fetch(url, { ...init, headers });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
 
@@ -209,7 +209,7 @@ export const sellerBackendApi = {
       method: "POST",
       body: JSON.stringify(body),
     }).catch((error: BackendRequestError) => {
-      if (error?.status === 404) {
+      if (error?.status === 404 || error?.status === 500) {
         return request<Record<string, unknown>>("/api/onboarding", {
           method: "PATCH",
           body: JSON.stringify(body),

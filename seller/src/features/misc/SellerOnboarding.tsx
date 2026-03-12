@@ -1588,7 +1588,8 @@ export default function SellerOnboardingProV4_JS() {
   const navigate = useNavigate();
   const location = useLocation();
   const sessionUser = useSession();
-  const sellerTaxonomy = useSellerTaxonomy();
+  const sellerTaxonomyQuery = useSellerTaxonomy();
+  const sellerTaxonomy = sellerTaxonomyQuery.taxonomy;
 
   const [ui, setUi] = useState(() => ({
     theme: "light",
@@ -2602,7 +2603,8 @@ export default function SellerOnboardingProV4_JS() {
           },
         }),
       ]);
-    } catch {
+    } catch (submitError) {
+      console.error("[SellerOnboarding] Submit failed:", submitError);
       setToast({
         tone: "error",
         title: "Submit failed",
@@ -3525,6 +3527,7 @@ export default function SellerOnboardingProV4_JS() {
                       selections={form.taxonomySelections || []}
                       onChange={handleTaxonomySelectionsUpdate}
                       taxonomyData={sellerTaxonomy}
+                      onRetry={sellerTaxonomyQuery.refetch}
                       disabled={isLocked}
                     />
                     <div className="mt-2 text-xs text-[var(--ev-subtle)]">

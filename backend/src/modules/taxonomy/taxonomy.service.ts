@@ -757,55 +757,115 @@ export class TaxonomyService {
     description: string;
     nodes: SeedTaxonomyNode[];
   }) {
-    await this.prisma.taxonomyTree.upsert({
-      where: { id: config.treeId },
-      update: {
-        slug: config.slug,
-        name: config.name,
-        description: config.description,
-        status: 'ACTIVE'
-      },
-      create: {
-        id: config.treeId,
-        slug: config.slug,
-        name: config.name,
-        description: config.description,
-        status: 'ACTIVE'
-      }
+    const treeBySlug = await this.prisma.taxonomyTree.findUnique({
+      where: { slug: config.slug }
     });
+    const treeById =
+      treeBySlug?.id === config.treeId
+        ? treeBySlug
+        : await this.prisma.taxonomyTree.findUnique({
+            where: { id: config.treeId }
+          });
+
+    const tree = treeBySlug
+      ? await this.prisma.taxonomyTree.update({
+          where: { id: treeBySlug.id },
+          data: {
+            name: config.name,
+            description: config.description,
+            status: 'ACTIVE'
+          }
+        })
+      : treeById
+        ? await this.prisma.taxonomyTree.update({
+            where: { id: treeById.id },
+            data: {
+              slug: config.slug,
+              name: config.name,
+              description: config.description,
+              status: 'ACTIVE'
+            }
+          })
+        : await this.prisma.taxonomyTree.create({
+            data: {
+              id: config.treeId,
+              slug: config.slug,
+              name: config.name,
+              description: config.description,
+              status: 'ACTIVE'
+            }
+          });
 
     const flatNodes = this.flattenSeedNodes(config.nodes);
+    const resolvedNodeIds = new Map<string, string>();
     for (const node of flatNodes) {
-      await this.prisma.taxonomyNode.upsert({
-        where: { id: node.id },
-        update: {
-          treeId: config.treeId,
-          parentId: node.parentId,
-          name: node.name,
-          slug: node.slug,
-          kind: node.kind,
-          description: node.description,
-          path: node.path,
-          depth: node.depth,
-          sortOrder: node.sortOrder,
-          isActive: true,
-          metadata: node.metadata
-        },
-        create: {
-          id: node.id,
-          treeId: config.treeId,
-          parentId: node.parentId,
-          name: node.name,
-          slug: node.slug,
-          kind: node.kind,
-          description: node.description,
-          path: node.path,
-          depth: node.depth,
-          sortOrder: node.sortOrder,
-          isActive: true,
-          metadata: node.metadata
+      const resolvedParentId = node.parentId ? resolvedNodeIds.get(node.parentId) ?? node.parentId : null;
+      const existingByPath = await this.prisma.taxonomyNode.findUnique({
+        where: {
+          treeId_path: {
+            treeId: tree.id,
+            path: node.path
+          }
         }
       });
+      const existingById =
+        existingByPath?.id === node.id
+          ? existingByPath
+          : await this.prisma.taxonomyNode.findUnique({
+              where: { id: node.id }
+            });
+
+      const persisted = existingByPath
+        ? await this.prisma.taxonomyNode.update({
+            where: { id: existingByPath.id },
+            data: {
+              parentId: resolvedParentId,
+              name: node.name,
+              slug: node.slug,
+              kind: node.kind,
+              description: node.description,
+              path: node.path,
+              depth: node.depth,
+              sortOrder: node.sortOrder,
+              isActive: true,
+              metadata: node.metadata
+            }
+          })
+        : existingById
+          ? await this.prisma.taxonomyNode.update({
+              where: { id: existingById.id },
+              data: {
+                treeId: tree.id,
+                parentId: resolvedParentId,
+                name: node.name,
+                slug: node.slug,
+                kind: node.kind,
+                description: node.description,
+                path: node.path,
+                depth: node.depth,
+                sortOrder: node.sortOrder,
+                isActive: true,
+                metadata: node.metadata
+              }
+            })
+          : await this.prisma.taxonomyNode.create({
+              data: {
+                id: node.id,
+                treeId: tree.id,
+                parentId: resolvedParentId,
+                name: node.name,
+                slug: node.slug,
+                kind: node.kind,
+                description: node.description,
+                path: node.path,
+                depth: node.depth,
+                sortOrder: node.sortOrder,
+                isActive: true,
+                metadata: node.metadata
+              }
+            });
+
+      resolvedNodeIds.set(node.id, persisted.id);
     }
   }
 
@@ -816,7 +876,7 @@ export class TaxonomyService {
     depth = 0
   ): FlatSeedTaxonomyNode[] {
     return nodes.flatMap((node, index) => {
-      const slug = this.normalizeSlug(node.name);
+      const slug = this.normalizeSlug(node.id || node.name);
       const path = parentPath ? `${parentPath}/${slug}` : `/${slug}`;
       const current: FlatSeedTaxonomyNode = {
         id: node.id,

@@ -1,9 +1,7 @@
 import type { Session } from "../types/session";
 import type { UserRole } from "../types/roles";
-
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ??
-  "";
+import { resolveApiUrl } from "./apiRuntime";
+import { handleDevApiMock } from "./devApiMock";
 
 type LoginResponse = {
   accessToken: string;
@@ -29,14 +27,16 @@ type MeResponse = {
   } | null;
 };
 
-const toUrl = (path: string) => `${API_BASE_URL}${path}`;
-
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const headers = new Headers(init?.headers ?? {});
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const response = await fetch(toUrl(path), { ...init, headers });
+  const url = await resolveApiUrl(path);
+  if (!url) {
+    return handleDevApiMock<T>(path, { ...init, headers });
+  }
+  const response = await fetch(url, { ...init, headers });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
   if (!response.ok) {

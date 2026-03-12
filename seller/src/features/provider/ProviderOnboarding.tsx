@@ -2717,7 +2717,8 @@ export default function ProviderOnboardingProV4_JS() {
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
-  const serviceTaxonomy = useProviderServiceTaxonomy();
+  const serviceTaxonomyQuery = useProviderServiceTaxonomy();
+  const serviceTaxonomy = serviceTaxonomyQuery.taxonomy;
   const sessionUser = useSession();
 
   const [ui, setUi] = useState<{ step: number }>(() => {
@@ -4745,6 +4746,7 @@ export default function ProviderOnboardingProV4_JS() {
                         onChange={(next) => setF({ categories: next.map((entry) => entry.nodeId) })}
                         disabled={isLocked}
                         taxonomyData={serviceTaxonomy}
+                        onRetry={serviceTaxonomyQuery.refetch}
                         types={{
                           marketplace: 'Service Marketplace',
                           family: 'Service Family',

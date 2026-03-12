@@ -1284,7 +1284,8 @@ function ProductLinesManagerFullPage({
 }
 
 export default function SupplierHubProfileStorefrontPage() {
-  const taxonomy = useSellerTaxonomy();
+  const taxonomyQuery = useSellerTaxonomy();
+  const taxonomy = taxonomyQuery.taxonomy;
   const [toasts, setToasts] = useState<Toast[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
