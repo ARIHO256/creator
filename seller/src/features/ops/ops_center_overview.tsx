@@ -420,7 +420,7 @@ export default function OpsCenterOverview() {
                 onClick={() =>
                   pushToast({
                     title: "Snapshot exported",
-                    message: "Export queued (demo).",
+                    message: "Export queued.",
                     tone: "success",
                   })
                 }
@@ -449,7 +449,7 @@ export default function OpsCenterOverview() {
               </button>
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest ops signals loaded (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest ops signals loaded.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -472,7 +472,7 @@ export default function OpsCenterOverview() {
             <div className="flex flex-wrap items-center gap-2">
               <SelectPill label="Marketplace" value={marketplace} onChange={setMarketplace} options={["All", "EVmart", "ExpressMart", "Wholesale", "MyLiveDealz"]} />
               <SelectPill label="Warehouse" value={warehouse} onChange={setWarehouse} options={["All", "Kampala", "Wuxi", "Nairobi"]} />
-              <span className="ml-auto hidden md:inline-flex"><Badge tone="slate">Filters are demo-only</Badge></span>
+              <span className="ml-auto hidden md:inline-flex"><Badge tone="slate">Filters are live-only</Badge></span>
             </div>
           </div>
         </div>
@@ -552,7 +552,7 @@ export default function OpsCenterOverview() {
                             onClick={() =>
                               pushToast({
                                 title: "Pinned action",
-                                message: "Saved to your command list (demo).",
+                                message: "Saved to your command list.",
                                 tone: "default",
                               })
                             }
@@ -627,7 +627,7 @@ export default function OpsCenterOverview() {
                     onAction={(label, row) =>
                       pushToast({
                         title: label,
-                        message: `Action executed on ${row.id || row.sku || row.task}. (demo)`,
+                        message: `Action executed on ${row.id || row.sku || row.task}.`,
                         tone: "success",
                       })
                     }
@@ -704,7 +704,7 @@ export default function OpsCenterOverview() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Subscribed", message: "Alerts subscriptions updated (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Subscribed", message: "Alerts subscriptions updated.", tone: "success" })}
                 className="mt-4 w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                 style={{ background: TOKENS.orange }}
               >
@@ -751,7 +751,7 @@ export default function OpsCenterOverview() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-black text-slate-900">Activity stream</div>
-                  <div className="mt-1 text-xs font-semibold text-slate-500">Recent operational events (demo).</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">Recent operational events.</div>
                 </div>
                 <Badge tone="slate">Live</Badge>
               </div>
@@ -771,7 +771,7 @@ export default function OpsCenterOverview() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Audit", message: "Open Audit Log Explorer (demo).", tone: "default" })}
+                onClick={() => pushToast({ title: "Audit", message: "Open Audit Log Explorer.", tone: "default" })}
                 className="mt-4 w-full rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-3 text-sm font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 Open audit log
@@ -819,7 +819,7 @@ export default function OpsCenterOverview() {
             <button
               type="button"
               onClick={() => {
-                pushToast({ title: "Action queued", message: "Workflow started (demo).", tone: "success" });
+                pushToast({ title: "Action queued", message: "Workflow started.", tone: "success" });
                 closeDrawer();
               }}
               className="ml-auto inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"

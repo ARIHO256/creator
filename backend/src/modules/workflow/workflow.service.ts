@@ -8,6 +8,8 @@ import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
+import { PROVIDER_SERVICE_TAXONOMY_TREE_SLUG } from '../taxonomy/provider-service-taxonomy.js';
+import { SELLER_CATALOG_TAXONOMY_TREE_SLUG } from '../taxonomy/seller-catalog-taxonomy.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
 import { UpdateAccountApprovalDecisionDto } from './dto/update-account-approval-decision.dto.js';
@@ -20,6 +22,95 @@ import {
   RESERVED_SELLER_SLUGS,
   sellerSlugToHandle
 } from './onboarding-state.js';
+
+const DEFAULT_ONBOARDING_LOOKUPS = {
+  payoutMethods: [
+    {
+      value: 'bank_account',
+      label: 'Bank account',
+      helper: 'Local or international bank settlement.'
+    },
+    {
+      value: 'mobile_money',
+      label: 'Mobile money',
+      helper: 'MTN, Airtel and other wallet providers.'
+    },
+    {
+      value: 'alipay',
+      label: 'Alipay',
+      helper: 'For payouts to Mainland China or Hong Kong.'
+    },
+    {
+      value: 'wechat_pay',
+      label: 'WeChat Pay (Weixin Pay)',
+      helper: 'For payouts to WeChat wallets.'
+    },
+    {
+      value: 'other_local',
+      label: 'Other payout method',
+      helper: 'Cheque, local wallet or regional solution.'
+    }
+  ],
+  payoutCurrencies: ['USD', 'EUR', 'CNY', 'UGX', 'KES', 'TZS', 'RWF', 'ZAR'],
+  payoutRhythms: [
+    { value: 'daily', label: 'Daily', helper: 'Payouts generated every business day.' },
+    { value: 'weekly', label: 'Weekly', helper: 'Payouts grouped once per week.' },
+    { value: 'monthly', label: 'Monthly', helper: 'Payouts grouped at month end.' },
+    {
+      value: 'on_threshold',
+      label: 'When balance reaches a threshold',
+      helper: 'We pay out once your balance reaches a minimum amount.'
+    }
+  ],
+  mobileMoneyProviders: [
+    { value: 'MTN Mobile Money', label: 'MTN Mobile Money' },
+    { value: 'Airtel Money', label: 'Airtel Money' },
+    { value: 'M-Pesa', label: 'M-Pesa' },
+    { value: 'Safaricom', label: 'Safaricom' },
+    { value: 'Orange Money', label: 'Orange Money' },
+    { value: 'Wave', label: 'Wave' }
+  ],
+  mobileIdTypes: [
+    { value: 'national_id', label: 'National ID' },
+    { value: 'passport', label: 'Passport' },
+    { value: 'drivers_license', label: "Driver's License" },
+    { value: 'tax_id', label: 'Tax ID' },
+    { value: 'residence_permit', label: 'Residence Permit' },
+    { value: 'voter_id', label: 'Voter ID' }
+  ],
+  payoutRegions: {
+    alipay: [
+      { value: 'mainland', label: 'Mainland China' },
+      { value: 'hong_kong', label: 'Hong Kong SAR' },
+      { value: 'other', label: 'Other region' }
+    ],
+    wechat: [
+      { value: 'mainland', label: 'Mainland China' },
+      { value: 'hong_kong', label: 'Hong Kong SAR' },
+      { value: 'other', label: 'Other region' }
+    ]
+  },
+  policyPresets: [
+    {
+      id: 'standard',
+      label: 'Standard',
+      desc: 'Balanced defaults for most sellers.',
+      patch: { returnsDays: '7', warrantyDays: '90', handlingTimeDays: '2' }
+    },
+    {
+      id: 'fast',
+      label: 'Fast',
+      desc: 'Optimized for high conversion (quick dispatch).',
+      patch: { returnsDays: '7', warrantyDays: '30', handlingTimeDays: '1' }
+    },
+    {
+      id: 'strict',
+      label: 'Strict',
+      desc: 'Lower returns risk (use carefully by category).',
+      patch: { returnsDays: '3', warrantyDays: '0', handlingTimeDays: '3' }
+    }
+  ]
+};
 
 @Injectable()
 export class WorkflowService {
@@ -84,6 +175,51 @@ export class WorkflowService {
       : createDefaultOnboardingState(profileType);
   }
 
+  async onboardingLookups() {
+    const existing = await this.prisma.systemContent.findUnique({
+      where: { key: 'onboarding_lookups' }
+    });
+    const payload =
+      existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
+        ? (existing.payload as Record<string, unknown>)
+        : {};
+    const payoutRegions =
+      payload.payoutRegions && typeof payload.payoutRegions === 'object' && !Array.isArray(payload.payoutRegions)
+        ? (payload.payoutRegions as Record<string, unknown>)
+        : {};
+
+    return {
+      ...DEFAULT_ONBOARDING_LOOKUPS,
+      ...payload,
+      payoutMethods: Array.isArray(payload.payoutMethods)
+        ? payload.payoutMethods
+        : DEFAULT_ONBOARDING_LOOKUPS.payoutMethods,
+      payoutCurrencies: Array.isArray(payload.payoutCurrencies)
+        ? payload.payoutCurrencies
+        : DEFAULT_ONBOARDING_LOOKUPS.payoutCurrencies,
+      payoutRhythms: Array.isArray(payload.payoutRhythms)
+        ? payload.payoutRhythms
+        : DEFAULT_ONBOARDING_LOOKUPS.payoutRhythms,
+      mobileMoneyProviders: Array.isArray(payload.mobileMoneyProviders)
+        ? payload.mobileMoneyProviders
+        : DEFAULT_ONBOARDING_LOOKUPS.mobileMoneyProviders,
+      mobileIdTypes: Array.isArray(payload.mobileIdTypes)
+        ? payload.mobileIdTypes
+        : DEFAULT_ONBOARDING_LOOKUPS.mobileIdTypes,
+      payoutRegions: {
+        alipay: Array.isArray(payoutRegions.alipay)
+          ? payoutRegions.alipay
+          : DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.alipay,
+        wechat: Array.isArray(payoutRegions.wechat)
+          ? payoutRegions.wechat
+          : DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.wechat
+      },
+      policyPresets: Array.isArray(payload.policyPresets)
+        ? payload.policyPresets
+        : DEFAULT_ONBOARDING_LOOKUPS.policyPresets
+    };
+  }
+
   async slugAvailability(userId: string, slug: string) {
     const normalizedSlug = sellerSlugToHandle(slug);
 
@@ -131,6 +267,8 @@ export class WorkflowService {
     await this.upsertRecord(userId, 'onboarding', 'main', submitted);
     await this.syncSellerProfile(userId, submitted);
     await this.syncTaxonomySelections(userId, submitted);
+    await this.syncOperationalSetupFromOnboarding(userId, submitted);
+    await this.syncUserAccessFromOnboarding(userId, submitted);
     await this.syncAccountApprovalFromOnboarding(userId, submitted);
     await this.jobsService.enqueue({
       queue: 'workflow',
@@ -363,7 +501,11 @@ export class WorkflowService {
     if (nodeIds.length === 0) {
       return;
     }
-    await this.taxonomyService.assertNodesInActiveTree(nodeIds);
+    const treeIdentifier =
+      onboarding.profileType === 'PROVIDER'
+        ? PROVIDER_SERVICE_TAXONOMY_TREE_SLUG
+        : SELLER_CATALOG_TAXONOMY_TREE_SLUG;
+    await this.taxonomyService.assertNodesInTree(treeIdentifier, nodeIds);
   }
 
   private async syncTaxonomySelections(userId: string, onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
@@ -379,14 +521,171 @@ export class WorkflowService {
         ? (onboarding.taxonomySelection as any).nodeId
         : null;
     const primaryNodeId = selectionNodeId ?? nodeIds[0];
-    await this.taxonomyService.syncSellerCoverage(userId, nodeIds);
-    await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId);
+    const treeIdentifier =
+      onboarding.profileType === 'PROVIDER'
+        ? PROVIDER_SERVICE_TAXONOMY_TREE_SLUG
+        : SELLER_CATALOG_TAXONOMY_TREE_SLUG;
+    await this.taxonomyService.syncSellerCoverage(userId, nodeIds, treeIdentifier);
+    await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId, treeIdentifier);
+  }
+
+  private async syncOperationalSetupFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (onboarding.profileType !== 'SELLER' && onboarding.profileType !== 'PROVIDER') {
+      return;
+    }
+
+    const seller = await this.prisma.seller.findUnique({
+      where: { userId },
+      include: {
+        warehouses: true,
+        shippingProfiles: true
+      }
+    });
+
+    if (!seller) {
+      return;
+    }
+
+    const onboardingWarehouse = seller.warehouses.find((warehouse) => {
+      const metadata =
+        warehouse.metadata && typeof warehouse.metadata === 'object' && !Array.isArray(warehouse.metadata)
+          ? (warehouse.metadata as Record<string, unknown>)
+          : {};
+      return metadata.source === 'onboarding';
+    });
+
+    const hasWarehouseAddress = Boolean(
+      onboarding.shipFrom.address1 || onboarding.shipFrom.address2 || onboarding.shipFrom.city || onboarding.shipFrom.country
+    );
+
+    if (hasWarehouseAddress && (onboardingWarehouse || seller.warehouses.length === 0)) {
+      if (onboardingWarehouse) {
+        await this.prisma.sellerWarehouse.update({
+          where: { id: onboardingWarehouse.id },
+          data: {
+            name: onboarding.storeName ? `${onboarding.storeName} primary warehouse` : onboardingWarehouse.name,
+            isDefault: true,
+            address: {
+              line1: onboarding.shipFrom.address1 || '',
+              line2: onboarding.shipFrom.address2 || '',
+              city: onboarding.shipFrom.city || '',
+              province: onboarding.shipFrom.province || '',
+              country: onboarding.shipFrom.country || '',
+              postalCode: onboarding.shipFrom.postalCode || ''
+            } as Prisma.InputJsonValue,
+            contact: {
+              email: onboarding.support.email || onboarding.email || '',
+              phone: onboarding.support.phone || onboarding.phone || '',
+              whatsapp: onboarding.support.whatsapp || ''
+            } as Prisma.InputJsonValue,
+            metadata: {
+              source: 'onboarding',
+              profileType: onboarding.profileType
+            } as Prisma.InputJsonValue
+          }
+        });
+      } else {
+        await this.prisma.sellerWarehouse.create({
+          data: {
+            sellerId: seller.id,
+            name: onboarding.storeName ? `${onboarding.storeName} primary warehouse` : 'Primary warehouse',
+            type: 'WAREHOUSE',
+            status: 'ACTIVE',
+            isDefault: true,
+            address: {
+              line1: onboarding.shipFrom.address1 || '',
+              line2: onboarding.shipFrom.address2 || '',
+              city: onboarding.shipFrom.city || '',
+              province: onboarding.shipFrom.province || '',
+              country: onboarding.shipFrom.country || '',
+              postalCode: onboarding.shipFrom.postalCode || ''
+            } as Prisma.InputJsonValue,
+            contact: {
+              email: onboarding.support.email || onboarding.email || '',
+              phone: onboarding.support.phone || onboarding.phone || '',
+              whatsapp: onboarding.support.whatsapp || ''
+            } as Prisma.InputJsonValue,
+            metadata: {
+              source: 'onboarding',
+              profileType: onboarding.profileType
+            } as Prisma.InputJsonValue
+          }
+        });
+      }
+    }
+
+    const shippingProfileId = onboarding.shipping.profileId || '';
+    const matchingProfile = shippingProfileId
+      ? seller.shippingProfiles.find((profile) => profile.id === shippingProfileId)
+      : seller.shippingProfiles.find((profile) => {
+          const metadata =
+            profile.metadata && typeof profile.metadata === 'object' && !Array.isArray(profile.metadata)
+              ? (profile.metadata as Record<string, unknown>)
+              : {};
+          return metadata.source === 'onboarding';
+        });
+    const shouldPersistShippingProfile = Boolean(
+      onboarding.shipping.handlingTimeDays !== null ||
+        onboarding.shipping.expressReady ||
+        onboarding.policies.returnsDays !== null ||
+        onboarding.policies.warrantyDays !== null ||
+        onboarding.shipFrom.country
+    );
+
+    if (!shouldPersistShippingProfile) {
+      return;
+    }
+
+    const shippingData = {
+      name: onboarding.shipping.expressReady ? 'Express shipping' : 'Standard shipping',
+      description:
+        onboarding.policies.policyNotes ||
+        (onboarding.shipping.expressReady
+          ? 'Shipping profile created from seller onboarding with express fulfillment enabled.'
+          : 'Shipping profile created from seller onboarding.'),
+      status: 'ACTIVE' as const,
+      carrier: null,
+      serviceLevel: onboarding.shipping.expressReady ? 'Express' : 'Standard',
+      handlingTimeDays: onboarding.shipping.handlingTimeDays,
+      regions: Array.from(
+        new Set([onboarding.shipFrom.country, onboarding.tax.taxCountry].filter(Boolean))
+      ) as Prisma.InputJsonValue,
+      isDefault: true,
+      metadata: {
+        source: 'onboarding',
+        profileType: onboarding.profileType,
+        expressReady: onboarding.shipping.expressReady,
+        returnsDays: onboarding.policies.returnsDays,
+        warrantyDays: onboarding.policies.warrantyDays
+      } as Prisma.InputJsonValue
+    };
+
+    if (matchingProfile) {
+      await this.prisma.shippingProfile.update({
+        where: { id: matchingProfile.id },
+        data: shippingData
+      });
+      return;
+    }
+
+    if (seller.shippingProfiles.length === 0) {
+      await this.prisma.shippingProfile.create({
+        data: {
+          sellerId: seller.id,
+          ...shippingData
+        }
+      });
+    }
   }
 
   private async syncAccountApprovalFromOnboarding(
     userId: string,
     onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
   ) {
+    const autoApproved = this.shouldAutoApproveSubmittedOnboarding(onboarding.profileType);
     const current = await this.getRecordPayload(userId, 'account_approval', 'main');
     const documents = Array.isArray(onboarding.docs?.list)
       ? onboarding.docs.list.map((doc: Record<string, unknown>, index: number) => ({
@@ -402,7 +701,12 @@ export class WorkflowService {
     const metadata = {
       ...((current?.metadata as Record<string, unknown> | undefined) ?? {}),
       source: 'onboarding',
-      uiStatus: current?.status === 'approved' ? 'Approved' : 'Submitted',
+      uiStatus:
+        current?.status === 'approved' || autoApproved
+          ? 'Approved'
+          : current?.status === 'rejected'
+            ? 'Rejected'
+            : 'Submitted',
       profileType: onboarding.profileType,
       submissionSnapshot: {
         owner: onboarding.owner,
@@ -420,15 +724,52 @@ export class WorkflowService {
 
     await this.upsertRecord(userId, 'account_approval', 'main', {
       ...(current ?? {}),
-      status: current?.status === 'approved' ? 'approved' : current?.status === 'rejected' ? 'rejected' : 'pending',
-      progressPercent:
-        typeof current?.progressPercent === 'number' ? current.progressPercent : onboarding.status === 'submitted' ? 15 : 5,
+      status: autoApproved
+        ? 'approved'
+        : current?.status === 'approved'
+          ? 'approved'
+          : current?.status === 'rejected'
+            ? 'rejected'
+            : 'pending',
+      progressPercent: autoApproved
+        ? 100
+        : typeof current?.progressPercent === 'number'
+          ? current.progressPercent
+          : onboarding.status === 'submitted'
+            ? 15
+            : 5,
       submittedAt:
         typeof current?.submittedAt === 'string' && current.submittedAt ? current.submittedAt : onboarding.submittedAt ?? new Date().toISOString(),
       reviewNotes: typeof current?.reviewNotes === 'string' ? current.reviewNotes : '',
       requiredActions,
       documents,
+      approvedAt: autoApproved
+        ? (typeof current?.approvedAt === 'string' && current.approvedAt
+            ? current.approvedAt
+            : onboarding.submittedAt ?? new Date().toISOString())
+        : (current?.approvedAt ?? null),
       metadata
+    });
+  }
+
+  private shouldAutoApproveSubmittedOnboarding(profileType: string) {
+    return profileType === 'SELLER' || profileType === 'PROVIDER';
+  }
+
+  private async syncUserAccessFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (!this.shouldAutoApproveSubmittedOnboarding(onboarding.profileType)) {
+      return;
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        approvalStatus: 'APPROVED',
+        onboardingCompleted: true
+      }
     });
   }
 

@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DisputeStatus, OrderStatus, Prisma, ReturnStatus, TransactionStatus, UserRole } from '@prisma/client';
+import { DisputeStatus, OrderStatus, Prisma, ReturnStatus, SellerKind, TransactionStatus, UserRole } from '@prisma/client';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { JobsWorker } from '../jobs/jobs.worker.js';
+
+const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
 
 @Injectable()
 export class DashboardService {
@@ -155,10 +157,17 @@ export class DashboardService {
       }
     });
 
-    if (user?.role === UserRole.SELLER || user?.role === UserRole.PROVIDER) {
+    if (user?.role === UserRole.SELLER) {
+      const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
       const [activeListings, openOrders] = await Promise.all([
         this.prisma.marketplaceListing.count({ where: { userId, status: 'ACTIVE' } }),
-        this.prisma.order.count({ where: { seller: { userId }, status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] } } })
+        this.prisma.order.count({
+          where: {
+            seller: { userId },
+            status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] },
+            ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+          }
+        })
       ]);
 
       return {
@@ -170,6 +179,25 @@ export class DashboardService {
         quickStats: [
           { label: 'Active listings', value: activeListings },
           { label: 'Open orders', value: openOrders }
+        ]
+      };
+    }
+
+    if (user?.role === UserRole.PROVIDER) {
+      const [openQuotes, activeBookings] = await Promise.all([
+        this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
+        this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } })
+      ]);
+
+      return {
+        role: user.role,
+        hero: {
+          title: user.sellerProfile?.displayName ?? 'Provider workspace',
+          subtitle: 'Quotes, bookings, consultations, and service delivery in one backend.'
+        },
+        quickStats: [
+          { label: 'Open quotes', value: openQuotes },
+          { label: 'Active bookings', value: activeBookings }
         ]
       };
     }
@@ -210,18 +238,14 @@ export class DashboardService {
       if (!roles.length && user.role) {
         roles.push(user.role);
       }
-      const isCreator = roles.includes(UserRole.CREATOR);
-      const isSeller = roles.includes(UserRole.SELLER);
-      const isProvider = roles.includes(UserRole.PROVIDER);
-
       const activeRole = user.role ?? UserRole.CREATOR;
       const snapshot = await this.loadSnapshot(userId, activeRole);
       if (snapshot) {
         return snapshot;
       }
 
-      const sellerProfile = isSeller || isProvider
-        ? await this.prisma.seller.findFirst({ where: { userId } })
+      const sellerProfile = activeRole === UserRole.SELLER
+        ? await this.prisma.seller.findFirst({ where: { userId, kind: { not: SellerKind.PROVIDER } } })
         : null;
 
       const [campaignCount, pendingProposals, openTasks] = await Promise.all([
@@ -229,14 +253,18 @@ export class DashboardService {
           where: {
             ...(sellerProfile
               ? { sellerId: sellerProfile.id, status: { in: ['OPEN', 'NEGOTIATION', 'ACTIVE'] } }
-              : { OR: [{ creatorId: userId }, { createdByUserId: userId }], status: { in: ['OPEN', 'NEGOTIATION', 'ACTIVE'] } })
+              : activeRole === UserRole.CREATOR
+                ? { OR: [{ creatorId: userId }, { createdByUserId: userId }], status: { in: ['OPEN', 'NEGOTIATION', 'ACTIVE'] } }
+                : { id: '__none__' })
           }
         }),
         this.prisma.proposal.count({
           where: {
             ...(sellerProfile
               ? { sellerId: sellerProfile.id, status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] } }
-              : { creatorId: userId, status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] } })
+              : activeRole === UserRole.CREATOR
+                ? { creatorId: userId, status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] } }
+                : { id: '__none__' })
           }
         }),
         this.prisma.task.count({
@@ -270,18 +298,23 @@ export class DashboardService {
       };
 
       const reviewAverage = await this.prisma.review.aggregate({
-        where: { subjectUserId: userId, status: 'PUBLISHED' },
+        where: { subjectUserId: userId, subjectType: this.reviewSubjectForRole(activeRole), status: 'PUBLISHED' },
         _avg: { ratingOverall: true },
         _count: { _all: true }
       });
       const repliedCount = await this.prisma.review.count({
-        where: { subjectUserId: userId, status: 'PUBLISHED', replies: { some: {} } }
+        where: { subjectUserId: userId, subjectType: this.reviewSubjectForRole(activeRole), status: 'PUBLISHED', replies: { some: {} } }
       });
       const needsReply = await this.prisma.review.count({
-        where: { subjectUserId: userId, status: 'PUBLISHED', requiresResponse: true, replies: { none: {} } }
+        where: { subjectUserId: userId, subjectType: this.reviewSubjectForRole(activeRole), status: 'PUBLISHED', requiresResponse: true, replies: { none: {} } }
       });
       const negativeCount = await this.prisma.review.count({
-        where: { subjectUserId: userId, status: 'PUBLISHED', sentiment: { in: ['negative', 'NEGATIVE'] } }
+        where: {
+          subjectUserId: userId,
+          subjectType: this.reviewSubjectForRole(activeRole),
+          status: 'PUBLISHED',
+          sentiment: { in: ['negative', 'NEGATIVE'] }
+        }
       });
 
       const reviewTotal = reviewAverage._count._all ?? 0;
@@ -290,10 +323,10 @@ export class DashboardService {
       const negativePct = reviewTotal ? (negativeCount / reviewTotal) * 100 : 0;
       const trustScore = this.computeTrustScore(averageRating, responseRate, negativePct);
 
-      const sellerMetrics = sellerProfile
+      const sellerMetrics = activeRole === UserRole.SELLER && sellerProfile
         ? await this.buildSellerMetrics(userId, sellerProfile.id)
         : null;
-      const providerMetrics = isProvider ? await this.buildProviderMetrics(userId) : null;
+      const providerMetrics = activeRole === UserRole.PROVIDER ? await this.buildProviderMetrics(userId) : null;
 
       const summary = {
         role: user.role ?? UserRole.CREATOR,
@@ -319,18 +352,51 @@ export class DashboardService {
   }
 
   async myDay(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const activeRole = user?.role ?? UserRole.CREATOR;
+    const tasksPromise = this.prisma.task.findMany({
+      where: {
+        OR: [{ assigneeUserId: userId }, { createdByUserId: userId }]
+      },
+      take: 5,
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    if (activeRole === UserRole.PROVIDER) {
+      const [tasks, bookings, consultations] = await Promise.all([
+        tasksPromise,
+        this.prisma.providerBooking.findMany({
+          where: { userId },
+          take: 3,
+          orderBy: { updatedAt: 'desc' }
+        }),
+        this.prisma.providerConsultation.findMany({
+          where: { userId },
+          take: 2,
+          orderBy: { updatedAt: 'desc' }
+        })
+      ]);
+
+      return {
+        agenda: [
+          ...bookings.map((booking) => `Booking ${booking.id} (${booking.status})`),
+          ...consultations.map((consultation) => `Consultation ${consultation.id} (${consultation.status})`)
+        ],
+        tasks: tasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+          status: task.status,
+          dueAt: task.dueAt
+        }))
+      };
+    }
+
     const [tasks, campaigns] = await Promise.all([
-      this.prisma.task.findMany({
-        where: {
-          OR: [{ assigneeUserId: userId }, { createdByUserId: userId }]
-        },
-        take: 5,
-        orderBy: { updatedAt: 'desc' }
-      }),
+      tasksPromise,
       this.prisma.campaign.findMany({
-        where: {
-          OR: [{ creatorId: userId }, { createdByUserId: userId }, { seller: { userId } }]
-        },
+        where: activeRole === UserRole.SELLER
+          ? { seller: { userId } }
+          : { OR: [{ creatorId: userId }, { createdByUserId: userId }] },
         take: 5,
         orderBy: { updatedAt: 'desc' }
       })
@@ -423,6 +489,7 @@ export class DashboardService {
   }
 
   private async buildSellerMetrics(userId: string, sellerId: string) {
+    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const openOrderStatuses: OrderStatus[] = [
       OrderStatus.NEW,
       OrderStatus.CONFIRMED,
@@ -435,7 +502,13 @@ export class DashboardService {
     ];
     const [activeListings, openOrders, openReturns, openDisputes] = await Promise.all([
       this.prisma.marketplaceListing.count({ where: { sellerId, status: 'ACTIVE' } }),
-      this.prisma.order.count({ where: { sellerId, status: { in: openOrderStatuses } } }),
+      this.prisma.order.count({
+        where: {
+          sellerId,
+          status: { in: openOrderStatuses },
+          ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+        }
+      }),
       this.prisma.sellerReturn.count({
         where: {
           sellerId,
@@ -476,6 +549,32 @@ export class DashboardService {
     };
   }
 
+  private async loadCompatibilityOrderIds() {
+    const records = await this.prisma.appRecord.findMany({
+      where: { id: { in: SELLERFRONT_COMPAT_RECORD_IDS } },
+      select: { payload: true }
+    });
+
+    const ids = new Set<string>();
+    for (const record of records) {
+      const payload =
+        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+          ? (record.payload as Record<string, unknown>)
+          : null;
+      const orders = Array.isArray(payload?.orders) ? payload.orders : [];
+      for (const entry of orders) {
+        const order =
+          entry && typeof entry === 'object' && !Array.isArray(entry)
+            ? (entry as Record<string, unknown>)
+            : null;
+        const id = typeof order?.id === 'string' ? order.id : '';
+        if (id) ids.add(id);
+      }
+    }
+
+    return Array.from(ids);
+  }
+
   private async buildProviderMetrics(userId: string) {
     const [openQuotes, activeBookings, openConsultations, portfolioItems] = await Promise.all([
       this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
@@ -490,5 +589,15 @@ export class DashboardService {
       consultationsOpen: openConsultations,
       portfolioItems
     };
+  }
+
+  private reviewSubjectForRole(role: UserRole) {
+    if (role === UserRole.SELLER) {
+      return 'SELLER';
+    }
+    if (role === UserRole.PROVIDER) {
+      return 'PROVIDER';
+    }
+    return 'CREATOR';
   }
 }

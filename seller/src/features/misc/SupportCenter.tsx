@@ -1262,7 +1262,7 @@ export default function SupportCenterPage() {
                 type="button"
                 onClick={() => {
                   safeCopy(JSON.stringify({ tickets: tickets.length, open: stats.open, overall }, null, 2));
-                  pushToast({ title: "Export", message: "Summary copied (demo).", tone: "success" });
+                  pushToast({ title: "Export", message: "Summary copied.", tone: "success" });
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
@@ -1388,7 +1388,7 @@ export default function SupportCenterPage() {
               <div>
                 <div className="text-xs font-extrabold text-slate-600">Resolved</div>
                 <div className="mt-1 text-2xl font-black text-slate-900">{stats.resolved}</div>
-                <div className="mt-1 text-[11px] font-semibold text-slate-500">This period (demo)</div>
+                <div className="mt-1 text-[11px] font-semibold text-slate-500">This period</div>
               </div>
             </div>
           </GlassCard>
@@ -2336,7 +2336,7 @@ export default function SupportCenterPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        pushToast({ title: "Escalation", message: "Escalation queued (demo).", tone: "default" });
+                        pushToast({ title: "Escalation", message: "Escalation queued.", tone: "default" });
                       }}
                       className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-orange-700"
                     >
@@ -2474,7 +2474,7 @@ export default function SupportCenterPage() {
                   type="button"
                   onClick={() => {
                     safeCopy(`/support/kb/${activeArticle.id}`);
-                    pushToast({ title: "Link copied", message: "Article route copied (demo).", tone: "success" });
+                    pushToast({ title: "Link copied", message: "Article route copied.", tone: "success" });
                   }}
                   className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                 >

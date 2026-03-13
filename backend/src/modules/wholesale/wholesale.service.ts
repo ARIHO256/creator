@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
@@ -121,9 +121,14 @@ export class WholesaleService {
   }
 
   async createQuote(userId: string, body: CreateWholesaleQuoteDto) {
-    const rfqPayload = body.rfqId
-      ? await this.prisma.wholesaleRfq.findFirst({ where: { id: body.rfqId, userId } }).then((rfq) => rfq?.data ?? null)
+    const rfqRecord = body.rfqId
+      ? await this.prisma.wholesaleRfq.findFirst({ where: { id: body.rfqId, userId } })
       : null;
+    if (body.rfqId && !rfqRecord) {
+      throw new NotFoundException('RFQ not found');
+    }
+
+    const rfqPayload = rfqRecord?.data ?? null;
     const nextQuote = createWholesaleQuote(
       {
         ...body,
@@ -131,33 +136,40 @@ export class WholesaleService {
       },
       rfqPayload
     );
-    await this.prisma.wholesaleQuote.upsert({
-      where: { id: nextQuote.id },
-      update: {
-        status: nextQuote.status,
-        title: nextQuote.title,
-        buyer: nextQuote.buyer,
-        buyerType: nextQuote.buyerType,
-        currency: nextQuote.currency,
-        total: nextQuote.totals.total,
-        approvalsRequired: nextQuote.approvals.required,
-        rfqId: nextQuote.rfqId,
-        data: nextQuote as Prisma.InputJsonValue
-      },
-      create: {
-        id: nextQuote.id,
-        userId,
-        status: nextQuote.status,
-        title: nextQuote.title,
-        buyer: nextQuote.buyer,
-        buyerType: nextQuote.buyerType,
-        currency: nextQuote.currency,
-        total: nextQuote.totals.total,
-        approvalsRequired: nextQuote.approvals.required,
-        rfqId: nextQuote.rfqId,
-        data: nextQuote as Prisma.InputJsonValue
-      }
+    const existingRecord = await this.prisma.wholesaleQuote.findUnique({
+      where: { id: nextQuote.id }
     });
+
+    if (existingRecord && existingRecord.userId !== userId) {
+      throw new ForbiddenException('Quote does not belong to this account');
+    }
+
+    const quoteData = {
+      status: nextQuote.status,
+      title: nextQuote.title,
+      buyer: nextQuote.buyer,
+      buyerType: nextQuote.buyerType,
+      currency: nextQuote.currency,
+      total: nextQuote.totals.total,
+      approvalsRequired: nextQuote.approvals.required,
+      rfqId: nextQuote.rfqId,
+      data: nextQuote as Prisma.InputJsonValue
+    };
+
+    if (existingRecord) {
+      await this.prisma.wholesaleQuote.update({
+        where: { id: existingRecord.id },
+        data: quoteData
+      });
+    } else {
+      await this.prisma.wholesaleQuote.create({
+        data: {
+          id: nextQuote.id,
+          userId,
+          ...quoteData
+        }
+      });
+    }
     await this.jobsService.enqueue({
       queue: 'wholesale',
       type: 'WHOLESALE_QUOTE_CREATED',

@@ -1,9 +1,6 @@
 import type { Session } from "../types/session";
 import type { UserRole } from "../types/roles";
-
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ??
-  "";
+import { resolveApiUrl } from "./apiRuntime";
 
 type LoginResponse = {
   accessToken: string;
@@ -18,6 +15,8 @@ type MeResponse = {
   phone?: string | null;
   role?: string | null;
   roles?: string[] | null;
+  approvalStatus?: string | null;
+  onboardingCompleted?: boolean | null;
   sellerProfile?: {
     displayName?: string | null;
     name?: string | null;
@@ -27,18 +26,20 @@ type MeResponse = {
   } | null;
 };
 
-const toUrl = (path: string) => `${API_BASE_URL}${path}`;
-
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const headers = new Headers(init?.headers ?? {});
   if (init?.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  const response = await fetch(toUrl(path), { ...init, headers });
+  const url = await resolveApiUrl(path);
+  const response = await fetch(url, { ...init, headers });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
   if (!response.ok) {
     throw new Error(payload?.error?.message || payload?.message || `Request failed with status ${response.status}`);
+  }
+  if (payload && typeof payload === "object" && "data" in payload && "success" in payload) {
+    return (payload as { data: T }).data;
   }
   return payload as T;
 };
@@ -75,6 +76,8 @@ function mapSession(tokens: LoginResponse, profile: MeResponse): Session {
       profile.creatorProfile?.name ||
       profile.email ||
       profile.id,
+    approvalStatus: profile.approvalStatus || undefined,
+    onboardingCompleted: Boolean(profile.onboardingCompleted),
     role,
     roles,
     accessToken: tokens.accessToken,
@@ -114,6 +117,9 @@ export const authClient = {
     password?: string;
     role: UserRole;
   }) {
+    if (!password?.trim()) {
+      throw new Error("Password is required for registration");
+    }
     const backendRole = role === "provider" ? "PROVIDER" : "SELLER";
     const tokens = await request<LoginResponse>("/api/auth/register", {
       method: "POST",
@@ -121,9 +127,9 @@ export const authClient = {
         name,
         email: email?.trim().toLowerCase(),
         phone,
-        password: password || "demo1234",
+        password,
         role: backendRole,
-        roles: role === "provider" ? ["PROVIDER", "SELLER"] : ["SELLER"],
+        roles: [backendRole],
         sellerKind: backendRole,
         sellerDisplayName: name,
       }),

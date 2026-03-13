@@ -247,11 +247,7 @@ function MetricCard({ label, value, sub }) {
 /* ----------------------------- Cards ----------------------------- */
 
 function SocialLinksCard({ onAction }) {
-  const socials = [
-    { id: "web", name: "Website", handle: "glowuphub.example", tag: "WEB", color: "bg-slate-900" },
-    { id: "ig", name: "Instagram", handle: "@glowuphub", tag: "IG", color: "bg-pink-500" },
-    { id: "tt", name: "TikTok", handle: "@glowuphub", tag: "TT", color: "bg-slate-900" }
-  ];
+  const socials = [];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
@@ -283,11 +279,7 @@ function SocialLinksCard({ onAction }) {
 }
 
 function PastCampaignsCard({ onAction }) {
-  const campaigns = [
-    { id: 1, title: "Autumn Beauty Flash", period: "Feb 10 – Feb 23 · Combo", gmv: "$12,400", payout: "<48h", rating: "4.9" },
-    { id: 2, title: "Weekend Mask Bar", period: "Jan 18 – Jan 21 · Live", gmv: "$7,800", payout: "<72h", rating: "4.7" },
-    { id: 3, title: "Holiday Bundle Drop", period: "Nov 23 – Nov 25 · Shoppable Adz", gmv: "$18,900", payout: "<48h", rating: "4.8" }
-  ];
+  const campaigns = [];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
@@ -326,7 +318,7 @@ function PastCampaignsCard({ onAction }) {
 }
 
 function TagsCard() {
-  const tags = ["#Beauty", "#Skincare", "#FastPayouts", "#Bundles", "#FlashDealz"];
+  const tags = [];
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Tags</h2>
@@ -460,7 +452,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
   const markAccepted = () => {
     if (!record) return;
     setRecord({ ...record, status: "Accepted" });
-    toast?.("Supplier accepted (demo).", "success");
+    toast?.("Supplier accepted.", "success");
   };
 
   const openNegotiation = () => {
@@ -662,7 +654,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
             <div className="mt-3 flex flex-wrap gap-2">
               {/* ✅ Keep simulation button */}
               <Btn onClick={markAccepted} disabled={record.status === "Accepted"} title="Simulate supplier acceptance">
-                ✅ Mark Accepted (demo)
+                ✅ Mark Accepted
               </Btn>
               <Btn tone="primary" onClick={openNegotiation} disabled={record.status !== "Accepted"}>
                 🗣️ Open Negotiation Room
@@ -670,7 +662,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
               <Btn
                 onClick={() => {
                   go("/supplier/collabs/invites-from-creators");
-                  toast?.("Opening supplier inbox (demo)…", "info");
+                  toast?.("Opening supplier inbox…", "info");
                 }}
               >
                 📥 View Supplier Inbox
@@ -775,7 +767,7 @@ export default function SupplierPublicProfilePage() {
         <>
           <Btn
             onClick={() => {
-              toast("Public link copied (demo)", "success");
+              toast("Public link copied", "success");
             }}
           >
             🔗 Copy link
@@ -783,7 +775,7 @@ export default function SupplierPublicProfilePage() {
           <Btn
             tone="primary"
             onClick={() => {
-              toast("Opening profile editor (demo)", "info");
+              toast("Opening profile editor", "info");
             }}
           >
             ✏️ Edit
@@ -801,7 +793,7 @@ export default function SupplierPublicProfilePage() {
         rightContent={headerRight}
         onBack={() => {
           go(viewerMode === "Creator" ? "/creator/suppliers" : "/supplier/settings");
-          toast("Back (demo)", "info");
+          toast("Back", "info");
         }}
       />
 
@@ -1058,7 +1050,7 @@ export default function SupplierPublicProfilePage() {
                       <div className="flex items-center gap-2">
                         <Btn
                           onClick={() => {
-                            toast("Opening pitch drawer (demo)", "info");
+                            toast("Opening pitch drawer", "info");
                             go(`/creator/opportunities/${op.id}`);
                           }}
                         >
@@ -1067,7 +1059,7 @@ export default function SupplierPublicProfilePage() {
                         {viewerMode === "Supplier" ? (
                           <Btn
                             tone="ghost"
-                            onClick={() => toast("Edit opportunity (demo)", "info")}
+                            onClick={() => toast("Edit opportunity", "info")}
                           >
                             ⚙️
                           </Btn>

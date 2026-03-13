@@ -941,7 +941,7 @@ export default function SupplierSettingsSafetyPage() {
 
   function deleteWorkspace() {
     addAudit("Workspace delete requested", "Support ticket created");
-    push("Delete request submitted to Support (demo).", "success");
+    push("Delete request submitted to Support.", "success");
     setConfirmDelete(false);
   }
 
@@ -1126,7 +1126,7 @@ export default function SupplierSettingsSafetyPage() {
       <Modal
         open={confirmDelete}
         title="Delete workspace"
-        subtitle="High impact. Creates a support ticket and revokes access (demo)."
+        subtitle="High impact. Creates a support ticket and revokes access."
         onClose={() => setConfirmDelete(false)}
         footer={
           <div className="flex justify-end gap-2">
@@ -1206,7 +1206,7 @@ export default function SupplierSettingsSafetyPage() {
 
             <GhostButton
               onClick={() => {
-                push("Opening Supplier onboarding (demo).", "success");
+                push("Opening Supplier onboarding.", "success");
               }}
             >
               <ExternalLink className="h-4 w-4" /> Open onboarding
@@ -1919,7 +1919,7 @@ export default function SupplierSettingsSafetyPage() {
                     onChange={(v) => {
                       update("settings.calendar.googleConnected", v);
                       addAudit("Calendar sync updated", v ? "connected" : "disconnected");
-                      push(v ? "Google Calendar connected (demo)." : "Google Calendar disconnected (demo).", "success");
+                      push(v ? "Google Calendar connected." : "Google Calendar disconnected.", "success");
                     }}
                   />
                 </div>
@@ -2327,7 +2327,7 @@ export default function SupplierSettingsSafetyPage() {
                         }
                         update("payout.verification.status", "code_sent");
                         addAudit("Verification code sent", `${form.payout.verification.method || "Email"} → ${form.payout.verification.lastSentTo}`);
-                        push("Verification code sent (demo).", "success");
+                        push("Verification code sent.", "success");
                       }}
                     >
                       <ShieldCheck className="h-4 w-4" /> Send code
@@ -2624,7 +2624,7 @@ export default function SupplierSettingsSafetyPage() {
               <div className="mt-4 flex justify-end gap-2">
                 <GhostButton
                   onClick={() => {
-                    push("Support chat opened (demo).", "success");
+                    push("Support chat opened.", "success");
                     addAudit("Support contacted", "Supplier Success");
                   }}
                 >
@@ -2646,7 +2646,7 @@ export default function SupplierSettingsSafetyPage() {
                   </PrimaryButton>
                   <GhostButton
                     onClick={() => {
-                      push("Copying JSON (demo).", "success");
+                      push("Copying JSON.", "success");
                       try {
                         navigator.clipboard?.writeText(JSON.stringify(form, null, 2));
                       } catch {
@@ -2668,7 +2668,7 @@ export default function SupplierSettingsSafetyPage() {
                   </GhostButton>
                   <GhostButton
                     onClick={() => {
-                      push("Incident report created (demo).", "success");
+                      push("Incident report created.", "success");
                       addAudit("Incident reported", "Deliverables / disputes");
                     }}
                   >

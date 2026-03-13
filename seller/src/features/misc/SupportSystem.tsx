@@ -954,7 +954,7 @@ export default function SupportSystemStatusPage() {
                         type="button"
                         onClick={() => {
                           safeCopy(`${window.location?.origin || ""}#${"/support/status"}?incident=${openIncident.id}`);
-                          pushToast({ title: "Link copied", message: "Incident link copied (demo).", tone: "success" });
+                          pushToast({ title: "Link copied", message: "Incident link copied.", tone: "success" });
                         }}
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                       >
@@ -1067,7 +1067,7 @@ export default function SupportSystemStatusPage() {
                               {
                                 at: new Date().toISOString(),
                                 state: x.status === "resolved" ? "monitoring" : "resolved",
-                                message: x.status === "resolved" ? "Re-opened for monitoring (demo)." : "Marked resolved (demo).",
+                                message: x.status === "resolved" ? "Re-opened for monitoring." : "Marked resolved.",
                                 by: "Support Ops",
                               },
                             ],
@@ -1075,7 +1075,7 @@ export default function SupportSystemStatusPage() {
                         : x
                     )
                   );
-                  pushToast({ title: "Incident updated", message: "State changed (demo).", tone: "success" });
+                  pushToast({ title: "Incident updated", message: "State changed.", tone: "success" });
                 }}
                 className="w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                 style={{ background: TOKENS.green }}

@@ -247,7 +247,7 @@ function approvalApplicationResponse(application) {
   };
 }
 
-function seedContentApprovalRecord(auth, body) {
+function createContentApprovalRecord(auth, body) {
   const now = new Date();
   const submittedAtISO = now.toISOString();
   const dueAtISO = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
@@ -636,7 +636,7 @@ export function registerWorkflowRoutes(router) {
     const body = await readBody();
     const item = store.update((db) => {
       ensureWorkflowCollections(db);
-      const createdRecord = seedContentApprovalRecord(auth, body);
+      const createdRecord = createContentApprovalRecord(auth, body);
       db.contentApprovals.unshift(createdRecord);
       pushAudit(db, { actor: auth.user.email, action: "Content submission created", detail: createdRecord.id, severity: "info" });
       return createdRecord;

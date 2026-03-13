@@ -221,79 +221,6 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function buildDocs(): KycDoc[] {
-  const now = Date.now();
-  const ago = (d) => new Date(now - d * 24 * 3600_000).toISOString();
-  const inDays = (d) => new Date(now + d * 24 * 3600_000).toISOString();
-
-  return [
-    {
-      id: "DOC-OWNER-ID",
-      title: "Owner ID (Passport or National ID)",
-      required: true,
-      status: "Approved",
-      fileName: "passport.pdf",
-      uploadedAt: ago(22),
-      expiresAt: inDays(210),
-      history: [
-        { at: ago(24), by: "Supplier", event: "Uploaded" },
-        { at: ago(23), by: "Compliance", event: "Reviewed" },
-        { at: ago(22), by: "Compliance", event: "Approved" },
-      ],
-    },
-    {
-      id: "DOC-BIZ-REG",
-      title: "Business registration certificate",
-      required: true,
-      status: "Submitted",
-      fileName: "business_registration.pdf",
-      uploadedAt: ago(5),
-      expiresAt: null,
-      history: [
-        { at: ago(5), by: "Supplier", event: "Uploaded" },
-        { at: ago(4), by: "System", event: "Queued for review" },
-      ],
-    },
-    {
-      id: "DOC-TAX",
-      title: "Tax certificate (VAT or equivalent)",
-      required: true,
-      status: "Required",
-      fileName: null,
-      uploadedAt: null,
-      expiresAt: null,
-      history: [],
-    },
-    {
-      id: "DOC-POA",
-      title: "Proof of address (utility bill)",
-      required: true,
-      status: "Expiring",
-      fileName: "utility_bill.pdf",
-      uploadedAt: ago(310),
-      expiresAt: inDays(12),
-      history: [
-        { at: ago(310), by: "Supplier", event: "Uploaded" },
-        { at: ago(308), by: "Compliance", event: "Approved" },
-      ],
-    },
-    {
-      id: "DOC-BANK",
-      title: "Bank account proof",
-      required: false,
-      status: "Rejected",
-      fileName: "bank_letter.jpg",
-      uploadedAt: ago(9),
-      expiresAt: null,
-      reason: "Image is not clear. Please upload a PDF or a clearer photo.",
-      history: [
-        { at: ago(9), by: "Supplier", event: "Uploaded" },
-        { at: ago(8), by: "Compliance", event: "Rejected" },
-      ],
-    },
-  ];
-}
-
 function deriveTier(docs: KycDoc[]): Tier {
   const approved = docs.filter((d) => d.status === "Approved").length;
   const requiredApproved = docs.filter((d) => d.required).every((d) => d.status === "Approved");
@@ -316,6 +243,7 @@ export default function SupplierHubKycKybPage() {
   const [docs, setDocs] = useState<KycDoc[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const hydratedRef = useRef(false);
+  const initialSnapshotRef = useRef("");
   useEffect(() => {
     let active = true;
     (async () => {
@@ -337,8 +265,16 @@ export default function SupplierHubKycKybPage() {
             history: Array.isArray(doc.history) ? doc.history as DocHistory[] : [],
           } as KycDoc;
         });
+        const nextHistory = Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.history)
+          ? ((payload.metadata as Record<string, unknown>).history as any[])
+          : [];
         setDocs(nextDocs);
-        setHistory(Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.history) ? ((payload.metadata as Record<string, unknown>).history as any[]) : []);
+        setHistory(nextHistory);
+        initialSnapshotRef.current = JSON.stringify({
+          status: deriveTier(nextDocs),
+          documents: nextDocs,
+          metadata: { history: nextHistory }
+        });
         hydratedRef.current = true;
       } catch {
         if (!active) return;
@@ -352,7 +288,9 @@ export default function SupplierHubKycKybPage() {
   }, []);
   useEffect(() => {
     if (!hydratedRef.current) return;
-    void sellerBackendApi.patchKycSettings({ status: deriveTier(docs), documents: docs, metadata: { history } });
+    const payload = { status: deriveTier(docs), documents: docs, metadata: { history } };
+    if (JSON.stringify(payload) === initialSnapshotRef.current) return;
+    void sellerBackendApi.patchKycSettings(payload);
   }, [docs, history]);
   const tier = useMemo(() => deriveTier(docs), [docs]);
 
@@ -376,16 +314,33 @@ export default function SupplierHubKycKybPage() {
   }, [docs, q, status, onlyExpiring]);
 
   const timeline = useMemo<TimelineItem[]>(() => {
-    const base: TimelineItem[] = [
-      { at: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(), label: "KYC started", tone: "slate" },
-      { at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), label: "Documents uploaded", tone: "orange" },
-      { at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(), label: "Under review", tone: "slate" },
-    ];
-    const done: TimelineItem[] = docs.some((d) => d.status === "Approved")
-      ? [{ at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), label: "Partial approval granted", tone: "green" }]
-      : [];
-    return [...done, ...base].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-  }, [docs]);
+    const historyItems = history
+      .filter((entry) => entry && typeof entry === "object" && typeof entry.at === "string")
+      .map((entry) => ({
+        at: String(entry.at),
+        label: String(entry.event || entry.label || "KYC event"),
+        tone:
+          String(entry.by || "").toLowerCase().includes("compliance")
+            ? "green"
+            : String(entry.event || entry.label || "").toLowerCase().includes("submitted")
+              ? "orange"
+              : "slate",
+      })) as TimelineItem[];
+    const docEvents = docs
+      .flatMap((doc) => (Array.isArray(doc.history) ? doc.history : []).map((item) => ({
+        at: String(item.at),
+        label: String(item.event || `${doc.title} updated`),
+        tone:
+          doc.status === "Approved"
+            ? "green"
+            : doc.status === "Rejected" || doc.status === "Expiring"
+              ? "orange"
+              : "slate",
+      } as TimelineItem)));
+    return [...historyItems, ...docEvents]
+      .filter((item) => item.at)
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }, [docs, history]);
 
   const expiryAlerts = useMemo(() => {
     return docs

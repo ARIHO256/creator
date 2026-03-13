@@ -9,15 +9,15 @@ This audit captures the **existing backend before the refactor** that was presen
 ## Current structure inventory
 - Nest entry: `backend/src/main.ts`
 - App module: `backend/src/app.module.ts`
-- Legacy mount bridge: `backend/src/platform/legacy-api.bootstrap.ts`
-- Prisma snapshot store: `backend/src/platform/app-state.store.ts`
+- Legacy mount bridge: removed
+- Prisma snapshot store: removed
 - Prisma service: `backend/src/platform/prisma.service.ts`
 - Legacy runtime:
   - Router core: `backend/src/legacy/lib/router.js`
   - Auth/session helpers: `backend/src/legacy/lib/auth.js`
   - HTTP helpers: `backend/src/legacy/lib/http.js`
   - Utility helpers: `backend/src/legacy/lib/utils.js`
-  - Seed builder: `backend/src/legacy/seed/buildSeedData.js`
+  - Seed builder: `backend/prisma/seed.mjs`
   - Domain route files:
     - `auth.routes.js`
     - `dashboard.routes.js`

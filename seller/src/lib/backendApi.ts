@@ -1,15 +1,45 @@
-import { readSession } from "../auth/session";
+import { clearSession, hasSessionToken, readSession } from "../auth/session";
+import { resolveApiUrl } from "./apiRuntime";
 
-const API_BASE_URL =
-  (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ??
-  "";
+type BackendRequestError = Error & {
+  status?: number;
+  payload?: unknown;
+};
 
-const toUrl = (path: string) => `${API_BASE_URL}${path}`;
+let authRedirectScheduled = false;
+
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/recovery",
+  "/api/auth/refresh",
+  "/api/auth/logout"
+];
+
+function isPublicApiPath(path: string) {
+  return PUBLIC_API_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+function handleUnauthorizedResponse() {
+  clearSession();
+  if (typeof window === "undefined") return;
+  if (window.location.pathname.startsWith("/auth") || authRedirectScheduled) return;
+  authRedirectScheduled = true;
+  const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.replace(`/auth?next=${encodeURIComponent(next)}`);
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   const session = readSession();
   const token = session?.accessToken || session?.token || "";
+
+  if (!hasSessionToken(session) && !isPublicApiPath(path)) {
+    handleUnauthorizedResponse();
+    const error = new Error("Missing authentication session") as BackendRequestError;
+    error.status = 401;
+    throw error;
+  }
 
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -18,14 +48,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(toUrl(path), { ...init, headers });
+  const url = await resolveApiUrl(path);
+  const response = await fetch(url, { ...init, headers });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
-    throw new Error(
+    if (response.status === 401) {
+      handleUnauthorizedResponse();
+    }
+    const error = new Error(
       payload?.error?.message || payload?.message || `Request failed with status ${response.status}`
-    );
+    ) as BackendRequestError;
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
   }
 
   if (payload && typeof payload === "object" && "data" in payload && "success" in payload) {
@@ -50,6 +87,12 @@ export const sellerBackendApi = {
   getSellerListingWizard: () => request<Record<string, unknown>>("/api/seller/listing-wizard"),
   getSellerOrderDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}`),
+  getSellerPrintInvoice: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/invoice`),
+  getSellerPrintPackingSlip: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/packing-slip`),
+  getSellerPrintSticker: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/sticker`),
   getSellerReturns: () => request<Array<Record<string, unknown>>>("/api/seller/returns"),
   getSellerDisputes: () => request<Array<Record<string, unknown>>>("/api/seller/disputes"),
   getExpressOrders: () =>
@@ -86,6 +129,11 @@ export const sellerBackendApi = {
       method: "POST",
     }),
   getNotifications: () => request<Array<Record<string, unknown>>>("/api/notifications"),
+  createCreatorInvite: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/invites", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   markNotificationRead: (id: string) =>
     request<Record<string, unknown>>(`/api/notifications/${encodeURIComponent(id)}/read`, {
       method: "PATCH",
@@ -185,6 +233,7 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getOnboarding: () => request<Record<string, unknown>>("/api/onboarding"),
+  getOnboardingLookups: () => request<Record<string, unknown>>("/api/onboarding/lookups"),
   patchOnboarding: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/onboarding", {
       method: "PATCH",
@@ -194,6 +243,14 @@ export const sellerBackendApi = {
     request<Record<string, unknown>>("/api/onboarding/submit", {
       method: "POST",
       body: JSON.stringify(body),
+    }).catch((error: BackendRequestError) => {
+      if (error?.status === 404 || error?.status === 500) {
+        return request<Record<string, unknown>>("/api/onboarding", {
+          method: "PATCH",
+          body: JSON.stringify(body),
+        });
+      }
+      throw error;
     }),
   resetOnboarding: () =>
     request<Record<string, unknown>>("/api/onboarding/reset", {

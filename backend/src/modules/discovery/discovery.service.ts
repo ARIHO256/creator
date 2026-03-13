@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, SellerKind, UserRole } from '@prisma/client';
 import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
 import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
+import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { SearchQueryDto } from './dto/search-query.dto.js';
+import { CreateInviteDto } from './dto/create-invite.dto.js';
 import { SearchService } from '../search/search.service.js';
 
 @Injectable()
@@ -229,37 +232,243 @@ export class DiscoveryService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    return invites.map((invite) => ({
-      id: invite.id,
-      title: invite.title,
-      message: invite.message,
-      status: invite.status,
-      seller: invite.seller?.displayName ?? null,
-      sender:
-        invite.sender.creatorProfile?.name ??
-        invite.sender.sellerProfile?.displayName ??
-        invite.sender.email,
-      opportunityId: invite.opportunityId,
-      campaignId: invite.campaignId,
-      metadata: invite.metadata,
-      createdAt: invite.createdAt,
-      updatedAt: invite.updatedAt
-    }));
+    return invites.map((invite) => this.serializeInvite(invite));
+  }
+
+  async createInvite(userId: string, payload: CreateInviteDto) {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { sellerProfile: true }
+    });
+
+    if (!actor) {
+      throw new NotFoundException('Sender not found');
+    }
+
+    if (!actor.sellerProfile && !['ADMIN', 'SUPPORT'].includes(actor.role ?? '')) {
+      throw new ForbiddenException('Only seller or provider workspaces can send creator invites');
+    }
+
+    const recipient = await this.resolveInviteRecipient(payload);
+    const campaign = payload.campaignId
+      ? await this.prisma.campaign.findFirst({
+          where: actor.sellerProfile
+            ? {
+                id: payload.campaignId,
+                sellerId: actor.sellerProfile.id
+              }
+            : { id: payload.campaignId }
+        })
+      : null;
+
+    const seller = actor.sellerProfile;
+    const sellerName = seller?.displayName ?? actor.email;
+    const sellerHandle = seller?.handle ? `@${seller.handle}` : null;
+    const campaignTitle = campaign?.title || payload.campaignTitle || payload.title || 'MyLiveDealz collaboration';
+    const estimatedValue =
+      payload.estimatedValue ??
+      payload.baseFee ??
+      (typeof payload.metadata?.estimatedValue === 'number' ? payload.metadata.estimatedValue : undefined) ??
+      null;
+    const messageShort =
+      payload.messageShort ??
+      (typeof payload.message === 'string' ? payload.message.trim().slice(0, 160) : undefined) ??
+      `You have a new invite from ${sellerName}.`;
+
+    const metadata = sanitizePayload(
+      {
+        ...(payload.metadata ?? {}),
+        campaignId: campaign?.id ?? null,
+        campaignTitle,
+        type: payload.type ?? null,
+        category: payload.category ?? null,
+        region: payload.region ?? null,
+        baseFee: payload.baseFee ?? null,
+        currency: payload.currency ?? 'USD',
+        commissionPct: payload.commissionPct ?? 0,
+        estimatedValue,
+        fitScore: payload.fitScore ?? null,
+        fitReason: payload.fitReason ?? null,
+        messageShort,
+        supplierDescription: payload.supplierDescription ?? seller?.description ?? null,
+        supplierRating: payload.supplierRating ?? seller?.rating ?? null,
+        sellerName,
+        sellerHandle,
+        sellerInitials: this.buildInitials(sellerName, 'SP'),
+        creatorName: recipient.name,
+        creatorHandle: `@${recipient.handle}`,
+        creatorUserId: recipient.userId,
+        creatorProfileId: recipient.id
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Prisma.InputJsonValue;
+
+    const invite = await this.prisma.collaborationInvite.create({
+      data: {
+        sellerId: seller?.id ?? null,
+        campaignId: campaign?.id ?? null,
+        senderUserId: userId,
+        recipientUserId: recipient.userId,
+        title: payload.title || `Invite to collaborate on ${campaignTitle}`,
+        message: payload.message ?? null,
+        metadata
+      },
+      include: {
+        seller: true,
+        sender: {
+          include: {
+            creatorProfile: true,
+            sellerProfile: true
+          }
+        },
+        opportunity: true,
+        campaign: true
+      }
+    });
+
+    await this.prisma.notification.create({
+      data: {
+        userId: recipient.userId,
+        kind: 'collaboration_invite',
+        title: `New invite from ${sellerName}`,
+        body: `${sellerName} invited you to collaborate on ${campaignTitle}.`,
+        metadata: {
+          ...(metadata as Record<string, unknown>),
+          workspaceRole: 'CREATOR'
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    return this.serializeInvite(invite);
   }
 
   async respondInvite(userId: string, inviteId: string, status: string) {
     const invite = await this.prisma.collaborationInvite.findFirst({
-      where: { id: inviteId, recipientUserId: userId }
+      where: { id: inviteId, recipientUserId: userId },
+      include: {
+        seller: true,
+        sender: {
+          include: {
+            sellerProfile: true,
+            creatorProfile: true
+          }
+        },
+        recipient: {
+          include: {
+            creatorProfile: true,
+            sellerProfile: true
+          }
+        },
+        campaign: true
+      }
     });
 
     if (!invite) {
       throw new NotFoundException('Invite not found');
     }
 
-    return this.prisma.collaborationInvite.update({
+    const nextStatus = this.normalizeInviteStatus(status);
+    const inviteMetadata = this.normalizeInviteMetadata(invite.metadata);
+    const proposal =
+      nextStatus === 'ACCEPTED'
+        ? await this.ensureProposalForInvite(invite, inviteMetadata, userId)
+        : null;
+    const updatedMetadata = sanitizePayload(
+      {
+        ...inviteMetadata,
+        respondedAt: new Date().toISOString(),
+        proposalId: proposal?.id ?? inviteMetadata.proposalId ?? null,
+        proposalStatus: proposal?.status ?? null
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Prisma.InputJsonValue;
+
+    const updatedInvite = await this.prisma.collaborationInvite.update({
       where: { id: inviteId },
-      data: { status: this.normalizeInviteStatus(status) }
+      data: {
+        status: nextStatus,
+        metadata: updatedMetadata
+      },
+      include: {
+        seller: true,
+        sender: {
+          include: {
+            creatorProfile: true,
+            sellerProfile: true
+          }
+        },
+        opportunity: true,
+        campaign: true
+      }
     });
+
+    const creatorName =
+      invite.recipient.creatorProfile?.name ??
+      invite.recipient.sellerProfile?.displayName ??
+      invite.recipient.email;
+    const sellerName =
+      invite.seller?.displayName ??
+      invite.sender.sellerProfile?.displayName ??
+      invite.sender.email;
+    const campaignTitle = String(
+      inviteMetadata.campaignTitle || invite.campaign?.title || invite.title || 'MyLiveDealz collaboration'
+    );
+
+    await this.prisma.notification.create({
+      data: {
+        userId: invite.senderUserId,
+        kind: 'collaboration_invite_response',
+        title:
+          nextStatus === 'ACCEPTED'
+            ? `${creatorName} accepted your invite`
+            : `${creatorName} declined your invite`,
+        body:
+          nextStatus === 'ACCEPTED'
+            ? `${creatorName} accepted ${campaignTitle}. Negotiation is ready to continue.`
+            : `${creatorName} declined ${campaignTitle}.`,
+        metadata: sanitizePayload(
+          {
+            inviteId: invite.id,
+            proposalId: proposal?.id ?? null,
+            campaignId: invite.campaignId,
+            campaignTitle,
+            creatorName,
+            creatorHandle:
+              invite.recipient.creatorProfile?.handle ? `@${invite.recipient.creatorProfile.handle}` : null,
+            status: nextStatus,
+            workspaceRole: this.resolveNotificationRole({
+              role: invite.sender.role ?? undefined,
+              creatorProfileId: invite.sender.creatorProfile?.id ?? null,
+              sellerKind: invite.sender.sellerProfile?.kind ?? null
+            })
+          },
+          { maxDepth: 6, maxArrayLength: 50, maxKeys: 50 }
+        ) as Prisma.InputJsonValue
+      }
+    });
+
+    return {
+      ...this.serializeInvite(updatedInvite),
+      proposalId: proposal?.id ?? null
+    };
+  }
+
+  private resolveNotificationRole(params: {
+    role?: UserRole | string | null;
+    creatorProfileId?: string | null;
+    sellerKind?: SellerKind | string | null;
+  }) {
+    const explicitRole = String(params.role || '').toUpperCase();
+    if (explicitRole) {
+      return explicitRole;
+    }
+    if (params.creatorProfileId) {
+      return 'CREATOR';
+    }
+    if (String(params.sellerKind || '').toUpperCase() === 'PROVIDER') {
+      return 'PROVIDER';
+    }
+    return 'SELLER';
   }
 
   async search(userId: string, query?: SearchQueryDto) {
@@ -312,5 +521,204 @@ export class DiscoveryService {
       return normalized as 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED';
     }
     return 'PENDING';
+  }
+
+  private async resolveInviteRecipient(payload: CreateInviteDto) {
+    if (payload.recipientUserId?.trim()) {
+      const direct = await this.prisma.creatorProfile.findUnique({
+        where: { userId: payload.recipientUserId.trim() }
+      });
+      if (direct) {
+        return direct;
+      }
+    }
+
+    const rawHandle = String(payload.creatorHandle || '').trim();
+    if (!rawHandle) {
+      throw new BadRequestException('Invite recipient handle is required');
+    }
+
+    const normalized = rawHandle.replace(/^@/, '').trim().toLowerCase();
+    const candidates = await this.prisma.creatorProfile.findMany({
+      where: {
+        OR: [
+          { handle: normalized },
+          { handle: rawHandle.trim() }
+        ]
+      },
+      take: 1
+    });
+
+    if (candidates[0]) {
+      return candidates[0];
+    }
+
+    throw new NotFoundException(`Creator ${rawHandle} was not found`);
+  }
+
+  private normalizeInviteMetadata(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private async ensureProposalForInvite(
+    invite: {
+      id: string;
+      sellerId: string | null;
+      campaignId: string | null;
+      title: string;
+      message: string | null;
+      metadata: unknown;
+    },
+    metadata: Record<string, unknown>,
+    creatorUserId: string
+  ) {
+    const existingId = typeof metadata.proposalId === 'string' ? metadata.proposalId : null;
+    if (existingId) {
+      const existing = await this.prisma.proposal.findUnique({ where: { id: existingId } });
+      if (existing) {
+        return existing;
+      }
+    }
+
+    if (!invite.sellerId) {
+      throw new BadRequestException('Invite is missing the seller relationship needed for a proposal');
+    }
+
+    const amount =
+      typeof metadata.estimatedValue === 'number'
+        ? metadata.estimatedValue
+        : typeof metadata.baseFee === 'number'
+          ? metadata.baseFee
+          : null;
+    const proposalMetadata = sanitizePayload(
+      {
+        inviteId: invite.id,
+        proposalIdLabel: `P-${invite.id.slice(-6).toUpperCase()}`,
+        supplierName: metadata.sellerName || null,
+        sellerInitials: metadata.sellerInitials || null,
+        campaignTitle: metadata.campaignTitle || invite.title,
+        region: metadata.region || 'Global',
+        category: metadata.category || 'General',
+        fitReason: metadata.fitReason || null,
+        liveWindow: metadata.liveWindow || 'To be agreed',
+        deliverablesList: Array.isArray(metadata.deliverablesList) ? metadata.deliverablesList : [],
+        terms: {
+          deliverables: String(metadata.messageShort || invite.message || 'Deliverables to be confirmed in negotiation.'),
+          schedule: 'Schedule to be agreed between seller and creator.',
+          compensation:
+            amount != null
+              ? `${metadata.currency || 'USD'} ${Number(amount).toLocaleString()} starting budget. Final terms to be agreed in negotiation.`
+              : 'Compensation to be agreed in negotiation.'
+        }
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Prisma.InputJsonValue;
+
+    const proposal = await this.prisma.proposal.create({
+      data: {
+        campaignId: invite.campaignId ?? undefined,
+        sellerId: invite.sellerId,
+        creatorId: creatorUserId,
+        submittedByUserId: creatorUserId,
+        title: String(metadata.campaignTitle || invite.title),
+        summary: invite.message || String(metadata.messageShort || 'Invite accepted. Negotiation opened.'),
+        amount,
+        currency: typeof metadata.currency === 'string' ? metadata.currency : 'USD',
+        status: 'SUBMITTED',
+        metadata: proposalMetadata
+      }
+    });
+
+    await this.prisma.proposalMessage.create({
+      data: {
+        proposalId: proposal.id,
+        authorUserId: creatorUserId,
+        body: `Invite accepted. Opening negotiation for ${String(metadata.campaignTitle || invite.title)}.`,
+        messageType: 'SYSTEM'
+      }
+    });
+
+    return proposal;
+  }
+
+  private serializeInvite(invite: {
+    id: string;
+    title: string;
+    message: string | null;
+    status: string;
+    seller?: { displayName: string | null; rating?: number | null } | null;
+    sender?: {
+      email: string;
+      creatorProfile?: { name?: string | null } | null;
+      sellerProfile?: { displayName?: string | null } | null;
+    };
+    opportunityId?: string | null;
+    campaignId?: string | null;
+    metadata?: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    const metadata = this.normalizeInviteMetadata(invite.metadata);
+    return {
+      id: invite.id,
+      title: invite.title,
+      message: invite.message,
+      status: invite.status,
+      seller: invite.seller?.displayName ?? (metadata.sellerName ? String(metadata.sellerName) : null),
+      sellerInitials: String(metadata.sellerInitials || this.buildInitials(String(metadata.sellerName || invite.seller?.displayName || 'SP'), 'SP')),
+      campaign: String(metadata.campaignTitle || invite.title || 'Campaign'),
+      type: typeof metadata.type === 'string' ? metadata.type : 'Live collaboration',
+      category: typeof metadata.category === 'string' ? metadata.category : 'General',
+      region: typeof metadata.region === 'string' ? metadata.region : 'Global',
+      baseFee: typeof metadata.baseFee === 'number' ? metadata.baseFee : 0,
+      currency: typeof metadata.currency === 'string' ? metadata.currency : 'USD',
+      commissionPct: typeof metadata.commissionPct === 'number' ? metadata.commissionPct : 0,
+      estimatedValue: typeof metadata.estimatedValue === 'number' ? metadata.estimatedValue : 0,
+      fitScore: typeof metadata.fitScore === 'number' ? metadata.fitScore : 70,
+      fitReason:
+        typeof metadata.fitReason === 'string' ? metadata.fitReason : 'Matched by campaign preferences.',
+      messageShort:
+        typeof metadata.messageShort === 'string' ? metadata.messageShort : invite.message ?? 'New invite from seller.',
+      lastActivity: this.describeInviteActivity(invite.status, invite.updatedAt),
+      supplierDescription:
+        typeof metadata.supplierDescription === 'string'
+          ? metadata.supplierDescription
+          : 'Supplier invite from MyLiveDealz.',
+      supplierRating:
+        typeof metadata.supplierRating === 'number'
+          ? metadata.supplierRating
+          : Number(invite.seller?.rating ?? 0),
+      sender:
+        invite.sender?.creatorProfile?.name ??
+        invite.sender?.sellerProfile?.displayName ??
+        invite.sender?.email ??
+        null,
+      opportunityId: invite.opportunityId,
+      campaignId: invite.campaignId,
+      proposalId: typeof metadata.proposalId === 'string' ? metadata.proposalId : null,
+      metadata,
+      createdAt: invite.createdAt,
+      updatedAt: invite.updatedAt
+    };
+  }
+
+  private describeInviteActivity(status: string, updatedAt: Date) {
+    const label = String(status || '').toLowerCase();
+    if (label === 'accepted') return 'Accepted · Recently';
+    if (label === 'declined') return 'Declined · Recently';
+    if (label === 'expired') return 'Expired · Recently';
+    return `Updated · ${updatedAt.toISOString()}`;
+  }
+
+  private buildInitials(value: string, fallback: string) {
+    const initials = String(value || '')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((entry) => entry[0]?.toUpperCase() || '')
+      .join('');
+    return initials || fallback;
   }
 }

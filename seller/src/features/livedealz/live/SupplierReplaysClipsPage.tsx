@@ -98,13 +98,13 @@ export default function SupplierLiveReplaysClipsPage() {
     navigate(destination);
   };
 
-  const [selectedReplayId, setSelectedReplayId] = useState("R-101");
+  const [selectedReplayId, setSelectedReplayId] = useState("");
   const [shareReplay, setShareReplay] = useState(null);
 
   const [clipStart, setClipStart] = useState(30);
   const [clipEnd, setClipEnd] = useState(90);
-  const [overlayText, setOverlayText] = useState("EV Charger Bundle – Limited offer");
-  const [ctaSticker, setCtaSticker] = useState("Tap to shop");
+  const [overlayText, setOverlayText] = useState("");
+  const [ctaSticker, setCtaSticker] = useState("");
 
   const [exportTargets, setExportTargets] = useState({
     campaigns: true,
@@ -112,62 +112,7 @@ export default function SupplierLiveReplaysClipsPage() {
     assetLibrary: true
   });
 
-  const [replays, setReplays] = useState([
-    {
-      id: "R-101",
-      title: "EV Charger Flash – Bundles + Install Tips",
-      campaign: "EV Charger Flash Drop",
-      supplier: "EV World Store",
-      host: "@lunaade",
-      hostRole: "Creator",
-      creatorUsage: "I will use a Creator",
-      collabMode: "Open for Collabs",
-      approvalMode: "Manual",
-      date: "Oct 10, 2025",
-      views: 1543,
-      sales: 62,
-      duration: "01:12:45",
-      status: "Published",
-      thumbColor: "bg-emerald-100",
-      performanceTags: ["Strong hook", "High retention", "Bundle focus"]
-    },
-    {
-      id: "R-102",
-      title: "Supplier-hosted Tech Friday – Gadgets Q&A",
-      campaign: "Tech Friday Mega Live",
-      supplier: "GadgetMart Africa",
-      host: "@gadgetmart",
-      hostRole: "Supplier",
-      creatorUsage: "I will NOT use a Creator",
-      collabMode: "(n/a)",
-      approvalMode: "Manual",
-      date: "Oct 11, 2025",
-      views: 2310,
-      sales: 87,
-      duration: "01:28:03",
-      status: "Draft replay",
-      thumbColor: "bg-sky-100",
-      performanceTags: ["Q&A heavy", "Late peak", "Bundle upsells"]
-    },
-    {
-      id: "R-103",
-      title: "Faith & Wellness Morning Dealz",
-      campaign: "Faith & Wellness Morning Dealz",
-      supplier: "Grace Living Store",
-      host: "@noahknows",
-      hostRole: "Creator",
-      creatorUsage: "I am NOT SURE yet",
-      collabMode: "Open for Collabs",
-      approvalMode: "Auto",
-      date: "Oct 12, 2025",
-      views: 987,
-      sales: 29,
-      duration: "00:54:10",
-      status: "Published",
-      thumbColor: "bg-rose-100",
-      performanceTags: ["Soft opener", "High replay", "Community chat"]
-    }
-  ]);
+  const [replays, setReplays] = useState([]);
 
   const selectedReplay = replays.find((r) => r.id === selectedReplayId) || replays[0] || null;
 

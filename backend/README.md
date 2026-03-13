@@ -32,6 +32,9 @@ npm run dev
 
 API base: `http://127.0.0.1:4010/api`
 
+`npm run dev` now compiles to `dist/` and serves the compiled app with `node --watch`.
+This avoids the `tsx` runtime path, which can hang before Nest finishes booting.
+
 Seed login:
 - `creator@mylivedealz.com`
 - `Password123!`
@@ -39,6 +42,7 @@ Seed login:
 ## Useful commands
 ```bash
 npm run dev
+npm run start
 npm run build
 npm run prisma:migrate
 npm run prisma:seed

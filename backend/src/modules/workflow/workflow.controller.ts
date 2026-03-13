@@ -18,6 +18,7 @@ export class WorkflowController {
   @Post('uploads') createUpload(@CurrentUser() user: RequestUser, @Body() body: CreateUploadDto) { return this.service.createUpload(user.sub, body); }
 
   @Get('onboarding') onboarding(@CurrentUser() user: RequestUser) { return this.service.onboarding(user.sub); }
+  @Get('onboarding/lookups') onboardingLookups() { return this.service.onboardingLookups(); }
   @Get('onboarding/slug-availability/:slug') slugAvailability(@CurrentUser() user: RequestUser, @Param('slug') slug: string) { return this.service.slugAvailability(user.sub, slug); }
   @Patch('onboarding')
   @RateLimit({ limit: 30, windowMs: 60_000 })

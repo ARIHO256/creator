@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useSession } from '../../auth/session';
+import { clearSession, useSession } from '../../auth/session';
 import { recordOnboardingStatus } from '../misc/onboardingStatus';
 import { sellerBackendApi } from '../../lib/backendApi';
+import { authClient } from '../../lib/authApi';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { useThemeMode } from '../../theme/themeMode';
 import { useProviderServiceTaxonomy } from '../../data/taxonomy';
@@ -720,6 +721,38 @@ function safeJsonParse<T = any>(str: string | null): T | null {
   } catch {
     return null;
   }
+}
+
+function readStoredDraft<T = any>(key: string): T | null {
+  if (typeof window === 'undefined') return null;
+  return safeJsonParse<T>(window.localStorage.getItem(key));
+}
+
+function writeStoredDraft(key: string, value: unknown) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function clearStoredDraft(keys: string[]) {
+  if (typeof window === 'undefined') return;
+  keys.forEach((key) => {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // ignore storage failures
+    }
+  });
+}
+
+function draftMatchesActiveUser(draft: Record<string, unknown> | null, activeUserId: string) {
+  if (!draft || typeof draft !== 'object') return false;
+  if (!activeUserId) return true;
+  const owner = String(draft.owner || draft.email || '').toLowerCase();
+  return !owner || owner === activeUserId;
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -2684,7 +2717,8 @@ export default function ProviderOnboardingProV4_JS() {
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
-  const serviceTaxonomy = useProviderServiceTaxonomy();
+  const serviceTaxonomyQuery = useProviderServiceTaxonomy();
+  const serviceTaxonomy = serviceTaxonomyQuery.taxonomy;
   const sessionUser = useSession();
 
   const [ui, setUi] = useState<{ step: number }>(() => {
@@ -2729,7 +2763,7 @@ export default function ProviderOnboardingProV4_JS() {
       // Step 2: Services & Pricing
       categories: [],
       otherCategory: '',
-      languages: ['en'],
+      languages: [],
       serviceCurrency: 'USD',
       serviceLines: [],
       team: {
@@ -2869,27 +2903,42 @@ export default function ProviderOnboardingProV4_JS() {
 
     const hydrate = async () => {
       try {
-        const payload = await sellerBackendApi.getWorkflowScreenState('provider-onboarding');
-        if (cancelled || !payload || typeof payload !== 'object') return;
+        const storedProfile = readStoredDraft<Record<string, unknown>>(STORAGE.form);
+        const storedUi = readStoredDraft<{ step?: number }>(STORAGE.ui);
+        const storedReview = readStoredDraft<Record<string, unknown>>(STORAGE.review);
+        const [payloadResult, accountApprovalResult] = await Promise.allSettled([
+          sellerBackendApi.getWorkflowScreenState('provider-onboarding'),
+          sellerBackendApi.getAccountApproval(),
+        ]);
+        if (cancelled) return;
+        const payload = payloadResult.status === 'fulfilled' ? payloadResult.value : null;
+        const accountApproval =
+          accountApprovalResult.status === 'fulfilled' ? accountApprovalResult.value : null;
+        const sourcePayload =
+          payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
 
         const nextProfile =
-          payload.form && typeof payload.form === 'object'
-            ? (payload.form as Partial<ProviderProfile>)
+          sourcePayload.form && typeof sourcePayload.form === 'object'
+            ? (sourcePayload.form as Partial<ProviderProfile>)
             : null;
         const nextUi =
-          payload.ui && typeof payload.ui === 'object'
-            ? (payload.ui as { step?: number })
+          sourcePayload.ui && typeof sourcePayload.ui === 'object'
+            ? (sourcePayload.ui as { step?: number })
             : null;
         const nextReview =
-          payload.review && typeof payload.review === 'object'
-            ? payload.review
+          sourcePayload.review && typeof sourcePayload.review === 'object'
+            ? sourcePayload.review
+            : null;
+        const approvalPayload =
+          accountApproval && typeof accountApproval === 'object'
+            ? (accountApproval as Record<string, unknown>)
             : null;
 
         if (nextProfile) {
           const base = createEmptyProfile();
           const owner = String(nextProfile.owner || nextProfile.email || '').toLowerCase();
           if (!activeUserId || !owner || owner === activeUserId) {
-            setProfile({
+            const mergedBackendProfile = {
               ...base,
               ...nextProfile,
               owner: activeUserId || owner || base.owner,
@@ -2903,14 +2952,128 @@ export default function ProviderOnboardingProV4_JS() {
               payout: hydratePayoutData(base.payout, nextProfile.payout || {}),
               tax: { ...base.tax, ...(nextProfile.tax || {}) },
               acceptance: { ...base.acceptance, ...(nextProfile.acceptance || {}) },
-            });
+            };
+            const resolvedProfile = draftMatchesActiveUser(storedProfile, activeUserId)
+              ? {
+                  ...mergedBackendProfile,
+                  ...(storedProfile as object),
+                  owner:
+                    activeUserId ||
+                    String((storedProfile as Record<string, unknown>).owner || mergedBackendProfile.owner || ''),
+                  support: {
+                    ...mergedBackendProfile.support,
+                    ...(((storedProfile as Record<string, unknown>).support as object) || {}),
+                  },
+                  hq: {
+                    ...mergedBackendProfile.hq,
+                    ...(((storedProfile as Record<string, unknown>).hq as object) || {}),
+                  },
+                  team: {
+                    ...mergedBackendProfile.team,
+                    ...(((storedProfile as Record<string, unknown>).team as object) || {}),
+                  },
+                  servicePolicies: {
+                    ...mergedBackendProfile.servicePolicies,
+                    ...(((storedProfile as Record<string, unknown>).servicePolicies as object) || {}),
+                  },
+                  coverage: {
+                    ...mergedBackendProfile.coverage,
+                    ...(((storedProfile as Record<string, unknown>).coverage as object) || {}),
+                  },
+                  availability: {
+                    ...mergedBackendProfile.availability,
+                    ...(((storedProfile as Record<string, unknown>).availability as object) || {}),
+                  },
+                  docs: {
+                    list: Array.isArray(
+                      ((storedProfile as Record<string, unknown>).docs as { list?: unknown[] } | undefined)?.list
+                    )
+                      ? ((((storedProfile as Record<string, unknown>).docs as { list?: unknown[] }).list ??
+                          []) as typeof mergedBackendProfile.docs.list)
+                      : mergedBackendProfile.docs.list,
+                  },
+                  payout: hydratePayoutData(
+                    mergedBackendProfile.payout,
+                    (((storedProfile as Record<string, unknown>).payout as object) || {}) as Partial<
+                      typeof mergedBackendProfile.payout
+                    >
+                  ),
+                  tax: {
+                    ...mergedBackendProfile.tax,
+                    ...(((storedProfile as Record<string, unknown>).tax as object) || {}),
+                  },
+                  acceptance: {
+                    ...mergedBackendProfile.acceptance,
+                    ...(((storedProfile as Record<string, unknown>).acceptance as object) || {}),
+                  },
+                }
+              : mergedBackendProfile;
+            setProfile(resolvedProfile);
           }
+        } else if (draftMatchesActiveUser(storedProfile, activeUserId)) {
+          const base = createEmptyProfile();
+          setProfile({
+            ...base,
+            ...(storedProfile as object),
+            owner:
+              activeUserId ||
+              String((storedProfile as Record<string, unknown>).owner || base.owner || ''),
+            support: { ...base.support, ...(((storedProfile as Record<string, unknown>).support as object) || {}) },
+            hq: { ...base.hq, ...(((storedProfile as Record<string, unknown>).hq as object) || {}) },
+            team: { ...base.team, ...(((storedProfile as Record<string, unknown>).team as object) || {}) },
+            servicePolicies: {
+              ...base.servicePolicies,
+              ...(((storedProfile as Record<string, unknown>).servicePolicies as object) || {}),
+            },
+            coverage: {
+              ...base.coverage,
+              ...(((storedProfile as Record<string, unknown>).coverage as object) || {}),
+            },
+            availability: {
+              ...base.availability,
+              ...(((storedProfile as Record<string, unknown>).availability as object) || {}),
+            },
+            docs: {
+              list: Array.isArray(
+                ((storedProfile as Record<string, unknown>).docs as { list?: unknown[] } | undefined)?.list
+              )
+                ? ((((storedProfile as Record<string, unknown>).docs as { list?: unknown[] }).list ??
+                    []) as ProviderProfile['docs']['list'])
+                : base.docs.list,
+            },
+            payout: hydratePayoutData(
+              base.payout,
+              (((storedProfile as Record<string, unknown>).payout as object) || {}) as Partial<
+                ProviderProfile['payout']
+              >
+            ),
+            tax: { ...base.tax, ...(((storedProfile as Record<string, unknown>).tax as object) || {}) },
+            acceptance: {
+              ...base.acceptance,
+              ...(((storedProfile as Record<string, unknown>).acceptance as object) || {}),
+            },
+          });
         }
         if (nextUi) {
-          setUi({ step: Number(nextUi.step || 1) || 1 });
+          setUi({
+            step: 1,
+          });
         }
         if (nextReview && typeof nextReview === 'object') {
-          setReview((prev) => ({ ...prev, ...(nextReview as object) }));
+          const normalizedReview = { ...(nextReview as object) } as Record<string, unknown>;
+          if (
+            String(approvalPayload?.status || '').toLowerCase() === 'approved' &&
+            !normalizedReview.approvedAt
+          ) {
+            normalizedReview.inReviewAt = null;
+            normalizedReview.approvedAt =
+              String(approvalPayload?.approvedAt || approvalPayload?.submittedAt || new Date().toISOString()) || null;
+          }
+          setReview((prev) => ({
+            ...prev,
+            ...(normalizedReview as object),
+            ...(storedReview && typeof storedReview === 'object' ? (storedReview as object) : {}),
+          }));
         }
       } catch {
         if (!cancelled) {
@@ -2937,6 +3100,13 @@ export default function ProviderOnboardingProV4_JS() {
   }, [activeUserId, createEmptyProfile, hydrated, t]);
 
   useEffect(() => {
+    if (!hydrated) return;
+    writeStoredDraft(STORAGE.form, profile);
+    writeStoredDraft(STORAGE.ui, ui);
+    writeStoredDraft(STORAGE.review, review);
+  }, [hydrated, profile, review, ui]);
+
+  useEffect(() => {
     if (!hydrated || !saveReadyRef.current) return;
     const timeoutId = window.setTimeout(() => {
       void sellerBackendApi
@@ -2960,6 +3130,11 @@ export default function ProviderOnboardingProV4_JS() {
 
   const step = clamp(ui.step || 1, 1, 6);
   const setStep = (n) => setUi((p) => ({ ...p, step: clamp(Number(n) || 1, 1, 6) }));
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
 
   const isLocked = profile.status !== 'DRAFT';
 
@@ -3005,6 +3180,7 @@ export default function ProviderOnboardingProV4_JS() {
     if (!activeUserId) return;
     const owner = String(profile.owner || profile.email || '').toLowerCase();
     if (owner && owner !== activeUserId) {
+      clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
       const fresh = createEmptyProfile();
       setProfile(fresh);
       recordOnboardingStatus(
@@ -3090,7 +3266,7 @@ export default function ProviderOnboardingProV4_JS() {
   const resetDraft = async () => {
     if (
       !window.confirm(
-        t('Reset this onboarding draft? This clears your backend draft for this workspace.')
+        t('Reset this onboarding draft? This clears the saved draft on this device and the backend draft for this workspace.')
       )
     )
       return;
@@ -3098,6 +3274,7 @@ export default function ProviderOnboardingProV4_JS() {
     setProfile(fresh);
     setReview({ submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 });
     setStep(1);
+    clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
     try {
       await sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
         form: fresh,
@@ -3169,7 +3346,7 @@ export default function ProviderOnboardingProV4_JS() {
     setF((prev) => {
       const cur = Array.isArray(prev.languages) ? prev.languages : [];
       const next = toggleInArray(cur, code);
-      return { languages: next.length ? next : ['en'] };
+      return { languages: next };
     });
   };
 
@@ -3725,8 +3902,8 @@ export default function ProviderOnboardingProV4_JS() {
           review: {
             ...review,
             submittedAt,
-            inReviewAt: submittedAt,
-            approvedAt: null,
+            inReviewAt: null,
+            approvedAt: submittedAt,
           },
         }),
       ]);
@@ -3746,8 +3923,8 @@ export default function ProviderOnboardingProV4_JS() {
     setReview((r) => ({
       ...r,
       submittedAt,
-      inReviewAt: submittedAt,
-      approvedAt: null,
+      inReviewAt: null,
+      approvedAt: submittedAt,
     }));
     recordOnboardingStatus(
       'provider',
@@ -3761,9 +3938,14 @@ export default function ProviderOnboardingProV4_JS() {
     setToast({
       tone: 'success',
       title: t('Submitted'),
-      message: t('Your onboarding has been submitted for review.'),
+      message: t('Your onboarding is active. Please sign in again to continue.'),
     });
-    navigate('/provider/onboarding');
+    await authClient.signOut(
+      typeof sessionUser?.refreshToken === 'string' ? sessionUser.refreshToken : undefined,
+      typeof sessionUser?.accessToken === 'string' ? sessionUser.accessToken : undefined
+    );
+    clearSession();
+    navigate('/auth?intent=signin', { replace: true, state: { defaultTab: 'signin' } });
   };
 
   const asideTips = useMemo(() => {
@@ -4569,6 +4751,7 @@ export default function ProviderOnboardingProV4_JS() {
                         onChange={(next) => setF({ categories: next.map((entry) => entry.nodeId) })}
                         disabled={isLocked}
                         taxonomyData={serviceTaxonomy}
+                        onRetry={serviceTaxonomyQuery.refetch}
                         types={{
                           marketplace: 'Service Marketplace',
                           family: 'Service Family',

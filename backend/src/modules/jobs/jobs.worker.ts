@@ -197,7 +197,8 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
                   metadata: {
                     approvalId: approval.id,
                     entityType: approval.entityType,
-                    status: approval.status
+                    status: approval.status,
+                    workspaceRole: String(meta.requestedWorkspaceRole || 'SELLER').toUpperCase()
                   } as Prisma.InputJsonValue
                 }
               });
@@ -242,7 +243,8 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
               metadata: {
                 approvalId: approval.id,
                 entityType: approval.entityType,
-                status: approval.status
+                status: approval.status,
+                workspaceRole: String(meta.requestedWorkspaceRole || 'SELLER').toUpperCase()
               } as Prisma.InputJsonValue
             }
           });

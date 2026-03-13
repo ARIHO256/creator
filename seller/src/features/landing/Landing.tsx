@@ -103,6 +103,80 @@ function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
+function escapeSvgText(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function svgDataUrl(markup: string) {
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(markup)}`;
+}
+
+function createHeroPlaceholder(title: string, subtitle: string, accent: string) {
+  const safeTitle = escapeSvgText(title);
+  const safeSubtitle = escapeSvgText(subtitle);
+  return svgDataUrl(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1080">
+      <defs>
+        <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#061512" />
+          <stop offset="100%" stop-color="#10352d" />
+        </linearGradient>
+        <linearGradient id="panel" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="rgba(255,255,255,0.08)" />
+          <stop offset="100%" stop-color="rgba(255,255,255,0.02)" />
+        </linearGradient>
+      </defs>
+      <rect width="1600" height="1080" fill="url(#bg)" />
+      <circle cx="1280" cy="200" r="220" fill="${accent}" opacity="0.18" />
+      <circle cx="260" cy="860" r="260" fill="#F77F00" opacity="0.14" />
+      <rect x="110" y="120" width="1380" height="840" rx="44" fill="url(#panel)" stroke="rgba(255,255,255,0.12)" />
+      <rect x="190" y="220" width="340" height="40" rx="20" fill="${accent}" opacity="0.92" />
+      <text x="190" y="390" fill="#EAFBF4" font-family="Arial, sans-serif" font-size="92" font-weight="700">${safeTitle}</text>
+      <text x="190" y="480" fill="rgba(234,251,244,0.72)" font-family="Arial, sans-serif" font-size="42">${safeSubtitle}</text>
+      <rect x="190" y="610" width="320" height="170" rx="28" fill="rgba(255,255,255,0.06)" />
+      <rect x="560" y="610" width="320" height="170" rx="28" fill="rgba(255,255,255,0.06)" />
+      <rect x="930" y="610" width="370" height="170" rx="28" fill="rgba(255,255,255,0.06)" />
+      <text x="230" y="685" fill="#EAFBF4" font-family="Arial, sans-serif" font-size="30" font-weight="700">Seller</text>
+      <text x="600" y="685" fill="#EAFBF4" font-family="Arial, sans-serif" font-size="30" font-weight="700">Buyer</text>
+      <text x="970" y="685" fill="#EAFBF4" font-family="Arial, sans-serif" font-size="30" font-weight="700">Escrow</text>
+      <path d="M520 696h44" stroke="${accent}" stroke-width="8" stroke-linecap="round" />
+      <path d="M890 696h44" stroke="#F77F00" stroke-width="8" stroke-linecap="round" />
+    </svg>`
+  );
+}
+
+function createAvatarPlaceholder(label: string, accent: string, base: string) {
+  const initials = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "EV";
+  const safeInitials = escapeSvgText(initials);
+  const safeLabel = escapeSvgText(label);
+  return svgDataUrl(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+      <defs>
+        <linearGradient id="avatar" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="${base}" />
+          <stop offset="100%" stop-color="#061512" />
+        </linearGradient>
+      </defs>
+      <rect width="240" height="240" rx="120" fill="url(#avatar)" />
+      <circle cx="120" cy="92" r="52" fill="${accent}" opacity="0.24" />
+      <circle cx="120" cy="92" r="36" fill="rgba(255,255,255,0.14)" />
+      <path d="M58 196c14-36 50-56 62-56s48 20 62 56" fill="rgba(255,255,255,0.16)" />
+      <text x="120" y="132" text-anchor="middle" fill="#EAFBF4" font-family="Arial, sans-serif" font-size="34" font-weight="700">${safeInitials}</text>
+      <title>${safeLabel}</title>
+    </svg>`
+  );
+}
+
 function formatMoney(value: number, currency: string) {
   const safe = Number.isFinite(value) ? value : 0;
   try {
@@ -733,15 +807,15 @@ export default function EVzoneMyLiveDealzSellerLandingEnterpriseV3Full() {
   const HERO_IMAGES = useMemo(
     () => [
       {
-        src: "https://images.pexels.com/photos/7414215/pexels-photo-7414215.jpeg?cs=srgb&dl=pexels-rdne-7414215.jpg&fm=jpg",
+        src: createHeroPlaceholder("Source with confidence", "Cross-border seller and buyer onboarding", BRAND.green),
         alt: "Chinese/Asian seller discussing a deal with a White business buyer",
       },
       {
-        src: "https://images.pexels.com/photos/8922210/pexels-photo-8922210.jpeg?cs=srgb&dl=pexels-ron-lach-8922210.jpg&fm=jpg",
+        src: createHeroPlaceholder("Negotiate faster", "Shared deal rooms, approvals, and payouts", BRAND.orange),
         alt: "Chinese/Asian seller meeting a Black business buyer during negotiation",
       },
       {
-        src: "https://images.pexels.com/photos/6348100/pexels-photo-6348100.jpeg?cs=srgb&dl=pexels-liza-summer-6348100.jpg&fm=jpg",
+        src: createHeroPlaceholder("Ship globally", "Logistics, finance, and storefronts in one stack", BRAND.green),
         alt: "Chinese/Asian seller preparing parcels for international delivery",
       },
     ],
@@ -750,11 +824,11 @@ export default function EVzoneMyLiveDealzSellerLandingEnterpriseV3Full() {
 
   const AVATARS = useMemo(
     () => [
-      { src: "https://images.pexels.com/photos/17049766/pexels-photo-17049766.jpeg?cs=srgb&dl=pexels-kooldark-17049766.jpg&fm=jpg", alt: "Chinese/Asian seller portrait" },
-      { src: "https://images.pexels.com/photos/15399144/pexels-photo-15399144.jpeg?cs=srgb&dl=pexels-monirathnak-15399144.jpg&fm=jpg", alt: "Chinese/Asian seller portrait" },
-      { src: "https://images.pexels.com/photos/27117681/pexels-photo-27117681.jpeg?cs=srgb&dl=pexels-bello-olamide-38387724-27117681.jpg&fm=jpg", alt: "Black buyer portrait" },
-      { src: "https://images.pexels.com/photos/8560308/pexels-photo-8560308.jpeg?cs=srgb&dl=pexels-timur-weber-8560308.jpg&fm=jpg", alt: "White buyer portrait" },
-      { src: "https://images.pexels.com/photos/30033725/pexels-photo-30033725.jpeg?cs=srgb&dl=pexels-mustapha-damilola-458083529-30033725.jpg&fm=jpg", alt: "Black buyer portrait" },
+      { src: createAvatarPlaceholder("Asian seller portrait", BRAND.green, "#17453B"), alt: "Chinese/Asian seller portrait" },
+      { src: createAvatarPlaceholder("Seller operations lead", BRAND.orange, "#4B2D0B"), alt: "Chinese/Asian seller portrait" },
+      { src: createAvatarPlaceholder("Buyer sourcing manager", BRAND.green, "#203F57"), alt: "Black buyer portrait" },
+      { src: createAvatarPlaceholder("Marketplace buyer", BRAND.orange, "#4A3947"), alt: "White buyer portrait" },
+      { src: createAvatarPlaceholder("Procurement buyer", BRAND.green, "#17363B"), alt: "Black buyer portrait" },
     ],
     []
   );

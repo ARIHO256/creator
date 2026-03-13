@@ -20,7 +20,7 @@ import { useNavigate } from "react-router-dom";
  * Supplier adaptations (minimal + required):
  * - Execution ownership: Supplier-hosted (direct control) vs Creator-hosted (request-only)
  * - In Creator-hosted mode, all platform actions become "requests" (no direct toggles/Go Live)
- * - Requests are logged locally (demo) and reflected as “Pending request” badges
+ * - Requests are logged locally and reflected as “Pending request” badges
  *
  * Canvas-safe:
  * - No lucide-react, no MUI.
@@ -594,7 +594,7 @@ export default function SupplierStreamToPlatformsPage() {
 
   const [estimatedUploadMbps, setEstimatedUploadMbps] = useState(12.4);
 
-  // Supplier adaptation: request log (demo)
+  // Supplier adaptation: request log
   const [pendingRequests, setPendingRequests] = useState({});
   const markRequested = (key, label) => {
     setPendingRequests((s) => ({
@@ -1196,7 +1196,7 @@ export default function SupplierStreamToPlatformsPage() {
                                         return;
                                       }
                                       setDestinations((prev) => prev.map((x) => (x.id === d.id ? { ...x, status: "Connected", errorTitle: undefined, errorNext: undefined } : x)));
-                                      push("Re-auth complete (demo)", "success");
+                                      push("Re-auth complete", "success");
                                     }}
                                   >
                                     <RefreshCw className="h-3.5 w-3.5" />
@@ -1666,7 +1666,7 @@ export default function SupplierStreamToPlatformsPage() {
 
                 <div className="mt-2 rounded-2xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800/50 p-3 ring-1 ring-slate-200 dark:ring-slate-800 transition">
                   <div className="text-[10px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">Premium policy hints</div>
-                  <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-500 leading-tight">Automatic restricted terms detection and platform policy hints (demo).</div>
+                  <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-500 leading-tight">Automatic restricted terms detection and platform policy hints.</div>
                 </div>
               </div>
             </div>

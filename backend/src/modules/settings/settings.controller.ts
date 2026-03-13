@@ -30,14 +30,14 @@ export class SettingsController {
   @Patch('settings')
   @RateLimit({ limit: 30, windowMs: 60_000 })
   updateSettings(@CurrentUser() user: RequestUser, @Body() body: UpdateSettingsDto) { return this.service.updateSettings(user.sub, body); }
-  @Get('settings/preferences') preferences(@CurrentUser() user: RequestUser) { return this.service.preferences(user.sub); }
+  @Get('settings/preferences') preferences(@CurrentUser() user: RequestUser) { return this.service.preferences(user.sub, user.role); }
   @Patch('settings/preferences')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  updatePreferences(@CurrentUser() user: RequestUser, @Body() body: UpdatePreferencesDto) { return this.service.updatePreferences(user.sub, body); }
-  @Get('settings/ui-state') uiState(@CurrentUser() user: RequestUser) { return this.service.uiState(user.sub); }
+  updatePreferences(@CurrentUser() user: RequestUser, @Body() body: UpdatePreferencesDto) { return this.service.updatePreferences(user.sub, user.role, body); }
+  @Get('settings/ui-state') uiState(@CurrentUser() user: RequestUser) { return this.service.uiState(user.sub, user.role); }
   @Patch('settings/ui-state')
   @RateLimit({ limit: 30, windowMs: 60_000 })
-  updateUiState(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.updateUiState(user.sub, body); }
+  updateUiState(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.updateUiState(user.sub, user.role, body); }
   @Get('settings/payout-methods') payoutMethods(@CurrentUser() user: RequestUser) { return this.service.payoutMethods(user.sub); }
   @Patch('settings/payout-methods')
   @RateLimit({ limit: 10, windowMs: 60_000 })
@@ -58,16 +58,16 @@ export class SettingsController {
   @Patch('settings/kyc')
   @RateLimit({ limit: 10, windowMs: 60_000 })
   updateKyc(@CurrentUser() user: RequestUser, @Body() body: UpdateKycDto) { return this.service.updateKyc(user.sub, body); }
-  @Get('settings/saved-views') savedViews(@CurrentUser() user: RequestUser) { return this.service.savedViews(user.sub); }
+  @Get('settings/saved-views') savedViews(@CurrentUser() user: RequestUser) { return this.service.savedViews(user.sub, user.role); }
   @Patch('settings/saved-views')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  updateSavedViews(@CurrentUser() user: RequestUser, @Body() body: UpdateSavedViewsDto) { return this.service.updateSavedViews(user.sub, body); }
+  updateSavedViews(@CurrentUser() user: RequestUser, @Body() body: UpdateSavedViewsDto) { return this.service.updateSavedViews(user.sub, user.role, body); }
   @Get('settings/help') help(@CurrentUser() user: RequestUser) { return this.service.help(user.sub); }
   @Get('settings/status-center') statusCenter(@CurrentUser() user: RequestUser) { return this.service.statusCenter(user.sub); }
-  @Get('settings/notification-preferences') notificationPreferences(@CurrentUser() user: RequestUser) { return this.service.notificationPreferences(user.sub); }
+  @Get('settings/notification-preferences') notificationPreferences(@CurrentUser() user: RequestUser) { return this.service.notificationPreferences(user.sub, user.role); }
   @Patch('settings/notification-preferences')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  updateNotificationPreferences(@CurrentUser() user: RequestUser, @Body() body: UpdateNotificationPreferencesDto) { return this.service.updateNotificationPreferences(user.sub, body); }
+  updateNotificationPreferences(@CurrentUser() user: RequestUser, @Body() body: UpdateNotificationPreferencesDto) { return this.service.updateNotificationPreferences(user.sub, user.role, body); }
   @Post('settings/payout/send-code')
   @RateLimit({ limit: 6, windowMs: 60_000 })
   sendPayoutCode(@CurrentUser() user: RequestUser, @Body() body: SendPayoutCodeDto) { return this.service.sendPayoutCode(user.sub, body); }
@@ -81,16 +81,16 @@ export class SettingsController {
   @RateLimit({ limit: 4, windowMs: 60_000 })
   signOutAll(@CurrentUser() user: RequestUser) { return this.service.signOutAll(user.sub); }
 
-  @Get('notifications') notifications(@CurrentUser() user: RequestUser) { return this.service.notifications(user.sub); }
+  @Get('notifications') notifications(@CurrentUser() user: RequestUser) { return this.service.notifications(user.sub, user.role); }
   @Patch('notifications/:id/read')
   @RateLimit({ limit: 60, windowMs: 60_000 })
-  notificationRead(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationRead(user.sub, id); }
+  notificationRead(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationRead(user.sub, user.role, id); }
   @Patch('notifications/:id/unread')
   @RateLimit({ limit: 60, windowMs: 60_000 })
-  notificationUnread(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationUnread(user.sub, id); }
+  notificationUnread(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.notificationUnread(user.sub, user.role, id); }
   @Post('notifications/read-all')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  notificationReadAll(@CurrentUser() user: RequestUser) { return this.service.notificationReadAll(user.sub); }
+  notificationReadAll(@CurrentUser() user: RequestUser) { return this.service.notificationReadAll(user.sub, user.role); }
 
   @Get('roles') roles(@CurrentUser() user: RequestUser) { return this.service.roles(user.sub); }
   @Patch('roles/security')

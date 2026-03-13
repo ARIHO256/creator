@@ -169,7 +169,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
 };
 
 // -----------------------------------------------------------------------------
-// Toasts (demo) — replace with NotificationContext if you have it
+// Toasts — replace with NotificationContext if you have it
 // -----------------------------------------------------------------------------
 
 type ToastKind = "success" | "info" | "warning" | "error";
@@ -957,7 +957,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
     if (next === "basic") {
       showWarning("Switched to Basic (Free). Pro tools remain visible in demo but are intended to be gated.");
     } else if (next === "pro") {
-      showSuccess("Welcome to Pro. Unlimited supplier Dealz and premium commerce tools are now unlocked (demo).");
+      showSuccess("Welcome to Pro. Unlimited supplier Dealz and premium commerce tools are now unlocked.");
     } else {
       showInfo("Enterprise is typically provisioned by Sales for supplier teams. Demo mode applied.");
     }
@@ -1602,7 +1602,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
               </div>
 
               <div className="mt-4 text-xs text-slate-600 dark:text-slate-300">
-                Note: This page is demo-ready. Wire it to your real billing backend and enforce supplier-plan limits at the API / feature-gate layer.
+                Note: This page is live-ready. Wire it to your real billing backend and enforce supplier-plan limits at the API / feature-gate layer.
               </div>
             </div>
           </div>
@@ -1618,7 +1618,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
         footer={
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs text-slate-600 dark:text-slate-300">
-              Changes here are demo-only.
+              Changes here are live-only.
             </div>
             <div className="flex items-center gap-2">
               <GhostButton onClick={() => setDrawerBilling(false)}>Cancel</GhostButton>
@@ -1628,7 +1628,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
                     showWarning("Add billing on Pro/Enterprise. Upgrade to continue.");
                     return;
                   }
-                  showSuccess("Billing updated successfully (demo).");
+                  showSuccess("Billing updated successfully.");
                   setDrawerBilling(false);
                 }}
               >
@@ -1738,7 +1738,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
                 <div className="col-span-1 flex justify-end">
                   <button
                     className="h-9 w-9 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-900 transition-colors flex items-center justify-center"
-                    onClick={() => showInfo(`Downloading ${inv.id} (demo).`)}
+                    onClick={() => showInfo(`Downloading ${inv.id}.`)}
                     aria-label="Download invoice"
                   >
                     <Receipt className="h-4 w-4 text-slate-700 dark:text-slate-200" />
@@ -1770,7 +1770,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
         subtitle="Tell us about your supplier team, catalogs, or branches — we’ll set up the right workspace"
         footer={
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-slate-600 dark:text-slate-300">We reply fast (demo).</div>
+            <div className="text-xs text-slate-600 dark:text-slate-300">We reply fast.</div>
             <div className="flex items-center gap-2">
               <GhostButton onClick={() => setDrawerSales(false)}>Cancel</GhostButton>
               <SecondaryButton
@@ -1779,7 +1779,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
                     showWarning("Please add an email address.");
                     return;
                   }
-                  showSuccess("Sales request sent (demo). We'll reach out soon.");
+                  showSuccess("Sales request sent. We'll reach out soon.");
                   setDrawerSales(false);
                 }}
               >

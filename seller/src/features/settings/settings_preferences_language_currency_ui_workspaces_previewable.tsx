@@ -296,12 +296,12 @@ function defaultWorkspaces() {
   const base = {};
   ROLES.forEach((r) => {
     base[r.value] = {
-      home: r.value === "seller" ? "/dashboard" : r.value === "provider" ? "/provider/service-command" : "/dashboard",
-      startOnLast: true,
-      showAdvanced: r.value !== "support",
-      defaultFilters: r.value === "seller" ? "Orders: New + At Risk" : r.value === "provider" ? "Reviews: Unreplied" : "Default",
-      pinned: r.value === "seller" ? ["Orders", "Listings", "Wholesale"] : r.value === "provider" ? ["Bookings", "Reviews", "Quotes"] : ["Status Center"],
-      quickActions: r.value === "seller" ? ["Create listing", "Draft quote", "Export"] : r.value === "provider" ? ["New quote", "Reply reviews", "Schedule"] : ["Open queue", "Export", "Audit"],
+      home: "",
+      startOnLast: false,
+      showAdvanced: false,
+      defaultFilters: "",
+      pinned: [],
+      quickActions: [],
     };
   });
   return base;
@@ -354,7 +354,7 @@ export default function PreferencesPage() {
         });
       } catch {
         if (!cancelled) {
-          pushToast({ title: "Backend unavailable", message: "Loaded default preferences.", tone: "warning" });
+          pushToast({ title: "Backend unavailable", message: "Could not load preferences.", tone: "warning" });
         }
       } finally {
         if (!cancelled) {

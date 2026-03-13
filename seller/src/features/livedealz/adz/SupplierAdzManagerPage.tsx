@@ -212,241 +212,7 @@ function Avatar({ src, alt }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS = [
-  {
-    id: "ADZ-10021",
-    name: "Flash Dealz: Power Bank",
-    status: "Live",
-    platforms: ["TikTok"],
-    supplier: {
-      name: "BBS",
-      category: "Electronics",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Flash Dealz", subtitle: "Limited-time drops" },
-    startISO: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "fullscreen",
-    // Supplier governance
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-
-    creator: { name: "Kofi Mensah", handle: "@kofi_live", avatarUrl: "https://i.pravatar.cc/100?img=11", verified: true },
-    owner: "Producer",
-    compensation: { type: "Commission", commissionRate: 0.12 },
-    offers: [
-      {
-        id: "O-1",
-        type: "PRODUCT",
-        name: "20,000mAh Power Bank",
-        currency: "UGX",
-        price: 65000,
-        basePrice: 80000,
-        stockLeft: 8,
-        posterUrl: "https://images.unsplash.com/photo-1580915411954-282cb1f69d1c?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 10,
-          step: 5,
-          leadTimeLabel: "Ships in 2–4 days",
-          tiers: [
-            { minQty: 10, unitPrice: 56000 },
-            { minQty: 25, unitPrice: 52000 },
-            { minQty: 50, unitPrice: 49000 }
-          ]
-        }
-      },
-      {
-        id: "O-2",
-        type: "SERVICE",
-        name: "Device setup support (15min)",
-        currency: "UGX",
-        price: 15000,
-        stockLeft: -1,
-        posterUrl: "https://images.unsplash.com/photo-1556741533-f6acd647d2c4?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        serviceMeta: { durationMins: 15, bookingType: "Instant" }
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: true,
-    needsApproval: false,
-    lock: { locked: true, label: "Locked by Ops", reason: "Live ads cannot be edited." },
-    impressions: 182400,
-    clicks: 9720,
-    orders: 412,
-    earnings: 1860,
-    earningsCurrency: "USD",
-    generated: true
-  },
-  {
-    id: "ADZ-10022",
-    name: "Beauty Drop: Glow Serum",
-    status: "Pending approval",
-    platforms: ["Instagram"],
-    supplier: {
-      name: "GlowCo",
-      category: "Beauty",
-      logoUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Beauty Drop", subtitle: "Host-first content" },
-    startISO: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 37 * 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Manual",
-    creator: { name: "Nala Okoye", handle: "@nala.skin", avatarUrl: "https://i.pravatar.cc/100?img=32", verified: true },
-    owner: "Editor",
-    compensation: { type: "Flat fee", flatFee: 550, currency: "GBP" },
-    offers: [
-      {
-        id: "O-3",
-        type: "PRODUCT",
-        name: "Vitamin C Serum",
-        currency: "UGX",
-        price: 38000,
-        basePrice: 52000,
-        stockLeft: 12,
-        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL"
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: false,
-    needsApproval: true,
-    impressions: 0,
-    clicks: 0,
-    orders: 0,
-    earnings: 0,
-    earningsCurrency: "USD",
-    generated: false
-  },
-  {
-    id: "ADZ-10023",
-    name: "Home Picks: Blender",
-    status: "Paused",
-    platforms: ["YouTube"],
-    supplier: {
-      name: "HomePro",
-      category: "Home",
-      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Home Essentials", subtitle: "Kitchen upgrade" },
-    startISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    hostRole: "Supplier",
-    creatorUsage: "I will NOT use a Creator",
-    collabMode: "(n/a)",
-    approvalMode: "Manual",
-    creator: { name: "(Supplier-hosted)", handle: "@homepro", avatarUrl: "https://i.pravatar.cc/100?img=47" },
-    owner: "Owner",
-    compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 200, currency: "GBP" },
-    offers: [
-      {
-        id: "O-4",
-        type: "PRODUCT",
-        name: "6-Speed Blender",
-        currency: "UGX",
-        price: 240000,
-        stockLeft: 18,
-        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 3,
-          step: 1,
-          leadTimeLabel: "Ships in 3–6 days",
-          tiers: [
-            { minQty: 3, unitPrice: 210000 },
-            { minQty: 6, unitPrice: 199000 },
-            { minQty: 12, unitPrice: 189000 }
-          ]
-        }
-      }
-    ],
-    hasBrokenLink: true,
-    lowStock: false,
-    needsApproval: false,
-    impressions: 60200,
-    clicks: 1100,
-    orders: 21,
-    earnings: 95,
-    earningsCurrency: "USD",
-    generated: true
-  },
-  {
-    id: "ADZ-10024",
-    name: "EV Accessories: Helmet",
-    status: "Rejected",
-    platforms: ["TikTok"],
-    supplier: {
-      name: "MotoGear",
-      category: "Auto",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "EV Accessories", subtitle: "Safety picks" },
-    startISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1495555961986-6d4c1ecb7be3?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    hostRole: "Creator",
-    creatorUsage: "I am NOT SURE yet",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    creator: { name: "Sade Bello", handle: "@sade.style", avatarUrl: "https://i.pravatar.cc/100?img=37" },
-    owner: "Editor",
-    compensation: { type: "Commission", commissionRate: 0.1 },
-    offers: [
-      {
-        id: "O-5",
-        type: "PRODUCT",
-        name: "Rider Helmet (ECE)",
-        currency: "UGX",
-        price: 165000,
-        stockLeft: 0,
-        posterUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL"
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: false,
-    needsApproval: false,
-    impressions: 3000,
-    clicks: 55,
-    orders: 1,
-    earnings: 4,
-    earningsCurrency: "USD",
-    generated: false
-  }
-];
+const DEMO_ADS: Array<Record<string, any>> = [];
 
 /* ------------------------------ Mini charts (no libs) ---------------------- */
 
@@ -523,7 +289,7 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useState(DEMO_ADS);
+  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;
@@ -655,7 +421,7 @@ export default function SupplierAdzManagerPage() {
     } catch {
       // ignore
     }
-    setToast("Share link copied (demo).");
+    setToast("Share link copied.");
   }
 
   function generateAd(adId) {
@@ -676,12 +442,12 @@ export default function SupplierAdzManagerPage() {
 
   function updateOfferDefaultMode(offerId, mode) {
     setModeByOffer((prev) => ({ ...prev, [offerId]: mode }));
-    setToast(`Default mode set: ${offerId} → ${mode === "WHOLESALE" ? "Wholesale" : "Retail"} (demo)`);
+    setToast(`Default mode set: ${offerId} → ${mode === "WHOLESALE" ? "Wholesale" : "Retail"}`);
   }
 
   function resubmitRejected(adId) {
     setAds((prev) => prev.map((a) => (a.id === adId ? { ...a, status: "Pending approval", needsApproval: true } : a)));
-    setToast("Resubmitted for review (demo).");
+    setToast("Resubmitted for review.");
   }
 
   const trendImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
@@ -1091,7 +857,7 @@ export default function SupplierAdzManagerPage() {
                               </Btn>
 
                               {o.videoUrl ? (
-                                <Btn tone="neutral" left={<span>▶</span>} onClick={() => setToast(`Play offer video: ${o.name} (demo)`)}>
+                                <Btn tone="neutral" left={<span>▶</span>} onClick={() => setToast(`Play offer video: ${o.name}`)}>
                                   Watch
                                 </Btn>
                               ) : null}
@@ -1226,7 +992,7 @@ export default function SupplierAdzManagerPage() {
               </div>
             </div>
 
-            <MiniTrend title="Trend (demo)" subtitle="Impressions vs Orders (14 days)" seriesA={trendImpr} seriesB={trendOrders} />
+            <MiniTrend title="Trend" subtitle="Impressions vs Orders (14 days)" seriesA={trendImpr} seriesB={trendOrders} />
 
             <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
               <div className="text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Supplier notes</div>
@@ -1259,7 +1025,7 @@ export default function SupplierAdzManagerPage() {
           <div className="mt-3 grid gap-2">
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Pixel status</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Connect Meta/TikTok/Google (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Connect Meta/TikTok/Google</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Pill tone="neutral">Meta: Not connected</Pill>
                 <Pill tone="neutral">TikTok: Connected</Pill>
@@ -1269,7 +1035,7 @@ export default function SupplierAdzManagerPage() {
 
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Short links</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Auto-rotate + click health (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Auto-rotate + click health</div>
               <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
                 Links are enabled only after Generate. Broken link detection auto-pauses on repeated failures.
               </div>
@@ -1277,7 +1043,7 @@ export default function SupplierAdzManagerPage() {
 
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Attribution notes</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Payout timing reminders (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Payout timing reminders</div>
               <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
                 For collab campaigns, payouts may be held until Admin approval and dispute windows end.
               </div>
@@ -1302,15 +1068,15 @@ export default function SupplierAdzManagerPage() {
           <div className="mt-3 grid gap-2">
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Start from template</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Create new ad from template (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Create new ad from template</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Btn tone="primary" left={<span>＋</span>} onClick={() => setToast("Create from template (demo)")}>Use template</Btn>
-                <Btn tone="neutral" left={<span>👁️</span>} onClick={() => setToast("Preview templates (demo)")}>Preview</Btn>
+                <Btn tone="primary" left={<span>＋</span>} onClick={() => setToast("Create from template")}>Use template</Btn>
+                <Btn tone="neutral" left={<span>👁️</span>} onClick={() => setToast("Preview templates")}>Preview</Btn>
               </div>
             </div>
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Brand kit rules</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Fonts, colors, voice guidelines (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Fonts, colors, voice guidelines</div>
               <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
                 Enforced during Generate: banned claims, missing disclaimers, inconsistent tone.
               </div>

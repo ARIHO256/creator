@@ -846,9 +846,18 @@ export default function SupplierAssetLibraryPage() {
   const campaignsForSupplier = useMemo(() => campaigns.filter((c) => c.supplierId === selectedSupplierId), [selectedSupplierId]);
   const deliverablesForCampaign = useMemo(() => deliverables.filter((d) => d.campaignId === selectedCampaignId), [selectedCampaignId]);
 
-  const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) || creators[0], [selectedCreatorId]);
-  const selectedSupplier = useMemo(() => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0], [selectedSupplierId]);
-  const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0], [selectedCampaignId, campaignsForSupplier]);
+  const selectedCreator = useMemo(
+    () => creators.find((c) => c.id === selectedCreatorId) || creators[0] || null,
+    [creators, selectedCreatorId]
+  );
+  const selectedSupplier = useMemo(
+    () => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0] || null,
+    [selectedSupplierId, suppliers]
+  );
+  const selectedCampaign = useMemo(
+    () => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0] || null,
+    [campaigns, campaignsForSupplier, selectedCampaignId]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -939,7 +948,7 @@ export default function SupplierAssetLibraryPage() {
 
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) || null, [assets, activeAssetId]);
 
-  // Supplier review note per asset (demo)
+  // Supplier review note per asset
   const [reviewNotes, setReviewNotes] = useState(() => ({}));
   const activeReviewNote = reviewNotes[activeAssetId || ""] || "";
 
@@ -971,7 +980,7 @@ export default function SupplierAssetLibraryPage() {
     // Supplier approves a creator submission: move to Admin review.
     const next = supplierAutoApprove ? "pending_admin" : "pending_admin";
     void setStatus(asset.id, next, activeReviewNote);
-    setToast({ title: "Approved", body: "Sent to Admin review (demo)." });
+    setToast({ title: "Approved", body: "Sent to Admin review." });
   }
 
   function supplierRequestChanges(asset) {
@@ -992,11 +1001,11 @@ export default function SupplierAssetLibraryPage() {
     }
 
     if (pickerMode) {
-      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id} (demo)` });
+      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id}` });
       return;
     }
 
-    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached (demo).` });
+    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached.` });
   }
 
   // ---------------- Submission drawer (Supplier uploads) ----------------
@@ -1210,7 +1219,7 @@ export default function SupplierAssetLibraryPage() {
       return;
     }
 
-    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review (demo)." });
+    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review." });
     setIsSubmitOpen(false);
   }
 
@@ -1232,7 +1241,7 @@ export default function SupplierAssetLibraryPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Btn
               tone="neutral"
-              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates (demo)" })}
+              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates" })}
               className="hidden sm:inline-flex"
             >
               ✨ Supplier assets & Creator templates
@@ -1277,7 +1286,7 @@ export default function SupplierAssetLibraryPage() {
                   </span>
                 ) : null}
                 {returnTo ? (
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder (demo)" })}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder" })}>
                     ← Back
                   </Btn>
                 ) : null}
@@ -1285,7 +1294,7 @@ export default function SupplierAssetLibraryPage() {
                   tone="neutral"
                   onClick={() => {
                     safeCopy(window.location.href);
-                    setToast({ title: "Shared", body: "Link copied (demo)." });
+                    setToast({ title: "Shared", body: "Link copied." });
                   }}
                 >
                   ↗ Share link
@@ -1317,17 +1326,32 @@ export default function SupplierAssetLibraryPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Creator selector */}
                   <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
-                    <img src={selectedCreator.avatarUrl} alt={selectedCreator.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                    {selectedCreator?.avatarUrl ? (
+                      <img
+                        src={selectedCreator.avatarUrl}
+                        alt={selectedCreator.name || "Creator"}
+                        className="h-6 w-6 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                        {selectedCreator?.name?.slice(0, 1)?.toUpperCase() || "C"}
+                      </div>
+                    )}
                     <select
                       value={selectedCreatorId}
                       onChange={(e) => setSelectedCreatorId(e.target.value)}
+                      disabled={creators.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {creators.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.handle})
-                        </option>
-                      ))}
+                      {creators.length > 0 ? (
+                        creators.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.handle})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No creators available</option>
+                      )}
                     </select>
                   </div>
 
@@ -1337,13 +1361,18 @@ export default function SupplierAssetLibraryPage() {
                     <select
                       value={selectedSupplierId}
                       onChange={(e) => setSelectedSupplierId(e.target.value)}
+                      disabled={suppliers.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {suppliers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          Supplier: {p.name} ({p.kind})
-                        </option>
-                      ))}
+                      {suppliers.length > 0 ? (
+                        suppliers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            Supplier: {p.name} ({p.kind})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No suppliers available</option>
+                      )}
                     </select>
                     <span className="text-slate-400">▾</span>
                   </div>
@@ -1353,13 +1382,18 @@ export default function SupplierAssetLibraryPage() {
                     <select
                       value={selectedCampaignId}
                       onChange={(e) => setSelectedCampaignId(e.target.value)}
+                      disabled={campaignsForSupplier.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {campaignsForSupplier.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          Campaign: {c.name} · {c.brand} ({c.status})
-                        </option>
-                      ))}
+                      {campaignsForSupplier.length > 0 ? (
+                        campaignsForSupplier.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Campaign: {c.name} · {c.brand} ({c.status})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No campaigns available</option>
+                      )}
                     </select>
                     <span className="text-slate-400">▾</span>
                   </div>
@@ -1451,7 +1485,7 @@ export default function SupplierAssetLibraryPage() {
                 </div>
 
                 <div className="hidden items-center gap-2 sm:flex">
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs (demo)" })}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs" })}>
                     ⭐ Saved packs
                   </Btn>
                 </div>
@@ -1538,7 +1572,7 @@ export default function SupplierAssetLibraryPage() {
                   <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Collections</div>
                   <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Group assets into reusable packs for Adz or Live.</div>
                 </div>
-                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection (demo)" })}>
+                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection" })}>
                   ➕ New collection
                 </Btn>
               </div>
@@ -1556,7 +1590,7 @@ export default function SupplierAssetLibraryPage() {
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Use for shoppable ads and short lives.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack (demo)" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack" })}>
                       Use pack →
                     </Btn>
                   </div>
@@ -1574,7 +1608,7 @@ export default function SupplierAssetLibraryPage() {
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Complete review to unlock this collection.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection (demo)" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection" })}>
                       Open ↗
                     </Btn>
                   </div>
@@ -1679,7 +1713,7 @@ export default function SupplierAssetLibraryPage() {
         open={isSubmitOpen}
         onClose={() => setIsSubmitOpen(false)}
         title="Add content"
-        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default (demo)."
+        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default."
         footer={
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">

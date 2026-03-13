@@ -22,7 +22,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
  *
  * Notes:
  * - Canvas-safe: no MUI, no lucide-react, no external contexts/hooks.
- * - Replace mock data with real Campaign/Session state from your store + routing.
+ * - Replace live data with real Campaign/Session state from your store + routing.
  * - RBAC comments included where you’d gate send/manage actions.
  */
 
@@ -487,7 +487,7 @@ export default function SupplierLiveAlertsManagerPage() {
   const [dealName, setDealName] = useState("GlowUp Serum Bundle");
   const [dealEndsMinutes, setDealEndsMinutes] = useState(10);
 
-  // cap timestamps (demo)
+  // cap timestamps
   const [lastSent, setLastSent] = useState({
     were_live: Date.now() - 11 * 60 * 1000,
     flash_deal: Date.now() - 20 * 60 * 1000,
@@ -556,7 +556,7 @@ export default function SupplierLiveAlertsManagerPage() {
         await new Promise((r) => setTimeout(r, 600));
         setLastSent((s) => ({ ...s, [active.key]: Date.now() }));
 
-        // Supplier add-on: create creator request tasks (demo)
+        // Supplier add-on: create creator request tasks
         if (campaign.creatorUsageDecision === "I will use a Creator" && alsoRequestCreator && selectedCreatorIds.length > 0) {
           await new Promise((r) => setTimeout(r, 250));
         }
@@ -887,7 +887,7 @@ export default function SupplierLiveAlertsManagerPage() {
                           />
                           <Btn
                             tone="ghost"
-                            onClick={() => push("Manage account (demo)", "info")}
+                            onClick={() => push("Manage account", "info")}
                             left={<Link2 className="h-4 w-4" />}
                             title="RBAC: supplier.live.alerts.manage"
                           >

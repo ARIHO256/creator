@@ -458,6 +458,10 @@ export default function PayoutMethodsPreviewable() {
 
   const [methods, setMethods] = useState<PayoutMethod[]>([]);
   const hydratedRef = useRef(false);
+  const initialSnapshotRef = useRef("");
+  const [kycState, setKycState] = useState<KycState>("Not started");
+  const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("Manual");
+  const [minThreshold, setMinThreshold] = useState(0);
   useEffect(() => {
     let active = true;
     (async () => {
@@ -465,25 +469,35 @@ export default function PayoutMethodsPreviewable() {
         const payload = await sellerBackendApi.getPayoutMethods();
         if (!active) return;
         const incoming = Array.isArray(payload.methods) ? payload.methods as Array<Record<string, unknown>> : [];
-        setMethods(
-          incoming.map((method) => ({
-            id: String(method.id),
-            kind: String(method.kind || method.type || "bank") === "provider" ? "provider" : "bank",
-            provider: String(method.provider || method.bank || method.label || "Provider"),
-            label: String(method.label || "Payout method"),
-            country: String(method.country || "UG"),
-            currency: String(method.currency || "USD"),
-            status: String(method.status || "Verified"),
-            isDefault: Boolean(method.isDefault),
-            createdAt: String(method.createdAt || new Date().toISOString()),
-            lastUsedAt: (method.lastUsedAt as string | null | undefined) ?? null,
-            masked: String(method.masked || method.accountNumberMasked || method.details?.masked || "")
-          }))
-        );
+        const mappedMethods = incoming.map((method) => ({
+          id: String(method.id),
+          kind: String(method.kind || method.type || "bank") === "provider" ? "provider" : "bank",
+          provider: String(method.provider || method.bank || method.label || "Provider"),
+          label: String(method.label || "Payout method"),
+          country: String(method.country || "UG"),
+          currency: String(method.currency || "USD"),
+          status: String(method.status || "Verified"),
+          isDefault: Boolean(method.isDefault),
+          createdAt: String(method.createdAt || new Date().toISOString()),
+          lastUsedAt: (method.lastUsedAt as string | null | undefined) ?? null,
+          masked: String(method.masked || method.accountNumberMasked || method.details?.masked || "")
+        }));
+        setMethods(mappedMethods);
         const metadata = (payload.metadata as Record<string, unknown> | undefined) ?? {};
-        setKycState((metadata.kycState as KycState | undefined) ?? "Pending");
-        setPayoutSchedule((metadata.payoutSchedule as PayoutSchedule | undefined) ?? "Weekly");
-        setMinThreshold(Number(metadata.minThreshold ?? 50));
+        const nextKycState = (metadata.kycState as KycState | undefined) ?? "Not started";
+        const nextPayoutSchedule = (metadata.payoutSchedule as PayoutSchedule | undefined) ?? "Manual";
+        const nextMinThreshold = Number(metadata.minThreshold ?? 0);
+        setKycState(nextKycState);
+        setPayoutSchedule(nextPayoutSchedule);
+        setMinThreshold(nextMinThreshold);
+        initialSnapshotRef.current = JSON.stringify({
+          methods: mappedMethods,
+          metadata: {
+            kycState: nextKycState,
+            payoutSchedule: nextPayoutSchedule,
+            minThreshold: nextMinThreshold
+          }
+        });
         hydratedRef.current = true;
       } catch {
         if (!active) return;
@@ -495,20 +509,18 @@ export default function PayoutMethodsPreviewable() {
     };
   }, []);
   const defaultMethod = useMemo(() => methods.find((m) => m.isDefault) || null, [methods]);
-
-  const [kycState, setKycState] = useState<KycState>("Pending");
-  const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("Weekly");
-  const [minThreshold, setMinThreshold] = useState(50);
   useEffect(() => {
     if (!hydratedRef.current) return;
-    void sellerBackendApi.patchPayoutMethods({
+    const payload = {
       methods: methods.map((method) => ({
         ...method,
         type: method.kind,
         details: { provider: method.provider, country: method.country, status: method.status, masked: method.masked, createdAt: method.createdAt, lastUsedAt: method.lastUsedAt }
       })),
       metadata: { kycState, payoutSchedule, minThreshold }
-    });
+    };
+    if (JSON.stringify(payload) === initialSnapshotRef.current) return;
+    void sellerBackendApi.patchPayoutMethods(payload);
   }, [methods, kycState, payoutSchedule, minThreshold]);
 
   const [tab, setTab] = useState<MethodsTab>("All");

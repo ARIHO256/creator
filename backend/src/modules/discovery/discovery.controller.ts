@@ -3,8 +3,10 @@ import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
+import { Roles } from '../../common/decorators/roles.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { DiscoveryService } from './discovery.service.js';
+import { CreateInviteDto } from './dto/create-invite.dto.js';
 import { SearchQueryDto } from './dto/search-query.dto.js';
 
 @Controller()
@@ -68,6 +70,13 @@ export class DiscoveryController {
   @Get('invites')
   invites(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
     return this.discoveryService.invites(user.sub, query);
+  }
+
+  @Post('invites')
+  @Roles('SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  createInvite(@CurrentUser() user: RequestUser, @Body() body: CreateInviteDto) {
+    return this.discoveryService.createInvite(user.sub, body);
   }
 
   @Post('invites/:id/respond')

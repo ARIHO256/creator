@@ -30,7 +30,7 @@ export type PageContentMap = {
 export type PageKey = keyof PageContentMap;
 export type PageContentByKey<K extends PageKey> = PageContentMap[K]["seller"];
 
-const EMPTY_PAGE_CONTENT: { [K in PageKey]: PageContentByKey<K> } = {
+const INITIAL_PAGE_CONTENT: { [K in PageKey]: PageContentByKey<K> } = {
   dashboard: {
     quickActions: [],
     hero: {
@@ -216,12 +216,16 @@ const inferNotificationPriority = (entry: Record<string, unknown>) => {
 
 async function loadDashboardContent(role: UserRole): Promise<DashboardContent> {
   if (role === "provider") {
-    const [bookingsPayload, serviceCommandPayload] = await Promise.all([
-      sellerBackendApi.getProviderBookings().catch(() => ({ bookings: [] })),
-      sellerBackendApi.getProviderServiceCommand().catch(() => ({ queues: [], kpis: [] })),
+    const [bookingsResult, serviceCommandResult] = await Promise.allSettled([
+      sellerBackendApi.getProviderBookings(),
+      sellerBackendApi.getProviderServiceCommand(),
     ]);
-    const bookings = Array.isArray(bookingsPayload.bookings) ? bookingsPayload.bookings : [];
-    const queues = Array.isArray(serviceCommandPayload.queues) ? serviceCommandPayload.queues : [];
+    const bookingsPayload =
+      bookingsResult.status === "fulfilled" ? bookingsResult.value : undefined;
+    const serviceCommandPayload =
+      serviceCommandResult.status === "fulfilled" ? serviceCommandResult.value : undefined;
+    const bookings = Array.isArray(bookingsPayload?.bookings) ? bookingsPayload.bookings : [];
+    const queues = Array.isArray(serviceCommandPayload?.queues) ? serviceCommandPayload.queues : [];
     return {
       quickActions: [
         { key: "new-booking", label: "New Booking", to: "/provider/bookings" },
@@ -249,18 +253,21 @@ async function loadDashboardContent(role: UserRole): Promise<DashboardContent> {
     };
   }
 
-  return (await sellerBackendApi.getSellerDashboard().catch(() => EMPTY_PAGE_CONTENT.dashboard)) as DashboardContent;
+  return (await sellerBackendApi.getSellerDashboard()) as DashboardContent;
 }
 
 async function loadMessagesContent(): Promise<MessagesContent> {
-  return (await sellerBackendApi.getMessages().catch(() => EMPTY_PAGE_CONTENT.messages)) as MessagesContent;
+  return (await sellerBackendApi.getMessages()) as MessagesContent;
 }
 
 async function loadNotificationsContent(): Promise<NotificationsContent> {
-  const [itemsPayload, preferencesPayload] = await Promise.all([
-    sellerBackendApi.getNotifications().catch(() => []),
-    sellerBackendApi.getNotificationPreferences().catch(() => ({ watches: [] })),
+  const [itemsResult, preferencesResult] = await Promise.allSettled([
+    sellerBackendApi.getNotifications(),
+    sellerBackendApi.getNotificationPreferences(),
   ]);
+  const itemsPayload = itemsResult.status === "fulfilled" ? itemsResult.value : [];
+  const preferencesPayload =
+    preferencesResult.status === "fulfilled" ? preferencesResult.value : undefined;
 
   const items = Array.isArray(itemsPayload)
     ? itemsPayload.map((entry) => {
@@ -303,13 +310,11 @@ async function loadNotificationsContent(): Promise<NotificationsContent> {
 }
 
 async function loadAnalyticsContent(): Promise<AnalyticsContent> {
-  return (await sellerBackendApi.getAnalyticsPage().catch(() => EMPTY_PAGE_CONTENT.analytics)) as AnalyticsContent;
+  return (await sellerBackendApi.getAnalyticsPage()) as AnalyticsContent;
 }
 
 async function loadComplianceContent(): Promise<ComplianceContent> {
-  const payload = (await sellerBackendApi.getCompliance().catch(
-    () => EMPTY_PAGE_CONTENT.compliance
-  )) as Record<string, unknown>;
+  const payload = (await sellerBackendApi.getCompliance()) as Record<string, unknown>;
   const autoRules = Array.isArray(payload.autoRules)
     ? payload.autoRules.map((entry) => {
         const record = entry as Record<string, unknown>;
@@ -333,14 +338,12 @@ async function loadComplianceContent(): Promise<ComplianceContent> {
 }
 
 async function loadListingWizardContent(): Promise<ListingWizardContent> {
-  return (await sellerBackendApi.getSellerListingWizard().catch(
-    () => EMPTY_PAGE_CONTENT.listingWizard
-  )) as ListingWizardContent;
+  return (await sellerBackendApi.getSellerListingWizard()) as ListingWizardContent;
 }
 
 async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {
   if (role === "provider") {
-    const payload = await sellerBackendApi.getProviderBookings().catch(() => ({ bookings: [] }));
+    const payload = await sellerBackendApi.getProviderBookings();
     const bookings = Array.isArray(payload.bookings)
       ? payload.bookings.map((entry) => {
           const data = ((entry as Record<string, unknown>).data ?? {}) as Record<string, unknown>;
@@ -364,9 +367,7 @@ async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {
     };
   }
 
-  const payload = (await sellerBackendApi.getSellerOrders().catch(
-    () => EMPTY_PAGE_CONTENT.orders
-  )) as Record<string, unknown>;
+  const payload = (await sellerBackendApi.getSellerOrders()) as Record<string, unknown>;
   const orders = Array.isArray(payload.orders)
     ? payload.orders.map((entry) => {
         const record = entry as Record<string, unknown>;
@@ -396,6 +397,8 @@ async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {
     orders,
     returns,
     disputes,
+    offlineNotice:
+      typeof payload.offlineNotice === "string" ? payload.offlineNotice : undefined,
   };
 }
 
@@ -419,32 +422,29 @@ async function loadPageContent<K extends PageKey>(
     case "orders":
       return (await loadOrdersContent(role)) as PageContentByKey<K>;
     default:
-      return EMPTY_PAGE_CONTENT[key];
+      return INITIAL_PAGE_CONTENT[key];
   }
 }
 
 export function getPageContentByRole<K extends PageKey>(key: K, _role: UserRole): PageContentByKey<K> {
-  return EMPTY_PAGE_CONTENT[key];
+  return INITIAL_PAGE_CONTENT[key];
 }
 
 export function useRolePageContent<K extends PageKey>(key: K, roleOverride?: UserRole) {
   const session = useSession();
   const role = roleOverride ?? getCurrentRole(session);
-  const [content, setContent] = useState<PageContentByKey<K>>(EMPTY_PAGE_CONTENT[key]);
+  const [content, setContent] = useState<PageContentByKey<K>>(INITIAL_PAGE_CONTENT[key]);
 
   useEffect(() => {
     let active = true;
+    setContent(INITIAL_PAGE_CONTENT[key]);
     void loadPageContent(key, role)
       .then((payload) => {
         if (active) {
           setContent(payload);
         }
       })
-      .catch(() => {
-        if (active) {
-          setContent(EMPTY_PAGE_CONTENT[key]);
-        }
-      });
+      .catch(() => undefined);
 
     return () => {
       active = false;

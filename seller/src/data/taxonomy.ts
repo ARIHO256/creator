@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ListingTaxonomyNode } from "./pageTypes";
-
-const DEFAULT_API_BASE = "http://localhost:3000/api";
+import { resolveApiUrl } from "../lib/apiRuntime";
 
 type TaxonomyTreeResponse = {
   id: string;
@@ -14,7 +13,17 @@ type TaxonomyNodesResponse = {
   nodes?: unknown;
 };
 
-const getApiBase = () => String(import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE).replace(/\/+$/, "");
+type ApiEnvelope<T> = {
+  success?: boolean;
+  data?: T;
+};
+
+const unwrapEnvelope = <T>(value: unknown): T => {
+  if (value && typeof value === "object" && "data" in (value as Record<string, unknown>)) {
+    return ((value as ApiEnvelope<T>).data ?? value) as T;
+  }
+  return value as T;
+};
 
 const normalizeNode = (value: unknown): ListingTaxonomyNode | null => {
   if (!value || typeof value !== "object") return null;
@@ -78,75 +87,116 @@ export const readSellerTaxonomy = () => {
   return [];
 };
 
-async function fetchTaxonomyTree(slug: string, kind: "seller" | "provider") {
-  const nodesResponse = await fetch(`${getApiBase()}/taxonomy/trees/${slug}/nodes`, {
+async function fetchApiJson<T>(path: string): Promise<T> {
+  const url = await resolveApiUrl(path);
+  if (!url) {
+    throw new Error(`API base URL not configured (cannot resolve ${path})`);
+  }
+  const response = await fetch(url, {
     headers: { Accept: "application/json" },
   });
-  if (!nodesResponse.ok) {
-    throw new Error(`Failed to load taxonomy nodes for ${slug}: ${nodesResponse.status}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load ${path}: ${response.status}`);
   }
-  const payload = (await nodesResponse.json()) as TaxonomyNodesResponse;
+  return unwrapEnvelope<T>(await response.json());
+}
+
+async function fetchTaxonomyTree(slug: string, kind: "seller" | "provider") {
+  const payload = await fetchApiJson<TaxonomyNodesResponse>(`/api/taxonomy/trees/${slug}/nodes`);
   return transformTree(normalizeTree(payload.nodes), kind);
 }
 
 export async function fetchSellerTaxonomy(): Promise<ListingTaxonomyNode[]> {
   try {
     return await fetchTaxonomyTree("sellerfront-catalog-taxonomy", "seller");
-  } catch {
-    const treesResponse = await fetch(`${getApiBase()}/taxonomy/trees`, {
-      headers: { Accept: "application/json" },
-    });
-    if (!treesResponse.ok) {
-      throw new Error(`Failed to load taxonomy trees: ${treesResponse.status}`);
-    }
-    const trees = (await treesResponse.json()) as TaxonomyTreeResponse[];
+  } catch (error) {
+    const trees = await fetchApiJson<TaxonomyTreeResponse[]>(`/api/taxonomy/trees`);
     const tree =
       trees.find((item) => item.slug === "sellerfront-catalog-taxonomy") ||
       trees.find((item) => item.status === "ACTIVE") ||
       trees[0];
     if (!tree?.id) {
-      return [];
+      throw error;
     }
     return fetchTaxonomyTree(tree.id, "seller");
   }
 }
 
-export function useSellerTaxonomy() {
+type TaxonomyQueryState = {
+  taxonomy: ListingTaxonomyNode[];
+  loading: boolean;
+  error: Error | null;
+  refetch: () => void;
+};
+
+export function useSellerTaxonomy(): TaxonomyQueryState {
   const [taxonomy, setTaxonomy] = useState<ListingTaxonomyNode[]>(() => readSellerTaxonomy());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  const refetch = useCallback(() => {
+    setNonce((v) => v + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setError(null);
     void fetchSellerTaxonomy()
       .then((next) => {
-        if (active && next.length > 0) {
-          setTaxonomy(next);
-        }
+        if (!active) return;
+        setTaxonomy(next);
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        if (!active) return;
+        setTaxonomy([]);
+        setError(err instanceof Error ? err : new Error("Failed to load seller taxonomy"));
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [nonce]);
 
-  return taxonomy;
+  return { taxonomy, loading, error, refetch };
 }
 
-export function useProviderServiceTaxonomy() {
+export function useProviderServiceTaxonomy(): TaxonomyQueryState {
   const [taxonomy, setTaxonomy] = useState<ListingTaxonomyNode[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  const refetch = useCallback(() => {
+    setNonce((v) => v + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setError(null);
     void fetchTaxonomyTree("provider-service-taxonomy", "provider")
       .then((next) => {
-        if (active) {
-          setTaxonomy(next);
-        }
+        if (!active) return;
+        setTaxonomy(next);
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        if (!active) return;
+        setTaxonomy([]);
+        setError(err instanceof Error ? err : new Error("Failed to load provider taxonomy"));
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [nonce]);
 
-  return taxonomy;
+  return { taxonomy, loading, error, refetch };
 }

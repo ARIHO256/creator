@@ -95,6 +95,7 @@ const IconChevronRight = ({ className }) => (
 const IconCategory = () => <IconShell>◎</IconShell>;
 const IconSearch = () => <IconShell>🔍</IconShell>;
 
+// Taxonomy must be provided by the backend (DB-backed). We intentionally do not ship a hardcoded fallback tree.
 const initialTaxonomy: TaxonomyNode[] = [
   {
     id: "marketplace-evmart",
@@ -421,6 +422,7 @@ function SellerOnboardingTaxonomyNavigator({
   types,
   labels,
   copy,
+  onRetry,
 }: {
   selections?: TaxonomySelection[];
   onChange?: (next: TaxonomySelection[]) => void;
@@ -431,8 +433,9 @@ function SellerOnboardingTaxonomyNavigator({
   types?: Partial<typeof DEFAULT_TYPES>;
   labels?: Partial<typeof DEFAULT_LABELS>;
   copy?: Partial<typeof DEFAULT_COPY>;
+  onRetry?: () => void;
 }) {
-  const taxonomy = taxonomyData || initialTaxonomy;
+  const taxonomy = taxonomyData ?? initialTaxonomy;
   const typeConfig = { ...DEFAULT_TYPES, ...types };
   const labelConfig = { ...DEFAULT_LABELS, ...labels };
   const copyConfig = { ...DEFAULT_COPY, ...copy };
@@ -446,6 +449,45 @@ function SellerOnboardingTaxonomyNavigator({
   const [selectedFamilyId, setSelectedFamilyId] = useState("");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedSubcategoryId, setSelectedSubcategoryId] = useState("");
+
+  if (!taxonomy.length) {
+    return (
+      <Paper
+        elevation={0}
+        className={className}
+        sx={{
+          borderRadius: CARD_RADIUS,
+          border: "1px solid rgba(226,232,240,1)",
+          backgroundColor: EV_COLORS.surface,
+          p: 3,
+        }}
+      >
+        <Stack spacing={1.5}>
+          <Typography variant="subtitle2" sx={{ color: EV_COLORS.textMain, fontWeight: 700 }}>
+            Taxonomy unavailable
+          </Typography>
+          <Typography variant="body2" sx={{ color: EV_COLORS.textSubtle }}>
+            This step requires taxonomy fetched from the database. Please try again.
+          </Typography>
+          <Stack direction="row" spacing={1.5}>
+            <Button
+              variant="contained"
+              onClick={onRetry}
+              disabled={!onRetry}
+              sx={{
+                borderRadius: 999,
+                textTransform: "none",
+                backgroundColor: EV_COLORS.primary,
+                "&:hover": { backgroundColor: EV_COLORS.primaryStrong },
+              }}
+            >
+              Retry
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
+    );
+  }
 
   const filteredTaxonomy = useMemo(() => filterTree(taxonomy, search), [taxonomy, search]);
   const selectedPath = useMemo(() => findNodePath(taxonomy, selectedNodeId), [taxonomy, selectedNodeId]);

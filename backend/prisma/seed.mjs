@@ -1,6 +1,5 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
-import { buildSeedData } from '../src/legacy/seed/buildSeedData.js';
 
 const prisma = new PrismaClient();
 
@@ -241,7 +240,7 @@ async function seedUsers(seed) {
         create: {
           id: seedProfile?.id ?? 'creator_profile_ronald',
           name: seedProfile?.name ?? 'Ronald M',
-          handle: seedProfile?.handle ?? 'ronald.m',
+          handle: seedProfile?.handle ?? 'ronald.creates',
           tier: toTier(seedProfile?.tier),
           tagline: seedProfile?.tagline ?? 'Live commerce host for EV and tech brands',
           bio:
@@ -257,6 +256,118 @@ async function seedUsers(seed) {
       }
     }
   });
+
+  const additionalCreators = [
+    {
+      id: 'user_creator_lilian',
+      email: 'lilian@mylivedealz.com',
+      phone: '+256700000011',
+      name: 'Lilian Beauty Plug',
+      handle: 'lilianbeauty',
+      tier: 'GOLD',
+      tagline: 'Skincare routines, live tutorials, and product reviews.',
+      bio: 'Beauty and skincare creator used by seller collaboration discovery pages.',
+      categories: ['Beauty', 'Skincare'],
+      regions: ['UG', 'KE', 'TZ'],
+      languages: ['English', 'Swahili'],
+      followers: 128000,
+      rating: 4.8,
+      totalSalesDriven: 176000
+    },
+    {
+      id: 'user_creator_brian',
+      email: 'brian@mylivedealz.com',
+      phone: '+256700000012',
+      name: 'TechWithBrian',
+      handle: 'techwithbrian',
+      tier: 'GOLD',
+      tagline: 'Unboxings, EV gadgets and smart home.',
+      bio: 'Tech creator seeded for invite and proposal negotiation testing.',
+      categories: ['Tech', 'Gadgets', 'EV'],
+      regions: ['UG', 'KE', 'NG'],
+      languages: ['English'],
+      followers: 210000,
+      rating: 4.7,
+      totalSalesDriven: 221000
+    },
+    {
+      id: 'user_creator_grace',
+      email: 'grace@mylivedealz.com',
+      phone: '+256700000013',
+      name: 'Grace Faith Wellness',
+      handle: 'gracefaithwellness',
+      tier: 'SILVER',
+      tagline: 'Faith-compatible wellness, calm routines, and lifestyle talk.',
+      bio: 'Faith and wellness creator seeded for seller collaboration invites.',
+      categories: ['Faith', 'Wellness'],
+      regions: ['UG', 'KE'],
+      languages: ['English'],
+      followers: 54000,
+      rating: 4.9,
+      totalSalesDriven: 94000
+    },
+    {
+      id: 'user_creator_ama',
+      email: 'ama@mylivedealz.com',
+      phone: '+256700000014',
+      name: 'StyleByAma',
+      handle: 'stylebyama',
+      tier: 'SILVER',
+      tagline: 'Try-ons, street style, and live haul sessions.',
+      bio: 'Fashion creator seeded for creator directory and invite flows.',
+      categories: ['Fashion'],
+      regions: ['GH', 'NG'],
+      languages: ['English', 'French'],
+      followers: 72000,
+      rating: 4.3,
+      totalSalesDriven: 81000
+    },
+    {
+      id: 'user_creator_newwave',
+      email: 'newwave@mylivedealz.com',
+      phone: '+256700000015',
+      name: 'NewWave Creator',
+      handle: 'newwavecreator',
+      tier: 'BRONZE',
+      tagline: 'Short-form reviews and EV accessories.',
+      bio: 'Emerging EV creator seeded for seller invite and discovery flows.',
+      categories: ['Tech', 'EV'],
+      regions: ['UG'],
+      languages: ['English'],
+      followers: 12000,
+      rating: 4.2,
+      totalSalesDriven: 22000
+    }
+  ];
+
+  for (const entry of additionalCreators) {
+    await prisma.user.create({
+      data: {
+        id: entry.id,
+        email: entry.email,
+        phone: entry.phone,
+        passwordHash,
+        role: 'CREATOR',
+        approvalStatus: 'APPROVED',
+        onboardingCompleted: true,
+        creatorProfile: {
+          create: {
+            name: entry.name,
+            handle: entry.handle,
+            tier: entry.tier,
+            tagline: entry.tagline,
+            bio: entry.bio,
+            categories: JSON.stringify(entry.categories),
+            regions: JSON.stringify(entry.regions),
+            languages: JSON.stringify(entry.languages),
+            followers: entry.followers,
+            rating: entry.rating,
+            totalSalesDriven: entry.totalSalesDriven
+          }
+        }
+      }
+    });
+  }
 
   const sellerUser = await prisma.user.create({
     data: {
@@ -285,6 +396,7 @@ async function seedUsers(seed) {
   await prisma.userRoleAssignment.createMany({
     data: [
       ...buildRoleAssignments(creator.id, ['CREATOR', 'SELLER']),
+      ...additionalCreators.flatMap((entry) => buildRoleAssignments(entry.id, ['CREATOR'])),
       ...buildRoleAssignments(sellerUser.id, ['SELLER']),
       ...buildRoleAssignments(providerUser.id, ['PROVIDER'])
     ]
@@ -1964,18 +2076,6 @@ async function seedDashboardAndCompatibility(users, sellerProfiles) {
       entityId: 'main',
       payload: {
         reports: [{ id: 'tax_2025', year: 2025, status: 'ready', jurisdiction: 'UG' }]
-      }
-    },
-    {
-      userId: users.sellerUser.id,
-      domain: 'seller_workspace',
-      entityType: 'messages',
-      entityId: 'main',
-      payload: {
-        tagOptions: ['Order', 'RFQ', 'Proposal', 'Support'],
-        threads: [{ id: 'thread_1', title: 'ORD-10512 shipment update', participants: [{ name: 'Amina K.', role: 'buyer' }], lastMessage: 'Please confirm dispatch.', lastAt: new Date().toISOString(), unreadCount: 1, tags: ['Order'], customerLang: 'en', myLang: 'en' }],
-        messages: [{ id: 'msg_1', threadId: 'thread_1', sender: 'other', text: 'Please confirm dispatch.', lang: 'en', at: new Date().toISOString() }],
-        templates: [{ id: 'tpl_1', title: 'Dispatch confirmed', category: 'Shipping', body: 'Your order has been dispatched.', pinned: true }]
       }
     },
     {
@@ -7335,6 +7435,22 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
       },
       {
         userId: sellerUserId,
+        key: 'messages_page',
+        payload: {
+          tagOptions: ['Order', 'RFQ', 'Proposal', 'Support'],
+          templates: [
+            {
+              id: 'tpl_1',
+              title: 'Dispatch confirmed',
+              category: 'Shipping',
+              body: 'Your order has been dispatched.',
+              pinned: true
+            }
+          ]
+        }
+      },
+      {
+        userId: sellerUserId,
         key: 'notification_preferences',
         payload: {
           metadata: {
@@ -8376,6 +8492,193 @@ async function seedSellerRuntimeMockReplacements(users, sellerProfiles) {
   });
 }
 
+async function seedOnboardingLookups() {
+  await prisma.systemContent.upsert({
+    where: { key: 'onboarding_lookups' },
+    update: {
+      payload: {
+        payoutMethods: [
+          {
+            value: 'bank_account',
+            label: 'Bank account',
+            helper: 'Local or international bank settlement.'
+          },
+          {
+            value: 'mobile_money',
+            label: 'Mobile money',
+            helper: 'MTN, Airtel and other wallet providers.'
+          },
+          {
+            value: 'alipay',
+            label: 'Alipay',
+            helper: 'For payouts to Mainland China or Hong Kong.'
+          },
+          {
+            value: 'wechat_pay',
+            label: 'WeChat Pay (Weixin Pay)',
+            helper: 'For payouts to WeChat wallets.'
+          },
+          {
+            value: 'other_local',
+            label: 'Other payout method',
+            helper: 'Cheque, local wallet or regional solution.'
+          }
+        ],
+        payoutCurrencies: ['USD', 'EUR', 'CNY', 'UGX', 'KES', 'TZS', 'RWF', 'ZAR'],
+        payoutRhythms: [
+          { value: 'daily', label: 'Daily', helper: 'Payouts generated every business day.' },
+          { value: 'weekly', label: 'Weekly', helper: 'Payouts grouped once per week.' },
+          { value: 'monthly', label: 'Monthly', helper: 'Payouts grouped at month end.' },
+          {
+            value: 'on_threshold',
+            label: 'When balance reaches a threshold',
+            helper: 'We pay out once your balance reaches a minimum amount.'
+          }
+        ],
+        mobileMoneyProviders: [
+          { value: 'MTN Mobile Money', label: 'MTN Mobile Money' },
+          { value: 'Airtel Money', label: 'Airtel Money' },
+          { value: 'M-Pesa', label: 'M-Pesa' },
+          { value: 'Safaricom', label: 'Safaricom' },
+          { value: 'Orange Money', label: 'Orange Money' },
+          { value: 'Wave', label: 'Wave' }
+        ],
+        mobileIdTypes: [
+          { value: 'national_id', label: 'National ID' },
+          { value: 'passport', label: 'Passport' },
+          { value: 'drivers_license', label: "Driver's License" },
+          { value: 'tax_id', label: 'Tax ID' },
+          { value: 'residence_permit', label: 'Residence Permit' },
+          { value: 'voter_id', label: 'Voter ID' }
+        ],
+        payoutRegions: {
+          alipay: [
+            { value: 'mainland', label: 'Mainland China' },
+            { value: 'hong_kong', label: 'Hong Kong SAR' },
+            { value: 'other', label: 'Other region' }
+          ],
+          wechat: [
+            { value: 'mainland', label: 'Mainland China' },
+            { value: 'hong_kong', label: 'Hong Kong SAR' },
+            { value: 'other', label: 'Other region' }
+          ]
+        },
+        policyPresets: [
+          {
+            id: 'standard',
+            label: 'Standard',
+            desc: 'Balanced defaults for most sellers.',
+            patch: { returnsDays: '7', warrantyDays: '90', handlingTimeDays: '2' }
+          },
+          {
+            id: 'fast',
+            label: 'Fast',
+            desc: 'Optimized for high conversion (quick dispatch).',
+            patch: { returnsDays: '7', warrantyDays: '30', handlingTimeDays: '1' }
+          },
+          {
+            id: 'strict',
+            label: 'Strict',
+            desc: 'Lower returns risk (use carefully by category).',
+            patch: { returnsDays: '3', warrantyDays: '0', handlingTimeDays: '3' }
+          }
+        ]
+      }
+    },
+    create: {
+      key: 'onboarding_lookups',
+      payload: {
+        payoutMethods: [
+          {
+            value: 'bank_account',
+            label: 'Bank account',
+            helper: 'Local or international bank settlement.'
+          },
+          {
+            value: 'mobile_money',
+            label: 'Mobile money',
+            helper: 'MTN, Airtel and other wallet providers.'
+          },
+          {
+            value: 'alipay',
+            label: 'Alipay',
+            helper: 'For payouts to Mainland China or Hong Kong.'
+          },
+          {
+            value: 'wechat_pay',
+            label: 'WeChat Pay (Weixin Pay)',
+            helper: 'For payouts to WeChat wallets.'
+          },
+          {
+            value: 'other_local',
+            label: 'Other payout method',
+            helper: 'Cheque, local wallet or regional solution.'
+          }
+        ],
+        payoutCurrencies: ['USD', 'EUR', 'CNY', 'UGX', 'KES', 'TZS', 'RWF', 'ZAR'],
+        payoutRhythms: [
+          { value: 'daily', label: 'Daily', helper: 'Payouts generated every business day.' },
+          { value: 'weekly', label: 'Weekly', helper: 'Payouts grouped once per week.' },
+          { value: 'monthly', label: 'Monthly', helper: 'Payouts grouped at month end.' },
+          {
+            value: 'on_threshold',
+            label: 'When balance reaches a threshold',
+            helper: 'We pay out once your balance reaches a minimum amount.'
+          }
+        ],
+        mobileMoneyProviders: [
+          { value: 'MTN Mobile Money', label: 'MTN Mobile Money' },
+          { value: 'Airtel Money', label: 'Airtel Money' },
+          { value: 'M-Pesa', label: 'M-Pesa' },
+          { value: 'Safaricom', label: 'Safaricom' },
+          { value: 'Orange Money', label: 'Orange Money' },
+          { value: 'Wave', label: 'Wave' }
+        ],
+        mobileIdTypes: [
+          { value: 'national_id', label: 'National ID' },
+          { value: 'passport', label: 'Passport' },
+          { value: 'drivers_license', label: "Driver's License" },
+          { value: 'tax_id', label: 'Tax ID' },
+          { value: 'residence_permit', label: 'Residence Permit' },
+          { value: 'voter_id', label: 'Voter ID' }
+        ],
+        payoutRegions: {
+          alipay: [
+            { value: 'mainland', label: 'Mainland China' },
+            { value: 'hong_kong', label: 'Hong Kong SAR' },
+            { value: 'other', label: 'Other region' }
+          ],
+          wechat: [
+            { value: 'mainland', label: 'Mainland China' },
+            { value: 'hong_kong', label: 'Hong Kong SAR' },
+            { value: 'other', label: 'Other region' }
+          ]
+        },
+        policyPresets: [
+          {
+            id: 'standard',
+            label: 'Standard',
+            desc: 'Balanced defaults for most sellers.',
+            patch: { returnsDays: '7', warrantyDays: '90', handlingTimeDays: '2' }
+          },
+          {
+            id: 'fast',
+            label: 'Fast',
+            desc: 'Optimized for high conversion (quick dispatch).',
+            patch: { returnsDays: '7', warrantyDays: '30', handlingTimeDays: '1' }
+          },
+          {
+            id: 'strict',
+            label: 'Strict',
+            desc: 'Lower returns risk (use carefully by category).',
+            patch: { returnsDays: '3', warrantyDays: '0', handlingTimeDays: '3' }
+          }
+        ]
+      }
+    }
+  });
+}
+
 async function clearDatabase() {
   await prisma.liveMoment.deleteMany();
   await prisma.liveToolConfig.deleteMany();
@@ -8395,6 +8698,7 @@ async function clearDatabase() {
   await prisma.supportContent.deleteMany();
   await prisma.workspaceSetting.deleteMany();
   await prisma.userSetting.deleteMany();
+  await prisma.systemContent.deleteMany();
   await prisma.userSubscription.deleteMany();
   await prisma.sellerFollow.deleteMany();
   await prisma.shippingRate.deleteMany();
@@ -8427,8 +8731,9 @@ async function clearDatabase() {
   await prisma.user.deleteMany();
 }
 
+
 async function main() {
-  const seed = buildSeedData();
+  const seed = {};
 
   await clearDatabase();
 
@@ -8442,16 +8747,22 @@ async function main() {
   await seedDashboardAndCompatibility(users, sellerProfiles);
   await seedFrontendReplacementData(users, sellerProfiles);
   await seedSellerRuntimeMockReplacements(users, sellerProfiles);
+  await seedOnboardingLookups();
   await seedAnalytics(users);
 
   console.log('Seeded unified creator/seller backend data.');
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+const isExecutedDirectly =
+  process.argv[1] != null && import.meta.url === new URL(process.argv[1], 'file:').href;
+
+if (isExecutedDirectly) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
+}

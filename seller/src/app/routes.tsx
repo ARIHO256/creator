@@ -10,7 +10,7 @@ import {
 import { useLocalization } from '../localization/LocalizationProvider';
 import type { Session } from '../types/session';
 import type { AuthProps } from '../features/misc/Auth';
-import { isValidSession, useSession } from '../auth/session';
+import { hasSessionToken, isValidSession, readSession, useSession } from '../auth/session';
 import { getCurrentRole } from '../auth/roles';
 import { ProviderGuard, SellerGuard, SellerOrProviderGuard } from '../auth/RoleGuard';
 import { sellerBackendApi } from '../lib/backendApi';
@@ -153,6 +153,10 @@ const SupplierMldzRedirect = () => {
 const useChannels = (): Record<string, boolean> => {
   const [channels, setChannels] = React.useState<Record<string, boolean>>({});
   useEffect(() => {
+    if (!hasSessionToken(readSession())) {
+      setChannels({});
+      return;
+    }
     let active = true;
     void sellerBackendApi
       .getUiState()
@@ -722,12 +726,10 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
   const targetOnboarding = nextOnboardingRoute(role, status) || onboardingPath;
   const onOnboardingRoute = location.pathname.startsWith(onboardingPath);
   const onAuthRoute = location.pathname.startsWith('/auth');
-  // Only enforce onboarding for freshly registered accounts (onboardingRequired flag)
-  const enforceOnboarding =
-    isAuthenticated && session?.onboardingRequired && needsOnboarding(role, session);
+  const enforceOnboarding = isAuthenticated && needsOnboarding(role, session);
   const mldzPriorityPrefetchedRef = useRef(false);
   if (enforceOnboarding && !onOnboardingRoute && !onAuthRoute) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to={targetOnboarding} replace />;
   }
 
   useEffect(() => {
@@ -820,14 +822,14 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
       <Routes location={location}>
         {isAuthenticated ? (
           <>
-            <Route path="/" element={<Navigate to={enforceOnboarding ? "/auth" : "/dashboard"} replace />} />
+            <Route path="/" element={<Navigate to={enforceOnboarding ? targetOnboarding : "/dashboard"} replace />} />
             <Route
               path="/auth"
-              element={enforceOnboarding ? <Auth defaultTab="signin" /> : <Navigate to="/dashboard" replace />}
+              element={enforceOnboarding ? <Navigate to={targetOnboarding} replace /> : <Navigate to="/dashboard" replace />}
             />
             <Route
               path="/auth/*"
-              element={enforceOnboarding ? <Auth defaultTab="signin" /> : <Navigate to="/dashboard" replace />}
+              element={enforceOnboarding ? <Navigate to={targetOnboarding} replace /> : <Navigate to="/dashboard" replace />}
             />
             <Route path="/landing" element={<Landing />} />
             <Route path="/dashboard" element={<Dashboard role={role} />} />

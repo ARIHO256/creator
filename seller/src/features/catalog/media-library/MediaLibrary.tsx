@@ -20,15 +20,20 @@ export default function SellerCatalogMediaLibraryEVzoneV1_JS() {
     title: String(row.metadata?.title || row.name || ""),
   });
   const [rows, setRows] = useState<any[]>([]);
+  const [backendError, setBackendError] = useState('');
   useEffect(() => {
     let active = true;
     void sellerBackendApi
       .getMediaAssets()
       .then((payload) => {
         if (!active) return;
+        setBackendError('');
         setRows(Array.isArray(payload) ? payload.map(mapAsset) : []);
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        if (!active) return;
+        setBackendError(error instanceof Error ? error.message : 'Failed to load media assets');
+      });
     return () => {
       active = false;
     };
@@ -40,23 +45,34 @@ export default function SellerCatalogMediaLibraryEVzoneV1_JS() {
   const filtered = useMemo(() => rows.filter(r => (ft === 'All' || r.type === ft) && (!q.trim() || `${r.id} ${r.title || ''} ${(r.tags || []).join(' ')}`.toLowerCase().includes(q.toLowerCase()))), [rows, q, ft]);
 
   const addAsset = async (url, type, tags, title) => {
-    const created = await sellerBackendApi.createMediaAsset({
-      name: title || url,
-      kind: type,
-      url,
-      visibility: "PUBLIC",
-      metadata: {
-        tags: String(tags || '').split(',').map((x) => x.trim()).filter(Boolean),
-        usage: 0,
-        title: title || ''
-      }
-    }).catch(() => null);
-    if (!created) { toastIt(t('Invalid JSON')); return; }
+    let created;
+    try {
+      created = await sellerBackendApi.createMediaAsset({
+        name: title || url,
+        kind: type,
+        url,
+        visibility: "PUBLIC",
+        metadata: {
+          tags: String(tags || '').split(',').map((x) => x.trim()).filter(Boolean),
+          usage: 0,
+          title: title || ''
+        }
+      });
+    } catch {
+      toastIt(t('Failed'));
+      return;
+    }
     setRows((list) => [mapAsset(created), ...list]);
     toastIt(t('Added'));
   };
   const remove = async (id) => {
-    const result = await sellerBackendApi.deleteMediaAsset(id).catch(() => null);
+    let result;
+    try {
+      result = await sellerBackendApi.deleteMediaAsset(id);
+    } catch {
+      toastIt(t('Failed'));
+      return;
+    }
     if (!result?.deleted) return;
     setRows((list) => list.filter((x) => x.id !== id));
   };
@@ -64,16 +80,21 @@ export default function SellerCatalogMediaLibraryEVzoneV1_JS() {
     const current = rows.find((entry) => entry.id === id);
     if (!current) return;
     const nextUsage = Number(current.usage || 0) + 1;
-    const updated = await sellerBackendApi.patchMediaAsset(id, {
-      name: current.title || current.id,
-      kind: current.type,
-      url: current.url,
-      metadata: {
-        tags: current.tags || [],
-        usage: nextUsage,
-        title: current.title || ""
-      }
-    }).catch(() => null);
+    let updated = null;
+    try {
+      updated = await sellerBackendApi.patchMediaAsset(id, {
+        name: current.title || current.id,
+        kind: current.type,
+        url: current.url,
+        metadata: {
+          tags: current.tags || [],
+          usage: nextUsage,
+          title: current.title || ""
+        }
+      });
+    } catch {
+      toastIt(t('Failed'));
+    }
     setRows((list) =>
       updated
         ? list.map((asset) => asset.id === id ? { ...asset, usage: nextUsage } : asset)
@@ -98,6 +119,7 @@ export default function SellerCatalogMediaLibraryEVzoneV1_JS() {
         <button onClick={exportJSON} className="btn-ghost">{t('Export')}</button><label className="btn-ghost"><input type="file" accept="application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) importJSON(f); }} />{t('Import')}</label></div></div></header>
 
       <main className="w-full max-w-none px-[0.55%] py-6">
+        {backendError ? <div className="mb-3 text-xs text-amber-600">{backendError}</div> : null}
         {/* Add asset */}
         <section>
           <div className="rounded-xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">

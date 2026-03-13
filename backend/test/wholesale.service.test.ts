@@ -32,3 +32,54 @@ test('WholesaleService blocks invalid quote status transitions', async () => {
     /Invalid quote status transition/
   );
 });
+
+test('WholesaleService.createQuote rejects RFQ ids from another account', async () => {
+  const prisma = {
+    wholesaleRfq: {
+      async findFirst() {
+        return null;
+      }
+    }
+  };
+  const jobsService = { async enqueue() {} };
+
+  const service = new WholesaleService(prisma as any, jobsService as any);
+
+  await assert.rejects(
+    () =>
+      service.createQuote('user-1', {
+        rfqId: 'rfq-other-user',
+        buyer: 'Buyer',
+        lines: [{ name: 'Item', quantity: 1, unitPrice: 100 }]
+      } as any),
+    /RFQ not found/
+  );
+});
+
+test('WholesaleService.createQuote rejects quote id collisions across accounts', async () => {
+  const prisma = {
+    wholesaleRfq: {
+      async findFirst() {
+        return null;
+      }
+    },
+    wholesaleQuote: {
+      async findUnique() {
+        return { id: 'quote-1', userId: 'user-2' };
+      }
+    }
+  };
+  const jobsService = { async enqueue() {} };
+
+  const service = new WholesaleService(prisma as any, jobsService as any);
+
+  await assert.rejects(
+    () =>
+      service.createQuote('user-1', {
+        id: 'quote-1',
+        buyer: 'Buyer',
+        lines: [{ name: 'Item', quantity: 1, unitPrice: 100 }]
+      } as any),
+    /Quote does not belong to this account/
+  );
+});

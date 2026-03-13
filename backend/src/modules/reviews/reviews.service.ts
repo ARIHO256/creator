@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CreateReviewDto } from './dto/create-review.dto.js';
@@ -12,10 +12,11 @@ export class ReviewsService {
     private readonly cache: CacheService
   ) {}
 
-  async dashboard(userId: string) {
+  async dashboard(userId: string, role: string) {
     const reviews = await this.prisma.review.findMany({
       where: {
-        OR: [{ subjectUserId: userId }, { reviewerUserId: userId }],
+        subjectUserId: userId,
+        subjectType: this.reviewSubjectForRole(role),
         status: 'PUBLISHED'
       },
       orderBy: { createdAt: 'desc' }
@@ -26,9 +27,9 @@ export class ReviewsService {
     return { score, trends, total: reviews.length };
   }
 
-  async summary(userId: string) {
+  async summary(userId: string, role: string) {
     const received = await this.prisma.review.findMany({
-      where: { subjectUserId: userId, status: 'PUBLISHED' },
+      where: { subjectUserId: userId, subjectType: this.reviewSubjectForRole(role), status: 'PUBLISHED' },
       select: { ratingOverall: true, isPublic: true }
     });
 
@@ -38,13 +39,19 @@ export class ReviewsService {
     return { total, publicCount, average };
   }
 
-  async list(userId: string, scope?: 'received' | 'authored') {
+  async list(userId: string, role: string, scope?: 'received' | 'authored') {
+    const reviewSubject = this.reviewSubjectForRole(role);
     const where =
       scope === 'authored'
-        ? { reviewerUserId: userId }
+        ? { reviewerUserId: userId, subjectType: reviewSubject }
         : scope === 'received'
-          ? { subjectUserId: userId }
-          : { OR: [{ reviewerUserId: userId }, { subjectUserId: userId }] };
+          ? { subjectUserId: userId, subjectType: reviewSubject }
+          : {
+              OR: [
+                { reviewerUserId: userId, subjectType: reviewSubject },
+                { subjectUserId: userId, subjectType: reviewSubject }
+              ]
+            };
 
     const reviews = await this.prisma.review.findMany({
       where,
@@ -155,7 +162,7 @@ export class ReviewsService {
     });
   }
 
-  async insights(userId: string, filters?: {
+  async insights(userId: string, role: string, filters?: {
     channel?: string;
     marketplace?: string;
     mldzSurface?: string;
@@ -165,7 +172,7 @@ export class ReviewsService {
     status?: 'PUBLISHED' | 'HIDDEN' | 'FLAGGED';
     since?: string;
   }) {
-    const cacheKey = `reviews:insights:${userId}:${JSON.stringify({
+    const cacheKey = `reviews:insights:${userId}:${String(role || '').toUpperCase()}:${JSON.stringify({
       channel: filters?.channel ?? null,
       marketplace: filters?.marketplace ?? null,
       mldzSurface: filters?.mldzSurface ?? null,
@@ -180,6 +187,7 @@ export class ReviewsService {
       const since = filters?.since ? this.parseDate(filters.since, 'since') : undefined;
       const where: Prisma.ReviewWhereInput = {
         subjectUserId: userId,
+        subjectType: this.reviewSubjectForRole(role),
         status: filters?.status,
         channel: filters?.channel,
         marketplace: filters?.marketplace,
@@ -346,5 +354,13 @@ export class ReviewsService {
     }
 
     return null;
+  }
+
+  private reviewSubjectForRole(role: string) {
+    const normalized = String(role || '').toUpperCase();
+    if (normalized === UserRole.SELLER || normalized === UserRole.PROVIDER || normalized === UserRole.CREATOR) {
+      return normalized;
+    }
+    return UserRole.CREATOR;
   }
 }

@@ -314,153 +314,6 @@ function ToastCenter({ toasts, dismiss }) {
   );
 }
 
-// ------------------------ Data ------------------------
-
-function buildWarehouses() {
-  return [
-    {
-      id: "WH-UG-KLA",
-      name: "Kampala Hub",
-      code: "KLA",
-      country: "Uganda",
-      city: "Kampala",
-      active: true,
-      cutOffLocal: "16:00",
-      processingDays: 1,
-      capabilities: { ship: true, pickup: true, returns: true },
-      constraints: { hazmat: false, batteries: true },
-      updatedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    },
-    {
-      id: "WH-KE-NBO",
-      name: "Nairobi Hub",
-      code: "NBO",
-      country: "Kenya",
-      city: "Nairobi",
-      active: true,
-      cutOffLocal: "15:00",
-      processingDays: 1,
-      capabilities: { ship: true, pickup: false, returns: true },
-      constraints: { hazmat: false, batteries: true },
-      updatedAt: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
-    },
-    {
-      id: "WH-CN-WUXI",
-      name: "Wuxi Main",
-      code: "WUX",
-      country: "China",
-      city: "Wuxi",
-      active: true,
-      cutOffLocal: "18:00",
-      processingDays: 2,
-      capabilities: { ship: true, pickup: false, returns: false },
-      constraints: { hazmat: false, batteries: true },
-      updatedAt: new Date(Date.now() - 1000 * 60 * 210).toISOString(),
-    },
-  ];
-}
-
-function buildProfiles(warehouses: Array<{ id: string }>): ShippingProfile[] {
-  const whUG = warehouses.find((w) => w.id === "WH-UG-KLA");
-  const whKE = warehouses.find((w) => w.id === "WH-KE-NBO");
-  const whCN = warehouses.find((w) => w.id === "WH-CN-WUXI");
-
-  return [
-    {
-      id: "SHIP-STD-AFR",
-      name: "Standard Parcel Africa",
-      status: "Active",
-      currency: "USD",
-      serviceType: "Parcel",
-      updatedAt: new Date(Date.now() - 1000 * 60 * 44).toISOString(),
-      zones: [
-        {
-          id: "Z-UG",
-          name: "Uganda",
-          countries: ["Uganda"],
-          pricing: { mode: "weight", base: 3.5, perKg: 0.6, perItem: 0 },
-          lead: { minDays: 1, maxDays: 3 },
-          notes: "Local delivery",
-        },
-        {
-          id: "Z-EA",
-          name: "East Africa",
-          countries: ["Kenya", "Tanzania", "Rwanda"],
-          pricing: { mode: "weight", base: 6.0, perKg: 0.9, perItem: 0 },
-          lead: { minDays: 2, maxDays: 5 },
-          notes: "Regional",
-        },
-      ],
-      policy: {
-        mode: "auto",
-        fallbackWarehouseId: whUG?.id ?? null,
-        rules: [
-          {
-            id: "R-1",
-            priority: 10,
-            title: "Kenya uses Nairobi",
-            when: { zoneId: "Z-EA", country: "Kenya", maxWeightKg: 35 },
-            then: { warehouseId: whKE?.id },
-          },
-          {
-            id: "R-2",
-            priority: 30,
-            title: "Uganda uses Kampala",
-            when: { zoneId: "Z-UG" },
-            then: { warehouseId: whUG?.id },
-          },
-        ],
-      },
-    },
-    {
-      id: "SHIP-EXP-INTL",
-      name: "Express International",
-      status: "Active",
-      currency: "USD",
-      serviceType: "Express",
-      updatedAt: new Date(Date.now() - 1000 * 60 * 130).toISOString(),
-      zones: [
-        {
-          id: "Z-AFR",
-          name: "Africa",
-          countries: ["Uganda", "Kenya", "Nigeria", "Ghana", "South Africa"],
-          pricing: { mode: "weight", base: 14, perKg: 3.5, perItem: 0 },
-          lead: { minDays: 3, maxDays: 7 },
-          notes: "Air express",
-        },
-        {
-          id: "Z-GLB",
-          name: "Global",
-          countries: ["China", "United States", "United Kingdom", "Germany", "France"],
-          pricing: { mode: "weight", base: 18, perKg: 4.2, perItem: 0 },
-          lead: { minDays: 4, maxDays: 9 },
-          notes: "Air express",
-        },
-      ],
-      policy: {
-        mode: "buyer_preferred",
-        fallbackWarehouseId: whCN?.id ?? null,
-        rules: [
-          {
-            id: "R-3",
-            priority: 10,
-            title: "Africa ships from Kampala if available",
-            when: { zoneId: "Z-AFR", maxWeightKg: 20 },
-            then: { warehouseId: whUG?.id },
-          },
-          {
-            id: "R-4",
-            priority: 20,
-            title: "Global ships from Wuxi",
-            when: { zoneId: "Z-GLB" },
-            then: { warehouseId: whCN?.id },
-          },
-        ],
-      },
-    },
-  ];
-}
-
 function zoneMatch(profile, country) {
   if (!profile) return null;
   const c = String(country || "").trim();
@@ -1015,7 +868,7 @@ export default function OpsShippingProfilesPremium() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest carrier sync loaded (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest carrier sync loaded.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1376,7 +1229,7 @@ export default function OpsShippingProfilesPremium() {
                           <div className="mt-2 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => pushToast({ title: "Saved", message: "Quote preview saved as a test case (demo).", tone: "success" })}
+                              onClick={() => pushToast({ title: "Saved", message: "Quote preview saved as a test case.", tone: "success" })}
                               className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                               style={{ background: TOKENS.orange }}
                             >

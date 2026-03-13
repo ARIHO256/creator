@@ -688,6 +688,11 @@ function TopBar({
 }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const session = useSession();
+  const userName = session?.name || session?.email || session?.phone || 'SellerSeller';
+  const avatarLetter = userName.charAt(0).toUpperCase();
+
   const topTone: 'light' | 'dark' = themeMode === 'dark' ? 'dark' : 'light';
   const topBarBackground =
     themeMode === 'dark'
@@ -856,11 +861,11 @@ function TopBar({
                     themeMode === 'dark' ? 'bg-slate-800 text-slate-100' : 'bg-slate-100 text-slate-700'
                   )}
                 >
-                  S
+                  {avatarLetter}
                   <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
                 </div>
                 <div className="hidden 2xl:block">
-                  <div className="text-xs font-semibold">SellerSeller</div>
+                  <div className="text-xs font-semibold">{userName}</div>
                   <div className={cx('text-[10px]', themeMode === 'dark' ? 'text-slate-300' : 'text-slate-500')}>
                     Supplier
                   </div>
@@ -895,7 +900,7 @@ function TopBar({
                         </div>
                         <div className="min-w-0">
                           <div className="truncate text-sm font-black text-slate-900">
-                            SellerSeller
+                            {userName}
                           </div>
                           <div className="truncate text-xs font-semibold text-slate-500">
                             Supplier account
@@ -1316,6 +1321,8 @@ function DesktopSidebar({
   navBadges?: { messages?: number; notifications?: number; orders?: number; bookings?: number; reviews?: number };
 }) {
   const groups = useSupplierNav(role, navBadges);
+  const session = useSession();
+  const userName = session?.name || session?.email || session?.phone || 'SellerSeller';
   const isDark = themeMode === 'dark';
   const sidebarWidth = collapsed ? PRIMARY_SIDEBAR_COLLAPSED_WIDTH_FLUID : PRIMARY_SIDEBAR_WIDTH_FLUID;
 
@@ -1489,7 +1496,7 @@ function DesktopSidebar({
           {!collapsed && (
             <div className="min-w-0">
               <div className={cx('text-sm font-extrabold leading-tight', isDark ? 'text-slate-100' : 'text-slate-900')}>
-                SellerSeller
+                {userName}
               </div>
               <div className={cx('text-xs font-semibold leading-tight', isDark ? 'text-slate-400' : 'text-slate-500')}>
                 Supplier account
@@ -1526,6 +1533,8 @@ function MobileDrawer({
   navBadges?: { messages?: number; notifications?: number; orders?: number; bookings?: number; reviews?: number };
 }) {
   const groups = useSupplierNav(role, navBadges);
+  const session = useSession();
+  const userName = session?.name || session?.email || session?.phone || 'SellerSeller';
   const isDark = themeMode === 'dark';
 
   return (
@@ -1662,7 +1671,7 @@ function MobileDrawer({
                   </span>
                   <div className="min-w-0">
                     <div className={cx('truncate text-sm font-extrabold', isDark ? 'text-slate-100' : 'text-slate-900')}>
-                      SellerSeller
+                      {userName}
                     </div>
                     <div className={cx('truncate text-xs font-semibold', isDark ? 'text-slate-400' : 'text-slate-500')}>
                       Supplier account
@@ -5168,8 +5177,29 @@ export default function EVzoneSupplierHubAppShellV9({
         next === 'provider'
           ? Array.from(new Set([...currentRoles.filter((r) => r !== 'seller'), 'provider']))
           : currentRoles.filter((r) => r !== 'provider');
-      void sellerBackendApi.switchAuthRole({ role: String(next).toUpperCase() }).catch(() => undefined);
-      updateSession({ role: next, roles: nextRoles as Role[] });
+      void sellerBackendApi
+        .switchAuthRole({ role: String(next).toUpperCase() })
+        .then((payload) => {
+          updateSession({
+            role: next,
+            roles: nextRoles as Role[],
+            accessToken:
+              typeof payload.accessToken === 'string' && payload.accessToken.trim()
+                ? payload.accessToken
+                : current.accessToken,
+            refreshToken:
+              typeof payload.refreshToken === 'string' && payload.refreshToken.trim()
+                ? payload.refreshToken
+                : current.refreshToken,
+            token:
+              typeof payload.accessToken === 'string' && payload.accessToken.trim()
+                ? payload.accessToken
+                : current.token
+          });
+        })
+        .catch(() => {
+          updateSession({ role: next, roles: nextRoles as Role[] });
+        });
     },
     []
   );
@@ -5352,33 +5382,37 @@ export default function EVzoneSupplierHubAppShellV9({
       })
       .catch(() => undefined);
     if (role === 'provider') {
-      void Promise.all([
-        sellerBackendApi.getProviderBookings().catch(() => ({ bookings: [] })),
-        sellerBackendApi.getProviderReviews().catch(() => ({ reviews: [] })),
-      ]).then(([bookingsPayload, reviewsPayload]) => {
+      void Promise.allSettled([
+        sellerBackendApi.getProviderBookings(),
+        sellerBackendApi.getProviderReviews(),
+      ]).then(([bookingsResult, reviewsResult]) => {
         if (cancelled) return;
-        const bookings = Array.isArray((bookingsPayload as { bookings?: unknown[] }).bookings)
-          ? ((bookingsPayload as { bookings?: unknown[] }).bookings ?? [])
+        const bookings = bookingsResult.status === 'fulfilled' && Array.isArray((bookingsResult.value as { bookings?: unknown[] }).bookings)
+          ? ((bookingsResult.value as { bookings?: unknown[] }).bookings ?? [])
           : [];
-        const reviews = Array.isArray((reviewsPayload as { reviews?: unknown[] }).reviews)
-          ? ((reviewsPayload as { reviews?: unknown[] }).reviews ?? [])
+        const reviews = reviewsResult.status === 'fulfilled' && Array.isArray((reviewsResult.value as { reviews?: unknown[] }).reviews)
+          ? ((reviewsResult.value as { reviews?: unknown[] }).reviews ?? [])
           : [];
         setOrdersCount(0);
         setBookingsCount(bookings.length);
         setReviewsCount(reviews.length);
       }).catch(() => undefined);
     } else {
-      void Promise.all([
-        sellerBackendApi.getSellerOrders().catch(() => ({ orders: [] })),
-        sellerBackendApi.getReviewsSummary().catch(() => ({ total: 0 })),
-      ]).then(([ordersPayload, reviewsPayload]) => {
+      void Promise.allSettled([
+        sellerBackendApi.getSellerOrders(),
+        sellerBackendApi.getReviewsSummary(),
+      ]).then(([ordersResult, reviewsResult]) => {
         if (cancelled) return;
-        const orders = Array.isArray((ordersPayload as { orders?: unknown[] }).orders)
-          ? ((ordersPayload as { orders?: unknown[] }).orders ?? [])
+        const orders = ordersResult.status === 'fulfilled' && Array.isArray((ordersResult.value as { orders?: unknown[] }).orders)
+          ? ((ordersResult.value as { orders?: unknown[] }).orders ?? [])
           : [];
         setOrdersCount(orders.length);
         setBookingsCount(0);
-        setReviewsCount(Number((reviewsPayload as { total?: number }).total ?? 0));
+        setReviewsCount(
+          reviewsResult.status === 'fulfilled'
+            ? Number((reviewsResult.value as { total?: number }).total ?? 0)
+            : 0
+        );
       }).catch(() => undefined);
     }
     return () => {

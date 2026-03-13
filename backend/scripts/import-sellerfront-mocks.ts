@@ -745,62 +745,8 @@ async function upsertListings(snapshot: Snapshot, userIdMap: Map<string, string>
 }
 
 async function upsertOrders(snapshot: Snapshot, userIdMap: Map<string, string>) {
-  const sellerUserId = requireResolvedUserId(
-    userIdMap,
-    snapshot.users.find((user) => user.role === 'seller')?.id,
-    'seller orders'
-  );
-  for (const order of snapshot.orders) {
-    await prisma.order.upsert({
-      where: { id: order.id },
-      update: {
-        sellerId: sellerUserId,
-        buyerUserId: resolveUserId(userIdMap, order.buyerId),
-        channel: order.channel,
-        currency: order.currency || 'USD',
-        total: Number(order.total || 0),
-        itemCount: Number(order.items || order.lineItems?.length || 0),
-        status: orderStatusFor(order.status),
-        warehouse: order.warehouse || null,
-        metadata: order as unknown as Prisma.InputJsonValue
-      },
-      create: {
-        id: order.id,
-        sellerId: sellerUserId,
-        buyerUserId: resolveUserId(userIdMap, order.buyerId),
-        channel: order.channel,
-        currency: order.currency || 'USD',
-        total: Number(order.total || 0),
-        itemCount: Number(order.items || order.lineItems?.length || 0),
-        status: orderStatusFor(order.status),
-        warehouse: order.warehouse || null,
-        metadata: order as unknown as Prisma.InputJsonValue
-      }
-    });
-
-    for (const [index, item] of (order.lineItems || []).entries()) {
-      await prisma.orderItem.upsert({
-        where: { id: `${order.id}::${index + 1}` },
-        update: {
-          orderId: order.id,
-          sku: item.sku,
-          name: item.name,
-          qty: item.qty,
-          unitPrice: item.unit,
-          currency: order.currency || 'USD'
-        },
-        create: {
-          id: `${order.id}::${index + 1}`,
-          orderId: order.id,
-          sku: item.sku,
-          name: item.name,
-          qty: item.qty,
-          unitPrice: item.unit,
-          currency: order.currency || 'USD'
-        }
-      });
-    }
-  }
+  void snapshot;
+  void userIdMap;
 }
 
 async function upsertNotifications(snapshot: Snapshot, userIdMap: Map<string, string>) {
@@ -1176,7 +1122,6 @@ async function main() {
   }
 
   await upsertListings(snapshot, userIdMap);
-  await upsertOrders(snapshot, userIdMap);
   await upsertNotifications(snapshot, userIdMap);
   await upsertMessages(snapshot, userIdMap);
   await upsertRelationships(snapshot, userIdMap);
@@ -1187,7 +1132,7 @@ async function main() {
   await upsertSnapshotRecords(snapshot);
 
   console.log(
-    `Imported sellerfront mocks: ${snapshot.users.length} users, ${snapshot.listings.length} listings, ${snapshot.orders.length} orders.`
+    `Imported sellerfront mocks: ${snapshot.users.length} users, ${snapshot.listings.length} listings, 0 orders imported.`
   );
 }
 

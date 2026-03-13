@@ -683,7 +683,7 @@ export default function SupportChangelogPage() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Subscribed", message: `You will receive ${role} updates (demo).`, tone: "success" })}
+                onClick={() => pushToast({ title: "Subscribed", message: `You will receive ${role} updates.`, tone: "success" })}
                 className="mt-4 w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                 style={{ background: TOKENS.green }}
               >

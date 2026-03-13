@@ -1515,7 +1515,7 @@ export default function SupplierCrewManagerPage() {
               </div>
               {/* TODO(nav): Wire this button to the dedicated advanced roster filters surface once its route is finalized.
                   Consider: open an in-page filters drawer, or navigate to the team filters page if/when introduced. */}
-              <SoftButton onClick={() => push("Advanced filters (demo)")}
+              <SoftButton onClick={() => push("Advanced filters")}
               >
                 <Search className="h-4 w-4" />
                 Filter

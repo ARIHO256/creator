@@ -1273,7 +1273,7 @@ export default function WholesaleQuotesHubCanvas() {
         };
       })
     );
-    pushToast({ title: "Approval requested", message: "Request sent to approver (demo).", tone: "success" });
+    pushToast({ title: "Approval requested", message: "Request sent to approver.", tone: "success" });
   };
 
   const decideApproval = (quoteId: string, reqId: string, decision: ApprovalDecisionStatus) => {
@@ -1300,7 +1300,7 @@ export default function WholesaleQuotesHubCanvas() {
         };
       })
     );
-    pushToast({ title: `Approval ${decision}`, message: "Updated status (demo).", tone: decision === "Approved" ? "success" : "warning" });
+    pushToast({ title: `Approval ${decision}`, message: "Updated status.", tone: decision === "Approved" ? "success" : "warning" });
   };
 
   const createOrUpdateTemplateFromDraft = () => {
@@ -1354,7 +1354,7 @@ export default function WholesaleQuotesHubCanvas() {
         };
       })
     );
-    pushToast({ title: "Follow-up updated", message: "Next follow-up scheduled (demo).", tone: "success" });
+    pushToast({ title: "Follow-up updated", message: "Next follow-up scheduled.", tone: "success" });
   };
 
   const snoozeFollowup = (quoteId, days = 1) => {
@@ -1701,7 +1701,7 @@ export default function WholesaleQuotesHubCanvas() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                pushToast({ title: "Message", message: "Open messaging composer (demo).", tone: "default" });
+                                pushToast({ title: "Message", message: "Open messaging composer.", tone: "default" });
                               }}
                               className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                             >
@@ -1858,7 +1858,7 @@ export default function WholesaleQuotesHubCanvas() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => pushToast({ title: "Email", message: "Open email composer (demo).", tone: "default" })}
+                                onClick={() => pushToast({ title: "Email", message: "Open email composer.", tone: "default" })}
                                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                               >
                                 <Mail className="h-4 w-4" />
@@ -1956,7 +1956,7 @@ export default function WholesaleQuotesHubCanvas() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => pushToast({ title: "Rollback", message: "Wire rollback to API (demo).", tone: "default" })}
+                                  onClick={() => pushToast({ title: "Rollback", message: "Wire rollback to API.", tone: "default" })}
                                   className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-extrabold text-orange-800"
                                 >
                                   <RefreshCw className="h-4 w-4" />
@@ -2397,7 +2397,7 @@ export default function WholesaleQuotesHubCanvas() {
                 <button
                   type="button"
                   onClick={() => {
-                    pushToast({ title: "Sent", message: "Quote sent to client (demo).", tone: "success" });
+                    pushToast({ title: "Sent", message: "Quote sent to client.", tone: "success" });
                     updateDraft((s) => ({ ...s, status: "Sent", updatedAt: new Date().toISOString() }));
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"

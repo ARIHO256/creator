@@ -10,17 +10,17 @@ export class AnalyticsController {
 
   @Get('summary')
   overview(@CurrentUser() user: RequestUser) {
-    return this.analyticsService.getOverview(user.sub);
+    return this.analyticsService.getOverview(user.sub, user.role);
   }
 
   @Get('page')
   page(@CurrentUser() user: RequestUser) {
-    return this.analyticsService.getPage(user.sub);
+    return this.analyticsService.getPage(user.sub, user.role);
   }
 
   @Patch('page')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   updatePage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
-    return this.analyticsService.updatePage(user.sub, body);
+    return this.analyticsService.updatePage(user.sub, user.role, body);
   }
 }
