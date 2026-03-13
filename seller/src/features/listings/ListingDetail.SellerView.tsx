@@ -2543,7 +2543,7 @@ export default function ListingsHubMergedPageV2() {
   const [versionsById, setVersionsById] = useState<Record<string, ListingVersion[]>>({});
 
   const loadListings = async () => {
-    const payload = await sellerBackendApi.getSellerWorkspaceListings().catch(() => []);
+    const payload = await sellerBackendApi.getSellerWorkspaceListings();
     const records = Array.isArray(payload) ? payload : [];
     const nextRows = records.map((entry) => mapBackendListing<Listing>(entry, calcQuality));
     const nextVersionsById: Record<string, ListingVersion[]> = {};

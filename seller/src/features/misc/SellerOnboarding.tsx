@@ -1833,15 +1833,27 @@ export default function SellerOnboardingProV4_JS() {
         const storedForm = readStoredDraft(STORAGE.form);
         const storedUi = readStoredDraft(STORAGE.ui);
         const storedReview = readStoredDraft(STORAGE.review);
-        const [onboarding, lookupPayload, screenState, shippingPayload, accountApproval] = await Promise.all([
-          sellerBackendApi.getOnboarding().catch(() => null),
-          sellerBackendApi.getOnboardingLookups().catch(() => null),
-          sellerBackendApi.getWorkflowScreenState("seller-onboarding").catch(() => null),
-          sellerBackendApi.getShippingProfiles().catch(() => null),
-          sellerBackendApi.getAccountApproval().catch(() => null),
+        const [
+          onboardingResult,
+          lookupsResult,
+          screenStateResult,
+          shippingResult,
+          accountApprovalResult,
+        ] = await Promise.allSettled([
+          sellerBackendApi.getOnboarding(),
+          sellerBackendApi.getOnboardingLookups(),
+          sellerBackendApi.getWorkflowScreenState("seller-onboarding"),
+          sellerBackendApi.getShippingProfiles(),
+          sellerBackendApi.getAccountApproval(),
         ]);
 
         if (cancelled) return;
+        const onboarding = onboardingResult.status === "fulfilled" ? onboardingResult.value : null;
+        const lookupPayload = lookupsResult.status === "fulfilled" ? lookupsResult.value : null;
+        const screenState = screenStateResult.status === "fulfilled" ? screenStateResult.value : null;
+        const shippingPayload = shippingResult.status === "fulfilled" ? shippingResult.value : null;
+        const accountApproval =
+          accountApprovalResult.status === "fulfilled" ? accountApprovalResult.value : null;
 
         const base = createEmptyForm();
         const normalizedForm = normalizeSellerFormPayload(

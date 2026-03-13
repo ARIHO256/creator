@@ -26,21 +26,51 @@ export default function GlobalSearch() {
   const [rfqs, setRfqs] = useState<any[]>([]);
   const [quotes, setQuotes] = useState<any[]>([]);
   const [listings, setListings] = useState<any[]>([]);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      sellerBackendApi.getSellerOrders().catch(() => ({ orders: [] })),
-      sellerBackendApi.getWholesaleRfqs().catch(() => ({ rfqs: [] })),
-      sellerBackendApi.getWholesaleQuotes().catch(() => ({ quotes: [] })),
-      sellerBackendApi.getSellerWorkspaceListings().catch(() => []),
-    ]).then(([ordersPayload, rfqsPayload, quotesPayload, listingsPayload]) => {
+    void Promise.allSettled([
+      sellerBackendApi.getSellerOrders(),
+      sellerBackendApi.getWholesaleRfqs(),
+      sellerBackendApi.getWholesaleQuotes(),
+      sellerBackendApi.getSellerWorkspaceListings(),
+    ]).then(([ordersResult, rfqsResult, quotesResult, listingsResult]) => {
       if (!active) return;
-      setOrders(Array.isArray((ordersPayload as { orders?: unknown[] }).orders) ? ((ordersPayload as { orders?: unknown[] }).orders ?? []) : []);
-      setRfqs(Array.isArray((rfqsPayload as { rfqs?: unknown[] }).rfqs) ? ((rfqsPayload as { rfqs?: unknown[] }).rfqs ?? []) : []);
-      setQuotes(Array.isArray((quotesPayload as { quotes?: unknown[] }).quotes) ? ((quotesPayload as { quotes?: unknown[] }).quotes ?? []) : []);
-      setListings(Array.isArray(listingsPayload) ? listingsPayload : []);
-    }).catch(() => undefined);
+      const firstFailure = [ordersResult, rfqsResult, quotesResult, listingsResult].find(
+        (result) => result.status === "rejected"
+      );
+      setBackendError(
+        firstFailure && firstFailure.status === "rejected"
+          ? firstFailure.reason instanceof Error
+            ? firstFailure.reason.message
+            : "Failed to load search index"
+          : null
+      );
+      setOrders(
+        ordersResult.status === "fulfilled" &&
+          Array.isArray((ordersResult.value as { orders?: unknown[] }).orders)
+          ? ((ordersResult.value as { orders?: unknown[] }).orders ?? [])
+          : []
+      );
+      setRfqs(
+        rfqsResult.status === "fulfilled" &&
+          Array.isArray((rfqsResult.value as { rfqs?: unknown[] }).rfqs)
+          ? ((rfqsResult.value as { rfqs?: unknown[] }).rfqs ?? [])
+          : []
+      );
+      setQuotes(
+        quotesResult.status === "fulfilled" &&
+          Array.isArray((quotesResult.value as { quotes?: unknown[] }).quotes)
+          ? ((quotesResult.value as { quotes?: unknown[] }).quotes ?? [])
+          : []
+      );
+      setListings(
+        listingsResult.status === "fulfilled" && Array.isArray(listingsResult.value)
+          ? listingsResult.value
+          : []
+      );
+    });
     return () => {
       active = false;
     };
@@ -102,6 +132,9 @@ export default function GlobalSearch() {
             Showing results for <span className="font-mono text-ev-ink">“{q}”</span>
           </p>
         )}
+        {backendError ? (
+          <p className="mt-1 text-xs text-amber-600">Backend request failed: {backendError}</p>
+        ) : null}
       </header>
 
       {!q.trim() && (

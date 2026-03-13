@@ -1386,12 +1386,18 @@ export default function SupplierMyCampaignsPage() {
       setWorkspaceError(null);
 
       try {
-        const [workspace, draft] = await Promise.all([
+        const [workspaceResult, draftResult] = await Promise.allSettled([
           backendApi.getCampaignWorkspace(),
-          backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID).catch(() => null),
+          backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID),
         ]);
 
         if (cancelled) return;
+        const workspace =
+          workspaceResult.status === 'fulfilled' ? workspaceResult.value : null;
+        const draft = draftResult.status === 'fulfilled' ? draftResult.value : null;
+        if (!workspace) {
+          throw new Error('Failed to load campaign workspace');
+        }
 
         const mappedWorkspace = mapCampaignWorkspace(workspace);
         setCampaigns(mappedWorkspace.campaigns);
@@ -1522,7 +1528,7 @@ export default function SupplierMyCampaignsPage() {
     if (!shouldRestore) return;
 
     void (async () => {
-      const saved = await backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID).catch(() => null);
+      const saved = await backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID);
       const mapped = saved ? mapCampaignBuilderRecord(saved) : null;
       if (mapped?.builder && Object.keys(mapped.builder).length) {
         setBuilder(mapped.builder);

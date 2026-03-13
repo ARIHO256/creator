@@ -5382,33 +5382,37 @@ export default function EVzoneSupplierHubAppShellV9({
       })
       .catch(() => undefined);
     if (role === 'provider') {
-      void Promise.all([
-        sellerBackendApi.getProviderBookings().catch(() => ({ bookings: [] })),
-        sellerBackendApi.getProviderReviews().catch(() => ({ reviews: [] })),
-      ]).then(([bookingsPayload, reviewsPayload]) => {
+      void Promise.allSettled([
+        sellerBackendApi.getProviderBookings(),
+        sellerBackendApi.getProviderReviews(),
+      ]).then(([bookingsResult, reviewsResult]) => {
         if (cancelled) return;
-        const bookings = Array.isArray((bookingsPayload as { bookings?: unknown[] }).bookings)
-          ? ((bookingsPayload as { bookings?: unknown[] }).bookings ?? [])
+        const bookings = bookingsResult.status === 'fulfilled' && Array.isArray((bookingsResult.value as { bookings?: unknown[] }).bookings)
+          ? ((bookingsResult.value as { bookings?: unknown[] }).bookings ?? [])
           : [];
-        const reviews = Array.isArray((reviewsPayload as { reviews?: unknown[] }).reviews)
-          ? ((reviewsPayload as { reviews?: unknown[] }).reviews ?? [])
+        const reviews = reviewsResult.status === 'fulfilled' && Array.isArray((reviewsResult.value as { reviews?: unknown[] }).reviews)
+          ? ((reviewsResult.value as { reviews?: unknown[] }).reviews ?? [])
           : [];
         setOrdersCount(0);
         setBookingsCount(bookings.length);
         setReviewsCount(reviews.length);
       }).catch(() => undefined);
     } else {
-      void Promise.all([
-        sellerBackendApi.getSellerOrders().catch(() => ({ orders: [] })),
-        sellerBackendApi.getReviewsSummary().catch(() => ({ total: 0 })),
-      ]).then(([ordersPayload, reviewsPayload]) => {
+      void Promise.allSettled([
+        sellerBackendApi.getSellerOrders(),
+        sellerBackendApi.getReviewsSummary(),
+      ]).then(([ordersResult, reviewsResult]) => {
         if (cancelled) return;
-        const orders = Array.isArray((ordersPayload as { orders?: unknown[] }).orders)
-          ? ((ordersPayload as { orders?: unknown[] }).orders ?? [])
+        const orders = ordersResult.status === 'fulfilled' && Array.isArray((ordersResult.value as { orders?: unknown[] }).orders)
+          ? ((ordersResult.value as { orders?: unknown[] }).orders ?? [])
           : [];
         setOrdersCount(orders.length);
         setBookingsCount(0);
-        setReviewsCount(Number((reviewsPayload as { total?: number }).total ?? 0));
+        setReviewsCount(
+          reviewsResult.status === 'fulfilled'
+            ? Number((reviewsResult.value as { total?: number }).total ?? 0)
+            : 0
+        );
       }).catch(() => undefined);
     }
     return () => {

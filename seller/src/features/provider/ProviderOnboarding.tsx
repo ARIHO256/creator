@@ -2906,11 +2906,14 @@ export default function ProviderOnboardingProV4_JS() {
         const storedProfile = readStoredDraft<Record<string, unknown>>(STORAGE.form);
         const storedUi = readStoredDraft<{ step?: number }>(STORAGE.ui);
         const storedReview = readStoredDraft<Record<string, unknown>>(STORAGE.review);
-        const [payload, accountApproval] = await Promise.all([
-          sellerBackendApi.getWorkflowScreenState('provider-onboarding').catch(() => null),
-          sellerBackendApi.getAccountApproval().catch(() => null),
+        const [payloadResult, accountApprovalResult] = await Promise.allSettled([
+          sellerBackendApi.getWorkflowScreenState('provider-onboarding'),
+          sellerBackendApi.getAccountApproval(),
         ]);
         if (cancelled) return;
+        const payload = payloadResult.status === 'fulfilled' ? payloadResult.value : null;
+        const accountApproval =
+          accountApprovalResult.status === 'fulfilled' ? accountApprovalResult.value : null;
         const sourcePayload =
           payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
 

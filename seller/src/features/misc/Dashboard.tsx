@@ -1008,17 +1008,18 @@ export default function SupplierHubDashboardPage({
   useEffect(() => {
     let active = true;
 
-    void Promise.all([
-      sellerBackendApi.getSavedViews().catch(() => ({ views: [] })),
-      sellerBackendApi.getUiState().catch(() => ({})),
-    ]).then(([savedViewsPayload, uiStatePayload]) => {
+    void Promise.allSettled([
+      sellerBackendApi.getSavedViews(),
+      sellerBackendApi.getUiState(),
+    ]).then(([savedViewsResult, uiStateResult]) => {
       if (!active) return;
 
-      const safeCustom: CustomView[] = Array.isArray(savedViewsPayload.views)
-        ? (savedViewsPayload.views as CustomView[])
+      const safeCustom: CustomView[] = savedViewsResult.status === "fulfilled" && Array.isArray(savedViewsResult.value.views)
+        ? (savedViewsResult.value.views as CustomView[])
         : [];
       setCustomViews(safeCustom);
 
+      const uiStatePayload = uiStateResult.status === "fulfilled" ? uiStateResult.value : {};
       const savedDefault = String(((uiStatePayload as Record<string, any>)?.dashboard as { defaultViewId?: string } | undefined)?.defaultViewId || 'all');
       const universe = [...PRESET_VIEWS, ...safeCustom];
       const resolvedDefault =
