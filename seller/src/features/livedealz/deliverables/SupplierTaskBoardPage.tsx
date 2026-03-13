@@ -819,7 +819,7 @@ function TaskSidePanel({
                 <Btn
                   tone="neutral"
                   onClick={() => {
-                    setToast("Queued for Admin review (demo)");
+                    setToast("Queued for Admin review");
                   }}
                   title="After supplier approval (manual), Admin review follows"
                 >
@@ -838,8 +838,8 @@ function TaskSidePanel({
             ) : null}
 
             {/* Always available */}
-            <Btn tone="neutral" onClick={() => setToast("Open campaign (demo)")}>Open campaign</Btn>
-            <Btn tone="neutral" onClick={() => setToast("Open contract (demo)")}>Open contract</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open campaign")}>Open campaign</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open contract")}>Open contract</Btn>
           </div>
 
           <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -914,14 +914,14 @@ function TaskSidePanel({
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2">
-                <Btn tone="neutral" onClick={() => setToast("Open preview player (demo)")}>Preview</Btn>
+                <Btn tone="neutral" onClick={() => setToast("Open preview player")}>Preview</Btn>
                 <Btn
                   tone="neutral"
                   onClick={() => {
                     try {
                       navigator.clipboard?.writeText(task.submission?.link || "");
                     } catch {}
-                    setToast("Submission link copied (demo)");
+                    setToast("Submission link copied");
                   }}
                 >
                   Copy link

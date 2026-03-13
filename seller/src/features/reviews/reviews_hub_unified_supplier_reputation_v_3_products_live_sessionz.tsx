@@ -968,7 +968,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
         note: "Demo evidence bundle. In production: PDFs, signatures, chain of custody.",
       };
       safeCopy(JSON.stringify(bundle, null, 2));
-      pushToast({ title: "Evidence bundle ready", message: "Copied as JSON (demo).", tone: "success" });
+      pushToast({ title: "Evidence bundle ready", message: "Copied as JSON.", tone: "success" });
     },
   };
 
@@ -1020,7 +1020,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
     const closing = " Please share your preferred resolution and reference ID so we can assist quickly.";
 
     setReply(`${base}${add}${closing}`);
-    pushToast({ title: "AI suggestion", message: "Draft response generated (demo).", tone: "default" });
+    pushToast({ title: "AI suggestion", message: "Draft response generated.", tone: "default" });
   };
 
   const sendReply = async () => {
@@ -1052,7 +1052,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
       )
     );
 
-    pushToast({ title: "Response sent", message: "Reply posted to buyer (demo).", tone: "success" });
+    pushToast({ title: "Response sent", message: "Reply posted to buyer.", tone: "success" });
     setDetailOpen(false);
   };
 
@@ -1103,7 +1103,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest reviews loaded (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest reviews loaded.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />

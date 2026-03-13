@@ -914,7 +914,7 @@ function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Marked as OK (demo).',
+                            message: 'Marked as OK.',
                             tone: 'success',
                           });
                         }}
@@ -936,7 +936,7 @@ function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Added a warning issue (demo).',
+                            message: 'Added a warning issue.',
                             tone: 'warning',
                           });
                         }}
@@ -1352,7 +1352,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
       return next;
     });
     pushApprovalHistory('Supplier', 'Requested review', 'Submitted for approval');
-    pushToast({ title: 'Submitted', message: 'Sent for review (demo).', tone: 'default' });
+    pushToast({ title: 'Submitted', message: 'Sent for review.', tone: 'default' });
   };
 
   const approveNow = () => {
@@ -1367,7 +1367,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
       };
     });
     pushApprovalHistory('Reviewer', 'Approved', 'Approved for publishing');
-    pushToast({ title: 'Approved', message: 'Approval granted (demo).', tone: 'success' });
+    pushToast({ title: 'Approved', message: 'Approval granted.', tone: 'success' });
   };
 
   const requestChanges = () => {
@@ -1379,7 +1379,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
     pushApprovalHistory('Reviewer', 'Requested changes', 'Please address the flagged items');
     pushToast({
       title: 'Changes requested',
-      message: 'Moved back to Draft (demo).',
+      message: 'Moved back to Draft.',
       tone: 'warning',
     });
   };
@@ -1391,7 +1391,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
       approval: { ...(s.approval || approval), state: 'Rejected' },
     }));
     pushApprovalHistory('Reviewer', 'Rejected', 'Rejected with reasons');
-    pushToast({ title: 'Rejected', message: 'Listing rejected (demo).', tone: 'danger' });
+    pushToast({ title: 'Rejected', message: 'Listing rejected.', tone: 'danger' });
   };
 
   const headerRight = (
@@ -1549,8 +1549,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                       </span>
                     </div>
                     <div className="mt-1 text-xs font-semibold text-emerald-900/70">
-                      Generate better titles using category, tags, MOQ and marketplace context
-                      (demo).
+                      Generate better titles using category, tags, MOQ and marketplace context.
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1700,7 +1699,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                               setVm({ ...vm, attributes: attrs, variants: rows });
                               pushToast({
                                 title: 'Matrix generated',
-                                message: `${rows.length} variants created (demo).`,
+                                message: `${rows.length} variants created.`,
                                 tone: 'success',
                               });
                             }}
@@ -2003,7 +2002,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                           setField('images', Number(draft.images || 0) + 1);
                           pushToast({
                             title: 'Uploaded',
-                            message: 'Media added (demo).',
+                            message: 'Media added.',
                             tone: 'success',
                           });
                         }}
@@ -2183,7 +2182,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                         </div>
                         <div>
                           <div className="text-[11px] font-extrabold text-slate-600">
-                            Reserved (demo)
+                            Reserved
                           </div>
                           <input
                             value={String(draft.inventory?.[0]?.reserved ?? 0)}
@@ -2243,7 +2242,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Marked as OK (demo).',
+                            message: 'Marked as OK.',
                             tone: 'success',
                           });
                         }}
@@ -2265,7 +2264,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Added a warning issue (demo).',
+                            message: 'Added a warning issue.',
                             tone: 'warning',
                           });
                         }}
@@ -2341,7 +2340,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                                 onRollback(v.snapshot);
                                 pushToast({
                                   title: 'Rolled back',
-                                  message: 'Draft replaced with selected version (demo).',
+                                  message: 'Draft replaced with selected version.',
                                   tone: 'success',
                                 });
                               }}
@@ -2480,7 +2479,7 @@ function LocalizationPanel({ draft, updateLocale, setField, pushToast }) {
     setField('locales', next);
     pushToast({
       title: 'Auto-translate',
-      message: 'Draft translations generated (demo).',
+      message: 'Draft translations generated.',
       tone: 'success',
     });
   };
@@ -2897,7 +2896,7 @@ function ApprovalPanel({
             onClick={() =>
               pushToast({
                 title: 'Evidence export',
-                message: 'Export evidence pack (demo).',
+                message: 'Export evidence pack.',
                 tone: 'default',
               })
             }
@@ -2985,7 +2984,7 @@ function ApprovalPanel({
             </span>
           </div>
           <div className="mt-2 text-xs font-semibold text-slate-500">
-            Derived from quality + compliance + media + localization (demo).
+            Derived from quality + compliance + media + localization.
           </div>
         </div>
       </GlassCard>

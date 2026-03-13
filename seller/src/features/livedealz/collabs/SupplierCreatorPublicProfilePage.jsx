@@ -21,7 +21,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Invite-only correction: creators ACCEPT invites to collaborate (not proposal response).
  * - Drawer supports selecting a Supplier campaign (must be “Use Creator” or “Not sure yet”).
  * - Campaign governance surfaced: Collab Mode + Content Approval Mode (Manual/Auto).
- * - Simulation button kept: “Mark Accepted (demo)” to emulate acceptance → negotiation entry.
+ * - Simulation button kept: “Mark Accepted” to emulate acceptance → negotiation entry.
  *
  * Canvas-safe:
  * - No MUI. Uses lightweight toast + drawer.
@@ -591,7 +591,7 @@ function InviteDrawer({ open, onClose, creator, campaigns, onInviteSent, toast }
     if (!inviteRecord) return;
     const next = { ...inviteRecord, status: "Accepted" };
     setInviteRecord(next);
-    toast?.("Invite accepted (demo). You can now negotiate terms.", "success");
+    toast?.("Invite accepted. You can now negotiate terms.", "success");
   };
 
   const openNegotiation = () => {
@@ -863,7 +863,7 @@ function InviteDrawer({ open, onClose, creator, campaigns, onInviteSent, toast }
             <div className="mt-3 flex flex-wrap gap-2">
               {/* ✅ Keep simulation button */}
               <Btn onClick={markAccepted} disabled={inviteRecord.status === "Accepted"} title="Simulate creator acceptance">
-                ✅ Mark Accepted (demo)
+                ✅ Mark Accepted
               </Btn>
               <Btn
                 tone="primary"

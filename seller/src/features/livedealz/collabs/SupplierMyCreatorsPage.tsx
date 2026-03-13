@@ -172,7 +172,7 @@ function InviteDrawer({ isOpen, onClose, creator, campaigns }) {
   const [collabMode, setCollabMode] = useState("Invite-Only");
   const [approvalMode, setApprovalMode] = useState("Manual");
 
-  // Commercial terms (proposal seed)
+  // Commercial terms (proposal)
   const [model, setModel] = useState("Hybrid");
   const [budget, setBudget] = useState("250");
   const [currency, setCurrency] = useState("USD");

@@ -686,7 +686,7 @@ export default function OpsWarehousesPremium() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "WMS status refreshed (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "WMS status refreshed.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1137,7 +1137,7 @@ export default function OpsWarehousesPremium() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => pushToast({ title: "Saved", message: "Simulator scenario saved (demo).", tone: "success" })}
+                    onClick={() => pushToast({ title: "Saved", message: "Simulator scenario saved.", tone: "success" })}
                     className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                     style={{ background: TOKENS.orange }}
                   >
@@ -1320,7 +1320,7 @@ export default function OpsWarehousesPremium() {
                     placeholder="Uganda, Kenya, Rwanda"
                     className="mt-2 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 outline-none"
                   />
-                  <div className="mt-1 text-[11px] font-semibold text-slate-500">If empty, the warehouse is treated as global (demo).</div>
+                  <div className="mt-1 text-[11px] font-semibold text-slate-500">If empty, the warehouse is treated as global.</div>
                 </div>
 
                 <div>

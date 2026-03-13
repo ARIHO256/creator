@@ -1128,7 +1128,7 @@ function CatalogCampaignPickerPage({
   );
 }
 
-/* ------------------------- seed campaigns ------------------------- */
+/* ------------------------- campaigns ------------------------- */
 
 const INIT_CAMPAIGNS = [
   {

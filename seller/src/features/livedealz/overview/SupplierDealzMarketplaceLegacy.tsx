@@ -1737,7 +1737,7 @@ function NewDealzWizard({
       creator,
       startISO,
       endISO,
-      notes: "Created from +New Dealz (demo)."
+      notes: "Created from +New Dealz."
     };
 
     const withShoppable =
@@ -2243,10 +2243,10 @@ export default function SupplierDealzMarketplace() {
     setViewerOpen(true);
   }
 
-  // checkout/cart actions (demo)
+  // checkout/cart actions
   function shoppableBuy(ad: ShoppableAd, offerId: string) {
     const url = `/checkout?source=shoppable&adId=${encodeURIComponent(ad.id)}&offerId=${encodeURIComponent(offerId)}&qty=1`;
-    setToast(`Checkout (demo): ${url}`);
+    setToast(`Checkout: ${url}`);
   }
   function shoppableAdd(ad: ShoppableAd, offerId: string) {
     const o = ad.offers.find((x) => x.id === offerId);
@@ -2257,7 +2257,7 @@ export default function SupplierDealzMarketplace() {
   }
   function liveBuy(live: LiveInvite, itemId: string) {
     const url = `/checkout?source=live&sessionId=${encodeURIComponent(live.id)}&itemId=${encodeURIComponent(itemId)}&qty=1`;
-    setToast(`Checkout (demo): ${url}`);
+    setToast(`Checkout: ${url}`);
   }
   function liveAdd(live: LiveInvite, itemId: string) {
     const it = live.featured.find((x) => x.id === itemId);
@@ -2441,7 +2441,7 @@ export default function SupplierDealzMarketplace() {
                 </select>
               </div>
 
-              <Btn tone="ghost" onClick={() => setToast("More filters (demo)")} left={<MoreHorizontal className="h-4 w-4" />}>
+              <Btn tone="ghost" onClick={() => setToast("More filters")} left={<MoreHorizontal className="h-4 w-4" />}>
                 More
               </Btn>
             </div>
@@ -2861,7 +2861,7 @@ export default function SupplierDealzMarketplace() {
         onCreate={(d, behavior) => {
           setDealz((prev) => [d, ...prev]);
           setSelectedId(d.id);
-          setToast("Deal created (demo).");
+          setToast("Deal created.");
           if (behavior === "open-builder") {
             if (d.type === "Shoppable Adz") openAdBuilderFor(d);
             else if (d.type === "Live Sessionz") openLiveBuilderFor(d);

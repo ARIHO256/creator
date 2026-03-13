@@ -249,7 +249,7 @@ export default function SellerComplianceCenterEVzoneV2() {
   const [remind, setRemind] = useState({ expiringSoon: true, missing: true, frequency: 'weekly' });
   const sendTestReminder = (kind) => {
     const label = kind === "expiringSoon" ? t("Expiring-Soon") : t("Missing documents");
-    alert(t("Sent {kind} reminder (demo)").replace("{kind}", label));
+    alert(t("Sent {kind} reminder").replace("{kind}", label));
   };
 
   return (

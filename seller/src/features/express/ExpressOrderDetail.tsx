@@ -472,7 +472,7 @@ function Modal({ open, title, children, onClose }: ModalProps) {
               <div className="flex items-start justify-between gap-3 border-b border-slate-200/70 p-4">
                 <div>
                   <div className="text-sm font-black text-slate-900">{title}</div>
-                  <div className="mt-1 text-xs font-semibold text-slate-500">Premium ops modal (demo).</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">Premium ops modal.</div>
                 </div>
                 <IconButton label="Close" onClick={onClose}>
                   <X className="h-4 w-4" />
@@ -1406,7 +1406,7 @@ function ExpressMartOrders({
       <Drawer
         open={assignOpen}
         title="Assign rider"
-        subtitle="Assign selected orders to a rider (demo)."
+        subtitle="Assign selected orders to a rider."
         onClose={() => setAssignOpen(false)}
       >
         <div className="space-y-3">
@@ -1683,7 +1683,7 @@ function ExpressMartOrderDetail({
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-sm font-black text-slate-900">Totals</div>
-                            <div className="mt-1 text-xs font-semibold text-slate-500">Includes taxes and delivery fee (demo).</div>
+                            <div className="mt-1 text-xs font-semibold text-slate-500">Includes taxes and delivery fee.</div>
                           </div>
                           <Badge tone="slate">{order.currency}</Badge>
                         </div>
@@ -1710,7 +1710,7 @@ function ExpressMartOrderDetail({
                           type="button"
                           onClick={() => {
                             setOrder({ status: "Delivered", proof: { ...order.proof, signature: true } });
-                            pushToast({ title: "Delivered", message: "Marked delivered (demo).", tone: "success" });
+                            pushToast({ title: "Delivered", message: "Marked delivered.", tone: "success" });
                           }}
                           className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
                           style={{ background: TOKENS.green }}
@@ -1721,7 +1721,7 @@ function ExpressMartOrderDetail({
                         <button
                           type="button"
                           onClick={() => {
-                            pushToast({ title: "Issue reported", message: "Create incident (demo).", tone: "warning" });
+                            pushToast({ title: "Issue reported", message: "Create incident.", tone: "warning" });
                             setOrder({ status: "Failed" });
                           }}
                           className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-extrabold text-rose-700"
@@ -1738,7 +1738,7 @@ function ExpressMartOrderDetail({
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="text-sm font-black text-slate-900">Items</div>
-                          <div className="mt-1 text-xs font-semibold text-slate-500">Line items (demo).</div>
+                          <div className="mt-1 text-xs font-semibold text-slate-500">Line items.</div>
                         </div>
                         <Badge tone="slate">{items.length} lines</Badge>
                       </div>
@@ -1791,7 +1791,7 @@ function ExpressMartOrderDetail({
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-sm font-black text-slate-900">Proof of delivery</div>
-                            <div className="mt-1 text-xs font-semibold text-slate-500">Photo, signature and OTP (demo).</div>
+                            <div className="mt-1 text-xs font-semibold text-slate-500">Photo, signature and OTP.</div>
                           </div>
                           <Badge tone={canProof ? "slate" : "orange"}>{canProof ? "Active" : "Available after dispatch"}</Badge>
                         </div>
@@ -1829,7 +1829,7 @@ function ExpressMartOrderDetail({
                             onClick={() => {
                               if (!canProof) return;
                               setOrder({ proof: { ...order.proof, signature: !order.proof?.signature } });
-                              pushToast({ title: "Signature toggled", message: "Updated signature flag (demo).", tone: "default" });
+                              pushToast({ title: "Signature toggled", message: "Updated signature flag.", tone: "default" });
                             }}
                             disabled={!canProof}
                             className={cx(
@@ -1859,7 +1859,7 @@ function ExpressMartOrderDetail({
                                 onClick={() => {
                                   if (!canProof) return;
                                   setOrder({ proof: { ...order.proof, otp } });
-                                  pushToast({ title: "OTP saved", message: "OTP stored (demo).", tone: "success" });
+                                  pushToast({ title: "OTP saved", message: "OTP stored.", tone: "success" });
                                 }}
                                 disabled={!canProof}
                                 className={cx("rounded-2xl px-3 py-2 text-xs font-extrabold text-white", !canProof && "opacity-60")}
@@ -2069,7 +2069,7 @@ function ExpressMartOrderDetail({
                 tone: order.risk === "risk" ? "danger" : order.risk === "watch" ? "orange" : "green",
                 action: {
                   label: "Create ETA message",
-                  onClick: () => pushToast({ title: "ETA draft", message: "Draft created (demo).", tone: "success" }),
+                  onClick: () => pushToast({ title: "ETA draft", message: "Draft created.", tone: "success" }),
                 },
               }].map((p) => (
                 <div

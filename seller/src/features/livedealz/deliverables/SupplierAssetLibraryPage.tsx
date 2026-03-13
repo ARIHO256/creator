@@ -948,7 +948,7 @@ export default function SupplierAssetLibraryPage() {
 
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) || null, [assets, activeAssetId]);
 
-  // Supplier review note per asset (demo)
+  // Supplier review note per asset
   const [reviewNotes, setReviewNotes] = useState(() => ({}));
   const activeReviewNote = reviewNotes[activeAssetId || ""] || "";
 
@@ -980,7 +980,7 @@ export default function SupplierAssetLibraryPage() {
     // Supplier approves a creator submission: move to Admin review.
     const next = supplierAutoApprove ? "pending_admin" : "pending_admin";
     void setStatus(asset.id, next, activeReviewNote);
-    setToast({ title: "Approved", body: "Sent to Admin review (demo)." });
+    setToast({ title: "Approved", body: "Sent to Admin review." });
   }
 
   function supplierRequestChanges(asset) {
@@ -1001,11 +1001,11 @@ export default function SupplierAssetLibraryPage() {
     }
 
     if (pickerMode) {
-      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id} (demo)` });
+      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id}` });
       return;
     }
 
-    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached (demo).` });
+    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached.` });
   }
 
   // ---------------- Submission drawer (Supplier uploads) ----------------
@@ -1219,7 +1219,7 @@ export default function SupplierAssetLibraryPage() {
       return;
     }
 
-    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review (demo)." });
+    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review." });
     setIsSubmitOpen(false);
   }
 
@@ -1241,7 +1241,7 @@ export default function SupplierAssetLibraryPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Btn
               tone="neutral"
-              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates (demo)" })}
+              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates" })}
               className="hidden sm:inline-flex"
             >
               ✨ Supplier assets & Creator templates
@@ -1286,7 +1286,7 @@ export default function SupplierAssetLibraryPage() {
                   </span>
                 ) : null}
                 {returnTo ? (
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder (demo)" })}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder" })}>
                     ← Back
                   </Btn>
                 ) : null}
@@ -1294,7 +1294,7 @@ export default function SupplierAssetLibraryPage() {
                   tone="neutral"
                   onClick={() => {
                     safeCopy(window.location.href);
-                    setToast({ title: "Shared", body: "Link copied (demo)." });
+                    setToast({ title: "Shared", body: "Link copied." });
                   }}
                 >
                   ↗ Share link
@@ -1485,7 +1485,7 @@ export default function SupplierAssetLibraryPage() {
                 </div>
 
                 <div className="hidden items-center gap-2 sm:flex">
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs (demo)" })}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs" })}>
                     ⭐ Saved packs
                   </Btn>
                 </div>
@@ -1572,7 +1572,7 @@ export default function SupplierAssetLibraryPage() {
                   <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Collections</div>
                   <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Group assets into reusable packs for Adz or Live.</div>
                 </div>
-                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection (demo)" })}>
+                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection" })}>
                   ➕ New collection
                 </Btn>
               </div>
@@ -1590,7 +1590,7 @@ export default function SupplierAssetLibraryPage() {
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Use for shoppable ads and short lives.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack (demo)" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack" })}>
                       Use pack →
                     </Btn>
                   </div>
@@ -1608,7 +1608,7 @@ export default function SupplierAssetLibraryPage() {
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Complete review to unlock this collection.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection (demo)" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection" })}>
                       Open ↗
                     </Btn>
                   </div>
@@ -1713,7 +1713,7 @@ export default function SupplierAssetLibraryPage() {
         open={isSubmitOpen}
         onClose={() => setIsSubmitOpen(false)}
         title="Add content"
-        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default (demo)."
+        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default."
         footer={
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">

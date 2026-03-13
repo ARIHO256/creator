@@ -77,7 +77,7 @@ export default function ServiceListingApprovalPending() {
   const [dndActive, setDndActive] = useState(false)
   const [dropInfo, setDropInfo] = useState('') // drag/drop status line
 
-  // Auto-move Submitted -> InReview (demo)
+  // Auto-move Submitted -> InReview
   useEffect(() => {
     if (status === 'Submitted') {
       const t = setTimeout(() => setStatus('InReview'), 2500)

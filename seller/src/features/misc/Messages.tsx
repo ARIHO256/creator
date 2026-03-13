@@ -1299,7 +1299,7 @@ export default function MessagesPage({
                       </div>
                       <div>
                         <div className="text-sm font-extrabold text-slate-900">{attachmentOpen.name}</div>
-                        <div className="mt-1 text-xs font-semibold text-slate-500">Preview not available for this file type in demo mode.</div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500">Preview not available for this file type in current mode.</div>
                       </div>
                     </div>
                   )}
@@ -1521,7 +1521,7 @@ function ConvertWizard({
               onClick={() => {
                 onToast({
                   title: "Created",
-                  message: `${primaryLabel} created from chat (demo).`,
+                  message: `${primaryLabel} created from chat.`,
                   tone: "success",
                   action: { label: "Open", onClick: () => onNavigate(primaryTo) },
                 });

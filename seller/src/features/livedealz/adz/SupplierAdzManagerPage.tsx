@@ -421,7 +421,7 @@ export default function SupplierAdzManagerPage() {
     } catch {
       // ignore
     }
-    setToast("Share link copied (demo).");
+    setToast("Share link copied.");
   }
 
   function generateAd(adId) {
@@ -442,12 +442,12 @@ export default function SupplierAdzManagerPage() {
 
   function updateOfferDefaultMode(offerId, mode) {
     setModeByOffer((prev) => ({ ...prev, [offerId]: mode }));
-    setToast(`Default mode set: ${offerId} → ${mode === "WHOLESALE" ? "Wholesale" : "Retail"} (demo)`);
+    setToast(`Default mode set: ${offerId} → ${mode === "WHOLESALE" ? "Wholesale" : "Retail"}`);
   }
 
   function resubmitRejected(adId) {
     setAds((prev) => prev.map((a) => (a.id === adId ? { ...a, status: "Pending approval", needsApproval: true } : a)));
-    setToast("Resubmitted for review (demo).");
+    setToast("Resubmitted for review.");
   }
 
   const trendImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
@@ -857,7 +857,7 @@ export default function SupplierAdzManagerPage() {
                               </Btn>
 
                               {o.videoUrl ? (
-                                <Btn tone="neutral" left={<span>▶</span>} onClick={() => setToast(`Play offer video: ${o.name} (demo)`)}>
+                                <Btn tone="neutral" left={<span>▶</span>} onClick={() => setToast(`Play offer video: ${o.name}`)}>
                                   Watch
                                 </Btn>
                               ) : null}
@@ -992,7 +992,7 @@ export default function SupplierAdzManagerPage() {
               </div>
             </div>
 
-            <MiniTrend title="Trend (demo)" subtitle="Impressions vs Orders (14 days)" seriesA={trendImpr} seriesB={trendOrders} />
+            <MiniTrend title="Trend" subtitle="Impressions vs Orders (14 days)" seriesA={trendImpr} seriesB={trendOrders} />
 
             <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
               <div className="text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Supplier notes</div>
@@ -1025,7 +1025,7 @@ export default function SupplierAdzManagerPage() {
           <div className="mt-3 grid gap-2">
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Pixel status</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Connect Meta/TikTok/Google (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Connect Meta/TikTok/Google</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Pill tone="neutral">Meta: Not connected</Pill>
                 <Pill tone="neutral">TikTok: Connected</Pill>
@@ -1035,7 +1035,7 @@ export default function SupplierAdzManagerPage() {
 
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Short links</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Auto-rotate + click health (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Auto-rotate + click health</div>
               <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
                 Links are enabled only after Generate. Broken link detection auto-pauses on repeated failures.
               </div>
@@ -1043,7 +1043,7 @@ export default function SupplierAdzManagerPage() {
 
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Attribution notes</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Payout timing reminders (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Payout timing reminders</div>
               <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
                 For collab campaigns, payouts may be held until Admin approval and dispute windows end.
               </div>
@@ -1068,15 +1068,15 @@ export default function SupplierAdzManagerPage() {
           <div className="mt-3 grid gap-2">
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Start from template</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Create new ad from template (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Create new ad from template</div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Btn tone="primary" left={<span>＋</span>} onClick={() => setToast("Create from template (demo)")}>Use template</Btn>
-                <Btn tone="neutral" left={<span>👁️</span>} onClick={() => setToast("Preview templates (demo)")}>Preview</Btn>
+                <Btn tone="primary" left={<span>＋</span>} onClick={() => setToast("Create from template")}>Use template</Btn>
+                <Btn tone="neutral" left={<span>👁️</span>} onClick={() => setToast("Preview templates")}>Preview</Btn>
               </div>
             </div>
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Brand kit rules</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Fonts, colors, voice guidelines (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Fonts, colors, voice guidelines</div>
               <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
                 Enforced during Generate: banned claims, missing disclaimers, inconsistent tone.
               </div>

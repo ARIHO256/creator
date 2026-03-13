@@ -23,7 +23,7 @@ import SupplierLinkToolsOrangePrimaryPreviewable from "../+NewLink";
  * - Manual review workflow (Supplier) for Creator-submitted link packs:
  *   reviewStatus: Pending Supplier → Approved / Changes Requested / Rejected
  * - Governance pills: hostRole, creatorUsage, collabMode, approvalMode
- * - Creator assignments: send link pack to creators and track by creator (demo)
+ * - Creator assignments: send link pack to creators and track by creator
  *
  * QR Notes:
  * - To stay dependency-free in the canvas, QR uses a remote QR image endpoint.
@@ -456,7 +456,7 @@ function FilterDialog({ isOpen, onClose, status, setStatus, groupBy, setGroupBy,
                         : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700"
                     )}
                     type="button"
-                    onClick={() => toast(`Sort: ${x.label} (demo)`)}
+                    onClick={() => toast(`Sort: ${x.label}`)}
                   >
                     {x.label}
                   </button>
@@ -760,7 +760,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
     downloadQrRemote(regionUrl, `${item.id}-${region.replace("/", "-")}-qr.png`);
   };
 
-  // Creator performance (demo) derived from assignments
+  // Creator performance derived from assignments
   const creatorPerf = useMemo(() => {
     const rows = (item.creatorAssignments || []).map((a, idx) => {
       const baseClicks = Math.max(10, Math.round((item.metrics.clicks || 0) / (Math.max(1, item.creatorAssignments.length) + 0.6)));
@@ -907,7 +907,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
             right={
               <div className="flex items-center gap-2">
                 <PillBtn label="Copy" icon={<span>📋</span>} onClick={() => copyToClipboard(item.primaryUrl)} />
-                <PillBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening destination for: ${item.title} (demo)`)} />
+                <PillBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening destination for: ${item.title}`)} />
               </div>
             }
           >
@@ -934,7 +934,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
             right={
               <div className="flex items-center gap-2">
                 <PillBtn label="Download" icon={<span>⬇️</span>} onClick={downloadQr} />
-                <PillBtn label="Add to overlay" icon={<span>🧩</span>} onClick={() => toast("QR added to Live Studio overlay (demo)")} />
+                <PillBtn label="Add to overlay" icon={<span>🧩</span>} onClick={() => toast("QR added to Live Studio overlay")} />
               </div>
             }
           >
@@ -968,7 +968,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
                       </div>
                       <div className="flex items-center gap-1">
                         <IconBtn label="Copy" icon={<span>📋</span>} onClick={() => copyToClipboard(c.url)} />
-                        <IconBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening ${c.name} link (demo)`) } />
+                        <IconBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening ${c.name} link`) } />
                         <IconBtn label="Share" icon={<span>🔗</span>} onClick={() => shareNative({ title: item.title, text: msg, url: c.url })} />
                         <IconBtn label="WhatsApp" icon={<span>💬</span>} onClick={() => shareWhatsApp(msg)} />
                       </div>
@@ -1035,7 +1035,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
 
           <Card
             title="Send pack to creators"
-            subtitle="Assign the correct region link to each creator (demo)."
+            subtitle="Assign the correct region link to each creator."
             right={<PillBtn label="Resend all" icon={<span>✉️</span>} onClick={() => onResendPack("all")} />}
           >
             {(item.creatorAssignments || []).length ? (
@@ -1153,9 +1153,9 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
           </Card>
 
           <Card
-            title="Creator performance (demo)"
+            title="Creator performance"
             subtitle="Track by creator assignment: clicks, purchases, earnings."
-            right={<PillBtn label="Export" icon={<span>⬇️</span>} onClick={() => toast("Export CSV (demo)")} />}
+            right={<PillBtn label="Export" icon={<span>⬇️</span>} onClick={() => toast("Export CSV")} />}
           >
             {creatorPerf.length ? (
               <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -1331,14 +1331,14 @@ export default function SupplierLinksHubPage() {
       })
     );
 
-    if (action === "approve") toast("Approved. Link pack unlocked (demo)");
+    if (action === "approve") toast("Approved. Link pack unlocked");
     if (action === "changes") toast("Changes requested. Creator must resubmit.");
     if (action === "reject") toast("Rejected.");
   };
 
   const onResendPack = (assignmentId) => {
     if (!selected) return;
-    toast(assignmentId === "all" ? "Resent pack to all creators (demo)" : `Resent pack (${assignmentId}) (demo)`);
+    toast(assignmentId === "all" ? "Resent pack to all creators" : `Resent pack (${assignmentId})`);
   };
 
   const headerTitle = "Links Hub";

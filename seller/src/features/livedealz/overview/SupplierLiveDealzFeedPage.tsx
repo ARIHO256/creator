@@ -929,7 +929,7 @@ export default function SupplierLiveDealzFeedPage() {
             <section className="space-y-3">
               <CreatorsDiscoveryCard onChangePage={onChangePage} />
               <AIAssistantCard
-                onAsk={() => showInfo("AI Assistant prompt sent (demo)")}
+                onAsk={() => showInfo("AI Assistant prompt sent")}
               />
               <CategoryInsightsCard onChangePage={onChangePage} />
             </section>

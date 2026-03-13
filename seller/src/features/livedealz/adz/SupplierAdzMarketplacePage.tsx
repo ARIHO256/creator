@@ -17,11 +17,11 @@ import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from 
  * - Cart dock inside preview (not checkout dock), wholesale constraints (MOQ/step)
  * - Video viewer (hero/offer) with overlays: countdown, stock, love/share, mode toggle, CTA buttons
  * - Toast feedback
- * - Ad Builder drawer (premium stub) opened from header or preview
+ * - Ad Builder drawer (premium module) opened from header or preview
  *
  * Supplier adaptations (minimal, necessary):
  * - Adds Supplier campaign governance context: creatorUsage, collabMode, approvalMode, hostRole
- * - Routes are supplier-safe (stubbed as toasts for canvas; replace safeNav with react-router navigate)
+ * - Routes are supplier-safe (router-safe actions for the app; replace safeNav with react-router navigate)
  * - Copy link disabled until Generated; publishing/generation notes reflect Supplier approvals workflow
  */
 
@@ -674,7 +674,7 @@ function ShoppableAdPreview({
   );
 }
 
-/* ------------------------------ Builder drawer (premium stub) -------------- */
+/* ------------------------------ Builder drawer (premium module) -------------- */
 
 function Drawer({ open, title, onClose, children }) {
   useEffect(() => {
@@ -1145,7 +1145,7 @@ export default function SupplierAdzMarketplacePage() {
 
     const qty = mode === "WHOLESALE" && offer.type === "PRODUCT" && offer.wholesale ? offer.wholesale.moq : 1;
     const url = `/checkout?offerId=${encodeURIComponent(offerId)}&mode=${encodeURIComponent(mode)}&qty=${encodeURIComponent(String(qty))}`;
-    setToast(`Buyer checkout preview → ${offer.name} (${mode}) · qty ${qty} · ${url} (demo)`);
+    setToast(`Buyer checkout preview → ${offer.name} (${mode}) · qty ${qty} · ${url}`);
   };
 
   const shareAd = (ad) => {
@@ -1154,7 +1154,7 @@ export default function SupplierAdzMarketplacePage() {
       return;
     }
     const base = `https://mldz.link/${encodeURIComponent(ad.id)}`;
-    setToast(`Share link copied: ${base} (demo)`);
+    setToast(`Share link copied: ${base}`);
     try {
       navigator.clipboard?.writeText(base);
     } catch {

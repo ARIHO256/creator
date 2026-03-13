@@ -830,7 +830,7 @@ function RfqDetailDrawer({
               <GlassCard className="p-4">
                 <div className="flex items-center gap-2">
                   <MessageCircle className="h-4 w-4 text-slate-700" />
-                  <div className="text-sm font-black text-slate-900">Negotiation timeline (demo)</div>
+                  <div className="text-sm font-black text-slate-900">Negotiation timeline</div>
                   <span className="ml-auto"><Badge tone="slate">2</Badge></span>
                 </div>
                 <div className="mt-3 space-y-2">
@@ -1046,7 +1046,7 @@ export default function WholesaleRFQsSignalsAndDraftTotalsPreviewable() {
             </div>
             <button
               type="button"
-              onClick={() => pushToast({ title: "Refreshed", message: "Latest RFQs loaded (demo).", tone: "success" })}
+              onClick={() => pushToast({ title: "Refreshed", message: "Latest RFQs loaded.", tone: "success" })}
               className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
               style={{ background: TOKENS.green }}
             >

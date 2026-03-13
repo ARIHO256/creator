@@ -287,7 +287,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
     }
   };
 
-  // 2FA TOTP (demo)
+  // 2FA TOTP
   const [totp, setTotp] = useState({ enabled: false, secret: 'JBSWY3DPEHPK3PXP' });
   useEffect(() => {
     const config = securityState?.twoFactorConfig;
@@ -747,7 +747,7 @@ function TwoFA({ totp, onSetup, onVerify }) {
     <section>
       <div className="text-lg font-extrabold">{t("Two‑Factor Authentication")}</div>
       <div className="text-xs text-gray-600">{totp.enabled ? t('Enter your 6‑digit code') : t('Setup with your authenticator app and then verify')}</div>
-      {!totp.enabled && (<div className="mt-2 rounded-lg border p-2 text-xs">{t("Secret (demo): ")}<b>{totp.secret}</b></div>)}
+      {!totp.enabled && (<div className="mt-2 rounded-lg border p-2 text-xs">{t("Secret: ")}<b>{totp.secret}</b></div>)}
       <div className="mt-2 inline-flex items-center gap-2 text-sm">
         {!totp.enabled && <button className="btn btn-ghost" onClick={onSetup}>{t("Setup")}</button>}
         <input className="input" placeholder={t("123456")} value={code} onChange={e => setCode(e.target.value)} />

@@ -625,7 +625,7 @@ export default function SettingsIntegrationsPage() {
     setNewKeyOpen(false);
     pushToast({
       title: "API key created",
-      message: "Copy it now. You will not see the full secret again (demo).",
+      message: "Copy it now. You will not see the full secret again.",
       tone: "success",
       action: {
         label: "Copy",
@@ -685,7 +685,7 @@ export default function SettingsIntegrationsPage() {
     const ev = logs.find((l) => l.id === id);
     if (!ev) return;
 
-    // Add a new success attempt as replay (demo)
+    // Add a new success attempt as replay
     const replay: WebhookLog = {
       ...ev,
       id: makeId("evt_replay"),
@@ -699,7 +699,7 @@ export default function SettingsIntegrationsPage() {
     const nextLogs = [replay, ...logs];
     setLogs(nextLogs);
     void persistIntegrations(apps, keys, endpoints, nextLogs);
-    pushToast({ title: "Replay queued", message: `${ev.eventType} sent again (demo).`, tone: "success" });
+    pushToast({ title: "Replay queued", message: `${ev.eventType} sent again.`, tone: "success" });
   };
 
   const addEndpointOpenRef = useRef(false);

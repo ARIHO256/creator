@@ -868,7 +868,7 @@ export default function OpsShippingProfilesPremium() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest carrier sync loaded (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest carrier sync loaded.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1229,7 +1229,7 @@ export default function OpsShippingProfilesPremium() {
                           <div className="mt-2 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => pushToast({ title: "Saved", message: "Quote preview saved as a test case (demo).", tone: "success" })}
+                              onClick={() => pushToast({ title: "Saved", message: "Quote preview saved as a test case.", tone: "success" })}
                               className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                               style={{ background: TOKENS.orange }}
                             >

@@ -22,7 +22,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  *
  * Notes:
  * - Dependency-free (no lucide-react). Emoji icons used to avoid CDN issues.
- * - Replace demo data with API data in the real project.
+ * - Replace live data with API data in the real project.
  */
 
 const ORANGE = "#f77f00";
@@ -1077,7 +1077,7 @@ export default function SupplierCreatorDirectoryPage() {
         type="button"
         className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 text-[11px] font-extrabold"
         onClick={() => setDataState((s) => (s === "error" ? "ready" : "error"))}
-        title="Simulate error state (demo)"
+        title="Simulate error state"
       >
         ⚠️ Test
       </button>

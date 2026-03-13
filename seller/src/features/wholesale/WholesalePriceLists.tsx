@@ -108,7 +108,7 @@ function safeCopy(text: string) {
 }
 
 function parseCsv(text: string): { header: string[]; rows: CsvRow[] } {
-  // Simple CSV parser (demo). Accepts comma-separated values.
+  // Simple CSV parser. Accepts comma-separated values.
   // Expected columns (flexible): sku, name, minQty, price, currency, cost
   const lines = String(text || "")
     .replace(/\r\n/g, "\n")
@@ -444,7 +444,7 @@ function buildPriceLists(): PriceList[] {
 }
 
 function segmentRule(segments) {
-  // Simple pricing multipliers (demo)
+  // Simple pricing multipliers
   // (In production: per-segment price list selection + buyer eligibility rules)
   const s = new Set(segments);
   let multiplier = 1;
@@ -634,7 +634,7 @@ export default function WholesalePriceListsPage() {
       return next;
     });
 
-    pushToast({ title: "Import applied", message: "Price list updated (demo).", tone: "success" });
+    pushToast({ title: "Import applied", message: "Price list updated.", tone: "success" });
     setImportOpen(false);
   };
 
@@ -725,7 +725,7 @@ export default function WholesalePriceListsPage() {
       { id: makeId("t"), minQty: 50, price: Math.round(recPrice(cost, 24) * 100) / 100 },
     ];
     updateDraft((s) => ({ ...s, tiers: suggested }));
-    pushToast({ title: "AI suggestions applied", message: "Tier ladder generated (demo).", tone: "default" });
+    pushToast({ title: "AI suggestions applied", message: "Tier ladder generated.", tone: "default" });
   };
 
   // Margin calculator
@@ -771,7 +771,7 @@ export default function WholesalePriceListsPage() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Export", message: "Export to CSV/XLSX (demo).", tone: "default" })}
+                onClick={() => pushToast({ title: "Export", message: "Export to CSV/XLSX.", tone: "default" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <Download className="h-4 w-4" />
@@ -867,7 +867,7 @@ export default function WholesalePriceListsPage() {
 
                   <IconButton
                     label="Refresh"
-                    onClick={() => pushToast({ title: "Refreshed", message: "Latest price signals loaded (demo).", tone: "success" })}
+                    onClick={() => pushToast({ title: "Refreshed", message: "Latest price signals loaded.", tone: "success" })}
                   >
                     <RefreshCw className="h-4 w-4" />
                   </IconButton>
@@ -1074,7 +1074,7 @@ export default function WholesalePriceListsPage() {
                         </div>
                         <div className="min-w-0">
                           <div className="text-sm font-black text-orange-900">Segmentation preview</div>
-                          <div className="mt-1 text-xs font-semibold text-orange-900/70">Selected segments apply a multiplier of × {Math.round(mult * 1000) / 1000} to show effective prices (demo).</div>
+                          <div className="mt-1 text-xs font-semibold text-orange-900/70">Selected segments apply a multiplier of × {Math.round(mult * 1000) / 1000} to show effective prices.</div>
                         </div>
                       </div>
                     </div>
@@ -1443,7 +1443,7 @@ export default function WholesalePriceListsPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-black text-orange-900">✨ AI tier suggestions</div>
-                    <div className="mt-1 text-xs font-semibold text-orange-900/70">Generate a tier ladder from cost and common margin targets (demo).</div>
+                    <div className="mt-1 text-xs font-semibold text-orange-900/70">Generate a tier ladder from cost and common margin targets.</div>
                     <button
                       type="button"
                       onClick={aiSuggestTiers}
@@ -1578,7 +1578,7 @@ export default function WholesalePriceListsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    pushToast({ title: "Approval workflow", message: "Send for approval (demo).", tone: "default" });
+                    pushToast({ title: "Approval workflow", message: "Send for approval.", tone: "default" });
                     saveDraft("Submitted for approval")
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"

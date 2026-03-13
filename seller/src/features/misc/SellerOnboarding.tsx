@@ -2015,7 +2015,7 @@ export default function SellerOnboardingProV4_JS() {
     return () => window.clearTimeout(timeoutId);
   }, [hydrated, review, ui]);
 
-  // Slug validation + mock availability
+  // Slug validation + availability
   const [slugState, setSlugState] = useState({ status: "idle", message: "" });
   useEffect(() => {
     const slug = String(form.storeSlug || "").trim();

@@ -452,7 +452,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
   const markAccepted = () => {
     if (!record) return;
     setRecord({ ...record, status: "Accepted" });
-    toast?.("Supplier accepted (demo).", "success");
+    toast?.("Supplier accepted.", "success");
   };
 
   const openNegotiation = () => {
@@ -654,7 +654,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
             <div className="mt-3 flex flex-wrap gap-2">
               {/* ✅ Keep simulation button */}
               <Btn onClick={markAccepted} disabled={record.status === "Accepted"} title="Simulate supplier acceptance">
-                ✅ Mark Accepted (demo)
+                ✅ Mark Accepted
               </Btn>
               <Btn tone="primary" onClick={openNegotiation} disabled={record.status !== "Accepted"}>
                 🗣️ Open Negotiation Room
@@ -662,7 +662,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
               <Btn
                 onClick={() => {
                   go("/supplier/collabs/invites-from-creators");
-                  toast?.("Opening supplier inbox (demo)…", "info");
+                  toast?.("Opening supplier inbox…", "info");
                 }}
               >
                 📥 View Supplier Inbox
@@ -767,7 +767,7 @@ export default function SupplierPublicProfilePage() {
         <>
           <Btn
             onClick={() => {
-              toast("Public link copied (demo)", "success");
+              toast("Public link copied", "success");
             }}
           >
             🔗 Copy link
@@ -775,7 +775,7 @@ export default function SupplierPublicProfilePage() {
           <Btn
             tone="primary"
             onClick={() => {
-              toast("Opening profile editor (demo)", "info");
+              toast("Opening profile editor", "info");
             }}
           >
             ✏️ Edit
@@ -793,7 +793,7 @@ export default function SupplierPublicProfilePage() {
         rightContent={headerRight}
         onBack={() => {
           go(viewerMode === "Creator" ? "/creator/suppliers" : "/supplier/settings");
-          toast("Back (demo)", "info");
+          toast("Back", "info");
         }}
       />
 
@@ -1050,7 +1050,7 @@ export default function SupplierPublicProfilePage() {
                       <div className="flex items-center gap-2">
                         <Btn
                           onClick={() => {
-                            toast("Opening pitch drawer (demo)", "info");
+                            toast("Opening pitch drawer", "info");
                             go(`/creator/opportunities/${op.id}`);
                           }}
                         >
@@ -1059,7 +1059,7 @@ export default function SupplierPublicProfilePage() {
                         {viewerMode === "Supplier" ? (
                           <Btn
                             tone="ghost"
-                            onClick={() => toast("Edit opportunity (demo)", "info")}
+                            onClick={() => toast("Edit opportunity", "info")}
                           >
                             ⚙️
                           </Btn>

@@ -262,7 +262,7 @@ const AlertTriangle = __makeIcon(
  * - Asset Library wiring: opens /supplier/deliverables/assets in picker mode and restores state via backend draft persistence
  *
  * Notes:
- * - This file is self-contained UI demo (TailwindCSS + lucide-react).
+ * - This file is self-contained UI module (TailwindCSS + lucide-react).
  * - Wire real APIs, persistence, routing, and Asset Library return payload as needed.
  */
 
@@ -1974,7 +1974,7 @@ export default function AdBuilder({
     if (!o) return;
     // In production: route to checkout page with item preloaded
     const url = `/checkout?offerId=${encodeURIComponent(offerId)}&qty=1`;
-    setToast(`Buy now → ${url} (demo)`);
+    setToast(`Buy now → ${url}`);
   }
 
   function addToCart(offerId: string) {
@@ -2356,7 +2356,7 @@ export default function AdBuilder({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Btn tone="neutral" onClick={() => setToast("Draft saved (demo)")} left={<CheckCircle2 className="h-4 w-4" />}>
+            <Btn tone="neutral" onClick={() => setToast("Draft saved")} left={<CheckCircle2 className="h-4 w-4" />}>
               Save draft
             </Btn>
             <Btn
@@ -2988,7 +2988,7 @@ export default function AdBuilder({
                         >
                           Copy
                         </Btn>
-                        <Btn tone="neutral" onClick={() => setToast("Regenerated link (demo)")} left={<Zap className="h-4 w-4" />}>
+                        <Btn tone="neutral" onClick={() => setToast("Regenerated link")} left={<Zap className="h-4 w-4" />}>
                           Regenerate
                         </Btn>
                       </div>
@@ -3209,10 +3209,10 @@ export default function AdBuilder({
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Btn tone="neutral" onClick={() => setToast("Exported creative pack (demo)")} left={<Upload className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => setToast("Exported creative pack")} left={<Upload className="h-4 w-4" />}>
                       Export pack
                     </Btn>
-                    <Btn tone="neutral" onClick={() => setToast("Shared preview (demo)")} left={<Share2 className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => setToast("Shared preview")} left={<Share2 className="h-4 w-4" />}>
                       Share preview
                     </Btn>
                   </div>
@@ -3277,7 +3277,7 @@ export default function AdBuilder({
                     >
                       {isApproved ? "Update Ad (re-approval)" : isSubmitted ? "Resubmit Update" : "Submit for Approval"}
                     </Btn>
-                    <Btn tone="neutral" onClick={() => setToast("Saved as template (demo)")} left={<Sparkles className="h-4 w-4" />} className="w-full">
+                    <Btn tone="neutral" onClick={() => setToast("Saved as template")} left={<Sparkles className="h-4 w-4" />} className="w-full">
                       Save template
                     </Btn>
                   </div>

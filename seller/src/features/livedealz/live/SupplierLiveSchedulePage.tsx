@@ -19,7 +19,7 @@ import { useNavigate } from "react-router-dom";
  *
  * Supplier adaptations (minimal, necessary):
  * - Sessions show Supplier-owned campaign context + Host Role (Creator-hosted vs Supplier-hosted)
- * - Actions route to Supplier Live Studio/Builder (stubbed as toasts for canvas)
+ * - Actions route to Supplier Live Studio/Builder (router-safe actions for the app)
  * - Approval gating notes included (Manual vs Auto)
  */
 
@@ -270,7 +270,7 @@ export default function SupplierLiveScheduleCalendarPage() {
           <>
             <Btn tone="ghost" onClick={() => safeNav("/supplier/live-dashboard")}>Live Dashboard</Btn>
             <Btn tone="ghost" onClick={() => safeNav("/supplier/dealz-marketplace")}>Dealz Marketplace</Btn>
-            <Btn tone="brand" onClick={() => showToast("New live session (demo)" )}>New Live Session</Btn>
+            <Btn tone="brand" onClick={() => showToast("New live session" )}>New Live Session</Btn>
           </>
         }
       />

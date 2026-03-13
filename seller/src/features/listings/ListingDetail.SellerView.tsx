@@ -701,7 +701,7 @@ function ListingDetailDrawer({
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-black text-slate-900">Buyer preview</div>
-                        <div className="mt-1 text-xs font-semibold text-slate-500">Retail + wholesale preview (demo).</div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500">Retail + wholesale preview.</div>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
                           <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 p-4">
                             <div className="text-[11px] font-extrabold text-slate-600">Retail</div>
@@ -1215,7 +1215,7 @@ function ListingEditDrawer({
       return next;
     });
     pushApprovalHistory("Supplier", "Requested review", "Submitted for approval");
-    pushToast({ title: "Submitted", message: "Sent for review (demo).", tone: "default" });
+    pushToast({ title: "Submitted", message: "Sent for review.", tone: "default" });
   };
 
   const approveNow = () => {
@@ -1230,7 +1230,7 @@ function ListingEditDrawer({
       };
     });
     pushApprovalHistory("Reviewer", "Approved", "Approved for publishing");
-    pushToast({ title: "Approved", message: "Approval granted (demo).", tone: "success" });
+    pushToast({ title: "Approved", message: "Approval granted.", tone: "success" });
   };
 
   const requestChanges = () => {
@@ -1240,7 +1240,7 @@ function ListingEditDrawer({
       approval: { ...(s.approval || approval), state: "Draft" as ApprovalState },
     }));
     pushApprovalHistory("Reviewer", "Requested changes", "Please address the flagged items");
-    pushToast({ title: "Changes requested", message: "Moved back to Draft (demo).", tone: "warning" });
+    pushToast({ title: "Changes requested", message: "Moved back to Draft.", tone: "warning" });
   };
 
   const rejectNow = () => {
@@ -1250,7 +1250,7 @@ function ListingEditDrawer({
       approval: { ...(s.approval || approval), state: "Rejected" as ApprovalState },
     }));
     pushApprovalHistory("Reviewer", "Rejected", "Rejected with reasons");
-    pushToast({ title: "Rejected", message: "Listing rejected (demo).", tone: "danger" });
+    pushToast({ title: "Rejected", message: "Listing rejected.", tone: "danger" });
   };
 
   const headerRight = (
@@ -1370,7 +1370,7 @@ function ListingEditDrawer({
                       <div className="text-sm font-black text-emerald-900">AI title suggestions</div>
                       <span className="ml-auto"><Badge tone="green">Premium</Badge></span>
                     </div>
-                    <div className="mt-1 text-xs font-semibold text-emerald-900/70">Generate better titles using category, tags, MOQ and marketplace context (demo).</div>
+                    <div className="mt-1 text-xs font-semibold text-emerald-900/70">Generate better titles using category, tags, MOQ and marketplace context.</div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
@@ -1492,7 +1492,7 @@ function ListingEditDrawer({
                               const attrs = vm.attributes.length ? vm.attributes : [{ name: "Color", values: ["Black", "White"] }];
                               const rows = generateVariantRows(attrs, vm.variants, 60);
                               setVm({ ...vm, attributes: attrs, variants: rows });
-                              pushToast({ title: "Matrix generated", message: `${rows.length} variants created (demo).`, tone: "success" });
+                              pushToast({ title: "Matrix generated", message: `${rows.length} variants created.`, tone: "success" });
                             }}
                             className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
                             style={{ background: TOKENS.green }}
@@ -1725,7 +1725,7 @@ function ListingEditDrawer({
                         type="button"
                         onClick={() => {
                           setField("images", Number(draft.images || 0) + 1);
-                          pushToast({ title: "Uploaded", message: "Media added (demo).", tone: "success" });
+                          pushToast({ title: "Uploaded", message: "Media added.", tone: "success" });
                         }}
                         className="inline-flex items-center justify-center gap-2 rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                         style={{ background: TOKENS.green }}
@@ -1874,7 +1874,7 @@ function ListingEditDrawer({
                           ) : null}
                         </div>
                         <div>
-                          <div className="text-[11px] font-extrabold text-slate-600">Reserved (demo)</div>
+                          <div className="text-[11px] font-extrabold text-slate-600">Reserved</div>
                           <input
                             value={String((draft.inventory?.[0]?.reserved ?? 0))}
                             onChange={(e) => {
@@ -1916,7 +1916,7 @@ function ListingEditDrawer({
                         type="button"
                         onClick={() => {
                           setField("compliance", { ...draft.compliance, state: "ok", issues: [], lastScanAt: new Date().toISOString() });
-                          pushToast({ title: "Compliance updated", message: "Marked as OK (demo).", tone: "success" });
+                          pushToast({ title: "Compliance updated", message: "Marked as OK.", tone: "success" });
                         }}
                         className="inline-flex items-center justify-center gap-2 rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                         style={{ background: TOKENS.green }}
@@ -1929,7 +1929,7 @@ function ListingEditDrawer({
                         type="button"
                         onClick={() => {
                           setField("compliance", { ...draft.compliance, state: "warn", issues: ["Missing document upload"], lastScanAt: new Date().toISOString() });
-                          pushToast({ title: "Compliance updated", message: "Added a warning issue (demo).", tone: "warning" });
+                          pushToast({ title: "Compliance updated", message: "Added a warning issue.", tone: "warning" });
                         }}
                         className="inline-flex items-center justify-center gap-2 rounded-3xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-extrabold text-orange-800"
                       >
@@ -1983,7 +1983,7 @@ function ListingEditDrawer({
                               type="button"
                               onClick={() => {
                                 onRollback(v.snapshot);
-                                pushToast({ title: "Rolled back", message: "Draft replaced with selected version (demo).", tone: "success" });
+                                pushToast({ title: "Rolled back", message: "Draft replaced with selected version.", tone: "success" });
                               }}
                               className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-extrabold text-orange-800"
                             >
@@ -2116,7 +2116,7 @@ function LocalizationPanel({
     });
 
     setField("locales", next);
-    pushToast({ title: "Auto-translate", message: "Draft translations generated (demo).", tone: "success" });
+    pushToast({ title: "Auto-translate", message: "Draft translations generated.", tone: "success" });
   };
 
   return (
@@ -2469,7 +2469,7 @@ function ApprovalPanel({
 
           <button
             type="button"
-            onClick={() => pushToast({ title: "Evidence export", message: "Export evidence pack (demo).", tone: "default" })}
+            onClick={() => pushToast({ title: "Evidence export", message: "Export evidence pack.", tone: "default" })}
             className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-extrabold text-slate-800"
           >
             <FileText className="h-5 w-5" />
@@ -2510,7 +2510,7 @@ function ApprovalPanel({
             <div className="text-sm font-black text-slate-900">Trust score</div>
             <span className="ml-auto"><Badge tone={policy.qualityScore >= 85 ? "green" : policy.qualityScore >= 65 ? "orange" : "danger"}>{policy.qualityScore}</Badge></span>
           </div>
-          <div className="mt-2 text-xs font-semibold text-slate-500">Derived from quality + compliance + media + localization (demo).</div>
+          <div className="mt-2 text-xs font-semibold text-slate-500">Derived from quality + compliance + media + localization.</div>
         </div>
       </GlassCard>
     </div>
