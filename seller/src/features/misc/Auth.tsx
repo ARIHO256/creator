@@ -57,6 +57,16 @@ type AuthSecurityState = {
   trustedDevices?: Array<Record<string, unknown>>;
 };
 
+const ONBOARDING_STORAGE_KEYS = {
+  seller: ["seller_onb_pro_v4", "seller_onb_pro_v3", "seller_onb_review_v1", "seller_onb_ui_v1"],
+  provider: ["provider_onb_pro_v4", "provider_onb_pro_v31", "provider_onb_review_v1", "provider_onb_ui_v1"],
+} as const;
+
+const ONBOARDING_SCREEN_KEYS = {
+  seller: "seller-onboarding",
+  provider: "provider-onboarding",
+} as const;
+
 function readUserAgentDeviceLabel() {
   if (typeof window === "undefined") return "Browser session";
   const ua = window.navigator.userAgent || "";
@@ -198,22 +208,54 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
     void persistSecurityState();
   };
 
-  const handleSocial = async (provider: "google" | "apple") => {
+  const resetFreshOnboardingState = async (role: UserRole, user: Session) => {
+    saveSession(user);
+    try {
+      recordOnboardingStatus(role, user, "DRAFT");
+    } catch {
+      // ignore local status write failures
+    }
+    if (typeof window !== "undefined") {
+      for (const key of ONBOARDING_STORAGE_KEYS[role]) {
+        window.localStorage.removeItem(key);
+      }
+    }
+    await Promise.allSettled([
+      sellerBackendApi.resetOnboarding(),
+      sellerBackendApi.patchWorkflowScreenState(ONBOARDING_SCREEN_KEYS[role], {
+        ui: { step: 1 },
+        review: {},
+      }),
+    ]);
+  };
+
+  const handleSocialSignIn = async (provider: "google" | "apple") => {
     try {
       const email = `${provider}.${userType}@demo.evzone`;
-      const session = await authClient
-        .signIn({ identifier: email, password: "", role: userType })
-        .catch(() =>
-          authClient.signUp({
-            name: provider === "google" ? "Google User" : "Apple User",
-            email,
-            password: "demo1234",
-            role: userType,
-          })
-        );
+      const session = await authClient.signIn({ identifier: email, password: "", role: userType });
       handleAuthSuccess(session, t("Signed in"));
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Social sign-in failed");
+      say(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
+    }
+  };
+
+  const handleSocialSignUp = async (provider: "google" | "apple") => {
+    try {
+      const email = `${provider}.${userType}@demo.evzone`;
+      const session = await authClient.signUp({
+        name: provider === "google" ? "Google User" : "Apple User",
+        email,
+        password: "demo1234",
+        role: userType,
+      });
+      await resetFreshOnboardingState(userType, session);
+      handleAuthSuccess(session, t("Account created"), {
+        redirectPath: userType === "seller" ? "/seller/onboarding" : "/provider/onboarding",
+        onboardingRequired: true,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Social sign-up failed");
       say(message);
     }
   };
@@ -230,17 +272,8 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
       const identifier = (user.userId || user.email || user.phone || "guest").toString();
       let activeUser = user;
       if (!activeUser.accessToken && !activeUser.token) {
-        activeUser = await authClient
-          .signIn({ identifier, password: "", role: userType })
-          .catch(() =>
-            authClient.signUp({
-              name: identifier.includes("@") ? identifier.split("@")[0] : "Passkey User",
-              email: identifier.includes("@") ? identifier : `${identifier}@demo.evzone`,
-              password: "demo1234",
-              role: userType,
-            })
-          );
-        saveSession(activeUser);
+        say(t("Sign in first before registering a passkey"));
+        return;
       }
       const current = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
       const nextPasskey: AuthPasskey = {
@@ -270,16 +303,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
         ? current.passkeys.find((entry) => entry.identifier === key)
         : null;
       if (!match) return say(t("No passkey on file"));
-      const session = await authClient
-        .signIn({ identifier, password: "", role: userType })
-        .catch(() =>
-          authClient.signUp({
-            name: identifier.includes("@") ? identifier.split("@")[0] : "Passkey User",
-            email: identifier.includes("@") ? identifier : `${identifier}@demo.evzone`,
-            password: "demo1234",
-            role: userType,
-          })
-        );
+      const session = await authClient.signIn({ identifier, password: "", role: userType });
       handleAuthSuccess(session, t("Signed in with Passkey"));
     } catch {
       say(t("Passkey sign-in failed"));
@@ -363,20 +387,23 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
 
   const primaryCard = (
     <section className="p-5">
-      {tab === 'signin' && <SignIn userType={userType} onDone={(u) => handleAuthSuccess(u, t('Signed in'))} onFail={bump} needCaptcha={needCaptcha} onCaptchaPass={() => setTries(0)} hasWebAuthn={hasWebAuthn} onPasskey={signInPasskey} onForgot={() => setTab('recovery')} onSocial={handleSocial} />}
+      {tab === 'signin' && <SignIn userType={userType} onDone={(u) => handleAuthSuccess(u, t('Signed in'))} onFail={bump} needCaptcha={needCaptcha} onCaptchaPass={() => setTries(0)} hasWebAuthn={hasWebAuthn} onPasskey={signInPasskey} onForgot={() => setTab('recovery')} onSocial={handleSocialSignIn} />}
       {tab === 'signup' && (
         <SignUp
           userType={userType}
           policy={policy}
-          onDone={(u) => handleAuthSuccess(
-            u,
-            t('Account created'),
-            {
-              redirectPath: userType === 'seller' ? '/seller/onboarding' : '/provider/onboarding',
-              onboardingRequired: true,
-            }
-          )}
-          onSocial={handleSocial}
+          onDone={async (u) => {
+            await resetFreshOnboardingState(userType, u);
+            handleAuthSuccess(
+              u,
+              t('Account created'),
+              {
+                redirectPath: userType === 'seller' ? '/seller/onboarding' : '/provider/onboarding',
+                onboardingRequired: true,
+              }
+            );
+          }}
+          onSocial={handleSocialSignUp}
         />
       )}
     </section>
@@ -396,7 +423,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
               <button className="btn btn-ghost text-xs" onClick={() => setTab('signin')}>{t("Close")}</button>
             </div>
             <div className="h-px w-full bg-gray-100 dark:bg-slate-800 mb-3" />
-            {tab === 'passwordless' && <Passwordless userType={userType} onMagic={(u) => handleAuthSuccess(u, t('Magic link used'))} onOTP={(u) => handleAuthSuccess(u, t('Signed in with OTP'))} onPasskeyReg={(u) => registerPasskey(u)} onPasskey={(id) => signInPasskey(id)} hasWebAuthn={hasWebAuthn} onSocial={handleSocial} />}
+            {tab === 'passwordless' && <Passwordless userType={userType} onMagic={(u) => handleAuthSuccess(u, t('Magic link used'))} onOTP={(u) => handleAuthSuccess(u, t('Signed in with OTP'))} onPasskeyReg={(u) => registerPasskey(u)} onPasskey={(id) => signInPasskey(id)} hasWebAuthn={hasWebAuthn} onSocial={handleSocialSignIn} />}
             {tab === '2fa' && <TwoFA totp={totp} onSetup={setupTOTP} onVerify={verifyTOTP} />}
             {tab === 'recovery' && <Recovery onDone={(id) => say(t('Recovery email sent to') + ' ' + id)} />}
           </section>
@@ -637,26 +664,31 @@ function SignIn({ userType, onDone, onFail, needCaptcha, onCaptchaPass, hasWebAu
 function Passwordless({ userType, onMagic, onOTP, onPasskeyReg, onPasskey, hasWebAuthn, onSocial }) {
   const { t } = useLocalization();
   const [email, setEmail] = useState(""); const [phone, setPhone] = useState(""); const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState("");
+  const [error, setError] = useState("");
   const sendMagic = async () => {
     if (!email.trim()) return;
-    const session = await authClient
-      .signIn({ identifier: email, password: "", role: userType })
-      .catch(() =>
-        authClient.signUp({ name: email.split("@")[0] || "Magic User", email, password: "demo1234", role: userType })
-      );
-    onMagic({ ...session, auth: "magic" });
+    setError("");
+    try {
+      const session = await authClient.signIn({ identifier: email, password: "", role: userType });
+      onMagic({ ...session, auth: "magic" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Magic link sign-in failed");
+      setError(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
+    }
   };
   const sendOTP = () => setOtpSent(true);
   const verifyOTP = async () => {
     if (otp.trim() !== "123456") return;
     const identifier = phone || email;
     if (!identifier) return;
-    const session = await authClient
-      .signIn({ identifier, password: "", role: userType })
-      .catch(() =>
-        authClient.signUp({ name: "OTP User", email: email || `${identifier}@demo.evzone`, password: "demo1234", role: userType, phone })
-      );
-    onOTP({ ...session, auth: "otp" });
+    setError("");
+    try {
+      const session = await authClient.signIn({ identifier, password: "", role: userType });
+      onOTP({ ...session, auth: "otp" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("OTP sign-in failed");
+      setError(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
+    }
   };
   const regPasskey = () => onPasskeyReg({ userId: email || phone, email, phone });
   return (
@@ -666,6 +698,7 @@ function Passwordless({ userType, onMagic, onOTP, onPasskeyReg, onPasskey, hasWe
       <SocialRow onSocial={onSocial} />
       <div className="my-3 divider">{t("or continue without a password")}</div>
       <div className="grid grid-cols-1 gap-3 text-sm">
+        {error && <div className="text-xs text-red-600">{error}</div>}
         <div>
           <div className="text-xs text-gray-600 mb-1">{t("Magic Link")}</div>
           <div className="field"><span className="ico"><Icon.Mail /></span><input className="input" placeholder={t("Email / Phone Number")} value={email} onChange={e => setEmail(e.target.value)} /></div>
@@ -696,17 +729,13 @@ function SignUp({ policy, userType, onDone, onSocial }) {
   const strong = pwd.length >= 8;
   const match = pwd && confirm && pwd === confirm;
   const isDisabled = !firstName || !email || !strong || !agree || !okDomain || !match;
-  const resetOnboardingDraft = (u) => {
-    try { recordOnboardingStatus(userType, u, 'DRAFT'); } catch { }
-  };
   const create = async () => {
     if (!agree) { setError(t("Please accept the policies to continue")); return; }
     if (!firstName || !email || !strong || !okDomain || !match) return;
     setError("");
     try {
       const session = await authClient.signUp({ name, email, password: pwd, role: userType });
-      resetOnboardingDraft(session);
-      onDone(session);
+      await onDone(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Sign up failed");
       setError(message);

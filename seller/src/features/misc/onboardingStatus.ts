@@ -1,6 +1,7 @@
 // Lightweight helpers to keep registration flows on the onboarding track (per user)
 import type { UserRole } from "../../types/roles";
 import type { Session } from "../../types/session";
+import { hasSessionToken, readSession } from "../../auth/session";
 import { sellerBackendApi } from "../../lib/backendApi";
 
 const STATUS_DONE = ["APPROVED", "SUBMITTED"] as const;
@@ -15,7 +16,7 @@ let statusMapCache: StatusMap = {};
 let statusMapBootstrapped = false;
 
 const readMap = (): StatusMap => {
-  if (!statusMapBootstrapped && typeof window !== "undefined") {
+  if (!statusMapBootstrapped && typeof window !== "undefined" && hasSessionToken(readSession())) {
     statusMapBootstrapped = true;
     void sellerBackendApi
       .getUiState()
@@ -32,6 +33,9 @@ const readMap = (): StatusMap => {
 
 const writeMap = (map: StatusMap) => {
   statusMapCache = map;
+  if (!hasSessionToken(readSession())) {
+    return;
+  }
   void sellerBackendApi.patchUiState({ onboarding: { statusMap: map } }).catch(() => undefined);
 };
 

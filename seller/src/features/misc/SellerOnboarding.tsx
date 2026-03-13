@@ -1449,11 +1449,11 @@ function normalizeSellerFormPayload(
     merged.taxonomySelections = [merged.taxonomySelection];
   }
 
-  if (!Array.isArray(merged.channels) || !merged.channels.length) {
-    merged.channels = ["marketplace_retail"];
+  if (!Array.isArray(merged.channels)) {
+    merged.channels = [];
   }
-  if (!Array.isArray(merged.languages) || !merged.languages.length) {
-    merged.languages = ["en"];
+  if (!Array.isArray(merged.languages)) {
+    merged.languages = [];
   }
 
   return merged;
@@ -1632,8 +1632,8 @@ export default function SellerOnboardingProV4_JS() {
       },
 
       // Step 2: Catalog & Channels
-      channels: ["marketplace_retail"],
-      languages: ["en"],
+      channels: [],
+      languages: [],
       taxonomySelection: null, // legacy single
       taxonomySelections: [], // multi
 
@@ -1644,11 +1644,11 @@ export default function SellerOnboardingProV4_JS() {
       shipping: {
         profileId: "",
         expressReady: false,
-        handlingTimeDays: "2",
+        handlingTimeDays: "",
       },
       policies: {
-        returnsDays: "7",
-        warrantyDays: "90",
+        returnsDays: "",
+        warrantyDays: "",
         termsUrl: "",
         privacyUrl: "",
         policyNotes: "",
@@ -1744,6 +1744,11 @@ export default function SellerOnboardingProV4_JS() {
   const step = clamp(ui.step || 1, 1, 6);
   const setStep = (n) => setUi((p) => ({ ...p, step: clamp(Number(n) || 1, 1, 6) }));
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
+
   const isLocked = form.status !== "DRAFT";
 
   // Owner contact convenience
@@ -1820,13 +1825,6 @@ export default function SellerOnboardingProV4_JS() {
     [lookups.payoutMethods]
   );
   useEffect(() => {
-    if (!profiles.length || form.shipping?.profileId) return;
-    const fallback = profiles.find((profile) => profile.isDefault)?.id || profiles[0]?.id || "";
-    if (!fallback) return;
-    setF((prev) => ({ shipping: { ...prev.shipping, profileId: fallback } }));
-  }, [form.shipping?.profileId, profiles]);
-
-  useEffect(() => {
     if (hydrated) return;
     let cancelled = false;
 
@@ -1886,8 +1884,8 @@ export default function SellerOnboardingProV4_JS() {
           : normalizedForm;
         const resolvedUi =
           storedUi && typeof storedUi === "object"
-            ? { ...normalizedScreen.ui, ...normalizedStoredScreen.ui }
-            : normalizedScreen.ui;
+            ? { ...normalizedScreen.ui, ...normalizedStoredScreen.ui, step: 1 }
+            : { ...normalizedScreen.ui, step: 1 };
         const resolvedReview =
           storedReview && typeof storedReview === "object"
             ? { ...normalizedScreen.review, ...normalizedStoredScreen.review }
@@ -2654,7 +2652,7 @@ export default function SellerOnboardingProV4_JS() {
     setF((prev) => {
       const cur = Array.isArray(prev.channels) ? prev.channels : [];
       const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-      return { channels: next.length ? next : ["marketplace_retail"] };
+      return { channels: next };
     });
   };
 
@@ -2664,7 +2662,7 @@ export default function SellerOnboardingProV4_JS() {
     setF((prev) => {
       const cur = Array.isArray(prev.languages) ? prev.languages : [];
       const next = cur.includes(code) ? cur.filter((x) => x !== code) : [...cur, code];
-      return { languages: next.length ? next : ["en"] };
+      return { languages: next };
     });
   };
 

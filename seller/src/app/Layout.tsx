@@ -1,6 +1,6 @@
 import React, { useLayoutEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import { useSession } from "../auth/session";
+import { hasSessionToken, useSession } from "../auth/session";
 import { getCurrentRole } from "../auth/roles";
 import { sellerBackendApi } from "../lib/backendApi";
 import AppShell from "../features/shell/AppShell";
@@ -17,13 +17,14 @@ export default function Layout({ children }: LayoutProps) {
   const role = getCurrentRole(session);
 
   const handleSidebarScroll = (value: number) => {
+    if (!hasSessionToken(session)) return;
     void sellerBackendApi
       .patchUiState({ shell: { sidebarScroll: Math.round(value) } })
       .catch(() => undefined);
   };
 
   useLayoutEffect(() => {
-    if (!sidebarRef.current) return;
+    if (!sidebarRef.current || !hasSessionToken(session)) return;
     let active = true;
     void sellerBackendApi
       .getUiState()
@@ -38,7 +39,7 @@ export default function Layout({ children }: LayoutProps) {
     return () => {
       active = false;
     };
-  }, [location.pathname]);
+  }, [location.pathname, session]);
 
   return (
     <div className="layout-shell" data-role={role}>

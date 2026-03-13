@@ -30,6 +30,9 @@ export const isValidSession = (session: Session | null | undefined): session is 
   );
   if (!hasIdentity) return false;
 
+  const token = session.accessToken || session.token;
+  if (typeof token !== "string" || token.trim().length === 0) return false;
+
   const role = session.role;
   if (typeof role !== "string" || !VALID_ROLES.includes(role as UserRole)) return false;
 
@@ -42,6 +45,13 @@ export const isValidSession = (session: Session | null | undefined): session is 
 
   return true;
 };
+
+export const hasSessionToken = (session: Session | null | undefined): boolean =>
+  Boolean(
+    session &&
+      typeof (session.accessToken || session.token) === "string" &&
+      String(session.accessToken || session.token).trim().length > 0
+  );
 
 export const readSession = (): Session | null => {
   if (!isValidSession(inMemorySession)) {

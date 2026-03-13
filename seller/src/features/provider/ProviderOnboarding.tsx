@@ -2763,7 +2763,7 @@ export default function ProviderOnboardingProV4_JS() {
       // Step 2: Services & Pricing
       categories: [],
       otherCategory: '',
-      languages: ['en'],
+      languages: [],
       serviceCurrency: 'USD',
       serviceLines: [],
       team: {
@@ -3053,10 +3053,7 @@ export default function ProviderOnboardingProV4_JS() {
         }
         if (nextUi) {
           setUi({
-            step:
-              storedUi && typeof storedUi === 'object'
-                ? Number(storedUi.step || nextUi.step || 1) || 1
-                : Number(nextUi.step || 1) || 1,
+            step: 1,
           });
         }
         if (nextReview && typeof nextReview === 'object') {
@@ -3130,6 +3127,11 @@ export default function ProviderOnboardingProV4_JS() {
 
   const step = clamp(ui.step || 1, 1, 6);
   const setStep = (n) => setUi((p) => ({ ...p, step: clamp(Number(n) || 1, 1, 6) }));
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [step]);
 
   const isLocked = profile.status !== 'DRAFT';
 
@@ -3341,7 +3343,7 @@ export default function ProviderOnboardingProV4_JS() {
     setF((prev) => {
       const cur = Array.isArray(prev.languages) ? prev.languages : [];
       const next = toggleInArray(cur, code);
-      return { languages: next.length ? next : ['en'] };
+      return { languages: next };
     });
   };
 

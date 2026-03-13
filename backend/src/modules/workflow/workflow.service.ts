@@ -267,6 +267,7 @@ export class WorkflowService {
     await this.upsertRecord(userId, 'onboarding', 'main', submitted);
     await this.syncSellerProfile(userId, submitted);
     await this.syncTaxonomySelections(userId, submitted);
+    await this.syncOperationalSetupFromOnboarding(userId, submitted);
     await this.syncUserAccessFromOnboarding(userId, submitted);
     await this.syncAccountApprovalFromOnboarding(userId, submitted);
     await this.jobsService.enqueue({
@@ -526,6 +527,158 @@ export class WorkflowService {
         : SELLER_CATALOG_TAXONOMY_TREE_SLUG;
     await this.taxonomyService.syncSellerCoverage(userId, nodeIds, treeIdentifier);
     await this.taxonomyService.syncStorefrontTaxonomy(userId, nodeIds, primaryNodeId, treeIdentifier);
+  }
+
+  private async syncOperationalSetupFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (onboarding.profileType !== 'SELLER' && onboarding.profileType !== 'PROVIDER') {
+      return;
+    }
+
+    const seller = await this.prisma.seller.findUnique({
+      where: { userId },
+      include: {
+        warehouses: true,
+        shippingProfiles: true
+      }
+    });
+
+    if (!seller) {
+      return;
+    }
+
+    const onboardingWarehouse = seller.warehouses.find((warehouse) => {
+      const metadata =
+        warehouse.metadata && typeof warehouse.metadata === 'object' && !Array.isArray(warehouse.metadata)
+          ? (warehouse.metadata as Record<string, unknown>)
+          : {};
+      return metadata.source === 'onboarding';
+    });
+
+    const hasWarehouseAddress = Boolean(
+      onboarding.shipFrom.address1 || onboarding.shipFrom.address2 || onboarding.shipFrom.city || onboarding.shipFrom.country
+    );
+
+    if (hasWarehouseAddress && (onboardingWarehouse || seller.warehouses.length === 0)) {
+      if (onboardingWarehouse) {
+        await this.prisma.sellerWarehouse.update({
+          where: { id: onboardingWarehouse.id },
+          data: {
+            name: onboarding.storeName ? `${onboarding.storeName} primary warehouse` : onboardingWarehouse.name,
+            isDefault: true,
+            address: {
+              line1: onboarding.shipFrom.address1 || '',
+              line2: onboarding.shipFrom.address2 || '',
+              city: onboarding.shipFrom.city || '',
+              province: onboarding.shipFrom.province || '',
+              country: onboarding.shipFrom.country || '',
+              postalCode: onboarding.shipFrom.postalCode || ''
+            } as Prisma.InputJsonValue,
+            contact: {
+              email: onboarding.support.email || onboarding.email || '',
+              phone: onboarding.support.phone || onboarding.phone || '',
+              whatsapp: onboarding.support.whatsapp || ''
+            } as Prisma.InputJsonValue,
+            metadata: {
+              source: 'onboarding',
+              profileType: onboarding.profileType
+            } as Prisma.InputJsonValue
+          }
+        });
+      } else {
+        await this.prisma.sellerWarehouse.create({
+          data: {
+            sellerId: seller.id,
+            name: onboarding.storeName ? `${onboarding.storeName} primary warehouse` : 'Primary warehouse',
+            type: 'WAREHOUSE',
+            status: 'ACTIVE',
+            isDefault: true,
+            address: {
+              line1: onboarding.shipFrom.address1 || '',
+              line2: onboarding.shipFrom.address2 || '',
+              city: onboarding.shipFrom.city || '',
+              province: onboarding.shipFrom.province || '',
+              country: onboarding.shipFrom.country || '',
+              postalCode: onboarding.shipFrom.postalCode || ''
+            } as Prisma.InputJsonValue,
+            contact: {
+              email: onboarding.support.email || onboarding.email || '',
+              phone: onboarding.support.phone || onboarding.phone || '',
+              whatsapp: onboarding.support.whatsapp || ''
+            } as Prisma.InputJsonValue,
+            metadata: {
+              source: 'onboarding',
+              profileType: onboarding.profileType
+            } as Prisma.InputJsonValue
+          }
+        });
+      }
+    }
+
+    const shippingProfileId = onboarding.shipping.profileId || '';
+    const matchingProfile = shippingProfileId
+      ? seller.shippingProfiles.find((profile) => profile.id === shippingProfileId)
+      : seller.shippingProfiles.find((profile) => {
+          const metadata =
+            profile.metadata && typeof profile.metadata === 'object' && !Array.isArray(profile.metadata)
+              ? (profile.metadata as Record<string, unknown>)
+              : {};
+          return metadata.source === 'onboarding';
+        });
+    const shouldPersistShippingProfile = Boolean(
+      onboarding.shipping.handlingTimeDays !== null ||
+        onboarding.shipping.expressReady ||
+        onboarding.policies.returnsDays !== null ||
+        onboarding.policies.warrantyDays !== null ||
+        onboarding.shipFrom.country
+    );
+
+    if (!shouldPersistShippingProfile) {
+      return;
+    }
+
+    const shippingData = {
+      name: onboarding.shipping.expressReady ? 'Express shipping' : 'Standard shipping',
+      description:
+        onboarding.policies.policyNotes ||
+        (onboarding.shipping.expressReady
+          ? 'Shipping profile created from seller onboarding with express fulfillment enabled.'
+          : 'Shipping profile created from seller onboarding.'),
+      status: 'ACTIVE' as const,
+      carrier: null,
+      serviceLevel: onboarding.shipping.expressReady ? 'Express' : 'Standard',
+      handlingTimeDays: onboarding.shipping.handlingTimeDays,
+      regions: Array.from(
+        new Set([onboarding.shipFrom.country, onboarding.tax.taxCountry].filter(Boolean))
+      ) as Prisma.InputJsonValue,
+      isDefault: true,
+      metadata: {
+        source: 'onboarding',
+        profileType: onboarding.profileType,
+        expressReady: onboarding.shipping.expressReady,
+        returnsDays: onboarding.policies.returnsDays,
+        warrantyDays: onboarding.policies.warrantyDays
+      } as Prisma.InputJsonValue
+    };
+
+    if (matchingProfile) {
+      await this.prisma.shippingProfile.update({
+        where: { id: matchingProfile.id },
+        data: shippingData
+      });
+      return;
+    }
+
+    if (seller.shippingProfiles.length === 0) {
+      await this.prisma.shippingProfile.create({
+        data: {
+          sellerId: seller.id,
+          ...shippingData
+        }
+      });
+    }
   }
 
   private async syncAccountApprovalFromOnboarding(

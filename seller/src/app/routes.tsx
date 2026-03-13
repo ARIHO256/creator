@@ -10,7 +10,7 @@ import {
 import { useLocalization } from '../localization/LocalizationProvider';
 import type { Session } from '../types/session';
 import type { AuthProps } from '../features/misc/Auth';
-import { isValidSession, useSession } from '../auth/session';
+import { hasSessionToken, isValidSession, readSession, useSession } from '../auth/session';
 import { getCurrentRole } from '../auth/roles';
 import { ProviderGuard, SellerGuard, SellerOrProviderGuard } from '../auth/RoleGuard';
 import { sellerBackendApi } from '../lib/backendApi';
@@ -153,6 +153,10 @@ const SupplierMldzRedirect = () => {
 const useChannels = (): Record<string, boolean> => {
   const [channels, setChannels] = React.useState<Record<string, boolean>>({});
   useEffect(() => {
+    if (!hasSessionToken(readSession())) {
+      setChannels({});
+      return;
+    }
     let active = true;
     void sellerBackendApi
       .getUiState()

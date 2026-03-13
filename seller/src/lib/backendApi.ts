@@ -1,4 +1,4 @@
-import { readSession } from "../auth/session";
+import { clearSession, hasSessionToken, readSession } from "../auth/session";
 import { resolveApiUrl } from "./apiRuntime";
 
 type BackendRequestError = Error & {
@@ -6,10 +6,40 @@ type BackendRequestError = Error & {
   payload?: unknown;
 };
 
+let authRedirectScheduled = false;
+
+const PUBLIC_API_PREFIXES = [
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/recovery",
+  "/api/auth/refresh",
+  "/api/auth/logout"
+];
+
+function isPublicApiPath(path: string) {
+  return PUBLIC_API_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+function handleUnauthorizedResponse() {
+  clearSession();
+  if (typeof window === "undefined") return;
+  if (window.location.pathname.startsWith("/auth") || authRedirectScheduled) return;
+  authRedirectScheduled = true;
+  const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.replace(`/auth?next=${encodeURIComponent(next)}`);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   const session = readSession();
   const token = session?.accessToken || session?.token || "";
+
+  if (!hasSessionToken(session) && !isPublicApiPath(path)) {
+    handleUnauthorizedResponse();
+    const error = new Error("Missing authentication session") as BackendRequestError;
+    error.status = 401;
+    throw error;
+  }
 
   if (token && !headers.has("Authorization")) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -24,6 +54,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = text ? JSON.parse(text) : null;
 
   if (!response.ok) {
+    if (response.status === 401) {
+      handleUnauthorizedResponse();
+    }
     const error = new Error(
       payload?.error?.message || payload?.message || `Request failed with status ${response.status}`
     ) as BackendRequestError;

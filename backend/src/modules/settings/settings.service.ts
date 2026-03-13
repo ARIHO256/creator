@@ -60,8 +60,11 @@ export class SettingsService {
   ) {}
 
   async settings(userId: string) {
-    const record = await this.getUserSetting(userId, 'profile', {});
-    return this.normalizeSettingsRecord(record);
+    const [record, derived] = await Promise.all([
+      this.getUserSetting(userId, 'profile', {}),
+      this.deriveSettings(userId)
+    ]);
+    return this.normalizeSettingsRecord(this.deepMerge(derived, record));
   }
   async updateSettings(userId: string, body: UpdateSettingsDto) {
     const current = await this.settings(userId);
@@ -540,7 +543,13 @@ export class SettingsService {
     });
   }
 
-  preferences(userId: string, role: string) { return this.getWorkspaceSetting(userId, this.scopedKey(role, 'preferences'), { locale: 'en', currency: 'USD' }); }
+  async preferences(userId: string, role: string) {
+    const [stored, derived] = await Promise.all([
+      this.findWorkspaceSetting(userId, this.scopedKey(role, 'preferences')),
+      this.derivePreferences(userId)
+    ]);
+    return this.deepMerge(derived, stored ?? {});
+  }
   async updatePreferences(userId: string, role: string, body: UpdatePreferencesDto) {
     const current = await this.preferences(userId, role);
     const next = {
@@ -589,7 +598,13 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
-  payoutMethods(userId: string) { return this.getWorkspaceSetting(userId, 'payout_methods', { methods: [] }); }
+  async payoutMethods(userId: string) {
+    const [stored, derived] = await Promise.all([
+      this.findWorkspaceSetting(userId, 'payout_methods'),
+      this.derivePayoutMethods(userId)
+    ]);
+    return this.deepMerge(derived, stored ?? {});
+  }
   async updatePayoutMethods(userId: string, body: UpdatePayoutMethodsDto) {
     const methods = Array.isArray(body.methods) ? body.methods : [];
     const normalized = methods.map((method, index) => ({
@@ -677,7 +692,13 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
-  tax(userId: string) { return this.getWorkspaceSetting(userId, 'tax', { profiles: [], reports: [] }); }
+  async tax(userId: string) {
+    const [stored, derived] = await Promise.all([
+      this.findWorkspaceSetting(userId, 'tax'),
+      this.deriveTaxSettings(userId)
+    ]);
+    return this.deepMerge(derived, stored ?? {});
+  }
   async updateTax(userId: string, body: UpdateTaxDto) {
     const current = await this.tax(userId);
     const next = {
@@ -698,7 +719,13 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
-  kyc(userId: string) { return this.getWorkspaceSetting(userId, 'kyc', { status: 'pending', documents: [] }); }
+  async kyc(userId: string) {
+    const [stored, derived] = await Promise.all([
+      this.findWorkspaceSetting(userId, 'kyc'),
+      this.deriveKycSettings(userId)
+    ]);
+    return this.deepMerge(derived, stored ?? {});
+  }
   async updateKyc(userId: string, body: UpdateKycDto) {
     const current = await this.kyc(userId);
     const next = {
@@ -769,6 +796,13 @@ export class SettingsService {
     return record ? (record.payload as Record<string, unknown>) : fallback;
   }
 
+  private async findWorkspaceSetting(userId: string, key: string) {
+    const record = await this.prisma.workspaceSetting.findUnique({
+      where: { userId_key: { userId, key } }
+    });
+    return record ? (record.payload as Record<string, unknown>) : null;
+  }
+
   private async upsertWorkspaceSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
     return this.prisma.workspaceSetting.upsert({
@@ -828,7 +862,234 @@ export class SettingsService {
     return [];
   }
 
+  private async deriveSettings(userId: string) {
+    const context = await this.loadDerivedAccountContext(userId);
+    const profile = this.buildDerivedProfile(context);
+    return profile ? { profile } : {};
+  }
+
+  private async derivePreferences(userId: string) {
+    const context = await this.loadDerivedAccountContext(userId);
+    const onboarding = context.onboarding;
+    const locale = this.normalizeLocale(
+      this.firstString(this.readStringArray(onboarding?.languages), ['en'])
+    );
+    const currency = this.readString(onboarding?.payout?.currency) || 'USD';
+    return {
+      locale,
+      currency
+    };
+  }
+
+  private async derivePayoutMethods(userId: string) {
+    const context = await this.loadDerivedAccountContext(userId);
+    const onboarding = context.onboarding;
+    if (!onboarding) {
+      return { methods: [] };
+    }
+
+    const method = this.readString(onboarding.payout?.method);
+    if (!method) {
+      return { methods: [] };
+    }
+
+    const currency = this.readString(onboarding.payout?.currency) || 'USD';
+    const createdAt = this.readString(onboarding.submittedAt) || this.readString(onboarding.updatedAt) || new Date().toISOString();
+    const approvalStatus = this.readString(context.approval?.status).toLowerCase();
+    const verified = approvalStatus === 'approved';
+
+    const payoutMethod =
+      method === 'bank_account'
+        ? {
+            id: 'onboarding-bank-account',
+            kind: 'bank',
+            type: 'bank',
+            provider: this.readString(onboarding.payout?.bankName) || 'Bank',
+            label:
+              this.readString(onboarding.payout?.accountName) ||
+              this.readString(onboarding.payout?.bankName) ||
+              'Bank account',
+            country:
+              this.readString(onboarding.payout?.bankCountry) ||
+              this.readString(onboarding.tax?.taxCountry) ||
+              this.readString(onboarding.shipFrom?.country) ||
+              'UG',
+            currency,
+            status: verified ? 'Verified' : 'Pending verification',
+            isDefault: true,
+            createdAt,
+            lastUsedAt: null,
+            masked: this.maskSensitiveValue(this.readString(onboarding.payout?.accountNo), 4),
+            accountNumberMasked: this.maskSensitiveValue(this.readString(onboarding.payout?.accountNo), 4),
+            details: {
+              masked: this.maskSensitiveValue(this.readString(onboarding.payout?.accountNo), 4),
+              swiftBic: this.readString(onboarding.payout?.swiftBic),
+              iban: this.readString(onboarding.payout?.iban)
+            }
+          }
+        : {
+            id: `onboarding-${method}`,
+            kind: 'provider',
+            type: 'provider',
+            provider: this.resolvePayoutProvider(onboarding),
+            label: this.resolvePayoutLabel(onboarding),
+            country:
+              this.readString(onboarding.payout?.otherCountry) ||
+              this.readString(onboarding.tax?.taxCountry) ||
+              this.readString(onboarding.shipFrom?.country) ||
+              'UG',
+            currency,
+            status: verified ? 'Verified' : 'Pending verification',
+            isDefault: true,
+            createdAt,
+            lastUsedAt: null,
+            masked: this.maskSensitiveValue(this.resolvePayoutAccountRef(onboarding), 4),
+            details: {
+              masked: this.maskSensitiveValue(this.resolvePayoutAccountRef(onboarding), 4)
+            }
+          };
+
+    return {
+      methods: [payoutMethod],
+      metadata: {
+        kycState: verified ? 'Verified' : 'Pending',
+        payoutSchedule: this.formatPayoutRhythm(this.readString(onboarding.payout?.rhythm)),
+        minThreshold: this.readNumber(onboarding.payout?.thresholdAmount) ?? 0
+      }
+    };
+  }
+
+  private async deriveTaxSettings(userId: string) {
+    const context = await this.loadDerivedAccountContext(userId);
+    const onboarding = context.onboarding;
+    if (!onboarding) {
+      return { profiles: [], reports: [] };
+    }
+
+    const taxCountry = this.readString(onboarding.tax?.taxCountry);
+    const taxId = this.readString(onboarding.tax?.taxId);
+    const vatNumber = this.readString(onboarding.tax?.vatNumber);
+    const legalName = this.readString(onboarding.tax?.legalName);
+    const hasTaxProfile = Boolean(taxCountry || taxId || vatNumber || legalName);
+
+    return {
+      profiles: hasTaxProfile
+        ? [
+            {
+              id: `tax-${(taxCountry || 'default').toLowerCase()}`,
+              profileName: legalName || `${taxCountry || 'Default'} tax profile`,
+              country: taxCountry || this.readString(onboarding.shipFrom?.country) || 'UG',
+              vatId: vatNumber || taxId || '',
+              standardRate: 0,
+              reducedRate: 0,
+              status: this.readString(context.approval?.status).toLowerCase() === 'approved' ? 'Active' : 'In Review',
+              isDefault: true,
+              updatedAt: this.readString(onboarding.updatedAt) || new Date().toISOString(),
+              notes: this.readString(onboarding.tax?.taxpayerType) || ''
+            }
+          ]
+        : [],
+      reports: [],
+      metadata: {
+        packHistory: [],
+        invoiceCfg: {
+          legalName,
+          legalAddress: this.readString(onboarding.tax?.legalAddress),
+          includeVatId: Boolean(vatNumber || taxId),
+          requireBuyerTaxIdForB2B: this.readString(onboarding.tax?.taxpayerType).toLowerCase() !== 'individual'
+        }
+      }
+    };
+  }
+
+  private async deriveKycSettings(userId: string) {
+    const context = await this.loadDerivedAccountContext(userId);
+    const onboarding = context.onboarding;
+    if (!onboarding) {
+      return { status: 'pending', documents: [] };
+    }
+
+    const uploadedAt = this.readString(onboarding.submittedAt) || this.readString(onboarding.updatedAt) || new Date().toISOString();
+    const documents = Array.isArray(onboarding.docs?.list)
+      ? onboarding.docs.list
+          .filter((entry) => this.isPlainObject(entry))
+          .map((entry, index) => {
+            const fileUrl = this.readString((entry as Record<string, unknown>).fileUrl);
+            const fileName =
+              this.readString((entry as Record<string, unknown>).file) ||
+              this.readString((entry as Record<string, unknown>).name) ||
+              this.extractAssetName(fileUrl) ||
+              null;
+            return {
+              id: this.readString((entry as Record<string, unknown>).id) || `kyc-doc-${index + 1}`,
+              title: this.humanizeDocumentTitle(
+                this.readString((entry as Record<string, unknown>).name) ||
+                  this.readString((entry as Record<string, unknown>).type) ||
+                  `Document ${index + 1}`
+              ),
+              required: true,
+              status: this.normalizeKycDocumentStatus(
+                this.readString((entry as Record<string, unknown>).status),
+                this.readString((entry as Record<string, unknown>).expiry)
+              ),
+              fileName,
+              uploadedAt: this.readString((entry as Record<string, unknown>).uploadedAt) || uploadedAt,
+              expiresAt: this.readString((entry as Record<string, unknown>).expiry) || null,
+              reason: this.readString((entry as Record<string, unknown>).notes) || undefined,
+              history: [
+                {
+                  at: this.readString((entry as Record<string, unknown>).uploadedAt) || uploadedAt,
+                  by: 'Supplier',
+                  event: `Uploaded ${fileName || 'document'}`
+                }
+              ]
+            };
+          })
+      : [];
+
+    const history = [
+      ...(this.readString(onboarding.submittedAt)
+        ? [
+            {
+              at: this.readString(onboarding.submittedAt),
+              by: 'Supplier',
+              event: 'Submitted onboarding for review'
+            }
+          ]
+        : []),
+      ...(this.readString(context.approval?.approvedAt)
+        ? [
+            {
+              at: this.readString(context.approval?.approvedAt),
+              by: 'Compliance',
+              event: 'Account approved'
+            }
+          ]
+        : []),
+      ...(this.readString(context.approval?.rejectedAt)
+        ? [
+            {
+              at: this.readString(context.approval?.rejectedAt),
+              by: 'Compliance',
+              event: 'Account rejected'
+            }
+          ]
+        : [])
+    ].filter((entry) => Boolean(entry.at));
+
+    return {
+      status: this.normalizeKycState(this.readString(context.approval?.status)),
+      documents,
+      metadata: {
+        history
+      }
+    };
+  }
+
   private normalizeSettingsRecord(payload: Record<string, unknown>) {
+    if (!payload.profile || typeof payload.profile !== 'object') {
+      payload.profile = {};
+    }
     if (!payload.settings || typeof payload.settings !== 'object') {
       payload.settings = {};
     }
@@ -842,6 +1103,352 @@ export class SettingsService {
       payload.payout = {};
     }
     return payload;
+  }
+
+  private async loadDerivedAccountContext(userId: string) {
+    const [user, seller, onboarding, approval] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true, phone: true }
+      }),
+      this.prisma.seller.findUnique({
+        where: { userId },
+        include: { storefront: true }
+      }),
+      this.getWorkflowRecordPayload(userId, 'onboarding', 'main'),
+      this.getWorkflowRecordPayload(userId, 'account_approval', 'main')
+    ]);
+
+    return {
+      user,
+      seller,
+      storefront: seller?.storefront ?? null,
+      onboarding: this.isPlainObject(onboarding) ? (onboarding as Record<string, any>) : null,
+      approval: this.isPlainObject(approval) ? (approval as Record<string, any>) : null
+    };
+  }
+
+  private buildDerivedProfile(context: {
+    user: { email?: string | null; phone?: string | null } | null;
+    seller: {
+      id: string;
+      handle: string | null;
+      name: string;
+      displayName: string;
+      legalBusinessName: string | null;
+      storefrontName: string | null;
+      category: string | null;
+      description: string | null;
+      updatedAt: Date;
+      storefront?: {
+        id: string;
+        slug: string;
+        name: string;
+        tagline: string | null;
+        description: string | null;
+        logoUrl: string | null;
+        coverUrl: string | null;
+      } | null;
+    } | null;
+    storefront: {
+      id: string;
+      slug: string;
+      name: string;
+      tagline: string | null;
+      description: string | null;
+      logoUrl: string | null;
+      coverUrl: string | null;
+    } | null;
+    onboarding: Record<string, any> | null;
+    approval: Record<string, any> | null;
+  }) {
+    const onboarding = context.onboarding;
+    const storefront = context.storefront;
+    const seller = context.seller;
+    const email = this.readString(context.user?.email) || this.readString(onboarding?.email);
+    const phone = this.readString(context.user?.phone) || this.readString(onboarding?.phone);
+    const shipFrom = this.isPlainObject(onboarding?.shipFrom) ? onboarding?.shipFrom : null;
+    const addressLine1 = this.readString(shipFrom?.address1);
+    const addressLine2 = this.readString(shipFrom?.address2);
+    const country = this.readString(shipFrom?.country);
+    const city = this.readString(shipFrom?.city);
+    const province = this.readString(shipFrom?.province);
+    const storeHandle = this.readString(storefront?.slug) || this.readString(seller?.handle) || this.readString(onboarding?.storeSlug);
+    const storeName =
+      this.readString(storefront?.name) ||
+      this.readString(seller?.storefrontName) ||
+      this.readString(seller?.displayName) ||
+      this.readString(onboarding?.storeName) ||
+      '';
+    const productLines = this.buildDerivedProductLines(onboarding);
+
+    return {
+      identity: {
+        displayName:
+          this.readString(seller?.displayName) ||
+          this.readString(onboarding?.storeName) ||
+          this.readString(onboarding?.owner) ||
+          '',
+        legalName:
+          this.readString(seller?.legalBusinessName) ||
+          this.readString(onboarding?.tax?.legalName) ||
+          '',
+        handle: storeHandle,
+        email,
+        phone,
+        website: this.readString(onboarding?.website),
+        category:
+          this.readString(seller?.category) ||
+          this.readString(onboarding?.taxonomySelection?.label) ||
+          this.readString(productLines[0]?.path?.slice(-1)?.[0]?.name) ||
+          ''
+      },
+      branding: {
+        tagline: this.readString(storefront?.tagline),
+        description:
+          this.readString(storefront?.description) ||
+          this.readString(seller?.description) ||
+          this.readString(onboarding?.about),
+        primary: this.readString(onboarding?.brandColor) || '#03CD8C',
+        accent: '#F77F00',
+        logoName: this.extractAssetName(this.readString(onboarding?.logoUrl) || this.readString(storefront?.logoUrl)),
+        coverName: this.extractAssetName(this.readString(onboarding?.coverUrl) || this.readString(storefront?.coverUrl))
+      },
+      addresses:
+        addressLine1 || addressLine2 || city || country
+          ? [
+              {
+                id: 'onboarding-primary-address',
+                label: 'Primary warehouse',
+                type: 'Warehouse',
+                line1: [addressLine1, addressLine2].filter(Boolean).join(', '),
+                city,
+                region: province,
+                country,
+                isDefault: true,
+                updatedAt:
+                  this.readString(onboarding?.updatedAt) ||
+                  seller?.updatedAt?.toISOString() ||
+                  new Date().toISOString()
+              }
+            ]
+          : [],
+      stores:
+        storeName || storeHandle
+          ? [
+              {
+                id: storefront?.id || seller?.id || 'primary-store',
+                name: storeName || 'Primary store',
+                handle: storeHandle,
+                region: country || this.readString(onboarding?.tax?.taxCountry) || 'Global',
+                status: this.readString(context.approval?.status).toLowerCase() === 'approved' ? 'Active' : 'Planned'
+              }
+            ]
+          : [],
+      regions: Array.from(
+        new Set(
+          [
+            country,
+            this.readString(onboarding?.tax?.taxCountry),
+            ...this.readStringArray(onboarding?.channels)
+          ].filter(Boolean)
+        )
+      ),
+      supportHours: '',
+      socials: {
+        facebook: '',
+        instagram: '',
+        twitter: '',
+        youtube: '',
+        linkedin: '',
+        tiktok: ''
+      },
+      customSocials: [],
+      productLines
+    };
+  }
+
+  private buildDerivedProductLines(onboarding: Record<string, any> | null) {
+    const selections = Array.isArray(onboarding?.taxonomySelections)
+      ? onboarding.taxonomySelections
+      : this.isPlainObject(onboarding?.taxonomySelection)
+        ? [onboarding.taxonomySelection]
+        : [];
+
+    return selections
+      .filter((entry) => this.isPlainObject(entry))
+      .map((entry, index) => {
+        const record = entry as Record<string, unknown>;
+        const nodeId = this.readString(record.nodeId);
+        if (!nodeId) {
+          return null;
+        }
+        const pathNodes = Array.isArray(record.pathNodes)
+          ? record.pathNodes
+              .filter((node) => this.isPlainObject(node))
+              .map((node, nodeIndex) => {
+                const pathNode = node as Record<string, unknown>;
+                return {
+                  id: this.readString(pathNode.id) || `${nodeId}-path-${nodeIndex + 1}`,
+                  name: this.readString(pathNode.name) || `Category ${nodeIndex + 1}`,
+                  type: this.readString(pathNode.type) || 'Category'
+                };
+              })
+          : this.readStringArray(record.path).map((name, pathIndex) => ({
+              id: `${nodeId}-path-${pathIndex + 1}`,
+              name,
+              type: pathIndex === 0 ? 'Marketplace' : 'Category'
+            }));
+        return {
+          id: `taxonomy-${nodeId}-${index + 1}`,
+          nodeId,
+          path: pathNodes,
+          status: 'active'
+        };
+      })
+      .filter(Boolean);
+  }
+
+  private async getWorkflowRecordPayload(userId: string, recordType: string, recordKey: string) {
+    const record = await this.prisma.workflowRecord.findUnique({
+      where: {
+        userId_recordType_recordKey: {
+          userId,
+          recordType,
+          recordKey
+        }
+      }
+    });
+    return record?.payload ?? null;
+  }
+
+  private readString(value: unknown) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private readNumber(value: unknown) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }
+
+  private readStringArray(value: unknown) {
+    return Array.isArray(value)
+      ? value.map((entry) => this.readString(entry)).filter(Boolean)
+      : [];
+  }
+
+  private firstString(values: string[], fallback: string[]) {
+    return values.find(Boolean) || fallback[0];
+  }
+
+  private normalizeLocale(value: string) {
+    return value || 'en';
+  }
+
+  private resolvePayoutProvider(onboarding: Record<string, any>) {
+    const method = this.readString(onboarding.payout?.method);
+    if (method === 'mobile_money') {
+      return this.readString(onboarding.payout?.mobileProvider) || 'Mobile money';
+    }
+    if (method === 'alipay') {
+      return 'Alipay';
+    }
+    if (method === 'wechat_pay') {
+      return 'WeChat Pay';
+    }
+    return (
+      this.readString(onboarding.payout?.otherProvider) ||
+      this.readString(onboarding.payout?.otherMethod) ||
+      'Payout provider'
+    );
+  }
+
+  private resolvePayoutLabel(onboarding: Record<string, any>) {
+    return (
+      this.readString(onboarding.payout?.accountName) ||
+      this.readString(onboarding.payout?.mobileNo) ||
+      this.readString(onboarding.payout?.alipayLogin) ||
+      this.readString(onboarding.payout?.wechatId) ||
+      this.readString(onboarding.payout?.otherDescription) ||
+      this.resolvePayoutProvider(onboarding)
+    );
+  }
+
+  private resolvePayoutAccountRef(onboarding: Record<string, any>) {
+    return (
+      this.readString(onboarding.payout?.accountNo) ||
+      this.readString(onboarding.payout?.mobileNo) ||
+      this.readString(onboarding.payout?.alipayLogin) ||
+      this.readString(onboarding.payout?.wechatId) ||
+      this.readString(onboarding.payout?.otherDetails)
+    );
+  }
+
+  private formatPayoutRhythm(value: string) {
+    if (!value) {
+      return 'Manual';
+    }
+    return value
+      .split(/[_\s]+/)
+      .filter(Boolean)
+      .map((entry) => entry[0]?.toUpperCase() + entry.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  private maskSensitiveValue(value: string, visibleDigits = 4) {
+    if (!value) {
+      return '';
+    }
+    const compact = value.replace(/\s+/g, '');
+    const suffix = compact.slice(-visibleDigits);
+    return suffix ? `**** ${suffix}` : '****';
+  }
+
+  private extractAssetName(value: string) {
+    if (!value) {
+      return '';
+    }
+    const [path] = value.split('?');
+    const parts = path.split('/').filter(Boolean);
+    return parts[parts.length - 1] ?? value;
+  }
+
+  private humanizeDocumentTitle(value: string) {
+    return value
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  private normalizeKycDocumentStatus(status: string, expiry: string) {
+    const normalized = status.toLowerCase();
+    if (normalized === 'approved') return 'Approved';
+    if (normalized === 'rejected') return 'Rejected';
+    if (expiry) {
+      const expiryDate = new Date(expiry);
+      if (!Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() <= Date.now() + 30 * 24 * 3600_000) {
+        return 'Expiring';
+      }
+    }
+    if (normalized === 'submitted' || normalized === 'uploaded' || normalized === 'pending') {
+      return 'Submitted';
+    }
+    return 'Required';
+  }
+
+  private normalizeKycState(status: string) {
+    const normalized = status.toLowerCase();
+    if (normalized === 'approved') return 'verified';
+    if (normalized === 'rejected') return 'rejected';
+    if (normalized === 'resubmitted' || normalized === 'submitted' || normalized === 'pending') return 'pending';
+    return 'pending';
   }
 
   private normalizeSettingsPatch(body: UpdateSettingsDto) {

@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import dictionaries from "./dictionaries";
+import { hasSessionToken, readSession } from "../auth/session";
 import { sellerBackendApi } from "../lib/backendApi";
 import {
   LANGUAGE_OPTIONS,
@@ -69,6 +70,9 @@ export function LocalizationProvider({ children }: { children: React.ReactNode }
   const [currency, setCurrencyState] = useState(() => normalizeCurrency("USD"));
 
   useEffect(() => {
+    if (!hasSessionToken(readSession())) {
+      return;
+    }
     let active = true;
     void sellerBackendApi
       .getPreferences()
@@ -93,6 +97,9 @@ export function LocalizationProvider({ children }: { children: React.ReactNode }
   const setLanguage = useCallback((next: string) => {
     const normalized = normalizeLanguage(next);
     setLanguageState(normalized);
+    if (!hasSessionToken(readSession())) {
+      return;
+    }
     void sellerBackendApi.patchPreferences({ locale: normalized }).catch(() => undefined);
     void sellerBackendApi.patchUiState({ locale: normalized }).catch(() => undefined);
   }, []);
@@ -100,6 +107,9 @@ export function LocalizationProvider({ children }: { children: React.ReactNode }
   const setCurrency = useCallback((next: string) => {
     const normalized = normalizeCurrency(next);
     setCurrencyState(normalized);
+    if (!hasSessionToken(readSession())) {
+      return;
+    }
     void sellerBackendApi.patchPreferences({ currency: normalized }).catch(() => undefined);
     void sellerBackendApi.patchUiState({ currency: normalized }).catch(() => undefined);
   }, []);

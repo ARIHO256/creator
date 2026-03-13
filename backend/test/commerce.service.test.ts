@@ -125,3 +125,37 @@ test('CommerceService.orderDetail rejects sellerfront compatibility orders', asy
 
   await assert.rejects(() => service.orderDetail('user-1', 'ORD-10512'), /Order not found/);
 });
+
+test('CommerceService.shippingProfiles returns empty results for new sellers without seeding defaults', async () => {
+  const prisma = {
+    shippingProfile: {
+      async findMany() {
+        return [];
+      },
+      async create() {
+        throw new Error('should not create starter shipping profiles');
+      }
+    }
+  };
+
+  const sellersService = {
+    async ensureSellerProfile() {
+      return { id: 'seller-1', userId: 'user-1' };
+    }
+  };
+
+  const cache = {
+    async invalidatePrefix() {
+      return;
+    },
+    async invalidate() {
+      return;
+    }
+  };
+
+  const exportsService = { async createJob() { return {}; } };
+  const service = new CommerceService(prisma as any, {} as any, sellersService as any, cache as any, {} as any, exportsService as any);
+
+  const response = await service.shippingProfiles('user-1');
+  assert.deepEqual(response, { profiles: [] });
+});

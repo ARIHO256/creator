@@ -846,9 +846,18 @@ export default function SupplierAssetLibraryPage() {
   const campaignsForSupplier = useMemo(() => campaigns.filter((c) => c.supplierId === selectedSupplierId), [selectedSupplierId]);
   const deliverablesForCampaign = useMemo(() => deliverables.filter((d) => d.campaignId === selectedCampaignId), [selectedCampaignId]);
 
-  const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) || creators[0], [selectedCreatorId]);
-  const selectedSupplier = useMemo(() => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0], [selectedSupplierId]);
-  const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0], [selectedCampaignId, campaignsForSupplier]);
+  const selectedCreator = useMemo(
+    () => creators.find((c) => c.id === selectedCreatorId) || creators[0] || null,
+    [creators, selectedCreatorId]
+  );
+  const selectedSupplier = useMemo(
+    () => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0] || null,
+    [selectedSupplierId, suppliers]
+  );
+  const selectedCampaign = useMemo(
+    () => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0] || null,
+    [campaigns, campaignsForSupplier, selectedCampaignId]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -1317,17 +1326,32 @@ export default function SupplierAssetLibraryPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Creator selector */}
                   <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
-                    <img src={selectedCreator.avatarUrl} alt={selectedCreator.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                    {selectedCreator?.avatarUrl ? (
+                      <img
+                        src={selectedCreator.avatarUrl}
+                        alt={selectedCreator.name || "Creator"}
+                        className="h-6 w-6 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                        {selectedCreator?.name?.slice(0, 1)?.toUpperCase() || "C"}
+                      </div>
+                    )}
                     <select
                       value={selectedCreatorId}
                       onChange={(e) => setSelectedCreatorId(e.target.value)}
+                      disabled={creators.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {creators.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.handle})
-                        </option>
-                      ))}
+                      {creators.length > 0 ? (
+                        creators.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.handle})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No creators available</option>
+                      )}
                     </select>
                   </div>
 
@@ -1337,13 +1361,18 @@ export default function SupplierAssetLibraryPage() {
                     <select
                       value={selectedSupplierId}
                       onChange={(e) => setSelectedSupplierId(e.target.value)}
+                      disabled={suppliers.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {suppliers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          Supplier: {p.name} ({p.kind})
-                        </option>
-                      ))}
+                      {suppliers.length > 0 ? (
+                        suppliers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            Supplier: {p.name} ({p.kind})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No suppliers available</option>
+                      )}
                     </select>
                     <span className="text-slate-400">▾</span>
                   </div>
@@ -1353,13 +1382,18 @@ export default function SupplierAssetLibraryPage() {
                     <select
                       value={selectedCampaignId}
                       onChange={(e) => setSelectedCampaignId(e.target.value)}
+                      disabled={campaignsForSupplier.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {campaignsForSupplier.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          Campaign: {c.name} · {c.brand} ({c.status})
-                        </option>
-                      ))}
+                      {campaignsForSupplier.length > 0 ? (
+                        campaignsForSupplier.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Campaign: {c.name} · {c.brand} ({c.status})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No campaigns available</option>
+                      )}
                     </select>
                     <span className="text-slate-400">▾</span>
                   </div>

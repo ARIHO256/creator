@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CssBaseline, ThemeProvider } from "@mui/material";
+import { hasSessionToken, readSession } from "../auth/session";
 import { sellerBackendApi } from "../lib/backendApi";
 import { createAppTheme } from "../theme";
 import {
@@ -58,6 +59,10 @@ export function AppThemeProvider({ children }: Props) {
   }, [mode]);
 
   useEffect(() => {
+    if (!hasSessionToken(readSession())) {
+      setUiStateHydrated(true);
+      return;
+    }
     let active = true;
     void sellerBackendApi
       .getUiState()
@@ -85,7 +90,7 @@ export function AppThemeProvider({ children }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!uiStateHydrated) return;
+    if (!uiStateHydrated || !hasSessionToken(readSession())) return;
     void sellerBackendApi
       .patchUiState({ appearance: { themeMode: mode } })
       .catch(() => undefined);
