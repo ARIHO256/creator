@@ -230,34 +230,11 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   };
 
   const handleSocialSignIn = async (provider: "google" | "apple") => {
-    try {
-      const email = `${provider}.${userType}@demo.evzone`;
-      const session = await authClient.signIn({ identifier: email, password: "", role: userType });
-      handleAuthSuccess(session, t("Signed in"));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : t("Social sign-in failed");
-      say(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
-    }
+    say(t(`${provider === "google" ? "Google" : "Apple"} sign-in is not configured yet.`));
   };
 
   const handleSocialSignUp = async (provider: "google" | "apple") => {
-    try {
-      const email = `${provider}.${userType}@demo.evzone`;
-      const session = await authClient.signUp({
-        name: provider === "google" ? "Google User" : "Apple User",
-        email,
-        password: "demo1234",
-        role: userType,
-      });
-      await resetFreshOnboardingState(userType, session);
-      handleAuthSuccess(session, t("Account created"), {
-        redirectPath: userType === "seller" ? "/seller/onboarding" : "/provider/onboarding",
-        onboardingRequired: true,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : t("Social sign-up failed");
-      say(message);
-    }
+    say(t(`${provider === "google" ? "Google" : "Apple"} sign-up is not configured yet.`));
   };
 
   // Rate-limit / captcha

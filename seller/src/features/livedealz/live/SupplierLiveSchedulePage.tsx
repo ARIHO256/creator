@@ -29,26 +29,7 @@ const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /* --------------------------------- Mock Data -------------------------------- */
 
-const AI_SLOTS = [
-  {
-    id: 1,
-    label: "Wed 20:00–21:00",
-    reason: "Peak East Africa view time · 1.3× retention",
-    recommendedFor: "Tech & Beauty"
-  },
-  {
-    id: 2,
-    label: "Fri 19:30–20:30",
-    reason: "High intent just before weekend shopping",
-    recommendedFor: "Gadgets & Flash dealz"
-  },
-  {
-    id: 3,
-    label: "Sun 09:00–10:00",
-    reason: "Faith & Wellness audience spike",
-    recommendedFor: "Faith-compatible shows"
-  }
-];
+const AI_SLOTS: Array<Record<string, any>> = [];
 
 /**
  * Supplier session model (mirrors Creator file shape + adds Supplier context)
@@ -57,104 +38,7 @@ const AI_SLOTS = [
  * - "Supplier" when Supplier chose “I will NOT use a Creator” (supplier acts as creator)
  * - "Creator" when Supplier is using a creator
  */
-const SESSIONS = [
-  {
-    id: "LS-201",
-    title: "EV Charger Flash – bundles + install tips",
-    campaign: "EV Charger Flash Drop",
-    supplier: "EV World Store",
-    host: "@lunaade",
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    weekday: "Thu",
-    dateLabel: "Thu 10 Oct",
-    time: "18:30–19:30",
-    location: "MyLiveDealz",
-    simulcast: "YouTube",
-    status: "Confirmed",
-    role: "Supplier (Sponsor)",
-    durationMin: 60,
-    scriptsReady: true,
-    assetsReady: false,
-    productsCount: 8,
-    workloadScore: 3,
-    conflict: false
-  },
-  {
-    id: "LS-202",
-    title: "Supplier-hosted Tech Friday – Gadgets Q&A",
-    campaign: "Tech Friday Mega Live",
-    supplier: "GadgetMart Africa",
-    host: "@gadgetmart",
-    hostRole: "Supplier",
-    creatorUsage: "I will NOT use a Creator",
-    collabMode: "(n/a)",
-    approvalMode: "Manual",
-    weekday: "Fri",
-    dateLabel: "Fri 11 Oct",
-    time: "20:00–21:30",
-    location: "MyLiveDealz",
-    simulcast: "Facebook",
-    status: "Draft",
-    role: "Host (Supplier)",
-    durationMin: 90,
-    scriptsReady: false,
-    assetsReady: false,
-    productsCount: 12,
-    workloadScore: 4,
-    conflict: true // overlaps with prep window
-  },
-  {
-    id: "LS-203",
-    title: "Faith & Wellness Morning Dealz",
-    campaign: "Faith & Wellness Morning Dealz",
-    supplier: "Grace Living Store",
-    host: "@noahknows",
-    hostRole: "Creator",
-    creatorUsage: "I am NOT SURE yet",
-    collabMode: "Open for Collabs",
-    approvalMode: "Auto",
-    weekday: "Sat",
-    dateLabel: "Sat 12 Oct",
-    time: "09:00–10:00",
-    location: "MyLiveDealz",
-    simulcast: "",
-    status: "Confirmed",
-    role: "Supplier (Sponsor)",
-    durationMin: 60,
-    scriptsReady: true,
-    assetsReady: true,
-    productsCount: 6,
-    workloadScore: 2,
-    conflict: false
-  },
-  {
-    id: "LS-204",
-    title: "Tech Friday – Clips replay",
-    campaign: "Tech Friday Mega Live",
-    supplier: "GadgetMart Africa",
-    host: "@lunaade",
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Manual",
-    weekday: "Sun",
-    dateLabel: "Sun 13 Oct",
-    time: "21:00–21:30",
-    location: "Replays only",
-    simulcast: "MyLiveDealz",
-    status: "Scheduled",
-    role: "Replay",
-    durationMin: 30,
-    scriptsReady: false,
-    assetsReady: true,
-    productsCount: 4,
-    workloadScore: 1,
-    conflict: false
-  }
-];
+const SESSIONS: Array<Record<string, any>> = [];
 
 /* --------------------------------- Toast ---------------------------------- */
 

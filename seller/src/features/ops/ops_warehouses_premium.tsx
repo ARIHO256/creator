@@ -297,58 +297,6 @@ function Toggle({ on, setOn, label }) {
   );
 }
 
-// ------------------------ Seed data ------------------------
-
-function buildWarehouses(): Warehouse[] {
-  return [
-    {
-      id: "WH-UG-KLA",
-      code: "KLA",
-      name: "Kampala Hub",
-      country: "Uganda",
-      city: "Kampala",
-      active: true,
-      cutOffLocal: "16:00",
-      processingDays: 1,
-      capabilities: { ship: true, pickup: true, returns: true },
-      constraints: { hazmat: false, batteries: true },
-      serviceCountries: ["Uganda", "Kenya", "Rwanda"],
-      blockedCountries: [],
-      updatedAt: new Date(Date.now() - 1000 * 60 * 28).toISOString(),
-    },
-    {
-      id: "WH-KE-NBO",
-      code: "NBO",
-      name: "Nairobi Hub",
-      country: "Kenya",
-      city: "Nairobi",
-      active: true,
-      cutOffLocal: "15:00",
-      processingDays: 1,
-      capabilities: { ship: true, pickup: false, returns: true },
-      constraints: { hazmat: false, batteries: true },
-      serviceCountries: ["Kenya", "Uganda", "Tanzania"],
-      blockedCountries: [],
-      updatedAt: new Date(Date.now() - 1000 * 60 * 84).toISOString(),
-    },
-    {
-      id: "WH-CN-WUXI",
-      code: "WUX",
-      name: "Wuxi Main",
-      country: "China",
-      city: "Wuxi",
-      active: true,
-      cutOffLocal: "18:00",
-      processingDays: 2,
-      capabilities: { ship: true, pickup: false, returns: false },
-      constraints: { hazmat: false, batteries: true },
-      serviceCountries: ["China", "United States", "United Kingdom", "Germany", "France", "Uganda", "Kenya"],
-      blockedCountries: [],
-      updatedAt: new Date(Date.now() - 1000 * 60 * 210).toISOString(),
-    },
-  ];
-}
-
 function buildRules(): RoutingRule[] {
   return [
     {
