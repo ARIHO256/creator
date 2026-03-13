@@ -69,11 +69,7 @@ export const readOnboardingStatus = (role: UserRole = "seller", userInput: Sessi
     return legacy;
   }
 
-  if (user.userId || user.email || user.phone) {
-    map[key] = "DRAFT";
-    writeMap(map);
-  }
-  return "DRAFT";
+  return null;
 };
 
 export const recordOnboardingStatus = (
@@ -98,22 +94,26 @@ export const clearOnboardingStatus = (role: UserRole = "seller", userInput: Sess
 
 export const needsOnboarding = (role: UserRole = "seller", userInput: Session | null = null) => {
   const user = userInput || {};
+
+  // Explicit opt-out: once marked completed, never force onboarding again.
   if (typeof user.onboardingCompleted === "boolean") {
     return !user.onboardingCompleted;
   }
-  const approvalStatus = String(user.approvalStatus || "").toUpperCase();
-  if (approvalStatus === "APPROVED") {
-    return false;
+
+  // IMPORTANT: Only users who have just registered via this app
+  // should be forced through onboarding. SignUp sets `onboardingRequired`
+  // on the session; normal sign-ins should not be redirected.
+  if (typeof user.onboardingRequired === "boolean") {
+    return user.onboardingRequired;
   }
-  if (approvalStatus) {
-    return true;
-  }
-  const status = readOnboardingStatus(role, userInput || {});
-  return !STATUS_DONE.includes(status || "");
+
+  // Do not infer onboarding from approvalStatus or local status map anymore;
+  // existing accounts signed in via /auth should land on the dashboard.
+  return false;
 };
 
-export const nextOnboardingRoute = (role: UserRole = "seller", status = "DRAFT") => {
-  const base = onboardingPathForRole(role);
-  if (status === "APPROVED" || status === "SUBMITTED") return null;
-  return base;
+export const nextOnboardingRoute = (role: UserRole = "seller", status: string | null = null) => {
+  if (!status) return null;
+  if (STATUS_DONE.includes(status)) return null;
+  return onboardingPathForRole(role);
 };

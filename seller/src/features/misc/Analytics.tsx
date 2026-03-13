@@ -266,16 +266,7 @@ function MiniBars({ values }: { values: number[] }) {
   );
 }
 
-function CohortGrid({ rows, cols }: { rows: number; cols: number }) {
-  // simple retention style grid
-  const data = Array.from({ length: rows }).map((_, r) =>
-    Array.from({ length: cols }).map((__, c) => {
-      const base = Math.max(0, 100 - r * 9 - c * 7);
-      const jitter = (r * 13 + c * 7) % 9;
-      return Math.max(0, base - jitter);
-    })
-  );
-
+function CohortGrid({ data }: { data: number[][] }) {
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70">
       <div className="grid grid-cols-12 gap-2 border-b border-slate-200/70 px-4 py-3 text-[11px] font-extrabold text-slate-500">
@@ -398,32 +389,6 @@ function Modal({
   );
 }
 
-function buildSeries(range: Range, role: Role) {
-  const len = range === "Today" ? 12 : range === "7D" ? 7 : range === "30D" ? 12 : 12;
-  const isProvider = role === "provider";
-  const base = isProvider
-    ? range === "Today"
-      ? 12
-      : range === "7D"
-        ? 52
-        : range === "30D"
-          ? 140
-          : 210
-    : range === "Today"
-      ? 18
-      : range === "7D"
-        ? 80
-        : range === "30D"
-          ? 220
-          : 360;
-  return Array.from({ length: len }).map((_, i) => {
-    const wave = Math.sin(i / 1.4) * 10;
-    const trend = i * (range === "90D" ? 2.3 : 1.3);
-    const jitter = ((i * 17) % 9) - 4;
-    return Math.max(1, base + wave + trend + jitter);
-  });
-}
-
 export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn }) {
   const navigate: NavigateFn =
     onNavigate ??
@@ -468,12 +433,17 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const series = useMemo(() => buildSeries(range, role), [range, role]);
-  const mini = useMemo(() => buildSeries("7D", role).slice(0, 10), [role]);
-
   const overviewKpis = useMemo<AnalyticsKpi[]>(() => content.overviewKpis, [content]);
   const highlights = useMemo<AnalyticsHighlights>(() => content.highlights, [content]);
   const cohort = useMemo<AnalyticsCohortContent>(() => content.cohort, [content]);
+  const series = useMemo(() => {
+    const next = Array.isArray(content.seriesByRange?.[range]) ? content.seriesByRange[range] : [];
+    return next.length > 0 ? next : [0];
+  }, [content, range]);
+  const mini = useMemo(() => {
+    const next = Array.isArray(content.seriesByRange?.["7D"]) ? content.seriesByRange["7D"] : [];
+    return (next.length > 0 ? next : [0]).slice(0, 10);
+  }, [content]);
 
   const [rules, setRules] = useState<AlertRule[]>(() => defaultRules);
   const [addOpen, setAddOpen] = useState(false);
@@ -696,7 +666,7 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
               <Badge tone="green">Premium</Badge>
             </div>
             <div className="mt-4">
-              <CohortGrid rows={8} cols={9} />
+              <CohortGrid data={cohort.grid} />
             </div>
             <div className="mt-4 rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
               <div className="flex items-center gap-2">

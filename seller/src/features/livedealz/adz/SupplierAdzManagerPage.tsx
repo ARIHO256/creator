@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
-import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
+import { buildAdzCampaignPayload, deriveMetricSeries, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzManagerPage.jsx
@@ -212,8 +212,6 @@ function Avatar({ src, alt }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS: Array<Record<string, any>> = [];
-
 /* ------------------------------ Mini charts (no libs) ---------------------- */
 
 function MiniTrend({ title, subtitle, seriesA, seriesB }) {
@@ -289,7 +287,7 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
+  const [ads, setAds] = useState<Array<Record<string, any>>>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;
@@ -300,7 +298,7 @@ export default function SupplierAdzManagerPage() {
         if (cancelled) return;
         const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
         if (nextAds.length) {
-          setAds(nextAds as typeof DEMO_ADS);
+          setAds(nextAds as Array<Record<string, any>>);
           setSyncedAds(Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)])));
         }
       })
@@ -450,8 +448,14 @@ export default function SupplierAdzManagerPage() {
     setToast("Resubmitted for review.");
   }
 
-  const trendImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
-  const trendOrders = useMemo(() => [3, 4, 5, 4, 6, 7, 8, 7, 10, 9, 12, 13, 14, 15], []);
+  const trendImpr = useMemo(
+    () => deriveMetricSeries(Number(selected?.impressions7d ?? selected?.impressions ?? 0), 14, `${selected?.id || "impressions"}`),
+    [selected?.id, selected?.impressions, selected?.impressions7d]
+  );
+  const trendOrders = useMemo(
+    () => deriveMetricSeries(Number(selected?.orders7d ?? selected?.orders ?? 0), 14, `${selected?.id || "orders"}-orders`),
+    [selected?.id, selected?.orders, selected?.orders7d]
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 transition-colors">

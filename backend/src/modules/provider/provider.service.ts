@@ -264,19 +264,90 @@ export class ProviderService {
     return updated;
   }
   async portfolio(userId: string) {
-    const [items, caseStudies] = await Promise.all([
+    const [items, caseStudies, settings] = await Promise.all([
       this.prisma.providerPortfolioItem.findMany({
         where: { userId },
         orderBy: { updatedAt: 'desc' }
       }),
-      this.loadSetting(userId, 'provider_portfolio_case_studies')
+      this.loadSetting(userId, 'provider_portfolio_case_studies'),
+      this.loadSetting(userId, 'provider_portfolio_settings')
     ]);
     return {
       items: items.map((entry) => this.serializePortfolio(entry)),
       caseStudies: Array.isArray((caseStudies as Record<string, unknown> | null)?.caseStudies)
         ? ((caseStudies as Record<string, unknown>).caseStudies as unknown[])
-        : []
+        : [],
+      settings: this.serializePortfolioSettings(settings)
     };
+  }
+  async updatePortfolio(userId: string, body: Record<string, unknown>) {
+    const sanitized = this.ensurePayload(body);
+    const hasItems = Array.isArray(sanitized.items);
+    const hasCaseStudies = Array.isArray(sanitized.caseStudies);
+    const hasSettings = sanitized.settings && typeof sanitized.settings === 'object' && !Array.isArray(sanitized.settings);
+
+    await this.prisma.$transaction(async (tx) => {
+      if (hasItems) {
+        const items = this.normalizePortfolioItems(sanitized.items as unknown[]);
+        await tx.providerPortfolioItem.deleteMany({ where: { userId } });
+        if (items.length) {
+          await tx.providerPortfolioItem.createMany({
+            data: items.map((item) => ({
+              id: item.id,
+              userId,
+              title: item.title,
+              description: item.description,
+              mediaUrl: item.mediaUrl,
+              status: item.status,
+              data: item.data as Prisma.InputJsonValue
+            }))
+          });
+        }
+      }
+
+      if (hasCaseStudies) {
+        await this.upsertSettingTx(tx, userId, 'provider_portfolio_case_studies', {
+          caseStudies: this.normalizeCaseStudies(sanitized.caseStudies as unknown[])
+        });
+      }
+
+      if (hasSettings) {
+        await this.upsertSettingTx(
+          tx,
+          userId,
+          'provider_portfolio_settings',
+          this.normalizePortfolioSettings(sanitized.settings as Record<string, unknown>)
+        );
+      }
+    });
+
+    await this.audit.log({
+      userId,
+      action: 'provider.portfolio_updated',
+      entityType: 'provider_portfolio',
+      entityId: userId,
+      route: '/api/provider/portfolio',
+      method: 'PATCH',
+      statusCode: 200
+    });
+
+    return this.portfolio(userId);
+  }
+  async quoteTemplates(userId: string) {
+    const existing = await this.loadSetting(userId, 'provider_quote_templates');
+    const templates = Array.isArray((existing as Record<string, unknown> | null)?.templates)
+      ? ((existing as Record<string, unknown>).templates as unknown[])
+      : null;
+
+    if (templates) {
+      return { templates };
+    }
+
+    const payload = {
+      templates: this.defaultQuoteTemplates()
+    };
+    await this.upsertSetting(userId, 'provider_quote_templates', payload);
+    return payload;
   }
   async reviews(userId: string) {
     const reviews = await this.prisma.review.findMany({
@@ -387,6 +458,15 @@ export class ProviderService {
     };
   }
 
+  private serializePortfolioSettings(payload: Record<string, unknown> | null) {
+    const normalized = this.normalizePortfolioSettings(payload ?? {});
+    return {
+      customTags: normalized.customTags,
+      isPublic: normalized.isPublic,
+      handle: normalized.handle
+    };
+  }
+
   private async loadSetting(userId: string, key: string) {
     const setting = await this.prisma.workspaceSetting.findUnique({
       where: {
@@ -397,6 +477,218 @@ export class ProviderService {
       }
     });
     return (setting?.payload as Record<string, unknown> | null) ?? null;
+  }
+
+  private async upsertSetting(userId: string, key: string, payload: Record<string, unknown>) {
+    await this.prisma.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      },
+      create: {
+        userId,
+        key,
+        payload: payload as Prisma.InputJsonValue
+      },
+      update: {
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async upsertSettingTx(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    key: string,
+    payload: Record<string, unknown>
+  ) {
+    await tx.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      },
+      create: {
+        userId,
+        key,
+        payload: payload as Prisma.InputJsonValue
+      },
+      update: {
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private normalizePortfolioItems(items: unknown[]) {
+    return items
+      .map((item) => this.normalizePortfolioItem(item))
+      .filter((item): item is ReturnType<ProviderService['normalizePortfolioItem']> => Boolean(item));
+  }
+
+  private normalizePortfolioItem(item: unknown) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+    const entry = item as Record<string, unknown>;
+    const dataValue = entry.data && typeof entry.data === 'object' && !Array.isArray(entry.data) ? entry.data : {};
+    const data = dataValue as Record<string, unknown>;
+    const title = String(entry.title ?? data.title ?? 'Portfolio item').trim() || 'Portfolio item';
+    const descriptionValue = entry.description ?? data.description;
+    const mediaUrlValue = entry.mediaUrl ?? data.thumb;
+    const createdAt = String(data.createdAt ?? entry.createdAt ?? new Date().toISOString());
+    return {
+      id: String(entry.id ?? randomUUID()),
+      title,
+      description: typeof descriptionValue === 'string' ? descriptionValue : null,
+      mediaUrl: typeof mediaUrlValue === 'string' ? mediaUrlValue : null,
+      status: typeof entry.status === 'string' && entry.status.trim() ? entry.status : 'active',
+      data: {
+        type: typeof data.type === 'string' ? data.type : 'image',
+        tags: Array.isArray(data.tags) ? data.tags.map((tag) => String(tag)) : [],
+        featured: Boolean(data.featured),
+        usedAsCover: Boolean(data.usedAsCover),
+        thumb: typeof data.thumb === 'string' ? data.thumb : typeof mediaUrlValue === 'string' ? mediaUrlValue : '',
+        createdAt
+      }
+    };
+  }
+
+  private normalizeCaseStudies(caseStudies: unknown[]) {
+    return caseStudies
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry))
+      .map((entry) => ({
+        id: String(entry.id ?? randomUUID()),
+        title: String(entry.title ?? 'Case study'),
+        client: String(entry.client ?? 'Client'),
+        scope: String(entry.scope ?? ''),
+        tags: Array.isArray(entry.tags) ? entry.tags.map((tag) => String(tag)) : [],
+        featured: Boolean(entry.featured),
+        createdAt: String(entry.createdAt ?? new Date().toISOString()),
+        summary: String(entry.summary ?? ''),
+        highlights: Array.isArray(entry.highlights)
+          ? entry.highlights
+              .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+              .map((item) => ({
+                k: String(item.k ?? ''),
+                v: String(item.v ?? '')
+              }))
+          : []
+      }));
+  }
+
+  private normalizePortfolioSettings(payload: Record<string, unknown>) {
+    const customTags = Array.isArray(payload.customTags)
+      ? payload.customTags
+          .map((tag) => String(tag || '').trim().toLowerCase())
+          .filter(Boolean)
+      : [];
+    const fallbackHandle = 'provider-portfolio';
+    const handleSource = typeof payload.handle === 'string' && payload.handle.trim() ? payload.handle : fallbackHandle;
+    const handle = handleSource
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'provider-portfolio';
+    return {
+      customTags: Array.from(new Set(customTags)),
+      isPublic: payload.isPublic === undefined ? true : Boolean(payload.isPublic),
+      handle
+    };
+  }
+
+  private defaultQuoteTemplates() {
+    return [
+      {
+        id: 'tpl_standard',
+        name: 'Standard Service Proposal',
+        badge: 'Most used',
+        desc: 'Balanced scope, milestones, and standard terms.',
+        draftPatch: {
+          meta: { title: 'Standard service quote' },
+          timeline: { durationDays: 14 },
+          terms: { payment: { model: 'milestones' }, revisions: { included: 2 } },
+          pricingPolicy: { minMarginPct: 18 }
+        }
+      },
+      {
+        id: 'tpl_install',
+        name: 'Installation Quote',
+        badge: 'Field work',
+        desc: 'Site survey, install, testing, handover.',
+        draftPatch: {
+          meta: { title: 'Installation quote' },
+          scope: {
+            deliverables: [
+              { title: 'Site survey', detail: 'Assess site, safety, routing, and materials.' },
+              { title: 'Installation', detail: 'Install equipment and verify compliance.' },
+              { title: 'Testing and handover', detail: 'Functional tests and handover documents.' }
+            ]
+          },
+          lines: [
+            { name: 'Survey', qty: 1, unitCost: 80, priceMode: 'markup', markupPct: 60, unitPrice: 0, notes: '' },
+            { name: 'Installation labor', qty: 1, unitCost: 260, priceMode: 'markup', markupPct: 35, unitPrice: 0, notes: '' },
+            { name: 'Testing and commissioning', qty: 1, unitCost: 120, priceMode: 'markup', markupPct: 35, unitPrice: 0, notes: '' }
+          ],
+          timeline: {
+            durationDays: 7,
+            milestones: [
+              { title: 'Survey', dueInDays: 1, percent: 25 },
+              { title: 'Install', dueInDays: 5, percent: 50 },
+              { title: 'Handover', dueInDays: 7, percent: 25 }
+            ]
+          },
+          pricingPolicy: { minMarginPct: 20 },
+          terms: { revisions: { included: 1 } }
+        }
+      },
+      {
+        id: 'tpl_consult',
+        name: 'Consultation Quote',
+        badge: 'Calls',
+        desc: 'Fixed price consultation with clear boundaries.',
+        draftPatch: {
+          meta: { title: 'Consultation quote' },
+          scope: {
+            deliverables: [
+              { title: 'Consultation call', detail: '60-90 minutes deep dive with summary.' },
+              { title: 'Follow-up', detail: 'One follow-up Q&A within 7 days.' }
+            ]
+          },
+          lines: [{ name: 'Consultation', qty: 1, unitCost: 40, priceMode: 'fixed', markupPct: 0, unitPrice: 120, notes: '' }],
+          timeline: {
+            durationDays: 3,
+            milestones: [
+              { title: 'Call', dueInDays: 2, percent: 70 },
+              { title: 'Summary', dueInDays: 3, percent: 30 }
+            ]
+          },
+          pricingPolicy: { minMarginPct: 15 },
+          terms: { payment: { model: 'upfront', upfrontPct: 100 } }
+        }
+      },
+      {
+        id: 'tpl_retainer',
+        name: 'Monthly Retainer',
+        badge: 'Premium',
+        desc: 'Recurring support with SLA and monthly billing.',
+        draftPatch: {
+          meta: { title: 'Monthly retainer quote' },
+          scope: {
+            deliverables: [
+              { title: 'Monthly support', detail: 'Up to 20 hours support monthly.' },
+              { title: 'SLA', detail: 'Response within 4 business hours.' }
+            ]
+          },
+          lines: [{ name: 'Retainer (monthly)', qty: 1, unitCost: 600, priceMode: 'markup', markupPct: 35, unitPrice: 0, notes: 'Billed monthly' }],
+          timeline: {
+            durationDays: 30,
+            milestones: [{ title: 'Month start', dueInDays: 1, percent: 100 }]
+          },
+          pricingPolicy: { minMarginPct: 22 },
+          terms: { payment: { model: 'upfront', upfrontPct: 100 }, support: { windowDays: 30 } }
+        }
+      }
+    ];
   }
 
   private normalizeStatus(status: string) {

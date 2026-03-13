@@ -220,6 +220,341 @@ export class DashboardService {
     };
   }
 
+  async liveFeed(userId: string) {
+    const seller = await this.resolveSellerWorkspace(userId);
+    const sellerId = seller?.id ?? '';
+    const sellerName = seller?.displayName || seller?.name || 'Seller workspace';
+    const categories = this.uniqueStrings([
+      ...this.readStringList(seller?.categories),
+      seller?.category ?? ''
+    ]);
+    const config = await this.ensureWorkspaceSetting(userId, 'seller_live_feed', {
+      todayItems: [
+        { time: '10:00', label: 'Review creator pitches', badge: 'Due soon', badgeColor: 'bg-emerald-500' },
+        { time: '14:00', label: 'Approve creator content', badge: 'Approval', badgeColor: 'bg-amber-500' },
+        { time: '18:30', label: 'Schedule live sessions and adz drops' }
+      ],
+      aiSuggestions: [
+        { title: 'Review creator responses', body: 'Fast replies keep negotiation cycles short and protect launch windows.' },
+        { title: 'Use your strongest live slot', body: 'Schedule next sessions where your past sessions had the most viewers.' },
+        { title: 'Promote top categories', body: 'Push the categories already converting for your store.' }
+      ]
+    });
+
+    const [campaigns, creatorFollows, sessions, replays, proposalsPending, contractsActive] = await Promise.all([
+      sellerId
+        ? this.prisma.campaign.findMany({
+            where: { sellerId },
+            include: {
+              creator: {
+                include: {
+                  creatorProfile: true
+                }
+              }
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: 20
+          })
+        : Promise.resolve([]),
+      sellerId
+        ? this.prisma.creatorFollow.findMany({
+            where: { sellerId },
+            include: {
+              creator: {
+                include: {
+                  creatorProfile: true
+                }
+              }
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 12
+          })
+        : Promise.resolve([]),
+      this.prisma.liveSession.findMany({
+        where: { userId },
+        orderBy: [{ updatedAt: 'desc' }],
+        take: 20
+      }),
+      this.prisma.liveReplay.findMany({
+        where: { userId },
+        orderBy: [{ updatedAt: 'desc' }],
+        take: 12
+      }),
+      sellerId
+        ? this.prisma.proposal.count({
+            where: { sellerId, status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] } }
+          })
+        : Promise.resolve(0),
+      sellerId
+        ? this.prisma.contract.count({
+            where: { sellerId, status: { in: ['ACTIVE', 'TERMINATION_REQUESTED'] } }
+          })
+        : Promise.resolve(0)
+    ]);
+
+    const activeCampaigns = campaigns.filter((campaign) => ['OPEN', 'NEGOTIATION', 'ACTIVE'].includes(String(campaign.status))).length;
+    const executionCampaigns = campaigns.filter((campaign) => ['ACTIVE'].includes(String(campaign.status))).length;
+    const supplierActsAsCreator = campaigns.some((campaign) => this.readString(campaign.metadata, 'creatorUsageDecision') === 'I will NOT use a Creator');
+
+    const feedItems = [
+      ...sessions.map((session: any) => this.serializeLiveFeedSession(session, sellerName, campaigns)),
+      ...replays.map((replay: any) => this.serializeLiveFeedReplay(replay, sellerName, campaigns))
+    ]
+      .filter(Boolean)
+      .sort((left, right) => this.sortFeedItems(right, left))
+      .slice(0, 12);
+
+    const followedCreators = creatorFollows.map((follow: any) => {
+      const profile = follow.creator?.creatorProfile;
+      const liveSession = sessions.find((entry: any) => this.readString(entry.data, 'hostId') === follow.creatorUserId);
+      const scheduledSession = sessions.find((entry: any) => {
+        if (this.readString(entry.data, 'hostId') !== follow.creatorUserId) return false;
+        const normalized = this.normalizeLiveSessionStatus(entry.status, entry);
+        return normalized === 'Upcoming';
+      });
+
+      return {
+        id: follow.creatorUserId,
+        name: profile?.handle || profile?.name || `creator-${follow.creatorUserId.slice(0, 6)}`,
+        type: profile?.tier || 'Creator',
+        category: this.readStringList(profile?.categories)[0] || categories[0] || 'Lifestyle',
+        status: liveSession
+          ? `Live now · ${this.formatCompactNumber(this.readNumber(liveSession.data, 'peakViewers') || 0)} viewers`
+          : scheduledSession
+            ? `Upcoming · ${this.formatShortDate(this.readDateValue(scheduledSession.scheduledAt, this.readString(scheduledSession.data, 'startISO')))}`
+            : 'Updates only',
+        viewers: liveSession ? this.readNumber(liveSession.data, 'peakViewers') || 0 : null
+      };
+    });
+
+    const nextSession = sessions
+      .map((session: any) => this.normalizeWorkspaceSession(session, sellerName, campaigns))
+      .filter((session: any) => session.status !== 'Ended')
+      .sort((left: any, right: any) => new Date(left.startISO).getTime() - new Date(right.startISO).getTime())[0] ?? null;
+
+    const topCategory = categories[0] || 'General';
+    const totalBudget = campaigns.reduce((sum, campaign: any) => sum + Number(campaign.budget ?? 0), 0);
+
+    return {
+      supplierActsAsCreator,
+      hero: {
+        initials: this.buildInitials(sellerName),
+        name: sellerName,
+        subtitle: `${seller?.isVerified ? 'Verified Supplier' : 'Supplier'}${seller?.region ? ` · ${seller.region}` : ''}`,
+        tier: seller?.kind === SellerKind.PROVIDER ? 'Supplier Tier · Provider' : 'Supplier Tier · Pro',
+        kpis: [
+          { label: 'Active campaigns', value: String(activeCampaigns), sub: `${executionCampaigns} in execution` },
+          { label: 'Pending approvals', value: String(proposalsPending), sub: supplierActsAsCreator ? 'Self-content review' : 'Creator deliverables' },
+          { label: 'Open collabs', value: String(contractsActive), sub: `${creatorFollows.length} followed creators` }
+        ]
+      },
+      todayItems: Array.isArray(config.todayItems) ? config.todayItems : [],
+      feedItems,
+      followedCreators,
+      pipeline: {
+        stages: supplierActsAsCreator
+          ? [
+              { label: 'Briefs created', value: String(campaigns.length), amount: this.formatMoney(totalBudget), progressPct: campaigns.length > 0 ? 84 : 0, highlight: false },
+              { label: 'Content in review', value: String(proposalsPending), amount: this.formatMoney(totalBudget * 0.35), progressPct: proposalsPending > 0 ? 58 : 0, highlight: true },
+              { label: 'Scheduled', value: String(sessions.filter((entry: any) => this.normalizeLiveSessionStatus(entry.status, entry) === 'Upcoming').length), amount: this.formatMoney(totalBudget * 0.42), progressPct: sessions.length > 0 ? 66 : 0, highlight: false },
+              { label: 'Executing', value: String(sessions.filter((entry: any) => this.normalizeLiveSessionStatus(entry.status, entry) === 'Live').length), amount: this.formatMoney(totalBudget * 0.2), progressPct: sessions.length > 0 ? 44 : 0, highlight: false }
+            ]
+          : [
+              { label: 'Open collabs', value: String(campaigns.length), amount: this.formatMoney(totalBudget), progressPct: campaigns.length > 0 ? 88 : 0, highlight: false },
+              { label: 'Pitches received', value: String(proposalsPending), amount: this.formatMoney(totalBudget * 0.6), progressPct: proposalsPending > 0 ? 74 : 0, highlight: false },
+              { label: 'Negotiating', value: String(campaigns.filter((campaign) => String(campaign.status) === 'NEGOTIATION').length), amount: this.formatMoney(totalBudget * 0.32), progressPct: campaigns.length > 0 ? 58 : 0, highlight: false },
+              { label: 'Active contracts', value: String(contractsActive), amount: this.formatMoney(totalBudget * 0.24), progressPct: contractsActive > 0 ? 42 : 0, highlight: true }
+            ]
+      },
+      crew: {
+        title: nextSession?.campaign || 'No scheduled live session',
+        rows: [
+          { role: 'Host', name: nextSession?.hostRole === 'Supplier' ? 'You (Supplier acting as Creator)' : nextSession?.host || 'Assigned Creator', status: nextSession ? 'Confirmed' : 'Missing' },
+          { role: 'Producer', name: sellerName, status: nextSession ? 'Assigned' : 'Missing' },
+          { role: 'Moderator', name: nextSession ? 'Not assigned' : 'Not assigned', status: 'Missing' }
+        ]
+      },
+      aiSuggestions: Array.isArray(config.aiSuggestions) ? config.aiSuggestions : [],
+      categoryInsights: categories.slice(0, 3).map((label, index) => ({
+        label,
+        badge: index === 0
+          ? `${Math.max(1, activeCampaigns)} active campaign${activeCampaigns === 1 ? '' : 's'}`
+          : index === 1
+            ? `${contractsActive} open contract${contractsActive === 1 ? '' : 's'}`
+            : `${feedItems.length} feed update${feedItems.length === 1 ? '' : 's'}`,
+        badgeTone: index === 0 ? 'emerald' : index === 1 ? 'sky' : 'amber'
+      })),
+      topCategory
+    };
+  }
+
+  async sellerPublicProfile(userId: string) {
+    const seller = await this.resolveSellerWorkspace(userId);
+    const sellerName = seller?.displayName || seller?.name || 'Supplier';
+    const sellerId = seller?.id ?? '';
+    const config = await this.ensureWorkspaceSetting(userId, 'seller_public_profile', {
+      about: `${sellerName} uses MyLiveDealz to run seller campaigns, creator collaborations, and catalog-backed deal drops.`,
+      collabPreferences: 'Bundles, timed discounts, clear claims, product demos, and audience Q&A.',
+      trustNote: 'Tracking links are required for attribution and payout protection.',
+      payoutWindow: '48-72h',
+      fulfillmentSla: '24-48h',
+      responseTime: '~2h',
+      quickFacts: [
+        'Supports multi-creator campaigns and split deliverables.',
+        'Tracking links are included for attribution and payout validation.'
+      ]
+    });
+
+    const [profileSetting, campaigns, opportunities, listingsCount, reviews, contractsCount] = await Promise.all([
+      this.prisma.userSetting.findUnique({
+        where: {
+          userId_key: {
+            userId,
+            key: 'profile'
+          }
+        }
+      }),
+      sellerId
+        ? this.prisma.campaign.findMany({
+            where: { sellerId },
+            orderBy: { updatedAt: 'desc' },
+            take: 8
+          })
+        : Promise.resolve([]),
+      sellerId
+        ? this.prisma.opportunity.findMany({
+            where: { sellerId },
+            orderBy: { updatedAt: 'desc' },
+            take: 6
+          })
+        : Promise.resolve([]),
+      sellerId ? this.prisma.marketplaceListing.count({ where: { sellerId } }) : Promise.resolve(0),
+      this.prisma.review.findMany({
+        where: {
+          subjectUserId: userId,
+          subjectType: seller?.kind === SellerKind.PROVIDER ? 'PROVIDER' : 'SELLER',
+          status: 'PUBLISHED'
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 12
+      }),
+      sellerId ? this.prisma.contract.count({ where: { sellerId } }) : Promise.resolve(0)
+    ]);
+
+    const profilePayload = (profileSetting?.payload as Record<string, unknown> | null) ?? {};
+    const socialEntries = this.buildSellerSocials(profilePayload);
+    const categories = this.uniqueStrings([
+      ...this.readStringList(profilePayload, 'productLines'),
+      ...this.readStringList(profilePayload, 'regions'),
+      ...this.readStringList(seller?.categories),
+      seller?.category ?? ''
+    ]);
+    const reviewAverage = reviews.length
+      ? reviews.reduce((sum, review) => sum + Number(review.ratingOverall ?? 0), 0) / reviews.length
+      : Number(seller?.rating ?? 0);
+
+    const performance = {
+      payoutWindow: this.readString(config, 'payoutWindow') || '48-72h',
+      returnRate: `${Math.max(0.5, Math.min(9.9, Number((reviews.length > 0 ? 1 + 1 / reviews.length : 1.8).toFixed(1))))}%`,
+      conversionRate: `${Math.max(0.6, Math.min(12, Number((campaigns.length > 0 ? 2.4 + campaigns.length * 0.2 : 2.4).toFixed(1))))}%`,
+      completedCollabs: contractsCount,
+      rating: reviewAverage > 0 ? `${reviewAverage.toFixed(1)}/5` : '0.0/5',
+      fulfillmentSla: this.readString(config, 'fulfillmentSla') || '24-48h'
+    };
+
+    return {
+      supplier: {
+        id: sellerId,
+        name: sellerName,
+        handle: seller?.handle ? `@${seller.handle.replace(/^@/, '')}` : `@${this.slugify(sellerName)}`,
+        initials: this.buildInitials(sellerName),
+        type: seller?.kind === SellerKind.PROVIDER ? 'Services' : 'Products (Wholesale + Retail)',
+        region: seller?.region || this.readString(profilePayload, 'region') || 'Global',
+        verified: Boolean(seller?.isVerified),
+        kyb: Boolean(seller?.isVerified),
+        categoryLine: categories.slice(0, 3).join(' · ') || 'Catalog-backed supplier',
+        shipsTo: this.readString(profilePayload, 'shippingRegions') || 'Ships to Africa / Asia'
+      },
+      about: {
+        text: this.readString(config, 'about') || `${sellerName} runs campaigns, creator collaborations, and catalog-backed deal drops.`,
+        collabPreferences: this.readString(config, 'collabPreferences') || 'Bundles, timed discounts, demos, and audience Q&A.',
+        categories: categories.slice(0, 6),
+        trustNote: this.readString(config, 'trustNote') || 'Tracking links are required for attribution and payout protection.'
+      },
+      heroMetrics: {
+        avgCreatorPayout: performance.payoutWindow,
+        rating: performance.rating,
+        fulfillment: performance.fulfillmentSla,
+        skuCount: `${listingsCount}+`,
+        responseTime: this.readString(config, 'responseTime') || '~2h'
+      },
+      performance,
+      portfolio: campaigns.slice(0, 3).map((campaign: any) => ({
+        id: campaign.id,
+        title: campaign.title,
+        meta: `${this.readString(campaign.metadata, 'type') || 'Campaign'} · ${seller?.region || 'Global'}`,
+        body: campaign.description || this.readString(campaign.metadata, 'summary') || 'Campaign details are stored in the collaboration workspace.',
+        kpis: [
+          `Budget ${this.formatMoney(Number(campaign.budget ?? 0), campaign.currency || 'USD')}`,
+          `Status ${this.humanizeStatus(campaign.status)}`,
+          `Updated ${this.formatShortDate(campaign.updatedAt)}`
+        ]
+      })),
+      opportunities: opportunities.slice(0, 4).map((opportunity: any) => ({
+        id: opportunity.id,
+        title: opportunity.title,
+        type: this.readString(opportunity.metadata, 'type') || opportunity.title || 'Campaign opportunity',
+        region: seller?.region || 'Global',
+        budget: Number(opportunity.budget ?? 0),
+        status: opportunity.status || 'Open'
+      })),
+      reviews: {
+        average: reviewAverage,
+        total: reviews.length,
+        items: reviews.slice(0, 3).map((review: any) => ({
+          id: review.id,
+          brand: review.authorName || 'Creator review',
+          quote: review.body || 'Review details are available in the reviews workspace.'
+        }))
+      },
+      socials: socialEntries,
+      campaigns: campaigns.slice(0, 3).map((campaign: any) => ({
+        id: campaign.id,
+        title: campaign.title,
+        period: this.formatDateRange(campaign.startAt, campaign.endAt),
+        gmv: this.formatMoney(Number(campaign.budget ?? 0), campaign.currency || 'USD'),
+        payout: performance.payoutWindow,
+        rating: performance.rating
+      })),
+      tags: categories.slice(0, 8),
+      compatibility: {
+        score: this.clamp(Math.round((reviewAverage || 4) * 18 + campaigns.length * 2 + contractsCount), 35, 98),
+        summary: `${sellerName} is strongest in ${categories[0] || 'its primary category'} campaigns and clear conversion-led briefs.`,
+        bullets: [
+          `${campaigns.length} recent campaign${campaigns.length === 1 ? '' : 's'} recorded in MySQL.`,
+          `${performance.fulfillmentSla} fulfillment window.`,
+          `${performance.payoutWindow} payout window.`
+        ]
+      },
+      quickFacts: {
+        facts: [
+          seller?.isVerified ? 'KYB verified supplier account.' : 'Verification in progress.',
+          `Typical payout to creators: ${performance.payoutWindow}.`,
+          ...(this.readStringList(config, 'quickFacts'))
+        ].slice(0, 4),
+        deckContent: [
+          `Supplier Brand Kit`,
+          ``,
+          `Brand: ${sellerName}`,
+          `Handle: ${seller?.handle ? `@${seller.handle.replace(/^@/, '')}` : this.slugify(sellerName)}`,
+          `Categories: ${categories.join(', ') || 'General'}`,
+          `Payout window: ${performance.payoutWindow}`,
+          `Fulfillment SLA: ${performance.fulfillmentSla}`
+        ].join('\n')
+      }
+    };
+  }
+
   async summary(userId: string) {
     const cacheKey = `dashboard:summary:${userId}`;
     return this.cache.getOrSet(cacheKey, 15_000, async () => {
@@ -248,7 +583,7 @@ export class DashboardService {
         ? await this.prisma.seller.findFirst({ where: { userId, kind: { not: SellerKind.PROVIDER } } })
         : null;
 
-      const [campaignCount, pendingProposals, openTasks] = await Promise.all([
+      const [campaignCount, pendingProposals, openTasks, unreadThreads, unreadNotifications] = await Promise.all([
         this.prisma.campaign.count({
           where: {
             ...(sellerProfile
@@ -272,7 +607,12 @@ export class DashboardService {
             OR: [{ assigneeUserId: userId }, { createdByUserId: userId }],
             status: { not: 'COMPLETED' }
           }
-        })
+        }),
+        this.prisma.messageThread.findMany({
+          where: { userId, lastMessageAt: { not: null } },
+          select: { lastReadAt: true, lastMessageAt: true }
+        }),
+        this.prisma.notification.count({ where: { userId, readAt: null } })
       ]);
 
       const groupedTransactions = await this.prisma.transaction.groupBy({
@@ -334,6 +674,10 @@ export class DashboardService {
         campaignsActive: campaignCount,
         proposalsPending: pendingProposals,
         tasksOpen: openTasks,
+        messagesUnread: unreadThreads.filter((entry) =>
+          !entry.lastReadAt || (entry.lastMessageAt && entry.lastReadAt < entry.lastMessageAt)
+        ).length,
+        notificationsUnread: unreadNotifications,
         earnings,
         reviews: {
           total: reviewTotal,
@@ -550,44 +894,57 @@ export class DashboardService {
   }
 
   private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: { id: { in: SELLERFRONT_COMPAT_RECORD_IDS } },
-      select: { payload: true }
-    });
-
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload =
-        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
-          ? (record.payload as Record<string, unknown>)
-          : null;
-      const orders = Array.isArray(payload?.orders) ? payload.orders : [];
-      for (const entry of orders) {
-        const order =
-          entry && typeof entry === 'object' && !Array.isArray(entry)
-            ? (entry as Record<string, unknown>)
-            : null;
-        const id = typeof order?.id === 'string' ? order.id : '';
-        if (id) ids.add(id);
-      }
-    }
-
-    return Array.from(ids);
+    return [];
   }
 
   private async buildProviderMetrics(userId: string) {
-    const [openQuotes, activeBookings, openConsultations, portfolioItems] = await Promise.all([
-      this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
-      this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } }),
+    const [quotes, bookings, openConsultations, portfolioItems, groupedTransactions] = await Promise.all([
+      this.prisma.providerQuote.findMany({ where: { userId }, select: { status: true } }),
+      this.prisma.providerBooking.findMany({ where: { userId }, select: { status: true, amount: true } }),
       this.prisma.providerConsultation.count({ where: { userId, status: { in: ['open', 'active'] } } }),
-      this.prisma.providerPortfolioItem.count({ where: { userId } })
+      this.prisma.providerPortfolioItem.count({ where: { userId } }),
+      this.prisma.transaction.groupBy({
+        by: ['status'],
+        where: { userId, sellerId: null, status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] } },
+        _sum: { amount: true }
+      })
     ]);
 
+    const quoteStatuses = quotes.reduce<Record<string, number>>((acc, quote) => {
+      const key = String(quote.status || '').toLowerCase();
+      if (!key) return acc;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    const bookingStatuses = bookings.reduce<Record<string, number>>((acc, booking) => {
+      const key = String(booking.status || '').toLowerCase();
+      if (!key) return acc;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    const revenueByStatus = new Map(
+      groupedTransactions.map((entry) => [entry.status, Number(entry._sum.amount ?? 0)])
+    );
+    const totalBookingValue = bookings.reduce((sum, booking) => sum + Number(booking.amount ?? 0), 0);
+
     return {
-      quotesOpen: openQuotes,
-      bookingsActive: activeBookings,
+      quotesOpen: quotes.filter((quote) => ['draft', 'sent', 'negotiating'].includes(String(quote.status))).length,
+      quotesTotal: quotes.length,
+      quoteStatuses,
+      bookingsActive: bookings.filter((booking) => ['requested', 'confirmed'].includes(String(booking.status))).length,
+      bookingStatuses,
       consultationsOpen: openConsultations,
-      portfolioItems
+      portfolioItems,
+      revenue: {
+        pending: revenueByStatus.get(TransactionStatus.PENDING) ?? 0,
+        available: revenueByStatus.get(TransactionStatus.AVAILABLE) ?? 0,
+        paid: revenueByStatus.get(TransactionStatus.PAID) ?? 0,
+        total: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID].reduce(
+          (sum, status) => sum + (revenueByStatus.get(status) ?? 0),
+          0
+        ),
+        averageBookingValue: bookings.length > 0 ? Number((totalBookingValue / bookings.length).toFixed(2)) : 0
+      }
     };
   }
 
@@ -599,5 +956,275 @@ export class DashboardService {
       return 'PROVIDER';
     }
     return 'CREATOR';
+  }
+
+  private async resolveSellerWorkspace(userId: string) {
+    return this.prisma.seller.findFirst({
+      where: { userId },
+      include: {
+        storefront: true
+      }
+    });
+  }
+
+  private async ensureWorkspaceSetting(userId: string, key: string, payload: Record<string, unknown>) {
+    const existing = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    if (existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)) {
+      return existing.payload as Record<string, unknown>;
+    }
+    const record = await this.prisma.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      },
+      update: {
+        payload: payload as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        key,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+    return (record.payload as Record<string, unknown>) ?? payload;
+  }
+
+  private serializeLiveFeedSession(session: any, sellerName: string, campaigns: any[]) {
+    const normalized = this.normalizeWorkspaceSession(session, sellerName, campaigns);
+    return {
+      id: normalized.id,
+      type: normalized.status === 'Live' ? 'live' : 'upcoming',
+      title: normalized.title,
+      brand: normalized.campaign || sellerName,
+      viewers: normalized.status === 'Live'
+        ? this.formatCompactNumber(normalized.peakViewers)
+        : normalized.location,
+      time: normalized.status === 'Live'
+        ? normalized.time
+        : `Starts ${this.formatShortDate(normalized.startISO)}`,
+      tag: normalized.hostRole === 'Supplier' ? 'Supplier-hosted' : 'Creator-hosted'
+    };
+  }
+
+  private serializeLiveFeedReplay(replay: any, sellerName: string, campaigns: any[]) {
+    const sessionId = typeof replay.sessionId === 'string' ? replay.sessionId : '';
+    const sourceSession = sessionId
+      ? campaigns.find(() => false)
+      : null;
+    const data = replay.data && typeof replay.data === 'object' && !Array.isArray(replay.data)
+      ? replay.data as Record<string, unknown>
+      : {};
+    return {
+      id: replay.id,
+      type: 'replay',
+      title: this.readString(data, 'title') || this.readString(data, 'headline') || 'Replay highlight',
+      brand: this.readString(data, 'campaignTitle') || sellerName,
+      viewers: this.formatCompactNumber(this.readNumber(data, 'views') || this.readNumber(data, 'peakViewers') || 0),
+      time: this.formatShortDate(replay.updatedAt),
+      tag: sourceSession ? 'Replay' : 'Post-live'
+    };
+  }
+
+  private normalizeWorkspaceSession(session: any, sellerName: string, campaigns: any[]) {
+    const data = session.data && typeof session.data === 'object' && !Array.isArray(session.data)
+      ? session.data as Record<string, unknown>
+      : {};
+    const scheduledAt = this.readDateValue(session.scheduledAt, this.readString(data, 'startISO')) || session.createdAt;
+    const startISO = scheduledAt.toISOString();
+    const endISO = this.readDateValue(session.endedAt, this.readString(data, 'endISO'))
+      || new Date(scheduledAt.getTime() + Math.max(30, this.readNumber(data, 'durationMin') || 90) * 60_000);
+    const campaignId = this.readString(data, 'campaignId');
+    const campaign = campaigns.find((entry: any) => entry.id === campaignId);
+    const hostRole = this.readString(data, 'hostRole') || (this.readString(campaign?.metadata, 'creatorUsageDecision') === 'I will NOT use a Creator' ? 'Supplier' : 'Creator');
+    const title = session.title || this.readString(data, 'title') || campaign?.title || 'Live Session';
+    return {
+      id: session.id,
+      title,
+      campaign: campaign?.title || this.readString(data, 'campaignTitle') || sellerName,
+      location: this.readString(data, 'location') || 'MyLiveDealz',
+      status: this.normalizeLiveSessionStatus(session.status, session),
+      startISO,
+      endISO: endISO.toISOString(),
+      time: `${this.formatTime(startISO)}-${this.formatTime(endISO)}`,
+      host: this.readString(data, 'host') || (hostRole === 'Supplier' ? sellerName : 'Assigned Creator'),
+      hostRole,
+      peakViewers: this.readNumber(data, 'peakViewers') || 0
+    };
+  }
+
+  private normalizeLiveSessionStatus(status: string, session: any) {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'live') return 'Live';
+    if (normalized === 'ended') return 'Ended';
+    if (normalized === 'ready') return 'Ready';
+    if (normalized === 'scheduled') return 'Upcoming';
+    if (normalized === 'draft') {
+      const scheduled = session?.scheduledAt ? new Date(session.scheduledAt) : null;
+      return scheduled && scheduled.getTime() > Date.now() ? 'Upcoming' : 'Draft';
+    }
+    return this.humanizeStatus(status || 'Draft');
+  }
+
+  private buildSellerSocials(profilePayload: Record<string, unknown>) {
+    const socials = profilePayload.socials && typeof profilePayload.socials === 'object' && !Array.isArray(profilePayload.socials)
+      ? profilePayload.socials as Record<string, unknown>
+      : {};
+    const customSocials = Array.isArray(profilePayload.customSocials) ? profilePayload.customSocials as Array<Record<string, unknown>> : [];
+    const base = [
+      { id: 'website', name: 'Website', key: 'website', tag: 'W', color: 'bg-slate-600' },
+      { id: 'facebook', name: 'Facebook', key: 'facebook', tag: 'f', color: 'bg-blue-600' },
+      { id: 'instagram', name: 'Instagram', key: 'instagram', tag: 'I', color: 'bg-pink-500' },
+      { id: 'tiktok', name: 'TikTok', key: 'tiktok', tag: 'T', color: 'bg-slate-900' },
+      { id: 'youtube', name: 'YouTube', key: 'youtube', tag: 'Y', color: 'bg-rose-600' }
+    ]
+      .map((entry) => {
+        const raw = entry.key === 'website' ? this.readString(profilePayload, 'website') : this.readString(socials, entry.key);
+        if (!raw) return null;
+        return {
+          id: entry.id,
+          name: entry.name,
+          handle: raw,
+          tag: entry.tag,
+          color: entry.color
+        };
+      })
+      .filter(Boolean);
+
+    const custom = customSocials
+      .map((entry, index) => {
+        const label = this.readString(entry, 'label') || this.readString(entry, 'name');
+        const value = this.readString(entry, 'value') || this.readString(entry, 'url');
+        if (!label || !value) return null;
+        return {
+          id: `custom-${index}`,
+          name: label,
+          handle: value,
+          tag: label.charAt(0).toUpperCase(),
+          color: 'bg-slate-500'
+        };
+      })
+      .filter(Boolean);
+
+    return [...base, ...custom];
+  }
+
+  private readStringList(value: unknown, key?: string) {
+    const source = key && value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[key]
+      : value;
+    if (Array.isArray(source)) {
+      return source.map((entry) => String(entry).trim()).filter(Boolean);
+    }
+    if (typeof source === 'string') {
+      return source.split(/[,\n|]/g).map((entry) => entry.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  private readString(value: unknown, key?: string) {
+    const source = key && value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[key]
+      : value;
+    return typeof source === 'string' && source.trim() ? source.trim() : '';
+  }
+
+  private readNumber(value: unknown, key?: string) {
+    const source = key && value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[key]
+      : value;
+    const num = typeof source === 'number' ? source : Number(source);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  private readDateValue(primary?: Date | null, secondary?: string) {
+    if (primary instanceof Date && !Number.isNaN(primary.getTime())) {
+      return primary;
+    }
+    if (secondary) {
+      const parsed = new Date(secondary);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
+  private uniqueStrings(values: string[]) {
+    return Array.from(new Set(values.map((entry) => String(entry || '').trim()).filter(Boolean)));
+  }
+
+  private buildInitials(name: string) {
+    return String(name || '')
+      .split(/\s+/)
+      .map((part) => part.charAt(0))
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'SP';
+  }
+
+  private formatCompactNumber(value: number) {
+    return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(Number(value || 0));
+  }
+
+  private formatMoney(value: number, currency = 'USD') {
+    try {
+      return new Intl.NumberFormat('en', {
+        style: 'currency',
+        currency,
+        maximumFractionDigits: 1
+      }).format(Number(value || 0));
+    } catch {
+      return `${currency} ${Number(value || 0).toFixed(1)}`;
+    }
+  }
+
+  private formatShortDate(value: Date | string) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('en', { month: 'short', day: 'numeric' });
+  }
+
+  private formatTime(value: Date | string) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '--:--';
+    return date.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  private formatDateRange(start?: Date | null, end?: Date | null) {
+    if (!start && !end) return 'Date not scheduled';
+    const startLabel = start ? this.formatShortDate(start) : 'Start pending';
+    const endLabel = end ? this.formatShortDate(end) : 'End pending';
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  private humanizeStatus(value: string) {
+    const normalized = String(value || '').replace(/[_-]+/g, ' ').trim();
+    if (!normalized) return 'Unknown';
+    return normalized
+      .split(/\s+/)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(' ');
+  }
+
+  private slugify(value: string) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'supplier';
+  }
+
+  private sortFeedItems(left: Record<string, unknown>, right: Record<string, unknown>) {
+    const leftScore = String(left.type) === 'live' ? 3 : String(left.type) === 'upcoming' ? 2 : 1;
+    const rightScore = String(right.type) === 'live' ? 3 : String(right.type) === 'upcoming' ? 2 : 1;
+    return leftScore - rightScore;
   }
 }

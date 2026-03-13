@@ -153,12 +153,11 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
       window.location.href = "/";
     }
   };
-  const resolvePostAuthRedirect = (user: Session | null, redirectPath?: string) => {
+  const resolvePostAuthRedirect = (_user: Session | null, redirectPath?: string) => {
+    // Explicit rule:
+    // - When a redirectPath is provided (Sign Up), go there (onboarding).
+    // - When no redirectPath is provided (Sign In), ALWAYS go to the dashboard.
     if (redirectPath) return redirectPath;
-    const role = getCurrentRole(user);
-    if (needsOnboarding(role, user)) {
-      return onboardingPathForRole(role);
-    }
     return "/dashboard";
   };
 

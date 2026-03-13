@@ -6,6 +6,14 @@ function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function hashSeed(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
 export function mapBackendAdzCampaign(value: Record<string, unknown>) {
   const data = asObject(value.data);
   const campaignName = String(data.campaignName || data.name || value.title || "Untitled campaign");
@@ -63,6 +71,35 @@ export function buildAdzCampaignPayload(ad: Record<string, unknown>) {
 
 export function hashAdzCampaign(ad: Record<string, unknown>) {
   return JSON.stringify(ad);
+}
+
+export function deriveMetricSeries(total: number, points = 14, seed = "adz") {
+  const safePoints = Math.max(1, Math.floor(points));
+  const safeTotal = Math.max(0, Number(total || 0));
+  if (safeTotal <= 0) {
+    return Array.from({ length: safePoints }, () => 0);
+  }
+
+  const seedHash = hashSeed(seed);
+  const weights = Array.from({ length: safePoints }, (_, index) => {
+    const wave = 1 + Math.sin((index / Math.max(1, safePoints - 1)) * Math.PI) * 0.45;
+    const variation = 0.86 + (((seedHash >> (index % 16)) & 7) / 20);
+    return wave * variation;
+  });
+  const weightSum = weights.reduce((sum, value) => sum + value, 0) || 1;
+  const raw = weights.map((weight) => (safeTotal * weight) / weightSum);
+  const rounded = raw.map((value) => Math.max(0, Math.round(value)));
+  const delta = safeTotal - rounded.reduce((sum, value) => sum + value, 0);
+
+  if (delta !== 0) {
+    const direction = delta > 0 ? 1 : -1;
+    for (let index = 0; index < Math.abs(delta); index += 1) {
+      const target = index % rounded.length;
+      rounded[target] = Math.max(0, rounded[target] + direction);
+    }
+  }
+
+  return rounded;
 }
 
 export function mapBackendAdzBuilder(value: Record<string, unknown>) {

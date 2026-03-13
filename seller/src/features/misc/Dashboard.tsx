@@ -987,6 +987,12 @@ export default function SupplierHubDashboardPage({
     warehouses: [],
     channels: [],
   });
+  const [workspaceConfig, setWorkspaceConfig] = useState<Record<string, any> | null>(null);
+  const [workspaceSummary, setWorkspaceSummary] = useState<Record<string, any> | null>(null);
+  const [sellerOrdersPayload, setSellerOrdersPayload] = useState<Record<string, any> | null>(null);
+  const [sellerInventoryRows, setSellerInventoryRows] = useState<Array<Record<string, any>>>([]);
+  const [sellerWallets, setSellerWallets] = useState<Array<Record<string, any>>>([]);
+  const [sellerHolds, setSellerHolds] = useState<Array<Record<string, any>>>([]);
   const applyingView = useRef(false);
 
   // Drawer
@@ -1068,6 +1074,77 @@ export default function SupplierHubDashboardPage({
   useEffect(() => {
     void sellerBackendApi.patchSavedViews({ views: customViews }).catch(() => undefined);
   }, [customViews]);
+
+  useEffect(() => {
+    let active = true;
+    if (role === 'seller') {
+      void Promise.allSettled([
+        sellerBackendApi.getSellerDashboard(),
+        sellerBackendApi.getSellerOrders(),
+        sellerBackendApi.getOpsInventory(),
+        sellerBackendApi.getFinanceWallets(),
+        sellerBackendApi.getFinanceHolds(),
+      ]).then(([dashboardResult, ordersResult, inventoryResult, walletsResult, holdsResult]) => {
+        if (!active) return;
+        setWorkspaceConfig(dashboardResult.status === 'fulfilled' ? (dashboardResult.value as Record<string, any>) : null);
+        setSellerOrdersPayload(ordersResult.status === 'fulfilled' ? (ordersResult.value as Record<string, any>) : null);
+        setSellerInventoryRows(
+          inventoryResult.status === 'fulfilled' && Array.isArray((inventoryResult.value as Record<string, any>)?.rows)
+            ? (((inventoryResult.value as Record<string, any>).rows as unknown[]) as Array<Record<string, any>>)
+            : []
+        );
+        setSellerWallets(
+          walletsResult.status === 'fulfilled' && Array.isArray((walletsResult.value as Record<string, any>)?.wallets)
+            ? (((walletsResult.value as Record<string, any>).wallets as unknown[]) as Array<Record<string, any>>)
+            : []
+        );
+        setSellerHolds(
+          holdsResult.status === 'fulfilled' && Array.isArray((holdsResult.value as Record<string, any>)?.holds)
+            ? (((holdsResult.value as Record<string, any>).holds as unknown[]) as Array<Record<string, any>>)
+            : []
+        );
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    void sellerBackendApi.getDashboardFeed()
+      .then((payload) => {
+        if (active) setWorkspaceConfig(payload as Record<string, any>);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [role]);
+
+  useEffect(() => {
+    let active = true;
+    const query = {
+      range,
+      ...(range === 'custom' ? { from: customFrom, to: customTo } : {}),
+      ...(filters.channels.length ? { channels: filters.channels } : {}),
+      ...(filters.marketplaces.length ? { marketplaces: filters.marketplaces } : {}),
+      ...(filters.warehouses.length ? { warehouses: filters.warehouses } : {}),
+    };
+
+    const loader =
+      role === 'seller'
+        ? sellerBackendApi.getSellerDashboardSummary(query)
+        : sellerBackendApi.getDashboardSummary();
+
+    void loader
+      .then((payload) => {
+        if (active) setWorkspaceSummary(payload as Record<string, any>);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, [role, range, customFrom, customTo, filters]);
+
   // Apply preset views (and treat any manual change as a "custom" view)
   useEffect(() => {
     const v = ([...PRESET_VIEWS, ...customViews] as CustomView[]).find((x) => x.id === viewId);
@@ -1090,6 +1167,54 @@ export default function SupplierHubDashboardPage({
   );
   const filterMeta = useMemo(() => computeFilterMeta(filters), [filters]);
   const allViews = useMemo(() => [...PRESET_VIEWS, ...customViews] as CustomView[], [customViews]);
+  const sellerOrders = useMemo(
+    () => (Array.isArray(sellerOrdersPayload?.orders) ? (sellerOrdersPayload.orders as Array<Record<string, any>>) : []),
+    [sellerOrdersPayload]
+  );
+  const sellerOrderStatuses = useMemo(() => {
+    return sellerOrders.reduce<Record<string, number>>((acc, order) => {
+      const key = String(order.status || '').toUpperCase();
+      if (!key) return acc;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+  }, [sellerOrders]);
+  const sellerInventoryInsights = useMemo(() => {
+    const rows = sellerInventoryRows;
+    const recentItemCounts = new Map<string, number>();
+    for (const order of sellerOrders) {
+      const items = Array.isArray(order.items) ? (order.items as Array<Record<string, any>>) : [];
+      for (const item of items) {
+        const key = String(item.listingId || item.sku || item.name || '');
+        if (!key) continue;
+        recentItemCounts.set(key, (recentItemCounts.get(key) ?? 0) + Number(item.quantity ?? 1));
+      }
+    }
+
+    const low = rows
+      .filter((row) => Number(row.inventoryCount ?? 0) > 0 && Number(row.inventoryCount ?? 0) <= 10)
+      .sort((left, right) => Number(left.inventoryCount ?? 0) - Number(right.inventoryCount ?? 0))
+      .slice(0, 3);
+    const over = rows
+      .filter((row) => Number(row.inventoryCount ?? 0) >= 50)
+      .sort((left, right) => Number(right.inventoryCount ?? 0) - Number(left.inventoryCount ?? 0))
+      .slice(0, 3);
+    const fast = rows
+      .map((row) => ({
+        row,
+        velocity: recentItemCounts.get(String(row.id || row.sku || row.title || '')) ?? 0,
+      }))
+      .filter((entry) => entry.velocity > 0)
+      .sort((left, right) => right.velocity - left.velocity)
+      .slice(0, 3)
+      .map((entry) => entry.row);
+    const dead = rows
+      .filter((row) => (recentItemCounts.get(String(row.id || row.sku || row.title || '')) ?? 0) === 0)
+      .sort((left, right) => new Date(String(left.updatedAt || left.createdAt || 0)).getTime() - new Date(String(right.updatedAt || right.createdAt || 0)).getTime())
+      .slice(0, 3);
+
+    return { low, over, fast, dead, recentItemCounts };
+  }, [sellerInventoryRows, sellerOrders]);
 
   // Data model (reactive to controls)
   const model = useMemo(() => {
@@ -1112,24 +1237,41 @@ export default function SupplierHubDashboardPage({
       return { ...rest, series };
     };
 
+    const dashboardConfig = workspaceConfig || {};
+    const summary = workspaceSummary || {};
+    const sellerCounts = (summary.counts as Record<string, any> | undefined) || {};
+    const sellerRevenue = (summary.revenue as Record<string, any> | undefined) || {};
+    const summaryChannels = Array.isArray(summary.channels) ? (summary.channels as Array<Record<string, any>>) : [];
+    const summaryTrend = (summary.trend as Record<string, any> | undefined) || {};
+    const summaryCashflow = Array.isArray(summary.cashflow) ? (summary.cashflow as Array<Record<string, any>>) : [];
+    const grossOrderRevenue = summaryChannels.reduce((sum, entry) => sum + Number(entry.revenue ?? 0), 0);
     const quickActionIconByKey: Record<string, LucideIcon> = {
       'create-listing': Store,
+      'new-listing': Store,
       'new-shipment': Truck,
       'request-payout': Wallet,
       'start-promo': Flame,
       'create-rma': Boxes,
       'new-booking': CalendarRange,
+      orders: ClipboardList,
     };
 
-    const quickActions = (content.quickActions || []).map((action: DashboardQuickAction) => ({
+    const quickActionsSource =
+      role === 'seller' && Array.isArray(dashboardConfig.quickActions)
+        ? (dashboardConfig.quickActions as DashboardQuickAction[])
+        : (content.quickActions || []);
+    const quickActions = quickActionsSource.map((action: DashboardQuickAction) => ({
       ...action,
       icon: quickActionIconByKey[action.key] ?? Plus,
     }));
 
     // HERO
-    const heroContent = content.hero || {} as DashboardContent['hero'];
-    const featuredContent = content.featured || {} as DashboardContent['featured'];
-    const basesContent = content.bases || { revenueBase: 0, ordersBase: 0, trustBase: 0 };
+    const heroContent =
+      (role === 'seller' ? (dashboardConfig.hero as DashboardContent['hero'] | undefined) : undefined)
+      || (content.hero || {} as DashboardContent['hero']);
+    const featuredContent =
+      (role === 'seller' ? (dashboardConfig.featured as DashboardContent['featured'] | undefined) : undefined)
+      || (content.featured || {} as DashboardContent['featured']);
     const hero = {
       title: 'Congratulations',
       name: heroContent.name || '',
@@ -1149,9 +1291,19 @@ export default function SupplierHubDashboardPage({
     };
 
     // KPI values that actually move with controls
-    const revenueBase = basesContent.revenueBase || 0;
-    const ordersBase = basesContent.ordersBase || 0;
-    const trustBase = basesContent.trustBase || 0;
+    const revenueBase =
+      role === 'seller'
+        ? Number((summary.bases as Record<string, any> | undefined)?.revenueBase ?? sellerRevenue.total ?? 0)
+        : Number((summary.earnings as Record<string, any> | undefined)?.lifetime ?? 0);
+    const ordersBase =
+      role === 'seller'
+        ? Number(sellerCounts.orders ?? 0)
+        : Number((summary.provider as Record<string, any> | undefined)?.bookingsActive ?? summary.tasksOpen ?? 0);
+    const trustBase = Number(
+      role === 'seller'
+        ? (summary.bases as Record<string, any> | undefined)?.trustBase ?? (summary.reviews as Record<string, any> | undefined)?.trustScore ?? 0
+        : (summary.reviews as Record<string, any> | undefined)?.trustScore ?? 0
+    );
 
     const revenueRaw = revenueBase * scale;
     const ordersRaw = Math.max(
@@ -1402,48 +1554,40 @@ export default function SupplierHubDashboardPage({
             },
           ]
         : [
-            {
-              name: 'Marketplace orders',
-              value: 6_140_000 * scale,
-              hint: 'Direct purchases',
-              to: '/orders?source=marketplace',
-              top: [
-                { label: 'Conversion', value: filterMeta.hasMLDZ ? '3.1%' : '2.4%' },
-                { label: 'Top region', value: 'East Africa' },
-              ],
-              actions: [
-                { label: 'View orders', to: '/orders', icon: Package },
-                { label: 'Improve listings', to: '/listings', icon: Store },
-              ],
-            },
-            {
-              name: 'Wholesale pipeline',
-              value: 2_520_000 * scale,
-              hint: 'Quotes and RFQs',
-              to: '/wholesale',
-              top: [
-                { label: 'Open RFQs', value: '9' },
-                { label: 'Avg ticket', value: formatMoney(320000 * scale, currency) },
-              ],
-              actions: [
-                { label: 'Open wholesale', to: '/wholesale', icon: Globe },
-                { label: 'Quotes received', to: '/wholesale/quotes', icon: BarChart3 },
-              ],
-            },
-            {
-              name: 'MyLiveDealz uplift',
-              value: 820_000 * scale,
-              hint: 'Live + Adz impact',
-              to: '/mldz/ads',
-              top: [
-                { label: 'Active promos', value: filterMeta.hasMLDZ ? 'Focused' : '6' },
-                { label: 'CTR', value: '4.8%' },
-              ],
-              actions: [
-                { label: 'Start promo', to: '/mldz/promos/new', icon: Flame },
-                { label: 'Adz performance', to: '/mldz/adz-performance', icon: BarChart3 },
-              ],
-            },
+            ...(summaryChannels.length
+              ? summaryChannels.slice(0, 3).map((entry, index) => ({
+                  name: String(entry.name || `Channel ${index + 1}`),
+                  value: Number(entry.revenue ?? 0),
+                  hint: `${Number(entry.orders ?? 0)} orders`,
+                  to: index === 1 ? '/wholesale' : index === 2 ? '/mldz/feed' : '/orders',
+                  top: [
+                    { label: 'Orders', value: `${Number(entry.orders ?? 0)}` },
+                    {
+                      label: 'Revenue share',
+                      value: `${Math.round((Number(entry.revenue ?? 0) / Math.max(1, revenueBase || 1)) * 100)}%`,
+                    },
+                  ],
+                  actions: [
+                    { label: 'View orders', to: '/orders', icon: Package },
+                    { label: index === 1 ? 'Open wholesale' : 'Open analytics', to: index === 1 ? '/wholesale' : '/analytics', icon: index === 1 ? Globe : BarChart3 },
+                  ],
+                }))
+              : [
+                  {
+                    name: 'Marketplace orders',
+                    value: revenueBase,
+                    hint: `${ordersBase} tracked orders`,
+                    to: '/orders',
+                    top: [
+                      { label: 'Orders', value: `${ordersBase}` },
+                      { label: 'Listings', value: `${Number(sellerCounts.listings ?? 0)}` },
+                    ],
+                    actions: [
+                      { label: 'View orders', to: '/orders', icon: Package },
+                      { label: 'Improve listings', to: '/listings', icon: Store },
+                    ],
+                  },
+                ]),
           ];
 
     // Trend chart (clickable)
@@ -1459,218 +1603,389 @@ export default function SupplierHubDashboardPage({
               ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
               : Array.from({ length: rangeMeta.trendPoints }, (_, i) => `P${i + 1}`);
 
-    const trend = trendLabels.map((m, i) => {
-      const income = Math.round(
-        (revenueBase * 0.06 + i * revenueBase * 0.005) * scale * (0.9 + (i % 3) * 0.07)
-      );
-      const expense = Math.round(income * (0.38 + (i % 2) * 0.05));
-      return { m, income, expense };
-    });
+    const trend =
+      role === 'seller' && Array.isArray(summaryTrend.labels) && Array.isArray(summaryTrend.revenue)
+        ? (summaryTrend.labels as string[]).map((label, index) => {
+            const income = Number((summaryTrend.revenue as number[])[index] ?? 0);
+            const payoutMatch = summaryCashflow.find((entry) => String(entry.day || '') === String(label || ''));
+            const expense =
+              Number(payoutMatch?.payout ?? 0)
+              || Math.round(income * (revenueBase > 0 ? Math.min(0.45, Math.max(0.08, 1 - Number(sellerRevenue.total ?? revenueBase) / Math.max(1, grossOrderRevenue))) : 0.18));
+            return { m: label, income, expense };
+          })
+        : trendLabels.map((m, i) => {
+            const income = Math.round(
+              (revenueBase * 0.06 + i * revenueBase * 0.005) * scale * (0.9 + (i % 3) * 0.07)
+            );
+            const expense = Math.round(income * (0.38 + (i % 2) * 0.05));
+            return { m, income, expense };
+          });
 
     // Operational Command Center
-    const opsPipeline = [
-      {
-        key: 'orders',
-        label: 'Orders',
-        count: Math.max(1, Math.round(ordersRaw * (1.1 + riskBoost))),
-        sla: '< 2h',
-        to: '/orders',
-      },
-      {
-        key: 'packed',
-        label: 'Packed',
-        count: Math.max(1, Math.round(ordersRaw * 0.45)),
-        sla: '6h avg',
-        to: '/orders',
-      },
-      {
-        key: 'shipped',
-        label: 'Shipped',
-        count: Math.max(1, Math.round(ordersRaw * 0.35)),
-        sla: '18h avg',
-        to: '/ops/shipping',
-      },
-      {
-        key: 'delivered',
-        label: 'Delivered',
-        count: Math.max(1, Math.round(ordersRaw * 0.65 * rangeMeta.scale)),
-        sla: '2.4d avg',
-        to: '/orders',
-      },
-    ];
+    const opsPipeline = role === 'seller'
+      ? [
+          {
+            key: 'orders',
+            label: 'Orders',
+            count: Number(sellerCounts.orders ?? 0),
+            sla: `${Number(sellerCounts.openOrders ?? 0)} open`,
+            to: '/orders',
+          },
+          {
+            key: 'packed',
+            label: 'Packed',
+            count: Number(sellerOrderStatuses.PACKED ?? 0) + Number(sellerOrderStatuses.PICKING ?? 0),
+            sla: 'Warehouse ready',
+            to: '/orders',
+          },
+          {
+            key: 'shipped',
+            label: 'Shipped',
+            count: Number(sellerOrderStatuses.SHIPPED ?? 0) + Number(sellerOrderStatuses.OUT_FOR_DELIVERY ?? 0),
+            sla: 'Transit',
+            to: '/ops/shipping',
+          },
+          {
+            key: 'delivered',
+            label: 'Delivered',
+            count: Number(sellerOrderStatuses.DELIVERED ?? 0),
+            sla: 'Completed',
+            to: '/orders',
+          },
+        ]
+      : [
+          {
+            key: 'orders',
+            label: 'Orders',
+            count: Math.max(1, Math.round(ordersRaw * (1.1 + riskBoost))),
+            sla: '< 2h',
+            to: '/orders',
+          },
+          {
+            key: 'packed',
+            label: 'Packed',
+            count: Math.max(1, Math.round(ordersRaw * 0.45)),
+            sla: '6h avg',
+            to: '/orders',
+          },
+          {
+            key: 'shipped',
+            label: 'Shipped',
+            count: Math.max(1, Math.round(ordersRaw * 0.35)),
+            sla: '18h avg',
+            to: '/ops/shipping',
+          },
+          {
+            key: 'delivered',
+            label: 'Delivered',
+            count: Math.max(1, Math.round(ordersRaw * 0.65 * rangeMeta.scale)),
+            sla: '2.4d avg',
+            to: '/orders',
+          },
+        ];
 
-    const riskItems = [
-      {
-        key: 'sla',
-        label: 'SLA risk',
-        score: clamp(35 + riskBoost * 140, 10, 92),
-        count: Math.max(1, Math.round(4 + riskBoost * 10)),
-        hint: 'Orders approaching breach',
-        to: '/orders?filter=sla_risk',
-      },
-      {
-        key: 'disputes',
-        label: 'Disputes',
-        score: clamp(18 + riskBoost * 90, 5, 80),
-        count: Math.max(0, Math.round(1 + riskBoost * 6)),
-        hint: 'Open cases and escalations',
-        to: '/ops/disputes',
-      },
-      {
-        key: 'returns',
-        label: 'Returns',
-        score: clamp(22 + riskBoost * 70, 6, 75),
-        count: Math.max(0, Math.round(2 + riskBoost * 6)),
-        hint: 'RMAs pending action',
-        to: '/ops/returns',
-      },
-      {
-        key: 'stockouts',
-        label: 'Stockouts',
-        score: clamp(
-          28 + riskBoost * 80 + (filters.marketplaces.includes('GadgetMart') ? 8 : 0),
-          6,
-          86
-        ),
-        count: Math.max(0, Math.round(3 + riskBoost * 8)),
-        hint: 'Low stock items',
-        to: '/inventory?filter=low_stock',
-      },
-      {
-        key: 'holds',
-        label: 'Payment holds',
-        score: clamp(14 + riskBoost * 60 + (trustRaw < 75 ? 10 : 0), 4, 78),
-        count: Math.max(0, Math.round(trustRaw < 75 ? 2 : 1)),
-        hint: 'Payout or compliance holds',
-        to: '/finance/holds',
-      },
-    ];
+    const riskItems = role === 'seller'
+      ? [
+          {
+            key: 'sla',
+            label: 'SLA risk',
+            score: clamp((Number(sellerCounts.openOrders ?? 0) / Math.max(1, Number(sellerCounts.orders ?? 1))) * 100, 0, 100),
+            count: Number(sellerCounts.openOrders ?? 0),
+            hint: 'Orders still in active fulfillment',
+            to: '/orders?filter=sla_risk',
+          },
+          {
+            key: 'disputes',
+            label: 'Disputes',
+            score: clamp((Number(sellerCounts.disputesOpen ?? 0) / Math.max(1, Number(sellerCounts.orders ?? 1))) * 400, 0, 100),
+            count: Number(sellerCounts.disputesOpen ?? 0),
+            hint: 'Open cases and escalations',
+            to: '/ops/disputes',
+          },
+          {
+            key: 'returns',
+            label: 'Returns',
+            score: clamp((Number(sellerCounts.returnsOpen ?? 0) / Math.max(1, Number(sellerCounts.orders ?? 1))) * 300, 0, 100),
+            count: Number(sellerCounts.returnsOpen ?? 0),
+            hint: 'RMAs pending action',
+            to: '/ops/returns',
+          },
+          {
+            key: 'stockouts',
+            label: 'Stockouts',
+            score: clamp((Number(sellerCounts.lowStockListings ?? 0) + Number(sellerCounts.outOfStockListings ?? 0)) * 10, 0, 100),
+            count: Number(sellerCounts.lowStockListings ?? 0) + Number(sellerCounts.outOfStockListings ?? 0),
+            hint: 'Low and out-of-stock listings',
+            to: '/inventory?filter=low_stock',
+          },
+          {
+            key: 'holds',
+            label: 'Payment holds',
+            score: clamp(sellerHolds.length * 18 + (trustRaw < 75 ? 12 : 0), 0, 100),
+            count: sellerHolds.length,
+            hint: 'Pending wallet holds',
+            to: '/finance/holds',
+          },
+        ]
+      : [
+          {
+            key: 'sla',
+            label: 'SLA risk',
+            score: clamp(35 + riskBoost * 140, 10, 92),
+            count: Math.max(1, Math.round(4 + riskBoost * 10)),
+            hint: 'Orders approaching breach',
+            to: '/orders?filter=sla_risk',
+          },
+          {
+            key: 'disputes',
+            label: 'Disputes',
+            score: clamp(18 + riskBoost * 90, 5, 80),
+            count: Math.max(0, Math.round(1 + riskBoost * 6)),
+            hint: 'Open cases and escalations',
+            to: '/ops/disputes',
+          },
+          {
+            key: 'returns',
+            label: 'Returns',
+            score: clamp(22 + riskBoost * 70, 6, 75),
+            count: Math.max(0, Math.round(2 + riskBoost * 6)),
+            hint: 'RMAs pending action',
+            to: '/ops/returns',
+          },
+          {
+            key: 'stockouts',
+            label: 'Stockouts',
+            score: clamp(
+              28 + riskBoost * 80 + (filters.marketplaces.includes('GadgetMart') ? 8 : 0),
+              6,
+              86
+            ),
+            count: Math.max(0, Math.round(3 + riskBoost * 8)),
+            hint: 'Low stock items',
+            to: '/inventory?filter=low_stock',
+          },
+          {
+            key: 'holds',
+            label: 'Payment holds',
+            score: clamp(14 + riskBoost * 60 + (trustRaw < 75 ? 10 : 0), 4, 78),
+            count: Math.max(0, Math.round(trustRaw < 75 ? 2 : 1)),
+            hint: 'Payout or compliance holds',
+            to: '/finance/holds',
+          },
+        ];
 
-    const inventoryRisk = [
-      {
-        key: 'low',
-        label: 'Low stock',
-        count: Math.max(0, Math.round(6 + riskBoost * 10)),
-        hint: 'Restock fast movers',
-        to: '/inventory?filter=low_stock',
-        top: [
-          { sku: 'EVCS-220', note: '< 5 units' },
-          { sku: 'E-BIKE-NT', note: '< 8 units' },
-          { sku: 'GAD-USB-C', note: '< 12 units' },
-        ],
-      },
-      {
-        key: 'over',
-        label: 'Overstock',
-        count: Math.max(0, Math.round(3 + (filterMeta.hasWholesale ? 2 : 1))),
-        hint: 'Discount or bundle',
-        to: '/inventory?filter=overstock',
-        top: [
-          { sku: 'GEN-CABLE', note: '+420 units' },
-          { sku: 'LIV-LAMP', note: '+180 units' },
-          { sku: 'STY-SHOE', note: '+90 units' },
-        ],
-      },
-      {
-        key: 'fast',
-        label: 'Fast movers',
-        count: Math.max(0, Math.round(4 + (filterMeta.hasMLDZ ? 3 : 1))),
-        hint: 'Prioritize reorders',
-        to: '/inventory?filter=fast_movers',
-        top: [
-          { sku: 'EV-ACC-01', note: 'High demand' },
-          { sku: 'GAD-EAR-02', note: 'Trend spike' },
-          { sku: 'GEN-KITCH', note: 'Repeat buyers' },
-        ],
-      },
-      {
-        key: 'dead',
-        label: 'Dead stock',
-        count: Math.max(0, Math.round(2 + (filters.marketplaces.includes('LivingMart') ? 2 : 0))),
-        hint: 'Clearance campaign',
-        to: '/inventory?filter=dead_stock',
-        top: [
-          { sku: 'LIV-DECOR-9', note: '90d no sales' },
-          { sku: 'GEN-OLD-1', note: '120d no sales' },
-        ],
-      },
-    ];
+    const inventoryRisk = role === 'seller'
+      ? [
+          {
+            key: 'low',
+            label: 'Low stock',
+            count: sellerInventoryInsights.low.length,
+            hint: 'Restock fast movers',
+            to: '/inventory?filter=low_stock',
+            top: sellerInventoryInsights.low.map((row) => ({
+              sku: String(row.sku || row.id || row.title || 'Listing'),
+              note: `${Number(row.inventoryCount ?? 0)} units`,
+            })),
+          },
+          {
+            key: 'over',
+            label: 'Overstock',
+            count: sellerInventoryInsights.over.length,
+            hint: 'Discount or bundle',
+            to: '/inventory?filter=overstock',
+            top: sellerInventoryInsights.over.map((row) => ({
+              sku: String(row.sku || row.id || row.title || 'Listing'),
+              note: `${Number(row.inventoryCount ?? 0)} units`,
+            })),
+          },
+          {
+            key: 'fast',
+            label: 'Fast movers',
+            count: sellerInventoryInsights.fast.length,
+            hint: 'Prioritize reorders',
+            to: '/inventory?filter=fast_movers',
+            top: sellerInventoryInsights.fast.map((row) => ({
+              sku: String(row.sku || row.id || row.title || 'Listing'),
+              note: `${sellerInventoryInsights.recentItemCounts.get(String(row.id || row.sku || row.title || '')) ?? 0} recent sales`,
+            })),
+          },
+          {
+            key: 'dead',
+            label: 'Dead stock',
+            count: sellerInventoryInsights.dead.length,
+            hint: 'Clearance campaign',
+            to: '/inventory?filter=dead_stock',
+            top: sellerInventoryInsights.dead.map((row) => ({
+              sku: String(row.sku || row.id || row.title || 'Listing'),
+              note: `Updated ${String(row.updatedAt || row.createdAt || '').slice(0, 10)}`,
+            })),
+          },
+        ]
+      : [
+          {
+            key: 'low',
+            label: 'Low stock',
+            count: Math.max(0, Math.round(6 + riskBoost * 10)),
+            hint: 'Restock fast movers',
+            to: '/inventory?filter=low_stock',
+            top: [
+              { sku: 'EVCS-220', note: '< 5 units' },
+              { sku: 'E-BIKE-NT', note: '< 8 units' },
+              { sku: 'GAD-USB-C', note: '< 12 units' },
+            ],
+          },
+          {
+            key: 'over',
+            label: 'Overstock',
+            count: Math.max(0, Math.round(3 + (filterMeta.hasWholesale ? 2 : 1))),
+            hint: 'Discount or bundle',
+            to: '/inventory?filter=overstock',
+            top: [
+              { sku: 'GEN-CABLE', note: '+420 units' },
+              { sku: 'LIV-LAMP', note: '+180 units' },
+              { sku: 'STY-SHOE', note: '+90 units' },
+            ],
+          },
+          {
+            key: 'fast',
+            label: 'Fast movers',
+            count: Math.max(0, Math.round(4 + (filterMeta.hasMLDZ ? 3 : 1))),
+            hint: 'Prioritize reorders',
+            to: '/inventory?filter=fast_movers',
+            top: [
+              { sku: 'EV-ACC-01', note: 'High demand' },
+              { sku: 'GAD-EAR-02', note: 'Trend spike' },
+              { sku: 'GEN-KITCH', note: 'Repeat buyers' },
+            ],
+          },
+          {
+            key: 'dead',
+            label: 'Dead stock',
+            count: Math.max(0, Math.round(2 + (filters.marketplaces.includes('LivingMart') ? 2 : 0))),
+            hint: 'Clearance campaign',
+            to: '/inventory?filter=dead_stock',
+            top: [
+              { sku: 'LIV-DECOR-9', note: '90d no sales' },
+              { sku: 'GEN-OLD-1', note: '120d no sales' },
+            ],
+          },
+        ];
 
     // Finance layer
-    const settlementStages = [
-      {
-        key: 'pending',
-        label: 'Pending settlement',
-        amount: revenueRaw * 0.18,
-        date: isoDaysAgo(0),
-        hint: 'Awaiting confirmation',
-        to: '/finance/statements?status=pending',
-      },
-      {
-        key: 'processing',
-        label: 'Processing',
-        amount: revenueRaw * 0.11,
-        date: isoDaysAgo(1),
-        hint: 'Bank processing',
-        to: '/finance/statements?status=processing',
-      },
-      {
-        key: 'paid',
-        label: 'Paid out',
-        amount: revenueRaw * 0.46,
-        date: isoDaysAgo(5),
-        hint: 'Completed payouts',
-        to: '/finance/statements?status=paid',
-      },
-    ];
+    const settlementStages = role === 'seller'
+      ? [
+          {
+            key: 'pending',
+            label: 'Pending settlement',
+            amount: Number(sellerRevenue.pending ?? 0),
+            date: isoDaysAgo(0),
+            hint: `${sellerHolds.length} pending hold${sellerHolds.length === 1 ? '' : 's'}`,
+            to: '/finance/statements?status=pending',
+          },
+          {
+            key: 'processing',
+            label: 'Processing',
+            amount: Number(sellerRevenue.available ?? 0),
+            date: isoDaysAgo(1),
+            hint: 'Available for payout',
+            to: '/finance/statements?status=processing',
+          },
+          {
+            key: 'paid',
+            label: 'Paid out',
+            amount: Number(sellerRevenue.paid ?? 0),
+            date: isoDaysAgo(5),
+            hint: 'Completed payouts',
+            to: '/finance/statements?status=paid',
+          },
+        ]
+      : [
+          {
+            key: 'pending',
+            label: 'Pending settlement',
+            amount: revenueRaw * 0.18,
+            date: isoDaysAgo(0),
+            hint: 'Awaiting confirmation',
+            to: '/finance/statements?status=pending',
+          },
+          {
+            key: 'processing',
+            label: 'Processing',
+            amount: revenueRaw * 0.11,
+            date: isoDaysAgo(1),
+            hint: 'Bank processing',
+            to: '/finance/statements?status=processing',
+          },
+          {
+            key: 'paid',
+            label: 'Paid out',
+            amount: revenueRaw * 0.46,
+            date: isoDaysAgo(5),
+            hint: 'Completed payouts',
+            to: '/finance/statements?status=paid',
+          },
+        ];
 
-    const cashflow = Array.from({ length: 7 }).map((_, i) => {
-      const day = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i];
-      const inflow = Math.round(revenueBase * 0.05 * scale * (0.85 + (i % 3) * 0.11));
-      const payout = Math.round(inflow * (0.42 + (i % 2) * 0.08));
-      return { day, inflow, payout };
-    });
+    const cashflow =
+      role === 'seller' && summaryCashflow.length
+        ? summaryCashflow.map((entry) => ({
+            day: String(entry.day || ''),
+            inflow: Number(entry.inflow ?? 0),
+            payout: Number(entry.payout ?? 0),
+          }))
+        : Array.from({ length: 7 }).map((_, i) => {
+            const day = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i];
+            const inflow = Math.round(revenueBase * 0.05 * scale * (0.85 + (i % 3) * 0.11));
+            const payout = Math.round(inflow * (0.42 + (i % 2) * 0.08));
+            return { day, inflow, payout };
+          });
 
+    const estimatedFeeTotal = role === 'seller'
+      ? Math.max(0, grossOrderRevenue - Number(sellerRevenue.total ?? revenueBase))
+      : revenueRaw * 0.089;
     const feeBreakdown = [
       {
         key: 'platform',
         label: 'Platform fees',
-        value: revenueRaw * 0.025,
-        hint: 'Listing + service charges',
+        value: estimatedFeeTotal * 0.4,
+        hint: 'Net revenue gap vs gross order value',
         to: '/finance/statements?type=platform',
       },
       {
         key: 'logistics',
         label: 'Logistics',
-        value: revenueRaw * (filterMeta.hasWarehouseA ? 0.032 : 0.026),
-        hint: 'Warehousing + shipping',
+        value: estimatedFeeTotal * 0.25,
+        hint: 'Shipping and warehouse allocation',
         to: '/finance/statements?type=logistics',
       },
       {
         key: 'payments',
         label: 'Payment fees',
-        value: revenueRaw * 0.014,
+        value: estimatedFeeTotal * 0.2,
         hint: 'Processor charges',
         to: '/finance/statements?type=payments',
       },
       {
         key: 'tax',
         label: 'Taxes',
-        value: revenueRaw * 0.018,
-        hint: 'VAT/withholding where applicable',
+        value: estimatedFeeTotal * 0.15,
+        hint: 'Tax and withholding estimate',
         to: '/finance/tax-reports',
       },
     ];
 
     const totalFees = feeBreakdown.reduce((sum, fee) => sum + fee.value, 0);
-    const avgOrderValue = revenueRaw / Math.max(1, ordersRaw);
+    const avgOrderValue =
+      role === 'seller'
+        ? grossOrderRevenue / Math.max(1, Number(sellerCounts.orders ?? ordersRaw))
+        : revenueRaw / Math.max(1, ordersRaw);
     const nextPayout = settlementStages[0]?.amount ?? revenueRaw * 0.1;
     const financeHighlights = [
       {
         key: 'available',
         label: 'Available balance',
-        value: formatMoney(revenueRaw * 0.22, currency),
-        hint: 'Across wallets',
+        value: formatMoney(role === 'seller' ? Number(sellerRevenue.available ?? 0) : revenueRaw * 0.22, currency),
+        hint: role === 'seller' ? `${sellerWallets.length} wallet${sellerWallets.length === 1 ? '' : 's'}` : 'Across wallets',
         icon: Wallet,
         tone: 'emerald',
       },
@@ -1694,7 +2009,7 @@ export default function SupplierHubDashboardPage({
         key: 'aov',
         label: 'Avg order value',
         value: formatMoney(avgOrderValue, currency),
-        hint: `${ordersRaw} active orders`,
+        hint: `${role === 'seller' ? Number(sellerCounts.orders ?? 0) : ordersRaw} tracked orders`,
         icon: TrendingUp,
         tone: 'blue',
       },
@@ -1726,20 +2041,20 @@ export default function SupplierHubDashboardPage({
         : [
             {
               icon: ShieldCheck,
-              title: 'KYC pending',
-              detail: 'Upload documents to prevent payout delays.',
+              title: trustRaw < 80 ? 'KYC pending' : 'Trust profile healthy',
+              detail: trustRaw < 80 ? 'Upload documents to prevent payout delays.' : 'Trust score is supported by live reviews and response coverage.',
               action: { label: 'Continue', to: '/settings/kyc' },
             },
             {
               icon: AlertTriangle,
-              title: `${riskItems.find((r) => r.key === 'sla')?.count ?? 4} orders near SLA risk`,
+              title: `${riskItems.find((r) => r.key === 'sla')?.count ?? 0} orders near SLA risk`,
               detail: 'Prioritize packing and handover for top-risk orders.',
               action: { label: 'Open', to: '/orders?filter=sla_risk' },
             },
             {
               icon: Store,
-              title: 'Regulated desk check',
-              detail: 'HealthMart Desk may require extra proofs for pharmacy items.',
+              title: `${Number(sellerCounts.lowStockListings ?? 0) + Number(sellerCounts.outOfStockListings ?? 0)} listings need stock attention`,
+              detail: 'Restock or rebalance inventory to protect conversion and fulfillment.',
               action: { label: 'Review', to: '/regulatory' },
             },
           ];
@@ -1747,8 +2062,18 @@ export default function SupplierHubDashboardPage({
     // Health snapshot
     const health = {
       trust: clamp(trustRaw, 0, 100),
-      response: clamp(88 - riskBoost * 18 + (filterMeta.hasMLDZ ? 3 : 0), 50, 99),
-      sla: clamp(84 - riskBoost * 20, 40, 98),
+      response:
+        role === 'seller'
+          ? clamp(Number((sellerCounts.reviews as Record<string, any> | undefined)?.responseRate ?? 0), 0, 100)
+          : clamp(88 - riskBoost * 18 + (filterMeta.hasMLDZ ? 3 : 0), 50, 99),
+      sla:
+        role === 'seller'
+          ? clamp(
+              (Number(sellerOrderStatuses.DELIVERED ?? 0) / Math.max(1, Number(sellerCounts.orders ?? 1))) * 100,
+              0,
+              100
+            )
+          : clamp(84 - riskBoost * 20, 40, 98),
     };
 
     // Tools
@@ -2040,13 +2365,26 @@ export default function SupplierHubDashboardPage({
     ];
     const actions = [...actionsBase].sort((a, b) => b.score - a.score).slice(0, 4);
 
-    const disputeRatePct = (disputeNow / Math.max(1, volumeNow)) * 100;
+    const disputeRatePct =
+      role === 'seller'
+        ? (Number(sellerCounts.disputesOpen ?? 0) / Math.max(1, Number(sellerCounts.orders ?? volumeNow))) * 100
+        : (disputeNow / Math.max(1, volumeNow)) * 100;
     const trustBreakdown = {
-      kyc: clamp(86 - riskBoost * 14 + (role === 'provider' ? 2 : 0), 40, 100),
+      kyc:
+        role === 'seller'
+          ? clamp(trustRaw, 40, 100)
+          : clamp(86 - riskBoost * 14 + (role === 'provider' ? 2 : 0), 40, 100),
       shippingSla: clamp(health.sla, 0, 100),
-      disputeRate: clamp(100 - disputeRatePct * 14 - riskBoost * 6, 30, 100),
+      disputeRate: clamp(100 - disputeRatePct * 14 - (role === 'seller' ? 0 : riskBoost * 6), 30, 100),
       responseTime: clamp(health.response, 0, 100),
-      productQuality: clamp(90 - riskBoost * 12 + (filterMeta.hasMLDZ ? 2 : 0), 40, 100),
+      productQuality:
+        role === 'seller'
+          ? clamp(
+              100 - ((Number(sellerCounts.lowStockListings ?? 0) + Number(sellerCounts.outOfStockListings ?? 0)) * 8),
+              40,
+              100
+            )
+          : clamp(90 - riskBoost * 12 + (filterMeta.hasMLDZ ? 2 : 0), 40, 100),
       score: 0,
     };
     trustBreakdown.score = Math.round(
@@ -2375,7 +2713,7 @@ export default function SupplierHubDashboardPage({
       return;
     }
 
-    // No backend here—return a practical, deterministic “AI-like” suggestion based on current signals
+    // Build drilldown suggestions from the current backend-fed dashboard signals.
     const drivers = model.smart?.drivers?.slice(0, 3) ?? [];
     const alerts = model.smart?.alerts?.slice(0, 3) ?? [];
 

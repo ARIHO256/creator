@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierLiveReplaysClipsPage.jsx
@@ -22,6 +23,112 @@ import { useNavigate } from "react-router-dom";
  */
 
 const ORANGE = "#f77f00";
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function formatReplayDate(iso) {
+  if (!iso) return "Unknown date";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
+function formatReplayDuration(totalSeconds) {
+  const safe = Math.max(0, Number(totalSeconds || 0));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function defaultReplaySuggestions(replay) {
+  const totalDurationSec = Math.max(90, Number(replay?.totalDurationSec || 0));
+  const firstEnd = Math.min(totalDurationSec, 75);
+  const midStart = Math.max(15, Math.round(totalDurationSec * 0.35));
+  const midEnd = Math.min(totalDurationSec, midStart + 45);
+  const lateStart = Math.max(30, Math.round(totalDurationSec * 0.75));
+  const lateEnd = Math.min(totalDurationSec, lateStart + 45);
+  return [
+    {
+      id: `${replay.id}-hook`,
+      label: "Hook + opening moment",
+      start: 15,
+      end: firstEnd,
+      tags: ["Early retention", "Top replay moment"],
+    },
+    {
+      id: `${replay.id}-proof`,
+      label: "Product proof moment",
+      start: midStart,
+      end: midEnd,
+      tags: ["Proof", "Conversion intent"],
+    },
+    {
+      id: `${replay.id}-countdown`,
+      label: "Countdown + CTA moment",
+      start: lateStart,
+      end: lateEnd,
+      tags: ["Urgency", "Replay-ready"],
+    },
+  ].filter((entry) => entry.end > entry.start);
+}
+
+function normalizeReplay(value) {
+  const data = asObject(value?.data);
+  const totalDurationSec = Math.max(
+    90,
+    Number(data.totalDurationSec ?? data.durationSec ?? data.durationSeconds ?? 1200)
+  );
+  const performanceTags = asArray(data.performanceTags).map((tag) => String(tag)).filter(Boolean);
+  const aiSuggestions = asArray(data.aiSuggestions).map((entry, index) => {
+    const safe = asObject(entry);
+    return {
+      id: String(safe.id ?? `${value.id}-suggestion-${index + 1}`),
+      label: String(safe.label ?? `Highlight ${index + 1}`),
+      start: Number(safe.start ?? 0),
+      end: Number(safe.end ?? 0),
+      tags: asArray(safe.tags).map((tag) => String(tag)).filter(Boolean),
+    };
+  }).filter((entry) => entry.end > entry.start);
+
+  return {
+    id: String(value.id || ""),
+    title: String(data.title || value.title || "Replay"),
+    status:
+      String(value.status || "draft").toLowerCase() === "published"
+        ? "Published"
+        : String(value.status || "draft").toLowerCase() === "archived"
+          ? "Private"
+          : "Draft",
+    date: formatReplayDate(data.endedISO || value.updatedAt || value.createdAt),
+    duration: String(data.durationLabel || formatReplayDuration(totalDurationSec)),
+    totalDurationSec,
+    views: Number(data.views ?? data.viewers ?? 0),
+    sales: Number(data.sales ?? data.orders ?? 0),
+    supplier: String(data.supplier || data.supplierName || "Supplier"),
+    campaign: String(data.campaign || data.campaignName || "Campaign"),
+    host: String(data.host || data.hostName || "Host"),
+    hostRole: String(data.hostRole || "Supplier"),
+    approvalMode: String(data.approvalMode || "Manual"),
+    performanceTags: performanceTags.length ? performanceTags : ["Replay"],
+    thumbColor: String(data.thumbColor || "bg-amber-100 dark:bg-amber-900/30"),
+    aiSuggestions: aiSuggestions.length ? aiSuggestions : defaultReplaySuggestions({ id: value.id, totalDurationSec }),
+    raw: value,
+  };
+}
 
 function PageHeader({ pageTitle, badge, right }) {
   return (
@@ -113,67 +220,53 @@ export default function SupplierLiveReplaysClipsPage() {
   });
 
   const [replays, setReplays] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const selectedReplay = replays.find((r) => r.id === selectedReplayId) || replays[0] || null;
 
   const aiClipSuggestions = useMemo(() => {
     if (!selectedReplay) return [];
-
-    if (selectedReplay.id === "R-101") {
-      return [
-        {
-          id: 1,
-          label: "Hook + first charger demo",
-          start: 15,
-          end: 75,
-          tags: ["Hook within first 3 seconds", "Demo clarity"]
-        },
-        {
-          id: 2,
-          label: "Installation moment",
-          start: 420,
-          end: 465,
-          tags: ["Proof", "High comments"]
-        },
-        {
-          id: 3,
-          label: "Flash deal countdown",
-          start: 900,
-          end: 945,
-          tags: ["Urgency", "Sales spike"]
-        }
-      ];
-    }
-
-    if (selectedReplay.id === "R-102") {
-      return [
-        {
-          id: 1,
-          label: "Gadget unboxing moment",
-          start: 120,
-          end: 180,
-          tags: ["Unboxing", "Reactions spike"]
-        },
-        {
-          id: 2,
-          label: "Top 3 gadgets summary",
-          start: 2100,
-          end: 2160,
-          tags: ["Summary", "Shareable"]
-        }
-      ];
-    }
-
-    return [
-      {
-        id: 1,
-        label: "Warm welcome + show outline",
-        start: 30,
-        end: 90,
-        tags: ["Warm opener", "Faith-compatible tone"]
-      }
-    ];
+    return selectedReplay.aiSuggestions || [];
   }, [selectedReplay]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        let replayRows = await sellerBackendApi.getLiveReplays();
+        if (!replayRows.length) {
+          const sessions = await sellerBackendApi.getLiveSessions();
+          const endedSessions = sessions.filter((session) => {
+            const status = String(session.status || "").toLowerCase();
+            return status === "ended" || status === "live" || status === "scheduled";
+          });
+          replayRows = await Promise.all(
+            endedSessions.slice(0, 12).map((session) => sellerBackendApi.getLiveReplayBySession(String(session.id || "")))
+          );
+        }
+        if (cancelled) return;
+        const next = replayRows.map((entry) => normalizeReplay(entry));
+        setReplays(next);
+        setSelectedReplayId((prev) => (prev && next.some((entry) => entry.id === prev) ? prev : next[0]?.id || ""));
+      } catch {
+        if (!cancelled) {
+          setReplays([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleApplySuggestion = (suggestion) => {
     setClipStart(suggestion.start);
@@ -195,11 +288,48 @@ export default function SupplierLiveReplaysClipsPage() {
   };
 
   const handlePublishReplay = (id) => {
-    setReplays((prev) => prev.map((r) => (r.id === id ? { ...r, status: "Published" } : r)));
+    const replay = replays.find((entry) => entry.id === id);
+    if (!replay) return;
+    void sellerBackendApi
+      .publishLiveReplay(id, {
+        ...replay.raw?.data,
+        title: replay.title,
+        campaignName: replay.campaign,
+        supplierName: replay.supplier,
+        hostName: replay.host,
+        hostRole: replay.hostRole,
+        approvalMode: replay.approvalMode,
+        totalDurationSec: replay.totalDurationSec,
+        aiSuggestions: replay.aiSuggestions,
+      })
+      .then((updated) => {
+        const normalized = normalizeReplay(updated);
+        setReplays((prev) => prev.map((entry) => (entry.id === id ? normalized : entry)));
+      })
+      .catch(() => undefined);
   };
 
   const handleSetPrivate = (id) => {
-    setReplays((prev) => prev.map((r) => (r.id === id ? { ...r, status: "Private" } : r)));
+    const replay = replays.find((entry) => entry.id === id);
+    if (!replay) return;
+    void sellerBackendApi
+      .patchLiveReplay(id, {
+        ...replay.raw?.data,
+        status: "archived",
+        title: replay.title,
+        campaignName: replay.campaign,
+        supplierName: replay.supplier,
+        hostName: replay.host,
+        hostRole: replay.hostRole,
+        approvalMode: replay.approvalMode,
+        totalDurationSec: replay.totalDurationSec,
+        aiSuggestions: replay.aiSuggestions,
+      })
+      .then((updated) => {
+        const normalized = normalizeReplay(updated);
+        setReplays((prev) => prev.map((entry) => (entry.id === id ? normalized : entry)));
+      })
+      .catch(() => undefined);
   };
 
   const handleExportClip = () => {
@@ -618,7 +748,7 @@ function ClipEditorPanel({
   onChangeCta,
   secondsToTime
 }) {
-  const totalDurationSec = 1200; // pretend 20 min timeline for demo
+  const totalDurationSec = Math.max(90, Number(replay?.totalDurationSec || 1200));
   const clamp = (val) => Math.min(Math.max(val, 0), totalDurationSec);
 
   const handleStartChange = (e) => {

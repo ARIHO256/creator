@@ -742,47 +742,6 @@ const DEFAULT_ONBOARDING_LOOKUPS: OnboardingLookups = {
   policyPresets: DEFAULT_POLICY_PRESETS,
 };
 
-function safeJsonParse(str) {
-  if (!str) return null;
-  try {
-    return JSON.parse(str);
-  } catch {
-    return null;
-  }
-}
-
-function readStoredDraft(key) {
-  if (typeof window === "undefined") return null;
-  return safeJsonParse(window.localStorage.getItem(key));
-}
-
-function writeStoredDraft(key, value) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function clearStoredDraft(keys) {
-  if (typeof window === "undefined") return;
-  keys.forEach((key) => {
-    try {
-      window.localStorage.removeItem(key);
-    } catch {
-      // ignore storage failures
-    }
-  });
-}
-
-function draftMatchesActiveUser(draft, activeUserId) {
-  if (!draft || typeof draft !== "object") return false;
-  if (!activeUserId) return true;
-  const owner = String(draft.owner || draft.email || "").toLowerCase();
-  return !owner || owner === activeUserId;
-}
-
 function clamp(n, a, b) {
   return Math.min(b, Math.max(a, n));
 }
@@ -1830,9 +1789,6 @@ export default function SellerOnboardingProV4_JS() {
 
     const hydrate = async () => {
       try {
-        const storedForm = readStoredDraft(STORAGE.form);
-        const storedUi = readStoredDraft(STORAGE.ui);
-        const storedReview = readStoredDraft(STORAGE.review);
         const [
           onboardingResult,
           lookupsResult,
@@ -1865,10 +1821,6 @@ export default function SellerOnboardingProV4_JS() {
           lookupPayload as Record<string, unknown> | null
         );
         const normalizedScreen = normalizeScreenUi(screenState as Record<string, unknown> | null);
-        const normalizedStoredScreen = normalizeScreenUi({
-          ui: storedUi && typeof storedUi === "object" ? storedUi : {},
-          review: storedReview && typeof storedReview === "object" ? storedReview : {},
-        });
         const approvalPayload =
           accountApproval && typeof accountApproval === "object"
             ? (accountApproval as Record<string, unknown>)
@@ -1887,21 +1839,9 @@ export default function SellerOnboardingProV4_JS() {
         const nextProfiles = normalizeShippingProfiles(
           shippingPayload as Record<string, unknown> | null
         ).filter((profile) => !profile.archived);
-        const resolvedForm = draftMatchesActiveUser(storedForm, activeUserId)
-          ? normalizeSellerFormPayload(
-              storedForm as Record<string, unknown>,
-              normalizedForm,
-              activeUserId
-            )
-          : normalizedForm;
-        const resolvedUi =
-          storedUi && typeof storedUi === "object"
-            ? { ...normalizedScreen.ui, ...normalizedStoredScreen.ui, step: 1 }
-            : { ...normalizedScreen.ui, step: 1 };
-        const resolvedReview =
-          storedReview && typeof storedReview === "object"
-            ? { ...normalizedScreen.review, ...normalizedStoredScreen.review }
-            : normalizedScreen.review;
+        const resolvedForm = normalizedForm;
+        const resolvedUi = { ...normalizedScreen.ui, step: 1 };
+        const resolvedReview = normalizedScreen.review;
         if (
           String(approvalPayload?.status || "").toLowerCase() === "approved" &&
           !resolvedReview.approvedAt
@@ -1944,13 +1884,6 @@ export default function SellerOnboardingProV4_JS() {
       cancelled = true;
     };
   }, [activeUserId, createEmptyForm, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    writeStoredDraft(STORAGE.form, form);
-    writeStoredDraft(STORAGE.ui, ui);
-    writeStoredDraft(STORAGE.review, review);
-  }, [form, hydrated, review, ui]);
 
   useEffect(() => {
     if (!hydrated || !saveReadyRef.current) return;
@@ -2367,7 +2300,6 @@ export default function SellerOnboardingProV4_JS() {
     if (!activeUserId) return;
     const owner = String(form.owner || form.email || "").toLowerCase();
     if (owner && owner !== activeUserId) {
-      clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
       const fresh = createEmptyForm();
       setForm(fresh);
       const id = activeUserId || form.email || form.storeName || "";
@@ -2425,7 +2357,6 @@ export default function SellerOnboardingProV4_JS() {
     setForm(fresh);
     setReview(DEFAULT_REVIEW_STATE);
     setStep(1);
-    clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
     try {
       await Promise.all([
         sellerBackendApi.resetOnboarding(),

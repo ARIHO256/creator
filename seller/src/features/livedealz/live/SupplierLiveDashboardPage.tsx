@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierLiveDashboardPage.jsx
@@ -43,6 +44,15 @@ const ROUTES = {
 };
 
 const cx = (...xs) => xs.filter(Boolean).join(" ");
+
+function normalizeLiveDashboardWorkspace(payload) {
+  return {
+    sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
+    suppliers: Array.isArray(payload?.suppliers) ? payload.suppliers : [],
+    campaigns: Array.isArray(payload?.campaigns) ? payload.campaigns : [],
+    hosts: Array.isArray(payload?.hosts) ? payload.hosts : []
+  };
+}
 
 /* --------------------------------- Helpers -------------------------------- */
 
@@ -1218,10 +1228,11 @@ export default function SupplierLiveDashboardPage() {
   const toastApi = useToast();
   const { run, isPending } = useAsyncAction(toastApi);
 
-  const [sessions, setSessions] = useState<Array<Record<string, any>>>([]);
-  const suppliers = useMemo<Array<Record<string, any>>>(() => [], []);
-  const campaigns = useMemo<Array<Record<string, any>>>(() => [], []);
-  const hosts = useMemo<Array<Record<string, any>>>(() => [], []);
+  const [workspace, setWorkspace] = useState(() => normalizeLiveDashboardWorkspace({}));
+  const sessions = workspace.sessions;
+  const suppliers = workspace.suppliers;
+  const campaigns = workspace.campaigns;
+  const hosts = workspace.hosts;
 
   // Filters
   const [tab, setTab] = useState("All");
@@ -1244,6 +1255,11 @@ export default function SupplierLiveDashboardPage() {
   // Active path highlight (mirrors isActivePath behavior)
   const [pathname, setPathname] = useState("");
   const currentPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
+
+  const loadWorkspace = async () => {
+    const payload = await sellerBackendApi.getLiveDashboardWorkspace();
+    setWorkspace(normalizeLiveDashboardWorkspace(payload));
+  };
 
   const isActivePath = (route) => {
     if (!route) return false;
@@ -1273,6 +1289,26 @@ export default function SupplierLiveDashboardPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     setPathname(window.location.pathname);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        const payload = await sellerBackendApi.getLiveDashboardWorkspace();
+        if (!active) return;
+        setWorkspace(normalizeLiveDashboardWorkspace(payload));
+      } catch {
+        if (!active) return;
+        toastApi.showError("Unable to load live dashboard");
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -1435,29 +1471,23 @@ export default function SupplierLiveDashboardPage() {
   async function onCreateSession(payload) {
     await run(
       async () => {
-        const heroImageUrl = "https://images.unsplash.com/photo-1520975958225-82284e3d2e52?auto=format&fit=crop&w=1200&q=60";
-        const created = {
+        const created = await sellerBackendApi.createLiveSession({
           id: payload.id,
           title: payload.title,
-          status: "Draft",
-          supplierId: payload.supplierId,
+          status: "draft",
+          scheduledAt: payload.startISO,
           campaignId: payload.campaignId,
           hostId: payload.hostId,
           hostRole: payload.hostRole,
-          platforms: payload.platforms,
-          heroImageUrl,
-          heroVideoUrl: SAMPLE_VIDEO_1,
-          desktopMode: payload.desktopMode,
+          supplierId: payload.supplierId,
           startISO: payload.startISO,
           endISO: payload.endISO,
-          peakViewers: 0,
-          avgWatchMin: 0,
-          chatRate: 0,
-          gmv: 0,
-          crewConflicts: 0
-        };
+          desktopMode: payload.desktopMode,
+          platforms: payload.platforms,
+          heroVideoUrl: SAMPLE_VIDEO_1
+        });
 
-        setSessions((prev) => [created, ...prev]);
+        await loadWorkspace();
         openBuilderPage(created.id);
       },
       {

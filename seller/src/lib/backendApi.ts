@@ -80,6 +80,28 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getSellerDashboard: () => request<Record<string, unknown>>("/api/seller/dashboard"),
+  getSellerDashboardSummary: (query?: {
+    range?: string;
+    from?: string;
+    to?: string;
+    channels?: string[];
+    marketplaces?: string[];
+    warehouses?: string[];
+  }) => {
+    const params = new URLSearchParams();
+    if (query?.range) params.set("range", query.range);
+    if (query?.from) params.set("from", query.from);
+    if (query?.to) params.set("to", query.to);
+    if (query?.channels?.length) params.set("channels", query.channels.join(","));
+    if (query?.marketplaces?.length) params.set("marketplaces", query.marketplaces.join(","));
+    if (query?.warehouses?.length) params.set("warehouses", query.warehouses.join(","));
+    const search = params.toString();
+    return request<Record<string, unknown>>(`/api/seller/dashboard/summary${search ? `?${search}` : ""}`);
+  },
+  getDashboardFeed: () => request<Record<string, unknown>>("/api/dashboard/feed"),
+  getLiveFeedWorkspace: () => request<Record<string, unknown>>("/api/dashboard/live-feed"),
+  getSellerPublicProfile: () => request<Record<string, unknown>>("/api/dashboard/seller-public-profile"),
+  getDashboardSummary: () => request<Record<string, unknown>>("/api/dashboard/summary"),
   getSellerOrders: () =>
     request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
       "/api/seller/orders"
@@ -164,6 +186,27 @@ export const sellerBackendApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  getMyStorefront: () => request<Record<string, unknown>>("/api/storefront/me"),
+  patchMyStorefront: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/storefront/me", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getTaxonomyCoverage: () => request<Array<Record<string, unknown>>>("/api/taxonomy/coverage"),
+  addTaxonomyCoverage: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/taxonomy/coverage", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchTaxonomyCoverage: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/taxonomy/coverage/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  removeTaxonomyCoverage: (id: string) =>
+    request<Record<string, unknown>>(`/api/taxonomy/coverage/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
   getPayoutMethods: () => request<{ methods?: unknown[] }>("/api/settings/payout-methods"),
   patchPayoutMethods: (body: { methods: unknown[] }) =>
     request<Record<string, unknown>>("/api/settings/payout-methods", {
@@ -217,6 +260,13 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getAnalyticsPage: () => request<Record<string, unknown>>("/api/analytics/page"),
+  getAnalyticsRankDetail: (query?: { range?: string; category?: string }) => {
+    const params = new URLSearchParams();
+    if (query?.range) params.set("range", query.range);
+    if (query?.category) params.set("category", query.category);
+    const search = params.toString();
+    return request<Record<string, unknown>>(`/api/analytics/rank-detail${search ? `?${search}` : ""}`);
+  },
   patchAnalyticsPage: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/analytics/page", {
       method: "PATCH",
@@ -460,6 +510,12 @@ export const sellerBackendApi = {
   getProviderConsultations: () => request<Record<string, unknown>>("/api/provider/consultations"),
   getProviderBookings: () => request<Record<string, unknown>>("/api/provider/bookings"),
   getProviderPortfolio: () => request<Record<string, unknown>>("/api/provider/portfolio"),
+  patchProviderPortfolio: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/provider/portfolio", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getProviderQuoteTemplates: () => request<Record<string, unknown>>("/api/provider/quote-templates"),
   getProviderReviews: () => request<Record<string, unknown>>("/api/provider/reviews"),
   getProviderDisputes: () => request<Record<string, unknown>>("/api/provider/disputes"),
   getRoles: () => request<Record<string, unknown>>("/api/roles"),
@@ -499,9 +555,9 @@ export const sellerBackendApi = {
   getAuditLogs: () => request<Array<Record<string, unknown>>>("/api/audit-logs"),
   getWholesalePriceLists: () => request<Record<string, unknown>>("/api/wholesale/price-lists"),
   getWholesaleIncoterms: () => request<Record<string, unknown>>("/api/wholesale/incoterms"),
-  getLegacyDealzMarketplace: () => request<Record<string, unknown>>("/api/campaigns/legacy-marketplace"),
-  patchLegacyDealzMarketplace: (body: Record<string, unknown>) =>
-    request<Record<string, unknown>>("/api/campaigns/legacy-marketplace", {
+  getDealzMarketplace: () => request<Record<string, unknown>>("/api/campaigns/dealz-marketplace"),
+  patchDealzMarketplace: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/campaigns/dealz-marketplace", {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -521,6 +577,34 @@ export const sellerBackendApi = {
   getWholesaleQuotes: () => request<Record<string, unknown>>("/api/wholesale/quotes"),
   getLiveBuilder: (id: string) =>
     request<Record<string, unknown>>(`/api/live/builder/${encodeURIComponent(id)}`),
+  getLiveSessions: () => request<Array<Record<string, unknown>>>("/api/live/sessions"),
+  getLiveScheduleWorkspace: () => request<Record<string, unknown>>("/api/live/schedule-workspace"),
+  getLiveDashboardWorkspace: () => request<Record<string, unknown>>("/api/live/dashboard-workspace"),
+  createLiveSession: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/live/sessions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchLiveSession: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/live/sessions/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getLiveReplays: () => request<Array<Record<string, unknown>>>("/api/live/replays"),
+  getLiveReplay: (id: string) =>
+    request<Record<string, unknown>>(`/api/live/replays/${encodeURIComponent(id)}`),
+  getLiveReplayBySession: (sessionId: string) =>
+    request<Record<string, unknown>>(`/api/live/replays/by-session/${encodeURIComponent(sessionId)}`),
+  patchLiveReplay: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/live/replays/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  publishLiveReplay: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/live/replays/${encodeURIComponent(id)}/publish`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   saveLiveBuilder: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/live/builder/save", {
       method: "POST",
@@ -545,10 +629,16 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getAdzMarketplace: () => request<Array<Record<string, unknown>>>("/api/adz/marketplace"),
+  getAdzBuilderConfig: () => request<Record<string, unknown>>("/api/adz/builder-config"),
   getAdzBuilder: (id: string) =>
     request<Record<string, unknown>>(`/api/adz/builder/${encodeURIComponent(id)}`),
   saveAdzBuilder: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/adz/builder/save", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  validateAdzSchedule: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/adz/validate-schedule", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -559,7 +649,64 @@ export const sellerBackendApi = {
     }),
   getAdzPerformance: (id: string) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}/performance`),
+  getCreators: () => request<Array<Record<string, unknown>>>("/api/creators"),
+  getSellers: () => request<Array<Record<string, unknown>>>("/api/sellers"),
+  followSeller: (id: string, body: { follow?: boolean }) =>
+    request<Record<string, unknown>>(`/api/sellers/${encodeURIComponent(id)}/follow`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getDiscoveryOpportunities: () => request<Array<Record<string, unknown>>>("/api/opportunities"),
+  getCreatorProfile: (id: string) =>
+    request<Record<string, unknown>>(`/api/creators/${encodeURIComponent(id)}/profile`),
+  followCreator: (id: string, body: { follow?: boolean }) =>
+    request<Record<string, unknown>>(`/api/creators/${encodeURIComponent(id)}/follow`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getMyCreatorsWorkspace: () => request<Record<string, unknown>>("/api/my-creators/workspace"),
+  getCollaborationContracts: () => request<Array<Record<string, unknown>>>("/api/contracts"),
+  getCollaborationTask: (id: string) =>
+    request<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(id)}`),
+  getCollaborationTasks: () => request<Array<Record<string, unknown>>>("/api/tasks"),
+  createCollaborationTask: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/tasks", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchCollaborationTask: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  createCollaborationTaskComment: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(id)}/comments`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  createCollaborationTaskAttachment: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(id)}/attachments`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  terminateCollaborationContract: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/contracts/${encodeURIComponent(id)}/terminate-request`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getLiveStudioDefault: () => request<Record<string, unknown>>("/api/live/studio/default"),
+  patchLiveStudio: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/live/studio/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getLiveToolConfig: (key: string) =>
+    request<Record<string, unknown>>(`/api/tools/${encodeURIComponent(key)}`),
+  patchLiveToolConfig: (key: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/tools/${encodeURIComponent(key)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   startLiveStudio: (id: string) =>
     request<Record<string, unknown>>(`/api/live/studio/${encodeURIComponent(id)}/start`, {
       method: "POST",

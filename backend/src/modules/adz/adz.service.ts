@@ -8,6 +8,24 @@ import { PayloadSanitizerOptions, normalizeIdentifier, sanitizePayload } from '.
 export class AdzService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async builderConfig() {
+    const key = 'seller_adz_builder_config';
+    const existing = await this.prisma.systemContent.findUnique({ where: { key } });
+    if (existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)) {
+      return existing.payload as Record<string, unknown>;
+    }
+    const payload = this.defaultBuilderConfig();
+    const record = await this.prisma.systemContent.upsert({
+      where: { key },
+      update: { payload: payload as Prisma.InputJsonValue },
+      create: {
+        key,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+    return (record.payload as Record<string, unknown>) ?? payload;
+  }
+
   async builder(id: string, userId: string) {
     const builder = await this.prisma.adzBuilder.findFirst({
       where: { id, userId }
@@ -161,6 +179,35 @@ export class AdzService {
     };
   }
 
+  async validateSchedule(userId: string, body: Record<string, unknown>) {
+    const sanitized = this.ensureObjectPayload(body, { maxDepth: 4, maxArrayLength: 25, maxKeys: 25 });
+    const campaignId = typeof sanitized.campaignId === 'string' ? sanitized.campaignId : '';
+    const start = this.parseDate(sanitized.startAt);
+    const end = this.parseDate(sanitized.endAt);
+    if (!campaignId || !start || !end) {
+      throw new BadRequestException('campaignId, startAt, and endAt are required');
+    }
+    if (end.getTime() <= start.getTime()) {
+      return { ok: false, error: 'End time must be after start time' };
+    }
+    const campaign = await this.prisma.adzCampaign.findFirst({ where: { id: campaignId, userId } });
+    if (!campaign) {
+      return { ok: false, error: 'Invalid campaign selected' };
+    }
+    const data = campaign.data && typeof campaign.data === 'object' && !Array.isArray(campaign.data)
+      ? campaign.data as Record<string, unknown>
+      : {};
+    const campaignStart = this.parseDate((data as any).startISO) ?? this.parseDate((data as any).startsAtISO);
+    const campaignEnd = this.parseDate((data as any).endISO) ?? this.parseDate((data as any).endsAtISO);
+    if (campaignStart && start.getTime() < campaignStart.getTime()) {
+      return { ok: false, error: 'Ad starts before the selected campaign window' };
+    }
+    if (campaignEnd && end.getTime() > campaignEnd.getTime()) {
+      return { ok: false, error: 'Ad ends after the selected campaign window' };
+    }
+    return { ok: true };
+  }
+
   async promoAd(userId: string, id: string) {
     const promo = await this.prisma.promoAd.findFirst({
       where: { id, userId }
@@ -228,6 +275,53 @@ export class AdzService {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
+  }
+
+  private parseDate(value?: unknown) {
+    if (!value) return null;
+    const date = new Date(String(value));
+    if (Number.isNaN(date.valueOf())) return null;
+    return date;
+  }
+
+  private defaultBuilderConfig() {
+    return {
+      utmPresets: [
+        {
+          id: 'utm1',
+          name: 'Marketplace default',
+          description: 'Standard marketplace attribution for seller-paid traffic.',
+          params: {
+            utm_source: 'mylivedealz',
+            utm_medium: 'shoppable_adz',
+            utm_campaign: 'seller_launch',
+            utm_content: 'default'
+          }
+        },
+        {
+          id: 'utm2',
+          name: 'Creator collab',
+          description: 'Use when a creator is amplifying the ad.',
+          params: {
+            utm_source: 'creator',
+            utm_medium: 'shoppable_adz',
+            utm_campaign: 'creator_collab',
+            utm_content: 'cohost'
+          }
+        },
+        {
+          id: 'utm3',
+          name: 'Flash sale',
+          description: 'Short-window promo tagging for countdown drops.',
+          params: {
+            utm_source: 'mylivedealz',
+            utm_medium: 'flash_sale',
+            utm_campaign: 'limited_drop',
+            utm_content: 'countdown'
+          }
+        }
+      ]
+    };
   }
 
   private serializeBuilder(builder: {

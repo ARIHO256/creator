@@ -30,6 +30,16 @@ export class DiscoveryController {
     return this.discoveryService.mySellers(user.sub, query);
   }
 
+  @Get('creators')
+  creators(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.discoveryService.creators(user.sub, query);
+  }
+
+  @Get('creators/:id/profile')
+  creatorProfile(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.discoveryService.creatorProfile(user.sub, id);
+  }
+
   @Post('creators/:id/follow')
   @RateLimit({ limit: 30, windowMs: 60_000 })
   followCreator(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: { follow?: boolean }) {
@@ -39,6 +49,11 @@ export class DiscoveryController {
   @Get('my-creators')
   myCreators(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
     return this.discoveryService.myCreators(user.sub, query);
+  }
+
+  @Get('my-creators/workspace')
+  myCreatorsWorkspace(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.discoveryService.myCreatorsWorkspace(user.sub, query);
   }
 
   @Get('opportunities')

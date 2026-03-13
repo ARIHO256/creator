@@ -292,10 +292,20 @@ export class WorkflowService {
         payload ?? { status: 'pending', progressPercent: 0, requiredActions: [], documents: [] }
     );
   }
-  screenState(userId: string, key: string) {
-    return this.getRecordPayload(userId, 'screen_state', key).then((payload) => payload ?? {});
+  async screenState(userId: string, key: string) {
+    const payload = await this.getRecordPayload(userId, 'screen_state', key);
+    if (payload) return payload;
+    if (key === 'provider-new-quote') {
+      const record = await this.upsertRecord(userId, 'screen_state', key, this.defaultProviderNewQuoteState());
+      return record.payload as Record<string, unknown>;
+    }
+    return {};
   }
   async patchScreenState(userId: string, key: string, body: Record<string, unknown>) {
+    if (key === 'provider-new-quote' && body.__resetToDefault === true) {
+      const record = await this.upsertRecord(userId, 'screen_state', key, this.defaultProviderNewQuoteState());
+      return record.payload as Record<string, unknown>;
+    }
     const current = (await this.screenState(userId, key)) as Record<string, unknown>;
     const next = {
       ...current,
@@ -857,6 +867,87 @@ export class WorkflowService {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
+  }
+
+  private defaultProviderNewQuoteState() {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const makeId = (prefix: string) => `${prefix}_${randomUUID().slice(0, 12)}`;
+    return {
+      meta: {
+        quoteId: `Q-${randomUUID().slice(0, 8).toUpperCase()}`,
+        title: 'Service quote',
+        currency: 'USD',
+        language: 'en',
+        status: 'Draft',
+        createdAt: now.toISOString()
+      },
+      client: {
+        name: '',
+        org: '',
+        email: '',
+        phone: '',
+        channel: 'EVzone Messages',
+        referenceId: ''
+      },
+      scope: {
+        summary: '',
+        deliverables: [
+          { id: makeId('del'), title: 'Discovery and requirements', detail: 'Clarify scope, constraints, and success metrics.' },
+          { id: makeId('del'), title: 'Execution', detail: 'Deliver service with progress updates.' }
+        ],
+        attachments: []
+      },
+      pricingPolicy: {
+        enforceGuardrails: true,
+        minMarginPct: 18,
+        allowOverride: true,
+        overrideReason: ''
+      },
+      lines: [
+        {
+          id: makeId('ln'),
+          name: 'Service package',
+          qty: 1,
+          unitCost: 120,
+          priceMode: 'markup',
+          markupPct: 40,
+          unitPrice: 0,
+          notes: ''
+        }
+      ],
+      discount: { type: 'none', value: 0 },
+      taxPct: 0,
+      timeline: {
+        startDate: today,
+        durationDays: 14,
+        milestones: [
+          { id: makeId('ms'), title: 'Kickoff', dueInDays: 1, percent: 20 },
+          { id: makeId('ms'), title: 'Delivery', dueInDays: 14, percent: 80 }
+        ],
+        notes: ''
+      },
+      terms: {
+        payment: {
+          model: 'milestones',
+          upfrontPct: 30,
+          netDays: 3,
+          acceptedMethods: ['EVzone Pay Wallet', 'Bank Transfer']
+        },
+        revisions: { included: 2, windowDays: 7 },
+        support: { included: true, windowDays: 14 },
+        confidentiality: true,
+        ip: 'client',
+        cancellation: 'If the client cancels after kickoff, the kickoff milestone is non-refundable.',
+        additional: ''
+      },
+      premium: {
+        templateId: 'tpl_standard',
+        autoConvertToContract: true,
+        contractType: 'Standard Service Contract'
+      },
+      updatedAt: now.toISOString()
+    };
   }
 
   private toUploadPayload(session: {

@@ -182,9 +182,9 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [screenShareOn, setScreenShareOn] = useState(false);
-  const [activeSceneId, setActiveSceneId] = useState("intro");
+  const [activeSceneId, setActiveSceneId] = useState("");
 
-  const [highlightedProductId, setHighlightedProductId] = useState("P-101");
+  const [highlightedProductId, setHighlightedProductId] = useState("");
   const [flashDealzActive, setFlashDealzActive] = useState(false);
   const [flashDealzSeconds, setFlashDealzSeconds] = useState(120);
   const [, setFlashConfigOpen] = useState(false);
@@ -219,6 +219,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   }, [location.state]);
 
   const [studioSessionId, setStudioSessionId] = useState("default");
+  const studioHydratedRef = useRef(false);
+  const studioAutosaveRef = useRef<number | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [coHosts, setCoHosts] = useState<CoHost[]>([]);
   const [storedLiveDraft, setStoredLiveDraft] = useState<StoredLiveDraft | null>(null);
@@ -295,16 +297,28 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
         setQaItems(asArray<QAItem>(payload.qaItems));
         setViewersList(asArray<Viewer>(payload.viewers));
         setAiPrompts(asArray<string>(payload.aiPrompts));
+        setPinnedMessage(typeof payload.pinnedMessage === "string" ? payload.pinnedMessage : null);
+        setPollActive(Boolean(payload.pollActive));
+        setPollQuestion(typeof payload.pollQuestion === "string" ? payload.pollQuestion : "");
+        setPollResults(asArray<number>(payload.pollResults));
+        setGiveawayActive(Boolean(payload.giveawayActive));
+        setGiveawayEntries(Number(payload.giveawayEntries ?? 0));
+        setViewerCount(Number(payload.viewerCount ?? 0));
+        setSalesCount(Number(payload.salesCount ?? 0));
+        setElapsedSeconds(Number(payload.elapsedSeconds ?? 0));
+        setActiveSceneId(String(payload.activeSceneId ?? asArray<Scene>(payload.scenes)[0]?.id ?? ""));
         if (nextGiveaways.length) {
           setSelectedGiveawayId((prev) => (prev ? prev : nextGiveaways[0].id));
         }
         if (nextProducts.length) {
           setHighlightedProductId((prev) => (prev ? prev : String(nextProducts[0].id)));
         }
+        studioHydratedRef.current = true;
       })
       .catch(() => {
         if (cancelled) return;
         setStoredLiveDraft({ giveaways: [], products: [] });
+        studioHydratedRef.current = true;
       });
 
     return () => {
@@ -558,15 +572,10 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       setPollQuestion("Do you like this product?");
     }
     setPollActive(true);
-    setPollResults([0, 0]);
-    // Simulate votes coming in
-    const interval = setInterval(() => {
-      setPollResults(prev => [
-        prev[0] + Math.floor(Math.random() * 3),
-        prev[1] + Math.floor(Math.random() * 2)
-      ]);
-    }, 2000);
-    setTimeout(() => clearInterval(interval), 30000);
+    const audienceBase = Math.max(viewersList.length, viewerCount, 1);
+    const positiveVotes = Math.max(1, Math.round(audienceBase * 0.58));
+    const otherVotes = Math.max(0, audienceBase - positiveVotes);
+    setPollResults([positiveVotes, otherVotes]);
     showToast("📊 Poll started!");
   };
 
@@ -593,20 +602,20 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       }
     }
     setGiveawayActive(true);
-    setGiveawayEntries(0);
-    // Simulate entries coming in
-    const interval = setInterval(() => {
-      setGiveawayEntries(prev => prev + Math.floor(Math.random() * 5) + 1);
-    }, 1500);
-    setTimeout(() => clearInterval(interval), 60000);
+    setGiveawayEntries(Math.max(viewersList.length, viewerCount, 0));
     showToast(`🎁 Giveaway started! Prize: ${giveawayPrizeLabel}. Viewers can enter now.`);
   };
 
   const handlePickWinner = () => {
     const activeGiveawayId = effectiveGiveawayId;
     const activePrizeLabel = giveawayPrizeLabel;
-    const winners = ["Sarah_99", "MikeDe", "VeganGal", "TechGiant", "MapleLeaf"];
-    const winner = winners[Math.floor(Math.random() * winners.length)];
+    const winners = viewersList.map((viewer) => viewer.name).filter(Boolean);
+    if (!winners.length) {
+      showToast("No active viewers are available to pick from yet.");
+      return;
+    }
+    const winnerIndex = Math.abs(giveawayEntries + chatMessages.length + salesCount) % winners.length;
+    const winner = winners[winnerIndex];
     setGiveawayActive(false);
     showToast(`🎉 Winner: @${winner}! Congratulations!`);
     // Add system message
@@ -689,29 +698,17 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   };
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [viewerCount, setViewerCount] = useState(842);
-  const [salesCount, setSalesCount] = useState(37);
+  const [viewerCount, setViewerCount] = useState(0);
+  const [salesCount, setSalesCount] = useState(0);
 
   // Timer effect
   useEffect(() => {
     if (mode !== "live") {
-      setElapsedSeconds(0);
       return;
     }
 
     const interval = setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
-
-      // Randomly fluctuate viewers
-      if (Math.random() > 0.7) {
-        setViewerCount((prev) => prev + Math.floor(Math.random() * 5) - 2);
-      }
-
-      // Randomly make a sale
-      if (Math.random() > 0.95) {
-        setSalesCount((prev) => prev + 1);
-        // Add chat message logic here if needed, but keeping it simple to fix errors first
-      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -733,6 +730,75 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
     return () => clearInterval(interval);
   }, [isRecording]);
+
+  useEffect(() => {
+    if (!studioHydratedRef.current) return;
+    if (studioAutosaveRef.current) window.clearTimeout(studioAutosaveRef.current);
+    studioAutosaveRef.current = window.setTimeout(() => {
+      void sellerBackendApi.patchLiveStudio(studioSessionId, {
+        products,
+        coHosts,
+        giveaways: storedLiveDraft?.giveaways ?? [],
+        attachments,
+        commerceGoal,
+        scenes,
+        runOfShow,
+        scriptCues,
+        salesEvents,
+        moments: momentMarkers,
+        chatMessages,
+        qaItems,
+        viewers: viewersList,
+        aiPrompts,
+        pinnedMessage,
+        pollActive,
+        pollQuestion,
+        pollResults,
+        giveawayActive,
+        giveawayEntries,
+        selectedGiveawayId,
+        giveawayRemainingById,
+        viewerCount,
+        salesCount,
+        elapsedSeconds,
+        activeSceneId,
+        highlightedProductId,
+      }).catch(() => undefined);
+    }, 500);
+
+    return () => {
+      if (studioAutosaveRef.current) window.clearTimeout(studioAutosaveRef.current);
+    };
+  }, [
+    studioSessionId,
+    products,
+    coHosts,
+    storedLiveDraft,
+    attachments,
+    commerceGoal,
+    scenes,
+    runOfShow,
+    scriptCues,
+    salesEvents,
+    momentMarkers,
+    chatMessages,
+    qaItems,
+    viewersList,
+    aiPrompts,
+    pinnedMessage,
+    pollActive,
+    pollQuestion,
+    pollResults,
+    giveawayActive,
+    giveawayEntries,
+    selectedGiveawayId,
+    giveawayRemainingById,
+    viewerCount,
+    salesCount,
+    elapsedSeconds,
+    activeSceneId,
+    highlightedProductId,
+  ]);
 
   const formatTime = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);

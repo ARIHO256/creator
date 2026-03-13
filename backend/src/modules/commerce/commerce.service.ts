@@ -30,7 +30,174 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { ExportsService } from '../exports/exports.service.js';
 
-const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
+const DEFAULT_SELLER_LISTING_WIZARD_CONFIG = {
+  markets: [
+    { id: 'market-ug', name: 'Uganda' },
+    { id: 'market-ke', name: 'Kenya' },
+    { id: 'market-rw', name: 'Rwanda' },
+    { id: 'market-tz', name: 'Tanzania' }
+  ],
+  steps: [
+    { id: 'core', label: 'Core Features', type: 'form' },
+    { id: 'preOwned', label: 'Pre-Owned Info', type: 'form', conditional: true },
+    { id: 'bev', label: 'BEV Data', type: 'form', conditional: true },
+    { id: 'extras', label: 'Extras', type: 'form' },
+    { id: 'gallery', label: 'Gallery', type: 'form' },
+    { id: 'pricing', label: 'Pricing', type: 'pricing' },
+    { id: 'warranty', label: 'Warranty', type: 'warranty', conditional: true },
+    { id: 'inventory', label: 'Inventory', type: 'inventory' },
+    { id: 'delivery', label: 'Markets & Delivery', type: 'delivery' },
+    { id: 'seo', label: 'Search & Discovery', type: 'seo' }
+  ],
+  variantOptions: {
+    colors: [
+      { value: 'white', label: 'White' },
+      { value: 'black', label: 'Black' },
+      { value: 'red', label: 'Red' },
+      { value: 'blue', label: 'Blue' },
+      { value: 'silver', label: 'Silver' }
+    ],
+    trims: [
+      { value: 'standard', label: 'Standard' },
+      { value: 'long_range', label: 'Long Range' },
+      { value: 'performance', label: 'Performance' }
+    ],
+    batteries: [
+      { value: '60', label: '60 kWh' },
+      { value: '75', label: '75 kWh' },
+      { value: '90', label: '90 kWh' }
+    ],
+    wheelSizes: [
+      { value: '17', label: '17"' },
+      { value: '18', label: '18"' },
+      { value: '19', label: '19"' }
+    ],
+    interiorColors: [
+      { value: 'black', label: 'Black' },
+      { value: 'beige', label: 'Beige' },
+      { value: 'white', label: 'White' }
+    ]
+  },
+  initialForm: {
+    title: '',
+    brand: '',
+    model: '',
+    bodyType: '',
+    keySellingPoint: '',
+    isUsed: false,
+    mileage: '',
+    owners: '',
+    serviceHistory: '',
+    powertrainType: 'BEV',
+    batteryCapacity: '',
+    range: '',
+    connectorType: '',
+    numPorts: '',
+    extras: {
+      fastCharger: false,
+      floorMats: false,
+      roofRack: false,
+      extendedWarranty: false
+    },
+    heroImageUploaded: false,
+    price: '',
+    currency: 'USD',
+    enableWholesale: false,
+    hasWarranty: false,
+    warrantyMonths: '',
+    warrantyDetails: '',
+    markets: {
+      allActive: true,
+      selectedIds: ['market-ug', 'market-ke', 'market-rw', 'market-tz']
+    },
+    allowPickup: true,
+    allowDelivery: true,
+    deliveryRegions: {
+      local: true,
+      upcountry: false,
+      crossBorder: false
+    },
+    deliverToBuyerWarehouse: false,
+    seoTitle: '',
+    seoDescription: '',
+    seoAudience: '',
+    seoKeywords: '',
+    variants: [
+      {
+        id: 'v1',
+        name: 'Standard Range',
+        color: 'White',
+        trim: 'Standard',
+        batteryPack: '60 kWh',
+        wheelSize: '17"',
+        interiorColor: 'Black',
+        description: 'Base configuration for daily city driving.',
+        specs: '60 kWh · 350 km range · Color: White · Trim: Standard',
+        price: '',
+        stockQty: '',
+        sku: '',
+        warrantyMonths: '',
+        wholesaleTiers: [
+          {
+            id: 'v1-t1',
+            minQty: '1',
+            maxQty: '',
+            price: '',
+            isFinal: false
+          }
+        ]
+      },
+      {
+        id: 'v2',
+        name: 'Long Range',
+        color: 'Black',
+        trim: 'Long Range',
+        batteryPack: '75 kWh',
+        wheelSize: '18"',
+        interiorColor: 'Beige',
+        description: 'Larger battery for longer trips.',
+        specs: '75 kWh · 450 km range · Color: Black · Trim: Long Range',
+        price: '',
+        stockQty: '',
+        sku: '',
+        warrantyMonths: '',
+        wholesaleTiers: [
+          {
+            id: 'v2-t1',
+            minQty: '1',
+            maxQty: '',
+            price: '',
+            isFinal: false
+          }
+        ]
+      },
+      {
+        id: 'v3',
+        name: 'Performance',
+        color: 'Red',
+        trim: 'Performance',
+        batteryPack: '90 kWh',
+        wheelSize: '19"',
+        interiorColor: 'Black',
+        description: 'High performance with stronger acceleration.',
+        specs: '90 kWh · Sport mode · Color: Red · Trim: Performance',
+        price: '',
+        stockQty: '',
+        sku: '',
+        warrantyMonths: '',
+        wholesaleTiers: [
+          {
+            id: 'v3-t1',
+            minQty: '1',
+            maxQty: '',
+            price: '',
+            isFinal: false
+          }
+        ]
+      }
+    ]
+  }
+};
 
 @Injectable()
 export class CommerceService {
@@ -85,7 +252,8 @@ export class CommerceService {
   async dashboardSummary(userId: string, query?: DashboardSummaryQueryDto) {
     const channels = this.parseCsv(query?.channels);
     const marketplaces = this.parseCsv(query?.marketplaces);
-    const cacheKey = `seller:dashboardSummary:${userId}:${query?.range ?? ''}:${query?.from ?? ''}:${query?.to ?? ''}:${channels.join('|')}:${marketplaces.join('|')}`;
+    const warehouses = this.parseCsv(query?.warehouses);
+    const cacheKey = `seller:dashboardSummary:${userId}:${query?.range ?? ''}:${query?.from ?? ''}:${query?.to ?? ''}:${channels.join('|')}:${marketplaces.join('|')}:${warehouses.join('|')}`;
     return this.cache.getOrSet(cacheKey, 15_000, async () => {
       const seller = await this.sellersService.ensureSellerProfile(userId);
       const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
@@ -101,7 +269,13 @@ export class CommerceService {
         sellerId: seller.id,
         createdAt: dateRange ?? undefined,
         ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {}),
-        ...(channels.length > 0 ? { channel: { in: channels } } : {})
+        ...(channels.length > 0 ? { channel: { in: channels } } : {}),
+        ...(warehouses.length > 0 ? { warehouse: { in: warehouses } } : {})
+      };
+
+      const listingWhere: Prisma.MarketplaceListingWhereInput = {
+        userId,
+        ...(marketplaces.length > 0 ? { marketplace: { in: marketplaces } } : {})
       };
 
       const reviewWhere: Prisma.ReviewWhereInput = {
@@ -110,30 +284,52 @@ export class CommerceService {
         createdAt: dateRange ?? undefined,
         ...(channels.length > 0 ? { channel: { in: channels } } : {})
       };
+      const relatedOrderFilter =
+        channels.length > 0 || warehouses.length > 0
+          ? {
+              order: {
+                ...(channels.length > 0 ? { channel: { in: channels } } : {}),
+                ...(warehouses.length > 0 ? { warehouse: { in: warehouses } } : {})
+              }
+            }
+          : {};
 
       const [
         listingCount,
         orderCount,
         openOrders,
         transactionTotals,
+        groupedTransactions,
         reviewAverage,
         reviewTotal,
         repliedCount,
         needsReply,
         flaggedCount,
-        negativeCount
+        negativeCount,
+        returnsOpen,
+        disputesOpen,
+        lowStockListings,
+        outOfStockListings,
+        activeListings,
+        draftListings,
+        unreadThreadRows,
+        unreadNotifications,
+        statusGroups,
+        channelGroups,
+        recentOrders,
+        recentTransactions
       ] = await Promise.all([
-        this.prisma.marketplaceListing.count({
-          where: {
-            userId,
-            ...(marketplaces.length > 0 ? { marketplace: { in: marketplaces } } : {})
-          }
-        }),
+        this.prisma.marketplaceListing.count({ where: listingWhere }),
         this.prisma.order.count({ where: orderWhere }),
         this.prisma.order.count({
           where: { ...orderWhere, status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] } }
         }),
         this.prisma.transaction.aggregate({
+          where: transactionWhere,
+          _sum: { amount: true }
+        }),
+        this.prisma.transaction.groupBy({
+          by: ['status'],
           where: transactionWhere,
           _sum: { amount: true }
         }),
@@ -149,6 +345,74 @@ export class CommerceService {
         this.prisma.review.count({ where: { ...reviewWhere, status: 'FLAGGED' } }),
         this.prisma.review.count({
           where: { ...reviewWhere, sentiment: { in: ['negative', 'NEGATIVE'] } }
+        }),
+        this.prisma.sellerReturn.count({
+          where: {
+            sellerId: seller.id,
+            createdAt: dateRange ?? undefined,
+            status: { in: ['REQUESTED', 'APPROVED', 'RECEIVED'] },
+            ...relatedOrderFilter
+          }
+        }),
+        this.prisma.sellerDispute.count({
+          where: {
+            sellerId: seller.id,
+            createdAt: dateRange ?? undefined,
+            status: { in: ['OPEN', 'UNDER_REVIEW'] },
+            ...relatedOrderFilter
+          }
+        }),
+        this.prisma.marketplaceListing.count({
+          where: { ...listingWhere, inventoryCount: { gt: 0, lte: 10 } }
+        }),
+        this.prisma.marketplaceListing.count({
+          where: { ...listingWhere, inventoryCount: { lte: 0 } }
+        }),
+        this.prisma.marketplaceListing.count({
+          where: { ...listingWhere, status: 'ACTIVE' }
+        }),
+        this.prisma.marketplaceListing.count({
+          where: { ...listingWhere, status: 'DRAFT' }
+        }),
+        this.prisma.messageThread.findMany({
+          where: { userId, lastMessageAt: { not: null } },
+          select: { lastReadAt: true, lastMessageAt: true }
+        }),
+        this.prisma.notification.count({
+          where: { userId, readAt: null }
+        }),
+        this.prisma.order.groupBy({
+          by: ['status'],
+          where: orderWhere,
+          _count: { _all: true }
+        }),
+        this.prisma.order.groupBy({
+          by: ['channel'],
+          where: orderWhere,
+          _count: { _all: true },
+          _sum: { total: true }
+        }),
+        this.prisma.order.findMany({
+          where: {
+            ...orderWhere,
+            createdAt: {
+              ...(dateRange ?? {}),
+              gte: this.resolveTrendWindowStart(query?.range, query?.from)
+            }
+          },
+          select: { createdAt: true, total: true, status: true },
+          orderBy: { createdAt: 'asc' }
+        }),
+        this.prisma.transaction.findMany({
+          where: {
+            ...transactionWhere,
+            createdAt: {
+              ...(dateRange ?? {}),
+              gte: this.resolveTrendWindowStart(query?.range, query?.from)
+            }
+          },
+          select: { createdAt: true, amount: true, status: true },
+          orderBy: { createdAt: 'asc' }
         })
       ]);
 
@@ -157,12 +421,30 @@ export class CommerceService {
       const responseRate = reviewTotal ? Math.round((repliedCount / reviewTotal) * 100) : 0;
       const negativePct = reviewTotal ? (negativeCount / reviewTotal) * 100 : 0;
       const trustBase = this.computeTrustScore(averageRating, responseRate, negativePct);
+      const transactionTotalsByStatus = new Map(
+        groupedTransactions.map((entry) => [String(entry.status), Number(entry._sum.amount ?? 0)])
+      );
+      const unreadThreads = unreadThreadRows.filter((entry) =>
+        !entry.lastReadAt || (entry.lastMessageAt && entry.lastReadAt < entry.lastMessageAt)
+      ).length;
+      const orderStatuses = this.toCountMap(statusGroups, 'status');
+      const channelBreakdown = channelGroups
+        .map((entry) => ({
+          name: String(entry.channel || 'Unknown'),
+          orders: entry._count._all,
+          revenue: Number(entry._sum.total ?? 0)
+        }))
+        .sort((a, b) => b.revenue - a.revenue || b.orders - a.orders);
+      const trend = this.buildSellerTrend(recentOrders, recentTransactions, query?.range, query?.from, query?.to);
+      const cashflow = this.buildCashflow(recentTransactions);
 
       if (
         listingCount === 0 &&
         orderCount === 0 &&
         revenueBase === 0 &&
-        reviewTotal === 0
+        reviewTotal === 0 &&
+        returnsOpen === 0 &&
+        disputesOpen === 0
       ) {
         return {
           ...this.emptyDashboardSummary(),
@@ -189,6 +471,15 @@ export class CommerceService {
           listings: listingCount,
           orders: orderCount,
           openOrders,
+          activeListings,
+          draftListings,
+          lowStockListings,
+          outOfStockListings,
+          returnsOpen,
+          disputesOpen,
+          unreadThreads,
+          unreadNotifications,
+          orderStatuses,
           reviews: {
             total: reviewTotal,
             averageRating,
@@ -196,7 +487,17 @@ export class CommerceService {
             flagged: flaggedCount,
             responseRate
           }
-        }
+        },
+        revenue: {
+          total: revenueBase,
+          pending: transactionTotalsByStatus.get(TransactionStatus.PENDING) ?? 0,
+          available: transactionTotalsByStatus.get(TransactionStatus.AVAILABLE) ?? 0,
+          paid: transactionTotalsByStatus.get(TransactionStatus.PAID) ?? 0,
+          averageOrderValue: orderCount > 0 ? Number((revenueBase / orderCount).toFixed(2)) : 0
+        },
+        channels: channelBreakdown,
+        trend,
+        cashflow
       };
     });
   }
@@ -232,6 +533,7 @@ export class CommerceService {
 
   async listingWizard(userId: string) {
     const taxonomy = await this.taxonomyService.listingWizardTaxonomy();
+    const config = await this.getSellerListingWizardConfig();
     const page = await this.prisma.appRecord.findFirst({
       where: {
         userId,
@@ -251,7 +553,8 @@ export class CommerceService {
     return {
       taxonomy,
       baseLines,
-      copy: (pagePayload.copy as Record<string, unknown> | undefined) ?? {}
+      copy: (pagePayload.copy as Record<string, unknown> | undefined) ?? {},
+      config
     };
   }
 
@@ -317,6 +620,15 @@ export class CommerceService {
         listings: 0,
         orders: 0,
         openOrders: 0,
+        activeListings: 0,
+        draftListings: 0,
+        lowStockListings: 0,
+        outOfStockListings: 0,
+        returnsOpen: 0,
+        disputesOpen: 0,
+        unreadThreads: 0,
+        unreadNotifications: 0,
+        orderStatuses: {},
         reviews: {
           total: 0,
           averageRating: 0,
@@ -324,8 +636,169 @@ export class CommerceService {
           flagged: 0,
           responseRate: 0
         }
-      }
+      },
+      revenue: {
+        total: 0,
+        pending: 0,
+        available: 0,
+        paid: 0,
+        averageOrderValue: 0
+      },
+      channels: [],
+      trend: {
+        labels: [],
+        revenue: [],
+        orders: []
+      },
+      cashflow: []
     };
+  }
+
+  private resolveTrendWindowStart(range?: string, from?: string) {
+    if (from) {
+      return this.parseDate(from, 'from');
+    }
+
+    const now = new Date();
+    const normalized = String(range || '7d').toLowerCase();
+    const start = new Date(now);
+    if (normalized === 'today') {
+      start.setHours(0, 0, 0, 0);
+      return start;
+    }
+    if (normalized === '30d') {
+      start.setDate(start.getDate() - 29);
+      return start;
+    }
+    if (normalized === '90d') {
+      start.setDate(start.getDate() - 89);
+      return start;
+    }
+    if (normalized === 'ytd') {
+      start.setMonth(0, 1);
+      start.setHours(0, 0, 0, 0);
+      return start;
+    }
+    start.setDate(start.getDate() - 6);
+    return start;
+  }
+
+  private toCountMap<T extends Record<string, unknown>>(rows: T[], key: keyof T) {
+    return rows.reduce<Record<string, number>>((acc, row) => {
+      const name = String(row[key] ?? '');
+      if (!name) return acc;
+      const count = Number((row as { _count?: { _all?: number } })._count?._all ?? 0);
+      acc[name] = count;
+      return acc;
+    }, {});
+  }
+
+  private buildSellerTrend(
+    orders: Array<{ createdAt: Date; total: number; status: string }>,
+    transactions: Array<{ createdAt: Date; amount: number; status: TransactionStatus }>,
+    range?: string,
+    from?: string,
+    to?: string
+  ) {
+    const buckets = this.buildTrendBuckets(range, from, to);
+    const revenue = new Array<number>(buckets.length).fill(0);
+    const orderCounts = new Array<number>(buckets.length).fill(0);
+
+    for (const entry of orders) {
+      const index = this.findTrendBucketIndex(entry.createdAt, buckets);
+      if (index >= 0) {
+        orderCounts[index] += 1;
+      }
+    }
+
+    for (const entry of transactions) {
+      const index = this.findTrendBucketIndex(entry.createdAt, buckets);
+      if (index >= 0) {
+        revenue[index] += Number(entry.amount ?? 0);
+      }
+    }
+
+    return {
+      labels: buckets.map((bucket) => bucket.label),
+      revenue: revenue.map((value) => Number(value.toFixed(2))),
+      orders: orderCounts
+    };
+  }
+
+  private buildCashflow(transactions: Array<{ createdAt: Date; amount: number; status: TransactionStatus }>) {
+    const today = new Date();
+    const buckets = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(today);
+      day.setDate(today.getDate() - (6 - index));
+      day.setHours(0, 0, 0, 0);
+      return {
+        key: day.toISOString().slice(0, 10),
+        label: day.toLocaleDateString('en-US', { weekday: 'short' }),
+        inflow: 0,
+        payout: 0
+      };
+    });
+
+    const bucketMap = new Map(buckets.map((bucket) => [bucket.key, bucket]));
+    for (const entry of transactions) {
+      const key = entry.createdAt.toISOString().slice(0, 10);
+      const bucket = bucketMap.get(key);
+      if (!bucket) continue;
+      if (entry.status === TransactionStatus.PAID) {
+        bucket.payout += Number(entry.amount ?? 0);
+      } else {
+        bucket.inflow += Number(entry.amount ?? 0);
+      }
+    }
+
+    return buckets.map((bucket) => ({
+      day: bucket.label,
+      inflow: Number(bucket.inflow.toFixed(2)),
+      payout: Number(bucket.payout.toFixed(2))
+    }));
+  }
+
+  private buildTrendBuckets(range?: string, from?: string, to?: string) {
+    const normalized = String(range || '7d').toLowerCase();
+    if (normalized === 'today') {
+      const start = this.resolveTrendWindowStart(range, from);
+      return Array.from({ length: 12 }, (_, index) => {
+        const bucketStart = new Date(start);
+        bucketStart.setHours(start.getHours() + index * 2, 0, 0, 0);
+        const bucketEnd = new Date(bucketStart);
+        bucketEnd.setHours(bucketStart.getHours() + 2, 0, 0, 0);
+        return {
+          label: `${String(bucketStart.getHours()).padStart(2, '0')}:00`,
+          start: bucketStart,
+          end: bucketEnd
+        };
+      });
+    }
+
+    const end = to ? this.parseDate(to, 'to') : new Date();
+    const start = this.resolveTrendWindowStart(range, from);
+    const days =
+      normalized === '30d' ? 30 :
+      normalized === '90d' ? 90 :
+      normalized === 'ytd' ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86_400_000)) :
+      7;
+
+    return Array.from({ length: days }, (_, index) => {
+      const bucketStart = new Date(start);
+      bucketStart.setDate(start.getDate() + index);
+      bucketStart.setHours(0, 0, 0, 0);
+      const bucketEnd = new Date(bucketStart);
+      bucketEnd.setDate(bucketStart.getDate() + 1);
+      return {
+        label: bucketStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        start: bucketStart,
+        end: bucketEnd
+      };
+    });
+  }
+
+  private findTrendBucketIndex(date: Date, buckets: Array<{ start: Date; end: Date }>) {
+    return buckets.findIndex((bucket) => date >= bucket.start && date < bucket.end);
   }
 
   async orders(userId: string, query?: SellerOrdersQueryDto) {
@@ -1289,35 +1762,28 @@ export class CommerceService {
     };
   }
 
-  private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: { id: { in: SELLERFRONT_COMPAT_RECORD_IDS } },
-      select: { payload: true }
+  private async getSellerListingWizardConfig() {
+    const existing = await this.prisma.systemContent.findUnique({
+      where: { key: 'seller_listing_wizard_config' }
     });
-
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload =
-        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
-          ? (record.payload as Record<string, unknown>)
-          : null;
-      const orders = Array.isArray(payload?.orders) ? payload.orders : [];
-      for (const entry of orders) {
-        const order =
-          entry && typeof entry === 'object' && !Array.isArray(entry)
-            ? (entry as Record<string, unknown>)
-            : null;
-        const id = typeof order?.id === 'string' ? order.id : '';
-        if (id) ids.add(id);
-      }
+    if (existing) {
+      return existing.payload;
     }
 
-    return Array.from(ids);
+    const created = await this.prisma.systemContent.create({
+      data: {
+        key: 'seller_listing_wizard_config',
+        payload: DEFAULT_SELLER_LISTING_WIZARD_CONFIG as Prisma.InputJsonValue
+      }
+    });
+    return created.payload;
+  }
+
+  private async loadCompatibilityOrderIds() {
+    return [];
   }
 
   private async isCompatibilityOrderId(id: string) {
-    if (!id) return false;
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
-    return compatibilityOrderIds.includes(id);
+    return Boolean(id) && false;
   }
 }

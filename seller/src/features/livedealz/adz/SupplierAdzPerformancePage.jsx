@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
+import { mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzPerformancePage.jsx
@@ -58,6 +60,101 @@ function moneyUSD(n) {
   if (!isFinite(n)) return "$0";
   const rounded = Math.round(n);
   return `$${rounded.toLocaleString()}`;
+}
+
+function asObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeCompensation(value, fallbackCurrency = "USD") {
+  const source = asObject(value);
+  const rawType = String(source.type || source.model || "").toLowerCase();
+  const commissionRateRaw = Number(source.commissionRate ?? source.commissionPct ?? source.rate ?? 0);
+  const commissionRate = commissionRateRaw > 1 ? commissionRateRaw / 100 : commissionRateRaw;
+  const flatFee = Number(source.flatFee ?? source.fee ?? 0);
+  const currency = String(source.currency || fallbackCurrency || "USD");
+
+  if (rawType.includes("hybrid")) {
+    return { type: "Hybrid", commissionRate, flatFee, currency };
+  }
+  if (rawType.includes("commission")) {
+    return { type: "Commission", commissionRate, currency };
+  }
+  if (rawType.includes("flat")) {
+    return { type: "Flat fee", flatFee, currency };
+  }
+  if (flatFee > 0 && commissionRate > 0) {
+    return { type: "Hybrid", commissionRate, flatFee, currency };
+  }
+  if (flatFee > 0) {
+    return { type: "Flat fee", flatFee, currency };
+  }
+  if (commissionRate > 0) {
+    return { type: "Commission", commissionRate, currency };
+  }
+  return undefined;
+}
+
+function normalizePerformanceVariants(value) {
+  return asArray(value)
+    .map((entry, index) => {
+      const variant = asObject(entry);
+      return {
+        id: String(variant.id || `variant_${index + 1}`),
+        label: String(variant.label || variant.name || String.fromCharCode(65 + index)),
+        impressions: Number(variant.impressions ?? variant.views ?? 0),
+        clicks: Number(variant.clicks ?? 0),
+        orders: Number(variant.orders ?? variant.purchases ?? 0),
+        earnings: Number(variant.earnings ?? variant.revenue ?? 0),
+      };
+    })
+    .filter((entry) => entry.id);
+}
+
+function mapCampaignToPerformanceEntity(campaignRecord, performanceRecord) {
+  const campaign = mapBackendAdzCampaign(campaignRecord);
+  const perf = asObject(performanceRecord);
+  const perfData = asObject(perf.data);
+  const offers = asArray(campaign.offers).map((offer) => ({
+    id: String(offer.id || ""),
+    kind: String(offer.type || "PRODUCT").toLowerCase() === "service" ? "service" : "product",
+    name: String(offer.name || "Offer"),
+    price: Number(offer.price ?? 0),
+    imageUrl: typeof offer.posterUrl === "string" ? offer.posterUrl : undefined,
+    videoUrl: typeof offer.videoUrl === "string" ? offer.videoUrl : undefined,
+  }));
+  const primaryItem = offers[0]?.name || String(campaign.primaryItem || "");
+  const currency = String(campaign.currency || perfData.currency || "USD");
+  const performanceVariants = normalizePerformanceVariants(perfData.variants || perfData.creativeBreakdown);
+
+  return {
+    id: String(campaign.id || ""),
+    kind: campaign.isMarketplace ? "ad" : "deal",
+    name: String(campaign.name || campaign.campaignName || "Untitled campaign"),
+    status: String(campaign.status || "Draft"),
+    platforms: asArray(campaign.platforms).map((entry) => String(entry || "Other")),
+    primaryItem,
+    items: offers,
+    impressions: Number(perfData.impressions ?? perfData.views ?? campaign.impressions ?? 0),
+    clicks: Number(perf.clicks ?? perfData.clicks ?? campaign.clicks ?? 0),
+    orders: Number(perf.purchases ?? perf.orders ?? perfData.orders ?? campaign.orders ?? 0),
+    earnings: Number(perf.earnings ?? perfData.earnings ?? campaign.earnings ?? 0),
+    creator:
+      campaign.creator && (campaign.creator.name || campaign.creator.handle)
+        ? {
+            name: String(campaign.creator.name || ""),
+            handle: String(campaign.creator.handle || "").replace(/^@/, ""),
+            avatarUrl: String(campaign.creator.avatarUrl || ""),
+          }
+        : undefined,
+    compensation: normalizeCompensation(campaign.compensation, currency),
+    hasBrokenLink: Boolean(campaign.hasBrokenLink ?? perfData.hasBrokenLink),
+    variants: performanceVariants.length ? performanceVariants : undefined,
+  };
 }
 
 async function safeCopy(text) {
@@ -904,68 +1001,35 @@ export default function SupplierAdzPerformancePage() {
   // In production routing: /supplier/adz/performance?entityId=...
   const entityId =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("entityId") || undefined : undefined;
+  const [entities, setEntities] = useState([]);
 
-  /** @type {PerformanceEntity[]} */
-  const demoEntities = useMemo(
-    () => [
-      {
-        id: "AD-10021",
-        kind: "ad",
-        name: "Flash Dealz: Power Bank",
-        status: "Live",
-        platforms: ["TikTok"],
-        primaryItem: "20,000mAh Power Bank",
-        items: [{ id: "p1", kind: "product", name: "20,000mAh Power Bank", price: 29 }],
-        impressions: 182400,
-        clicks: 9720,
-        orders: 412,
-        earnings: 1860,
-        creator: { name: "Kofi Mensah", handle: "kofi_live", avatarUrl: "https://i.pravatar.cc/100?img=11" },
-        compensation: { type: "Commission", commissionRate: 0.12 },
-        hasBrokenLink: false,
-        variants: [
-          { id: "vA", label: "A", impressions: 102000, clicks: 5000, orders: 210, earnings: 980 },
-          { id: "vB", label: "B", impressions: 80400, clicks: 4720, orders: 202, earnings: 880 }
-        ]
-      },
-      {
-        id: "DL-20002",
-        kind: "deal",
-        name: "Autumn Beauty Flash",
-        status: "Live",
-        platforms: ["TikTok", "Instagram"],
-        primaryItem: "Vitamin C serum (30ml)",
-        items: [
-          { id: "it_2a", kind: "product", name: "Vitamin C serum (30ml)", price: 24 },
-          { id: "it_2b", kind: "product", name: "Hydrating moisturizer", price: 18 }
-        ],
-        impressions: 290000,
-        clicks: 10150,
-        orders: 420,
-        earnings: 6100,
-        creator: { name: "Amina K", handle: "amina_live", avatarUrl: "https://i.pravatar.cc/100?img=47" },
-        compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 400, currency: "$" },
-        hasBrokenLink: true
-      },
-      {
-        id: "AD-99901",
-        kind: "ad",
-        name: "Supplier-hosted: Ring Light Bundle",
-        status: "Scheduled",
-        platforms: ["Facebook"],
-        primaryItem: "LED Ring Light Kit",
-        items: [{ id: "p9", kind: "product", name: "LED Ring Light Kit", price: 45 }],
-        impressions: 54000,
-        clicks: 2600,
-        orders: 94,
-        earnings: 940,
-        // no creator => supplier-hosted
-        compensation: undefined,
-        hasBrokenLink: false
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      try {
+        const campaigns = await sellerBackendApi.getAdzCampaigns();
+        const performanceResults = await Promise.allSettled(
+          campaigns.map((campaign) => sellerBackendApi.getAdzPerformance(String(campaign.id || "")))
+        );
+        if (!active) return;
+        const mapped = campaigns.map((campaign, index) =>
+          mapCampaignToPerformanceEntity(
+            campaign,
+            performanceResults[index]?.status === "fulfilled" ? performanceResults[index].value : {}
+          )
+        );
+        setEntities(mapped.filter((entry) => entry.id));
+      } catch (error) {
+        if (!active) return;
+        toast(error instanceof Error ? error.message : "Unable to load Adz performance.", "warning");
       }
-    ],
-    []
-  );
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 overflow-x-hidden transition-colors">
@@ -997,7 +1061,7 @@ export default function SupplierAdzPerformancePage() {
 
         <div className="mt-6">
           <SupplierAdzPerformance
-            entities={demoEntities}
+            entities={entities}
             selectedId={entityId}
             canView={true}
             entityLabelSingular="Ad"

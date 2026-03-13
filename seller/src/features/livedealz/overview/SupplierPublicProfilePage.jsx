@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierPublicProfilePage.jsx
@@ -71,6 +72,57 @@ function pad2(n) {
 function todayYMD() {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function normalizeSupplierProfilePayload(payload) {
+  const supplier = payload?.supplier || {};
+  return {
+    supplier: {
+      id: supplier.id || "",
+      name: supplier.name || "Supplier",
+      handle: supplier.handle || "@supplier",
+      initials: supplier.initials || "SP",
+      type: supplier.type || "Products",
+      region: supplier.region || "Global",
+      verified: Boolean(supplier.verified),
+      kyb: Boolean(supplier.kyb),
+      categoryLine: supplier.categoryLine || "Catalog-backed supplier",
+      shipsTo: supplier.shipsTo || "Ships to Africa / Asia"
+    },
+    about: {
+      text: payload?.about?.text || "",
+      collabPreferences: payload?.about?.collabPreferences || "",
+      categories: Array.isArray(payload?.about?.categories) ? payload.about.categories : [],
+      trustNote: payload?.about?.trustNote || ""
+    },
+    heroMetrics: {
+      avgCreatorPayout: payload?.heroMetrics?.avgCreatorPayout || "—",
+      rating: payload?.heroMetrics?.rating || "—",
+      fulfillment: payload?.heroMetrics?.fulfillment || "—",
+      skuCount: payload?.heroMetrics?.skuCount || "0",
+      responseTime: payload?.heroMetrics?.responseTime || "—"
+    },
+    performance: payload?.performance || {},
+    portfolio: Array.isArray(payload?.portfolio) ? payload.portfolio : [],
+    opportunities: Array.isArray(payload?.opportunities) ? payload.opportunities : [],
+    reviews: {
+      average: Number(payload?.reviews?.average || 0),
+      total: Number(payload?.reviews?.total || 0),
+      items: Array.isArray(payload?.reviews?.items) ? payload.reviews.items : []
+    },
+    socials: Array.isArray(payload?.socials) ? payload.socials : [],
+    campaigns: Array.isArray(payload?.campaigns) ? payload.campaigns : [],
+    tags: Array.isArray(payload?.tags) ? payload.tags : [],
+    compatibility: {
+      score: Number(payload?.compatibility?.score || 0),
+      summary: payload?.compatibility?.summary || "",
+      bullets: Array.isArray(payload?.compatibility?.bullets) ? payload.compatibility.bullets : []
+    },
+    quickFacts: {
+      facts: Array.isArray(payload?.quickFacts?.facts) ? payload.quickFacts.facts : [],
+      deckContent: payload?.quickFacts?.deckContent || ""
+    }
+  };
 }
 
 /* ----------------------------- Toast ----------------------------- */
@@ -246,9 +298,7 @@ function MetricCard({ label, value, sub }) {
 
 /* ----------------------------- Cards ----------------------------- */
 
-function SocialLinksCard({ onAction }) {
-  const socials = [];
-
+function SocialLinksCard({ socials, onAction }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Social links</h2>
@@ -278,9 +328,7 @@ function SocialLinksCard({ onAction }) {
   );
 }
 
-function PastCampaignsCard({ onAction }) {
-  const campaigns = [];
-
+function PastCampaignsCard({ campaigns, onAction }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -317,8 +365,7 @@ function PastCampaignsCard({ onAction }) {
   );
 }
 
-function TagsCard() {
-  const tags = [];
+function TagsCard({ tags }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Tags</h2>
@@ -339,7 +386,7 @@ function TagsCard() {
   );
 }
 
-function CompatibilityCard({ onAction }) {
+function CompatibilityCard({ compatibility, onAction }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <div className="flex items-center justify-between mb-1">
@@ -352,16 +399,17 @@ function CompatibilityCard({ onAction }) {
       <div className="flex items-center gap-3 mb-2">
         <div className="relative h-14 w-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center transition-colors">
           <div className="h-11 w-11 rounded-full bg-[#03cd8c] text-white flex items-center justify-center text-sm font-semibold dark:text-slate-50 dark:font-bold">
-            86%
+            {Math.max(0, Math.round(compatibility?.score || 0))}%
           </div>
         </div>
         <div className="flex-1 text-xs text-slate-600 dark:text-slate-200 font-medium">
           <p className="mb-1">
-            Strong fit for creators who do <span className="font-semibold">beauty flash dealz</span> and short clips.
+            {compatibility?.summary || "Compatibility details are available in workspace."}
           </p>
           <ul className="list-disc pl-4 space-y-0.5">
-            <li>Fast payouts and clear briefs.</li>
-            <li>High conversion with bundles and discounts.</li>
+            {(compatibility?.bullets || []).map((bullet) => (
+              <li key={bullet}>{bullet}</li>
+            ))}
           </ul>
         </div>
       </div>
@@ -375,15 +423,14 @@ function CompatibilityCard({ onAction }) {
   );
 }
 
-function QuickFactsCard({ onDownload }) {
+function QuickFactsCard({ facts, onDownload }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-xs font-semibold mb-2">Quick collaboration facts</h2>
       <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-200 font-medium">
-        <li>KYB verified supplier account.</li>
-        <li>Typical payout to creators: 48–72 hours after Admin approval.</li>
-        <li>Strong preference: bundles, limited-time discounts, clear claims.</li>
-        <li>Supports multi-creator campaigns and split deliverables.</li>
+        {(facts || []).map((fact) => (
+          <li key={fact}>{fact}</li>
+        ))}
       </ul>
       <button
         className="mt-3 w-full py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-sm hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 transition-colors"
@@ -680,18 +727,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
 export default function SupplierPublicProfilePage() {
   const navigate = useNavigate();
   const go = (path) => goTo(navigate, path);
-  const supplier = useMemo(
-    () => ({
-      name: "GlowUp Hub",
-      handle: "@glowuphub",
-      initials: "GH",
-      type: "Products (Wholesale + Retail)",
-      region: "East Africa",
-      verified: true,
-      kyb: true
-    }),
-    []
-  );
+  const [profileData, setProfileData] = useState(() => normalizeSupplierProfilePayload({}));
 
   const [viewerMode, setViewerMode] = useState("Creator"); // Creator | Supplier
 
@@ -708,18 +744,49 @@ export default function SupplierPublicProfilePage() {
     setToastText(msg);
   };
 
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        const payload = await sellerBackendApi.getSellerPublicProfile();
+        if (!active) return;
+        setProfileData(normalizeSupplierProfilePayload(payload));
+      } catch {
+        if (!active) return;
+        toast("Unable to load supplier profile", "error");
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const supplier = profileData.supplier;
+
   const toggleFollow = async () => {
     setPendingFollow(true);
-    await sleep(650);
-    setPendingFollow(false);
-    setIsFollowing((s) => !s);
-    toast(!isFollowing ? "Supplier saved to My Suppliers 🎉" : "Removed from My Suppliers", "success");
+    try {
+      if (supplier.id) {
+        await sellerBackendApi.followSeller(supplier.id, { follow: !isFollowing });
+      } else {
+        await sleep(300);
+      }
+      setIsFollowing((s) => !s);
+      toast(!isFollowing ? "Supplier saved to My Suppliers 🎉" : "Removed from My Suppliers", "success");
+    } catch {
+      toast("Unable to update saved supplier", "error");
+    } finally {
+      setPendingFollow(false);
+    }
   };
 
   const downloadBrandKit = async () => {
     toast("Preparing brand kit…", "info");
     await sleep(850);
-    const dummy = `Supplier Brand Kit\n\nBrand: ${supplier.name}\nHandle: ${supplier.handle}\n\nIncludes:\n- Logos\n- Color palette\n- Claims guidance\n- Product list summary\n`;
+    const dummy = profileData.quickFacts.deckContent || `Supplier Brand Kit\n\nBrand: ${supplier.name}\nHandle: ${supplier.handle}\n`;
     const blob = new Blob([dummy], { type: "text/plain" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -830,9 +897,9 @@ export default function SupplierPublicProfilePage() {
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700 transition-colors">
                       ✓ {supplier.kyb ? "KYB Verified" : "Verification pending"}
                     </span>
-                    <span className="text-slate-500 dark:text-slate-300">Beauty · Skincare · Bundles</span>
+                    <span className="text-slate-500 dark:text-slate-300">{supplier.categoryLine}</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">Based in {supplier.region} · Ships to Africa / Asia</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">Based in {supplier.region} · {supplier.shipsTo}</div>
                 </div>
               </div>
 
@@ -840,11 +907,11 @@ export default function SupplierPublicProfilePage() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col items-start md:items-end">
                     <span className="text-xs text-slate-500 dark:text-slate-300">Avg creator payout</span>
-                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">48–72h</span>
+                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">{profileData.heroMetrics.avgCreatorPayout}</span>
                   </div>
                   <div className="flex flex-col items-start md:items-end">
                     <span className="text-xs text-slate-500 dark:text-slate-300">Rating</span>
-                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">4.8/5</span>
+                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">{profileData.heroMetrics.rating}</span>
                   </div>
                 </div>
 
@@ -883,9 +950,9 @@ export default function SupplierPublicProfilePage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-200 font-medium">
-                  <span className="inline-flex items-center gap-1">🚚 <span className="text-slate-500 dark:text-slate-300">Fulfillment</span> <span className="font-semibold">Fast</span></span>
-                  <span className="inline-flex items-center gap-1">📦 <span className="text-slate-500 dark:text-slate-300">SKU</span> <span className="font-semibold">120+</span></span>
-                  <span className="inline-flex items-center gap-1">💬 <span className="text-slate-500 dark:text-slate-300">Response</span> <span className="font-semibold">~2h</span></span>
+                  <span className="inline-flex items-center gap-1">🚚 <span className="text-slate-500 dark:text-slate-300">Fulfillment</span> <span className="font-semibold">{profileData.heroMetrics.fulfillment}</span></span>
+                  <span className="inline-flex items-center gap-1">📦 <span className="text-slate-500 dark:text-slate-300">SKU</span> <span className="font-semibold">{profileData.heroMetrics.skuCount}</span></span>
+                  <span className="inline-flex items-center gap-1">💬 <span className="text-slate-500 dark:text-slate-300">Response</span> <span className="font-semibold">{profileData.heroMetrics.responseTime}</span></span>
                 </div>
 
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
@@ -915,23 +982,21 @@ export default function SupplierPublicProfilePage() {
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
                 <SectionTitle>About this supplier</SectionTitle>
                 <p className="text-sm text-slate-700 dark:text-slate-100 mb-2">
-                  GlowUp Hub is a beauty and skincare brand specializing in bundle offers and flash discounts.
-                  We collaborate with creators to launch seasonal drops, limited-time dealz, and education-driven live sessionz.
+                  {profileData.about.text}
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Collab preferences</h3>
                     <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
-                      Bundles + discounts, clear claims, before/after demos, and audience Q&A.
+                      {profileData.about.collabPreferences}
                     </p>
                   </div>
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Categories</h3>
                     <div className="flex flex-wrap gap-1.5">
-                      <Chip>Beauty</Chip>
-                      <Chip>Skincare</Chip>
-                      <Chip>Bundles</Chip>
-                      <Chip>Flash dealz</Chip>
+                      {profileData.about.categories.map((category) => (
+                        <Chip key={category}>{category}</Chip>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -939,7 +1004,7 @@ export default function SupplierPublicProfilePage() {
                 <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950/40 p-3">
                   <div className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Trust & compliance</div>
                   <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                    Supplier notes: avoid medical claims; use compliant language; link tracking is required for conversion attribution.
+                    Supplier notes: {profileData.about.trustNote}
                     {viewerMode === "Supplier" ? " (Supplier can edit these guidelines in Settings.)" : ""}
                   </div>
                 </div>
@@ -948,12 +1013,12 @@ export default function SupplierPublicProfilePage() {
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
                 <SectionTitle>Performance snapshot</SectionTitle>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <MetricCard label="Creator payouts" value="48–72h" sub="After approval" />
-                  <MetricCard label="Return rate" value="1.8%" sub="Low refunds" />
-                  <MetricCard label="Avg conversion" value="3.9%" sub="Across campaigns" />
-                  <MetricCard label="Completed collabs" value="42" sub="Across 27 creators" />
-                  <MetricCard label="Creator rating" value="4.8/5" sub="31 reviews" />
-                  <MetricCard label="Fulfillment SLA" value="24–48h" sub="In-region" />
+                  <MetricCard label="Creator payouts" value={profileData.performance.payoutWindow || "—"} sub="After approval" />
+                  <MetricCard label="Return rate" value={profileData.performance.returnRate || "—"} sub="Low refunds" />
+                  <MetricCard label="Avg conversion" value={profileData.performance.conversionRate || "—"} sub="Across campaigns" />
+                  <MetricCard label="Completed collabs" value={String(profileData.performance.completedCollabs || 0)} sub="Across creator contracts" />
+                  <MetricCard label="Creator rating" value={profileData.performance.rating || "—"} sub={`${profileData.reviews.total || 0} reviews`} />
+                  <MetricCard label="Fulfillment SLA" value={profileData.performance.fulfillmentSla || "—"} sub="In-region" />
                 </div>
               </div>
 
@@ -972,27 +1037,16 @@ export default function SupplierPublicProfilePage() {
                 </SectionTitle>
 
                 <div className="space-y-2.5">
-                  <PortfolioRow
-                    title="Autumn Beauty Flash"
-                    meta="Combo · East Africa"
-                    body="Bundles + 15% discount. Strong conversions in first 30 minutes."
-                    kpis={["GMV $12.4k", "Payout <48h", "Rating 4.9"]}
-                    onAction={() => handleAction("View Dealz")}
-                  />
-                  <PortfolioRow
-                    title="Weekend Mask Bar"
-                    meta="Live Sessionz · East Africa"
-                    body="Education-first demo. Low return rate and high repeat orders."
-                    kpis={["GMV $7.8k", "Return 1.4%", "Rating 4.7"]}
-                    onAction={() => handleAction("View Dealz")}
-                  />
-                  <PortfolioRow
-                    title="Holiday Bundle Drop"
-                    meta="Shoppable Adz · Global"
-                    body="Short clips + CTA pack. Best performing SKU was the serum duo bundle."
-                    kpis={["GMV $18.9k", "CTR 4.2%", "Conv 3.1%"]}
-                    onAction={() => handleAction("View Dealz")}
-                  />
+                  {profileData.portfolio.map((entry) => (
+                    <PortfolioRow
+                      key={entry.id}
+                      title={entry.title}
+                      meta={entry.meta}
+                      body={entry.body}
+                      kpis={entry.kpis}
+                      onAction={() => handleAction("View Dealz")}
+                    />
+                  ))}
                 </div>
               </div>
 
@@ -1014,24 +1068,7 @@ export default function SupplierPublicProfilePage() {
                 </SectionTitle>
 
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                  {[
-                    {
-                      id: "OP-11",
-                      title: "Serum Launch Live",
-                      type: "Live Sessionz",
-                      region: "East Africa",
-                      budget: 800,
-                      status: "Open for Collabs"
-                    },
-                    {
-                      id: "OP-12",
-                      title: "Bundle Discount Sprint",
-                      type: "Shoppable Adz",
-                      region: "Africa / Asia",
-                      budget: 600,
-                      status: "Open for Collabs"
-                    }
-                  ].map((op) => (
+                  {profileData.opportunities.map((op) => (
                     <div
                       key={op.id}
                       className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950"
@@ -1079,27 +1116,27 @@ export default function SupplierPublicProfilePage() {
                   right={
                     <div className="flex items-center gap-1 text-xs text-amber-600">
                       <span>★★★★★</span>
-                      <span className="text-slate-500 dark:text-slate-300">4.8 average (31 reviews)</span>
+                      <span className="text-slate-500 dark:text-slate-300">{profileData.reviews.average.toFixed(1)} average ({profileData.reviews.total} reviews)</span>
                     </div>
                   }
                 >
                   Creator reviews
                 </SectionTitle>
                 <ul className="space-y-2">
-                  <Review brand="Creator: @ayesha.live" quote="Clear briefs, fast payouts, and no last-minute changes. Loved the bundle strategy." />
-                  <Review brand="Creator: @techmike" quote="They respect creator input and provide good tracking links. Easy negotiation." />
-                  <Review brand="Creator: @faithstyle" quote="Brand guidelines were clear and compliant. Smooth approval process." />
+                  {profileData.reviews.items.map((review) => (
+                    <Review key={review.id} brand={review.brand} quote={review.quote} />
+                  ))}
                 </ul>
               </div>
             </div>
 
             {/* Right */}
             <aside className="flex flex-col gap-4">
-              <SocialLinksCard onAction={handleAction} />
-              <PastCampaignsCard onAction={handleAction} />
-              <TagsCard />
-              <CompatibilityCard onAction={handleAction} />
-              <QuickFactsCard onDownload={downloadBrandKit} />
+              <SocialLinksCard socials={profileData.socials} onAction={handleAction} />
+              <PastCampaignsCard campaigns={profileData.campaigns} onAction={handleAction} />
+              <TagsCard tags={profileData.tags} />
+              <CompatibilityCard compatibility={profileData.compatibility} onAction={handleAction} />
+              <QuickFactsCard facts={profileData.quickFacts.facts} onDownload={downloadBrandKit} />
             </aside>
           </div>
         </section>

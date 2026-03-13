@@ -837,7 +837,16 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
             <Route path="/trust" element={<TrustCenter />} />
             <Route path="/account/health" element={<Navigate to="/status-center" replace />} />
             <Route path="/market-panel/approvals" element={<MarketPanelApprovals />} />
-            <Route path="/seller/onboarding" element={<SellerOnboarding />} />
+            <Route
+              path="/seller/onboarding"
+              element={
+                enforceOnboarding ? (
+                  <SellerOnboarding />
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )
+              }
+            />
 
             <Route
               path="/listings"

@@ -893,60 +893,126 @@ export default function ProviderPortfolioPage() {
   const [tab, setTab] = useState("Media");
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([]);
+  const [customTags, setCustomTags] = useState<string[]>([]);
+  const [isPublic, setIsPublic] = useState(true);
+  const [handle, setHandle] = useState("provider-portfolio");
+  const portfolioHydratedRef = useRef(false);
+  const portfolioAutosaveRef = useRef<number | null>(null);
+
   useEffect(() => {
     let active = true;
 
-    void sellerBackendApi.getProviderPortfolio().then((payload) => {
-      if (!active) return;
-      const items = Array.isArray((payload as { items?: unknown[] }).items)
-        ? ((payload as { items?: Array<Record<string, unknown>> }).items ?? [])
-        : [];
-      const studies = Array.isArray((payload as { caseStudies?: unknown[] }).caseStudies)
-        ? ((payload as { caseStudies?: Array<Record<string, unknown>> }).caseStudies ?? [])
-        : [];
-      setMedia(
-        items.map((entry) => {
-          const data = ((entry.data ?? {}) as Record<string, unknown>);
-          return {
-            id: String(entry.id ?? data.id ?? ""),
-            type: String(data.type ?? "image") as MediaType,
-            title: String(entry.title ?? data.title ?? "Portfolio item"),
-            tags: Array.isArray(data.tags) ? data.tags.map((item) => String(item)) : [],
-            featured: Boolean(data.featured),
-            usedAsCover: Boolean(data.usedAsCover),
-            description: String(entry.description ?? data.description ?? ""),
-            thumb: String(entry.mediaUrl ?? data.thumb ?? ""),
-            createdAt: String(data.createdAt ?? entry.createdAt ?? new Date().toISOString()),
-          } satisfies MediaItem;
-        })
-      );
-      setCaseStudies(
-        studies.map((entry) => ({
-          id: String(entry.id ?? ""),
-          title: String(entry.title ?? "Case study"),
-          client: String(entry.client ?? "Client"),
-          scope: String(entry.scope ?? ""),
-          tags: Array.isArray(entry.tags) ? entry.tags.map((item) => String(item)) : [],
-          featured: Boolean(entry.featured),
-          createdAt: String(entry.createdAt ?? new Date().toISOString()),
-          summary: String(entry.summary ?? ""),
-          highlights: Array.isArray(entry.highlights)
-            ? entry.highlights.map((item) => ({
-                k: String((item as { k?: unknown }).k ?? ""),
-                v: String((item as { v?: unknown }).v ?? ""),
-              }))
-            : [],
-        }))
-      );
-    });
+    void sellerBackendApi
+      .getProviderPortfolio()
+      .then((payload) => {
+        if (!active) return;
+        const items = Array.isArray((payload as { items?: unknown[] }).items)
+          ? ((payload as { items?: Array<Record<string, unknown>> }).items ?? [])
+          : [];
+        const studies = Array.isArray((payload as { caseStudies?: unknown[] }).caseStudies)
+          ? ((payload as { caseStudies?: Array<Record<string, unknown>> }).caseStudies ?? [])
+          : [];
+        const settings =
+          (payload as { settings?: Record<string, unknown> }).settings &&
+          typeof (payload as { settings?: Record<string, unknown> }).settings === "object"
+            ? (((payload as { settings?: Record<string, unknown> }).settings ?? {}) as Record<string, unknown>)
+            : {};
+
+        setMedia(
+          items.map((entry) => {
+            const data = ((entry.data ?? {}) as Record<string, unknown>);
+            return {
+              id: String(entry.id ?? data.id ?? ""),
+              type: String(data.type ?? "image") as MediaType,
+              title: String(entry.title ?? data.title ?? "Portfolio item"),
+              tags: Array.isArray(data.tags) ? data.tags.map((item) => String(item)) : [],
+              featured: Boolean(data.featured),
+              usedAsCover: Boolean(data.usedAsCover),
+              description: String(entry.description ?? data.description ?? ""),
+              thumb: String(entry.mediaUrl ?? data.thumb ?? ""),
+              createdAt: String(data.createdAt ?? entry.createdAt ?? new Date().toISOString()),
+            } satisfies MediaItem;
+          })
+        );
+        setCaseStudies(
+          studies.map((entry) => ({
+            id: String(entry.id ?? ""),
+            title: String(entry.title ?? "Case study"),
+            client: String(entry.client ?? "Client"),
+            scope: String(entry.scope ?? ""),
+            tags: Array.isArray(entry.tags) ? entry.tags.map((item) => String(item)) : [],
+            featured: Boolean(entry.featured),
+            createdAt: String(entry.createdAt ?? new Date().toISOString()),
+            summary: String(entry.summary ?? ""),
+            highlights: Array.isArray(entry.highlights)
+              ? entry.highlights.map((item) => ({
+                  k: String((item as { k?: unknown }).k ?? ""),
+                  v: String((item as { v?: unknown }).v ?? ""),
+                }))
+              : [],
+          }))
+        );
+        setCustomTags(
+          Array.isArray(settings.customTags) ? settings.customTags.map((item) => String(item).toLowerCase()) : []
+        );
+        setIsPublic(settings.isPublic === undefined ? true : Boolean(settings.isPublic));
+        setHandle(String(settings.handle ?? "provider-portfolio"));
+        portfolioHydratedRef.current = true;
+      })
+      .catch(() => {
+        portfolioHydratedRef.current = true;
+      });
 
     return () => {
       active = false;
     };
   }, []);
 
+  useEffect(() => {
+    if (!portfolioHydratedRef.current) return;
+    if (portfolioAutosaveRef.current) window.clearTimeout(portfolioAutosaveRef.current);
+    portfolioAutosaveRef.current = window.setTimeout(() => {
+      void sellerBackendApi.patchProviderPortfolio({
+        items: media.map((item) => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          mediaUrl: item.thumb,
+          status: "active",
+          data: {
+            type: item.type,
+            tags: item.tags,
+            featured: item.featured,
+            usedAsCover: item.usedAsCover,
+            thumb: item.thumb,
+            createdAt: item.createdAt,
+          },
+        })),
+        caseStudies: caseStudies.map((study) => ({
+          id: study.id,
+          title: study.title,
+          client: study.client,
+          scope: study.scope,
+          tags: study.tags,
+          featured: study.featured,
+          createdAt: study.createdAt,
+          summary: study.summary,
+          highlights: study.highlights,
+        })),
+        settings: {
+          customTags,
+          isPublic,
+          handle,
+        },
+      }).catch(() => undefined);
+    }, 450);
+
+    return () => {
+      if (portfolioAutosaveRef.current) window.clearTimeout(portfolioAutosaveRef.current);
+    };
+  }, [media, caseStudies, customTags, isPublic, handle]);
+
   // Tags
-  const [customTags, setCustomTags] = useState(["reel", "installation", "maintenance"]);
   const allTags = useMemo(() => {
     const set = new Set<string>();
     customTags.forEach((t) => set.add(t));
@@ -1013,8 +1079,6 @@ export default function ProviderPortfolioPage() {
   const featuredMedia = useMemo(() => media.filter((m) => m.featured), [media]);
 
   // Shareable portfolio link
-  const [isPublic, setIsPublic] = useState(true);
-  const [handle, setHandle] = useState("provider-ronald");
   const shareUrl = useMemo(() => `https://evzone.app/p/${handle}`, [handle]);
   const [shareDrawerOpen, setShareDrawerOpen] = useState(false);
 

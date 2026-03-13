@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierStreamToPlatformsPage.jsx
@@ -529,7 +530,7 @@ function SectionTitle({ icon, title, subtitle, right }) {
 
 /* ------------------------------ Domain helpers ------------------------------ */
 
-const DEFAULT_TITLE = "GlowUp Hub: Autumn Beauty Flash Live";
+const DEFAULT_TITLE = "Untitled stream";
 
 function prettyKbps(kbps) {
   if (kbps >= 1000) return `${(kbps / 1000).toFixed(1)} Mbps`;
@@ -563,36 +564,38 @@ export default function SupplierStreamToPlatformsPage() {
   const safeNav = (url) => safeNavTo(navigate, url);
   const { toasts, push } = useToasts();
   const { run, isPending } = useAsyncAction();
+  const toolHydratedRef = useRef(false);
+  const toolAutosaveRef = useRef(null);
 
   // Supplier adaptation: execution owner
-  const [executionOwner, setExecutionOwner] = useState("Supplier-hosted");
+  const [executionOwner, setExecutionOwner] = useState("");
   const directControl = executionOwner === "Supplier-hosted";
 
-  const [isPro, setIsPro] = useState(true);
-  const [sessionStatus, setSessionStatus] = useState("Draft");
+  const [isPro, setIsPro] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState("");
   const [selectedDestId, setSelectedDestId] = useState(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const [profile, setProfile] = useState({
-    orientation: "Auto",
-    quality: "High",
+    orientation: "",
+    quality: "",
     advancedOpen: false,
-    resolution: "1080p",
-    bitrateKbps: 4500,
-    audio: "Stereo",
+    resolution: "",
+    bitrateKbps: 0,
+    audio: "",
     gainDb: 0,
-    latency: "Low",
-    adaptiveBitrate: true,
+    latency: "",
+    adaptiveBitrate: false,
   });
 
-  const [degradeMode, setDegradeMode] = useState("Reduce quality, keep all destinations");
+  const [degradeMode, setDegradeMode] = useState("");
 
-  const [recordMaster, setRecordMaster] = useState(true);
-  const [autoReplay, setAutoReplay] = useState(true);
+  const [recordMaster, setRecordMaster] = useState(false);
+  const [autoReplay, setAutoReplay] = useState(false);
   const [autoHighlights, setAutoHighlights] = useState(false);
   const [downloadMasterAllowed, setDownloadMasterAllowed] = useState(false);
 
-  const [estimatedUploadMbps, setEstimatedUploadMbps] = useState(12.4);
+  const [estimatedUploadMbps, setEstimatedUploadMbps] = useState(0);
 
   // Supplier adaptation: request log
   const [pendingRequests, setPendingRequests] = useState({});
@@ -606,141 +609,90 @@ export default function SupplierStreamToPlatformsPage() {
     }));
   };
 
-  const [destinations, setDestinations] = useState(() => {
-    const base = [
-      {
-        id: "yt",
-        name: "YouTube Live",
-        kind: "Video Live",
-        status: "Connected",
-        enabled: true,
-        accountLabel: "Supplier Brand Channel",
-        supportsStreamKey: true,
-        supportsPrivacy: true,
-        supportsCategory: true,
-        supportsTags: true,
-        supportsDelay: true,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        ownership: "Supplier",
-        settings: {
-          title: DEFAULT_TITLE,
-          description: "Serum benefits, fit checks, and instant buy links.",
-          privacy: "Public",
-          category: "Beauty",
-          tags: ["beauty", "serum", "flash"],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 2, outBitrateKbps: 4300 },
-      },
-      {
-        id: "fb",
-        name: "Facebook Live",
-        kind: "Community Live",
-        status: "Needs re-auth",
-        enabled: false,
-        accountLabel: "Supplier Page",
-        supportsStreamKey: true,
-        supportsPrivacy: true,
-        supportsCategory: false,
-        supportsTags: false,
-        supportsDelay: false,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        ownership: "Supplier",
-        errorTitle: "Your session expired",
-        errorNext: "Re-authenticate the connected account to restore posting permissions.",
-        settings: {
-          title: DEFAULT_TITLE,
-          description: "Live promo. Products pinned for instant checkout.",
-          privacy: "Public",
-          tags: ["live"],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 },
-      },
-      {
-        id: "tt",
-        name: "TikTok Live",
-        kind: "Video Live",
-        status: "Stream key missing",
-        enabled: false,
-        accountLabel: "Creator account",
-        supportsStreamKey: true,
-        supportsPrivacy: false,
-        supportsCategory: false,
-        supportsTags: false,
-        supportsDelay: true,
-        supportsAutoReconnect: true,
-        proAdvanced: true,
-        ownership: "Creator",
-        errorTitle: "Stream key required",
-        errorNext: "Add a stream key or connect via OAuth if supported in your region.",
-        settings: {
-          title: DEFAULT_TITLE,
-          description: "Live now. Limited stock.",
-          tags: ["tiktok"],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 },
-      },
-      {
-        id: "ig",
-        name: "Instagram Live",
-        kind: "Video Live",
-        status: "Connected",
-        enabled: true,
-        accountLabel: "Creator Studio",
-        supportsStreamKey: false,
-        supportsPrivacy: false,
-        supportsCategory: false,
-        supportsTags: false,
-        supportsDelay: false,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        ownership: "Creator",
-        settings: {
-          title: DEFAULT_TITLE,
-          description: "Quick demo + price breakdown + instant buy.",
-          tags: ["beauty", "live"],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 1, reconnects: 0, lastAckSec: 3, outBitrateKbps: 3800 },
-      },
-      {
-        id: "tw",
-        name: "Twitch",
-        kind: "Video Live",
-        status: "Blocked",
-        enabled: false,
-        accountLabel: "Channel under review",
-        supportsStreamKey: true,
-        supportsPrivacy: false,
-        supportsCategory: true,
-        supportsTags: false,
-        supportsDelay: true,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        ownership: "Supplier",
-        errorTitle: "Destination blocked",
-        errorNext: "Account flagged by platform policy. Contact support or switch destination.",
-        settings: {
-          title: DEFAULT_TITLE,
-          description: "Live commerce stream.",
-          category: "Just Chatting",
-          tags: ["commerce"],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 },
-      },
-    ];
-    return base;
-  });
+  const [destinations, setDestinations] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi
+      .getLiveToolConfig("streaming")
+      .then((payload) => {
+        if (!active) return;
+        const nextProfile = payload.profile && typeof payload.profile === "object" && !Array.isArray(payload.profile) ? payload.profile : {};
+        setExecutionOwner(String(payload.executionOwner ?? "Supplier-hosted"));
+        setIsPro(payload.isPro === undefined ? true : Boolean(payload.isPro));
+        setSessionStatus(String(payload.sessionStatus ?? "Draft"));
+        setProfile({
+          orientation: String(nextProfile.orientation ?? "Auto"),
+          quality: String(nextProfile.quality ?? "High"),
+          advancedOpen: Boolean(nextProfile.advancedOpen),
+          resolution: String(nextProfile.resolution ?? "1080p"),
+          bitrateKbps: Number(nextProfile.bitrateKbps ?? 4500),
+          audio: String(nextProfile.audio ?? "Stereo"),
+          gainDb: Number(nextProfile.gainDb ?? 0),
+          latency: String(nextProfile.latency ?? "Low"),
+          adaptiveBitrate: Boolean(nextProfile.adaptiveBitrate ?? true),
+        });
+        setDegradeMode(String(payload.degradeMode ?? "Reduce quality, keep all destinations"));
+        setRecordMaster(Boolean(payload.recordMaster ?? true));
+        setAutoReplay(Boolean(payload.autoReplay ?? true));
+        setAutoHighlights(Boolean(payload.autoHighlights ?? false));
+        setDownloadMasterAllowed(Boolean(payload.downloadMasterAllowed ?? false));
+        setEstimatedUploadMbps(Number(payload.estimatedUploadMbps ?? 12.4));
+        setPendingRequests(
+          payload.pendingRequests && typeof payload.pendingRequests === "object" && !Array.isArray(payload.pendingRequests)
+            ? payload.pendingRequests
+            : {}
+        );
+        setDestinations(Array.isArray(payload.destinations) ? payload.destinations : []);
+        toolHydratedRef.current = true;
+      })
+      .catch(() => {
+        toolHydratedRef.current = true;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!toolHydratedRef.current) return;
+    if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
+    toolAutosaveRef.current = window.setTimeout(() => {
+      void sellerBackendApi.patchLiveToolConfig("streaming", {
+        executionOwner,
+        isPro,
+        sessionStatus,
+        profile,
+        degradeMode,
+        recordMaster,
+        autoReplay,
+        autoHighlights,
+        downloadMasterAllowed,
+        estimatedUploadMbps,
+        pendingRequests,
+        destinations,
+      }).catch(() => undefined);
+    }, 450);
+
+    return () => {
+      if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
+    };
+  }, [
+    executionOwner,
+    isPro,
+    sessionStatus,
+    profile,
+    degradeMode,
+    recordMaster,
+    autoReplay,
+    autoHighlights,
+    downloadMasterAllowed,
+    estimatedUploadMbps,
+    pendingRequests,
+    destinations,
+  ]);
 
   const enabledDests = useMemo(() => destinations.filter((d) => d.enabled), [destinations]);
   const requiredUpload = useMemo(() => computeRequiredUploadMbps(profile), [profile]);
@@ -841,8 +793,10 @@ export default function SupplierStreamToPlatformsPage() {
   }
 
   function runBandwidthTest() {
-    const jitter = Math.random() * 10 - 3;
-    const next = Math.max(1, Math.min(40, estimatedUploadMbps + jitter));
+    const enabledCount = destinations.filter((d) => d.enabled).length;
+    const stressedCount = destinations.filter((d) => d.status === "Warn" || d.status === "Issue").length;
+    const target = profile.bitrateKbps / 1000 + enabledCount * 1.5 - stressedCount * 1.25;
+    const next = Math.max(1, Math.min(40, Number(target.toFixed(1))));
     setEstimatedUploadMbps(next);
     push("Bandwidth check updated", "success");
   }
@@ -910,12 +864,15 @@ export default function SupplierStreamToPlatformsPage() {
   const selectedDest = useMemo(() => destinations.find((d) => d.id === selectedDestId) || null, [destinations, selectedDestId]);
 
   const healthSeries = useMemo(() => {
-    const base = profile.bitrateKbps;
-    return Array.from({ length: 12 }, (_, i) => {
-      const wobble = Math.sin(i / 2) * 0.07 + (Math.random() * 0.06 - 0.03);
-      return Math.max(0, Math.round(base * (0.86 + wobble)));
+    const bases = destinations
+      .map((destination) => Number(destination?.health?.outBitrateKbps ?? 0))
+      .filter((value) => value > 0);
+    const base = bases[0] || Number(profile.bitrateKbps || 0);
+    return Array.from({ length: 12 }, (_, index) => {
+      const modifier = 0.88 + ((index % 4) * 0.04);
+      return Math.max(0, Math.round(base * modifier));
     });
-  }, [profile.bitrateKbps]);
+  }, [destinations, profile.bitrateKbps]);
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors overflow-x-hidden">

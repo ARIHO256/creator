@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -16,6 +16,15 @@ export class AnalyticsController {
   @Get('page')
   page(@CurrentUser() user: RequestUser) {
     return this.analyticsService.getPage(user.sub, user.role);
+  }
+
+  @Get('rank-detail')
+  rankDetail(
+    @CurrentUser() user: RequestUser,
+    @Query('range') range?: string,
+    @Query('category') category?: string
+  ) {
+    return this.analyticsService.getRankDetail(user.sub, user.role, { range, category });
   }
 
   @Patch('page')

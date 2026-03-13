@@ -66,6 +66,18 @@ function mapSession(tokens: LoginResponse, profile: MeResponse): Session {
     ? profile.roles.map(normalizeRole)
     : [role];
 
+  const approvalStatusRaw = (profile.approvalStatus || "").toString();
+  const approvalStatus =
+    approvalStatusRaw.trim().length > 0 ? approvalStatusRaw : undefined;
+  const normalizedApprovalStatus = approvalStatus ? approvalStatus.toUpperCase() : "";
+
+  const onboardingCompleted =
+    typeof profile.onboardingCompleted === "boolean"
+      ? profile.onboardingCompleted
+      : normalizedApprovalStatus === "APPROVED"
+      ? true
+      : undefined;
+
   return {
     userId: profile.id,
     email: profile.email || undefined,
@@ -76,8 +88,8 @@ function mapSession(tokens: LoginResponse, profile: MeResponse): Session {
       profile.creatorProfile?.name ||
       profile.email ||
       profile.id,
-    approvalStatus: profile.approvalStatus || undefined,
-    onboardingCompleted: Boolean(profile.onboardingCompleted),
+    approvalStatus,
+    onboardingCompleted,
     role,
     roles,
     accessToken: tokens.accessToken,

@@ -31,6 +31,64 @@ function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
+function avatarBgForId(id) {
+  const options = [
+    "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/20 dark:text-pink-200 dark:border-pink-800",
+    "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800",
+    "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800",
+    "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-200 dark:border-purple-800",
+    "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900/30 dark:text-slate-200 dark:border-slate-800"
+  ];
+  const value = String(id || "");
+  const index = value.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % options.length;
+  return options[index];
+}
+
+function buildInitials(name, handle) {
+  const label = String(name || "").trim();
+  if (label) {
+    const parts = label.split(/\s+/g).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0]?.[0] || ""}${parts[1]?.[0] || ""}`.toUpperCase();
+  }
+  return String(handle || "").replace(/^@/, "").slice(0, 2).toUpperCase() || "CR";
+}
+
+function normalizeCreator(creator) {
+  return {
+    ...creator,
+    id: String(creator?.id || ""),
+    name: String(creator?.name || "Creator"),
+    handle: String(creator?.handle || "@creator"),
+    initials: String(creator?.initials || buildInitials(creator?.name, creator?.handle)),
+    avatarBg: String(creator?.avatarBg || avatarBgForId(creator?.id)),
+    tagline: String(creator?.tagline || ""),
+    categories: Array.isArray(creator?.categories) ? creator.categories.map(String) : [],
+    followers: Number(creator?.followers || 0),
+    livesCompleted: Number(creator?.livesCompleted || 0),
+    ctr: Number(creator?.ctr || 0),
+    conversion: Number(creator?.conversion || 0),
+    rating: Number(creator?.rating || 0),
+    tier: String(creator?.tier || "Bronze"),
+    badge: String(creator?.badge || "Creator"),
+    collabStatus: String(creator?.collabStatus || "Open to collabs"),
+    region: String(creator?.region || "Global"),
+    languages: Array.isArray(creator?.languages) ? creator.languages.map(String) : [],
+    relationship: String(creator?.relationship || "New"),
+    fitScore: Number(creator?.fitScore || 0),
+    fitReason: String(creator?.fitReason || ""),
+    followersTrend: String(creator?.followersTrend || "flat"),
+    livesTrend: String(creator?.livesTrend || "flat"),
+    orderTrend: String(creator?.orderTrend || "flat"),
+    trustBadges: Array.isArray(creator?.trustBadges) ? creator.trustBadges.map(String) : [],
+    lastActive: String(creator?.lastActive || "Recently active"),
+    platforms: Array.isArray(creator?.platforms) ? creator.platforms : [],
+    isActivelyCollaborating: Boolean(creator?.isActivelyCollaborating),
+    hasActiveCampaigns: Boolean(creator?.hasActiveCampaigns),
+    isSaved: Boolean(creator?.isSaved)
+  };
+}
+
 function useScrollLock(locked) {
   useEffect(() => {
     if (!locked) return;
@@ -788,179 +846,45 @@ export default function SupplierCreatorDirectoryPage() {
   const [savedCreatorIds, setSavedCreatorIds] = useState([]);
   const [selectedCreator, setSelectedCreator] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [creators, setCreators] = useState([]);
+  const [supplierCampaigns, setSupplierCampaigns] = useState([]);
 
   const [dataState, setDataState] = useState("loading"); // loading | ready | error
 
   useEffect(() => {
-    const t = setTimeout(() => setDataState("ready"), 320);
-    return () => clearTimeout(t);
+    let cancelled = false;
+
+    setDataState("loading");
+    void Promise.all([sellerBackendApi.getCreators(), sellerBackendApi.getCampaignWorkspace()])
+      .then(([creatorRecords, workspace]) => {
+        if (cancelled) return;
+        const nextCreators = Array.isArray(creatorRecords) ? creatorRecords.map(normalizeCreator) : [];
+        setCreators(nextCreators);
+        setSavedCreatorIds(nextCreators.filter((creator) => creator.isSaved).map((creator) => creator.id));
+        const campaigns = Array.isArray(workspace?.campaigns) ? workspace.campaigns : [];
+        setSupplierCampaigns(
+          campaigns.map((campaign) => ({
+            id: String(campaign?.id || ""),
+            name: String(campaign?.title || campaign?.name || "MyLiveDealz campaign"),
+            creatorUsageDecision: String(campaign?.metadata?.creatorUsageDecision || campaign?.creatorUsageDecision || "I will use a Creator"),
+            collabMode: String(campaign?.metadata?.collabMode || campaign?.collabMode || "Open for Collabs"),
+            approvalMode: String(campaign?.metadata?.approvalMode || campaign?.approvalMode || "Manual"),
+            stage: String(campaign?.metadata?.stage || campaign?.stage || campaign?.status || "Draft")
+          }))
+        );
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCreators([]);
+        setSupplierCampaigns([]);
+        setDataState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  const creators = useMemo(
-    () => [
-      {
-        id: "CR-001",
-        name: "Lilian Beauty Plug",
-        handle: "@lilianbeauty",
-        initials: "LB",
-        avatarBg: "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/20 dark:text-pink-200 dark:border-pink-800",
-        tagline: "Skincare routines, live tutorials, and product reviews.",
-        categories: ["Beauty", "Skincare"],
-        followers: 128000,
-        livesCompleted: 22,
-        ctr: 3.9,
-        conversion: 2.4,
-        rating: 4.8,
-        tier: "Gold",
-        badge: "Top Creator",
-        collabStatus: "Open to collabs",
-        region: "East Africa",
-        languages: ["English", "Swahili"],
-        relationship: "2 past campaigns",
-        fitScore: 94,
-        fitReason: "Strong Beauty conversion with clear CTA cadence. Great fit for time-bound Dealz.",
-        followersTrend: "up",
-        livesTrend: "up",
-        orderTrend: "flat",
-        trustBadges: ["Verified", "On-time delivery"],
-        lastActive: "Active this week",
-        platforms: [{ platform: "TikTok" }, { platform: "Instagram" }, { platform: "WhatsApp" }],
-        isActivelyCollaborating: true,
-        hasActiveCampaigns: true
-      },
-      {
-        id: "CR-002",
-        name: "TechWithBrian",
-        handle: "@techwithbrian",
-        initials: "TB",
-        avatarBg: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800",
-        tagline: "Unboxings, EV gadgets and smart home.",
-        categories: ["Tech", "Gadgets", "EV"],
-        followers: 210000,
-        livesCompleted: 31,
-        ctr: 4.4,
-        conversion: 2.9,
-        rating: 4.7,
-        tier: "Gold",
-        badge: "Top Creator",
-        collabStatus: "Invite only",
-        region: "Pan-Africa",
-        languages: ["English"],
-        relationship: "1 Tech Friday series",
-        fitScore: 90,
-        fitReason: "High CTR in Tech. Strong live demo rhythm and conversion consistency.",
-        followersTrend: "up",
-        livesTrend: "up",
-        orderTrend: "up",
-        trustBadges: ["Verified", "Low disputes"],
-        lastActive: "Live 2 days ago",
-        platforms: [{ platform: "YouTube" }, { platform: "TikTok" }, { platform: "Telegram" }],
-        isActivelyCollaborating: true,
-        hasActiveCampaigns: false
-      },
-      {
-        id: "CR-003",
-        name: "Grace Faith Wellness",
-        handle: "@gracefaithwellness",
-        initials: "GW",
-        avatarBg: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800",
-        tagline: "Faith-compatible wellness, calm routines, and lifestyle talk.",
-        categories: ["Faith", "Wellness"],
-        followers: 54000,
-        livesCompleted: 14,
-        ctr: 2.8,
-        conversion: 3.1,
-        rating: 4.9,
-        tier: "Silver",
-        badge: "High Trust",
-        collabStatus: "Open to collabs",
-        region: "East Africa",
-        languages: ["English"],
-        relationship: "New (no campaigns yet)",
-        fitScore: 88,
-        fitReason: "High retention and trust. Strong fit for faith-friendly product lines.",
-        followersTrend: "up",
-        livesTrend: "flat",
-        orderTrend: "flat",
-        trustBadges: ["Low return rate"],
-        lastActive: "Active this week",
-        platforms: [{ platform: "Facebook" }, { platform: "WhatsApp" }],
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: true
-      },
-      {
-        id: "CR-004",
-        name: "StyleByAma",
-        handle: "@stylebyama",
-        initials: "SA",
-        avatarBg: "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-200 dark:border-purple-800",
-        tagline: "Try-ons, street style, and live haul sessions.",
-        categories: ["Fashion"],
-        followers: 72000,
-        livesCompleted: 12,
-        ctr: 3.1,
-        conversion: 2.2,
-        rating: 4.3,
-        tier: "Silver",
-        badge: "Style Specialist",
-        collabStatus: "Open to collabs",
-        region: "West Africa",
-        languages: ["English", "French"],
-        relationship: "New",
-        fitScore: 76,
-        fitReason: "Good reach and styling authority. Best for apparel launches and bundles.",
-        followersTrend: "up",
-        livesTrend: "up",
-        orderTrend: "up",
-        trustBadges: [],
-        lastActive: "Active this month",
-        platforms: [{ platform: "Instagram" }, { platform: "TikTok" }],
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: false
-      },
-      {
-        id: "CR-005",
-        name: "NewWave Creator",
-        handle: "@newwavecreator",
-        initials: "NW",
-        avatarBg: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900/30 dark:text-slate-200 dark:border-slate-800",
-        tagline: "Short-form reviews and EV accessories.",
-        categories: ["Tech", "EV"],
-        followers: 12000,
-        livesCompleted: 3,
-        ctr: 4.0,
-        conversion: 1.8,
-        rating: 4.2,
-        tier: "Bronze",
-        badge: "Rising",
-        collabStatus: "Open to collabs",
-        region: "East Africa",
-        languages: ["English"],
-        relationship: "New",
-        fitScore: 69,
-        fitReason: "Rising creator with strong hooks; needs tighter offer framing to lift conversion.",
-        followersTrend: "flat",
-        livesTrend: "up",
-        orderTrend: "flat",
-        trustBadges: [],
-        lastActive: "Active this week",
-        platforms: [{ platform: "TikTok" }],
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: false
-      }
-    ],
-    []
-  );
-
-  const supplierCampaigns = useMemo(
-    () => [
-      { id: "CAMP-11", name: "Beauty Flash Dealz" },
-      { id: "CAMP-07", name: "Tech Friday Mega" },
-      { id: "CAMP-21", name: "GlowUp Serum Promo" },
-      { id: "CAMP-33", name: "Repair Booking Offer" }
-    ],
-    []
-  );
 
   const handleFilterChange = (setter, val) => {
     setIsTransitioning(true);
@@ -1045,7 +969,13 @@ export default function SupplierCreatorDirectoryPage() {
   }, [tabFilteredCreators, sortBy]);
 
   const toggleSave = (creatorId) => {
-    setSavedCreatorIds((prev) => (prev.includes(creatorId) ? prev.filter((x) => x !== creatorId) : [...prev, creatorId]));
+    const shouldFollow = !savedCreatorIds.includes(creatorId);
+    setSavedCreatorIds((prev) => (shouldFollow ? [...prev, creatorId] : prev.filter((x) => x !== creatorId)));
+    setCreators((prev) => prev.map((creator) => (creator.id === creatorId ? { ...creator, isSaved: shouldFollow } : creator)));
+    void sellerBackendApi.followCreator(creatorId, { follow: shouldFollow }).catch(() => {
+      setSavedCreatorIds((prev) => (shouldFollow ? prev.filter((x) => x !== creatorId) : [...prev, creatorId]));
+      setCreators((prev) => prev.map((creator) => (creator.id === creatorId ? { ...creator, isSaved: !shouldFollow } : creator)));
+    });
   };
 
   const openInvite = (creator) => {

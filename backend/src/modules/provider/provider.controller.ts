@@ -50,6 +50,10 @@ export class ProviderController {
     return this.service.transitionFulfillment(user.sub, id, body);
   }
   @Get('portfolio') portfolio(@CurrentUser() user: RequestUser) { return this.service.portfolio(user.sub); }
+  @Patch('portfolio') updatePortfolio(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updatePortfolio(user.sub, body);
+  }
+  @Get('quote-templates') quoteTemplates(@CurrentUser() user: RequestUser) { return this.service.quoteTemplates(user.sub); }
   @Get('reviews') reviews(@CurrentUser() user: RequestUser) { return this.service.reviews(user.sub); }
   @Get('disputes') disputes(@CurrentUser() user: RequestUser) { return this.service.disputes(user.sub); }
 }

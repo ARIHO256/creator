@@ -82,17 +82,39 @@ export class CollaborationService {
     };
   }
 
-  async legacyMarketplace(userId: string) {
-    const record = await this.prisma.workspaceSetting.findUnique({
+  async dealzMarketplace(userId: string) {
+    return this.readDealzMarketplace(userId, 'seller_dealz_marketplace');
+  }
+
+  async updateDealzMarketplace(userId: string, payload: Record<string, unknown>) {
+    const current = await this.dealzMarketplace(userId);
+    const next = this.sanitizeLegacyMarketplacePayload({
+      ...current,
+      ...payload
+    });
+
+    await this.prisma.workspaceSetting.upsert({
       where: {
         userId_key: {
           userId,
-          key: 'seller_dealz_marketplace_legacy'
+          key: 'seller_dealz_marketplace'
         }
+      },
+      update: {
+        payload: next as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        key: 'seller_dealz_marketplace',
+        payload: next as Prisma.InputJsonValue
       }
     });
 
-    return (record?.payload as Record<string, unknown>) ?? { deals: [], selectedId: '', cart: {}, liveCart: {} };
+    return next;
+  }
+
+  async legacyMarketplace(userId: string) {
+    return this.readDealzMarketplace(userId, 'seller_dealz_marketplace_legacy');
   }
 
   async updateLegacyMarketplace(userId: string, payload: Record<string, unknown>) {
@@ -120,6 +142,53 @@ export class CollaborationService {
     });
 
     return next;
+  }
+
+  private async readDealzMarketplace(userId: string, key: string) {
+    const primary = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    if (primary?.payload && typeof primary.payload === 'object' && !Array.isArray(primary.payload)) {
+      return primary.payload as Record<string, unknown>;
+    }
+
+    if (key === 'seller_dealz_marketplace') {
+      const legacy = await this.prisma.workspaceSetting.findUnique({
+        where: {
+          userId_key: {
+            userId,
+            key: 'seller_dealz_marketplace_legacy'
+          }
+        }
+      });
+      if (legacy?.payload && typeof legacy.payload === 'object' && !Array.isArray(legacy.payload)) {
+        const migrated = this.sanitizeLegacyMarketplacePayload(legacy.payload as Record<string, unknown>);
+        await this.prisma.workspaceSetting.upsert({
+          where: {
+            userId_key: {
+              userId,
+              key
+            }
+          },
+          update: {
+            payload: migrated as Prisma.InputJsonValue
+          },
+          create: {
+            userId,
+            key,
+            payload: migrated as Prisma.InputJsonValue
+          }
+        });
+        return migrated;
+      }
+    }
+
+    return { deals: [], selectedId: '', cart: {}, liveCart: {} };
   }
 
   async createCampaign(userId: string, payload: Record<string, unknown>) {
@@ -336,11 +405,7 @@ export class CollaborationService {
       orderBy: { updatedAt: 'desc' }
     });
 
-    return contracts.map((contract: any) => ({
-      ...contract,
-      seller: contract.seller.displayName,
-      creator: contract.creator.creatorProfile?.name ?? contract.creator.email
-    }));
+    return contracts.map((contract: any) => this.serializeContract(contract));
   }
 
   async contract(userId: string, id: string) {
@@ -362,11 +427,7 @@ export class CollaborationService {
       throw new NotFoundException('Contract not found');
     }
 
-    return {
-      ...contract,
-      seller: contract.seller.displayName,
-      creator: contract.creator.creatorProfile?.name ?? contract.creator.email
-    };
+    return this.serializeContract(contract);
   }
 
   async terminateContract(userId: string, id: string, payload: { reason?: string }) {
@@ -385,23 +446,125 @@ export class CollaborationService {
     const tasks = await this.prisma.task.findMany({
       where: this.taskAccessClause(userId),
       include: {
-        comments: true,
-        attachments: true
+        campaign: {
+          include: {
+            seller: true,
+            creator: {
+              include: {
+                creatorProfile: true
+              }
+            }
+          }
+        },
+        contract: {
+          include: {
+            seller: true,
+            creator: {
+              include: {
+                creatorProfile: true
+              }
+            },
+            campaign: true
+          }
+        },
+        createdBy: {
+          include: {
+            creatorProfile: true,
+            sellerProfile: true
+          }
+        },
+        assignee: {
+          include: {
+            creatorProfile: true,
+            sellerProfile: true
+          }
+        },
+        comments: {
+          include: {
+            author: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'asc' }
+        },
+        attachments: {
+          include: {
+            addedBy: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'asc' }
+        }
       },
       orderBy: { updatedAt: 'desc' }
     });
 
-    return tasks;
+    return tasks.map((task: any) => this.serializeTask(task));
   }
 
   async task(userId: string, id: string) {
     const task = await this.prisma.task.findFirst({
       where: { id, ...this.taskAccessClause(userId) },
       include: {
+        campaign: {
+          include: {
+            seller: true,
+            creator: {
+              include: {
+                creatorProfile: true
+              }
+            }
+          }
+        },
+        contract: {
+          include: {
+            seller: true,
+            creator: {
+              include: {
+                creatorProfile: true
+              }
+            },
+            campaign: true
+          }
+        },
+        createdBy: {
+          include: {
+            creatorProfile: true,
+            sellerProfile: true
+          }
+        },
+        assignee: {
+          include: {
+            creatorProfile: true,
+            sellerProfile: true
+          }
+        },
         comments: {
+          include: {
+            author: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
           orderBy: { createdAt: 'asc' }
         },
         attachments: {
+          include: {
+            addedBy: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
           orderBy: { createdAt: 'asc' }
         }
       }
@@ -411,7 +574,7 @@ export class CollaborationService {
       throw new NotFoundException('Task not found');
     }
 
-    return task;
+    return this.serializeTask(task);
   }
 
   async createTask(userId: string, payload: CreateTaskDto) {
@@ -914,5 +1077,135 @@ export class CollaborationService {
       next[key] = value;
     }
     return next;
+  }
+
+  private serializeContract(contract: any) {
+    const metadata = this.normalizeCampaignMetadata(contract.metadata);
+    const creatorName = contract.creator?.creatorProfile?.name ?? contract.creator?.email ?? null;
+    const creatorHandle = contract.creator?.creatorProfile?.handle ? `@${contract.creator.creatorProfile.handle}` : null;
+
+    return {
+      ...contract,
+      seller: contract.seller?.displayName ?? null,
+      creator: creatorName,
+      sellerId: contract.sellerId,
+      sellerName: contract.seller?.displayName ?? null,
+      creatorId: contract.creatorId,
+      creatorUserId: contract.creatorId,
+      creatorName,
+      creatorHandle,
+      campaignName: contract.campaign?.title ?? metadata.campaignTitle ?? null,
+      campaign: contract.campaign?.title ?? metadata.campaignTitle ?? null,
+      brand: contract.seller?.displayName ?? null,
+      totalTasks:
+        Array.isArray(metadata.deliverablesList)
+          ? metadata.deliverablesList.length
+          : Array.isArray(metadata.deliverables)
+            ? metadata.deliverables.length
+            : 0,
+      governance: {
+        hostRole: this.readMetadataString(metadata, 'hostRole') || 'Creator',
+        creatorUsage: this.readMetadataString(metadata, 'creatorUsageDecision') || 'I will use a Creator',
+        collabMode: this.readMetadataString(metadata, 'collabMode') || 'Open for Collabs',
+        approvalMode: this.readMetadataString(metadata, 'approvalMode') || 'Manual'
+      },
+      deliverables: Array.isArray(metadata.deliverablesList)
+        ? metadata.deliverablesList
+        : Array.isArray(metadata.deliverables)
+          ? metadata.deliverables
+          : [],
+      metadata
+    };
+  }
+
+  private serializeTask(task: any) {
+    const metadata = this.normalizeCampaignMetadata(task.metadata);
+    const contract = task.contract ? this.serializeContract(task.contract) : null;
+    const campaignMetadata = this.normalizeCampaignMetadata(task.campaign?.metadata);
+
+    return {
+      id: task.id,
+      campaignId: task.campaignId,
+      contractId: task.contractId,
+      createdByUserId: task.createdByUserId,
+      assigneeUserId: task.assigneeUserId,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      priority: task.priority,
+      dueAt: task.dueAt?.toISOString?.() ?? task.dueAt ?? null,
+      metadata,
+      createdAt: task.createdAt?.toISOString?.() ?? task.createdAt ?? null,
+      updatedAt: task.updatedAt?.toISOString?.() ?? task.updatedAt ?? null,
+      campaign: task.campaign
+        ? {
+            id: task.campaign.id,
+            title: task.campaign.title,
+            status: task.campaign.status,
+            sellerId: task.campaign.sellerId,
+            sellerName: task.campaign.seller?.displayName ?? null,
+            creatorId: task.campaign.creatorId,
+            creatorName: task.campaign.creator?.creatorProfile?.name ?? task.campaign.creator?.email ?? null,
+            creatorHandle: task.campaign.creator?.creatorProfile?.handle ? `@${task.campaign.creator.creatorProfile.handle}` : null,
+            metadata: campaignMetadata
+          }
+        : contract?.campaign
+          ? {
+              id: contract.campaign.id,
+              title: contract.campaign.title,
+              status: contract.campaign.status,
+              sellerId: contract.campaign.sellerId,
+              sellerName: contract.sellerName,
+              creatorId: contract.campaign.creatorId,
+              creatorName: contract.creatorName,
+              creatorHandle: contract.creatorHandle,
+              metadata: this.normalizeCampaignMetadata(contract.campaign.metadata)
+            }
+          : null,
+      contract,
+      createdBy: this.serializeTaskActor(task.createdBy),
+      assignee: this.serializeTaskActor(task.assignee),
+      comments: Array.isArray(task.comments)
+        ? task.comments.map((comment: any) => ({
+            id: comment.id,
+            body: comment.body,
+            createdAt: comment.createdAt?.toISOString?.() ?? comment.createdAt ?? null,
+            authorUserId: comment.authorUserId,
+            author: this.serializeTaskActor(comment.author)
+          }))
+        : [],
+      attachments: Array.isArray(task.attachments)
+        ? task.attachments.map((attachment: any) => ({
+            id: attachment.id,
+            name: attachment.name,
+            url: attachment.url,
+            kind: attachment.kind,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            metadata: attachment.metadata ?? {},
+            createdAt: attachment.createdAt?.toISOString?.() ?? attachment.createdAt ?? null,
+            addedByUserId: attachment.addedByUserId,
+            addedBy: this.serializeTaskActor(attachment.addedBy)
+          }))
+        : []
+    };
+  }
+
+  private serializeTaskActor(actor: any) {
+    if (!actor) {
+      return null;
+    }
+
+    return {
+      id: actor.id,
+      name: actor.creatorProfile?.name ?? actor.sellerProfile?.displayName ?? actor.email ?? null,
+      handle: actor.creatorProfile?.handle ? `@${actor.creatorProfile.handle}` : null,
+      role: actor.role ?? null
+    };
+  }
+
+  private readMetadataString(metadata: Record<string, unknown>, key: string) {
+    const value = metadata[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
   }
 }

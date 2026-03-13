@@ -183,9 +183,9 @@ export function updateWholesaleQuote(current: WholesaleQuote, patch: UpdateWhole
   });
 }
 
-function normalizeStoredQuote(value: JsonRecord, fallbackId: string) {
+function normalizeStoredQuote(value: JsonRecord, defaultValueId: string) {
   return buildWholesaleQuote(value as CreateWholesaleQuoteDto & JsonRecord, {
-    id: pickString(value.id, fallbackId),
+    id: pickString(value.id, defaultValueId),
     createdAt: pickString(value.createdAt, new Date().toISOString()),
     updatedAt: pickString(value.updatedAt, pickString(value.createdAt, new Date().toISOString()))
   });
@@ -345,16 +345,16 @@ function stringArray(value: unknown) {
   return Array.isArray(value) ? value.map((entry) => pickString(entry, '')).filter(Boolean) : [];
 }
 
-function pickString(value: unknown, fallback: string) {
-  return typeof value === 'string' ? value.trim() : fallback;
+function pickString(value: unknown, defaultValue: string) {
+  return typeof value === 'string' ? value.trim() : defaultValue;
 }
 
-function pickNumber(value: unknown, fallback: number) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+function pickNumber(value: unknown, defaultValue: number) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : defaultValue;
 }
 
-function pickBoolean(value: unknown, fallback: boolean) {
-  return typeof value === 'boolean' ? value : fallback;
+function pickBoolean(value: unknown, defaultValue: boolean) {
+  return typeof value === 'boolean' ? value : defaultValue;
 }
 
 function nullableString(value: unknown) {

@@ -1,6 +1,6 @@
 // @ts-nocheck
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
@@ -486,6 +486,7 @@ function PromoteCard({ title, desc, icon: Icon, primary, onClick }) {
 }
 
 function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels }) {
+  const navigate = useNavigate();
   const [tab, setTab] = useState('Overview');
   const [range, setRange] = useState('7d');
 
@@ -1967,6 +1968,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                   updateLocale={updateLocale}
                   setField={setField}
                   pushToast={pushToast}
+                  labels={labels}
                 />
               ) : null}
 
@@ -2443,7 +2445,8 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
   );
 }
 
-function LocalizationPanel({ draft, updateLocale, setField, pushToast }) {
+function LocalizationPanel({ draft, updateLocale, setField, pushToast, labels }) {
+  const navigate = useNavigate();
   const [lang, setLang] = useState('en');
 
   useEffect(() => {
@@ -2994,18 +2997,36 @@ function ApprovalPanel({
 
 export default function ListingsHubMergedPageV2() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { resolvedMode } = useThemeMode();
   const isDark = resolvedMode === 'dark';
   const pageBackground = isDark ? PAGE_BG_DARK : PAGE_BG_LIGHT;
   const labels = SELLER_LISTINGS_LABELS;
 
   const [toasts, setToasts] = useState([]);
-  const pushToast = (t) => {
+  const pushToast = useCallback((t) => {
     const id = makeId('toast');
     setToasts((s) => [{ id, ...t }, ...s].slice(0, 4));
     window.setTimeout(() => setToasts((s) => s.filter((x) => x.id !== id)), 4600);
-  };
+  }, []);
   const dismissToast = (id) => setToasts((s) => s.filter((x) => x.id !== id));
+
+  const submissionState = location.state?.listingSubmitted;
+  const submissionSummary = location.state?.submissionSummary;
+
+  useEffect(() => {
+    if (!submissionState) return;
+    pushToast({
+      title: submissionSummary?.title
+        ? `${submissionSummary.title} submitted`
+        : 'Listing submitted',
+      message: 'The new listing is now visible on this page.',
+      tone: 'success',
+    });
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', `${location.pathname}${location.search}`);
+    }
+  }, [submissionState, submissionSummary, location.pathname, location.search, pushToast]);
 
   const [pipeline, setPipeline] = useState('All');
   const [query, setQuery] = useState('');
