@@ -782,7 +782,7 @@ export default function SupplierLiveDealzFeedPage() {
     }
   };
 
-  // Supplier role awareness: simulate "Supplier acting as Creator" toggle.
+  // Supplier role awareness for the "Supplier acting as Creator" toggle.
   // In the real app this is driven by campaign Creator Usage Decision.
   const [supplierActsAsCreator, setSupplierActsAsCreator] = useState(false);
 

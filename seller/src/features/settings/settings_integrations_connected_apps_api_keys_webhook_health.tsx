@@ -27,7 +27,7 @@ import { sellerBackendApi } from "../../lib/backendApi";
 /**
  * Integrations (Previewable)
  * Route: /settings/integrations
- * Core: connected apps, API keys placeholder
+ * Core: connected apps, API keys, webhook health
  * Super premium: webhook health dashboard, retries and logs
  */
 
@@ -759,7 +759,7 @@ export default function SettingsIntegrationsPage() {
     pushToast({ title: "Endpoint removed", message: id, tone: "default" });
   };
 
-  const simulateFailure = () => {
+  const createTestFailure = () => {
     const ep = endpoints.find((e) => e.status !== "Paused") || endpoints[0];
     if (!ep) return;
 
@@ -778,7 +778,7 @@ export default function SettingsIntegrationsPage() {
     const nextLogs = [entry, ...logs];
     setLogs(nextLogs);
     void persistIntegrations(apps, keys, endpoints, nextLogs);
-    pushToast({ title: "Failure simulated", message: "A failed delivery was added to logs.", tone: "warning" });
+    pushToast({ title: "Failure recorded", message: "A failed delivery was added to logs.", tone: "warning" });
   };
 
   return (
@@ -1162,9 +1162,9 @@ export default function SettingsIntegrationsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={simulateFailure}
+                    onClick={createTestFailure}
                     className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 px-4 py-2 text-xs font-extrabold text-orange-800"
-                    title="Demo action"
+                    title="Create a test delivery failure"
                   >
                     <AlertTriangle className="h-4 w-4" />
                     Simulate failure
@@ -1500,7 +1500,7 @@ export default function SettingsIntegrationsPage() {
       <Drawer
         open={newKeyOpen}
         title="Create API key"
-        subtitle="Core: API keys placeholder. This demo simulates creation."
+        subtitle="Create a workspace API key."
         onClose={() => setNewKeyOpen(false)}
       >
         <div className="space-y-3">

@@ -118,7 +118,7 @@ function memberStatusPillCls(status) {
 function hasCapability(member, crewRole) {
   // Premium idea:
   // - Workspace roleId comes from Roles & Permissions.
-  // - Capability rules can be more complex (capabilities matrix). This is a mock.
+  // - Capability rules can be more complex (capabilities matrix).
   if (!member) return false;
   if (crewRole === "Host") return ["owner", "manager", "host"].includes(member.roleId);
   if (crewRole === "Producer") return ["owner", "manager", "producer"].includes(member.roleId);

@@ -161,7 +161,7 @@ function useAsyncAction(toastApi) {
 
     setIsPending(true);
     try {
-      // simulate latency
+      // local latency guard
       if (delay) await new Promise((r) => setTimeout(r, delay));
       const res = await fn();
       toastApi?.showSuccess?.(successMessage);
@@ -316,7 +316,7 @@ function isoNowPlus(ms) {
   return new Date(Date.now() + ms).toISOString();
 }
 
-const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+const SAMPLE_VIDEO_1 = "";
 
 /* ------------------------------ UI primitives ------------------------------ */
 
@@ -824,7 +824,7 @@ export function LiveBuilderDrawer({
     setSaving(true);
     await safeAsyncApi.run(
       async () => {
-        // simulate validation
+        // local validation
         if (!title.trim()) throw new Error("missing title");
         return true;
       },

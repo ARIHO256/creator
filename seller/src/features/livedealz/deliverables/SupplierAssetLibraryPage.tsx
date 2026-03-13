@@ -22,7 +22,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  *   pending_supplier → changes_requested (Recommend changes)
  *   pending_supplier → rejected (Reject)
  * - Review note + recommended fix list is captured per asset (demo state).
- * - Campaign-level setting simulated: “Supplier manual review” vs “Auto-approval to Admin”.
+ * - Campaign-level setting: “Supplier manual review” vs “Auto-approval to Admin”.
  *   Auto mode skips pending_supplier and submits directly to pending_admin.
  *
  * Notes:

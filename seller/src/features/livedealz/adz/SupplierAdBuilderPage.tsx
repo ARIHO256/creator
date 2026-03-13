@@ -449,10 +449,9 @@ function parseLocalDateTime(dateStr: string, timeStr: string) {
 }
 
 /**
- * Mock backend validation call.
- * In a real system, this would be an async API call.
+ * Local validation against the loaded campaign window.
  */
-function mockValidateSchedule(campaignId: string, start: Date, end: Date, campaigns: Campaign[]) {
+function validateScheduleWindow(campaignId: string, start: Date, end: Date, campaigns: Campaign[]) {
   const campaign = campaigns.find((c) => c.id === campaignId);
   if (!campaign) return { ok: false, error: "Invalid campaign selected" };
 
@@ -2233,7 +2232,7 @@ export default function AdBuilder({
     issues.push({ label: "End date/time set", ok: !!builder.endDate && !!builder.endTime });
     issues.push({ label: "End after start", ok: endsAt.getTime() > startsAt.getTime(), fix: "Adjust schedule." });
 
-    const scheduleValidation = mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns);
+    const scheduleValidation = validateScheduleWindow(builder.campaignId, startsAt, endsAt, scope.campaigns);
     issues.push({ label: "Schedule within campaign window", ok: scheduleValidation.ok, fix: scheduleValidation.error });
 
     const ok = issues.every((i) => i.ok);
@@ -2847,7 +2846,7 @@ export default function AdBuilder({
                               </Pill>
                             </div>
                             <div className="mt-2 rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 p-3 ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors">
-                              <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{videoAsset?.title || (o.catalogVideoUrl ? "Catalog video (fallback)" : "No video")}</div>
+                              <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{videoAsset?.title || (o.catalogVideoUrl ? "Catalog video" : "No video")}</div>
                               <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Desktop viewer: {(videoAsset?.desktopMode || "modal").toUpperCase()}</div>
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
@@ -3139,7 +3138,7 @@ export default function AdBuilder({
                 </div>
 
                 {(() => {
-                  const val = mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns);
+                  const val = validateScheduleWindow(builder.campaignId, startsAt, endsAt, scope.campaigns);
                   if (!val.ok) {
                     return (
                       <div className="mt-4 flex items-start gap-2 rounded-2xl bg-rose-50 dark:bg-rose-900/20 p-3 text-xs text-rose-900 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800 transition-colors">
@@ -3163,8 +3162,8 @@ export default function AdBuilder({
                   tone="primary"
                   onClick={handleNext}
                   right={<ChevronRight className="h-4 w-4" />}
-                  disabled={!mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns).ok}
-                  title={!mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns).ok ? "Fix schedule issues" : undefined}
+                  disabled={!validateScheduleWindow(builder.campaignId, startsAt, endsAt, scope.campaigns).ok}
+                  title={!validateScheduleWindow(builder.campaignId, startsAt, endsAt, scope.campaigns).ok ? "Fix schedule issues" : undefined}
                 >
                   Next: Review
                 </Btn>

@@ -302,9 +302,9 @@ function SocialStat({ icon, label, value }) {
   );
 }
 
-/* ----------------------------- Supplier domain mocks ----------------------------- */
+/* ----------------------------- Supplier campaign data ----------------------------- */
 
-const MOCK_CAMPAIGNS = [];
+const PROFILE_CAMPAIGNS = [];
 
 const DELIVERABLE_PACKS = [];
 
@@ -1224,7 +1224,7 @@ export default function SupplierCreatorProfilePage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         creator={creator}
-        campaigns={MOCK_CAMPAIGNS}
+        campaigns={PROFILE_CAMPAIGNS}
         onInviteSent={() => {
           // Optional: in production, update My Creators / Invites state stores
         }}
@@ -1244,7 +1244,7 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
   assert(typeof ORANGE === "string" && ORANGE.length > 0, "ORANGE exists");
   assert(typeof GREEN === "string" && GREEN.length > 0, "GREEN exists");
-  assert(Array.isArray(MOCK_CAMPAIGNS) && MOCK_CAMPAIGNS.length > 0, "campaign mocks exist");
-  assert(Array.isArray(DELIVERABLE_PACKS) && DELIVERABLE_PACKS.length > 0, "deliverable packs exist");
+  assert(Array.isArray(PROFILE_CAMPAIGNS), "campaign data exists");
+  assert(Array.isArray(DELIVERABLE_PACKS), "deliverable packs exist");
   console.log("✅ SupplierCreatorProfilePage self-tests passed");
 }

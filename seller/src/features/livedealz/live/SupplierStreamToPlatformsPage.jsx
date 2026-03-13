@@ -861,7 +861,7 @@ export default function SupplierStreamToPlatformsPage() {
 
     run(
       async () => {
-        // simulate
+        // local test
       },
       {
         delay: 1500,

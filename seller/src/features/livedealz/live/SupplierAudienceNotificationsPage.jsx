@@ -14,7 +14,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * - Reminder Pipeline (T-24h, T-1h, T-10m, Live Now, Deal Drop, Replay Ready)
  * - Messaging Blueprint (template packs)
  * - Deployment Bricks (links + QR) + Protocol Synopsis panel
- * - Protocol Simulation drawer (phone mockups + checklist + toolkit)
+ * - Protocol drawer (phone previews + checklist + toolkit)
  * - Toast behavior
  *
  * Supplier adaptations (minimal, required):
@@ -642,7 +642,7 @@ export default function SupplierAudienceNotificationsPage() {
         supportsQr: false,
         supportsButtons: false,
         proOnly: true,
-        note: "Pro: RCS/SMS fallback. Buttons vary by device; keep copy short.",
+        note: "Pro: RCS/SMS delivery note. Buttons vary by device; keep copy short.",
       },
     ],
     []

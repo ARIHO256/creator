@@ -448,9 +448,9 @@ function BarList({ title, subtitle, rows }) {
 
 /* -------------------------------- Mock data -------------------------------- */
 
-const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+const SAMPLE_VIDEO = "";
 
-const DEMO_ADS: Array<Record<string, any>> = [];
+const EMPTY_ADS: Array<Record<string, any>> = [];
 
 /* ----------------------------- Performance drawer --------------------------- */
 
@@ -1070,7 +1070,7 @@ export default function SupplierAdzDashboardPage() {
   const [drawer, setDrawer] = useState(null); // null | calendar | quickLinks | performance | builder
   const [drawerData, setDrawerData] = useState(undefined); // adId
 
-  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
+  const [ads, setAds] = useState<typeof EMPTY_ADS>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;
@@ -1081,7 +1081,7 @@ export default function SupplierAdzDashboardPage() {
         if (cancelled) return;
         const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
         if (nextAds.length) {
-          setAds(nextAds as typeof DEMO_ADS);
+          setAds(nextAds as typeof EMPTY_ADS);
           syncedAdsRef.current = Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)]));
         }
       })

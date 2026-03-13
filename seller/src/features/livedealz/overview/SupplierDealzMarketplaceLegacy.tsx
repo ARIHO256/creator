@@ -57,7 +57,7 @@ import {
  *
  * This rebuild is aligned to:
  * - The latest Shoppable Ad template/preview used in Ad Builder (campaign-first, shareable preview, overlays, viewers)
- * - The Live Builder promo-link (live session invite) preview pattern (mobile-first phone mockup + item viewer)
+ * - The Live Builder promo-link (live session invite) preview pattern (mobile-first phone preview + item viewer)
  *
  * Wiring conventions used (update routes to match your app):
  * - /ad-builder?embed=drawer&returnTo=/dealz-marketplace            (Shoppable builder)

@@ -13,7 +13,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
  * - Destinations list with toggles + per-channel “Pin link to chat” helper
  * - Preview panel (selected alert) + copy + send-with-confirm
  * - Recommended cadence cards
- * - Confirm modal with Preflight checks + editable draft + phone mock preview
+ * - Confirm modal with Preflight checks + editable draft + phone preview
  *
  * Supplier adaptations (minimal + required):
  * - Role copy: Supplier App → Live → Live Alerts Manager
@@ -552,7 +552,7 @@ export default function SupplierLiveAlertsManagerPage() {
     // RBAC: require supplier.live.alerts.send permission.
     run(
       async () => {
-        // simulate network
+        // local network delay
         await new Promise((r) => setTimeout(r, 600));
         setLastSent((s) => ({ ...s, [active.key]: Date.now() }));
 
@@ -1104,7 +1104,7 @@ export default function SupplierLiveAlertsManagerPage() {
                 <div className="rounded-2xl bg-neutral-900 dark:bg-black p-3 transition">
                   <div className="rounded-2xl bg-white dark:bg-slate-900 p-3">
                     <div className="mb-2 flex items-center justify-between">
-                      <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">Phone mock</div>
+                      <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">Phone preview</div>
                       <Pill>
                         <Phone className="h-3.5 w-3.5" />
                         Preview

@@ -329,7 +329,7 @@ export default function SupplierTaskBoardPage() {
           collabMode: contract.governance?.collabMode || "Open for Collabs",
           approvalMode: contract.governance?.approvalMode || "Manual",
 
-          // Submission mocks
+          // Submission preview entries
           submission: {
             status: d.done ? "Approved" : "In progress",
             link: `https://drive.example.com/${encodeURIComponent(contract.id)}/${d.id}`,

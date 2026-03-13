@@ -1130,105 +1130,6 @@ function CatalogCampaignPickerPage({
 
 /* ------------------------- campaigns ------------------------- */
 
-const INIT_CAMPAIGNS = [
-  {
-    id: 'S-201',
-    name: 'Beauty Flash Week (Combo)',
-    stage: 'Execution',
-    approvalStatus: 'Approved',
-    creatorUsageDecision: 'I will use a Creator',
-    collabMode: 'Open for Collabs',
-    approvalMode: 'Manual',
-    offerScope: 'Products',
-    promoType: 'Discount',
-    promoArrangement: 'PercentOff',
-    currency: 'USD',
-    estValue: 2400,
-    region: 'East Africa',
-    type: 'Live + Shoppables.',
-    startDate: '2026-02-10',
-    durationDays: 14,
-    endDate: computeEndDate('2026-02-10', 14),
-    items: [
-      {
-        ...CATALOG_ITEMS[2],
-        plannedQty: 40,
-        discount: { mode: 'percent', value: 15 },
-        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[2].price, 'percent', 15),
-        discountLabel: formatDiscount('percent', 15, 'USD'),
-      },
-      {
-        ...CATALOG_ITEMS[3],
-        plannedQty: 25,
-        discount: { mode: 'amount', value: 5 },
-        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[3].price, 'amount', 5),
-        discountLabel: formatDiscount('amount', 5, 'USD'),
-      },
-    ],
-    creatorsCount: 2,
-    pitchesCount: 7,
-    invitesSent: 0,
-    invitesAccepted: 0,
-    proposalsCount: 2,
-    contractCount: 1,
-    pendingSupplierApproval: true,
-    pendingAdminApproval: false,
-    adminRejected: false,
-    creatorRejected: false,
-    renegotiation: false,
-    health: 'on-track',
-    nextAction: 'Approve Creator Clip #3',
-    lastActivity: 'Assets submitted · 2h',
-    lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
-  },
-  {
-    id: 'S-202',
-    name: 'Tech Friday Mega Live',
-    stage: 'Draft',
-    approvalStatus: 'Pending',
-    creatorUsageDecision: 'I will use a Creator',
-    collabMode: 'Invite-only',
-    approvalMode: 'Manual',
-    offerScope: 'Products',
-    promoType: 'Coupon',
-    promoArrangement: 'InfluencerCode',
-    promoCode: 'TECHFRIDAY',
-    currency: 'USD',
-    estValue: 3100,
-    region: 'Africa / Asia',
-    type: 'Live Sessionz',
-    startDate: '2026-02-25',
-    durationDays: 10,
-    endDate: computeEndDate('2026-02-25', 10),
-    items: [
-      {
-        ...CATALOG_ITEMS[1],
-        plannedQty: 60,
-        discount: { mode: 'percent', value: 10 },
-        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[1].price, 'percent', 10),
-        discountLabel: formatDiscount('percent', 10, 'USD'),
-      },
-    ],
-    creatorsCount: 0,
-    pitchesCount: 0,
-    invitesSent: 0,
-    invitesAccepted: 0,
-    proposalsCount: 0,
-    contractCount: 0,
-    pendingSupplierApproval: false,
-    pendingAdminApproval: true,
-    adminRejected: false,
-    creatorRejected: false,
-    renegotiation: false,
-    health: 'at-risk',
-    nextAction: 'Await Admin approval',
-    lastActivity: 'Submitted for approval · 1d',
-    lastActivityAt: Date.now() - 1 * 24 * 60 * 60 * 1000,
-    queuedStageAfterApproval: 'Collabs',
-    queuedNextActionAfterApproval: 'Invite creators',
-  },
-];
-
 export function createEmptySupplierCampaignBuilder() {
   return {
     name: '',
@@ -2305,7 +2206,7 @@ export default function SupplierMyCampaignsPage() {
     }
   }
 
-  function simulateAdminDecision(c, decision) {
+  function handleAdminDecision(c, decision) {
     if (decision === 'approve') {
       const nextCampaign = {
         ...c,
@@ -4847,13 +4748,13 @@ export default function SupplierMyCampaignsPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Btn
                     tone="primary"
-                    onClick={() => simulateAdminDecision(activeCampaign, 'approve')}
+                    onClick={() => handleAdminDecision(activeCampaign, 'approve')}
                   >
                     ✅ Simulate Approve
                   </Btn>
                   <Btn
                     tone="danger"
-                    onClick={() => simulateAdminDecision(activeCampaign, 'reject')}
+                    onClick={() => handleAdminDecision(activeCampaign, 'reject')}
                   >
                     ❌ Simulate Reject
                   </Btn>

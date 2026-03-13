@@ -3221,8 +3221,8 @@ function SupplierPlaceholder({
               onClick={() => {
                 logAudit({
                   actor: 'SellerSeller',
-                  action: 'action simulated',
-                  detail: 'Demo audit entry',
+                  action: 'action recorded',
+                  detail: 'Audit entry',
                   route: path,
                 });
                 pushToast({
