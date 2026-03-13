@@ -117,6 +117,9 @@ export const authClient = {
     password?: string;
     role: UserRole;
   }) {
+    if (!password?.trim()) {
+      throw new Error("Password is required for registration");
+    }
     const backendRole = role === "provider" ? "PROVIDER" : "SELLER";
     const tokens = await request<LoginResponse>("/api/auth/register", {
       method: "POST",
@@ -124,7 +127,7 @@ export const authClient = {
         name,
         email: email?.trim().toLowerCase(),
         phone,
-        password: password || "demo1234",
+        password,
         role: backendRole,
         roles: [backendRole],
         sellerKind: backendRole,
