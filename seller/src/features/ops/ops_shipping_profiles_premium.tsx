@@ -71,7 +71,7 @@ type PolicyRule = {
 
 type ShippingPolicy = {
   mode: string;
-  fallbackWarehouseId: string | null;
+  defaultWarehouseId: string | null;
   rules: PolicyRule[];
 };
 
@@ -363,7 +363,7 @@ function mapShippingProfile(entry: Record<string, any>): ShippingProfile {
     policy:
       metadata.policy && typeof metadata.policy === "object"
         ? (metadata.policy as ShippingPolicy)
-        : { mode: "auto", fallbackWarehouseId: null, rules: [] },
+        : { mode: "auto", defaultWarehouseId: null, rules: [] },
   };
 }
 
@@ -394,7 +394,7 @@ function selectWarehouse(profile, ctx) {
   const policy = profile?.policy;
   const whMap = new Map((warehouses || []).map((w) => [w.id, w]));
 
-  const fallback = policy?.fallbackWarehouseId && whMap.get(policy.fallbackWarehouseId) ? policy.fallbackWarehouseId : (warehouses?.[0]?.id || null);
+  const defaultWarehouseId = policy?.defaultWarehouseId && whMap.get(policy.defaultWarehouseId) ? policy.defaultWarehouseId : (warehouses?.[0]?.id || null);
 
   const w = Math.max(0, Number(weightKg || 0));
   const it = Math.max(0, Math.floor(Number(items || 0)));
@@ -427,8 +427,8 @@ function selectWarehouse(profile, ctx) {
   }
 
   return {
-    warehouseId: fallback,
-    reason: `Fallback warehouse selected (${fallback}).`,
+    warehouseId: defaultWarehouseId,
+    reason: `Default warehouse selected (${defaultWarehouseId}).`,
   };
 }
 
@@ -438,10 +438,10 @@ function policyHealth(profile, warehouses) {
   const rules = policy?.rules || [];
 
   const missing = rules.filter((r) => r?.then?.warehouseId && !whSet.has(r.then.warehouseId)).length;
-  const hasFallback = !!(policy?.fallbackWarehouseId && whSet.has(policy.fallbackWarehouseId));
+  const hasDefaultWarehouse = !!(policy?.defaultWarehouseId && whSet.has(policy.defaultWarehouseId));
 
   const scoreBase = 70;
-  const score = clamp(scoreBase + (hasFallback ? 12 : -10) - missing * 10 + Math.min(14, rules.length * 4), 30, 99);
+  const score = clamp(scoreBase + (hasDefaultWarehouse ? 12 : -10) - missing * 10 + Math.min(14, rules.length * 4), 30, 99);
 
   const tone = score >= 85 ? "green" : score >= 65 ? "orange" : "danger";
   return { score, tone, missing, hasFallback };
@@ -660,7 +660,7 @@ export default function OpsShippingProfilesPremium() {
       serviceType: "Parcel",
       updatedAt: new Date().toISOString(),
       zones: [],
-      policy: { mode: "auto", fallbackWarehouseId: warehouses[0]?.id || null, rules: [] },
+      policy: { mode: "auto", defaultWarehouseId: warehouses[0]?.id || null, rules: [] },
     }),
     [warehouses]
   );
@@ -791,7 +791,7 @@ export default function OpsShippingProfilesPremium() {
         priority: rules.length ? Math.max(...rules.map((r) => Number(r.priority || 0))) + 10 : 10,
         title: "New rule",
         when: { zoneId: s.zones?.[0]?.id || "" },
-        then: { warehouseId: s.policy?.fallbackWarehouseId || warehouses[0]?.id || "" },
+        then: { warehouseId: s.policy?.defaultWarehouseId || warehouses[0]?.id || "" },
       };
       return { ...s, policy: { ...s.policy, rules: [...rules, next] } };
     });
@@ -990,11 +990,11 @@ export default function OpsShippingProfilesPremium() {
               <div className="text-sm font-black text-slate-900">Policy quality</div>
               <span className="ml-auto">{active ? <Badge tone={policyHealth(active, warehouses).tone}>{policyHealth(active, warehouses).score}</Badge> : <AwareEmpty />}</span>
             </div>
-            <div className="mt-2 text-xs font-semibold text-slate-500">Super premium: validate missing warehouses and fallback routing.</div>
+            <div className="mt-2 text-xs font-semibold text-slate-500">Super premium: validate missing warehouses and default routing.</div>
             {active ? (
               <div className="mt-3 grid gap-2">
                 <MiniRow label="Rules" value={(active.policy?.rules || []).length} />
-                <MiniRow label="Fallback" value={active.policy?.fallbackWarehouseId ? "Set" : "Not set"} />
+                <MiniRow label="Default" value={active.policy?.defaultWarehouseId ? "Set" : "Not set"} />
                 <MiniRow label="Missing targets" value={policyHealth(active, warehouses).missing} />
               </div>
             ) : null}
@@ -1118,7 +1118,7 @@ export default function OpsShippingProfilesPremium() {
                         <div className="mt-1 text-xs font-semibold text-slate-500">Service type: {active.serviceType} · {active.zones.length} zones</div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Badge tone="slate">Policy mode: {active.policy?.mode || "auto"}</Badge>
-                          <Badge tone="slate">Fallback: {active.policy?.fallbackWarehouseId || "-"}</Badge>
+                          <Badge tone="slate">Default: {active.policy?.defaultWarehouseId || "-"}</Badge>
                           <Badge tone={policyHealth(active, warehouses).tone}>Policy score {policyHealth(active, warehouses).score}</Badge>
                         </div>
                       </div>
@@ -1529,8 +1529,8 @@ export default function OpsShippingProfilesPremium() {
                           <FieldLabel>Fallback warehouse</FieldLabel>
                           <div className="mt-2">
                             <SmallSelect
-                              value={draft?.policy?.fallbackWarehouseId || ""}
-                              onChange={(v) => setDraft((s) => ({ ...s, policy: { ...(s.policy || {}), fallbackWarehouseId: v } }))}
+                              value={draft?.policy?.defaultWarehouseId || ""}
+                              onChange={(v) => setDraft((s) => ({ ...s, policy: { ...(s.policy || {}), defaultWarehouseId: v } }))}
                             >
                               {warehouses.map((w) => (
                                 <option key={w.id} value={w.id}>
@@ -1711,7 +1711,7 @@ export default function OpsShippingProfilesPremium() {
                         ))}
 
                       {(draft?.policy?.rules || []).length === 0 ? (
-                        <EmptyState title="No rules yet" message="Add at least one rule, or rely on fallback warehouse." action={{ label: "Add rule", onClick: addPolicyRule }} />
+                        <EmptyState title="No rules yet" message="Add at least one rule, or rely on default warehouse." action={{ label: "Add rule", onClick: addPolicyRule }} />
                       ) : null}
                     </div>
                   </div>

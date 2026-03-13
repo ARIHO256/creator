@@ -316,8 +316,6 @@ function isoNowPlus(ms) {
   return new Date(Date.now() + ms).toISOString();
 }
 
-const SAMPLE_VIDEO_1 = "";
-
 /* ------------------------------ UI primitives ------------------------------ */
 
 function PageHeader({ pageTitle, rightContent }) {
@@ -1171,7 +1169,7 @@ export function LiveBuilderDrawer({
             </label>
             <label className="flex items-center gap-2 text-[12px] font-bold text-slate-800 dark:text-slate-200">
               <input type="checkbox" defaultChecked />
-              Product demo clip
+              Product showcase clip
             </label>
             <label className="flex items-center gap-2 text-[12px] font-bold text-slate-800 dark:text-slate-200">
               <input type="checkbox" defaultChecked />
@@ -1446,7 +1444,7 @@ export default function SupplierLiveDashboardPage() {
           hostRole: payload.hostRole,
           platforms: payload.platforms,
           heroImageUrl,
-          heroVideoUrl: SAMPLE_VIDEO_1,
+          heroVideoUrl: "",
           desktopMode: payload.desktopMode,
           startISO: payload.startISO,
           endISO: payload.endISO,
@@ -1761,7 +1759,7 @@ export default function SupplierLiveDashboardPage() {
               </div>
 
               <div className="lg:col-span-12">
-                <Card title="Go‑Live readiness" subtitle="Lightweight preflight summary (demo logic).">
+                <Card title="Go‑Live readiness" subtitle="Lightweight preflight summary.">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                     {readiness.items.map((it) => (
                       <div key={it.label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 flex items-center justify-between gap-2 transition-colors">

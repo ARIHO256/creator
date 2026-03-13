@@ -712,13 +712,13 @@ export class DiscoveryService {
     return `Updated · ${updatedAt.toISOString()}`;
   }
 
-  private buildInitials(value: string, fallback: string) {
+  private buildInitials(value: string, defaultValue: string) {
     const initials = String(value || '')
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
       .map((entry) => entry[0]?.toUpperCase() || '')
       .join('');
-    return initials || fallback;
+    return initials || defaultValue;
   }
 }

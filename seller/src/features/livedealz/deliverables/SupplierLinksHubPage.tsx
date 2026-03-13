@@ -284,7 +284,7 @@ function CaptionBlock({ platform, text, onCopy }) {
 /* -------------------------------- QR ------------------------------------- */
 
 function RemoteQR({ value, size = 180 }) {
-  // Remote QR fallback. Replace with local QR generator in project if desired.
+  // Remote QR helper. Replace with a local QR generator in project if desired.
   const src = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}`;
   return (
     <div className="rounded-2xl border border-slate-200 bg-white dark:bg-slate-900" style={{ width: size, height: size }}>

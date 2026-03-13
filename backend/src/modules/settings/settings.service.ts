@@ -789,11 +789,11 @@ export class SettingsService {
     return record.payload as Record<string, unknown>;
   }
 
-  private async getWorkspaceSetting(userId: string, key: string, fallback: Record<string, unknown>) {
+  private async getWorkspaceSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
     const record = await this.prisma.workspaceSetting.findUnique({
       where: { userId_key: { userId, key } }
     });
-    return record ? (record.payload as Record<string, unknown>) : fallback;
+    return record ? (record.payload as Record<string, unknown>) : defaultValue;
   }
 
   private async findWorkspaceSetting(userId: string, key: string) {
@@ -816,11 +816,11 @@ export class SettingsService {
     });
   }
 
-  private async getUserSetting(userId: string, key: string, fallback: Record<string, unknown>) {
+  private async getUserSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
     const record = await this.prisma.userSetting.findUnique({
       where: { userId_key: { userId, key } }
     });
-    return record ? (record.payload as Record<string, unknown>) : fallback;
+    return record ? (record.payload as Record<string, unknown>) : defaultValue;
   }
 
   private async upsertUserSetting(userId: string, key: string, body: unknown) {
@@ -1343,8 +1343,8 @@ export class SettingsService {
       : [];
   }
 
-  private firstString(values: string[], fallback: string[]) {
-    return values.find(Boolean) || fallback[0];
+  private firstString(values: string[], defaultValue: string[]) {
+    return values.find(Boolean) || defaultValue[0];
   }
 
   private normalizeLocale(value: string) {

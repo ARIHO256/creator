@@ -95,7 +95,7 @@ const IconChevronRight = ({ className }) => (
 const IconCategory = () => <IconShell>◎</IconShell>;
 const IconSearch = () => <IconShell>🔍</IconShell>;
 
-// Taxonomy must be provided by the backend (DB-backed). We intentionally do not ship a hardcoded fallback tree.
+// Taxonomy must be provided by the backend (DB-backed). We intentionally do not ship a hardcoded local tree.
 const initialTaxonomy: TaxonomyNode[] = [
   {
     id: "marketplace-evmart",

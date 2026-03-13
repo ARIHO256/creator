@@ -245,9 +245,9 @@ export function createDefaultOnboardingState(profileType: OnboardingProfileType)
   };
 }
 
-export function normalizeStoredOnboardingState(payload: unknown, fallbackProfileType: OnboardingProfileType) {
+export function normalizeStoredOnboardingState(payload: unknown, defaultValueProfileType: OnboardingProfileType) {
   const source = isRecord(payload) ? payload : {};
-  return mergeOnboardingState(createDefaultOnboardingState(inferProfileType(source, fallbackProfileType)), source);
+  return mergeOnboardingState(createDefaultOnboardingState(inferProfileType(source, defaultValueProfileType)), source);
 }
 
 export function mergeOnboardingState(current: OnboardingState, patch: UpdateOnboardingDto | JsonRecord) {
@@ -424,16 +424,16 @@ export function assertSubmittableOnboarding(state: OnboardingState) {
   }
 }
 
-function inferProfileType(source: JsonRecord, fallback: OnboardingProfileType): OnboardingProfileType {
-  const value = pickString(source.profileType, fallback).toUpperCase();
+function inferProfileType(source: JsonRecord, defaultValue: OnboardingProfileType): OnboardingProfileType {
+  const value = pickString(source.profileType, defaultValue).toUpperCase();
   return ONBOARDING_PROFILE_TYPES.includes(value as OnboardingProfileType)
     ? (value as OnboardingProfileType)
-    : fallback;
+    : defaultValue;
 }
 
-function inferStatus(source: JsonRecord, fallback: OnboardingStatus): OnboardingStatus {
-  const value = pickString(source.status, fallback).toLowerCase();
-  return ONBOARDING_STATUSES.includes(value as OnboardingStatus) ? (value as OnboardingStatus) : fallback;
+function inferStatus(source: JsonRecord, defaultValue: OnboardingStatus): OnboardingStatus {
+  const value = pickString(source.status, defaultValue).toLowerCase();
+  return ONBOARDING_STATUSES.includes(value as OnboardingStatus) ? (value as OnboardingStatus) : defaultValue;
 }
 
 function normalizeSlug(value: string) {
@@ -444,9 +444,9 @@ function normalizeSlug(value: string) {
   return slug;
 }
 
-function normalizeSteps(value: unknown, fallback: OnboardingState['steps']) {
+function normalizeSteps(value: unknown, defaultValue: OnboardingState['steps']) {
   if (!Array.isArray(value)) {
-    return fallback;
+    return defaultValue;
   }
 
   return value
@@ -465,9 +465,9 @@ function normalizeSteps(value: unknown, fallback: OnboardingState['steps']) {
     }));
 }
 
-function normalizeDocumentList(value: unknown, fallback: JsonRecord[]) {
+function normalizeDocumentList(value: unknown, defaultValue: JsonRecord[]) {
   if (!Array.isArray(value)) {
-    return fallback;
+    return defaultValue;
   }
 
   return value
@@ -514,21 +514,21 @@ function hasOnboardingProgress(state: OnboardingState) {
   );
 }
 
-function uniqStringArray(value: unknown, fallback: string[]) {
+function uniqStringArray(value: unknown, defaultValue: string[]) {
   if (!Array.isArray(value)) {
-    return fallback;
+    return defaultValue;
   }
 
   return [...new Set(value.map((entry) => pickString(entry, '')).filter(Boolean))];
 }
 
-function normalizeObject(value: unknown, fallback: JsonRecord | null) {
-  return isRecord(value) ? { ...value } : fallback;
+function normalizeObject(value: unknown, defaultValue: JsonRecord | null) {
+  return isRecord(value) ? { ...value } : defaultValue;
 }
 
-function normalizeObjectArray(value: unknown, fallback: JsonRecord[]) {
+function normalizeObjectArray(value: unknown, defaultValue: JsonRecord[]) {
   if (!Array.isArray(value)) {
-    return fallback;
+    return defaultValue;
   }
 
   return value.filter(isRecord).map((entry) => ({ ...entry }));
@@ -547,31 +547,31 @@ function readMaybe(value: unknown) {
   return value === null ? null : value;
 }
 
-function pickString(value: unknown, fallback: string) {
-  return typeof value === 'string' ? value.trim() : fallback;
+function pickString(value: unknown, defaultValue: string) {
+  return typeof value === 'string' ? value.trim() : defaultValue;
 }
 
-function pickBoolean(value: unknown, fallback: boolean) {
-  return typeof value === 'boolean' ? value : fallback;
+function pickBoolean(value: unknown, defaultValue: boolean) {
+  return typeof value === 'boolean' ? value : defaultValue;
 }
 
-function pickNullableNumber(value: unknown, fallback: number | null) {
+function pickNullableNumber(value: unknown, defaultValue: number | null) {
   if (value === null) {
     return null;
   }
 
   const parsed = typeof value === 'number' && Number.isFinite(value) ? value : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
-function pickNumber(value: unknown, fallback: number) {
+function pickNumber(value: unknown, defaultValue: number) {
   const parsed = typeof value === 'number' && Number.isFinite(value) ? value : Number.NaN;
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
-function pickStatus<T extends readonly string[]>(value: unknown, allowed: T, fallback: T[number]) {
-  const normalized = pickString(value, fallback).toUpperCase();
-  return allowed.includes(normalized as T[number]) ? (normalized as T[number]) : fallback;
+function pickStatus<T extends readonly string[]>(value: unknown, allowed: T, defaultValue: T[number]) {
+  const normalized = pickString(value, defaultValue).toUpperCase();
+  return allowed.includes(normalized as T[number]) ? (normalized as T[number]) : defaultValue;
 }
 
 function isRecord(value: unknown): value is JsonRecord {

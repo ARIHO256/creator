@@ -886,14 +886,14 @@ function isExpiringSoon(expiry, days = 30) {
   return diffDays >= 0 && diffDays <= days;
 }
 
-function splitPhoneNumber(value, fallbackCode = DEFAULT_DIAL_CODE) {
+function splitPhoneNumber(value, defaultValueCode = DEFAULT_DIAL_CODE) {
   const raw = String(value || "").trim();
-  if (!raw) return { code: fallbackCode, number: "" };
+  if (!raw) return { code: defaultValueCode, number: "" };
   const match = COUNTRY_DIAL_CODES.find((item) => raw.startsWith(item.dial));
   if (match) {
     return { code: match.dial, number: raw.slice(match.dial.length).trim() };
   }
-  return { code: fallbackCode, number: raw };
+  return { code: defaultValueCode, number: raw };
 }
 
 function combinePhoneNumber(code, number) {
@@ -1496,9 +1496,9 @@ function normalizeShippingProfiles(payload: Record<string, unknown> | null | und
 
 function normalizeLabeledValueOptions(
   value: unknown,
-  fallback: LabeledValueOption[]
+  defaultValue: LabeledValueOption[]
 ): LabeledValueOption[] {
-  if (!Array.isArray(value)) return fallback;
+  if (!Array.isArray(value)) return defaultValue;
   const rows = value
     .map((entry) => {
       if (!entry || typeof entry !== "object") return null;
@@ -1513,19 +1513,19 @@ function normalizeLabeledValueOptions(
       };
     })
     .filter((entry): entry is LabeledValueOption => Boolean(entry));
-  return rows.length ? rows : fallback;
+  return rows.length ? rows : defaultValue;
 }
 
-function normalizeStringOptions(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) return fallback;
+function normalizeStringOptions(value: unknown, defaultValue: string[]): string[] {
+  if (!Array.isArray(value)) return defaultValue;
   const rows = value
     .map((entry) => String(entry || "").trim().toUpperCase())
     .filter(Boolean);
-  return rows.length ? rows : fallback;
+  return rows.length ? rows : defaultValue;
 }
 
-function normalizePolicyPresets(value: unknown, fallback: PolicyPresetOption[]): PolicyPresetOption[] {
-  if (!Array.isArray(value)) return fallback;
+function normalizePolicyPresets(value: unknown, defaultValue: PolicyPresetOption[]): PolicyPresetOption[] {
+  if (!Array.isArray(value)) return defaultValue;
   const rows = value
     .map((entry) => {
       if (!entry || typeof entry !== "object") return null;
@@ -1549,7 +1549,7 @@ function normalizePolicyPresets(value: unknown, fallback: PolicyPresetOption[]):
       };
     })
     .filter((entry): entry is PolicyPresetOption => Boolean(entry));
-  return rows.length ? rows : fallback;
+  return rows.length ? rows : defaultValue;
 }
 
 function normalizeOnboardingLookups(payload: Record<string, unknown> | null | undefined): OnboardingLookups {

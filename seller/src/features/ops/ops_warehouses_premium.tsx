@@ -408,9 +408,9 @@ function evaluateRouting({
   }
 
   // Fallback
-  const fallback = warehouses.find((w) => warehouseAllows(w, country, category).ok) || warehouses[0];
-  explain.push({ step: "Fallback", ok: true, note: fallback ? `Selected ${fallback.code}` : "No warehouses" });
-  return { warehouseId: fallback?.id || null, reason: "Fallback warehouse selected.", explain };
+  const defaultWarehouse = warehouses.find((w) => warehouseAllows(w, country, category).ok) || warehouses[0];
+  explain.push({ step: "Default", ok: true, note: defaultWarehouse ? `Selected ${defaultWarehouse.code}` : "No warehouses" });
+  return { warehouseId: defaultWarehouse?.id || null, reason: "Default warehouse selected.", explain };
 }
 
 // ------------------------ Main page ------------------------
@@ -1468,7 +1468,7 @@ export default function OpsWarehousesPremium() {
                 </div>
                 <div>
                   <div className="text-sm font-black text-orange-900">Tip</div>
-                  <div className="mt-1 text-xs font-semibold text-orange-900/70">Leave match fields empty to make a broad fallback rule.</div>
+                  <div className="mt-1 text-xs font-semibold text-orange-900/70">Leave match fields empty to make a broad default rule.</div>
                 </div>
               </div>
             </div>
