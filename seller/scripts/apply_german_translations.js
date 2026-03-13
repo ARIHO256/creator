@@ -85,7 +85,7 @@ for (const [key, englishValue] of Object.entries(englishDict)) {
     continue;
   }
   
-  // Priority 3: Use English as default English
+  // Priority 3: Use English as fallback
   newGermanDict[key] = englishValue;
   usingEnglish++;
 }
@@ -95,7 +95,7 @@ writeDictionary(germanPath, newGermanDict);
 console.log(`\n✅ German dictionary updated:`);
 console.log(`   Preserved: ${preserved}`);
 console.log(`   Applied from file: ${applied}`);
-console.log(`   Using English default English: ${usingEnglish}`);
+console.log(`   Using English fallback: ${usingEnglish}`);
 console.log(`   Total: ${Object.keys(newGermanDict).length}`);
 
 if (usingEnglish > 0) {

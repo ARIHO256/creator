@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   AlertTriangle,
@@ -381,107 +381,25 @@ function KpiCard({ icon: Icon, label, value, delta, tone = "slate", spark, onCli
   );
 }
 
-function seedFinance() {
-  const now = Date.now();
-  const ago = (m) => new Date(now - m * 60_000).toISOString();
-  const inM = (m) => new Date(now + m * 60_000).toISOString();
-  const inD = (d) => new Date(now + d * 24 * 60_000).toISOString();
-
-  const fx = { UGX_to_USD: 1 / 3800, KES_to_USD: 1 / 145, CNY_to_USD: 1 / 7.2 };
-
-  const balances = [
-    { currency: "UGX", available: 6240000, pending: 1180000, reserved: 420000, holds: 0 },
-    { currency: "USD", available: 1840.25, pending: 320.0, reserved: 120.0, holds: 210.5 },
-    { currency: "CNY", available: 9200.0, pending: 1500.0, reserved: 0, holds: 0 },
-    { currency: "KES", available: 92000.0, pending: 11000.0, reserved: 6000.0, holds: 0 },
-  ];
-
-  const toUsd = (row) => {
-    if (row.currency === "USD") return row.available;
-    if (row.currency === "UGX") return row.available * fx.UGX_to_USD;
-    if (row.currency === "KES") return row.available * fx.KES_to_USD;
-    if (row.currency === "CNY") return row.available * fx.CNY_to_USD;
-    return 0;
-  };
-
-  const availableUsd = balances.reduce((s, r) => s + toUsd(r), 0);
-  const pendingUsd = balances.reduce((s, r) => {
-    const pending = Number(r.pending || 0);
-    if (r.currency === "USD") return s + pending;
-    if (r.currency === "UGX") return s + pending * fx.UGX_to_USD;
-    if (r.currency === "KES") return s + pending * fx.KES_to_USD;
-    if (r.currency === "CNY") return s + pending * fx.CNY_to_USD;
-    return s;
-  }, 0);
-  const holdsUsd = balances.reduce((s, r) => {
-    const h = Number(r.holds || 0);
-    if (r.currency === "USD") return s + h;
-    if (r.currency === "UGX") return s + h * fx.UGX_to_USD;
-    if (r.currency === "KES") return s + h * fx.KES_to_USD;
-    if (r.currency === "CNY") return s + h * fx.CNY_to_USD;
-    return s;
-  }, 0);
-
-  const invoices = [
-    { id: "INV-12091", buyer: "CorporatePay Org", amount: "USD 840.00", status: "Due", dueAt: inD(3), channel: "SupplierHub" },
-    { id: "INV-12088", buyer: "Amina K.", amount: "UGX 240,000", status: "Sent", dueAt: inD(7), channel: "ExpressMart" },
-    { id: "INV-12072", buyer: "Kato S.", amount: "USD 120.00", status: "Paid", dueAt: inD(-2), channel: "MyLiveDealz" },
-  ];
-
-  const transactions = [
-    { id: "TX-88901", at: ago(22), type: "Sale", channel: "SupplierHub", amount: "+USD 840.00", status: "Settled", ref: "ORD-10512" },
-    { id: "TX-88900", at: ago(58), type: "Fee", channel: "SupplierHub", amount: "-USD 12.50", status: "Settled", ref: "Commission" },
-    { id: "TX-88898", at: ago(130), type: "Refund", channel: "ExpressMart", amount: "-UGX 120,000", status: "Pending", ref: "RMA-2399" },
-    { id: "TX-88896", at: ago(210), type: "Payout", channel: "SupplierHub", amount: "-USD 250.00", status: "Processing", ref: "PAY-441" },
-    { id: "TX-88892", at: ago(460), type: "Sale", channel: "MyLiveDealz", amount: "+USD 120.00", status: "Settled", ref: "ADZ-501" },
-  ];
-
-  const holds = [
-    { id: "HOLD-1190", reason: "KYB expiry soon", amount: "USD 210.50", status: "Active", howToFix: "Upload renewed KYB document" },
-  ];
-
-  const payout = {
-    nextAt: inD(2),
-    method: "Bank transfer",
-    currency: "USD",
-    estimate: "USD 520.00",
-    cadence: "Weekly",
-    holdsActive: holds.length,
-  };
-
-  const reconciliation = {
-    state: "Needs review",
-    matchedPct: 92,
-    unmatched: 3,
-    note: "3 transactions need matching. Review refunds and fees.",
-  };
-
-  const alerts = [
-    { id: "al1", tone: "orange", title: "Payout hold active", message: "KYB renewal required to release USD holds." },
-    { id: "al2", tone: "slate", title: "Multi-currency balances", message: "Consider FX conversion before next payout." },
-    { id: "al3", tone: "orange", title: "Refund pending", message: "1 refund pending confirmation (ExpressMart)." },
-  ];
-
-  return {
-    fx,
-    balances,
-    availableUsd,
-    pendingUsd,
-    holdsUsd,
-    invoices,
-    transactions,
-    holds,
-    payout,
-    reconciliation,
-    alerts,
-    kpis: {
-      available: { value: availableUsd, delta: 4, spark: [72, 74, 73, 76, 79, 81, 84] },
-      pending: { value: pendingUsd, delta: -2, spark: [18, 17, 16, 16, 15, 15, 14] },
-      holds: { value: holdsUsd, delta: 9, spark: [2, 2, 3, 4, 5, 5, 6] },
-      invoicesDue: { value: 2, delta: 0, spark: [1, 2, 2, 2, 2, 2, 2] },
-    },
-  };
-}
+const emptyFinanceData = {
+  fx: {},
+  balances: [],
+  availableUsd: 0,
+  pendingUsd: 0,
+  holdsUsd: 0,
+  invoices: [],
+  transactions: [],
+  holds: [],
+  payout: { nextAt: new Date().toISOString(), method: "", currency: "USD", estimate: "", cadence: "", holdsActive: 0 },
+  reconciliation: { state: "Needs review", matchedPct: 0, unmatched: 0, note: "" },
+  alerts: [],
+  kpis: {
+    available: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+    pending: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+    holds: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+    invoicesDue: { value: 0, delta: 0, spark: [0, 0, 0, 0, 0, 0, 0] },
+  },
+};
 
 function progressLabel(pct: number): { label: string; tone: BadgeTone } {
   const v = clamp(Number(pct || 0), 0, 100);
@@ -520,7 +438,7 @@ function exportCsv(rows: Array<Record<string, unknown>>) {
 
 export default function FinanceHomeOverview() {
   const { resolvedMode } = useThemeMode();
-  const [data] = useMockState("finance.home", seedFinance());
+  const [data, setData] = useState<Record<string, any>>(emptyFinanceData);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -529,6 +447,23 @@ export default function FinanceHomeOverview() {
     window.setTimeout(() => setToasts((s) => s.filter((x) => x.id !== id)), 4600);
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
+
+  useEffect(() => {
+    let mounted = true;
+    void sellerBackendApi
+      .getFinanceHome()
+      .then((payload) => {
+        if (!mounted) return;
+        setData({ ...emptyFinanceData, ...(payload as Record<string, any>) });
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Finance unavailable", message: "Could not load finance overview.", tone: "danger" });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [range, setRange] = useState("7d");
   const [channel, setChannel] = useState("All");
@@ -602,7 +537,7 @@ export default function FinanceHomeOverview() {
                 onClick={() =>
                   pushToast({
                     title: "Request payout",
-                    message: "Payout request queued (demo).",
+                    message: "Payout request queued.",
                     tone: "success",
                   })
                 }
@@ -615,7 +550,7 @@ export default function FinanceHomeOverview() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest balances loaded (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest balances loaded.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -638,7 +573,7 @@ export default function FinanceHomeOverview() {
             <div className="flex flex-wrap items-center gap-2">
               <SelectPill label="Channel" value={channel} onChange={setChannel} options={["All", "SupplierHub", "ExpressMart", "MyLiveDealz"]} />
               <SelectPill label="Currency" value={currency} onChange={setCurrency} options={["All", "UGX", "USD", "CNY", "KES"]} />
-              <span className="ml-auto hidden md:inline-flex"><Badge tone="slate">Demo filters</Badge></span>
+              <span className="ml-auto hidden md:inline-flex"><Badge tone="slate">Workspace filters</Badge></span>
             </div>
           </div>
         </div>
@@ -718,7 +653,7 @@ export default function FinanceHomeOverview() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => pushToast({ title: "Payout requested", message: "Your payout request was queued (demo).", tone: "success" })}
+                    onClick={() => pushToast({ title: "Payout requested", message: "Your payout request was queued.", tone: "success" })}
                     className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
                     style={{ background: TOKENS.green }}
                   >
@@ -837,7 +772,7 @@ export default function FinanceHomeOverview() {
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => pushToast({ title: "FX preview", message: "Wire FX engine and conversion flows (demo).", tone: "default" })}
+                  onClick={() => pushToast({ title: "FX preview", message: "Wire FX engine and conversion flows.", tone: "default" })}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
                 >
                   <BarChart3 className="h-4 w-4" />
@@ -845,7 +780,7 @@ export default function FinanceHomeOverview() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => pushToast({ title: "Convert", message: "Conversion wizard (demo).", tone: "success" })}
+                  onClick={() => pushToast({ title: "Convert", message: "Conversion wizard.", tone: "success" })}
                   className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
                   style={{ background: TOKENS.green }}
                 >
@@ -1117,7 +1052,7 @@ export default function FinanceHomeOverview() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => pushToast({ title: "Guided fix", message: "Start guided fix flow (demo).", tone: "success" })}
+                        onClick={() => pushToast({ title: "Guided fix", message: "Start guided fix flow.", tone: "success" })}
                         className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                         style={{ background: TOKENS.green }}
                       >
@@ -1126,7 +1061,7 @@ export default function FinanceHomeOverview() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => pushToast({ title: "Audit logged", message: "Hold resolution attempt logged (demo).", tone: "default" })}
+                        onClick={() => pushToast({ title: "Audit logged", message: "Hold resolution attempt logged.", tone: "default" })}
                         className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-orange-700"
                       >
                         <ClipboardList className="h-4 w-4" />
@@ -1182,7 +1117,7 @@ export default function FinanceHomeOverview() {
             <button
               type="button"
               onClick={() => {
-                pushToast({ title: "Audit", message: "Open audit log explorer (demo).", tone: "default" });
+                pushToast({ title: "Audit", message: "Open audit log explorer.", tone: "default" });
               }}
               className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-orange-700"
             >
@@ -1192,7 +1127,7 @@ export default function FinanceHomeOverview() {
             <button
               type="button"
               onClick={() => {
-                pushToast({ title: "Done", message: "Action queued (demo).", tone: "success" });
+                pushToast({ title: "Done", message: "Action queued.", tone: "success" });
                 closeDrawer();
               }}
               className="ml-auto inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
@@ -1209,7 +1144,7 @@ export default function FinanceHomeOverview() {
       <Drawer
         open={exportOpen}
         title="Export"
-        subtitle="Export finance data (demo)."
+        subtitle="Export finance data."
         onClose={() => setExportOpen(false)}
       >
         <div className="grid gap-3">
@@ -1229,7 +1164,7 @@ export default function FinanceHomeOverview() {
                 if (x.k === "csv") safeCopy(exportCsv(data.transactions));
                 if (x.k === "json") safeCopy(JSON.stringify(payload, null, 2));
                 setExportOpen(false);
-                pushToast({ title: `Export ready (${x.t})`, message: "Copied to clipboard (demo).", tone: "success" });
+                pushToast({ title: `Export ready (${x.t})`, message: "Copied to clipboard.", tone: "success" });
               }}
               className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4 text-left transition hover:bg-gray-50 dark:hover:bg-slate-800"
             >

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -21,6 +20,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Payout Methods (Previewable)
@@ -290,7 +290,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function seedMethods(): PayoutMethod[] {
+function buildMethods(): PayoutMethod[] {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -456,12 +456,72 @@ export default function PayoutMethodsPreviewable() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [methods, setMethods] = useMockState<PayoutMethod[]>("settings.payout.methods", seedMethods());
+  const [methods, setMethods] = useState<PayoutMethod[]>([]);
+  const hydratedRef = useRef(false);
+  const initialSnapshotRef = useRef("");
+  const [kycState, setKycState] = useState<KycState>("Not started");
+  const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("Manual");
+  const [minThreshold, setMinThreshold] = useState(0);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getPayoutMethods();
+        if (!active) return;
+        const incoming = Array.isArray(payload.methods) ? payload.methods as Array<Record<string, unknown>> : [];
+        const mappedMethods = incoming.map((method) => ({
+          id: String(method.id),
+          kind: String(method.kind || method.type || "bank") === "provider" ? "provider" : "bank",
+          provider: String(method.provider || method.bank || method.label || "Provider"),
+          label: String(method.label || "Payout method"),
+          country: String(method.country || "UG"),
+          currency: String(method.currency || "USD"),
+          status: String(method.status || "Verified"),
+          isDefault: Boolean(method.isDefault),
+          createdAt: String(method.createdAt || new Date().toISOString()),
+          lastUsedAt: (method.lastUsedAt as string | null | undefined) ?? null,
+          masked: String(method.masked || method.accountNumberMasked || method.details?.masked || "")
+        }));
+        setMethods(mappedMethods);
+        const metadata = (payload.metadata as Record<string, unknown> | undefined) ?? {};
+        const nextKycState = (metadata.kycState as KycState | undefined) ?? "Not started";
+        const nextPayoutSchedule = (metadata.payoutSchedule as PayoutSchedule | undefined) ?? "Manual";
+        const nextMinThreshold = Number(metadata.minThreshold ?? 0);
+        setKycState(nextKycState);
+        setPayoutSchedule(nextPayoutSchedule);
+        setMinThreshold(nextMinThreshold);
+        initialSnapshotRef.current = JSON.stringify({
+          methods: mappedMethods,
+          metadata: {
+            kycState: nextKycState,
+            payoutSchedule: nextPayoutSchedule,
+            minThreshold: nextMinThreshold
+          }
+        });
+        hydratedRef.current = true;
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Payout methods unavailable", message: "Could not load payout methods.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
   const defaultMethod = useMemo(() => methods.find((m) => m.isDefault) || null, [methods]);
-
-  const [kycState, setKycState] = useState<KycState>("Pending");
-  const [payoutSchedule, setPayoutSchedule] = useState<PayoutSchedule>("Weekly");
-  const [minThreshold, setMinThreshold] = useState(50);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    const payload = {
+      methods: methods.map((method) => ({
+        ...method,
+        type: method.kind,
+        details: { provider: method.provider, country: method.country, status: method.status, masked: method.masked, createdAt: method.createdAt, lastUsedAt: method.lastUsedAt }
+      })),
+      metadata: { kycState, payoutSchedule, minThreshold }
+    };
+    if (JSON.stringify(payload) === initialSnapshotRef.current) return;
+    void sellerBackendApi.patchPayoutMethods(payload);
+  }, [methods, kycState, payoutSchedule, minThreshold]);
 
   const [tab, setTab] = useState<MethodsTab>("All");
 

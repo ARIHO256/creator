@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -21,6 +20,7 @@ import {
   User,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Audit Log Explorer (Previewable)
@@ -380,7 +380,7 @@ function toneForOutcome(outcome: AuditOutcome) {
   return "slate";
 }
 
-function seedAudit(): AuditEvent[] {
+function buildAuditSnapshot(): AuditEvent[] {
   const now = Date.now();
   const agoMin = (m: number) => new Date(now - m * 60_000).toISOString();
 
@@ -571,7 +571,7 @@ export default function AuditLogExplorerPage() {
   const dismissToast = (id: string) =>
     setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [events, setEvents] = useMockState<AuditEvent[]>("settings.audit.events", seedAudit());
+  const [events, setEvents] = useState<AuditEvent[]>([]);
 
   const [range, setRange] = useState<RangeKey>("24h");
   const [module, setModule] = useState<AuditModule | "All">("All");
@@ -639,10 +639,72 @@ export default function AuditLogExplorerPage() {
     setSelected(next);
   };
 
-  const [activeId, setActiveId] = useMockState<string | null>(
-    "settings.audit.activeId",
-    seedAudit()[0]?.id ?? null
-  );
+  const [activeId, setActiveId] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const rows = await sellerBackendApi.getAuditLogs();
+        if (!active) return;
+        setEvents(
+          rows.map((row) => {
+            const metadata = (row.metadata || {}) as Record<string, unknown>;
+            const moduleLabel = String(metadata.module || row.entityType || "Ops");
+            const severityLabel = String(metadata.severity || "info").toLowerCase();
+            const statusCode = Number(row.statusCode || 200);
+            const outcomeLabel = String(metadata.outcome || (statusCode >= 400 ? "failed" : "success")).toLowerCase();
+            const role = String(row.role || "SELLER");
+            return {
+              id: String(row.id || makeId("audit")),
+              at: String(row.createdAt || new Date().toISOString()),
+              actor: role === "SELLER" ? "Supplier" : role,
+              role,
+              action: String(row.action || "unknown"),
+              module:
+                moduleLabel.includes("Finance")
+                  ? "Finance"
+                  : moduleLabel.includes("Order")
+                    ? "Orders"
+                    : moduleLabel.includes("Security")
+                      ? "Security"
+                      : moduleLabel.includes("Listing")
+                        ? "Listings"
+                        : moduleLabel.includes("Provider")
+                          ? "Provider"
+                          : "Ops",
+              target: String(row.entityId || row.entityType || "workspace"),
+              outcome:
+                outcomeLabel.includes("denied")
+                  ? "Denied"
+                  : outcomeLabel.includes("flag")
+                    ? "Flagged"
+                    : outcomeLabel.includes("fail")
+                      ? "Failed"
+                      : "Success",
+              severity:
+                severityLabel.includes("high") || severityLabel.includes("critical")
+                  ? "High"
+                  : severityLabel.includes("warn") || severityLabel.includes("medium")
+                    ? "Medium"
+                    : "Low",
+              ip: String(row.ip || "127.0.0.1"),
+              device: String(row.userAgent || "Web"),
+              location: String(metadata.location || "Kampala, UG"),
+              meta: Object.fromEntries(
+                Object.entries(metadata).map(([key, value]) => [key, typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value : JSON.stringify(value)])
+              ),
+            } satisfies AuditEvent;
+          })
+        );
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Audit unavailable", message: "Could not load audit logs.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     if (!events.find((e) => e.id === activeId)) setActiveId(events[0]?.id ?? null);
   }, [events, activeId]);

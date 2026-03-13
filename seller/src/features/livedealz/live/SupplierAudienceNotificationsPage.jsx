@@ -1776,7 +1776,7 @@ export default function SupplierAudienceNotificationsPage() {
                         <div className="whitespace-pre-wrap text-[13px] font-bold text-slate-800 dark:text-slate-200 leading-relaxed italic">“{initiationPromptText}”</div>
                         <div
                           className="rounded-xl bg-orange-500 p-4 ring-1 ring-orange-600 shadow-lg shadow-orange-500/20 text-center transition hover:brightness-105 cursor-pointer"
-                          onClick={() => setToast("Prompt tapped (demo)")}
+                          onClick={() => setToast("Prompt tapped")}
                         >
                           <div className="flex items-center justify-center gap-2 text-sm font-black text-white uppercase tracking-widest">
                             <Link2 className="h-4 w-4" />

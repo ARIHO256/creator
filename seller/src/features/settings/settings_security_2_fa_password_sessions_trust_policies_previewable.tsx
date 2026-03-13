@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -18,6 +17,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Security (Previewable)
@@ -266,7 +266,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
 
 // -------------------- Demo data --------------------
 
-function seedSessions() {
+function buildSessions() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   return [
@@ -276,7 +276,7 @@ function seedSessions() {
   ];
 }
 
-function seedDevices() {
+function buildDevices() {
   const now = Date.now();
   const agoD = (d) => new Date(now - d * 24 * 3600_000).toISOString();
   return [
@@ -286,7 +286,7 @@ function seedDevices() {
   ];
 }
 
-function seedAlerts() {
+function buildAlerts() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   return [
@@ -354,9 +354,10 @@ export default function SettingsSecurityPage() {
   const [twoFAEnabled, setTwoFAEnabled] = useState(false);
   const [twoFAMethod, setTwoFAMethod] = useState("authenticator"); // authenticator | sms | email
 
-  const [sessions, setSessions] = useMockState("settings.security.sessionsSummary", seedSessions());
-  const [devices, setDevices] = useMockState("settings.security.devices", seedDevices());
-  const [alerts, setAlerts] = useMockState("settings.security.alerts", seedAlerts());
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const hydratedRef = useRef(false);
 
   // Password
   const [pwOpen, setPwOpen] = useState(false);
@@ -378,6 +379,42 @@ export default function SettingsSecurityPage() {
     maxTrustedDevices: 5,
     allowHighRiskCountries: false,
   });
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getSecuritySettings();
+        if (!active) return;
+        const metadata = (payload.metadata as Record<string, unknown> | undefined) ?? {};
+        setTwoFAEnabled(Boolean(payload.twoFactor));
+        setTwoFAMethod(String(payload.twoFactorMethod || "authenticator"));
+        setSessions(Array.isArray(metadata.settingsSessions) ? metadata.settingsSessions as any[] : []);
+        setDevices(Array.isArray(metadata.settingsDevices) ? metadata.settingsDevices as any[] : []);
+        setAlerts(Array.isArray(metadata.settingsAlerts) ? metadata.settingsAlerts as any[] : []);
+        setPolicies((current) => ({ ...current, ...((metadata.policies as Record<string, unknown> | undefined) ?? {}) }));
+        hydratedRef.current = true;
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Security unavailable", message: "Could not load security settings.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    void sellerBackendApi.patchSecuritySettings({
+      twoFactor: twoFAEnabled,
+      twoFactorMethod: twoFAMethod,
+      metadata: {
+        settingsSessions: sessions,
+        settingsDevices: devices,
+        settingsAlerts: alerts,
+        policies,
+      },
+    });
+  }, [twoFAEnabled, twoFAMethod, sessions, devices, alerts, policies]);
 
   const activeAlert = useMemo(() => alerts.find((a) => a.id === activeAlertId) || null, [alerts, activeAlertId]);
 

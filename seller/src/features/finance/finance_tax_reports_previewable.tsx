@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
   BadgeCheck,
@@ -240,7 +240,7 @@ function ToastCenter({ toasts, dismiss }) {
   );
 }
 
-function seedReports() {
+function taxDemoReports() {
   const now = Date.now();
   const agoD = (d) => new Date(now - d * 24 * 3600_000).toISOString();
 
@@ -372,7 +372,24 @@ export default function FinanceTaxReportsPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [reports, setReports] = useMockState("finance.taxReports", seedReports());
+  const [reports, setReports] = useState<any[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    void sellerBackendApi
+      .getFinanceTaxReports()
+      .then((payload) => {
+        if (!mounted) return;
+        setReports(Array.isArray((payload as Record<string, any>)?.reports) ? ((payload as Record<string, any>).reports as any[]) : []);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Tax reports unavailable", message: "Could not load tax reports.", tone: "danger" });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const [q, setQ] = useState("");
   const [region, setRegion] = useState("All");

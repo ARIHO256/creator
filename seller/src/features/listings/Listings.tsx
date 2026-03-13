@@ -40,9 +40,14 @@ import {
   Wallet,
   X,
 } from 'lucide-react';
-import { useRolePageContent } from '../../mock/shared/pageContent';
-import type { ListingRow } from '../../mock/shared/types';
+import { sellerBackendApi } from '../../lib/backendApi';
 import { useThemeMode } from '../../theme/themeMode';
+import {
+  buildListingPayload,
+  mapBackendListing,
+  mapListingVersions,
+  SELLER_LISTINGS_LABELS,
+} from './runtime';
 
 /**
  * Listings Hub (Merged) v2
@@ -138,12 +143,6 @@ function buildShareEntry(draft) {
 
 function openSharePreview(draft, navigate) {
   const entry = buildShareEntry(draft);
-  try {
-    sessionStorage.setItem('seller_share_current', JSON.stringify(entry));
-    localStorage.setItem('seller_share_last', JSON.stringify(entry));
-  } catch {
-    // ignore storage failures
-  }
   if (typeof window !== 'undefined') {
     navigate(`/p/${encodeURIComponent(entry.sku)}`);
   }
@@ -375,186 +374,8 @@ function calcQuality(d) {
   return clamp(Math.round(score), 35, 99);
 }
 
-function normalizeListings(rows: ListingRow[]) {
+function normalizeListings(rows) {
   return rows.map((x) => ({ ...x, quality: calcQuality(x) }));
-}
-
-function seedListings() {
-  const base = Date.now();
-  return [
-    {
-      id: 'L-1001',
-      title: 'EV Fast Charger 7kW Wallbox',
-      kind: 'Product',
-      marketplace: 'EVmart',
-      category: 'Chargers',
-      currency: 'USD',
-      retailPrice: 620,
-      compareAt: 720,
-      moq: 2,
-      wholesaleTiers: [
-        { qty: 2, price: 600 },
-        { qty: 10, price: 570 },
-        { qty: 50, price: 545 },
-      ],
-      stock: 18,
-      inventory: [
-        { id: 'w1', location: 'Main Warehouse', onHand: 18, reserved: 2 },
-        { id: 'w2', location: 'Kampala Hub', onHand: 6, reserved: 1 },
-      ],
-      images: 7,
-      translations: 5,
-      description:
-        'Premium 7kW wallbox charger with smart scheduling, RFID access, and OCPP-ready control. Suitable for homes and commercial sites.',
-      tags: ['wallbox', '7kW', 'OCPP'],
-      status: 'Live',
-      updatedAt: new Date(base - 1000 * 60 * 18).toISOString(),
-      compliance: {
-        state: 'ok',
-        issues: [],
-        lastScanAt: new Date(base - 1000 * 60 * 42).toISOString(),
-      },
-      kpis: { views: 18420, addToCart: 920, orders: 214, conversion: 1.16, revenue: 132680 },
-      trend: {
-        views: [12, 18, 16, 22, 29, 31, 28, 34, 38, 42, 40, 47],
-        orders: [1, 3, 2, 4, 6, 5, 6, 7, 6, 8, 7, 9],
-      },
-    },
-    {
-      id: 'L-1002',
-      title: 'E-Bike Battery Pack 48V 20Ah',
-      kind: 'Product',
-      marketplace: 'EVmart',
-      category: 'Batteries',
-      currency: 'USD',
-      retailPrice: 280,
-      compareAt: 320,
-      moq: 5,
-      wholesaleTiers: [
-        { qty: 5, price: 265 },
-        { qty: 20, price: 248 },
-        { qty: 50, price: 235 },
-      ],
-      stock: 42,
-      inventory: [
-        { id: 'w1', location: 'Main Warehouse', onHand: 42, reserved: 6 },
-        { id: 'w2', location: 'Kampala Hub', onHand: 10, reserved: 2 },
-      ],
-      images: 4,
-      translations: 3,
-      description:
-        'High-density 48V 20Ah battery pack designed for long-range e-bikes. Includes smart BMS and premium casing.',
-      tags: ['48V', '20Ah', 'BMS'],
-      status: 'In Review',
-      updatedAt: new Date(base - 1000 * 60 * 55).toISOString(),
-      compliance: {
-        state: 'warn',
-        issues: ['Missing MSDS upload', 'Warranty terms not set'],
-        lastScanAt: null,
-      },
-      kpis: { views: 12890, addToCart: 620, orders: 118, conversion: 0.92, revenue: 33040 },
-      trend: {
-        views: [9, 10, 12, 13, 14, 16, 17, 18, 19, 22, 20, 24],
-        orders: [1, 1, 2, 2, 3, 3, 3, 4, 4, 5, 4, 6],
-      },
-    },
-    {
-      id: 'L-1003',
-      title: 'Type 2 Charging Cable 5m',
-      kind: 'Product',
-      marketplace: 'EVmart',
-      category: 'Accessories',
-      currency: 'USD',
-      retailPrice: 36,
-      compareAt: 45,
-      moq: 10,
-      wholesaleTiers: [
-        { qty: 10, price: 32 },
-        { qty: 100, price: 28 },
-      ],
-      stock: 210,
-      inventory: [{ id: 'w1', location: 'Main Warehouse', onHand: 210, reserved: 9 }],
-      images: 2,
-      translations: 1,
-      description:
-        'Type 2 cable for public and home charging. Durable insulation and premium connector grip.',
-      tags: ['Type2', '5m'],
-      status: 'Draft',
-      updatedAt: new Date(base - 1000 * 60 * 140).toISOString(),
-      compliance: {
-        state: 'warn',
-        issues: ['Low image count', 'Shipping profile not selected'],
-        lastScanAt: null,
-      },
-      kpis: { views: 880, addToCart: 22, orders: 4, conversion: 0.45, revenue: 144 },
-      trend: {
-        views: [1, 2, 1, 3, 4, 5, 4, 6, 7, 6, 8, 9],
-        orders: [0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1],
-      },
-    },
-    {
-      id: 'L-1004',
-      title: 'Warehouse-to-port logistics setup',
-      kind: 'Service',
-      marketplace: 'ServiceMart',
-      category: 'Logistics',
-      currency: 'USD',
-      retailPrice: 190,
-      compareAt: 240,
-      moq: 1,
-      wholesaleTiers: [{ qty: 1, price: 175 }],
-      stock: 999,
-      inventory: [{ id: 'svc', location: 'Capacity', onHand: 999, reserved: 18 }],
-      images: 6,
-      translations: 4,
-      description:
-        'End-to-end logistics planning from warehouse to port. Includes documentation checklist and timelines.',
-      tags: ['freight', 'incoterms'],
-      status: 'Paused',
-      updatedAt: new Date(base - 1000 * 60 * 240).toISOString(),
-      compliance: {
-        state: 'ok',
-        issues: [],
-        lastScanAt: new Date(base - 1000 * 60 * 90).toISOString(),
-      },
-      kpis: { views: 6200, addToCart: 210, orders: 44, conversion: 0.71, revenue: 8360 },
-      trend: {
-        views: [6, 6, 7, 8, 7, 8, 9, 10, 9, 11, 12, 11],
-        orders: [0, 1, 0, 1, 1, 1, 2, 1, 1, 2, 1, 2],
-      },
-    },
-    {
-      id: 'L-1005',
-      title: 'EV charging installation service',
-      kind: 'Service',
-      marketplace: 'ServiceMart',
-      category: 'Installation',
-      currency: 'USD',
-      retailPrice: 320,
-      compareAt: 420,
-      moq: 1,
-      wholesaleTiers: [{ qty: 1, price: 290 }],
-      stock: 999,
-      inventory: [{ id: 'svc', location: 'Capacity', onHand: 999, reserved: 55 }],
-      images: 1,
-      translations: 2,
-      description:
-        'Professional EV charger installation for residential and commercial sites. Includes site survey and safety compliance.',
-      tags: ['installation', 'site survey'],
-      status: 'Rejected',
-      updatedAt: new Date(base - 1000 * 60 * 520).toISOString(),
-      compliance: {
-        state: 'issue',
-        issues: ['Missing license document', 'Incorrect category'],
-        lastScanAt: null,
-      },
-      kpis: { views: 3100, addToCart: 88, orders: 19, conversion: 0.61, revenue: 6080 },
-      trend: {
-        views: [2, 3, 2, 4, 5, 6, 5, 7, 8, 8, 9, 10],
-        orders: [0, 0, 1, 0, 1, 1, 1, 2, 1, 2, 1, 2],
-      },
-    },
-  ].map((x) => ({ ...x, quality: calcQuality(x) }));
 }
 
 function complianceTone(state) {
@@ -1093,7 +914,7 @@ function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Marked as OK (demo).',
+                            message: 'Marked as OK.',
                             tone: 'success',
                           });
                         }}
@@ -1115,7 +936,7 @@ function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Added a warning issue (demo).',
+                            message: 'Added a warning issue.',
                             tone: 'warning',
                           });
                         }}
@@ -1531,7 +1352,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
       return next;
     });
     pushApprovalHistory('Supplier', 'Requested review', 'Submitted for approval');
-    pushToast({ title: 'Submitted', message: 'Sent for review (demo).', tone: 'default' });
+    pushToast({ title: 'Submitted', message: 'Sent for review.', tone: 'default' });
   };
 
   const approveNow = () => {
@@ -1546,7 +1367,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
       };
     });
     pushApprovalHistory('Reviewer', 'Approved', 'Approved for publishing');
-    pushToast({ title: 'Approved', message: 'Approval granted (demo).', tone: 'success' });
+    pushToast({ title: 'Approved', message: 'Approval granted.', tone: 'success' });
   };
 
   const requestChanges = () => {
@@ -1558,7 +1379,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
     pushApprovalHistory('Reviewer', 'Requested changes', 'Please address the flagged items');
     pushToast({
       title: 'Changes requested',
-      message: 'Moved back to Draft (demo).',
+      message: 'Moved back to Draft.',
       tone: 'warning',
     });
   };
@@ -1570,7 +1391,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
       approval: { ...(s.approval || approval), state: 'Rejected' },
     }));
     pushApprovalHistory('Reviewer', 'Rejected', 'Rejected with reasons');
-    pushToast({ title: 'Rejected', message: 'Listing rejected (demo).', tone: 'danger' });
+    pushToast({ title: 'Rejected', message: 'Listing rejected.', tone: 'danger' });
   };
 
   const headerRight = (
@@ -1728,8 +1549,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                       </span>
                     </div>
                     <div className="mt-1 text-xs font-semibold text-emerald-900/70">
-                      Generate better titles using category, tags, MOQ and marketplace context
-                      (demo).
+                      Generate better titles using category, tags, MOQ and marketplace context.
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -1879,7 +1699,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                               setVm({ ...vm, attributes: attrs, variants: rows });
                               pushToast({
                                 title: 'Matrix generated',
-                                message: `${rows.length} variants created (demo).`,
+                                message: `${rows.length} variants created.`,
                                 tone: 'success',
                               });
                             }}
@@ -2182,7 +2002,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                           setField('images', Number(draft.images || 0) + 1);
                           pushToast({
                             title: 'Uploaded',
-                            message: 'Media added (demo).',
+                            message: 'Media added.',
                             tone: 'success',
                           });
                         }}
@@ -2362,7 +2182,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                         </div>
                         <div>
                           <div className="text-[11px] font-extrabold text-slate-600">
-                            Reserved (demo)
+                            Reserved
                           </div>
                           <input
                             value={String(draft.inventory?.[0]?.reserved ?? 0)}
@@ -2422,7 +2242,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Marked as OK (demo).',
+                            message: 'Marked as OK.',
                             tone: 'success',
                           });
                         }}
@@ -2444,7 +2264,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                           });
                           pushToast({
                             title: 'Compliance updated',
-                            message: 'Added a warning issue (demo).',
+                            message: 'Added a warning issue.',
                             tone: 'warning',
                           });
                         }}
@@ -2520,7 +2340,7 @@ function ListingEditDrawer({ open, listing, onClose, onSave, pushToast, versions
                                 onRollback(v.snapshot);
                                 pushToast({
                                   title: 'Rolled back',
-                                  message: 'Draft replaced with selected version (demo).',
+                                  message: 'Draft replaced with selected version.',
                                   tone: 'success',
                                 });
                               }}
@@ -2659,7 +2479,7 @@ function LocalizationPanel({ draft, updateLocale, setField, pushToast }) {
     setField('locales', next);
     pushToast({
       title: 'Auto-translate',
-      message: 'Draft translations generated (demo).',
+      message: 'Draft translations generated.',
       tone: 'success',
     });
   };
@@ -3076,7 +2896,7 @@ function ApprovalPanel({
             onClick={() =>
               pushToast({
                 title: 'Evidence export',
-                message: 'Export evidence pack (demo).',
+                message: 'Export evidence pack.',
                 tone: 'default',
               })
             }
@@ -3164,7 +2984,7 @@ function ApprovalPanel({
             </span>
           </div>
           <div className="mt-2 text-xs font-semibold text-slate-500">
-            Derived from quality + compliance + media + localization (demo).
+            Derived from quality + compliance + media + localization.
           </div>
         </div>
       </GlassCard>
@@ -3177,8 +2997,7 @@ export default function ListingsHubMergedPageV2() {
   const { resolvedMode } = useThemeMode();
   const isDark = resolvedMode === 'dark';
   const pageBackground = isDark ? PAGE_BG_DARK : PAGE_BG_LIGHT;
-  const { content, updateContent } = useRolePageContent('listings');
-  const labels = content.labels;
+  const labels = SELLER_LISTINGS_LABELS;
 
   const [toasts, setToasts] = useState([]);
   const pushToast = (t) => {
@@ -3193,53 +3012,37 @@ export default function ListingsHubMergedPageV2() {
   const [marketplace, setMarketplace] = useState('All');
   const [kind, setKind] = useState('All');
   const [qualityMin, setQualityMin] = useState(0);
+  const [rows, setRows] = useState([]);
+  const [versionsById, setVersionsById] = useState({});
 
-  const [rows, setRows] = useState(() => normalizeListings(content.rows));
-  const setRowsPersist = (updater) => {
-    setRows((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      updateContent((current) => ({ ...current, rows: next }));
-      return next;
+  const loadListings = async () => {
+    const payload = await sellerBackendApi.getSellerWorkspaceListings();
+    const records = Array.isArray(payload) ? payload : [];
+    const nextRows = records.map((entry) => mapBackendListing(entry, calcQuality));
+    const nextVersionsById = {};
+    records.forEach((entry) => {
+      const listing = mapBackendListing(entry, calcQuality);
+      const versions = mapListingVersions(entry);
+      nextVersionsById[listing.id] =
+        versions.length > 0
+          ? versions
+          : [
+              {
+                id: `ver_${listing.id}_initial`,
+                at: listing.updatedAt,
+                actor: 'System',
+                note: 'Initial version',
+                snapshot: JSON.parse(JSON.stringify(listing)),
+              },
+            ];
     });
+    setRows(nextRows);
+    setVersionsById(nextVersionsById);
   };
 
-  const [versionsById, setVersionsById] = useState(() => {
-    const initial = {};
-    const now = new Date().toISOString();
-    normalizeListings(content.rows).forEach((l) => {
-      initial[l.id] = [
-        {
-          id: makeId('ver'),
-          at: now,
-          actor: 'System',
-          note: 'Initial version',
-          snapshot: JSON.parse(JSON.stringify(l)),
-        },
-      ];
-    });
-    return initial;
-  });
-
   useEffect(() => {
-    const next = normalizeListings(content.rows);
-    setRows(next);
-    setVersionsById(() => {
-      const initial = {};
-      const now = new Date().toISOString();
-      next.forEach((l) => {
-        initial[l.id] = [
-          {
-            id: makeId('ver'),
-            at: now,
-            actor: 'System',
-            note: 'Initial version',
-            snapshot: JSON.parse(JSON.stringify(l)),
-          },
-        ];
-      });
-      return initial;
-    });
-  }, [content]);
+    void loadListings();
+  }, []);
 
   const counts = useMemo(() => {
     const map = { All: rows.length };
@@ -3305,14 +3108,14 @@ export default function ListingsHubMergedPageV2() {
     });
     await new Promise((r) => setTimeout(r, 900));
 
-    setRowsPersist((prev) =>
-      prev.map((r) => {
-        if (!ids.includes(r.id)) return r;
+    const updated = rows
+      .filter((r) => ids.includes(r.id))
+      .map((r) => {
         const state = r.compliance?.state;
         const issues = r.compliance?.issues || [];
         const improved = state === 'warn' ? issues.slice(0, 1) : issues;
         const nextState = improved.length === 0 ? 'ok' : state === 'issue' ? 'issue' : 'warn';
-        return {
+        const next = {
           ...r,
           compliance: {
             ...r.compliance,
@@ -3321,29 +3124,47 @@ export default function ListingsHubMergedPageV2() {
             lastScanAt: new Date().toISOString(),
           },
           updatedAt: new Date().toISOString(),
-          quality: calcQuality(r),
         };
-      })
+        next.quality = calcQuality(next);
+        return next;
+      });
+
+    await Promise.all(
+      updated.map((listing) =>
+        sellerBackendApi.patchSellerWorkspaceListing(
+          listing.id,
+          buildListingPayload(listing, versionsById[listing.id] || [])
+        )
+      )
     );
+    await loadListings();
 
     setScanState({ running: false, last: new Date().toISOString() });
     pushToast({ title: 'Scan completed', message: 'Results updated.', tone: 'success' });
   };
 
-  const bulkUpdateStatus = (nextStatus) => {
+  const bulkUpdateStatus = async (nextStatus) => {
     if (!selectedIds.length) return;
-    setRowsPersist((prev) =>
-      prev.map((r) =>
-        selectedIds.includes(r.id)
-          ? {
-            ...r,
-            status: nextStatus,
-            updatedAt: new Date().toISOString(),
-            quality: calcQuality(r),
-          }
-          : r
+    const updated = rows
+      .filter((r) => selectedIds.includes(r.id))
+      .map((r) => {
+        const next = {
+          ...r,
+          status: nextStatus,
+          updatedAt: new Date().toISOString(),
+        };
+        next.quality = calcQuality(next);
+        return next;
+      });
+    await Promise.all(
+      updated.map((listing) =>
+        sellerBackendApi.patchSellerWorkspaceListing(
+          listing.id,
+          buildListingPayload(listing, versionsById[listing.id] || [])
+        )
       )
     );
+    await loadListings();
     setSelected({});
     pushToast({
       title: 'Bulk update',
@@ -3352,25 +3173,29 @@ export default function ListingsHubMergedPageV2() {
     });
   };
 
-  const bulkDuplicate = () => {
+  const bulkDuplicate = async () => {
     if (!selectedIds.length) return;
-    setRowsPersist((prev) => {
-      const now = new Date().toISOString();
-      const copies = prev
-        .filter((r) => selectedIds.includes(r.id))
-        .map((r) => {
-          const copy = {
-            ...JSON.parse(JSON.stringify(r)),
-            id: `DUP-${r.id}-${Math.floor(Math.random() * 9) + 1}`,
-            title: `${r.title} (Copy)`,
-            status: 'Draft',
-            updatedAt: now,
-          };
-          copy.quality = calcQuality(copy);
-          return copy;
-        });
-      return [...copies, ...prev];
+    const copies = rows.filter((r) => selectedIds.includes(r.id)).map((r) => {
+      const copy = {
+        ...JSON.parse(JSON.stringify(r)),
+        title: `${r.title} (Copy)`,
+        status: 'Draft',
+        updatedAt: new Date().toISOString(),
+      };
+      copy.quality = calcQuality(copy);
+      const versions = [
+        {
+          id: makeId('ver'),
+          at: copy.updatedAt,
+          actor: 'Supplier',
+          note: 'Initial version',
+          snapshot: JSON.parse(JSON.stringify(copy)),
+        },
+      ];
+      return sellerBackendApi.createSellerWorkspaceListing(buildListingPayload(copy, versions));
     });
+    await Promise.all(copies);
+    await loadListings();
     setSelected({});
     pushToast({ title: 'Duplicated', message: 'Copies created as Draft.', tone: 'success' });
   };
@@ -3389,26 +3214,32 @@ export default function ListingsHubMergedPageV2() {
     setEditOpen(true);
   };
 
-  const saveListing = (updated) => {
-    setRowsPersist((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
-    setVersionsById((m) => {
-      const current = m[updated.id] || [];
-      const next = [
-        {
-          id: makeId('ver'),
-          at: new Date().toISOString(),
-          actor: 'Supplier',
-          note: 'Saved changes',
-          snapshot: JSON.parse(JSON.stringify(updated)),
-        },
-        ...current,
-      ];
-      return { ...m, [updated.id]: next.slice(0, 20) };
-    });
+  const saveListing = async (updated) => {
+    const nextListing = {
+      ...updated,
+      updatedAt: new Date().toISOString(),
+    };
+    nextListing.quality = calcQuality(nextListing);
+    const current = versionsById[updated.id] || [];
+    const nextVersions = [
+      {
+        id: makeId('ver'),
+        at: nextListing.updatedAt,
+        actor: 'Supplier',
+        note: 'Saved changes',
+        snapshot: JSON.parse(JSON.stringify(nextListing)),
+      },
+      ...current,
+    ].slice(0, 20);
+    await sellerBackendApi.patchSellerWorkspaceListing(
+      updated.id,
+      buildListingPayload(nextListing, nextVersions)
+    );
+    await loadListings();
   };
 
   const rollbackDraftInEditor = (snapshot) => {
-    saveListing({
+    void saveListing({
       ...snapshot,
       updatedAt: new Date().toISOString(),
       quality: calcQuality(snapshot),

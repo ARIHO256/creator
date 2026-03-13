@@ -19,7 +19,7 @@ import { useNavigate } from "react-router-dom";
  *
  * Supplier adaptations (minimal, necessary):
  * - Sessions show Supplier-owned campaign context + Host Role (Creator-hosted vs Supplier-hosted)
- * - Actions route to Supplier Live Studio/Builder (stubbed as toasts for canvas)
+ * - Actions route to Supplier Live Studio/Builder (router-safe actions for the app)
  * - Approval gating notes included (Manual vs Auto)
  */
 
@@ -29,26 +29,7 @@ const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /* --------------------------------- Mock Data -------------------------------- */
 
-const AI_SLOTS = [
-  {
-    id: 1,
-    label: "Wed 20:00–21:00",
-    reason: "Peak East Africa view time · 1.3× retention",
-    recommendedFor: "Tech & Beauty"
-  },
-  {
-    id: 2,
-    label: "Fri 19:30–20:30",
-    reason: "High intent just before weekend shopping",
-    recommendedFor: "Gadgets & Flash dealz"
-  },
-  {
-    id: 3,
-    label: "Sun 09:00–10:00",
-    reason: "Faith & Wellness audience spike",
-    recommendedFor: "Faith-compatible shows"
-  }
-];
+const AI_SLOTS: Array<Record<string, any>> = [];
 
 /**
  * Supplier session model (mirrors Creator file shape + adds Supplier context)
@@ -57,104 +38,6 @@ const AI_SLOTS = [
  * - "Supplier" when Supplier chose “I will NOT use a Creator” (supplier acts as creator)
  * - "Creator" when Supplier is using a creator
  */
-const SESSIONS = [
-  {
-    id: "LS-201",
-    title: "EV Charger Flash – bundles + install tips",
-    campaign: "EV Charger Flash Drop",
-    supplier: "EV World Store",
-    host: "@lunaade",
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    weekday: "Thu",
-    dateLabel: "Thu 10 Oct",
-    time: "18:30–19:30",
-    location: "MyLiveDealz",
-    simulcast: "YouTube",
-    status: "Confirmed",
-    role: "Supplier (Sponsor)",
-    durationMin: 60,
-    scriptsReady: true,
-    assetsReady: false,
-    productsCount: 8,
-    workloadScore: 3,
-    conflict: false
-  },
-  {
-    id: "LS-202",
-    title: "Supplier-hosted Tech Friday – Gadgets Q&A",
-    campaign: "Tech Friday Mega Live",
-    supplier: "GadgetMart Africa",
-    host: "@gadgetmart",
-    hostRole: "Supplier",
-    creatorUsage: "I will NOT use a Creator",
-    collabMode: "(n/a)",
-    approvalMode: "Manual",
-    weekday: "Fri",
-    dateLabel: "Fri 11 Oct",
-    time: "20:00–21:30",
-    location: "MyLiveDealz",
-    simulcast: "Facebook",
-    status: "Draft",
-    role: "Host (Supplier)",
-    durationMin: 90,
-    scriptsReady: false,
-    assetsReady: false,
-    productsCount: 12,
-    workloadScore: 4,
-    conflict: true // overlaps with prep window
-  },
-  {
-    id: "LS-203",
-    title: "Faith & Wellness Morning Dealz",
-    campaign: "Faith & Wellness Morning Dealz",
-    supplier: "Grace Living Store",
-    host: "@noahknows",
-    hostRole: "Creator",
-    creatorUsage: "I am NOT SURE yet",
-    collabMode: "Open for Collabs",
-    approvalMode: "Auto",
-    weekday: "Sat",
-    dateLabel: "Sat 12 Oct",
-    time: "09:00–10:00",
-    location: "MyLiveDealz",
-    simulcast: "",
-    status: "Confirmed",
-    role: "Supplier (Sponsor)",
-    durationMin: 60,
-    scriptsReady: true,
-    assetsReady: true,
-    productsCount: 6,
-    workloadScore: 2,
-    conflict: false
-  },
-  {
-    id: "LS-204",
-    title: "Tech Friday – Clips replay",
-    campaign: "Tech Friday Mega Live",
-    supplier: "GadgetMart Africa",
-    host: "@lunaade",
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Manual",
-    weekday: "Sun",
-    dateLabel: "Sun 13 Oct",
-    time: "21:00–21:30",
-    location: "Replays only",
-    simulcast: "MyLiveDealz",
-    status: "Scheduled",
-    role: "Replay",
-    durationMin: 30,
-    scriptsReady: false,
-    assetsReady: true,
-    productsCount: 4,
-    workloadScore: 1,
-    conflict: false
-  }
-];
 
 /* --------------------------------- Toast ---------------------------------- */
 
@@ -294,6 +177,7 @@ function QRCodeMock({ value, size = 160 }) {
 
 export default function SupplierLiveScheduleCalendarPage() {
   const navigate = useNavigate();
+  const sessions = useMemo<Array<Record<string, any>>>(() => [], []);
   const [viewMode, setViewMode] = useState("week"); // week | month | agenda
   const [selectedSession, setSelectedSession] = useState(null);
   const [toast, setToast] = useState(null);
@@ -313,41 +197,41 @@ export default function SupplierLiveScheduleCalendarPage() {
 
   const conflicts = useMemo(() => {
     const msgs = [];
-    const heavy = SESSIONS.filter((s) => s.workloadScore >= 4);
+    const heavy = sessions.filter((s) => s.workloadScore >= 4);
     if (heavy.length) {
       msgs.push("You have heavy workload on Tech Friday. Consider spacing prep and lives.");
     }
 
-    const conflictSessions = SESSIONS.filter((s) => s.conflict);
+    const conflictSessions = sessions.filter((s) => s.conflict);
     if (conflictSessions.length) {
       msgs.push("Some sessionz may overlap with prep windows. Review supplier-hosted Tech Friday schedule.");
     }
 
-    const pendingAssets = SESSIONS.filter((s) => !s.assetsReady && s.status !== "Ended");
+    const pendingAssets = sessions.filter((s) => !s.assetsReady && s.status !== "Ended");
     if (pendingAssets.length) {
       msgs.push("Some sessionz are missing assets. If approval mode is Manual, delays can block Admin review.");
     }
 
     return msgs;
-  }, []);
+  }, [sessions]);
 
   const sessionsByDay = useMemo(() => {
     const map = {};
     WEEK_DAYS.forEach((d) => (map[d] = []));
-    SESSIONS.forEach((s) => {
+    sessions.forEach((s) => {
       if (!map[s.weekday]) map[s.weekday] = [];
       map[s.weekday].push(s);
     });
     return map;
-  }, []);
+  }, [sessions]);
 
   const agendaSessions = useMemo(() => {
-    return [...SESSIONS].sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       const order = WEEK_DAYS.indexOf(a.weekday) - WEEK_DAYS.indexOf(b.weekday);
       if (order !== 0) return order;
       return a.time.localeCompare(b.time);
     });
-  }, []);
+  }, [sessions]);
 
   const handleStartRehearsal = (session) => {
     showToast(`Entering rehearsal for "${session.title}"`);
@@ -386,7 +270,7 @@ export default function SupplierLiveScheduleCalendarPage() {
           <>
             <Btn tone="ghost" onClick={() => safeNav("/supplier/live-dashboard")}>Live Dashboard</Btn>
             <Btn tone="ghost" onClick={() => safeNav("/supplier/dealz-marketplace")}>Dealz Marketplace</Btn>
-            <Btn tone="brand" onClick={() => showToast("New live session (demo)" )}>New Live Session</Btn>
+            <Btn tone="brand" onClick={() => showToast("New live session" )}>New Live Session</Btn>
           </>
         }
       />
@@ -464,7 +348,7 @@ export default function SupplierLiveScheduleCalendarPage() {
           <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start text-sm">
             {/* Calendar View (Week, Month, or Agenda) */}
             {viewMode === "month" ? (
-              <MonthView sessions={SESSIONS} onSelectSession={setSelectedSession} />
+              <MonthView sessions={sessions} onSelectSession={setSelectedSession} />
             ) : viewMode === "agenda" ? (
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
                 <div className="flex items-center justify-between mb-2">

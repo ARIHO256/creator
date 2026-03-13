@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   Building2,
@@ -269,7 +269,7 @@ function slaLabel(dueAt, status) {
   return { label: "On track", tone: "green" };
 }
 
-function seedCases() {
+function buildCases() {
   const now = Date.now();
   const agoH = (h) => new Date(now - h * 3600_000).toISOString();
   const inH = (h) => new Date(now + h * 3600_000).toISOString();
@@ -361,7 +361,7 @@ function seedCases() {
   ];
 }
 
-function seedDocs() {
+function buildDocs() {
   const now = Date.now();
   const agoD = (d) => new Date(now - d * 24 * 3600_000).toISOString();
   return [
@@ -486,8 +486,41 @@ export default function ComplianceCenterPreviewable() {
 
   const [tab, setTab] = useState("Overview");
 
-  const [cases, setCases] = useMockState("ops.compliance.cases", seedCases());
-  const [docs, setDocs] = useMockState("ops.compliance.docs", seedDocs());
+  const [cases, setCases] = useState<any[]>([]);
+  const [docs, setDocs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const didHydrateRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getOpsCompliancePage();
+        if (cancelled || !payload || typeof payload !== "object") return;
+        if (Array.isArray(payload.cases)) setCases(payload.cases as typeof cases);
+        if (Array.isArray(payload.docs)) setDocs(payload.docs as typeof docs);
+      } catch {
+        setCases([]);
+        setDocs([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      return;
+    }
+    void sellerBackendApi.patchOpsCompliancePage({ cases, docs });
+  }, [cases, docs, loading]);
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
@@ -689,6 +722,7 @@ export default function ComplianceCenterPreviewable() {
                 <Badge tone="slate">/ops/compliance</Badge>
                 <Badge tone="slate">Ops</Badge>
                 <Badge tone="orange">Premium</Badge>
+                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Cases, documents, desk routing and policy controls.</div>
             </div>

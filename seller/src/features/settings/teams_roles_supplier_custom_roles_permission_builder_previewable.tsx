@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   BadgeCheck,
   Check,
@@ -35,8 +35,6 @@ import {
  * - Assign roles to members.
  * - System roles are protected.
  *
- * Notes
- * - Demo only: uses localStorage.
  */
 
 const TOKENS = {
@@ -44,13 +42,6 @@ const TOKENS = {
   greenDeep: "#02B77E",
   orange: "#F77F00",
   black: "#0B0F14",
-};
-
-const LS = {
-  ROLES: "evz_supplier_roles_v1",
-  MEMBERS: "evz_supplier_members_v1",
-  AUDIT: "evz_supplier_role_audit_v1",
-  POLICIES: "evz_supplier_role_policies_v1",
 };
 
 type Tone = "green" | "orange" | "slate" | "danger" | "default";
@@ -122,25 +113,6 @@ function safeCopy(text: string) {
   } catch {
     // ignore
   }
-}
-
-function safeParse<T>(raw: string | null, fallback: T): T {
-  try {
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function lsGet<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  return safeParse<T>(window.localStorage.getItem(key), fallback);
-}
-
-function lsSet<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
 }
 
 function BadgePill({ children, tone = "slate" }: { children: React.ReactNode; tone?: Tone }) {
@@ -489,86 +461,74 @@ function applyTemplate(tpl: RoleTemplateKey) {
   }
 }
 
-function seedRoles(): Role[] {
-  const now = new Date().toISOString();
-  return [
-    {
-      id: "role_owner",
-      name: "Owner",
-      description: "Full access, can manage billing, teams and security.",
-      template: "OWNER",
-      system: true,
-      permissions: applyTemplate("OWNER"),
-      updatedAt: now,
-    },
-    {
-      id: "role_admin",
-      name: "Admin",
-      description: "Full access except protected ownership actions.",
-      template: "ADMIN",
-      system: true,
-      permissions: applyTemplate("ADMIN"),
-      updatedAt: now,
-    },
-    {
-      id: "role_ops",
-      name: "Operations",
-      description: "Fulfillment, listings compliance, returns and disputes.",
-      template: "OPS",
-      system: true,
-      permissions: applyTemplate("OPS"),
-      updatedAt: now,
-    },
-    {
-      id: "role_sales",
-      name: "Sales",
-      description: "Listings, light orders view, MyLiveDealz promotions.",
-      template: "SALES",
-      system: true,
-      permissions: applyTemplate("SALES"),
-      updatedAt: now,
-    },
-    {
-      id: "role_finance",
-      name: "Finance",
-      description: "Wallets, invoices, reporting. Payout initiation optional.",
-      template: "FINANCE",
-      system: true,
-      permissions: applyTemplate("FINANCE"),
-      updatedAt: now,
-    },
-    {
-      id: "role_viewer",
-      name: "Viewer",
-      description: "Read-only access across key areas.",
-      template: "VIEWER",
-      system: true,
-      permissions: applyTemplate("VIEWER"),
-      updatedAt: now,
-    },
-  ];
-}
-
-function seedMembers(roleIds: { owner: string; admin: string; ops: string; sales: string; finance: string; viewer: string }): Member[] {
-  const now = Date.now();
-  const ago = (mins: number) => new Date(now - mins * 60_000).toISOString();
-  return [
-    { id: "m1", name: "Ronald Isabirye", email: "owner@supplier.com", roleId: roleIds.owner, status: "Active", lastActiveAt: ago(11) },
-    { id: "m2", name: "Amina K.", email: "ops@supplier.com", roleId: roleIds.ops, status: "Active", lastActiveAt: ago(80) },
-    { id: "m3", name: "Kato S.", email: "sales@supplier.com", roleId: roleIds.sales, status: "Invited", lastActiveAt: ago(999) },
-    { id: "m4", name: "Sarah T.", email: "finance@supplier.com", roleId: roleIds.finance, status: "Active", lastActiveAt: ago(320) },
-    { id: "m5", name: "Chen L.", email: "viewer@supplier.com", roleId: roleIds.viewer, status: "Suspended", lastActiveAt: ago(6000) },
-    { id: "m6", name: "Joy A.", email: "admin@supplier.com", roleId: roleIds.admin, status: "Active", lastActiveAt: ago(35) },
-  ];
-}
-
-function seedPolicies(): PolicyState {
+function createDefaultPolicies(): PolicyState {
   return {
     require2faForAdmins: true,
     requireApprovalForPayouts: true,
     payoutApprovalThresholdUsd: 500,
     restrictSensitiveExports: true,
     sessionTimeoutMins: 60,
+  };
+}
+
+function roleTemplateFromBackend(role: Record<string, unknown>): RoleTemplateKey {
+  const name = String(role.name ?? "").toUpperCase();
+  if (name.includes("OWNER")) return "OWNER";
+  if (name.includes("ADMIN")) return "ADMIN";
+  if (name.includes("OPS")) return "OPS";
+  if (name.includes("SALES")) return "SALES";
+  if (name.includes("FINANCE")) return "FINANCE";
+  if (name.includes("SUPPORT")) return "SUPPORT";
+  if (name.includes("VIEWER")) return "VIEWER";
+  return "CUSTOM";
+}
+
+function mapBackendRole(role: Record<string, unknown>): Role {
+  return {
+    id: String(role.id ?? makeId("role")),
+    name: String(role.name ?? "Role"),
+    description: String(role.description ?? "Custom role"),
+    template: roleTemplateFromBackend(role),
+    system: String(role.badge ?? "").toLowerCase() === "system",
+    permissions: ((role.perms as Record<string, boolean> | undefined) ?? {}) as Record<string, boolean>,
+    updatedAt: String(role.updatedAt ?? role.createdAt ?? new Date().toISOString()),
+  };
+}
+
+function mapBackendMember(member: Record<string, unknown>): Member {
+  const status = String(member.status ?? "active").toLowerCase();
+  return {
+    id: String(member.id ?? makeId("mem")),
+    name: String(member.name ?? "Member"),
+    email: String(member.email ?? ""),
+    roleId: String(member.roleId ?? ""),
+    status: status === "invited" ? "Invited" : status === "suspended" ? "Suspended" : "Active",
+    lastActiveAt: String(member.updatedAt ?? member.createdAt ?? new Date().toISOString()),
+  };
+}
+
+function mapBackendPolicies(payload: Record<string, unknown> | null | undefined): PolicyState {
+  const base = createDefaultPolicies();
+  if (!payload) return base;
+  return {
+    require2faForAdmins: payload.require2FA === undefined ? base.require2faForAdmins : Boolean(payload.require2FA),
+    requireApprovalForPayouts:
+      payload.requireApprovalForPayouts === undefined ? base.requireApprovalForPayouts : Boolean(payload.requireApprovalForPayouts),
+    payoutApprovalThresholdUsd: Number(payload.payoutApprovalThresholdUsd ?? base.payoutApprovalThresholdUsd) || 0,
+    restrictSensitiveExports:
+      payload.restrictSensitiveExports === undefined ? base.restrictSensitiveExports : Boolean(payload.restrictSensitiveExports),
+    sessionTimeoutMins: Number(payload.sessionTimeoutMins ?? base.sessionTimeoutMins) || base.sessionTimeoutMins,
+  };
+}
+
+function mapBackendAudit(event: Record<string, unknown>): AuditEvent {
+  const metadata = (event.metadata as Record<string, unknown> | undefined) ?? {};
+  return {
+    id: String(event.id ?? makeId("audit")),
+    at: String(event.createdAt ?? new Date().toISOString()),
+    actor: String(event.role ?? "Seller"),
+    action: String(event.action ?? "updated"),
+    detail: String(metadata.detail ?? metadata.outcome ?? ""),
   };
 }
 
@@ -602,8 +562,7 @@ export default function TeamsRolesSupplierPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const seededRoles = useMemo(() => seedRoles(), []);
-  const [roles, setRoles] = useMockState<Role[]>("settings.teams.roles", seededRoles);
+  const [roles, setRoles] = useState<Role[]>([]);
 
   const roleIdMap = useMemo(() => {
     const byName: Record<string, string> = {};
@@ -618,21 +577,57 @@ export default function TeamsRolesSupplierPage() {
     };
   }, [roles]);
 
-  const [members, setMembers] = useMockState<Member[]>("settings.teams.members", seedMembers(roleIdMap));
+  const [members, setMembers] = useState<Member[]>([]);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [policies, setPolicies] = useState<PolicyState>(mapBackendPolicies(null));
+  const [loading, setLoading] = useState(true);
+  const rolesRef = useRef<Role[]>([]);
 
-  const [audit, setAudit] = useMockState<AuditEvent[]>("settings.teams.audit", []);
-  const logAudit = (action: string, detail?: string) => {
-    const ev: AuditEvent = {
-      id: makeId("audit"),
-      at: new Date().toISOString(),
-      actor: "Supplier", // demo
-      action,
-      detail,
-    };
-    setAudit((s) => [ev, ...s].slice(0, 200));
+  useEffect(() => {
+    rolesRef.current = roles;
+  }, [roles]);
+
+  const refreshAudit = async () => {
+    try {
+      const logs = await sellerBackendApi.getAuditLogs();
+      setAudit(Array.isArray(logs) ? logs.map(mapBackendAudit) : []);
+    } catch {
+      // ignore audit refresh failures
+    }
   };
 
-  const [policies, setPolicies] = useMockState<PolicyState>("settings.teams.policies", seedPolicies());
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [workspace, logs] = await Promise.all([
+          sellerBackendApi.getRoles(),
+          sellerBackendApi.getAuditLogs(),
+        ]);
+        if (cancelled) return;
+        setRoles(Array.isArray(workspace.roles) ? workspace.roles.map((entry) => mapBackendRole(entry as Record<string, unknown>)) : []);
+        setMembers(
+          Array.isArray(workspace.members)
+            ? workspace.members.map((entry) => mapBackendMember(entry as Record<string, unknown>))
+            : []
+        );
+        setPolicies(mapBackendPolicies((workspace.workspaceSecurity as Record<string, unknown> | undefined) ?? null));
+        setAudit(Array.isArray(logs) ? logs.map(mapBackendAudit) : []);
+      } catch {
+        if (cancelled) return;
+        setRoles([]);
+        setMembers([]);
+        setPolicies(mapBackendPolicies(null));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Tabs
   const [tab, setTab] = useState<"Members" | "Roles" | "Policies" | "Audit">("Roles");
@@ -719,7 +714,7 @@ export default function TeamsRolesSupplierPage() {
     []
   );
 
-  const createRole = () => {
+  const createRole = async () => {
     const name = roleWizard.name.trim();
     if (!name) {
       pushToast({ title: "Role name required", message: "Add a name for the new role.", tone: "orange" });
@@ -739,14 +734,26 @@ export default function TeamsRolesSupplierPage() {
       updatedAt: new Date().toISOString(),
     };
 
-    setRoles((s) => [role, ...s]);
-    setActiveRoleId(id);
-    setRoleDrawerOpen(false);
-    logAudit("role created", `${role.name}`);
-    pushToast({ title: "Role created", message: role.name, tone: "green" });
+    try {
+      const created = await sellerBackendApi.createRole({
+        id,
+        name: role.name,
+        badge: role.system ? "System" : "Custom",
+        description: role.description,
+        perms: role.permissions,
+      });
+      const mapped = mapBackendRole(created);
+      setRoles((s) => [mapped, ...s.filter((entry) => entry.id !== mapped.id)]);
+      setActiveRoleId(mapped.id);
+      setRoleDrawerOpen(false);
+      pushToast({ title: "Role created", message: mapped.name, tone: "green" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Role create failed", message: error instanceof Error ? error.message : "Unable to create role", tone: "danger" });
+    }
   };
 
-  const saveRoleMeta = () => {
+  const saveRoleMeta = async () => {
     if (!roleWizard.targetRoleId) return;
     const role = roles.find((r) => r.id === roleWizard.targetRoleId);
     if (!role) return;
@@ -761,19 +768,22 @@ export default function TeamsRolesSupplierPage() {
       return;
     }
 
-    setRoles((s) =>
-      s.map((r) =>
-        r.id === roleWizard.targetRoleId
-          ? { ...r, name, description: roleWizard.description.trim() || r.description, updatedAt: new Date().toISOString() }
-          : r
-      )
-    );
-    setRoleDrawerOpen(false);
-    logAudit("role updated", `${name}`);
-    pushToast({ title: "Role updated", message: name, tone: "green" });
+    try {
+      const updated = await sellerBackendApi.patchRole(role.id, {
+        name,
+        description: roleWizard.description.trim() || role.description,
+      });
+      const mapped = mapBackendRole(updated);
+      setRoles((s) => s.map((r) => (r.id === mapped.id ? mapped : r)));
+      setRoleDrawerOpen(false);
+      pushToast({ title: "Role updated", message: name, tone: "green" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Role update failed", message: error instanceof Error ? error.message : "Unable to update role", tone: "danger" });
+    }
   };
 
-  const duplicateRole = (r: Role) => {
+  const duplicateRole = async (r: Role) => {
     const id = makeId("role");
     const copy: Role = {
       ...JSON.parse(JSON.stringify(r)),
@@ -783,13 +793,25 @@ export default function TeamsRolesSupplierPage() {
       template: "CUSTOM",
       updatedAt: new Date().toISOString(),
     };
-    setRoles((s) => [copy, ...s]);
-    setActiveRoleId(id);
-    logAudit("role duplicated", `${r.name} -> ${copy.name}`);
-    pushToast({ title: "Role duplicated", message: copy.name, tone: "green" });
+    try {
+      const created = await sellerBackendApi.createRole({
+        id,
+        name: copy.name,
+        badge: "Custom",
+        description: copy.description,
+        perms: copy.permissions,
+      });
+      const mapped = mapBackendRole(created);
+      setRoles((s) => [mapped, ...s.filter((entry) => entry.id !== mapped.id)]);
+      setActiveRoleId(mapped.id);
+      pushToast({ title: "Role duplicated", message: mapped.name, tone: "green" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Duplicate failed", message: error instanceof Error ? error.message : "Unable to duplicate role", tone: "danger" });
+    }
   };
 
-  const deleteRole = (r: Role) => {
+  const deleteRole = async (r: Role) => {
     if (r.system) {
       pushToast({ title: "Protected role", message: "System roles cannot be deleted.", tone: "orange" });
       return;
@@ -801,25 +823,32 @@ export default function TeamsRolesSupplierPage() {
       return;
     }
 
-    setRoles((s) => s.filter((x) => x.id !== r.id));
-    logAudit("role deleted", r.name);
-    pushToast({ title: "Role deleted", message: r.name, tone: "danger" });
+    try {
+      await sellerBackendApi.deleteRole(r.id);
+      setRoles((s) => s.filter((x) => x.id !== r.id));
+      pushToast({ title: "Role deleted", message: r.name, tone: "danger" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Delete failed", message: error instanceof Error ? error.message : "Unable to delete role", tone: "danger" });
+    }
   };
 
-  const setRolePermission = (roleId: string, key: string, value: boolean) => {
-    setRoles((s) =>
-      s.map((r) => {
-        if (r.id !== roleId) return r;
-        return {
-          ...r,
-          permissions: { ...r.permissions, [key]: value },
-          updatedAt: new Date().toISOString(),
-        };
-      })
-    );
+  const setRolePermission = async (roleId: string, key: string, value: boolean) => {
+    const target = rolesRef.current.find((entry) => entry.id === roleId);
+    if (!target) return;
+    const next = { ...target.permissions, [key]: value };
+    setRoles((s) => s.map((r) => (r.id === roleId ? { ...r, permissions: next, updatedAt: new Date().toISOString() } : r)));
+    try {
+      const updated = await sellerBackendApi.patchRole(roleId, { perms: next });
+      const mapped = mapBackendRole(updated);
+      setRoles((s) => s.map((r) => (r.id === roleId ? mapped : r)));
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Permission save failed", message: error instanceof Error ? error.message : "Unable to persist permission", tone: "danger" });
+    }
   };
 
-  const applyPreset = (preset: "view" | "standard" | "full") => {
+  const applyPreset = async (preset: "view" | "standard" | "full") => {
     if (!activeRole) return;
     if (activeRole.system && activeRole.template === "OWNER") {
       pushToast({ title: "Owner is full access", tone: "default" });
@@ -875,19 +904,33 @@ export default function TeamsRolesSupplierPage() {
     }
 
     setRoles((s) => s.map((r) => (r.id === activeRole.id ? { ...r, permissions: next, updatedAt: new Date().toISOString() } : r)));
-    logAudit("permissions preset applied", `${activeRole.name} -> ${preset}`);
-    pushToast({ title: "Preset applied", message: `${activeRole.name} updated`, tone: "green" });
+    try {
+      const updated = await sellerBackendApi.patchRole(activeRole.id, { perms: next });
+      const mapped = mapBackendRole(updated);
+      setRoles((s) => s.map((r) => (r.id === mapped.id ? mapped : r)));
+      pushToast({ title: "Preset applied", message: `${activeRole.name} updated`, tone: "green" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Preset save failed", message: error instanceof Error ? error.message : "Unable to persist preset", tone: "danger" });
+    }
   };
 
-  const setGroupAll = (groupName: string, value: boolean) => {
+  const setGroupAll = async (groupName: string, value: boolean) => {
     if (!activeRole) return;
     const group = PERMISSION_GROUPS.find((g) => g.group === groupName);
     if (!group) return;
     const next = { ...activeRole.permissions };
     group.items.forEach((it) => (next[it.key] = value));
     setRoles((s) => s.map((r) => (r.id === activeRole.id ? { ...r, permissions: next, updatedAt: new Date().toISOString() } : r)));
-    logAudit("permission group updated", `${activeRole.name} -> ${groupName}: ${value ? "enable" : "disable"}`);
-    pushToast({ title: value ? "Enabled group" : "Disabled group", message: groupName, tone: "default" });
+    try {
+      const updated = await sellerBackendApi.patchRole(activeRole.id, { perms: next });
+      const mapped = mapBackendRole(updated);
+      setRoles((s) => s.map((r) => (r.id === mapped.id ? mapped : r)));
+      pushToast({ title: value ? "Enabled group" : "Disabled group", message: groupName, tone: "default" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Group save failed", message: error instanceof Error ? error.message : "Unable to persist group", tone: "danger" });
+    }
   };
 
   // Members
@@ -908,17 +951,22 @@ export default function TeamsRolesSupplierPage() {
     return [...list].sort((a, b) => a.status.localeCompare(b.status));
   }, [members, memberQuery]);
 
-  const setMemberRole = (memberId: string, roleId: string) => {
-    setMembers((s) =>
-      s.map((m) => (m.id === memberId ? { ...m, roleId, lastActiveAt: new Date().toISOString() } : m))
-    );
+  const setMemberRole = async (memberId: string, roleId: string) => {
     const r = roles.find((x) => x.id === roleId);
     const m = members.find((x) => x.id === memberId);
-    logAudit("member role changed", `${m?.email ?? memberId} -> ${r?.name ?? roleId}`);
-    pushToast({ title: "Role updated", message: `${m?.name ?? "Member"} -> ${r?.name ?? "Role"}`, tone: "green" });
+    setMembers((s) => s.map((entry) => (entry.id === memberId ? { ...entry, roleId, lastActiveAt: new Date().toISOString() } : entry)));
+    try {
+      const updated = await sellerBackendApi.patchRoleMember(memberId, { roleId });
+      const mapped = mapBackendMember(updated);
+      setMembers((s) => s.map((entry) => (entry.id === memberId ? mapped : entry)));
+      pushToast({ title: "Role updated", message: `${m?.name ?? "Member"} -> ${r?.name ?? "Role"}`, tone: "green" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Member update failed", message: error instanceof Error ? error.message : "Unable to update member", tone: "danger" });
+    }
   };
 
-  const inviteMember = () => {
+  const inviteMember = async () => {
     const name = inviteDraft.name.trim();
     const email = inviteDraft.email.trim();
     if (!name || !email) {
@@ -940,19 +988,34 @@ export default function TeamsRolesSupplierPage() {
       lastActiveAt: new Date().toISOString(),
     };
 
-    setMembers((s) => [member, ...s]);
-    setInviteOpen(false);
-    setInviteDraft({ name: "", email: "", roleId: inviteDraft.roleId });
-
-    logAudit("member invited", `${email} as ${role?.name ?? "Role"}`);
-    pushToast({ title: "Invite sent", message: `${email}`, tone: "green" });
+    try {
+      const created = await sellerBackendApi.createRoleInvite({
+        id: member.id,
+        name,
+        email,
+        roleId: inviteDraft.roleId,
+      });
+      const mapped = mapBackendMember(created);
+      setMembers((s) => [mapped, ...s.filter((entry) => entry.id !== mapped.id)]);
+      setInviteOpen(false);
+      setInviteDraft({ name: "", email: "", roleId: inviteDraft.roleId });
+      pushToast({ title: "Invite sent", message: `${email}`, tone: "green" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Invite failed", message: error instanceof Error ? error.message : "Unable to send invite", tone: "danger" });
+    }
   };
 
-  const removeMember = (id: string) => {
+  const removeMember = async (id: string) => {
     const m = members.find((x) => x.id === id);
-    setMembers((s) => s.filter((x) => x.id !== id));
-    logAudit("member removed", m?.email ?? id);
-    pushToast({ title: "Member removed", message: m?.email ?? "", tone: "danger" });
+    try {
+      await sellerBackendApi.deleteRoleMember(id);
+      setMembers((s) => s.filter((x) => x.id !== id));
+      pushToast({ title: "Member removed", message: m?.email ?? "", tone: "danger" });
+      void refreshAudit();
+    } catch (error) {
+      pushToast({ title: "Remove failed", message: error instanceof Error ? error.message : "Unable to remove member", tone: "danger" });
+    }
   };
 
   const exportJson = () => {
@@ -968,7 +1031,6 @@ export default function TeamsRolesSupplierPage() {
       setRoles(parsed.roles as Role[]);
       setMembers(parsed.members as Member[]);
       if (parsed.policies) setPolicies(parsed.policies as PolicyState);
-      logAudit("import", "Imported roles and members");
       pushToast({ title: "Imported", message: "Roles and members updated.", tone: "green" });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e ?? "Invalid JSON");
@@ -1000,6 +1062,7 @@ export default function TeamsRolesSupplierPage() {
                 <BadgePill tone="slate">/settings/teams</BadgePill>
                 <BadgePill tone="slate">Supplier</BadgePill>
                 <BadgePill tone="orange">Custom roles</BadgePill>
+                {loading ? <BadgePill tone="slate">Loading</BadgePill> : <BadgePill tone="green">Backend</BadgePill>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Create roles, customize permissions, and assign them to your supplier team.</div>
             </div>
@@ -1387,8 +1450,7 @@ export default function TeamsRolesSupplierPage() {
                                               <Toggle
                                                 on={on}
                                                 onChange={(v) => {
-                                                  setRolePermission(activeRole.id, it.key, v);
-                                                  logAudit("permission toggled", `${activeRole.name}: ${it.key} -> ${v ? "on" : "off"}`);
+                                                  void setRolePermission(activeRole.id, it.key, v);
                                                 }}
                                                 label={`${it.label} toggle`}
                                               />
@@ -1585,7 +1647,6 @@ export default function TeamsRolesSupplierPage() {
                   on={policies.require2faForAdmins}
                   onChange={(v) => {
                     setPolicies((s) => ({ ...s, require2faForAdmins: v }));
-                    logAudit("policy updated", `require2faForAdmins -> ${v}`);
                   }}
                 />
 
@@ -1595,7 +1656,6 @@ export default function TeamsRolesSupplierPage() {
                   on={policies.requireApprovalForPayouts}
                   onChange={(v) => {
                     setPolicies((s) => ({ ...s, requireApprovalForPayouts: v }));
-                    logAudit("policy updated", `requireApprovalForPayouts -> ${v}`);
                   }}
                   right={
                     <div className="flex items-center gap-2">
@@ -1615,7 +1675,6 @@ export default function TeamsRolesSupplierPage() {
                   on={policies.restrictSensitiveExports}
                   onChange={(v) => {
                     setPolicies((s) => ({ ...s, restrictSensitiveExports: v }));
-                    logAudit("policy updated", `restrictSensitiveExports -> ${v}`);
                   }}
                 />
 
@@ -1640,9 +1699,20 @@ export default function TeamsRolesSupplierPage() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    pushToast({ title: "Policies saved", message: "Applied to org (demo).", tone: "green" });
-                    logAudit("policies saved");
+                  onClick={async () => {
+                    try {
+                      await sellerBackendApi.patchRolesSecurity({
+                        require2FA: policies.require2faForAdmins,
+                        requireApprovalForPayouts: policies.requireApprovalForPayouts,
+                        payoutApprovalThresholdUsd: policies.payoutApprovalThresholdUsd,
+                        restrictSensitiveExports: policies.restrictSensitiveExports,
+                        sessionTimeoutMins: policies.sessionTimeoutMins,
+                      });
+                      pushToast({ title: "Policies saved", message: "Applied to org.", tone: "green" });
+                      void refreshAudit();
+                    } catch (error) {
+                      pushToast({ title: "Policies save failed", message: error instanceof Error ? error.message : "Unable to save policies", tone: "danger" });
+                    }
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
                   style={{ background: TOKENS.green }}
@@ -1654,9 +1724,8 @@ export default function TeamsRolesSupplierPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setPolicies(seedPolicies());
-                    pushToast({ title: "Reset", message: "Policies reset to defaults.", tone: "default" });
-                    logAudit("policies reset");
+                    setPolicies(mapBackendPolicies(null));
+                    pushToast({ title: "Reset", message: "Policies reset to current backend baseline.", tone: "default" });
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
                 >

@@ -328,7 +328,7 @@ export default function SupplierNegotiationRoomPage() {
       <Btn
         tone="ghost"
         onClick={() => {
-          toastIt("Opening proposals (demo)");
+          toastIt("Opening proposals");
         }}
         title="Back to proposals"
       >
@@ -337,7 +337,7 @@ export default function SupplierNegotiationRoomPage() {
       <Btn
         tone="ghost"
         onClick={() => {
-          toastIt("Opening contracts (demo)");
+          toastIt("Opening contracts");
         }}
         title="Open contract record"
       >

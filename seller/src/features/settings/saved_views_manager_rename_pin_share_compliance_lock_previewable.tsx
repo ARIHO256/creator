@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -22,6 +21,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Saved Views Manager (Previewable)
@@ -39,14 +39,6 @@ const TOKENS = {
 
 type ToastTone = "success" | "warning" | "danger" | "default";
 type Toast = { id: string; title: string; message?: string; tone?: ToastTone; action?: { label: string; onClick: () => void } };
-
-const STORAGE_CANDIDATES = [
-  "evzone_supplierhub_saved_views_v9",
-  "evzone_supplierhub_saved_views_v2",
-  "evzone_supplierhub_saved_views_v1",
-  "evzone_partnerhub_saved_views_v1",
-  "evzone_saved_views_manager_demo_v1",
-];
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -74,22 +66,7 @@ function safeCopy(text) {
   }
 }
 
-function pickStorageKey() {
-  if (typeof window === "undefined") return STORAGE_CANDIDATES[0];
-  for (const k of STORAGE_CANDIDATES) {
-    try {
-      const raw = window.localStorage.getItem(k);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) return k;
-    } catch {
-      // ignore
-    }
-  }
-  return STORAGE_CANDIDATES[0];
-}
-
-function seedViews() {
+function buildViews() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -480,9 +457,6 @@ function roleTone(role) {
 }
 
 export default function SavedViewsManagerPage() {
-  const storageKeyRef = useRef(pickStorageKey());
-  const storageKey = storageKeyRef.current;
-
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
     const id = makeId("toast");
@@ -491,7 +465,29 @@ export default function SavedViewsManagerPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [views, setViews] = useMockState(`settings.savedViews.${storageKey}`, seedViews());
+  const [views, setViews] = useState<any[]>([]);
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getSavedViews();
+        if (!active) return;
+        setViews(normalizeViews(Array.isArray(payload.views) ? payload.views : []));
+        hydratedRef.current = true;
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Saved views unavailable", message: "Could not load saved views.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    void sellerBackendApi.patchSavedViews({ views });
+  }, [views]);
 
   // Filters
   const [query, setQuery] = useState("");
@@ -887,7 +883,7 @@ export default function SavedViewsManagerPage() {
                 <Badge tone="orange">Super premium</Badge>
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Rename, pin, delete, share with team, and lock for compliance.</div>
-              <div className="mt-1 text-[11px] font-semibold text-slate-400">Storage key: <span className="font-extrabold text-slate-600">{storageKey}</span></div>
+              <div className="mt-1 text-[11px] font-semibold text-slate-400">Persisted in seller settings backend</div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -903,14 +899,16 @@ export default function SavedViewsManagerPage() {
               <button
                 type="button"
                 onClick={() => {
-                  try {
-                    window.localStorage.setItem(storageKey, JSON.stringify(seedViews()));
-                    setViews(normalizeViews(seedViews()));
-                    setSelected({});
-                    pushToast({ title: "Reset", message: "Demo data restored.", tone: "success" });
-                  } catch {
-                    pushToast({ title: "Reset failed", message: "Local storage blocked.", tone: "warning" });
-                  }
+                  setSelected({});
+                  void sellerBackendApi
+                    .getSavedViews()
+                    .then((payload) => {
+                      setViews(normalizeViews(Array.isArray(payload.views) ? payload.views : []));
+                      pushToast({ title: "Reset", message: "Saved views reloaded from backend.", tone: "success" });
+                    })
+                    .catch(() => {
+                      pushToast({ title: "Reset failed", message: "Could not reload saved views.", tone: "warning" });
+                    });
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >

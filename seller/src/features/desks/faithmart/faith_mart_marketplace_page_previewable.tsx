@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
-import { mockCart } from "../../../mocks";
+import { addSellerCartItem } from "../../../lib/cartApi";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   Calendar,
   Check,
@@ -259,117 +259,11 @@ function PillToggle({ value, onChange, leftLabel, rightLabel }) {
   );
 }
 
-function seedData() {
+function createEmptyPageData() {
   return {
-    categories: [
-      { id: "books", label: "Books & Study", icon: FileText },
-      { id: "music", label: "Music & Media", icon: Sparkles },
-      { id: "apparel", label: "Apparel & Accessories", icon: Tag },
-      { id: "home", label: "Home & Decor", icon: Store },
-      { id: "events", label: "Events & Tickets", icon: Calendar },
-      { id: "services", label: "Services", icon: Handshake },
-      { id: "community", label: "Community", icon: Users2 },
-    ],
-    orgs: [
-      {
-        id: "org1",
-        name: "BrightPath Publishers",
-        type: "Publisher",
-        verified: true,
-        focus: "Books, study guides, educational content",
-      },
-      {
-        id: "org2",
-        name: "Harmony Choir Studio",
-        type: "Media",
-        verified: true,
-        focus: "Music, audio sessions, digital albums",
-      },
-      {
-        id: "org3",
-        name: "Community Care Network",
-        type: "Charity",
-        verified: false,
-        focus: "Community support, donations, outreach",
-      },
-    ],
-    items: [
-      {
-        id: "FM-1001",
-        kind: "Product",
-        category: "Books & Study",
-        title: "Faith Study Journal (Hardcover)",
-        vendor: "BrightPath Publishers",
-        verified: true,
-        retail: 16.5,
-        wholesale: 12.0,
-        moq: 10,
-        currency: "USD",
-        tags: ["journal", "study"],
-        desc:
-          "Premium hardcover journal designed for study notes, reflections, and group sessions. Includes structured prompts and durable binding.",
-      },
-      {
-        id: "FM-1002",
-        kind: "Digital",
-        category: "Music & Media",
-        title: "Guided Audio Session Pack",
-        vendor: "Harmony Choir Studio",
-        verified: true,
-        retail: 9.99,
-        wholesale: 7.5,
-        moq: 5,
-        currency: "USD",
-        tags: ["audio", "download"],
-        desc:
-          "A curated set of guided audio sessions for quiet time and group listening. Instant access after payment.",
-      },
-      {
-        id: "FM-1003",
-        kind: "Service",
-        category: "Services",
-        title: "Counselling Session (Online)",
-        vendor: "Community Care Network",
-        verified: false,
-        retail: 25,
-        wholesale: 22,
-        moq: 1,
-        currency: "USD",
-        tags: ["session", "support"],
-        desc:
-          "A private session with a qualified counsellor. Booking confirmation is sent instantly and rescheduling is supported.",
-      },
-      {
-        id: "FM-1004",
-        kind: "Event",
-        category: "Events & Tickets",
-        title: "Community Music Night Ticket",
-        vendor: "Harmony Choir Studio",
-        verified: true,
-        retail: 5,
-        wholesale: 4,
-        moq: 20,
-        currency: "USD",
-        tags: ["ticket", "community"],
-        desc:
-          "Entry ticket for a community music night. Includes seating guidance and on-site QR check-in.",
-      },
-      {
-        id: "FM-1005",
-        kind: "Product",
-        category: "Home & Decor",
-        title: "Inspirational Wall Art (Set of 3)",
-        vendor: "FaithMart Studio",
-        verified: true,
-        retail: 18,
-        wholesale: 13.8,
-        moq: 12,
-        currency: "USD",
-        tags: ["decor", "prints"],
-        desc:
-          "Minimal, modern wall art prints with premium paper and safe packaging. Works well for homes and offices.",
-      },
-    ],
+    categories: [],
+    orgs: [],
+    items: [],
   };
 }
 
@@ -446,7 +340,32 @@ function ItemCard({ item, mode, onOpen }) {
 }
 
 export default function FaithMartMarketplacePage() {
-  const [seeded] = useMockState("desks.faithmart.marketplace", seedData());
+  const [pageData, setPageData] = useState(() => createEmptyPageData());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getRegulatoryDesk("faithmart");
+        const nextPageData = payload?.pageData;
+        if (!cancelled && nextPageData && typeof nextPageData === "object") {
+          setPageData(nextPageData as typeof pageData);
+        }
+      } catch {
+        if (!cancelled) {
+          setPageData(createEmptyPageData());
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [mode, setMode] = useState("retail");
   const [tab, setTab] = useState("All");
@@ -456,7 +375,7 @@ export default function FaithMartMarketplacePage() {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [activeId, setActiveId] = useState<string | undefined>(seeded.items[0]?.id);
+  const [activeId, setActiveId] = useState<string | undefined>(undefined);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -466,11 +385,11 @@ export default function FaithMartMarketplacePage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const active = useMemo(() => seeded.items.find((x) => x.id === activeId) || null, [seeded.items, activeId]);
+  const active = useMemo(() => pageData.items.find((x) => x.id === activeId) || null, [pageData.items, activeId]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    return seeded.items
+    return pageData.items
       .filter((it) => (tab === "All" ? true : it.kind === tab))
       .filter((it) => (category === "All" ? true : it.category === category))
       .filter((it) => (verifiedOnly ? !!it.verified : true))
@@ -479,17 +398,23 @@ export default function FaithMartMarketplacePage() {
         const hay = [it.id, it.title, it.vendor, it.category, it.kind, ...(it.tags || [])].join(" ").toLowerCase();
         return hay.includes(query);
       });
-  }, [seeded.items, tab, category, verifiedOnly, q]);
+  }, [pageData.items, tab, category, verifiedOnly, q]);
 
-  const categories = useMemo(() => ["All", ...Array.from(new Set(seeded.items.map((x) => x.category)))], [seeded.items]);
+  const categories = useMemo(() => ["All", ...Array.from(new Set(pageData.items.map((x) => x.category)))], [pageData.items]);
 
   const stats = useMemo(() => {
-    const verifiedStores = seeded.orgs.filter((o) => o.verified).length;
-    const digital = seeded.items.filter((x) => x.kind === "Digital").length;
-    const events = seeded.items.filter((x) => x.kind === "Event").length;
-    const services = seeded.items.filter((x) => x.kind === "Service").length;
+    const verifiedStores = pageData.orgs.filter((o) => o.verified).length;
+    const digital = pageData.items.filter((x) => x.kind === "Digital").length;
+    const events = pageData.items.filter((x) => x.kind === "Event").length;
+    const services = pageData.items.filter((x) => x.kind === "Service").length;
     return { verifiedStores, digital, events, services };
-  }, [seeded.orgs, seeded.items]);
+  }, [pageData.orgs, pageData.items]);
+
+  useEffect(() => {
+    if (!activeId && pageData.items[0]?.id) {
+      setActiveId(pageData.items[0].id);
+    }
+  }, [activeId, pageData.items]);
 
   const openItem = (id) => {
     setActiveId(id);
@@ -499,10 +424,10 @@ export default function FaithMartMarketplacePage() {
   const addToCart = async () => {
     if (!active) return;
     try {
-      await mockCart.addItem(active.id, 1);
+      await addSellerCartItem(active.id, 1);
       pushToast({
         title: "Added to cart",
-        message: `${active.title} added to demo cart.`,
+        message: `${active.title} added to cart.`,
         tone: "success",
         action: { label: "View cart", onClick: () => pushToast({ title: "Cart", message: "Cart drawer comes next.", tone: "default" }) },
       });
@@ -541,6 +466,7 @@ export default function FaithMartMarketplacePage() {
               <div className="text-sm font-black text-white">FaithMart</div>
               <div className="text-[11px] font-semibold text-white/80">Books, media, services and community</div>
             </div>
+            {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
           </div>
 
           <div className="flex items-center gap-2">
@@ -699,12 +625,12 @@ export default function FaithMartMarketplacePage() {
             <div className="flex items-center gap-2">
               <Store className="h-4 w-4 text-slate-700" />
               <div className="text-sm font-black text-slate-900">Featured organizations</div>
-              <span className="ml-auto"><Badge tone="slate">{seeded.orgs.length}</Badge></span>
+              <span className="ml-auto"><Badge tone="slate">{pageData.orgs.length}</Badge></span>
             </div>
             <div className="mt-1 text-xs font-semibold text-slate-500">Verified partners and trusted community sellers.</div>
 
             <div className="mt-4 space-y-2">
-              {seeded.orgs.map((o) => (
+              {pageData.orgs.map((o) => (
                 <button
                   key={o.id}
                   type="button"

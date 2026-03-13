@@ -492,7 +492,7 @@ export default function SupplierPostLivePublisherPage() {
   const [creatorPublishRequested, setCreatorPublishRequested] = useState(false);
 
   useEffect(() => {
-    // keep a sensible default when switching mode (demo)
+    // keep a sensible default when switching mode
     if (executionMode === "supplier_hosted") {
       setSupplierApproved(true);
       setCreatorPublishRequested(false);
@@ -705,7 +705,7 @@ export default function SupplierPostLivePublisherPage() {
                 </Btn>
               </div>
 
-              <Btn tone="neutral" onClick={() => push("Preview replay page (demo)", "info")} left={<ExternalLink className="h-4 w-4" />}>
+              <Btn tone="neutral" onClick={() => push("Preview replay page", "info")} left={<ExternalLink className="h-4 w-4" />}>
                 Preview
               </Btn>
 
@@ -787,7 +787,7 @@ export default function SupplierPostLivePublisherPage() {
                       >
                         Copy
                       </Btn>
-                      <Btn tone="ghost" onClick={() => push("Open replay (demo)", "info")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => push("Open replay", "info")} left={<ExternalLink className="h-4 w-4" />}>
                         Open
                       </Btn>
                     </div>
@@ -858,7 +858,7 @@ export default function SupplierPostLivePublisherPage() {
                               tone="ghost"
                               onClick={() => {
                                 setCreatorPublishRequested(true);
-                                push("Creator publish requested (demo)", "success");
+                                push("Creator publish requested", "success");
                               }}
                               left={<Send className="h-4 w-4" />}
                             >
@@ -904,7 +904,7 @@ export default function SupplierPostLivePublisherPage() {
                                 setSubmittedToAdmin(true);
                                 setAdminRejected(false);
                                 setAdminApproved(false);
-                                push("Submitted to Admin (demo)", "success");
+                                push("Submitted to Admin", "success");
                               }}
                               left={<Send className="h-4 w-4" />}
                             >
@@ -915,7 +915,7 @@ export default function SupplierPostLivePublisherPage() {
                               onClick={() => {
                                 setAdminApproved(true);
                                 setAdminRejected(false);
-                                push("Admin approved (demo)", "success");
+                                push("Admin approved", "success");
                               }}
                               left={<CheckCircle2 className="h-4 w-4" />}
                             >
@@ -926,7 +926,7 @@ export default function SupplierPostLivePublisherPage() {
                               onClick={() => {
                                 setAdminRejected(true);
                                 setAdminApproved(false);
-                                push("Admin rejected (demo)", "warn");
+                                push("Admin rejected", "warn");
                               }}
                               left={<AlertTriangle className="h-4 w-4" />}
                             >
@@ -977,7 +977,7 @@ export default function SupplierPostLivePublisherPage() {
                   </Btn>
                   <Btn
                     tone="ghost"
-                    onClick={() => push("Auto highlights (demo)", "info")}
+                    onClick={() => push("Auto highlights", "info")}
                     left={<Sparkles className="h-4 w-4" />}
                     disabled={!isPro}
                     title={!isPro ? "Pro required" : ""}
@@ -1019,7 +1019,7 @@ export default function SupplierPostLivePublisherPage() {
                           tone="ghost"
                           onClick={() => {
                             setClips((s) => s.map((x) => (x.id === c.id ? { ...x, status: x.status === "Draft" ? "Queued" : x.status } : x)));
-                            push("Queued export (demo)", "success");
+                            push("Queued export", "success");
                           }}
                           left={<Download className="h-4 w-4" />}
                           disabled={c.status !== "Draft"}
@@ -1166,7 +1166,7 @@ export default function SupplierPostLivePublisherPage() {
                   </div>
 
                   <div className="flex items-center justify-end gap-2">
-                    <Btn tone="neutral" onClick={() => push("Preview message (demo)", "info")} left={<Phone className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => push("Preview message", "info")} left={<Phone className="h-4 w-4" />}>
                       Preview
                     </Btn>
                     <Btn
@@ -1299,7 +1299,7 @@ export default function SupplierPostLivePublisherPage() {
               </div>
 
               <div className="mt-3 flex items-center justify-end gap-2">
-                <Btn tone="ghost" onClick={() => push("Preview booster plan (demo)", "info")} left={<Phone className="h-4 w-4" />}>
+                <Btn tone="ghost" onClick={() => push("Preview booster plan", "info")} left={<Phone className="h-4 w-4" />}>
                   Preview
                 </Btn>
                 <Btn

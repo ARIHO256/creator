@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { LANGUAGE_OPTIONS } from "../../localization/config";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Preferences (Previewable)
@@ -234,9 +235,6 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-const LS_PREFS = "evzone_preferences_v1";
-const LS_WORKSPACES = "evzone_workspace_prefs_v1";
-
 const LANGS = LANGUAGE_OPTIONS.map((option) => ({ label: option.label, value: option.code }));
 
 const CURRENCIES = [
@@ -298,12 +296,12 @@ function defaultWorkspaces() {
   const base = {};
   ROLES.forEach((r) => {
     base[r.value] = {
-      home: r.value === "seller" ? "/dashboard" : r.value === "provider" ? "/provider/service-command" : "/dashboard",
-      startOnLast: true,
-      showAdvanced: r.value !== "support",
-      defaultFilters: r.value === "seller" ? "Orders: New + At Risk" : r.value === "provider" ? "Reviews: Unreplied" : "Default",
-      pinned: r.value === "seller" ? ["Orders", "Listings", "Wholesale"] : r.value === "provider" ? ["Bookings", "Reviews", "Quotes"] : ["Status Center"],
-      quickActions: r.value === "seller" ? ["Create listing", "Draft quote", "Export"] : r.value === "provider" ? ["New quote", "Reply reviews", "Schedule"] : ["Open queue", "Export", "Audit"],
+      home: "",
+      startOnLast: false,
+      showAdvanced: false,
+      defaultFilters: "",
+      pinned: [],
+      quickActions: [],
     };
   });
   return base;
@@ -319,29 +317,57 @@ export default function PreferencesPage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [tab, setTab] = useState("Core");
-
-  const [prefs, setPrefs] = useState(() => {
-    try {
-      const raw = localStorage.getItem(LS_PREFS);
-      return raw ? { ...defaultPrefs(), ...JSON.parse(raw) } : defaultPrefs();
-    } catch {
-      return defaultPrefs();
-    }
-  });
-
-  const [workspaces, setWorkspaces] = useState(() => {
-    try {
-      const raw = localStorage.getItem(LS_WORKSPACES);
-      return raw ? { ...defaultWorkspaces(), ...JSON.parse(raw) } : defaultWorkspaces();
-    } catch {
-      return defaultWorkspaces();
-    }
-  });
-
+  const [prefs, setPrefs] = useState(() => defaultPrefs());
+  const [workspaces, setWorkspaces] = useState(() => defaultWorkspaces());
   const [activeRole, setActiveRole] = useState("seller");
+  const [loading, setLoading] = useState(true);
 
   const dirtyRef = useRef(false);
   const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [prefPayload, uiPayload] = await Promise.all([
+          sellerBackendApi.getPreferences().catch(() => ({})),
+          sellerBackendApi.getUiState().catch(() => ({})),
+        ]);
+        if (cancelled) return;
+        const uiPrefs =
+          uiPayload && typeof uiPayload === "object" && uiPayload.preferences && typeof uiPayload.preferences === "object"
+            ? (uiPayload.preferences as Record<string, unknown>)
+            : {};
+        const uiWorkspaces =
+          uiPayload && typeof uiPayload === "object" && uiPayload.workspaces && typeof uiPayload.workspaces === "object"
+            ? (uiPayload.workspaces as Record<string, unknown>)
+            : {};
+        setPrefs({
+          ...defaultPrefs(),
+          ...uiPrefs,
+          language: String(uiPrefs.language ?? prefPayload.locale ?? defaultPrefs().language),
+          currency: String(uiPrefs.currency ?? prefPayload.currency ?? defaultPrefs().currency),
+        });
+        setWorkspaces({
+          ...defaultWorkspaces(),
+          ...uiWorkspaces,
+        });
+      } catch {
+        if (!cancelled) {
+          pushToast({ title: "Backend unavailable", message: "Could not load preferences.", tone: "warning" });
+        }
+      } finally {
+        if (!cancelled) {
+          dirtyRef.current = false;
+          setDirty(false);
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!dirtyRef.current) return;
@@ -354,15 +380,24 @@ export default function PreferencesPage() {
   };
 
   const saveAll = () => {
-    try {
-      localStorage.setItem(LS_PREFS, JSON.stringify(prefs));
-      localStorage.setItem(LS_WORKSPACES, JSON.stringify(workspaces));
-      setDirty(false);
-      dirtyRef.current = false;
-      pushToast({ title: "Preferences saved", message: "Saved locally (wire to API).", tone: "success" });
-    } catch {
-      pushToast({ title: "Save failed", message: "Could not access storage.", tone: "danger" });
-    }
+    void Promise.all([
+      sellerBackendApi.patchPreferences({
+        locale: prefs.language,
+        currency: prefs.currency,
+      }),
+      sellerBackendApi.patchUiState({
+        preferences: prefs,
+        workspaces,
+      }),
+    ])
+      .then(() => {
+        setDirty(false);
+        dirtyRef.current = false;
+        pushToast({ title: "Preferences saved", message: "Persisted to seller settings.", tone: "success" });
+      })
+      .catch(() => {
+        pushToast({ title: "Save failed", message: "Could not update backend settings.", tone: "danger" });
+      });
   };
 
   const resetAll = () => {
@@ -433,7 +468,7 @@ export default function PreferencesPage() {
             {["Core", "Workspaces"].map((t) => (
               <SegTab key={t} label={t} active={tab === t} onClick={() => setTab(t)} />
             ))}
-            <span className="ml-auto"><Badge tone="slate">Local demo</Badge></span>
+            <span className="ml-auto"><Badge tone="slate">{loading ? "Loading backend" : "Backend persisted"}</Badge></span>
           </div>
         </div>
 

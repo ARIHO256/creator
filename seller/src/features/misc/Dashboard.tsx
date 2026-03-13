@@ -51,9 +51,10 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useRolePageContent } from '../../mock/shared/pageContent';
-import type { DashboardQuickAction } from '../../mock/shared/types';
+import { useRolePageContent } from '../../data/pageContent';
+import type { DashboardQuickAction, DashboardContent } from '../../data/pageTypes';
 import type { UserRole } from '../../types/roles';
+import { sellerBackendApi } from '../../lib/backendApi';
 
 const TOKENS = {
   green: '#03CD8C',
@@ -63,9 +64,6 @@ const TOKENS = {
   black: '#0B0F14',
 };
 const MIX_TREND_CARD_HEIGHT = 260;
-
-const STORAGE_DEFAULT_VIEW = 'evz_supplier_dashboard_default_view';
-const STORAGE_CUSTOM_VIEWS = 'evz_supplier_dashboard_custom_views_v1';
 
 type ViewFilters = {
   marketplaces: string[];
@@ -116,10 +114,10 @@ type KpiInput = {
   seriesBase: number;
   drift: number;
   vol: number;
-  seedAdd: number;
+  seriesOffset: number;
   drilldown: KpiDrilldown;
 };
-type Kpi = Omit<KpiInput, 'seriesBase' | 'drift' | 'vol' | 'seedAdd'> & { series: number[] };
+type Kpi = Omit<KpiInput, 'seriesBase' | 'drift' | 'vol' | 'seriesOffset'> & { series: number[] };
 
 type DonutTopItem = { label: string; value: string };
 type DonutAction = { label: string; to: string; icon: React.ElementType };
@@ -1008,58 +1006,67 @@ export default function SupplierHubDashboardPage({
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    let active = true;
 
-    // Load custom views (saved locally)
-    const storedCustom = safeJsonParse(window.localStorage.getItem(STORAGE_CUSTOM_VIEWS), []);
-    const safeCustom: CustomView[] = Array.isArray(storedCustom) ? storedCustom : [];
-    setCustomViews(safeCustom);
+    void Promise.allSettled([
+      sellerBackendApi.getSavedViews(),
+      sellerBackendApi.getUiState(),
+    ]).then(([savedViewsResult, uiStateResult]) => {
+      if (!active) return;
 
-    // Resolve default view (preset or custom)
-    const savedDefault = window.localStorage.getItem(STORAGE_DEFAULT_VIEW);
-    const universe = [...PRESET_VIEWS, ...safeCustom];
-    const resolvedDefault =
-      savedDefault && universe.some((v) => v.id === savedDefault) ? savedDefault : 'all';
-    setDefaultViewId(resolvedDefault);
-    setViewId(resolvedDefault);
+      const safeCustom: CustomView[] = savedViewsResult.status === "fulfilled" && Array.isArray(savedViewsResult.value.views)
+        ? (savedViewsResult.value.views as CustomView[])
+        : [];
+      setCustomViews(safeCustom);
 
-    // Apply shared view from URL (supports both search params and hash-router params)
-    const params = getShareParamsFromLocation();
-    const hasShare =
-      params.has('range') ||
-      params.has('from') ||
-      params.has('to') ||
-      params.has('m') ||
-      params.has('w') ||
-      params.has('c');
-    if (hasShare) {
-      applyingView.current = true;
+      const uiStatePayload = uiStateResult.status === "fulfilled" ? uiStateResult.value : {};
+      const savedDefault = String(((uiStatePayload as Record<string, any>)?.dashboard as { defaultViewId?: string } | undefined)?.defaultViewId || 'all');
+      const universe = [...PRESET_VIEWS, ...safeCustom];
+      const resolvedDefault =
+        savedDefault && universe.some((v) => v.id === savedDefault) ? savedDefault : 'all';
+      setDefaultViewId(resolvedDefault);
+      setViewId(resolvedDefault);
 
-      const nextRange = params.get('range');
-      if (isTimeRangeKey(nextRange)) setRange(nextRange);
+      const params = getShareParamsFromLocation();
+      const hasShare =
+        params.has('range') ||
+        params.has('from') ||
+        params.has('to') ||
+        params.has('m') ||
+        params.has('w') ||
+        params.has('c');
+      if (hasShare) {
+        applyingView.current = true;
 
-      const from = params.get('from');
-      const to = params.get('to');
-      if (from) setCustomFrom(from);
-      if (to) setCustomTo(to);
+        const nextRange = params.get('range');
+        if (isTimeRangeKey(nextRange)) setRange(nextRange);
 
-      setFilters({
-        marketplaces: parseCommaList(params.get('m')),
-        warehouses: parseCommaList(params.get('w')),
-        channels: parseCommaList(params.get('c')),
-      });
+        const from = params.get('from');
+        const to = params.get('to');
+        if (from) setCustomFrom(from);
+        if (to) setCustomTo(to);
 
-      setViewId('custom');
-      window.setTimeout(() => {
-        applyingView.current = false;
-      }, 0);
-      showToast('View loaded from link');
-    }
+        setFilters({
+          marketplaces: parseCommaList(params.get('m')),
+          warehouses: parseCommaList(params.get('w')),
+          channels: parseCommaList(params.get('c')),
+        });
+
+        setViewId('custom');
+        window.setTimeout(() => {
+          applyingView.current = false;
+        }, 0);
+        showToast('View loaded from link');
+      }
+    });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(STORAGE_CUSTOM_VIEWS, JSON.stringify(customViews));
+    void sellerBackendApi.patchSavedViews({ views: customViews }).catch(() => undefined);
   }, [customViews]);
   // Apply preset views (and treat any manual change as a "custom" view)
   useEffect(() => {
@@ -1086,7 +1093,7 @@ export default function SupplierHubDashboardPage({
 
   // Data model (reactive to controls)
   const model = useMemo(() => {
-    const seedBase = hashStr(
+    const seriesSeedBase = hashStr(
       `${role}|${currency}|${range}|${customFrom}|${customTo}|${filters.marketplaces.join(',')}|${filters.warehouses.join(',')}|${filters.channels.join(',')}`
     );
 
@@ -1099,9 +1106,9 @@ export default function SupplierHubDashboardPage({
         k.seriesBase,
         k.drift,
         k.vol,
-        seedBase + k.seedAdd
+        seriesSeedBase + k.seriesOffset
       );
-      const { seriesBase, drift, vol, seedAdd, ...rest } = k;
+      const { seriesBase, drift, vol, seriesOffset, ...rest } = k;
       return { ...rest, series };
     };
 
@@ -1114,34 +1121,37 @@ export default function SupplierHubDashboardPage({
       'new-booking': CalendarRange,
     };
 
-    const quickActions = content.quickActions.map((action: DashboardQuickAction) => ({
+    const quickActions = (content.quickActions || []).map((action: DashboardQuickAction) => ({
       ...action,
       icon: quickActionIconByKey[action.key] ?? Plus,
     }));
 
     // HERO
+    const heroContent = content.hero || {} as DashboardContent['hero'];
+    const featuredContent = content.featured || {} as DashboardContent['featured'];
+    const basesContent = content.bases || { revenueBase: 0, ordersBase: 0, trustBase: 0 };
     const hero = {
       title: 'Congratulations',
-      name: content.hero.name,
-      sub: content.hero.sub,
-      cta: { label: content.hero.ctaLabel, to: content.hero.ctaTo },
-      miniBar: generateSeries(6, 10 * scale, 1.2, 2.4, seedBase + 11).map((n) => Math.round(n)),
+      name: heroContent.name || '',
+      sub: heroContent.sub || '',
+      cta: { label: heroContent.ctaLabel || '', to: heroContent.ctaTo || '' },
+      miniBar: generateSeries(6, 10 * scale, 1.2, 2.4, seriesSeedBase + 11).map((n) => Math.round(n)),
       chip: {
         label: 'MyLiveDealz',
-        value: filterMeta.hasMLDZ ? content.hero.chipWhenMLDZ : content.hero.chipWhenNoMLDZ,
+        value: filterMeta.hasMLDZ ? (heroContent.chipWhenMLDZ || '') : (heroContent.chipWhenNoMLDZ || ''),
       },
     };
 
     const featured = {
-      title: content.featured.title,
-      sub: content.featured.sub,
-      cta: { label: content.featured.ctaLabel, to: content.featured.ctaTo },
+      title: featuredContent.title || '',
+      sub: featuredContent.sub || '',
+      cta: { label: featuredContent.ctaLabel || '', to: featuredContent.ctaTo || '' },
     };
 
     // KPI values that actually move with controls
-    const revenueBase = content.bases.revenueBase;
-    const ordersBase = content.bases.ordersBase;
-    const trustBase = content.bases.trustBase;
+    const revenueBase = basesContent.revenueBase || 0;
+    const ordersBase = basesContent.ordersBase || 0;
+    const trustBase = basesContent.trustBase || 0;
 
     const revenueRaw = revenueBase * scale;
     const ordersRaw = Math.max(
@@ -1165,7 +1175,7 @@ export default function SupplierHubDashboardPage({
               seriesBase: 8 * scale,
               drift: 0.45,
               vol: 1.2,
-              seedAdd: 21,
+              seriesOffset: 21,
               drilldown: {
                 headline: 'Bookings are increasing',
                 sub: 'Improve response speed to keep acceptance high.',
@@ -1193,7 +1203,7 @@ export default function SupplierHubDashboardPage({
               seriesBase: 4 * scale,
               drift: 0.35,
               vol: 1.0,
-              seedAdd: 22,
+              seriesOffset: 22,
               drilldown: {
                 headline: 'Quotes are converting',
                 sub: 'Follow up quickly to improve acceptance.',
@@ -1221,7 +1231,7 @@ export default function SupplierHubDashboardPage({
               seriesBase: trustRaw,
               drift: -0.2,
               vol: 1.0,
-              seedAdd: 23,
+              seriesOffset: 23,
               drilldown: {
                 headline: 'Protect payouts and ranking',
                 sub: 'Complete identity and maintain response quality.',
@@ -1251,7 +1261,7 @@ export default function SupplierHubDashboardPage({
               seriesBase: 10 * scale,
               drift: 0.8,
               vol: 2.5,
-              seedAdd: 31,
+              seriesOffset: 31,
               drilldown: {
                 headline: 'Revenue is trending up',
                 sub: 'Drivers are marketplace conversions, wholesale pipeline, and promo uplift.',
@@ -1291,7 +1301,7 @@ export default function SupplierHubDashboardPage({
               seriesBase: 18 * Math.max(0.6, rangeMeta.scale),
               drift: 0.3,
               vol: 1.6,
-              seedAdd: 32,
+              seriesOffset: 32,
               drilldown: {
                 headline: 'Order flow is healthy',
                 sub: 'Prioritize the items near SLA risk to protect delivery rate.',
@@ -1322,7 +1332,7 @@ export default function SupplierHubDashboardPage({
               seriesBase: trustRaw,
               drift: -0.35,
               vol: 1.3,
-              seedAdd: 33,
+              seriesOffset: 33,
               drilldown: {
                 headline: 'Resolve blockers to protect payouts',
                 sub: 'KYC is incomplete and one integration is degraded.',
@@ -1785,7 +1795,7 @@ export default function SupplierHubDashboardPage({
       filterMeta.hasMLDZ ? 3.2 : 2.6,
       filterMeta.hasMLDZ ? 0.02 : -0.01,
       0.18 + riskBoost * 0.35,
-      seedBase + 91
+      seriesSeedBase + 91
     ).map((n) => clamp(n, 0.4, 12));
 
     const cancelRateSeries = generateSeries(
@@ -1793,14 +1803,14 @@ export default function SupplierHubDashboardPage({
       5.1 + riskBoost * 4.2,
       -0.01,
       0.38 + riskBoost * 0.7,
-      seedBase + 92
+      seriesSeedBase + 92
     ).map((n) => clamp(n, 1.2, 18));
     const disputeRateSeries = generateSeries(
       rangeMeta.sparkPoints,
       1.2 + riskBoost * 2.0,
       0.0,
       0.18 + riskBoost * 0.5,
-      seedBase + 93
+      seriesSeedBase + 93
     ).map((n) => clamp(n, 0.2, 7));
 
     const cancellationsSeries = volumeSeries.length
@@ -1817,7 +1827,7 @@ export default function SupplierHubDashboardPage({
           Math.max(1, volumeNow * 0.06),
           0.2,
           2.4 + riskBoost * 4,
-          seedBase + 94
+          seriesSeedBase + 94
         ).map((n) => Math.round(n));
 
     const disputesSeries = volumeSeries.length
@@ -1834,7 +1844,7 @@ export default function SupplierHubDashboardPage({
           Math.max(0, volumeNow * 0.012),
           0.08,
           1.2 + riskBoost * 2,
-          seedBase + 95
+          seriesSeedBase + 95
         ).map((n) => Math.round(n));
 
     const convNow = conversionSeries[conversionSeries.length - 1] ?? 0;
@@ -2150,7 +2160,7 @@ export default function SupplierHubDashboardPage({
     return {
       hero,
       featured,
-      seedBase,
+      seriesSeedBase,
       smart,
       trustSignals,
       quickActions,
@@ -2202,8 +2212,8 @@ export default function SupplierHubDashboardPage({
 
   const setDefaultView = () => {
     const v = allViews.some((x) => x.id === viewId) ? viewId : 'all';
-    if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_DEFAULT_VIEW, v);
     setDefaultViewId(v);
+    void sellerBackendApi.patchUiState({ dashboard: { defaultViewId: v } }).catch(() => undefined);
     showToast('Default view saved');
   };
 

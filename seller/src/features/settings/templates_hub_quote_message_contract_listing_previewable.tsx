@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -25,6 +24,7 @@ import {
   Star,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Templates Hub (Previewable)
@@ -371,7 +371,7 @@ function renderSample(templateBody: string) {
   return out;
 }
 
-function seedTemplates(): Template[] {
+function buildTemplates(): Template[] {
   const now = Date.now();
   const ago = (m: number) => new Date(now - m * 60_000).toISOString();
 
@@ -504,6 +504,53 @@ function templateTokensByType(type: TemplateType) {
   return [...common, "{{sku}}"];
 }
 
+function mapBackendTemplate(raw: Record<string, unknown>): Template {
+  const metadata = raw.metadata && typeof raw.metadata === "object" ? (raw.metadata as Record<string, unknown>) : {};
+  const payload = raw.payload && typeof raw.payload === "object" ? (raw.payload as Record<string, unknown>) : {};
+  const kind = String(raw.kind || "quote").toLowerCase();
+  return {
+    id: String(raw.id || makeId("tpl")),
+    name: String(raw.name || ""),
+    description: String(raw.notes || payload.description || ""),
+    type: kind === "message" || kind === "contract" || kind === "listing" ? (kind as TemplateType) : "quote",
+    status: String(raw.status || "ACTIVE") === "ARCHIVED" ? "Archived" : String(metadata.approvalState || "draft") === "draft" ? "Draft" : "Active",
+    approvalState: ["approved", "pending", "rejected", "draft"].includes(String(metadata.approvalState || "").toLowerCase())
+      ? (String(metadata.approvalState).toLowerCase() as ApprovalState)
+      : "draft",
+    tags: Array.isArray(payload.tags) ? payload.tags.map((tag) => String(tag)) : [],
+    owner: String(metadata.owner || "SellerSeller"),
+    updatedAt: String(raw.updatedAt || new Date().toISOString()),
+    createdAt: String(raw.createdAt || new Date().toISOString()),
+    usage: Number(metadata.usage || 0),
+    requireApproval: Boolean(metadata.requireApproval ?? true),
+    content: String(payload.content || ""),
+    approvals: Array.isArray(metadata.approvals) ? (metadata.approvals as TemplateApproval[]) : [],
+    versions: Array.isArray(metadata.versions) ? (metadata.versions as TemplateVersion[]) : [],
+  };
+}
+
+function serializeTemplate(template: Template) {
+  return {
+    name: template.name,
+    kind: template.type,
+    notes: template.description,
+    status: template.status === "Archived" ? "ARCHIVED" : "ACTIVE",
+    payload: {
+      content: template.content,
+      description: template.description,
+      tags: template.tags,
+    },
+    metadata: {
+      approvalState: template.approvalState,
+      owner: template.owner,
+      usage: template.usage,
+      requireApproval: template.requireApproval,
+      approvals: template.approvals,
+      versions: template.versions,
+    },
+  };
+}
+
 export default function TemplatesHubPage() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -513,7 +560,30 @@ export default function TemplatesHubPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [templates, setTemplates] = useMockState<Template[]>("settings.templates.items", seedTemplates());
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getCatalogTemplates();
+        if (cancelled) return;
+        const rows = Array.isArray(payload.templates) ? payload.templates : [];
+        setTemplates(rows.map((row) => mapBackendTemplate(row as Record<string, unknown>)));
+      } catch {
+        if (!cancelled) {
+          setTemplates([]);
+          pushToast({ title: "Backend unavailable", message: "Could not load templates.", tone: "warning" });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [tab, setTab] = useState("All");
   const [q, setQ] = useState("");
@@ -621,7 +691,7 @@ export default function TemplatesHubPage() {
     setDrawerOpen(true);
   };
 
-  const saveTemplate = () => {
+  const saveTemplate = async () => {
     if (!draft) return;
 
     const isNew = !templates.some((t) => t.id === draft.id);
@@ -672,10 +742,19 @@ export default function TemplatesHubPage() {
       return;
     }
 
-    setTemplates((prev) => {
-      if (isNew) return [normalized, ...prev];
-      return prev.map((t) => (t.id === normalized.id ? normalized : t));
-    });
+    try {
+      const saved = isNew
+        ? await sellerBackendApi.createCatalogTemplate(serializeTemplate(normalized))
+        : await sellerBackendApi.patchCatalogTemplate(normalized.id, serializeTemplate(normalized));
+      const persisted = mapBackendTemplate(saved);
+      setTemplates((prev) => {
+        if (isNew) return [persisted, ...prev];
+        return prev.map((t) => (t.id === persisted.id ? persisted : t));
+      });
+    } catch {
+      pushToast({ title: "Save failed", message: "Could not persist template.", tone: "danger" });
+      return;
+    }
 
     pushToast({
       title: isNew ? "Template created" : "Template saved",
@@ -686,7 +765,7 @@ export default function TemplatesHubPage() {
     setDrawerOpen(false);
   };
 
-  const duplicateTemplate = (t: Template) => {
+  const duplicateTemplate = async (t: Template) => {
     const now = new Date().toISOString();
     const copy: Template = {
       ...(JSON.parse(JSON.stringify(t)) as Template),
@@ -723,8 +802,14 @@ export default function TemplatesHubPage() {
       ],
     };
 
-    setTemplates((prev) => [copy, ...prev]);
-    pushToast({ title: "Duplicated", message: "New draft created.", tone: "success", action: { label: "Edit", onClick: () => openEdit(copy.id) } });
+    try {
+      const saved = await sellerBackendApi.createCatalogTemplate(serializeTemplate(copy));
+      const persisted = mapBackendTemplate(saved);
+      setTemplates((prev) => [persisted, ...prev]);
+      pushToast({ title: "Duplicated", message: "New draft created.", tone: "success", action: { label: "Edit", onClick: () => openEdit(persisted.id) } });
+    } catch {
+      pushToast({ title: "Duplicate failed", message: "Could not create backend copy.", tone: "danger" });
+    }
   };
 
   const submitForApproval = () => {
@@ -785,14 +870,21 @@ export default function TemplatesHubPage() {
     pushToast({ title: decision === "approve" ? "Approved" : "Rejected", message: "Decision recorded.", tone: decision === "approve" ? "success" : "warning" });
   };
 
-  const applyDraftToStore = () => {
+  const applyDraftToStore = async () => {
     if (!draft) return;
-    setTemplates((prev) => {
-      const exists = prev.some((t) => t.id === draft.id);
-      if (!exists) return [draft, ...prev];
-      return prev.map((t) => (t.id === draft.id ? draft : t));
-    });
-    pushToast({ title: "Updated", message: "Template state synced to list.", tone: "success" });
+    try {
+      const saved = await sellerBackendApi.patchCatalogTemplate(draft.id, serializeTemplate(draft));
+      const persisted = mapBackendTemplate(saved);
+      setTemplates((prev) => {
+        const exists = prev.some((t) => t.id === persisted.id);
+        if (!exists) return [persisted, ...prev];
+        return prev.map((t) => (t.id === persisted.id ? persisted : t));
+      });
+      setDraft(persisted);
+      pushToast({ title: "Updated", message: "Template state synced to backend.", tone: "success" });
+    } catch {
+      pushToast({ title: "Sync failed", message: "Could not update template.", tone: "danger" });
+    }
   };
 
   useEffect(() => {
@@ -831,11 +923,24 @@ export default function TemplatesHubPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest templates loaded (demo).", tone: "success" })}
+                onClick={() => {
+                  setLoading(true);
+                  void sellerBackendApi
+                    .getCatalogTemplates()
+                    .then((payload) => {
+                      const rows = Array.isArray(payload.templates) ? payload.templates : [];
+                      setTemplates(rows.map((row) => mapBackendTemplate(row as Record<string, unknown>)));
+                      pushToast({ title: "Refreshed", message: "Latest templates loaded.", tone: "success" });
+                    })
+                    .catch(() => {
+                      pushToast({ title: "Refresh failed", message: "Could not fetch templates.", tone: "danger" });
+                    })
+                    .finally(() => setLoading(false));
+                }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
-                Refresh
+                {loading ? "Loading" : "Refresh"}
               </button>
               <button
                 type="button"

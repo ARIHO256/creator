@@ -91,7 +91,7 @@ function translateToGerman(text) {
     }
   }
   
-  // Return English as default English (will be translated via API)
+  // Return English as fallback (will be translated via API)
   return text;
 }
 

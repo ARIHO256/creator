@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import { useNavigate } from "react-router-dom";
 import {
@@ -87,6 +87,34 @@ type ActionCard = {
 type ProviderMode = "Available" | "Busy";
 type DateScope = "Today" | "Tomorrow" | "Week";
 type QueueTab = "All" | QueueItem["status"];
+
+function mapScheduleItem(entry: Record<string, any>): ScheduleItem {
+  return {
+    id: String(entry.id || ""),
+    title: String(entry.title || ""),
+    customer: String(entry.customer || ""),
+    service: String(entry.service || ""),
+    startAt: String(entry.startAt || new Date().toISOString()),
+    endAt: String(entry.endAt || new Date().toISOString()),
+    channel: String(entry.channel || ""),
+    location: String(entry.location || ""),
+    status: String(entry.status || "Upcoming"),
+  };
+}
+
+function mapQueueItem(entry: Record<string, any>): QueueItem {
+  return {
+    id: String(entry.id || ""),
+    customer: String(entry.customer || ""),
+    request: String(entry.request || ""),
+    service: String(entry.service || ""),
+    status: (entry.status || "New") as QueueItem["status"],
+    priority: (entry.priority || "Medium") as QueueItem["priority"],
+    channel: String(entry.channel || ""),
+    slaDueAt: String(entry.slaDueAt || new Date().toISOString()),
+    score: Number(entry.score || 0),
+  };
+}
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -361,7 +389,7 @@ function Sparkline({ points }) {
   );
 }
 
-function seedSchedule(): ScheduleItem[] {
+function buildSchedule(): ScheduleItem[] {
   const now = Date.now();
   const at = (mins: number) => new Date(now + mins * 60000).toISOString();
 
@@ -402,7 +430,7 @@ function seedSchedule(): ScheduleItem[] {
   ].sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
 }
 
-function seedQueue(): QueueItem[] {
+function buildQueue(): QueueItem[] {
   const now = Date.now();
   const due = (mins: number) => new Date(now + mins * 60000).toISOString();
 
@@ -599,8 +627,34 @@ export default function ProviderServiceCommandPage() {
   const [dateScope, setDateScope] = useState<DateScope>("Today");
   const [serviceLine, setServiceLine] = useState("All services");
 
-  const [schedule] = useMockState("provider.serviceCommand.schedule", seedSchedule());
-  const [queue, setQueue] = useMockState<QueueItem[]>("provider.serviceCommand.queue", seedQueue());
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    void sellerBackendApi
+      .getProviderServiceCommand()
+      .then((payload) => {
+        if (!mounted) return;
+        setSchedule(
+          Array.isArray(payload?.schedule)
+            ? (payload.schedule as Array<Record<string, any>>).map(mapScheduleItem)
+            : []
+        );
+        setQueue(
+          Array.isArray(payload?.queue)
+            ? (payload.queue as Array<Record<string, any>>).map(mapQueueItem)
+            : []
+        );
+      })
+      .catch(() => {
+        if (!mounted) return;
+        pushToast({ title: "Service command unavailable", message: "Could not load provider queue.", tone: "danger" });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const queueCounts = useMemo(() => {
     const map = { All: queue.length, New: 0, "In progress": 0, Awaiting: 0, Escalated: 0 };

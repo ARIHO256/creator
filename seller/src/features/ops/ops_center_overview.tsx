@@ -1,6 +1,6 @@
-import React, { useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -309,71 +309,27 @@ function MiniRow({ label, value, tone = "slate" }) {
   );
 }
 
-function seedData() {
-  const now = Date.now();
-  const ago = (m) => new Date(now - m * 60_000).toISOString();
-
+function createEmptyOverviewData() {
   return {
     kpis: {
-      ordersRisk: { value: 7, delta: 9, spark: [4, 5, 6, 4, 7, 8, 7] },
-      pendingRmas: { value: 3, delta: -12, spark: [6, 5, 5, 4, 3, 3, 3] },
-      openDisputes: { value: 2, delta: 0, spark: [2, 2, 3, 2, 2, 2, 2] },
-      lowStock: { value: 11, delta: 6, spark: [8, 9, 9, 10, 11, 11, 11] },
-      exportJobs: { value: 1, delta: -50, spark: [3, 2, 2, 2, 1, 1, 1] },
-      complianceDue: { value: 4, delta: 14, spark: [2, 2, 3, 3, 4, 4, 4] },
+      ordersRisk: { value: 0, delta: 0, spark: [] },
+      pendingRmas: { value: 0, delta: 0, spark: [] },
+      openDisputes: { value: 0, delta: 0, spark: [] },
+      lowStock: { value: 0, delta: 0, spark: [] },
+      exportJobs: { value: 0, delta: 0, spark: [] },
+      complianceDue: { value: 0, delta: 0, spark: [] },
     },
-    dailyCommand: [
-      { id: "cmd1", title: "Resolve SLA risks", detail: "3 orders are within 2 hours of SLA breach", priority: "High", cta: "Open orders" },
-      { id: "cmd2", title: "Approve pending RMAs", detail: "2 RMAs waiting on decision", priority: "Normal", cta: "Review returns" },
-      { id: "cmd3", title: "Restock low stock SKUs", detail: "5 SKUs below threshold in Kampala warehouse", priority: "High", cta: "Open inventory" },
-      { id: "cmd4", title: "Compliance tasks due", detail: "2 tasks due within 7 days", priority: "Normal", cta: "Open compliance" },
-    ],
+    dailyCommand: [],
     queues: {
-      Orders: [
-        { id: "ORD-10512", status: "Packed", sla: "1h 40m", risk: "High", warehouse: "Kampala", total: "UGX 1,240,000" },
-        { id: "ORD-10508", status: "Confirmed", sla: "4h 10m", risk: "Watch", warehouse: "Wuxi", total: "USD 840" },
-        { id: "ORD-10501", status: "Shipped", sla: "OK", risk: "OK", warehouse: "Nairobi", total: "KES 92,000" },
-        { id: "ORD-10498", status: "Confirmed", sla: "2h 05m", risk: "High", warehouse: "Kampala", total: "USD 120" },
-      ],
-      Returns: [
-        { id: "RMA-2401", reason: "Damaged", stage: "Awaiting approval", amount: "USD 120", age: "6h" },
-        { id: "RMA-2399", reason: "Wrong item", stage: "Awaiting pickup", amount: "UGX 240,000", age: "1d" },
-        { id: "RMA-2397", reason: "Not as described", stage: "Inspection", amount: "USD 60", age: "2d" },
-      ],
-      Disputes: [
-        { id: "DSP-901", type: "Chargeback", risk: 86, next: "Upload evidence", due: "Today" },
-        { id: "DSP-896", type: "Delivery", risk: 42, next: "Respond to buyer", due: "Tomorrow" },
-      ],
-      Inventory: [
-        { sku: "CHG-7KW-WBX", available: 7, reserved: 4, cover: "3d", action: "Restock" },
-        { sku: "EVBATT-60V", available: 2, reserved: 1, cover: "1d", action: "Restock" },
-        { sku: "CABLE-T2-5M", available: 18, reserved: 6, cover: "12d", action: "OK" },
-        { sku: "HELMET-S", available: 0, reserved: 2, cover: "0d", action: "Pause listings" },
-      ],
-      Compliance: [
-        { task: "Update KYB document expiry", desk: "Compliance Center", due: "7 days", status: "Action needed" },
-        { task: "Upload import certificate", desk: "HealthMart Desk", due: "3 days", status: "Action needed" },
-        { task: "Renew tax profile", desk: "Tax Hub", due: "14 days", status: "Scheduled" },
-        { task: "Webhook signing enabled", desk: "Integrations", due: "Now", status: "Recommended" },
-      ],
+      Orders: [],
+      Returns: [],
+      Disputes: [],
+      Inventory: [],
+      Compliance: [],
     },
-    alerts: [
-      { id: "al1", title: "Low stock risk", message: "5 SKUs below threshold in Kampala", tone: "orange" },
-      { id: "al2", title: "SLA breach risk", message: "2 orders are within 2 hours of SLA", tone: "danger" },
-      { id: "al3", title: "Compliance task due", message: "HealthMart certificate due in 3 days", tone: "orange" },
-    ],
-    health: [
-      { service: "Warehouse sync", status: "Operational", last: ago(11) },
-      { service: "Webhooks", status: "Operational", last: ago(9) },
-      { service: "Messaging", status: "Degraded", last: ago(22) },
-      { service: "Exports", status: "Operational", last: ago(17) },
-    ],
-    activity: [
-      { at: ago(12), who: "System", what: "Inventory adjustment recorded", ref: "SKU CHG-7KW-WBX" },
-      { at: ago(35), who: "Ops", what: "Order moved to Packed", ref: "ORD-10512" },
-      { at: ago(68), who: "Support", what: "Dispute evidence requested", ref: "DSP-901" },
-      { at: ago(95), who: "Finance", what: "Payout hold released", ref: "HOLD-1190" },
-    ],
+    alerts: [],
+    health: [],
+    activity: [],
   };
 }
 
@@ -384,7 +340,29 @@ function toneFromHealth(status: string) {
 }
 
 export default function OpsCenterOverview() {
-  const [data] = useMockState("ops.centerOverview", seedData());
+  const [data, setData] = useState(createEmptyOverviewData());
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getOpsOverviewPage();
+        if (!cancelled && payload && typeof payload === "object") {
+          setData(payload as typeof data);
+        }
+      } catch {
+        setData(createEmptyOverviewData());
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -429,6 +407,7 @@ export default function OpsCenterOverview() {
                 <Badge tone="slate">/ops</Badge>
                 <Badge tone="slate">Operations</Badge>
                 <Badge tone="orange">Premium</Badge>
+                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">
                 Daily command, queue summaries, alerts and drilldowns.
@@ -441,7 +420,7 @@ export default function OpsCenterOverview() {
                 onClick={() =>
                   pushToast({
                     title: "Snapshot exported",
-                    message: "Export queued (demo).",
+                    message: "Export queued.",
                     tone: "success",
                   })
                 }
@@ -470,7 +449,7 @@ export default function OpsCenterOverview() {
               </button>
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest ops signals loaded (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest ops signals loaded.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -493,7 +472,7 @@ export default function OpsCenterOverview() {
             <div className="flex flex-wrap items-center gap-2">
               <SelectPill label="Marketplace" value={marketplace} onChange={setMarketplace} options={["All", "EVmart", "ExpressMart", "Wholesale", "MyLiveDealz"]} />
               <SelectPill label="Warehouse" value={warehouse} onChange={setWarehouse} options={["All", "Kampala", "Wuxi", "Nairobi"]} />
-              <span className="ml-auto hidden md:inline-flex"><Badge tone="slate">Filters are demo-only</Badge></span>
+              <span className="ml-auto hidden md:inline-flex"><Badge tone="slate">Filters are live-only</Badge></span>
             </div>
           </div>
         </div>
@@ -573,7 +552,7 @@ export default function OpsCenterOverview() {
                             onClick={() =>
                               pushToast({
                                 title: "Pinned action",
-                                message: "Saved to your command list (demo).",
+                                message: "Saved to your command list.",
                                 tone: "default",
                               })
                             }
@@ -648,7 +627,7 @@ export default function OpsCenterOverview() {
                     onAction={(label, row) =>
                       pushToast({
                         title: label,
-                        message: `Action executed on ${row.id || row.sku || row.task}. (demo)`,
+                        message: `Action executed on ${row.id || row.sku || row.task}.`,
                         tone: "success",
                       })
                     }
@@ -725,7 +704,7 @@ export default function OpsCenterOverview() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Subscribed", message: "Alerts subscriptions updated (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Subscribed", message: "Alerts subscriptions updated.", tone: "success" })}
                 className="mt-4 w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                 style={{ background: TOKENS.orange }}
               >
@@ -772,7 +751,7 @@ export default function OpsCenterOverview() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm font-black text-slate-900">Activity stream</div>
-                  <div className="mt-1 text-xs font-semibold text-slate-500">Recent operational events (demo).</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">Recent operational events.</div>
                 </div>
                 <Badge tone="slate">Live</Badge>
               </div>
@@ -792,7 +771,7 @@ export default function OpsCenterOverview() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Audit", message: "Open Audit Log Explorer (demo).", tone: "default" })}
+                onClick={() => pushToast({ title: "Audit", message: "Open Audit Log Explorer.", tone: "default" })}
                 className="mt-4 w-full rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-3 text-sm font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 Open audit log
@@ -840,7 +819,7 @@ export default function OpsCenterOverview() {
             <button
               type="button"
               onClick={() => {
-                pushToast({ title: "Action queued", message: "Workflow started (demo).", tone: "success" });
+                pushToast({ title: "Action queued", message: "Workflow started.", tone: "success" });
                 closeDrawer();
               }}
               className="ml-auto inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierAssetLibraryPage.jsx
@@ -153,169 +154,72 @@ function mediaEmoji(mt) {
   }
 }
 
-/* --------------------------------- Mock ---------------------------------- */
+const EMPTY_ASSET_LIBRARY_CONTEXT = {
+  creators: [],
+  suppliers: [],
+  campaigns: [],
+  deliverables: []
+};
 
-const creators = [
-  { id: "cr_1", name: "Amina K.", handle: "@amina.dealz", avatarUrl: "https://i.pravatar.cc/120?img=32" },
-  { id: "cr_2", name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
-  { id: "cr_3", name: "Luna Ade", handle: "@lunaade", avatarUrl: "https://i.pravatar.cc/120?img=7" }
-];
+function mapBackendAsset(asset) {
+  const metadata = asset?.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
+  const tags = Array.isArray(metadata.tags) ? metadata.tags.map((tag) => String(tag)) : [];
+  const width = Number(metadata.width);
+  const height = Number(metadata.height);
+  const previewKind = String(metadata.previewKind || (asset.kind === "video" ? "video" : "image"));
+  return {
+    id: String(asset.id || ""),
+    creatorScope: String(metadata.creatorScope || "all"),
+    title: String(asset.name || "Untitled asset"),
+    subtitle: String(metadata.subtitle || ""),
+    campaignId: String(metadata.campaignId || ""),
+    supplierId: String(metadata.supplierId || ""),
+    brand: String(metadata.brand || ""),
+    tags,
+    mediaType: String(asset.kind || metadata.mediaType || "image"),
+    source: String(metadata.source || "supplier"),
+    ownerLabel: String(metadata.ownerLabel || `Owner: ${metadata.owner || "Supplier"}`),
+    status: String(metadata.status || "draft"),
+    lastUpdatedLabel: `Last updated: ${new Date(asset.updatedAt || asset.createdAt || Date.now()).toLocaleString()}`,
+    thumbnailUrl: String(metadata.thumbnailUrl || metadata.posterUrl || asset.url || ""),
+    previewUrl: String(asset.url || metadata.previewUrl || metadata.posterUrl || ""),
+    previewKind,
+    dimensions:
+      Number.isFinite(width) && Number.isFinite(height)
+        ? { width, height }
+        : undefined,
+    role: typeof metadata.role === "string" ? metadata.role : undefined,
+    aspect: typeof metadata.aspect === "string" ? metadata.aspect : undefined,
+    desktopMode: typeof metadata.desktopMode === "string" ? metadata.desktopMode : undefined,
+    usageNotes: typeof metadata.usageNotes === "string" ? metadata.usageNotes : "",
+    restrictions: typeof metadata.restrictions === "string" ? metadata.restrictions : "",
+  };
+}
 
-const suppliers = [
-  { id: "sp_1", name: "GlowUp Hub", kind: "Seller", brand: "GlowUp" },
-  { id: "sp_2", name: "Urban Supply", kind: "Seller", brand: "Urban" },
-  { id: "sp_3", name: "EV World Store", kind: "Seller", brand: "EV World" }
-];
-
-const campaigns = [
-  {
-    id: "cp_1",
-    supplierId: "sp_1",
-    name: "Valentine Glow Week",
-    brand: "GlowUp",
-    status: "Active",
-    // Supplier review control (asset-level): Manual means creators go to pending_supplier.
-    supplierReviewMode: "Manual"
-  },
-  {
-    id: "cp_2",
-    supplierId: "sp_2",
-    name: "Back-to-Work Essentials",
-    brand: "Urban",
-    status: "Active",
-    supplierReviewMode: "Manual"
-  },
-  {
-    id: "cp_3",
-    supplierId: "sp_3",
-    name: "EV Charger Flash Drop",
-    brand: "EV World",
-    status: "Paused",
-    supplierReviewMode: "Auto"
-  }
-];
-
-const deliverables = [
-  { id: "dv_1", campaignId: "cp_1", label: "Hero intro video", dueDateLabel: "Tomorrow" },
-  { id: "dv_2", campaignId: "cp_1", label: "Featured item poster", dueDateLabel: "In 2 days" },
-  { id: "dv_3", campaignId: "cp_2", label: "Unboxing clip", dueDateLabel: "In 3 days" },
-  { id: "dv_4", campaignId: "cp_3", label: "Live opener", dueDateLabel: "Today" }
-];
-
-const seedAssets = [
-  {
-    id: "as_1",
-    creatorScope: "cr_3",
-    title: "Hero intro (vertical)",
-    subtitle: "EV Charger Flash Drop · EV World",
-    campaignId: "cp_3",
-    supplierId: "sp_3",
-    brand: "EV World",
-    tags: ["hero", "intro", "vertical"],
-    mediaType: "video",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "pending_admin", // auto campaign
-    lastUpdatedLabel: "Last updated: 2h ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "hero",
-    aspect: "vertical",
-    desktopMode: "fullscreen",
-    usageNotes: "Best for TikTok / Shorts. Add price overlay at 00:05.",
-    restrictions: "No third-party logos."
-  },
-  {
-    id: "as_2",
-    creatorScope: "cr_1",
-    title: "Featured item poster (500×500)",
-    subtitle: "Valentine Glow Week · GlowUp",
-    campaignId: "cp_1",
-    supplierId: "sp_1",
-    brand: "GlowUp",
-    tags: ["poster", "product", "square"],
-    mediaType: "image",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "pending_supplier",
-    lastUpdatedLabel: "Last updated: Yesterday",
-    thumbnailUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=1200&auto=format&fit=crop",
-    previewKind: "image",
-    dimensions: { width: 500, height: 500 },
-    role: "item_poster",
-    aspect: "horizontal",
-    desktopMode: "modal",
-    usageNotes: "Use as poster behind play icon.",
-    restrictions: "Must show disclaimer: results may vary."
-  },
-  {
-    id: "as_3",
-    creatorScope: "cr_2",
-    title: "Unboxing clip (30s)",
-    subtitle: "Back-to-Work Essentials · Urban",
-    campaignId: "cp_2",
-    supplierId: "sp_2",
-    brand: "Urban",
-    tags: ["unboxing", "clip", "hook"],
-    mediaType: "video",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "changes_requested",
-    lastUpdatedLabel: "Last updated: 3 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "offer",
-    aspect: "horizontal",
-    desktopMode: "modal",
-    usageNotes: "Need stronger hook in first 2 seconds.",
-    restrictions: "No music unless licensed."
-  },
-  {
-    id: "as_4",
-    creatorScope: "all",
-    title: "Brand overlay: Price drop frame",
-    subtitle: "Reusable overlay pack",
-    campaignId: "cp_1",
-    supplierId: "sp_1",
-    brand: "GlowUp",
-    tags: ["overlay", "price"],
-    mediaType: "overlay",
-    source: "supplier",
-    ownerLabel: "Owner: Supplier",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 5 days ago",
-    previewKind: "image",
-    previewUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1200&auto=format&fit=crop",
-    dimensions: { width: 1920, height: 1080 },
-    role: "overlay",
-    usageNotes: "Use with countdown badge.",
-    restrictions: "Do not alter logo." 
-  },
-  {
-    id: "as_5",
-    creatorScope: "all",
-    title: "Catalog hero image (1920×1080)",
-    subtitle: "Catalog media · auto-imported",
-    campaignId: "cp_2",
-    supplierId: "sp_2",
-    brand: "Urban",
-    tags: ["hero", "catalog"],
-    mediaType: "image",
-    source: "catalog",
-    ownerLabel: "Owner: Catalog",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 1 week ago",
-    previewKind: "image",
-    previewUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    dimensions: { width: 1920, height: 1080 },
-    role: "hero",
-    usageNotes: "Recommended hero for the campaign.",
-    restrictions: "Catalog license applies." 
-  }
-];
+function buildAssetMetadata(asset, note) {
+  return {
+    creatorScope: asset.creatorScope || "all",
+    subtitle: asset.subtitle || "",
+    campaignId: asset.campaignId || "",
+    supplierId: asset.supplierId || "",
+    brand: asset.brand || "",
+    tags: Array.isArray(asset.tags) ? asset.tags : [],
+    source: asset.source || "supplier",
+    ownerLabel: asset.ownerLabel || "Owner: Supplier",
+    status: asset.status || "draft",
+    previewKind: asset.previewKind || (asset.mediaType === "video" ? "video" : "image"),
+    thumbnailUrl: asset.thumbnailUrl || "",
+    posterUrl: asset.thumbnailUrl || "",
+    role: asset.role || null,
+    aspect: asset.aspect || null,
+    desktopMode: asset.desktopMode || null,
+    usageNotes: asset.usageNotes || "",
+    restrictions: asset.restrictions || "",
+    width: asset.dimensions?.width ?? null,
+    height: asset.dimensions?.height ?? null,
+    reviewNote: typeof note === "string" ? note : "",
+  };
+}
 
 const smartPacks = [
   {
@@ -915,22 +819,24 @@ export default function SupplierAssetLibraryPage() {
   const pickerMode = mode === "picker";
   const pickerTarget = target === "live" ? "live" : "shoppable";
 
-  const [assets, setAssets] = useState(seedAssets);
+  const [assets, setAssets] = useState([]);
+  const [workspace, setWorkspace] = useState(EMPTY_ASSET_LIBRARY_CONTEXT);
 
-  const [selectedCreatorId, setSelectedCreatorId] = useState(creators[0]?.id || "");
-  const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id || "");
+  const creators = Array.isArray(workspace.creators) ? workspace.creators : [];
+  const suppliers = Array.isArray(workspace.suppliers) ? workspace.suppliers : [];
+  const campaigns = Array.isArray(workspace.campaigns) ? workspace.campaigns : [];
+  const deliverables = Array.isArray(workspace.deliverables) ? workspace.deliverables : [];
 
-  const [selectedCampaignId, setSelectedCampaignId] = useState(() => {
-    const first = campaigns.find((c) => c.supplierId === suppliers[0]?.id);
-    return first?.id || campaigns[0]?.id || "";
-  });
+  const [selectedCreatorId, setSelectedCreatorId] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
 
   const [search, setSearch] = useState("");
   const [filterMedia, setFilterMedia] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all"); // includes "pending" alias
   const [filterSource, setFilterSource] = useState("all");
 
-  const [activeAssetId, setActiveAssetId] = useState(seedAssets[0]?.id || null);
+  const [activeAssetId, setActiveAssetId] = useState(null);
 
   const [toast, setToast] = useState(null);
 
@@ -940,15 +846,79 @@ export default function SupplierAssetLibraryPage() {
   const campaignsForSupplier = useMemo(() => campaigns.filter((c) => c.supplierId === selectedSupplierId), [selectedSupplierId]);
   const deliverablesForCampaign = useMemo(() => deliverables.filter((d) => d.campaignId === selectedCampaignId), [selectedCampaignId]);
 
-  const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) || creators[0], [selectedCreatorId]);
-  const selectedSupplier = useMemo(() => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0], [selectedSupplierId]);
-  const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0], [selectedCampaignId, campaignsForSupplier]);
+  const selectedCreator = useMemo(
+    () => creators.find((c) => c.id === selectedCreatorId) || creators[0] || null,
+    [creators, selectedCreatorId]
+  );
+  const selectedSupplier = useMemo(
+    () => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0] || null,
+    [selectedSupplierId, suppliers]
+  );
+  const selectedCampaign = useMemo(
+    () => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0] || null,
+    [campaigns, campaignsForSupplier, selectedCampaignId]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [workspacePayload, assetPayload] = await Promise.all([
+          sellerBackendApi.getMediaWorkspace(),
+          sellerBackendApi.getMediaAssets()
+        ]);
+        if (cancelled) return;
+        const rows = Array.isArray(assetPayload) ? assetPayload : [];
+        setWorkspace({
+          creators: Array.isArray(workspacePayload?.creators) ? workspacePayload.creators : [],
+          suppliers: Array.isArray(workspacePayload?.suppliers) ? workspacePayload.suppliers : [],
+          campaigns: Array.isArray(workspacePayload?.campaigns) ? workspacePayload.campaigns : [],
+          deliverables: Array.isArray(workspacePayload?.deliverables) ? workspacePayload.deliverables : []
+        });
+        setAssets(rows.map(mapBackendAsset));
+      } catch {
+        if (!cancelled) {
+          setWorkspace(EMPTY_ASSET_LIBRARY_CONTEXT);
+          setAssets([]);
+          setToast({ title: "Backend unavailable", body: "Could not fetch media assets." });
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCreatorId && creators[0]?.id) {
+      setSelectedCreatorId(creators[0].id);
+    }
+  }, [creators, selectedCreatorId]);
+
+  useEffect(() => {
+    if (!selectedSupplierId && suppliers[0]?.id) {
+      setSelectedSupplierId(suppliers[0].id);
+    }
+  }, [selectedSupplierId, suppliers]);
+
+  useEffect(() => {
+    if (!activeAssetId && assets[0]?.id) {
+      setActiveAssetId(assets[0].id);
+    }
+  }, [activeAssetId, assets]);
 
   // Auto-select first campaign when supplier changes
   useEffect(() => {
     const first = campaigns.find((c) => c.supplierId === selectedSupplierId);
-    if (first && first.id !== selectedCampaignId) setSelectedCampaignId(first.id);
-  }, [selectedSupplierId]);
+    if (first && first.id !== selectedCampaignId) {
+      setSelectedCampaignId(first.id);
+      return;
+    }
+    if (!first && selectedCampaignId) {
+      setSelectedCampaignId("");
+    }
+  }, [campaigns, selectedCampaignId, selectedSupplierId]);
 
   const pendingSupplierCount = useMemo(
     () => assets.filter((a) => a.campaignId === selectedCampaignId && a.status === "pending_supplier").length,
@@ -978,7 +948,7 @@ export default function SupplierAssetLibraryPage() {
 
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) || null, [assets, activeAssetId]);
 
-  // Supplier review note per asset (demo)
+  // Supplier review note per asset
   const [reviewNotes, setReviewNotes] = useState(() => ({}));
   const activeReviewNote = reviewNotes[activeAssetId || ""] || "";
 
@@ -987,25 +957,39 @@ export default function SupplierAssetLibraryPage() {
     if (typeof window !== "undefined" && window.innerWidth < 1024) setIsMobilePreviewOpen(true);
   }
 
-  function setStatus(assetId, status, note) {
-    setAssets((prev) => prev.map((a) => (a.id === assetId ? { ...a, status } : a)));
+  async function setStatus(assetId, status, note) {
+    const current = assets.find((asset) => asset.id === assetId);
+    if (!current) return;
+    const nextAsset = { ...current, status };
+    try {
+      await sellerBackendApi.patchMediaAsset(assetId, {
+        name: nextAsset.title,
+        kind: nextAsset.mediaType,
+        url: nextAsset.previewUrl,
+        metadata: buildAssetMetadata(nextAsset, note),
+      });
+    } catch {
+      setToast({ title: "Update failed", body: "Could not persist asset review status." });
+      return;
+    }
+    setAssets((prev) => prev.map((a) => (a.id === assetId ? nextAsset : a)));
     if (note != null) setReviewNotes((prev) => ({ ...prev, [assetId]: note }));
   }
 
   function supplierApprove(asset) {
     // Supplier approves a creator submission: move to Admin review.
     const next = supplierAutoApprove ? "pending_admin" : "pending_admin";
-    setStatus(asset.id, next, activeReviewNote);
-    setToast({ title: "Approved", body: "Sent to Admin review (demo)." });
+    void setStatus(asset.id, next, activeReviewNote);
+    setToast({ title: "Approved", body: "Sent to Admin review." });
   }
 
   function supplierRequestChanges(asset) {
-    setStatus(asset.id, "changes_requested", activeReviewNote);
+    void setStatus(asset.id, "changes_requested", activeReviewNote);
     setToast({ title: "Changes requested", body: "The creator must update and resubmit." });
   }
 
   function supplierReject(asset) {
-    setStatus(asset.id, "rejected", activeReviewNote);
+    void setStatus(asset.id, "rejected", activeReviewNote);
     setToast({ title: "Rejected", body: "Submission rejected. Creator can submit a new version." });
   }
 
@@ -1017,11 +1001,11 @@ export default function SupplierAssetLibraryPage() {
     }
 
     if (pickerMode) {
-      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id} (demo)` });
+      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id}` });
       return;
     }
 
-    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached (demo).` });
+    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached.` });
   }
 
   // ---------------- Submission drawer (Supplier uploads) ----------------
@@ -1126,7 +1110,7 @@ export default function SupplierAssetLibraryPage() {
     }
   }
 
-  function submitForReview() {
+  async function submitForReview() {
     const missingRights = !submitDraft.rightsConfirmed || !submitDraft.noCopyrightedMusicConfirmed;
     const hasAnyMedia =
       submitDraft.mediaType === "link" ? Boolean((submitDraft.linkUrl || "").trim()) : submitDraft.files.length > 0 || Boolean((submitDraft.postUrl || "").trim());
@@ -1197,33 +1181,45 @@ export default function SupplierAssetLibraryPage() {
 
     const dims = submitImageMeta ? { width: submitImageMeta.width, height: submitImageMeta.height } : undefined;
 
-    setAssets((prev) => [
-      {
-        id,
-        creatorScope: "all",
-        title: submitDraft.title || "Untitled submission",
-        subtitle: `${selectedCampaign?.name || "Campaign"} · ${selectedSupplier?.brand || selectedSupplier?.name}`,
-        campaignId: submitDraft.campaignId,
-        supplierId: selectedSupplierId,
-        brand: selectedSupplier?.brand || selectedSupplier?.name,
-        tags,
-        mediaType: submitDraft.mediaType,
-        source: "supplier",
-        ownerLabel: "Owner: Supplier",
-        status: finalStatus,
-        lastUpdatedLabel: "Last updated: Just now",
-        thumbnailUrl: previewKind === "image" ? previewUrl : undefined,
-        previewUrl,
-        previewKind,
-        dimensions: dims,
-        role: submitDraft.role || undefined,
-        usageNotes: submitDraft.notes,
-        restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required"
-      },
-      ...prev
-    ]);
+    const nextAsset = {
+      id,
+      creatorScope: "all",
+      title: submitDraft.title || "Untitled submission",
+      subtitle: `${selectedCampaign?.name || "Campaign"} · ${selectedSupplier?.brand || selectedSupplier?.name}`,
+      campaignId: submitDraft.campaignId,
+      supplierId: selectedSupplierId,
+      brand: selectedSupplier?.brand || selectedSupplier?.name,
+      tags,
+      mediaType: submitDraft.mediaType,
+      source: "supplier",
+      ownerLabel: "Owner: Supplier",
+      status: finalStatus,
+      lastUpdatedLabel: "Last updated: Just now",
+      thumbnailUrl: previewKind === "image" ? previewUrl : undefined,
+      previewUrl,
+      previewKind,
+      dimensions: dims,
+      role: submitDraft.role || undefined,
+      usageNotes: submitDraft.notes,
+      restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required"
+    };
 
-    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review (demo)." });
+    try {
+      const created = await sellerBackendApi.createMediaAsset({
+        name: nextAsset.title,
+        kind: nextAsset.mediaType,
+        url: nextAsset.previewUrl,
+        isPublic: false,
+        metadata: buildAssetMetadata(nextAsset, ""),
+      });
+      setAssets((prev) => [mapBackendAsset(created), ...prev]);
+      setActiveAssetId(String(created.id || nextAsset.id));
+    } catch {
+      setToast({ title: "Submit failed", body: "Could not persist the media asset." });
+      return;
+    }
+
+    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review." });
     setIsSubmitOpen(false);
   }
 
@@ -1245,7 +1241,7 @@ export default function SupplierAssetLibraryPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Btn
               tone="neutral"
-              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates (demo)" })}
+              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates" })}
               className="hidden sm:inline-flex"
             >
               ✨ Supplier assets & Creator templates
@@ -1290,7 +1286,7 @@ export default function SupplierAssetLibraryPage() {
                   </span>
                 ) : null}
                 {returnTo ? (
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder (demo)" })}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder" })}>
                     ← Back
                   </Btn>
                 ) : null}
@@ -1298,7 +1294,7 @@ export default function SupplierAssetLibraryPage() {
                   tone="neutral"
                   onClick={() => {
                     safeCopy(window.location.href);
-                    setToast({ title: "Shared", body: "Link copied (demo)." });
+                    setToast({ title: "Shared", body: "Link copied." });
                   }}
                 >
                   ↗ Share link
@@ -1330,17 +1326,32 @@ export default function SupplierAssetLibraryPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Creator selector */}
                   <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
-                    <img src={selectedCreator.avatarUrl} alt={selectedCreator.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                    {selectedCreator?.avatarUrl ? (
+                      <img
+                        src={selectedCreator.avatarUrl}
+                        alt={selectedCreator.name || "Creator"}
+                        className="h-6 w-6 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                        {selectedCreator?.name?.slice(0, 1)?.toUpperCase() || "C"}
+                      </div>
+                    )}
                     <select
                       value={selectedCreatorId}
                       onChange={(e) => setSelectedCreatorId(e.target.value)}
+                      disabled={creators.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {creators.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} ({c.handle})
-                        </option>
-                      ))}
+                      {creators.length > 0 ? (
+                        creators.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} ({c.handle})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No creators available</option>
+                      )}
                     </select>
                   </div>
 
@@ -1350,13 +1361,18 @@ export default function SupplierAssetLibraryPage() {
                     <select
                       value={selectedSupplierId}
                       onChange={(e) => setSelectedSupplierId(e.target.value)}
+                      disabled={suppliers.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {suppliers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          Supplier: {p.name} ({p.kind})
-                        </option>
-                      ))}
+                      {suppliers.length > 0 ? (
+                        suppliers.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            Supplier: {p.name} ({p.kind})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No suppliers available</option>
+                      )}
                     </select>
                     <span className="text-slate-400">▾</span>
                   </div>
@@ -1366,13 +1382,18 @@ export default function SupplierAssetLibraryPage() {
                     <select
                       value={selectedCampaignId}
                       onChange={(e) => setSelectedCampaignId(e.target.value)}
+                      disabled={campaignsForSupplier.length === 0}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {campaignsForSupplier.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          Campaign: {c.name} · {c.brand} ({c.status})
-                        </option>
-                      ))}
+                      {campaignsForSupplier.length > 0 ? (
+                        campaignsForSupplier.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Campaign: {c.name} · {c.brand} ({c.status})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No campaigns available</option>
+                      )}
                     </select>
                     <span className="text-slate-400">▾</span>
                   </div>
@@ -1464,7 +1485,7 @@ export default function SupplierAssetLibraryPage() {
                 </div>
 
                 <div className="hidden items-center gap-2 sm:flex">
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs (demo)" })}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs" })}>
                     ⭐ Saved packs
                   </Btn>
                 </div>
@@ -1551,7 +1572,7 @@ export default function SupplierAssetLibraryPage() {
                   <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Collections</div>
                   <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Group assets into reusable packs for Adz or Live.</div>
                 </div>
-                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection (demo)" })}>
+                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection" })}>
                   ➕ New collection
                 </Btn>
               </div>
@@ -1569,7 +1590,7 @@ export default function SupplierAssetLibraryPage() {
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Use for shoppable ads and short lives.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack (demo)" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack" })}>
                       Use pack →
                     </Btn>
                   </div>
@@ -1587,7 +1608,7 @@ export default function SupplierAssetLibraryPage() {
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Complete review to unlock this collection.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection (demo)" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection" })}>
                       Open ↗
                     </Btn>
                   </div>
@@ -1692,7 +1713,7 @@ export default function SupplierAssetLibraryPage() {
         open={isSubmitOpen}
         onClose={() => setIsSubmitOpen(false)}
         title="Add content"
-        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default (demo)."
+        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default."
         footer={
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">

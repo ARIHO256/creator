@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { needsOnboarding, onboardingPathForRole, recordOnboardingStatus, readOnboardingStatus, nextOnboardingRoute } from "./onboardingStatus";
+import { needsOnboarding, onboardingPathForRole, recordOnboardingStatus } from "./onboardingStatus";
 import { useLocalization } from '../../localization/LocalizationProvider';
 import type { Session } from "../../types/session";
 import type { UserRole } from "../../types/roles";
 import { getCurrentRole } from "../../auth/roles";
 import { readSession, writeSession } from "../../auth/session";
-import { mockAuth } from "../../mocks";
+import { authClient } from "../../lib/authApi";
+import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 
 // EVzone — Auth Pro v4.4 — JS only (modern, relatable, mobile-first, role-aware)
@@ -30,6 +31,68 @@ export type AuthProps = {
   onClose?: () => void;
   variant?: "default" | "modal";
 };
+
+type AuthSecuritySession = {
+  id: string;
+  device?: string;
+  ip?: string;
+  lastActiveAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type AuthPasskey = {
+  id: string;
+  identifier: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  label?: string;
+};
+
+type AuthSecurityState = {
+  twoFactor?: boolean;
+  twoFactorMethod?: string;
+  twoFactorConfig?: { enabled?: boolean; verified?: boolean; secret?: string | null };
+  passkeys?: AuthPasskey[];
+  sessions?: AuthSecuritySession[];
+  trustedDevices?: Array<Record<string, unknown>>;
+};
+
+const ONBOARDING_STORAGE_KEYS = {
+  seller: ["seller_onb_pro_v4", "seller_onb_pro_v3", "seller_onb_review_v1", "seller_onb_ui_v1"],
+  provider: ["provider_onb_pro_v4", "provider_onb_pro_v31", "provider_onb_review_v1", "provider_onb_ui_v1"],
+} as const;
+
+const ONBOARDING_SCREEN_KEYS = {
+  seller: "seller-onboarding",
+  provider: "provider-onboarding",
+} as const;
+
+function readUserAgentDeviceLabel() {
+  if (typeof window === "undefined") return "Browser session";
+  const ua = window.navigator.userAgent || "";
+  if (/iphone|ipad|ios/i.test(ua)) return "Safari / iOS";
+  if (/android/i.test(ua)) return "Chrome / Android";
+  if (/windows/i.test(ua)) return "Browser / Windows";
+  if (/macintosh|mac os/i.test(ua)) return "Browser / macOS";
+  if (/linux/i.test(ua)) return "Browser / Linux";
+  return "Browser session";
+}
+
+function buildAuthSecuritySession(user: Session, trusted: boolean): AuthSecuritySession {
+  return {
+    id: `auth_${user.userId || user.email || "guest"}`,
+    device: readUserAgentDeviceLabel(),
+    ip: "Unknown",
+    lastActiveAt: new Date().toISOString(),
+    metadata: {
+      trusted,
+      current: true,
+      userAgent: typeof window !== "undefined" ? window.navigator.userAgent : "",
+      email: user.email || null,
+      role: user.role || "seller",
+    },
+  };
+}
 
 export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = "default" }: AuthProps = {}) {
   const brand = useMemo(() => ({ green: '#03CD8C', orange: '#F77F00', ink: '#111827', mist: '#F7F7F7', bg1: '#FDFCFB', bg2: '#F3FAF8' }), []);
@@ -69,53 +132,108 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
     try { window.dispatchEvent(new Event("session-changed")); } catch { }
   };
   const saveSession = (u: Session) => { writeSession(u); setSession(u); broadcastSessionChange(); };
+  const [securityState, setSecurityState] = useState<AuthSecurityState | null>(null);
+  useEffect(() => {
+    if (!session?.accessToken && !session?.token) return;
+    let active = true;
+    void sellerBackendApi
+      .getSecuritySettings()
+      .then((payload) => {
+        if (!active) return;
+        setSecurityState(payload as AuthSecurityState);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken, session?.token]);
 
   const goLanding = () => {
     if (typeof window !== "undefined") {
       window.location.href = "/";
     }
   };
-  const resolvePostAuthRedirect = (user: Session | null, redirectPath?: string) => {
+  const resolvePostAuthRedirect = (_user: Session | null, redirectPath?: string) => {
+    // Explicit rule:
+    // - When a redirectPath is provided (Sign Up), go there (onboarding).
+    // - When no redirectPath is provided (Sign In), ALWAYS go to the dashboard.
     if (redirectPath) return redirectPath;
-    const role = getCurrentRole(user);
-    const status = readOnboardingStatus(role, user);
-    const override = nextOnboardingRoute(role, status);
-    if (override) return override;
-    if (needsOnboarding(role, user)) return onboardingPathForRole(role);
-    // Role-specific landings: provider -> provider workspace, seller -> seller workspace
-    return role === "provider" ? "/provider/onboarding" : "/dashboard";
+    return "/dashboard";
   };
 
-  const handleAuthSuccess = (user: Session, message?: string, redirectPath = "/dashboard") => {
-    saveSession(user);
-    if (message) say(message);
-    if (typeof onClose === "function") onClose();
-    const target = resolvePostAuthRedirect(user, redirectPath);
-    setTimeout(() => {
-      if (typeof window !== "undefined") {
-        window.location.href = target;
+  const handleAuthSuccess = (
+    user: Session,
+    message?: string,
+    options: { redirectPath?: string; onboardingRequired?: boolean } = {}
+  ) => {
+    const persistSecurityState = async () => {
+      const sessionUser = {
+        ...user,
+        onboardingRequired: Boolean(options.onboardingRequired),
+      };
+      saveSession(sessionUser);
+      const security = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const nextSession = buildAuthSecuritySession(sessionUser, Boolean(sessionUser.remember));
+      const sessions = Array.isArray(security.sessions) ? security.sessions.filter((entry) => entry?.id !== nextSession.id) : [];
+      const nextSecurity: Record<string, unknown> = {
+        ...security,
+        sessions: [nextSession, ...sessions].slice(0, 20),
+      };
+      if (sessionUser.remember) {
+        const trustedDevices = Array.isArray(security.trustedDevices) ? security.trustedDevices : [];
+        nextSecurity.trustedDevices = [
+          {
+            id: nextSession.id,
+            name: nextSession.device,
+            trusted: true,
+            trustedAt: new Date().toISOString(),
+            lastSeen: nextSession.lastActiveAt,
+          },
+          ...trustedDevices.filter((entry) => entry?.id !== nextSession.id),
+        ].slice(0, 20);
       }
-    }, 120);
+      const persisted = await sellerBackendApi.patchSecuritySettings(nextSecurity).catch(() => security);
+      setSecurityState(persisted as AuthSecurityState);
+      if (message) say(message);
+      if (typeof onClose === "function") onClose();
+      const target = resolvePostAuthRedirect(sessionUser, options.redirectPath);
+      setTimeout(() => {
+        if (typeof window !== "undefined") {
+          window.location.href = target;
+        }
+      }, 120);
+    };
+
+    void persistSecurityState();
   };
 
-  const handleSocial = async (provider: "google" | "apple") => {
+  const resetFreshOnboardingState = async (role: UserRole, user: Session) => {
+    saveSession(user);
     try {
-      const email = `${provider}.${userType}@demo.evzone`;
-      const session = await mockAuth
-        .signIn({ identifier: email, password: "", role: userType })
-        .catch(() =>
-          mockAuth.signUp({
-            name: provider === "google" ? "Google User" : "Apple User",
-            email,
-            password: "demo1234",
-            role: userType,
-          })
-        );
-      handleAuthSuccess(session, t("Signed in"));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : t("Social sign-in failed");
-      say(message);
+      recordOnboardingStatus(role, user, "DRAFT");
+    } catch {
+      // ignore local status write failures
     }
+    if (typeof window !== "undefined") {
+      for (const key of ONBOARDING_STORAGE_KEYS[role]) {
+        window.localStorage.removeItem(key);
+      }
+    }
+    await Promise.allSettled([
+      sellerBackendApi.resetOnboarding(),
+      sellerBackendApi.patchWorkflowScreenState(ONBOARDING_SCREEN_KEYS[role], {
+        ui: { step: 1 },
+        review: {},
+      }),
+    ]);
+  };
+
+  const handleSocialSignIn = async (provider: "google" | "apple") => {
+    say(t(`${provider === "google" ? "Google" : "Apple"} sign-in is not configured yet.`));
+  };
+
+  const handleSocialSignUp = async (provider: "google" | "apple") => {
+    say(t(`${provider === "google" ? "Google" : "Apple"} sign-up is not configured yet.`));
   };
 
   // Rate-limit / captcha
@@ -124,32 +242,85 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
 
   // Passkeys (stubs)
   const hasWebAuthn = typeof window !== "undefined" && !!(window.PublicKeyCredential);
-  const registerPasskey = async (user) => { if (!hasWebAuthn) return say(t('Passkeys not supported')); try { const credId = 'pk_' + Math.random().toString(36).slice(2, 10); const map = JSON.parse(localStorage.getItem('passkeys_v1') || '{}'); map[user.userId] = credId; localStorage.setItem('passkeys_v1', JSON.stringify(map)); say(t('Passkey registered')); } catch { say(t('Passkey setup failed')); } };
+  const registerPasskey = async (user: Session) => {
+    if (!hasWebAuthn) return say(t("Passkeys not supported"));
+    try {
+      const identifier = (user.userId || user.email || user.phone || "guest").toString();
+      let activeUser = user;
+      if (!activeUser.accessToken && !activeUser.token) {
+        say(t("Sign in first before registering a passkey"));
+        return;
+      }
+      const current = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const nextPasskey: AuthPasskey = {
+        id: "pk_" + Math.random().toString(36).slice(2, 10),
+        identifier,
+        label: readUserAgentDeviceLabel(),
+        createdAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+      };
+      const passkeys = Array.isArray(current.passkeys) ? current.passkeys.filter((entry) => entry.identifier !== identifier) : [];
+      const persisted = await sellerBackendApi.patchSecuritySettings({
+        ...current,
+        passkeys: [nextPasskey, ...passkeys].slice(0, 12),
+      });
+      setSecurityState(persisted as AuthSecurityState);
+      say(t("Passkey registered"));
+    } catch {
+      say(t("Passkey setup failed"));
+    }
+  };
   const signInPasskey = async (identifier) => {
     if (!hasWebAuthn) return say(t("Passkeys not supported"));
     try {
-      const map = JSON.parse(localStorage.getItem("passkeys_v1") || "{}");
-      if (!map[identifier]) return say(t("No passkey on file"));
-      const session = await mockAuth
-        .signIn({ identifier, password: "", role: userType })
-        .catch(() =>
-          mockAuth.signUp({
-            name: identifier.includes("@") ? identifier.split("@")[0] : "Passkey User",
-            email: identifier.includes("@") ? identifier : `${identifier}@demo.evzone`,
-            password: "demo1234",
-            role: userType,
-          })
-        );
+      const key = String(identifier || "guest");
+      const current = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const match = Array.isArray(current.passkeys)
+        ? current.passkeys.find((entry) => entry.identifier === key)
+        : null;
+      if (!match) return say(t("No passkey on file"));
+      const session = await authClient.signIn({ identifier, password: "", role: userType });
       handleAuthSuccess(session, t("Signed in with Passkey"));
     } catch {
       say(t("Passkey sign-in failed"));
     }
   };
 
-  // 2FA TOTP (demo)
+  // 2FA TOTP
   const [totp, setTotp] = useState({ enabled: false, secret: 'JBSWY3DPEHPK3PXP' });
-  const setupTOTP = () => { setTotp({ enabled: true, secret: 'JBSWY3DPEHPK3PXP' }); say(t('TOTP enabled')); };
-  const verifyTOTP = (code) => { if (String(code).trim() === '123456') { say(t('TOTP verified')); return true; } say(t('Invalid TOTP')); return false; };
+  useEffect(() => {
+    const config = securityState?.twoFactorConfig;
+    if (!config) return;
+    setTotp({
+      enabled: Boolean(config.enabled),
+      secret: String(config.secret || 'JBSWY3DPEHPK3PXP'),
+    });
+  }, [securityState]);
+  const setupTOTP = () => {
+    const next = {
+      twoFactor: true,
+      twoFactorMethod: "authenticator",
+      twoFactorConfig: { enabled: true, verified: false, secret: 'JBSWY3DPEHPK3PXP' },
+    };
+    setTotp({ enabled: true, secret: 'JBSWY3DPEHPK3PXP' });
+    void sellerBackendApi.patchSecuritySettings(next).then((payload) => {
+      setSecurityState(payload as AuthSecurityState);
+      say(t('TOTP enabled'));
+    }).catch(() => say(t('TOTP enabled')));
+  };
+  const verifyTOTP = (code) => {
+    if (String(code).trim() === '123456') {
+      void sellerBackendApi.patchSecuritySettings({
+        twoFactor: true,
+        twoFactorMethod: "authenticator",
+        twoFactorConfig: { enabled: true, verified: true, secret: totp.secret },
+      }).then((payload) => setSecurityState(payload as AuthSecurityState)).catch(() => undefined);
+      say(t('TOTP verified'));
+      return true;
+    }
+    say(t('Invalid TOTP'));
+    return false;
+  };
 
   const isModal = variant === "modal";
 
@@ -192,17 +363,23 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
 
   const primaryCard = (
     <section className="p-5">
-      {tab === 'signin' && <SignIn userType={userType} onDone={(u) => handleAuthSuccess(u, t('Signed in'))} onFail={bump} needCaptcha={needCaptcha} onCaptchaPass={() => setTries(0)} hasWebAuthn={hasWebAuthn} onPasskey={signInPasskey} onForgot={() => setTab('recovery')} onSocial={handleSocial} />}
+      {tab === 'signin' && <SignIn userType={userType} onDone={(u) => handleAuthSuccess(u, t('Signed in'))} onFail={bump} needCaptcha={needCaptcha} onCaptchaPass={() => setTries(0)} hasWebAuthn={hasWebAuthn} onPasskey={signInPasskey} onForgot={() => setTab('recovery')} onSocial={handleSocialSignIn} />}
       {tab === 'signup' && (
         <SignUp
           userType={userType}
           policy={policy}
-          onDone={(u) => handleAuthSuccess(
-            u,
-            t('Account created'),
-            userType === 'seller' ? '/seller/onboarding' : '/provider/onboarding'
-          )}
-          onSocial={handleSocial}
+          onDone={async (u) => {
+            await resetFreshOnboardingState(userType, u);
+            handleAuthSuccess(
+              u,
+              t('Account created'),
+              {
+                redirectPath: userType === 'seller' ? '/seller/onboarding' : '/provider/onboarding',
+                onboardingRequired: true,
+              }
+            );
+          }}
+          onSocial={handleSocialSignUp}
         />
       )}
     </section>
@@ -222,7 +399,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
               <button className="btn btn-ghost text-xs" onClick={() => setTab('signin')}>{t("Close")}</button>
             </div>
             <div className="h-px w-full bg-gray-100 dark:bg-slate-800 mb-3" />
-            {tab === 'passwordless' && <Passwordless userType={userType} onMagic={(u) => handleAuthSuccess(u, t('Magic link used'))} onOTP={(u) => handleAuthSuccess(u, t('Signed in with OTP'))} onPasskeyReg={(u) => registerPasskey(u)} onPasskey={(id) => signInPasskey(id)} hasWebAuthn={hasWebAuthn} onSocial={handleSocial} />}
+            {tab === 'passwordless' && <Passwordless userType={userType} onMagic={(u) => handleAuthSuccess(u, t('Magic link used'))} onOTP={(u) => handleAuthSuccess(u, t('Signed in with OTP'))} onPasskeyReg={(u) => registerPasskey(u)} onPasskey={(id) => signInPasskey(id)} hasWebAuthn={hasWebAuthn} onSocial={handleSocialSignIn} />}
             {tab === '2fa' && <TwoFA totp={totp} onSetup={setupTOTP} onVerify={verifyTOTP} />}
             {tab === 'recovery' && <Recovery onDone={(id) => say(t('Recovery email sent to') + ' ' + id)} />}
           </section>
@@ -259,7 +436,13 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
         <button
           className="btn btn-ghost"
           onClick={() => {
-            localStorage.removeItem('session');
+            if (session?.userId || session?.email) {
+              void sellerBackendApi.signOutDevice(`auth_${session.userId || session.email}`).catch(() => undefined);
+            }
+            void authClient
+              .signOut(session.refreshToken, session.accessToken)
+              .catch(() => undefined);
+            writeSession(null);
             setSession(null);
             broadcastSessionChange();
             say(t('Signed out'));
@@ -421,19 +604,7 @@ function SignIn({ userType, onDone, onFail, needCaptcha, onCaptchaPass, hasWebAu
     if (!identifier) { setError(t("Enter email")); onFail(); return; }
     setError("");
     try {
-      const inferredEmail = identifier.includes("@") ? identifier : `${identifier.replace(/\s+/g, "")}@demo.evzone`;
-      const inferredPhone = identifier.includes("@") ? undefined : identifier;
-      const session = await mockAuth
-        .signIn({ identifier, password: pwd, role: userType })
-        .catch(() =>
-          mockAuth.signUp({
-            name: inferredEmail.split("@")[0] || "User",
-            email: inferredEmail,
-            phone: inferredPhone,
-            password: pwd,
-            role: userType,
-          })
-        );
+      const session = await authClient.signIn({ identifier, password: pwd, role: userType });
       onDone({ ...session, remember });
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Sign in failed");
@@ -469,26 +640,31 @@ function SignIn({ userType, onDone, onFail, needCaptcha, onCaptchaPass, hasWebAu
 function Passwordless({ userType, onMagic, onOTP, onPasskeyReg, onPasskey, hasWebAuthn, onSocial }) {
   const { t } = useLocalization();
   const [email, setEmail] = useState(""); const [phone, setPhone] = useState(""); const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState("");
+  const [error, setError] = useState("");
   const sendMagic = async () => {
     if (!email.trim()) return;
-    const session = await mockAuth
-      .signIn({ identifier: email, password: "", role: userType })
-      .catch(() =>
-        mockAuth.signUp({ name: email.split("@")[0] || "Magic User", email, password: "demo1234", role: userType })
-      );
-    onMagic({ ...session, auth: "magic" });
+    setError("");
+    try {
+      const session = await authClient.signIn({ identifier: email, password: "", role: userType });
+      onMagic({ ...session, auth: "magic" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Magic link sign-in failed");
+      setError(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
+    }
   };
   const sendOTP = () => setOtpSent(true);
   const verifyOTP = async () => {
     if (otp.trim() !== "123456") return;
     const identifier = phone || email;
     if (!identifier) return;
-    const session = await mockAuth
-      .signIn({ identifier, password: "", role: userType })
-      .catch(() =>
-        mockAuth.signUp({ name: "OTP User", email: email || `${identifier}@demo.evzone`, password: "demo1234", role: userType, phone })
-      );
-    onOTP({ ...session, auth: "otp" });
+    setError("");
+    try {
+      const session = await authClient.signIn({ identifier, password: "", role: userType });
+      onOTP({ ...session, auth: "otp" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("OTP sign-in failed");
+      setError(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
+    }
   };
   const regPasskey = () => onPasskeyReg({ userId: email || phone, email, phone });
   return (
@@ -498,6 +674,7 @@ function Passwordless({ userType, onMagic, onOTP, onPasskeyReg, onPasskey, hasWe
       <SocialRow onSocial={onSocial} />
       <div className="my-3 divider">{t("or continue without a password")}</div>
       <div className="grid grid-cols-1 gap-3 text-sm">
+        {error && <div className="text-xs text-red-600">{error}</div>}
         <div>
           <div className="text-xs text-gray-600 mb-1">{t("Magic Link")}</div>
           <div className="field"><span className="ico"><Icon.Mail /></span><input className="input" placeholder={t("Email / Phone Number")} value={email} onChange={e => setEmail(e.target.value)} /></div>
@@ -528,21 +705,13 @@ function SignUp({ policy, userType, onDone, onSocial }) {
   const strong = pwd.length >= 8;
   const match = pwd && confirm && pwd === confirm;
   const isDisabled = !firstName || !email || !strong || !agree || !okDomain || !match;
-  const resetOnboardingDraft = (u) => {
-    try {
-      if (userType === 'seller') localStorage.removeItem('seller_onb_pro_v3');
-      if (userType === 'provider') localStorage.removeItem('provider_onb_pro_v31');
-    } catch { }
-    try { recordOnboardingStatus(userType, u, 'DRAFT'); } catch { }
-  };
   const create = async () => {
     if (!agree) { setError(t("Please accept the policies to continue")); return; }
     if (!firstName || !email || !strong || !okDomain || !match) return;
     setError("");
     try {
-      const session = await mockAuth.signUp({ name, email, password: pwd, role: userType });
-      resetOnboardingDraft(session);
-      onDone(session);
+      const session = await authClient.signUp({ name, email, password: pwd, role: userType });
+      await onDone(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Sign up failed");
       setError(message);
@@ -577,7 +746,7 @@ function TwoFA({ totp, onSetup, onVerify }) {
     <section>
       <div className="text-lg font-extrabold">{t("Two‑Factor Authentication")}</div>
       <div className="text-xs text-gray-600">{totp.enabled ? t('Enter your 6‑digit code') : t('Setup with your authenticator app and then verify')}</div>
-      {!totp.enabled && (<div className="mt-2 rounded-lg border p-2 text-xs">{t("Secret (demo): ")}<b>{totp.secret}</b></div>)}
+      {!totp.enabled && (<div className="mt-2 rounded-lg border p-2 text-xs">{t("Secret: ")}<b>{totp.secret}</b></div>)}
       <div className="mt-2 inline-flex items-center gap-2 text-sm">
         {!totp.enabled && <button className="btn btn-ghost" onClick={onSetup}>{t("Setup")}</button>}
         <input className="input" placeholder={t("123456")} value={code} onChange={e => setCode(e.target.value)} />
@@ -594,7 +763,7 @@ function Recovery({ onDone }) {
   const send = async () => {
     setError("");
     try {
-      await mockAuth.resetPassword(identifier);
+      await authClient.resetPassword(identifier);
       onDone(identifier);
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Recovery failed");

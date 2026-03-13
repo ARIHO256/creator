@@ -19,12 +19,7 @@ export default function SellerReturnsEVzoneV3() {
     );
   };
 
-  const initial = [
-    { rma: "RMA-22015", orderId: "EV-10510", channel: "EVmart", buyer: "GreenFleet Ltd", sku: "WBX-7KW-BLK", title: "7kW Wallbox (Black)", quantity: 1, currency: "USD", amount: 1999, reason: "Defective on arrival", attachments: ["https://dummyimage.com/60x60/f2f2f2/111827&text=IMG"], state: "Requested", createdAt: "2025-10-12 13:05" },
-    { rma: "RMA-22014", orderId: "GM-10509", channel: "GadgetMart", buyer: "K. Namusoke", sku: "GAD-WATCH-UL", title: "Smart Watch Ultra", quantity: 1, currency: "USD", amount: 79, reason: "Wrong color", attachments: [], state: "Approved", createdAt: "2025-10-12 10:44" },
-    { rma: "RMA-22013", orderId: "MD-10507", channel: "Medical", buyer: "City Clinic", sku: "PPE-MASK-50", title: "Masks (50 pack)", quantity: 10, currency: "USD", amount: 120, reason: "Over-order, need partial refund", attachments: [], state: "Received", createdAt: "2025-10-11 09:02" },
-    { rma: "RMA-22012", orderId: "ST-10506", channel: "StyleMart", buyer: "J. Byaruhanga", sku: "STYLE-TEE-XL-BK", title: "EVzone Tee — XL Black", quantity: 1, currency: "USD", amount: 18, reason: "Size mismatch", attachments: ["https://dummyimage.com/60x60/f2f2f2/111827&text=IMG"], state: "Refunded", createdAt: "2025-10-10 19:30" }
-  ];
+  const initial = [];
 
   const [rows, setRows] = useState(initial);
   const [tab, setTab] = useState("All");

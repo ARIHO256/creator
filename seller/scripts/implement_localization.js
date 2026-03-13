@@ -5,7 +5,7 @@ const path = require('path');
  * This script implements localization by:
  * 1. Using Chinese translations as reference (since it's fully translated)
  * 2. Preserving existing translations in each language
- * 3. Using English as default English for untranslated keys
+ * 3. Using English as fallback for untranslated keys
  * 4. Creating a translation-ready structure
  */
 
@@ -147,8 +147,8 @@ async function implementLocalization() {
         continue;
       }
       
-      // Priority 3: Use English as default English (will be translated later or by translation service)
-      // The localization system will default English to English if translation is missing
+      // Priority 3: Use English as fallback (will be translated later or by translation service)
+      // The localization system will fallback to English if translation is missing
       newDict[key] = englishValue;
       usingEnglishCount++;
     }
@@ -237,7 +237,7 @@ async function implementLocalization() {
   console.log('   1. Use translation_export.json with a translation service');
   console.log('   2. Import translated values back into dictionaries');
   console.log('   3. The localization system will automatically use translations when available');
-  console.log('   4. English is used as default English for missing translations');
+  console.log('   4. English is used as fallback for missing translations');
 }
 
 implementLocalization().catch(console.error);

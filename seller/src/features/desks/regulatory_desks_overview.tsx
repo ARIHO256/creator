@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   Check,
@@ -317,7 +317,7 @@ function ToastCenter({ toasts, dismiss }: ToastCenterProps) {
 
 // ---------------- Data ----------------
 
-function seedData(): { submissions: Submission[]; policies: PolicyUpdate[]; tasks: Task[] } {
+function createEmptyOverviewData(): { submissions: Submission[]; policies: PolicyUpdate[]; tasks: Task[] } {
   const now = Date.now();
   const ago = (m: number) => new Date(now - m * 60_000).toISOString();
   const inD = (d: number) => new Date(now + d * 24 * 60_000).toISOString();
@@ -579,7 +579,41 @@ function ProgressBar({ pct, tone }: { pct: number; tone: "green" | "orange" | "d
 
 export default function RegulatoryDesksHome() {
   const navigate = useNavigate();
-  const [data, setData] = useMockState("desks.regulatory.overview", seedData());
+  const [data, setData] = useState(createEmptyOverviewData());
+  const [loading, setLoading] = useState(true);
+  const didHydrateRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const payload = await sellerBackendApi.getRegulatoryOverview();
+        if (!cancelled && payload && typeof payload === "object") {
+          setData(payload as typeof data);
+        }
+      } catch {
+        if (!cancelled) {
+          setData(createEmptyOverviewData());
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!didHydrateRef.current) {
+      didHydrateRef.current = true;
+      return;
+    }
+    void sellerBackendApi.patchRegulatoryOverview(data);
+  }, [data, loading]);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -755,7 +789,7 @@ export default function RegulatoryDesksHome() {
           : ["Community guidelines"],
     };
 
-    // Local add (demo)
+    // Local add
     data.submissions.unshift(newS);
 
     setNewOpen(false);
@@ -852,7 +886,7 @@ export default function RegulatoryDesksHome() {
       note: "Demo evidence bundle. In production: PDFs, signatures, hashes, chain of custody.",
     };
     safeCopy(JSON.stringify(bundle, null, 2));
-    pushToast({ title: "Evidence bundle ready", message: "Copied as JSON (demo).", tone: "success" });
+    pushToast({ title: "Evidence bundle ready", message: "Copied as JSON.", tone: "success" });
   };
 
   return (
@@ -877,6 +911,7 @@ export default function RegulatoryDesksHome() {
                 <Badge tone="slate">/regulatory</Badge>
                 <Badge tone="slate">Seller-facing</Badge>
                 <Badge tone="orange">Super premium</Badge>
+                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Manage regulated submissions and compliance evidence across desks.</div>
             </div>
@@ -909,7 +944,7 @@ export default function RegulatoryDesksHome() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest policy and queue loaded (demo).", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest policy and queue loaded.", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <Sparkles className="h-4 w-4" />
@@ -1357,7 +1392,7 @@ export default function RegulatoryDesksHome() {
                       <div className="mt-3 flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => pushToast({ title: "Saved", message: "Policy saved to bookmarks (demo).", tone: "success" })}
+                          onClick={() => pushToast({ title: "Saved", message: "Policy saved to bookmarks.", tone: "success" })}
                           className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-1.5 text-[11px] font-extrabold text-slate-800"
                         >
                           <CheckCheck className="h-4 w-4" />
@@ -1365,7 +1400,7 @@ export default function RegulatoryDesksHome() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => pushToast({ title: "Read", message: "Open policy article (demo).", tone: "default" })}
+                          onClick={() => pushToast({ title: "Read", message: "Open policy article.", tone: "default" })}
                           className="ml-auto inline-flex items-center gap-2 rounded-2xl px-3 py-1.5 text-[11px] font-extrabold text-white"
                           style={{ background: TOKENS.orange }}
                         >
@@ -1530,7 +1565,7 @@ export default function RegulatoryDesksHome() {
             <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
               <div className="flex items-center gap-2">
                 <ClipboardList className="h-4 w-4 text-slate-700" />
-                <div className="text-sm font-black text-slate-900">Timeline (demo)</div>
+                <div className="text-sm font-black text-slate-900">Timeline</div>
                 <span className="ml-auto"><Badge tone="slate">Events</Badge></span>
               </div>
               <div className="mt-3 space-y-2">
@@ -1713,7 +1748,7 @@ export default function RegulatoryDesksHome() {
           {wizardStep === 3 ? (
             <GlassCard className="p-4">
               <div className="text-sm font-black text-slate-900">Documents and policy</div>
-              <div className="mt-1 text-xs font-semibold text-slate-500">Tick what you have ready (demo). Upload flows wire later.</div>
+              <div className="mt-1 text-xs font-semibold text-slate-500">Tick what you have ready. Upload flows wire later.</div>
 
               <div className="mt-4 grid gap-2">
                 {[

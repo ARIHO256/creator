@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -24,6 +23,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Notification Preferences (Previewable)
@@ -86,8 +86,6 @@ type PrefsState = {
   digest: DigestSettings;
   rules: Rule[];
 };
-
-const STORAGE_KEY = "evzone_notification_preferences_demo_v1";
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -339,138 +337,39 @@ function ToastCenter({ toasts, dismiss }) {
   );
 }
 
-function seedDefaults(): PrefsState {
-  const globalChannels: ChannelMap = {
-    inApp: true,
-    email: true,
-    sms: false,
-    whatsapp: true,
+function createDefaultPreferencesState(): PrefsState {
+  return {
+    globalChannels: {
+      inApp: false,
+      email: false,
+      sms: false,
+      whatsapp: false,
+    },
+    categories: [],
+    channelProfiles: {
+      email: { enabled: false, address: "", verified: false },
+      sms: { enabled: false, number: "", verified: false },
+      whatsapp: { enabled: false, number: "", verified: false },
+      inApp: { enabled: false },
+    },
+    quietHours: {
+      enabled: false,
+      start: "22:00",
+      end: "07:00",
+      days: [],
+      bypassCritical: false,
+    },
+    digest: {
+      enabled: false,
+      mode: "Daily",
+      time: "18:00",
+      channels: { email: false, inApp: false, whatsapp: false, sms: false },
+      includeCategories: [],
+      includePreview: false,
+      instantForCritical: false,
+    },
+    rules: [],
   };
-
-  const categories: Category[] = [
-    {
-      key: "mentions",
-      label: "Mentions",
-      desc: "Direct mentions, replies and assignments",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "orders",
-      label: "Orders",
-      desc: "New orders, SLA risk, cancellations",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "rfqs",
-      label: "RFQs",
-      desc: "New RFQs, clarifications, buyer messages",
-      critical: false,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "quotes",
-      label: "Quotes",
-      desc: "Quote approved, rejected, revised",
-      critical: false,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: false },
-    },
-    {
-      key: "finance",
-      label: "Finance",
-      desc: "Payouts, holds, settlements, invoices",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: true },
-    },
-    {
-      key: "mldz",
-      label: "MyLiveDealz",
-      desc: "Live Sessionz, Adz, creator collabs",
-      critical: false,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: false, whatsapp: false },
-    },
-    {
-      key: "system",
-      label: "System",
-      desc: "Security, policy, incidents and maintenance",
-      critical: true,
-      enabled: true,
-      channels: { inApp: true, email: true, sms: true, whatsapp: true },
-    },
-  ];
-
-  const channelProfiles: ChannelProfiles = {
-    email: { enabled: true, address: "seller@evzone.example", verified: true },
-    sms: { enabled: false, number: "+256700000000", verified: false },
-    whatsapp: { enabled: true, number: "+256700000000", verified: true },
-    inApp: { enabled: true },
-  };
-
-  const quietHours: QuietHours = {
-    enabled: true,
-    start: "22:00",
-    end: "07:00",
-    days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    bypassCritical: true,
-  };
-
-  const digest: DigestSettings = {
-    enabled: true,
-    mode: "Daily",
-    time: "18:00",
-    channels: { email: true, inApp: true, whatsapp: false, sms: false },
-    includeCategories: ["rfqs", "quotes", "mldz"],
-    includePreview: true,
-    instantForCritical: true,
-  };
-
-  const rules: Rule[] = [
-    {
-      id: "r_sla",
-      enabled: true,
-      name: "Order SLA risk",
-      priority: "High",
-      trigger: { category: "orders", event: "sla_risk" },
-      conditions: { severity: "High", keyword: "" },
-      action: { delivery: "Instant", channels: { inApp: true, whatsapp: true, email: false, sms: false }, throttleMins: 20, bypassQuietHours: true },
-    },
-    {
-      id: "r_rfq",
-      enabled: true,
-      name: "Urgent RFQ",
-      priority: "Normal",
-      trigger: { category: "rfqs", event: "new_urgent" },
-      conditions: { severity: "Any", keyword: "urgent" },
-      action: { delivery: "Instant", channels: { inApp: true, whatsapp: false, email: true, sms: false }, throttleMins: 60, bypassQuietHours: false },
-    },
-    {
-      id: "r_payout",
-      enabled: true,
-      name: "Payout scheduled",
-      priority: "Low",
-      trigger: { category: "finance", event: "payout_scheduled" },
-      conditions: { severity: "Any", keyword: "" },
-      action: { delivery: "Digest", channels: { inApp: true, whatsapp: false, email: true, sms: false }, throttleMins: 0, bypassQuietHours: false },
-    },
-    {
-      id: "r_security",
-      enabled: true,
-      name: "Security alert",
-      priority: "High",
-      trigger: { category: "system", event: "security_alert" },
-      conditions: { severity: "High", keyword: "" },
-      action: { delivery: "Instant", channels: { inApp: true, whatsapp: true, email: true, sms: true }, throttleMins: 0, bypassQuietHours: true },
-    },
-  ];
-
-  return { globalChannels, categories, channelProfiles, quietHours, digest, rules };
 }
 
 function summarizeRule(r: Rule) {
@@ -533,8 +432,35 @@ export default function NotificationPreferencesPage() {
 
   const [dirty, setDirty] = useState(false);
 
-  const [prefs, setAll] = useMockState<PrefsState>("settings.notificationPrefs", seedDefaults());
+  const [prefs, setAll] = useState<PrefsState>(createDefaultPreferencesState());
   const { globalChannels, categories, channelProfiles, quietHours, digest, rules } = prefs;
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getNotificationPreferences();
+        if (!active) return;
+        const next = (payload.metadata || payload) as Partial<PrefsState>;
+        const defaults = createDefaultPreferencesState();
+        setAll({
+          ...defaults,
+          ...next,
+          globalChannels: { ...defaults.globalChannels, ...(next.globalChannels || {}) },
+          channelProfiles: { ...defaults.channelProfiles, ...(next.channelProfiles || {}) },
+          quietHours: { ...defaults.quietHours, ...(next.quietHours || {}) },
+          digest: { ...defaults.digest, ...(next.digest || {}) },
+          categories: Array.isArray(next.categories) ? next.categories as PrefsState["categories"] : defaults.categories,
+          rules: Array.isArray(next.rules) ? next.rules as PrefsState["rules"] : defaults.rules,
+        });
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Notifications unavailable", message: "Could not load notification preferences.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const snapshotRef = useRef<string | null>(null);
   useEffect(() => {
@@ -544,16 +470,21 @@ export default function NotificationPreferencesPage() {
 
   const markDirty = () => setDirty(true);
 
-  const saveAll = () => {
+  const saveAll = async () => {
     const payload = { globalChannels, categories, channelProfiles, quietHours, digest, rules };
-    setAll(payload);
-    snapshotRef.current = JSON.stringify(payload);
-    setDirty(false);
-    pushToast({ title: "Preferences saved", message: "Your notification settings were updated.", tone: "success" });
+    try {
+      await sellerBackendApi.patchNotificationPreferences({ metadata: payload });
+      setAll(payload);
+      snapshotRef.current = JSON.stringify(payload);
+      setDirty(false);
+      pushToast({ title: "Preferences saved", message: "Your notification settings were updated.", tone: "success" });
+    } catch {
+      pushToast({ title: "Save failed", message: "Could not update notification preferences.", tone: "danger" });
+    }
   };
 
   const restoreDefaults = () => {
-    const next = seedDefaults();
+    const next = createDefaultPreferencesState();
     setAll(next);
     setDirty(true);
     pushToast({ title: "Defaults restored", message: "Review and save to apply.", tone: "default" });

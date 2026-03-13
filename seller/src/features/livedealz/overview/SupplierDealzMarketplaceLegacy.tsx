@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "../adz/SupplierAdBuilderPage";
 import { LiveBuilderDrawer } from "../live/SupplierLiveDashboardPage";
@@ -175,6 +176,56 @@ type Deal = {
   notes?: string;
 };
 
+type LegacyMarketplaceTemplates = {
+  shoppable: ShoppableAd;
+  live: LiveInvite;
+};
+
+function createEmptySupplier(): Supplier {
+  return { name: "", category: "", logoUrl: "" };
+}
+
+function createEmptyCreator(): Creator {
+  return { name: "", handle: "", avatarUrl: "", verified: false };
+}
+
+function createEmptyShoppableTemplate(): ShoppableAd {
+  return {
+    id: "",
+    status: "Draft",
+    campaignName: "New Campaign",
+    campaignSubtitle: "New deal draft",
+    supplier: createEmptySupplier(),
+    creator: createEmptyCreator(),
+    platforms: ["Instagram", "TikTok"],
+    startISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
+    heroImageUrl: "",
+    offers: [],
+    ctaPrimaryLabel: "Shop now",
+    ctaSecondaryLabel: "View details",
+    kpis: []
+  };
+}
+
+function createEmptyLiveTemplate(): LiveInvite {
+  return {
+    id: "",
+    status: "Draft",
+    title: "New Campaign Live",
+    description: "Draft live session created from Dealz Marketplace. Add run-of-show, featured items, and destinations in Live Builder.",
+    host: createEmptyCreator(),
+    supplier: createEmptySupplier(),
+    platforms: ["Instagram", "TikTok"],
+    startISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
+    timezoneLabel: "GMT+3",
+    promoLink: "",
+    heroImageUrl: "",
+    featured: []
+  };
+}
+
 function money(currency: string, amount: number) {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
@@ -228,470 +279,6 @@ function useCountdown(targetISO: string) {
   const sec = Math.floor((diff % (1000 * 60)) / 1000);
   return { d, h, m, sec, diff };
 }
-
-const SUPPLIERS: Supplier[] = [
-  { name: "Acme Co", category: "Retail", logoUrl: "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop" },
-  { name: "Global Traders", category: "Wholesale", logoUrl: "https://images.unsplash.com/photo-1554774853-719586f8c277?w=100&h=100&fit=crop" }
-];
-
-const CREATORS: Creator[] = [
-  { name: "Jane Doe", handle: "@jane", avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop", verified: true },
-  { name: "John Smith", handle: "@john", avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" }
-];
-
-const DEALZ_SEED: Deal[] = [
-  {
-    id: "deal_1",
-    type: "Shoppable Adz",
-    title: "Summer Sale",
-    tagline: "Best dealz of the season",
-    supplier: SUPPLIERS[0],
-    creator: CREATORS[0],
-    startISO: new Date().toISOString(),
-    endISO: new Date(Date.now() + 86400000).toISOString(),
-    notes: "Sample deal",
-    shoppable: {
-      id: "ad_1",
-      status: "Generated",
-      campaignName: "Summer Sale",
-      campaignSubtitle: "Best dealz",
-      supplier: SUPPLIERS[0],
-      creator: CREATORS[0],
-      platforms: ["Instagram"],
-      startISO: new Date().toISOString(),
-      endISO: new Date(Date.now() + 86400000).toISOString(),
-      heroImageUrl: "https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=800&q=80",
-      ctaPrimaryLabel: "Shop Now",
-      ctaSecondaryLabel: "Add to Cart",
-      offers: [
-        {
-          id: "offer_1",
-          type: "PRODUCT",
-          name: "Summer Dress",
-          price: 50,
-          currency: "USD",
-          stockLeft: 10,
-          sold: 5,
-          posterUrl: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80"
-        }
-      ],
-      kpis: [{ label: "CTR", value: "2.5%" }]
-    }
-  },
-  {
-    id: "deal_2",
-    type: "Live Sessionz",
-    title: "Tech Unboxing Live",
-    tagline: "First look at the latest gadgets",
-    supplier: SUPPLIERS[1],
-    creator: CREATORS[1],
-    startISO: new Date(Date.now() + 3600000).toISOString(),
-    endISO: new Date(Date.now() + 7200000).toISOString(),
-    live: {
-      id: "live_2",
-      status: "Scheduled",
-      title: "Tech Unboxing Live",
-      description: "Unboxing the newest smartphones and laptops from Global Traders.",
-      host: CREATORS[1],
-      supplier: SUPPLIERS[1],
-      platforms: ["YouTube", "TikTok"],
-      startISO: new Date(Date.now() + 3600000).toISOString(),
-      endISO: new Date(Date.now() + 7200000).toISOString(),
-      timezoneLabel: "GMT+3",
-      heroImageUrl: "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800&q=80",
-      promoLink: "https://example.com/live/2",
-      featured: [
-        {
-          id: "item_2_1",
-          kind: "product",
-          name: "Pro Smartphone X",
-          priceLabel: "$999",
-          stockLeft: 20,
-          posterUrl: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&q=80"
-        }
-      ]
-    }
-  },
-  {
-    id: "deal_3",
-    type: "Live + Shoppables",
-    title: "Eco-Friendly Fashion",
-    tagline: "Sustainable style for everyone",
-    supplier: SUPPLIERS[0],
-    creator: CREATORS[0],
-    startISO: new Date().toISOString(),
-    endISO: new Date(Date.now() + 172800000).toISOString(),
-    shoppable: {
-      id: "ad_3",
-      status: "Generated",
-      campaignName: "Eco Fashion Hub",
-      campaignSubtitle: "Wear the future",
-      supplier: SUPPLIERS[0],
-      creator: CREATORS[0],
-      platforms: ["Instagram", "Pinterest"],
-      startISO: new Date().toISOString(),
-      endISO: new Date(Date.now() + 172800000).toISOString(),
-      heroImageUrl: "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=800&q=80",
-      ctaPrimaryLabel: "Shop Sustainable",
-      ctaSecondaryLabel: "Sustainability Guide",
-      offers: [
-        {
-          id: "offer_3_1",
-          type: "PRODUCT",
-          name: "Organic Cotton Tee",
-          price: 35,
-          currency: "USD",
-          stockLeft: 50,
-          sold: 12,
-          posterUrl: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&q=80"
-        }
-      ],
-      kpis: [{ label: "Conversion", value: "3.2%" }]
-    },
-    live: {
-      id: "live_3",
-      status: "Live",
-      title: "Sustainable Styling",
-      description: "Live styling session with eco-friendly clothes.",
-      host: CREATORS[0],
-      supplier: SUPPLIERS[0],
-      platforms: ["Instagram"],
-      startISO: new Date().toISOString(),
-      endISO: new Date(Date.now() + 7200000).toISOString(),
-      timezoneLabel: "GMT+3",
-      heroImageUrl: "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=800&q=80",
-      promoLink: "https://example.com/live/3",
-      featured: [
-        {
-          id: "item_3_1",
-          kind: "product",
-          name: "Organic Cotton Tee",
-          priceLabel: "$35",
-          stockLeft: 50,
-          posterUrl: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&q=80"
-        }
-      ]
-    }
-  },
-  {
-    id: "deal_4",
-    type: "Shoppable Adz",
-    title: "Masterclass: Video Editing",
-    tagline: "Learn from the best",
-    supplier: SUPPLIERS[1],
-    creator: CREATORS[1],
-    startISO: new Date(Date.now() - 86400000).toISOString(),
-    endISO: new Date(Date.now() + 604800000).toISOString(),
-    shoppable: {
-      id: "ad_4",
-      status: "Generated",
-      campaignName: "Editor's Masterclass",
-      campaignSubtitle: "Advanced techniques",
-      supplier: SUPPLIERS[1],
-      creator: CREATORS[1],
-      platforms: ["LinkedIn", "YouTube"],
-      startISO: new Date(Date.now() - 86400000).toISOString(),
-      endISO: new Date(Date.now() + 604800000).toISOString(),
-      heroImageUrl: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&q=80",
-      ctaPrimaryLabel: "Enroll Now",
-      ctaSecondaryLabel: "Free Preview",
-      offers: [
-        {
-          id: "offer_4_1",
-          type: "SERVICE",
-          name: "Full Masterclass Access",
-          price: 199,
-          currency: "USD",
-          stockLeft: -1,
-          sold: 450,
-          posterUrl: "https://images.unsplash.com/photo-1492724441997-5dc865305da7?w=400&q=80"
-        }
-      ],
-      kpis: [{ label: "ROAS", value: "4.8x" }]
-    }
-  },
-  {
-    id: "deal_5",
-    type: "Live + Shoppables",
-    title: "Gamer's Setup Live",
-    tagline: "Performance gear for pros",
-    supplier: SUPPLIERS[1],
-    creator: CREATORS[1],
-    startISO: new Date(Date.now() + 7200000).toISOString(),
-    endISO: new Date(Date.now() + 10800000).toISOString(),
-    shoppable: {
-      id: "ad_5",
-      status: "Generated",
-      campaignName: "Gaming Excellence",
-      campaignSubtitle: "Level up your game",
-      supplier: SUPPLIERS[1],
-      creator: CREATORS[1],
-      platforms: ["Twitch", "YouTube"],
-      startISO: new Date(Date.now() + 7200000).toISOString(),
-      endISO: new Date(Date.now() + 10800000).toISOString(),
-      heroImageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80",
-      ctaPrimaryLabel: "View Hardware",
-      ctaSecondaryLabel: "Setup Guide",
-      offers: [
-        {
-          id: "offer_5_1",
-          type: "PRODUCT",
-          name: "Mechanical Keyboard",
-          price: 120,
-          currency: "USD",
-          stockLeft: 15,
-          sold: 8,
-          posterUrl: "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?w=400&q=80"
-        }
-      ],
-      kpis: [{ label: "CTR", value: "4.1%" }]
-    },
-    live: {
-      id: "live_5",
-      status: "Scheduled",
-      title: "Pro Gaming Setup",
-      description: "Live review of the best gaming peripherals available.",
-      host: CREATORS[1],
-      supplier: SUPPLIERS[1],
-      platforms: ["Twitch"],
-      startISO: new Date(Date.now() + 7200000).toISOString(),
-      endISO: new Date(Date.now() + 10800000).toISOString(),
-      timezoneLabel: "GMT+3",
-      heroImageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80",
-      promoLink: "https://example.com/live/5",
-      featured: [
-        {
-          id: "item_5_1",
-          kind: "product",
-          name: "Mechanical Keyboard",
-          priceLabel: "$120",
-          stockLeft: 15,
-          posterUrl: "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?w=400&q=80"
-        }
-      ]
-    }
-  },
-  {
-    id: "deal_6",
-    type: "Shoppable Adz",
-    title: "Organic Skincare Routine",
-    tagline: "Glowing skin naturally",
-    supplier: SUPPLIERS[0],
-    creator: CREATORS[0],
-    startISO: new Date(Date.now() - 43200000).toISOString(),
-    endISO: new Date(Date.now() + 43200000).toISOString(),
-    shoppable: {
-      id: "ad_6",
-      status: "Generated",
-      campaignName: "Nature's Glow",
-      campaignSubtitle: "Organic solutions",
-      supplier: SUPPLIERS[0],
-      creator: CREATORS[0],
-      platforms: ["Instagram", "TikTok"],
-      startISO: new Date(Date.now() - 43200000).toISOString(),
-      endISO: new Date(Date.now() + 43200000).toISOString(),
-      heroImageUrl: "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80",
-      ctaPrimaryLabel: "Get Serum",
-      ctaSecondaryLabel: "Routine Tips",
-      offers: [
-        {
-          id: "offer_6_1",
-          type: "PRODUCT",
-          name: "Vitamin C Serum",
-          price: 45,
-          currency: "USD",
-          stockLeft: 30,
-          sold: 110,
-          posterUrl: "https://images.unsplash.com/photo-1594125355935-db633f815b3c?w=400&q=80"
-        }
-      ],
-      kpis: [{ label: "ROAS", value: "3.5x" }]
-    }
-  },
-  {
-    id: "deal_7",
-    type: "Live Sessionz",
-    title: "Home Office Refresh",
-    tagline: "Workspace for productivity",
-    supplier: SUPPLIERS[1],
-    creator: CREATORS[0],
-    startISO: new Date(Date.now() + 86400000).toISOString(),
-    endISO: new Date(Date.now() + 90000000).toISOString(),
-    live: {
-      id: "live_7",
-      status: "Scheduled",
-      title: "Office Productivity Live",
-      description: "Upgrade your home office with these professional tools.",
-      host: CREATORS[0],
-      supplier: SUPPLIERS[1],
-      platforms: ["YouTube"],
-      startISO: new Date(Date.now() + 86400000).toISOString(),
-      endISO: new Date(Date.now() + 90000000).toISOString(),
-      timezoneLabel: "GMT+3",
-      heroImageUrl: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&q=80",
-      promoLink: "https://example.com/live/7",
-      featured: [
-        {
-          id: "item_7_1",
-          kind: "product",
-          name: "Ergonomic Desk Chair",
-          priceLabel: "$250",
-          stockLeft: 5,
-          posterUrl: "https://images.unsplash.com/photo-1505843490701-515a00ae48f0?w=400&q=80"
-        }
-      ]
-    }
-  },
-  {
-    id: "deal_8",
-    type: "Shoppable Adz",
-    title: "Healthy Cooking Masterclass",
-    tagline: "Quick & delicious meals",
-    supplier: SUPPLIERS[0],
-    creator: CREATORS[1],
-    startISO: new Date(Date.now() + 172800000).toISOString(),
-    endISO: new Date(Date.now() + 259200000).toISOString(),
-    shoppable: {
-      id: "ad_8",
-      status: "Generated",
-      campaignName: "Healthy Eats",
-      campaignSubtitle: "Cook like a pro",
-      supplier: SUPPLIERS[0],
-      creator: CREATORS[1],
-      platforms: ["Facebook", "Instagram"],
-      startISO: new Date(Date.now() + 172800000).toISOString(),
-      endISO: new Date(Date.now() + 259200000).toISOString(),
-      heroImageUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80",
-      ctaPrimaryLabel: "Browse Recipes",
-      ctaSecondaryLabel: "Get Ingredients",
-      offers: [
-        {
-          id: "offer_8_1",
-          type: "SERVICE",
-          name: "Live Cooking Class Access",
-          price: 50,
-          currency: "USD",
-          stockLeft: 100,
-          sold: 5,
-          posterUrl: "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=400&q=80"
-        }
-      ],
-      kpis: [{ label: "CTR", value: "2.8%" }]
-    }
-  },
-  {
-    id: "deal_9",
-    type: "Live Sessionz",
-    title: "Eco-Home Workshop",
-    tagline: "Sustainable living tips",
-    supplier: SUPPLIERS[0],
-    creator: CREATORS[0],
-    startISO: new Date(Date.now() + 345600000).toISOString(),
-    endISO: new Date(Date.now() + 349200000).toISOString(),
-    live: {
-      id: "live_9",
-      status: "Scheduled",
-      title: "Eco-Home Workshop",
-      description: "Learn how to make your home more sustainable with simple changes.",
-      host: CREATORS[0],
-      supplier: SUPPLIERS[0],
-      platforms: ["LinkedIn"],
-      startISO: new Date(Date.now() + 345600000).toISOString(),
-      endISO: new Date(Date.now() + 349200000).toISOString(),
-      timezoneLabel: "GMT+3",
-      heroImageUrl: "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=800&q=80",
-      promoLink: "https://example.com/live/9",
-      featured: [
-        {
-          id: "item_9_1",
-          kind: "product",
-          name: "Bamboo Utensil Set",
-          priceLabel: "$15",
-          stockLeft: 100,
-          posterUrl: "https://images.unsplash.com/photo-1610557870699-a46737482812?w=400&q=80"
-        }
-      ]
-    }
-  },
-  {
-    id: "deal_10",
-    type: "Live + Shoppables",
-    title: "Yoga & Mindfulness",
-    tagline: "Find your balance",
-    supplier: SUPPLIERS[1],
-    creator: CREATORS[0],
-    startISO: new Date().toISOString(),
-    endISO: new Date(Date.now() + 604800000).toISOString(),
-    shoppable: {
-      id: "ad_10",
-      status: "Generated",
-      campaignName: "Zen Lifestyle",
-      campaignSubtitle: "Mindful movements",
-      supplier: SUPPLIERS[1],
-      creator: CREATORS[0],
-      platforms: ["Instagram", "Meta"],
-      startISO: new Date().toISOString(),
-      endISO: new Date(Date.now() + 604800000).toISOString(),
-      heroImageUrl: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&q=80",
-      ctaPrimaryLabel: "View Mats",
-      ctaSecondaryLabel: "Free Session",
-      offers: [
-        {
-          id: "offer_10_1",
-          type: "PRODUCT",
-          name: "Premium Yoga Mat",
-          price: 60,
-          currency: "USD",
-          stockLeft: 40,
-          sold: 150,
-          posterUrl: "https://images.unsplash.com/photo-1592176372045-2199e8006241?w=400&q=80"
-        }
-      ],
-      kpis: [{ label: "Conversion", value: "5.4%" }]
-    },
-    live: {
-      id: "live_10",
-      status: "Live",
-      title: "Morning Yoga Flow",
-      description: "Start your day with a calming yoga session.",
-      host: CREATORS[0],
-      supplier: SUPPLIERS[1],
-      platforms: ["Instagram"],
-      startISO: new Date().toISOString(),
-      endISO: new Date(Date.now() + 3600000).toISOString(),
-      timezoneLabel: "GMT+3",
-      heroImageUrl: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&q=80",
-      promoLink: "https://example.com/live/10",
-      featured: [
-        {
-          id: "item_10_1",
-          kind: "product",
-          name: "Premium Yoga Mat",
-          priceLabel: "$60",
-          stockLeft: 40,
-          posterUrl: "https://images.unsplash.com/photo-1592176372045-2199e8006241?w=400&q=80"
-        }
-      ]
-    }
-  }
-];
-
-const shoppable1 = DEALZ_SEED[0].shoppable!;
-const live1: LiveInvite = {
-  id: "live_1",
-  status: "Draft",
-  title: "Summer Sale Live",
-  description: "Join us for the summer sale live event!",
-  supplier: SUPPLIERS[0],
-  host: CREATORS[0],
-  platforms: ["Instagram", "TikTok"],
-  startISO: new Date().toISOString(),
-  endISO: new Date(Date.now() + 3600000).toISOString(),
-  heroImageUrl: "https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=800&q=80",
-  promoLink: "https://example.com/live/1",
-  timezoneLabel: "GMT+3",
-  featured: []
-};
 
 function Pill({
   tone = "neutral",
@@ -2089,11 +1676,17 @@ type WizardType = DealType | "";
 function NewDealzWizard({
   open,
   onClose,
-  onCreate
+  onCreate,
+  suppliers,
+  creators,
+  templates
 }: {
   open: boolean;
   onClose: () => void;
   onCreate: (d: Deal, behavior: "open-builder" | "stay") => void;
+  suppliers: Supplier[];
+  creators: Creator[];
+  templates: LegacyMarketplaceTemplates;
 }) {
   const [step, setStep] = useState(0);
   const [type, setType] = useState<WizardType>("");
@@ -2129,10 +1722,10 @@ function NewDealzWizard({
   }
 
   function create(behavior: "open-builder" | "stay") {
-    if (!type) return;
+    if (!type || !suppliers.length || !creators.length) return;
 
-    const supplier = SUPPLIERS[supplierIdx];
-    const creator = CREATORS[creatorIdx];
+    const supplier = suppliers[supplierIdx] || suppliers[0];
+    const creator = creators[creatorIdx] || creators[0];
     const id = `dz_${Math.floor(Date.now() / 1000)}`;
 
     const base: Deal = {
@@ -2144,7 +1737,7 @@ function NewDealzWizard({
       creator,
       startISO,
       endISO,
-      notes: "Created from +New Dealz (demo)."
+      notes: "Created from +New Dealz."
     };
 
     const withShoppable =
@@ -2152,7 +1745,7 @@ function NewDealzWizard({
         ? {
           ...base,
           shoppable: {
-            ...shoppable1,
+            ...templates.shoppable,
             id: `ad_${id}`,
             status: "Draft",
             supplier,
@@ -2171,7 +1764,7 @@ function NewDealzWizard({
         ? {
           ...withShoppable,
           live: {
-            ...live1,
+            ...templates.live,
             id: `live_${id}`,
             status: "Draft",
             title: type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
@@ -2189,8 +1782,8 @@ function NewDealzWizard({
     onClose();
   }
 
-  const supplier = SUPPLIERS[supplierIdx];
-  const creator = CREATORS[creatorIdx];
+  const supplier = suppliers[supplierIdx] || suppliers[0] || createEmptySupplier();
+  const creator = creators[creatorIdx] || creators[0] || createEmptyCreator();
 
   return (
     <Drawer
@@ -2281,7 +1874,7 @@ function NewDealzWizard({
             <div>
               <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Select supplier</div>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {SUPPLIERS.map((s, i) => (
+                {suppliers.map((s, i) => (
                   <button
                     key={s.name}
                     type="button"
@@ -2355,8 +1948,15 @@ export default function SupplierDealzMarketplace() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const [dealz, setDealz] = useState<Deal[]>(DEALZ_SEED);
-  const [selectedId, setSelectedId] = useState<string>(DEALZ_SEED[0]?.id || "");
+  const [dealz, setDealz] = useState<Deal[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [creators, setCreators] = useState<Creator[]>([]);
+  const [templates, setTemplates] = useState<LegacyMarketplaceTemplates>({
+    shoppable: createEmptyShoppableTemplate(),
+    live: createEmptyLiveTemplate()
+  });
+  const [marketplaceReady, setMarketplaceReady] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 
@@ -2386,6 +1986,49 @@ export default function SupplierDealzMarketplace() {
   // Cart state for the Live Session invite preview (per selected deal)
   const [liveCart, setLiveCart] = useState<Record<string, number>>({});
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getLegacyDealzMarketplace().then((payload) => {
+      if (!active) return;
+      setDealz(Array.isArray((payload as { deals?: unknown[] }).deals) ? ((payload as { deals?: Deal[] }).deals ?? []) : []);
+      setSelectedId(String((payload as { selectedId?: unknown }).selectedId ?? ""));
+      setCart((((payload as { cart?: unknown }).cart ?? {}) as Record<string, number>));
+      setLiveCart((((payload as { liveCart?: unknown }).liveCart ?? {}) as Record<string, number>));
+      setSuppliers(Array.isArray((payload as { suppliers?: unknown[] }).suppliers) ? ((payload as { suppliers?: Supplier[] }).suppliers ?? []) : []);
+      setCreators(Array.isArray((payload as { creators?: unknown[] }).creators) ? ((payload as { creators?: Creator[] }).creators ?? []) : []);
+      const templatePayload = (payload as { templates?: Record<string, unknown> }).templates;
+      setTemplates({
+        shoppable:
+          templatePayload?.shoppable && typeof templatePayload.shoppable === "object"
+            ? ({ ...createEmptyShoppableTemplate(), ...(templatePayload.shoppable as Partial<ShoppableAd>) })
+            : createEmptyShoppableTemplate(),
+        live:
+          templatePayload?.live && typeof templatePayload.live === "object"
+            ? ({ ...createEmptyLiveTemplate(), ...(templatePayload.live as Partial<LiveInvite>) })
+            : createEmptyLiveTemplate()
+      });
+      setMarketplaceReady(true);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!marketplaceReady) return;
+    void sellerBackendApi.patchLegacyDealzMarketplace({
+      deals: dealz,
+      selectedId,
+      cart,
+      liveCart,
+      suppliers,
+      creators,
+      templates
+    }).catch(() => {});
+  }, [cart, creators, dealz, liveCart, marketplaceReady, selectedId, suppliers, templates]);
 
   function safeNav(url: string) {
     navigate(url);
@@ -2600,10 +2243,10 @@ export default function SupplierDealzMarketplace() {
     setViewerOpen(true);
   }
 
-  // checkout/cart actions (demo)
+  // checkout/cart actions
   function shoppableBuy(ad: ShoppableAd, offerId: string) {
     const url = `/checkout?source=shoppable&adId=${encodeURIComponent(ad.id)}&offerId=${encodeURIComponent(offerId)}&qty=1`;
-    setToast(`Checkout (demo): ${url}`);
+    setToast(`Checkout: ${url}`);
   }
   function shoppableAdd(ad: ShoppableAd, offerId: string) {
     const o = ad.offers.find((x) => x.id === offerId);
@@ -2614,7 +2257,7 @@ export default function SupplierDealzMarketplace() {
   }
   function liveBuy(live: LiveInvite, itemId: string) {
     const url = `/checkout?source=live&sessionId=${encodeURIComponent(live.id)}&itemId=${encodeURIComponent(itemId)}&qty=1`;
-    setToast(`Checkout (demo): ${url}`);
+    setToast(`Checkout: ${url}`);
   }
   function liveAdd(live: LiveInvite, itemId: string) {
     const it = live.featured.find((x) => x.id === itemId);
@@ -2798,7 +2441,7 @@ export default function SupplierDealzMarketplace() {
                 </select>
               </div>
 
-              <Btn tone="ghost" onClick={() => setToast("More filters (demo)")} left={<MoreHorizontal className="h-4 w-4" />}>
+              <Btn tone="ghost" onClick={() => setToast("More filters")} left={<MoreHorizontal className="h-4 w-4" />}>
                 More
               </Btn>
             </div>
@@ -3212,10 +2855,13 @@ export default function SupplierDealzMarketplace() {
       <NewDealzWizard
         open={newOpen}
         onClose={() => setNewOpen(false)}
+        suppliers={suppliers}
+        creators={creators}
+        templates={templates}
         onCreate={(d, behavior) => {
           setDealz((prev) => [d, ...prev]);
           setSelectedId(d.id);
-          setToast("Deal created (demo).");
+          setToast("Deal created.");
           if (behavior === "open-builder") {
             if (d.type === "Shoppable Adz") openAdBuilderFor(d);
             else if (d.type === "Live Sessionz") openLiveBuilderFor(d);

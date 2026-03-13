@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -21,6 +20,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * Tax Hub (Previewable)
@@ -289,61 +289,6 @@ const COUNTRIES = [
   { code: "CN", name: "China" },
 ];
 
-function seedVatProfiles() {
-  const now = Date.now();
-  const ago = (mins) => new Date(now - mins * 60_000).toISOString();
-
-  return [
-    {
-      id: "VAT-UG-001",
-      profileName: "UG Standard VAT",
-      country: "UG",
-      vatId: "UG-1234567",
-      standardRate: 18,
-      reducedRate: 0,
-      status: "Active",
-      isDefault: true,
-      updatedAt: ago(55),
-      notes: "Default VAT profile for domestic sales.",
-    },
-    {
-      id: "VAT-KE-002",
-      profileName: "KE VAT",
-      country: "KE",
-      vatId: "KE-9988123",
-      standardRate: 16,
-      reducedRate: 8,
-      status: "Active",
-      isDefault: false,
-      updatedAt: ago(220),
-      notes: "Supports standard and reduced rate categories.",
-    },
-    {
-      id: "VAT-GB-003",
-      profileName: "UK VAT",
-      country: "GB",
-      vatId: "GB-7711-2233",
-      standardRate: 20,
-      reducedRate: 5,
-      status: "In Review",
-      isDefault: false,
-      updatedAt: ago(1040),
-      notes: "Pending verification.",
-    },
-  ];
-}
-
-function seedPackHistory() {
-  const now = Date.now();
-  const ago = (mins) => new Date(now - mins * 60_000).toISOString();
-
-  return [
-    { id: "PACK-102", scope: "All regions", status: "Ready", createdAt: ago(290), items: 14, size: "6.8 MB" },
-    { id: "PACK-101", scope: "UG only", status: "Ready", createdAt: ago(940), items: 11, size: "5.2 MB" },
-    { id: "PACK-100", scope: "KE + UG", status: "Expired", createdAt: ago(2880), items: 13, size: "6.1 MB" },
-  ];
-}
-
 export default function TaxHubPreviewable() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -356,9 +301,12 @@ export default function TaxHubPreviewable() {
   const [tab, setTab] = useState("VAT Profiles");
   const [region, setRegion] = useState("All");
 
-  const [profiles, setProfiles] = useMockState("settings.tax.vatProfiles", seedVatProfiles());
+  const [profiles, setProfiles] = useState<any[]>([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [packHistory, setPackHistory] = useState<any[]>([]);
+  const hydratedRef = useRef(false);
+  const initialSnapshotRef = useRef("");
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -486,16 +434,64 @@ export default function TaxHubPreviewable() {
 
   // Invoice compliance
   const [invoiceCfg, setInvoiceCfg] = useState({
-    legalName: "EVzone Marketplace",
-    legalAddress: "Millennium House, Nsambya Road 472, Kampala, Uganda",
-    invoiceSeries: "EVZ-INV",
-    nextNumber: 12039,
-    includeVatId: true,
-    requireBuyerTaxIdForB2B: true,
-    showPaymentRail: true,
-    enableCreditNotes: true,
+    legalName: "",
+    legalAddress: "",
+    invoiceSeries: "",
+    nextNumber: 0,
+    includeVatId: false,
+    requireBuyerTaxIdForB2B: false,
+    showPaymentRail: false,
+    enableCreditNotes: false,
     enableEinvoicing: false,
   });
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getTaxSettings();
+        if (!active) return;
+        const nextProfiles = Array.isArray(payload.profiles) ? payload.profiles as any[] : [];
+        const nextPackHistory = Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.packHistory)
+          ? ((payload.metadata as Record<string, unknown>).packHistory as any[])
+          : Array.isArray(payload.reports)
+            ? payload.reports as any[]
+            : [];
+        const nextInvoiceCfg = {
+          legalName: "",
+          legalAddress: "",
+          invoiceSeries: "",
+          nextNumber: 0,
+          includeVatId: false,
+          requireBuyerTaxIdForB2B: false,
+          showPaymentRail: false,
+          enableCreditNotes: false,
+          enableEinvoicing: false,
+          ...(((payload.metadata as Record<string, unknown> | undefined)?.invoiceCfg as Record<string, unknown> | undefined) ?? {})
+        };
+        setProfiles(nextProfiles);
+        setPackHistory(nextPackHistory);
+        setInvoiceCfg(nextInvoiceCfg);
+        initialSnapshotRef.current = JSON.stringify({
+          profiles: nextProfiles,
+          reports: nextPackHistory,
+          metadata: { packHistory: nextPackHistory, invoiceCfg: nextInvoiceCfg }
+        });
+        hydratedRef.current = true;
+      } catch {
+        if (!active) return;
+        pushToast({ title: "Tax settings unavailable", message: "Could not load tax settings.", tone: "warning" });
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    const payload = { profiles, reports: packHistory, metadata: { packHistory, invoiceCfg } };
+    if (JSON.stringify(payload) === initialSnapshotRef.current) return;
+    void sellerBackendApi.patchTaxSettings(payload);
+  }, [profiles, packHistory, invoiceCfg]);
 
   const complianceSignals = useMemo(() => {
     const issues: string[] = [];
@@ -552,7 +548,6 @@ export default function TaxHubPreviewable() {
   };
 
   // Compliance pack
-  const [packHistory, setPackHistory] = useMockState("settings.tax.packHistory", seedPackHistory());
   const [packBusy, setPackBusy] = useState(false);
 
   const packItems = useMemo(

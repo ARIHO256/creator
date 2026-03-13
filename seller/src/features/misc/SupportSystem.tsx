@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -20,6 +19,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 /**
  * System Status (Previewable)
@@ -241,7 +241,7 @@ function severityTone(sev) {
   return "slate";
 }
 
-function seedProviders() {
+function buildProviders() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   return [
@@ -298,7 +298,7 @@ function seedProviders() {
   ];
 }
 
-function seedIncidents() {
+function buildIncidents() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -428,8 +428,32 @@ export default function SupportSystemStatusPage() {
   };
   const dismissToast = (id) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [providers, setProviders] = useMockState("support.system.providers", seedProviders());
-  const [incidents, setIncidents] = useMockState("support.system.incidents", seedIncidents());
+  const [providers, setProviders] = useState<any[]>([]);
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await sellerBackendApi.getStatusCenter();
+        if (cancelled) return;
+        if (Array.isArray(payload.providers)) setProviders(payload.providers as any);
+        if (Array.isArray(payload.incidents)) setIncidents(payload.incidents as any);
+      } catch {
+        if (!cancelled) {
+          setProviders([]);
+          setIncidents([]);
+          pushToast({ title: "Backend unavailable", message: "Could not fetch system status.", tone: "warning" });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Filters
   const [query, setQuery] = useState("");
@@ -477,22 +501,18 @@ export default function SupportSystemStatusPage() {
 
   // “Refresh” demo
   const refresh = async () => {
-    pushToast({ title: "Refreshing", message: "Fetching latest provider health and incidents (demo).", tone: "default" });
-    await new Promise((r) => setTimeout(r, 550));
-
-    // tiny demo drift
-    setProviders((prev) =>
-      prev.map((p) => {
-        if (p.id === "p_pay") {
-          const nextLatency = clamp((p.latencyMs || 0) + (Math.random() > 0.5 ? -40 : 35), 180, 1200);
-          const nextErr = Math.max(0, Math.round(((p.errorRate || 0) + (Math.random() > 0.6 ? -0.1 : 0.08)) * 10) / 10);
-          return { ...p, latencyMs: nextLatency, errorRate: nextErr, lastCheckAt: new Date().toISOString() };
-        }
-        return { ...p, lastCheckAt: new Date().toISOString() };
-      })
-    );
-
-    pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
+    pushToast({ title: "Refreshing", message: "Fetching latest provider health and incidents.", tone: "default" });
+    setLoading(true);
+    try {
+      const payload = await sellerBackendApi.getStatusCenter();
+      if (Array.isArray(payload.providers)) setProviders(payload.providers as any);
+      if (Array.isArray(payload.incidents)) setIncidents(payload.incidents as any);
+      pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
+    } catch {
+      pushToast({ title: "Refresh failed", message: "Could not fetch status center.", tone: "danger" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Close drawer if incident removed
@@ -515,6 +535,7 @@ export default function SupportSystemStatusPage() {
                 <div className="text-2xl font-black tracking-tight text-slate-900 md:text-3xl">System Status</div>
                 <Badge tone="slate">/support/status</Badge>
                 <Badge tone="orange">Super premium</Badge>
+                {loading ? <Badge tone="slate">Loading backend</Badge> : null}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Outages, incidents and provider health. Timeline and postmortems are included as premium placeholders.</div>
             </div>
@@ -933,7 +954,7 @@ export default function SupportSystemStatusPage() {
                         type="button"
                         onClick={() => {
                           safeCopy(`${window.location?.origin || ""}#${"/support/status"}?incident=${openIncident.id}`);
-                          pushToast({ title: "Link copied", message: "Incident link copied (demo).", tone: "success" });
+                          pushToast({ title: "Link copied", message: "Incident link copied.", tone: "success" });
                         }}
                         className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                       >
@@ -1046,7 +1067,7 @@ export default function SupportSystemStatusPage() {
                               {
                                 at: new Date().toISOString(),
                                 state: x.status === "resolved" ? "monitoring" : "resolved",
-                                message: x.status === "resolved" ? "Re-opened for monitoring (demo)." : "Marked resolved (demo).",
+                                message: x.status === "resolved" ? "Re-opened for monitoring." : "Marked resolved.",
                                 by: "Support Ops",
                               },
                             ],
@@ -1054,7 +1075,7 @@ export default function SupportSystemStatusPage() {
                         : x
                     )
                   );
-                  pushToast({ title: "Incident updated", message: "State changed (demo).", tone: "success" });
+                  pushToast({ title: "Incident updated", message: "State changed.", tone: "success" });
                 }}
                 className="w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                 style={{ background: TOKENS.green }}

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BookOpen,
@@ -259,7 +259,7 @@ function ToastCenter({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: strin
   );
 }
 
-function seedTemplates(): Template[] {
+function buildTemplates(): Template[] {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -360,7 +360,22 @@ export default function OpsDocumentsCenterPage() {
 
   const [tab, setTab] = useState("All Templates");
 
-  const [templates, setTemplates] = useMockState<Template[]>("ops.documents.templates", seedTemplates());
+  const [templates, setTemplates] = useState<Template[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getOpsDocuments().then((payload) => {
+      if (!active) return;
+      const rows = Array.isArray((payload as { templates?: unknown[] }).templates)
+        ? ((payload as { templates?: Array<Template> }).templates ?? [])
+        : [];
+      setTemplates(rows);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("All");

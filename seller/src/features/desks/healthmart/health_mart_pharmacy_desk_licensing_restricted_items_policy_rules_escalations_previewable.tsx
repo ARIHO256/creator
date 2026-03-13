@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useMockState } from "../../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   AlertTriangle,
   Check,
@@ -320,7 +320,7 @@ function severityTone(s: EscalationSeverity): BadgeTone {
   return "slate";
 }
 
-function seedLicenses(): License[] {
+function buildLicenses(): License[] {
   const now = Date.now();
   const agoH = (h: number) => new Date(now - h * 3600_000).toISOString();
   const inD = (d: number) => new Date(now + d * 24 * 3600_000).toISOString();
@@ -400,7 +400,7 @@ function restrictionTone(k: RestrictionKey): BadgeTone {
   return "slate";
 }
 
-function seedRestrictedItems(): RestrictedItem[] {
+function buildRestrictedItems(): RestrictedItem[] {
   const now = Date.now();
   const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
 
@@ -452,7 +452,7 @@ function seedRestrictedItems(): RestrictedItem[] {
   ];
 }
 
-function seedRules(): PolicyRule[] {
+function buildRules(): PolicyRule[] {
   return [
     {
       id: "RULE-01",
@@ -481,7 +481,7 @@ function seedRules(): PolicyRule[] {
   ];
 }
 
-function seedCases(): EscalationCase[] {
+function buildCases(): EscalationCase[] {
   const now = Date.now();
   const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
   return [
@@ -554,10 +554,26 @@ export default function HealthMartPharmacyDeskPreviewable() {
 
   const [tab, setTab] = useState<TabKey>("Licensing");
 
-  const [licenses, setLicenses] = useMockState<License[]>("desks.healthmart.pharmacy.licenses", seedLicenses());
-  const [items, setItems] = useMockState<RestrictedItem[]>("desks.healthmart.pharmacy.restrictedItems", seedRestrictedItems());
-  const [rules, setRules] = useMockState<PolicyRule[]>("desks.healthmart.pharmacy.rules", seedRules());
-  const [cases, setCases] = useMockState<EscalationCase[]>("desks.healthmart.pharmacy.cases", seedCases());
+  const [licenses, setLicenses] = useState<License[]>([]);
+  const [items, setItems] = useState<RestrictedItem[]>([]);
+  const [rules, setRules] = useState<PolicyRule[]>([]);
+  const [cases, setCases] = useState<EscalationCase[]>([]);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getRegulatoryDesk("healthmart-pharmacy").then((payload) => {
+      if (!active) return;
+      const pageData = ((payload as { pageData?: Record<string, unknown> }).pageData ?? {}) as Record<string, unknown>;
+      setLicenses(Array.isArray(pageData.licenses) ? pageData.licenses as License[] : []);
+      setItems(Array.isArray(pageData.items) ? pageData.items as RestrictedItem[] : []);
+      setRules(Array.isArray(pageData.rules) ? pageData.rules as PolicyRule[] : []);
+      setCases(Array.isArray(pageData.cases) ? pageData.cases as EscalationCase[] : []);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const pendingLicenses = useMemo(() => licenses.filter((l) => l.status === "Pending").length, [licenses]);
   const flaggedItems = useMemo(() => items.filter((i) => i.status !== "Approved").length, [items]);

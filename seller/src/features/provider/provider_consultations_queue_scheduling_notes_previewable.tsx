@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   Calendar,
   Check,
@@ -372,7 +372,7 @@ function EmptyState({ title, message, action }: { title: string; message: string
   );
 }
 
-function seedConsultations(): Consult[] {
+function buildConsultations(): Consult[] {
   const now = Date.now();
   const minsAgo = (m: number) => new Date(now - m * 60_000).toISOString();
   const inMins = (m: number) => new Date(now + m * 60_000).toISOString();
@@ -512,8 +512,44 @@ export default function ProviderConsultationsPage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [rows, setRows] = useMockState<Consult[]>("provider.consultations.rows", seedConsultations());
-  const [activeId, setActiveId] = useMockState<string | null>("provider.consultations.activeId", seedConsultations()[0]?.id ?? null);
+  const [rows, setRows] = useState<Consult[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi.getProviderConsultations().then((payload) => {
+      if (!active) return;
+      const items = Array.isArray((payload as { consultations?: unknown[] }).consultations)
+        ? ((payload as { consultations?: Array<Record<string, unknown>> }).consultations ?? [])
+        : [];
+      setRows(
+        items.map((entry) => {
+          const data = ((entry.data ?? {}) as Record<string, unknown>);
+          return {
+            id: String(entry.id ?? data.id ?? ""),
+            client: String(data.client ?? "Client"),
+            channel: String(data.channel ?? "Seller"),
+            topic: String(data.topic ?? "Consultation"),
+            status: String(data.status ?? entry.status ?? "New"),
+            priority: String(data.priority ?? "Medium"),
+            createdAt: String(data.createdAt ?? entry.createdAt ?? new Date().toISOString()),
+            lastMessageAt: String(data.lastMessageAt ?? entry.updatedAt ?? new Date().toISOString()),
+            scheduledAt: data.scheduledAt ? String(data.scheduledAt) : null,
+            tags: Array.isArray(data.tags) ? data.tags.map((item) => String(item)) : [],
+            transcript: String(data.transcript ?? ""),
+            notes: String(data.notes ?? ""),
+            summary: (data.summary as ConsultSummary | null | undefined) ?? null,
+            summaryAt: data.summaryAt ? String(data.summaryAt) : null,
+            lastConverted: (data.lastConverted as { type: string; at: string } | null | undefined) ?? null,
+          } satisfies Consult;
+        })
+      );
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
   const active = useMemo(() => rows.find((r) => r.id === activeId) || null, [rows, activeId]);
 
   const [q, setQ] = useState("");
