@@ -5,8 +5,9 @@ import { getCurrentRole } from '../../auth/roles';
 import { clearSession, readSession, updateSession, useSession } from '../../auth/session';
 import type { UserRole } from '../../types/roles';
 import { useLocalization } from '../../localization/LocalizationProvider';
-import { sellerBackendApi } from '../../lib/backendApi';
-import type { NotifCategory, NotifItem } from '../../data/pageTypes';
+import { useMockState } from '../../mocks';
+import { getPageContentByRole } from '../../mock/shared/pageContent';
+import type { NotifCategory, NotifItem } from '../../mock/shared/types';
 import { useThemeMode } from '../../theme/themeMode';
 import {
   Activity,
@@ -217,8 +218,34 @@ const TOKENS = {
 };
 const COLLAPSED_ICON_SCALE = 1.15;
 
+const LS_KEYS = {
+  RECENTS: 'evzone_supplierhub_recents_v9',
+  FAVORITES: 'evzone_supplierhub_favorites_v9',
+  SAVED_VIEWS: 'evzone_supplierhub_saved_views_v9',
+  AUDIT: 'evzone_supplierhub_audit_v9',
+};
+
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
+}
+
+function safeParse<T>(raw: string | null, fallback: T): T {
+  try {
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function lsGet<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback;
+  return safeParse<T>(window.localStorage.getItem(key), fallback);
+}
+
+function lsSet<T>(key: string, value: T) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(key, JSON.stringify(value));
 }
 
 function useHashRoute() {
@@ -688,11 +715,6 @@ function TopBar({
 }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
-
-  const session = useSession();
-  const userName = session?.name || session?.email || session?.phone || 'SellerSeller';
-  const avatarLetter = userName.charAt(0).toUpperCase();
-
   const topTone: 'light' | 'dark' = themeMode === 'dark' ? 'dark' : 'light';
   const topBarBackground =
     themeMode === 'dark'
@@ -861,11 +883,11 @@ function TopBar({
                     themeMode === 'dark' ? 'bg-slate-800 text-slate-100' : 'bg-slate-100 text-slate-700'
                   )}
                 >
-                  {avatarLetter}
+                  S
                   <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
                 </div>
                 <div className="hidden 2xl:block">
-                  <div className="text-xs font-semibold">{userName}</div>
+                  <div className="text-xs font-semibold">SellerSeller</div>
                   <div className={cx('text-[10px]', themeMode === 'dark' ? 'text-slate-300' : 'text-slate-500')}>
                     Supplier
                   </div>
@@ -900,7 +922,7 @@ function TopBar({
                         </div>
                         <div className="min-w-0">
                           <div className="truncate text-sm font-black text-slate-900">
-                            {userName}
+                            SellerSeller
                           </div>
                           <div className="truncate text-xs font-semibold text-slate-500">
                             Supplier account
@@ -1321,8 +1343,6 @@ function DesktopSidebar({
   navBadges?: { messages?: number; notifications?: number; orders?: number; bookings?: number; reviews?: number };
 }) {
   const groups = useSupplierNav(role, navBadges);
-  const session = useSession();
-  const userName = session?.name || session?.email || session?.phone || 'SellerSeller';
   const isDark = themeMode === 'dark';
   const sidebarWidth = collapsed ? PRIMARY_SIDEBAR_COLLAPSED_WIDTH_FLUID : PRIMARY_SIDEBAR_WIDTH_FLUID;
 
@@ -1496,7 +1516,7 @@ function DesktopSidebar({
           {!collapsed && (
             <div className="min-w-0">
               <div className={cx('text-sm font-extrabold leading-tight', isDark ? 'text-slate-100' : 'text-slate-900')}>
-                {userName}
+                SellerSeller
               </div>
               <div className={cx('text-xs font-semibold leading-tight', isDark ? 'text-slate-400' : 'text-slate-500')}>
                 Supplier account
@@ -1533,8 +1553,6 @@ function MobileDrawer({
   navBadges?: { messages?: number; notifications?: number; orders?: number; bookings?: number; reviews?: number };
 }) {
   const groups = useSupplierNav(role, navBadges);
-  const session = useSession();
-  const userName = session?.name || session?.email || session?.phone || 'SellerSeller';
   const isDark = themeMode === 'dark';
 
   return (
@@ -1671,7 +1689,7 @@ function MobileDrawer({
                   </span>
                   <div className="min-w-0">
                     <div className={cx('truncate text-sm font-extrabold', isDark ? 'text-slate-100' : 'text-slate-900')}>
-                      {userName}
+                      SellerSeller
                     </div>
                     <div className={cx('truncate text-xs font-semibold', isDark ? 'text-slate-400' : 'text-slate-500')}>
                       Supplier account
@@ -3221,8 +3239,8 @@ function SupplierPlaceholder({
               onClick={() => {
                 logAudit({
                   actor: 'SellerSeller',
-                  action: 'action recorded',
-                  detail: 'Audit entry',
+                  action: 'action simulated',
+                  detail: 'Demo audit entry',
                   route: path,
                 });
                 pushToast({
@@ -5177,29 +5195,7 @@ export default function EVzoneSupplierHubAppShellV9({
         next === 'provider'
           ? Array.from(new Set([...currentRoles.filter((r) => r !== 'seller'), 'provider']))
           : currentRoles.filter((r) => r !== 'provider');
-      void sellerBackendApi
-        .switchAuthRole({ role: String(next).toUpperCase() })
-        .then((payload) => {
-          updateSession({
-            role: next,
-            roles: nextRoles as Role[],
-            accessToken:
-              typeof payload.accessToken === 'string' && payload.accessToken.trim()
-                ? payload.accessToken
-                : current.accessToken,
-            refreshToken:
-              typeof payload.refreshToken === 'string' && payload.refreshToken.trim()
-                ? payload.refreshToken
-                : current.refreshToken,
-            token:
-              typeof payload.accessToken === 'string' && payload.accessToken.trim()
-                ? payload.accessToken
-                : current.token
-          });
-        })
-        .catch(() => {
-          updateSession({ role: next, roles: nextRoles as Role[] });
-        });
+      updateSession({ role: next, roles: nextRoles as Role[] });
     },
     []
   );
@@ -5226,64 +5222,35 @@ export default function EVzoneSupplierHubAppShellV9({
   }, []);
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [audit, setAudit] = useState<AuditEvent[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    void sellerBackendApi
-      .getUiState()
-      .then((payload) => {
-        if (cancelled) return;
-        const shell = (payload.shell as Record<string, unknown> | undefined) || {};
-        const nextAudit = Array.isArray((shell as any).auditFeed) ? ((shell as any).auditFeed as AuditEvent[]) : [];
-        const nextRecents = Array.isArray((shell as any).recentsRoutes) ? ((shell as any).recentsRoutes as string[]) : [];
-        const nextFavorites = Array.isArray((shell as any).favoriteRoutes)
-          ? ((shell as any).favoriteRoutes as string[])
-          : [];
-        setAudit(nextAudit);
-        setRecents(nextRecents);
-        setFavorites(nextFavorites);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [audit, setAudit] = useState<AuditEvent[]>(() => lsGet<AuditEvent[]>(LS_KEYS.AUDIT, []));
+  useEffect(() => lsSet(LS_KEYS.AUDIT, audit), [audit]);
   const logAudit = useCallback((e: Omit<AuditEvent, 'id' | 'at'>) => {
-    setAudit((s) => {
-      const next = [{ id: makeId('audit'), at: nowIso(), ...e }, ...s].slice(0, 200);
-      void sellerBackendApi
-        .patchUiState({ shell: { auditFeed: next } })
-        .catch(() => undefined);
-      return next;
-    });
+    setAudit((s) => [{ id: makeId('audit'), at: nowIso(), ...e }, ...s].slice(0, 200));
   }, []);
 
-  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    void sellerBackendApi
-      .getSavedViews()
-      .then((payload) => {
-        if (cancelled) return;
-        const views = Array.isArray((payload as any).views) ? ((payload as any).views as SavedView[]) : [];
-        setSavedViews(views);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [savedViews, setSavedViews] = useState<SavedView[]>(() => {
+    const existing = lsGet<SavedView[]>(LS_KEYS.SAVED_VIEWS, []);
+    if (existing.length) return existing;
+    return [
+      {
+        id: makeId('view'),
+        name: 'Wholesale RFQs: last 7 days · urgent',
+        route: '/wholesale/rfq',
+        group: 'RFQs',
+        pinned: true,
+        note: 'Quick access view',
+      },
+    ];
+  });
+  useEffect(() => lsSet(LS_KEYS.SAVED_VIEWS, savedViews), [savedViews]);
   const saveView = useCallback((v: Omit<SavedView, 'id'>) => {
-    setSavedViews((s) => {
-      const next = [{ id: makeId('view'), ...v }, ...s].slice(0, 30);
-      void sellerBackendApi
-        .patchSavedViews({ views: next })
-        .catch(() => undefined);
-      return next;
-    });
+    setSavedViews((s) => [{ id: makeId('view'), ...v }, ...s].slice(0, 30));
   }, []);
 
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favorites, setFavorites] = useMockState<string[]>(
+    'shell.favorites',
+    lsGet<string[]>(LS_KEYS.FAVORITES, [])
+  );
   const isFavorite = favorites.includes(path);
   const toggleFavorite = () => {
     setFavorites((s) => {
@@ -5292,14 +5259,12 @@ export default function EVzoneSupplierHubAppShellV9({
         title: s.includes(path) ? 'Removed from favorites' : 'Added to favorites',
         tone: 'default',
       });
-      void sellerBackendApi
-        .patchUiState({ shell: { favoriteRoutes: next } })
-        .catch(() => undefined);
       return next.slice(0, 40);
     });
   };
 
-  const [recents, setRecents] = useState<string[]>([]);
+  const [recents, setRecents] = useState<string[]>(() => lsGet<string[]>(LS_KEYS.RECENTS, []));
+  useEffect(() => lsSet(LS_KEYS.RECENTS, recents), [recents]);
 
   useEffect(() => {
     const raw = location.hash?.replace(/^#/, '');
@@ -5321,13 +5286,7 @@ export default function EVzoneSupplierHubAppShellV9({
       if (getShellKey(cleaned) !== 'core') {
         setSecondarySidebarOpen(true);
       }
-      setRecents((s) => {
-        const next = [cleaned, ...s.filter((x) => x !== cleaned)].slice(0, 20);
-        void sellerBackendApi
-          .patchUiState({ shell: { recentsRoutes: next } })
-          .catch(() => undefined);
-        return next;
-      });
+      setRecents((s) => [cleaned, ...s.filter((x) => x !== cleaned)].slice(0, 20));
       routerNavigate(cleaned);
       setShellMenuOpen(false);
     },
@@ -5351,80 +5310,34 @@ export default function EVzoneSupplierHubAppShellV9({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const [notifItems, setNotifItems] = useState<NotifItem[]>([]);
-  const [unreadMessages, setUnreadMessages] = useState(0);
-  const [ordersCount, setOrdersCount] = useState(0);
-  const [bookingsCount, setBookingsCount] = useState(0);
-  const [reviewsCount, setReviewsCount] = useState(0);
-  const [notifCategories, setNotifCategories] = useState<NotificationCategory[]>(['All']);
+  const notificationsContent = useMemo(() => getPageContentByRole('notifications', role), [role]);
+  const [notifItems, setNotifItems] = useState<NotifItem[]>(() => notificationsContent.items);
   useEffect(() => {
-    let cancelled = false;
-    void sellerBackendApi
-      .getNotifications()
-      .then((payload) => {
-        if (cancelled) return;
-        const nextItems = Array.isArray(payload) ? (payload as NotifItem[]) : [];
-        setNotifItems(nextItems);
-        const nextCategories = Array.from(
-          new Set(nextItems.map((item) => item.category).filter(Boolean))
-        ) as NotificationCategory[];
-        setNotifCategories(['All', ...nextCategories]);
-      })
-      .catch(() => undefined);
-    void sellerBackendApi
-      .getMessages()
-      .then((payload) => {
-        if (cancelled) return;
-        const threads = Array.isArray((payload as { threads?: unknown[] }).threads)
-          ? ((payload as { threads?: Array<{ unreadCount?: number }> }).threads ?? [])
-          : [];
-        setUnreadMessages(threads.reduce((sum, thread) => sum + Number(thread.unreadCount ?? 0), 0));
-      })
-      .catch(() => undefined);
-    if (role === 'provider') {
-      void Promise.allSettled([
-        sellerBackendApi.getProviderBookings(),
-        sellerBackendApi.getProviderReviews(),
-      ]).then(([bookingsResult, reviewsResult]) => {
-        if (cancelled) return;
-        const bookings = bookingsResult.status === 'fulfilled' && Array.isArray((bookingsResult.value as { bookings?: unknown[] }).bookings)
-          ? ((bookingsResult.value as { bookings?: unknown[] }).bookings ?? [])
-          : [];
-        const reviews = reviewsResult.status === 'fulfilled' && Array.isArray((reviewsResult.value as { reviews?: unknown[] }).reviews)
-          ? ((reviewsResult.value as { reviews?: unknown[] }).reviews ?? [])
-          : [];
-        setOrdersCount(0);
-        setBookingsCount(bookings.length);
-        setReviewsCount(reviews.length);
-      }).catch(() => undefined);
-    } else {
-      void Promise.allSettled([
-        sellerBackendApi.getSellerOrders(),
-        sellerBackendApi.getReviewsSummary(),
-      ]).then(([ordersResult, reviewsResult]) => {
-        if (cancelled) return;
-        const orders = ordersResult.status === 'fulfilled' && Array.isArray((ordersResult.value as { orders?: unknown[] }).orders)
-          ? ((ordersResult.value as { orders?: unknown[] }).orders ?? [])
-          : [];
-        setOrdersCount(orders.length);
-        setBookingsCount(0);
-        setReviewsCount(
-          reviewsResult.status === 'fulfilled'
-            ? Number((reviewsResult.value as { total?: number }).total ?? 0)
-            : 0
-        );
-      }).catch(() => undefined);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [role]);
+    setNotifItems(notificationsContent.items);
+  }, [notificationsContent]);
+  const notifCategories = notificationsContent.categories;
 
   const unreadNotifs = useMemo(() => notifItems.filter((n) => n.unread).length, [notifItems]);
   const notifBadgeCount = useMemo(
     () => (unreadNotifs > 0 ? unreadNotifs : notifItems.length),
     [unreadNotifs, notifItems]
   );
+  const unreadMessages = useMemo(() => {
+    const content = getPageContentByRole('messages', role);
+    return content.threads.reduce((sum, t) => sum + (t.unreadCount ?? 0), 0);
+  }, [role]);
+  const ordersContent = useMemo(() => getPageContentByRole('orders', role), [role]);
+  const ordersCount = ordersContent.orders?.length ?? 0;
+  const bookingsCount = ordersContent.bookings?.length ?? 0;
+  const reviewsCount = useMemo(() => {
+    if (role === 'provider') {
+      const providerReviews = lsGet<Array<unknown>>('provider.reviews', []);
+      return providerReviews.length || 6;
+    }
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem('seller.reviews.count') : null;
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 21;
+  }, [role, path]);
 
   const supplierNav = useSupplierNav(role, {
     messages: unreadMessages,

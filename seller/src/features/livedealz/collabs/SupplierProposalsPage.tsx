@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 /**
  * SupplierProposalsPage.jsx
@@ -31,11 +30,6 @@ import { useNavigate } from "react-router-dom";
  */
 
 const ORANGE = "#f77f00";
-const ROUTES = {
-  campaignsBoard: "/mldz/collab/campaigns",
-  contracts: "/mldz/collab/contracts",
-  negotiationRoom: "/mldz/collab/negotiation-room",
-};
 
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
@@ -116,6 +110,166 @@ function PageHeader({ pageTitle, badge, right }) {
 }
 
 /* ------------------------------- Data ----------------------------------- */
+
+const PROPOSALS = [
+  {
+    id: "SP-901",
+    creator: "Lilian Beauty Plug",
+    initials: "LB",
+    campaign: "GlowUp Serum Promo",
+    origin: "from-creator", // from-creator | my-proposal
+    offerType: "Live session package",
+    category: "Beauty",
+    region: "East Africa",
+    baseFeeMin: 320,
+    baseFeeMax: 480,
+    currency: "USD",
+    commissionPct: 5,
+    estimatedValue: 1200,
+    status: "In negotiation", // Draft | New | In negotiation | Accepted | Declined | Expired
+    lastActivity: "Countered terms · 2h ago",
+    notesShort: "Creator proposes 60–90 min live + 3 clips with 5% commission during flash dealz.",
+
+    // Supplier campaign context
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    proposalSource: "Open Collabs",
+    deliverables: ["Live", "Clips", "Posts"],
+    scheduleHint: "Next Friday",
+    reviewSlaHours: 6
+  },
+  {
+    id: "SP-902",
+    creator: "TechWithBrian",
+    initials: "TB",
+    campaign: "Tech Friday Mega",
+    origin: "my-proposal",
+    offerType: "Launch live series (3 episodes)",
+    category: "Tech",
+    region: "Africa / Asia",
+    baseFeeMin: 900,
+    baseFeeMax: 1400,
+    currency: "USD",
+    commissionPct: 0,
+    estimatedValue: 1600,
+    status: "New",
+    lastActivity: "Sent to creator · Yesterday",
+    notesShort: "You proposed a 3-episode Tech Friday series with mid-ticket gadgets and bundle closes.",
+
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-Only",
+    approvalMode: "Auto",
+    proposalSource: "Invite-Only",
+    deliverables: ["Live", "Posts"],
+    scheduleHint: "Next week",
+    reviewSlaHours: 6
+  },
+  {
+    id: "SP-903",
+    creator: "Grace Faith Wellness",
+    initials: "GW",
+    campaign: "Faith & Wellness Morning Dealz",
+    origin: "my-proposal",
+    offerType: "Morning lives + Shoppable Adz",
+    category: "Faith-compatible",
+    region: "Africa",
+    baseFeeMin: 260,
+    baseFeeMax: 360,
+    currency: "USD",
+    commissionPct: 0,
+    estimatedValue: 520,
+    status: "Draft",
+    lastActivity: "Draft saved · 1 day ago",
+    notesShort: "Draft proposal – not yet sent. Waiting for campaign collaboration mode confirmation.",
+
+    creatorUsageDecision: "I am NOT SURE yet",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    proposalSource: "Open Collabs",
+    deliverables: ["Live", "Adz"],
+    scheduleHint: "This month",
+    reviewSlaHours: 6
+  },
+  {
+    id: "SP-904",
+    creator: "Amina K.",
+    initials: "AK",
+    campaign: "Beauty Flash Dealz",
+    origin: "from-creator",
+    offerType: "Live (1x) + 2 clips",
+    category: "Beauty",
+    region: "East Africa",
+    baseFeeMin: 280,
+    baseFeeMax: 280,
+    currency: "USD",
+    commissionPct: 6,
+    estimatedValue: 950,
+    status: "Accepted",
+    lastActivity: "Accepted · 4 days ago",
+    notesShort: "Accepted. Next step is Contract + scheduling. Creator requested faster approvals for clips.",
+
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-Only",
+    approvalMode: "Manual",
+    proposalSource: "Invites from Creators",
+    deliverables: ["Live", "Clips"],
+    scheduleHint: "This week",
+    reviewSlaHours: 6
+  },
+  {
+    id: "SP-905",
+    creator: "EV Gadgets Daily",
+    initials: "EG",
+    campaign: "EV Accessories Launch",
+    origin: "from-creator",
+    offerType: "Live + Shoppables.",
+    category: "EV",
+    region: "Global",
+    baseFeeMin: 350,
+    baseFeeMax: 500,
+    currency: "USD",
+    commissionPct: 4,
+    estimatedValue: 600,
+    status: "Declined",
+    lastActivity: "Declined · last week",
+    notesShort: "Declined due to timing. Consider revisiting when supplier campaign window opens.",
+
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Auto",
+    proposalSource: "Open Collabs",
+    deliverables: ["Adz", "Live"],
+    scheduleHint: "Next quarter",
+    reviewSlaHours: 6
+  },
+  {
+    id: "SP-906",
+    creator: "(Supplier-hosted)",
+    initials: "SY",
+    campaign: "Supplier-hosted EV Accessories Showcase",
+    origin: "from-creator",
+    offerType: "Creator wants to join supplier-hosted live",
+    category: "EV",
+    region: "Global",
+    baseFeeMin: 200,
+    baseFeeMax: 350,
+    currency: "USD",
+    commissionPct: 3,
+    estimatedValue: 480,
+    status: "New",
+    lastActivity: "New proposal · Today",
+    notesShort: "This campaign is configured as supplier-hosted. You must switch Creator Usage to accept creator involvement.",
+
+    creatorUsageDecision: "I will NOT use a Creator",
+    collabMode: "n/a",
+    approvalMode: "Manual",
+    proposalSource: "N/A",
+    deliverables: ["Live"],
+    scheduleHint: "Next month",
+    reviewSlaHours: 6
+  }
+];
 
 const TABS = [
   { id: "all", label: "All" },
@@ -668,7 +822,7 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, onOpenDr
         {proposal.status === "In negotiation" ? (
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <button
-              onClick={() => window.location.assign(ROUTES.negotiationRoom)}
+              onClick={() => toast("Go to Negotiation Room (demo)")}
               className="w-full px-4 py-2 rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 font-bold text-[11px] hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-all"
               type="button"
             >
@@ -779,9 +933,16 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, onOpenDr
             <button
               type="button"
               className="px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-extrabold text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800"
-              onClick={() => window.location.assign(ROUTES.contracts)}
+              onClick={() => toast("Open Contracts (demo)")}
             >
               View Contract
+            </button>
+            <button
+              type="button"
+              className="px-4 py-2 rounded-2xl bg-[#f77f00] text-white text-[11px] font-extrabold hover:bg-[#e26f00]"
+              onClick={() => toast("Generate Contract from proposal (demo)")}
+            >
+              Generate / Confirm Contract
             </button>
           </div>
         ) : null}
@@ -812,17 +973,18 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, onOpenDr
 /* -------------------------------- Main ---------------------------------- */
 
 export default function SupplierProposalsPage() {
-  const navigate = useNavigate();
-  const [proposals, setProposals] = useState<Array<Record<string, any>>>([]);
+  const [proposals, setProposals] = useState(PROPOSALS);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [minBudget, setMinBudget] = useState("");
-  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [selectedProposalId, setSelectedProposalId] = useState(PROPOSALS[0]?.id ?? null);
   const [expandedProposalId, setExpandedProposalId] = useState(null);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerProposalId, setDrawerProposalId] = useState(null);
+
+  const [dataState, setDataState] = useState("ready"); // ready | loading | error
 
   const { run, isPending } = useAsyncAction();
 
@@ -940,7 +1102,7 @@ export default function SupplierProposalsPage() {
             </span>
             <button
               className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors"
-              onClick={() => navigate(ROUTES.campaignsBoard)}
+              onClick={() => toast("Open Campaigns Board (demo)")}
               type="button"
             >
               View Campaigns Board
@@ -948,10 +1110,20 @@ export default function SupplierProposalsPage() {
             <button
               className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white font-extrabold hover:bg-[#e26f00]"
               onClick={() => selectedProposal && openDrawer(selectedProposal)}
-              disabled={!selectedProposal}
               type="button"
             >
               Counter / Negotiate
+            </button>
+            <button
+              className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors"
+              onClick={() => {
+                setDataState((s) => (s === "ready" ? "loading" : s === "loading" ? "error" : "ready"));
+                toast("Toggled data state (demo)");
+              }}
+              type="button"
+              title="Toggle loading/error (demo)"
+            >
+              ⚙️
             </button>
           </>
         }
@@ -969,7 +1141,7 @@ export default function SupplierProposalsPage() {
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <button
                 className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors"
-                onClick={() => navigate(ROUTES.contracts)}
+                onClick={() => toast("Open Contracts (demo)")}
                 type="button"
               >
                 Open Contracts
@@ -1071,6 +1243,35 @@ export default function SupplierProposalsPage() {
             </div>
           </section>
 
+          {/* Error state */}
+          {dataState === "error" ? (
+            <section className="rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 p-4">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-2xl bg-rose-100 dark:bg-rose-900/20 flex items-center justify-center">⚠️</div>
+                <div className="min-w-0">
+                  <div className="text-sm font-extrabold text-rose-900 dark:text-rose-200">Proposals failed to load</div>
+                  <div className="text-xs text-rose-800 dark:text-rose-300 mt-1">Check connectivity or try again. (Demo error state)</div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-full bg-slate-900 text-white text-[11px] font-extrabold"
+                      onClick={() => setDataState("ready")}
+                    >
+                      Retry
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded-full border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-900 text-[11px] font-extrabold text-rose-700 dark:text-rose-300"
+                      onClick={() => toast("Open AI helper (demo)")}
+                    >
+                      Open AI helper
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {/* Main layout: list + detail */}
           <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1.2fr)] gap-3 items-start text-sm">
             {/* List */}
@@ -1107,7 +1308,7 @@ export default function SupplierProposalsPage() {
             {/* Detail panel (Desktop only) */}
             <div className="hidden lg:block bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 lg:sticky lg:top-20">
               <ProposalDetailPanel
-                proposal={selectedProposal}
+                proposal={dataState === "ready" ? selectedProposal : null}
                 onAccept={handleAcceptProposal}
                 onDecline={handleDeclineProposal}
                 onOpenDrawer={() => selectedProposal && openDrawer(selectedProposal)}

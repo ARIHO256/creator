@@ -35,7 +35,7 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { useRolePageContent } from "../../data/pageContent";
+import { useRolePageContent } from "../../mock/shared/pageContent";
 import type {
   AttachmentType,
   ChatMessage,
@@ -43,8 +43,7 @@ import type {
   MessageTemplate,
   MessageThread,
   ThreadTag,
-} from "../../data/pageTypes";
-import { sellerBackendApi } from "../../lib/backendApi";
+} from "../../mock/shared/types";
 
 /**
  * SupplierHub Premium Messages Page
@@ -389,7 +388,7 @@ function Drawer({
   );
 }
 
-// Page content now comes from backend domain loaders via useRolePageContent.
+// Demo data now lives in src/mock/* and is selected via useRolePageContent.
 
 function EmptyState({ title, message }: { title: string; message: string }) {
   return (
@@ -444,7 +443,7 @@ export default function MessagesPage({
   role?: Role;
   onNavigate?: NavigateFn;
 }) {
-  const { role: activeRole, content } = useRolePageContent("messages", role);
+  const { role: activeRole, content, updateContent } = useRolePageContent("messages", role);
   const navigate: NavigateFn =
     onNavigate ??
     ((to: string) => {
@@ -456,17 +455,23 @@ export default function MessagesPage({
   const [templates, setTemplates] = useState<Template[]>(content.templates);
   const setThreadsPersist = (updater: ((prev: Thread[]) => Thread[]) | Thread[]) => {
     setThreads((prev) => {
-      return typeof updater === "function" ? (updater as (prev: Thread[]) => Thread[])(prev) : updater;
+      const next = typeof updater === "function" ? (updater as (prev: Thread[]) => Thread[])(prev) : updater;
+      updateContent((current) => ({ ...current, threads: next }));
+      return next;
     });
   };
   const setMessagesPersist = (updater: ((prev: ChatMessage[]) => ChatMessage[]) | ChatMessage[]) => {
     setMessages((prev) => {
-      return typeof updater === "function" ? (updater as (prev: ChatMessage[]) => ChatMessage[])(prev) : updater;
+      const next = typeof updater === "function" ? (updater as (prev: ChatMessage[]) => ChatMessage[])(prev) : updater;
+      updateContent((current) => ({ ...current, messages: next }));
+      return next;
     });
   };
   const setTemplatesPersist = (updater: ((prev: Template[]) => Template[]) | Template[]) => {
     setTemplates((prev) => {
-      return typeof updater === "function" ? (updater as (prev: Template[]) => Template[])(prev) : updater;
+      const next = typeof updater === "function" ? (updater as (prev: Template[]) => Template[])(prev) : updater;
+      updateContent((current) => ({ ...current, templates: next }));
+      return next;
     });
   };
 
@@ -549,7 +554,6 @@ export default function MessagesPage({
   const openThread = (id: string) => {
     setSelectedThreadId(id);
     setThreadsPersist((s) => s.map((t) => (t.id === id ? { ...t, unreadCount: 0 } : t)));
-    void sellerBackendApi.markMessageThreadRead(id).catch(() => undefined);
     setMobilePane("thread");
   };
 
@@ -611,18 +615,6 @@ export default function MessagesPage({
           : t
       )
     );
-    void sellerBackendApi
-      .replyMessageThread(selectedThread.id, {
-        text,
-        lang: "en",
-        attachments: cleanAttachments,
-      })
-      .then((payload) => {
-        if (Array.isArray(payload.messages)) {
-          setMessages(payload.messages as ChatMessage[]);
-        }
-      })
-      .catch(() => undefined);
 
     pushToast({ title: "Sent", message: "Message delivered to thread.", tone: "success" });
 
@@ -1247,11 +1239,7 @@ export default function MessagesPage({
                   <button
                     type="button"
                     onClick={() => {
-                      setTemplatesPersist((s) => {
-                        const next = s.map((x) => (x.id === tpl.id ? { ...x, pinned: !x.pinned } : x));
-                        void sellerBackendApi.patchMessageTemplates({ templates: next }).catch(() => undefined);
-                        return next;
-                      });
+                      setTemplatesPersist((s) => s.map((x) => (x.id === tpl.id ? { ...x, pinned: !x.pinned } : x)));
                       pushToast({ title: tpl.pinned ? "Unpinned" : "Pinned", message: tpl.title, tone: "default" });
                     }}
                     className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
@@ -1299,7 +1287,7 @@ export default function MessagesPage({
                       </div>
                       <div>
                         <div className="text-sm font-extrabold text-slate-900">{attachmentOpen.name}</div>
-                        <div className="mt-1 text-xs font-semibold text-slate-500">Preview not available for this file type in current mode.</div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500">Preview not available for this file type in demo mode.</div>
                       </div>
                     </div>
                   )}
@@ -1521,7 +1509,7 @@ function ConvertWizard({
               onClick={() => {
                 onToast({
                   title: "Created",
-                  message: `${primaryLabel} created from chat.`,
+                  message: `${primaryLabel} created from chat (demo).`,
                   tone: "success",
                   action: { label: "Open", onClick: () => onNavigate(primaryTo) },
                 });

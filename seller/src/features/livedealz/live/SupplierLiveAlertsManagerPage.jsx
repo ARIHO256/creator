@@ -13,7 +13,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
  * - Destinations list with toggles + per-channel “Pin link to chat” helper
  * - Preview panel (selected alert) + copy + send-with-confirm
  * - Recommended cadence cards
- * - Confirm modal with Preflight checks + editable draft + phone preview
+ * - Confirm modal with Preflight checks + editable draft + phone mock preview
  *
  * Supplier adaptations (minimal + required):
  * - Role copy: Supplier App → Live → Live Alerts Manager
@@ -22,7 +22,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
  *
  * Notes:
  * - Canvas-safe: no MUI, no lucide-react, no external contexts/hooks.
- * - Replace live data with real Campaign/Session state from your store + routing.
+ * - Replace mock data with real Campaign/Session state from your store + routing.
  * - RBAC comments included where you’d gate send/manage actions.
  */
 
@@ -487,7 +487,7 @@ export default function SupplierLiveAlertsManagerPage() {
   const [dealName, setDealName] = useState("GlowUp Serum Bundle");
   const [dealEndsMinutes, setDealEndsMinutes] = useState(10);
 
-  // cap timestamps
+  // cap timestamps (demo)
   const [lastSent, setLastSent] = useState({
     were_live: Date.now() - 11 * 60 * 1000,
     flash_deal: Date.now() - 20 * 60 * 1000,
@@ -552,11 +552,11 @@ export default function SupplierLiveAlertsManagerPage() {
     // RBAC: require supplier.live.alerts.send permission.
     run(
       async () => {
-        // local network delay
+        // simulate network
         await new Promise((r) => setTimeout(r, 600));
         setLastSent((s) => ({ ...s, [active.key]: Date.now() }));
 
-        // Supplier add-on: create creator request tasks
+        // Supplier add-on: create creator request tasks (demo)
         if (campaign.creatorUsageDecision === "I will use a Creator" && alsoRequestCreator && selectedCreatorIds.length > 0) {
           await new Promise((r) => setTimeout(r, 250));
         }
@@ -887,7 +887,7 @@ export default function SupplierLiveAlertsManagerPage() {
                           />
                           <Btn
                             tone="ghost"
-                            onClick={() => push("Manage account", "info")}
+                            onClick={() => push("Manage account (demo)", "info")}
                             left={<Link2 className="h-4 w-4" />}
                             title="RBAC: supplier.live.alerts.manage"
                           >
@@ -1104,7 +1104,7 @@ export default function SupplierLiveAlertsManagerPage() {
                 <div className="rounded-2xl bg-neutral-900 dark:bg-black p-3 transition">
                   <div className="rounded-2xl bg-white dark:bg-slate-900 p-3">
                     <div className="mb-2 flex items-center justify-between">
-                      <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">Phone preview</div>
+                      <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">Phone mock</div>
                       <Pill>
                         <Phone className="h-3.5 w-3.5" />
                         Preview

@@ -24,7 +24,7 @@ import React, { useMemo, useState } from "react";
  * - Includes role-awareness concept: “Supplier acting as creator” permissions (campaign/content execution without external creators).
  *
  * Notes:
- * - UI-only live data; wire to your RBAC + API.
+ * - UI-only demo data; wire to your RBAC + API.
  * - No external icon libraries to keep the canvas runnable.
  */
 
@@ -757,7 +757,7 @@ export default function SupplierRolesPermissionsPage() {
   const [allowExternalInvites, setAllowExternalInvites] = useState(false);
   const [creatorGuestExpiryHours, setCreatorGuestExpiryHours] = useState(24);
 
-  // local UI states
+  // demo states
   const [dataState, setDataState] = useState("ready"); // ready | loading | error
 
   const permIndex = useMemo(() => {
@@ -878,7 +878,7 @@ export default function SupplierRolesPermissionsPage() {
       return;
     }
 
-    // External invite guardrail
+    // External invite guardrail (demo)
     const domain = (email.split("@")[1] || "").toLowerCase();
     const internal = ["supplierhub.com", "evzone.com"].includes(domain);
     if (!internal && !allowExternalInvites) {
@@ -964,10 +964,10 @@ export default function SupplierRolesPermissionsPage() {
             <SmallBtn
               tone="ghost"
               icon={<Settings className="h-4 w-4" />}
-              title="Toggle loading/error"
+              title="Toggle loading/error (demo)"
               onClick={() => {
                 setDataState((s) => (s === "ready" ? "loading" : s === "loading" ? "error" : "ready"));
-                push("Toggled data state");
+                push("Toggled data state (demo)");
               }}
             >
               State
@@ -1037,7 +1037,7 @@ export default function SupplierRolesPermissionsPage() {
           </div>
         </div>
 
-        {/* Error state */}
+        {/* Error state (demo) */}
         {dataState === "error" ? (
           <div className="rounded-3xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 p-4">
             <div className="flex items-start gap-2">
@@ -1366,7 +1366,7 @@ export default function SupplierRolesPermissionsPage() {
                         <td className="py-3 px-1 text-sm text-slate-700 dark:text-slate-300 font-semibold">{m.lastActiveLabel}</td>
                         <td className="py-3 px-1">
                           <div className="flex items-center justify-end gap-1">
-                            <SmallBtn tone="ghost" icon={<Pencil className="h-4 w-4" />} onClick={() => push("Open member details.")}>
+                            <SmallBtn tone="ghost" icon={<Pencil className="h-4 w-4" />} onClick={() => push("Open member details (demo).")}>
                               Details
                             </SmallBtn>
                             {m.status === "Active" ? (
@@ -1530,13 +1530,13 @@ export default function SupplierRolesPermissionsPage() {
             <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
               <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Quick actions</div>
               <div className="mt-3 flex flex-col gap-2">
-                <SmallBtn icon={<ExternalLink className="h-4 w-4" />} onClick={() => push("Open Creator Directory.")}> 
+                <SmallBtn icon={<ExternalLink className="h-4 w-4" />} onClick={() => push("Open Creator Directory (demo).")}> 
                   Creator directory
                 </SmallBtn>
-                <SmallBtn icon={<ShieldCheck className="h-4 w-4" />} onClick={() => push("Review creator access policies.")}> 
+                <SmallBtn icon={<ShieldCheck className="h-4 w-4" />} onClick={() => push("Review creator access policies (demo).")}> 
                   Review access
                 </SmallBtn>
-                <SmallBtn icon={<AlertTriangle className="h-4 w-4" />} onClick={() => push("Report incident to Ops.")} tone="danger">
+                <SmallBtn icon={<AlertTriangle className="h-4 w-4" />} onClick={() => push("Report incident to Ops (demo).")} tone="danger">
                   Incident report
                 </SmallBtn>
               </div>
@@ -1598,7 +1598,7 @@ export default function SupplierRolesPermissionsPage() {
               </div>
 
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
-                <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Device & session policies</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Device & session policies (demo)</div>
                 <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">Add device list, login sessions, and revocation controls here.</div>
               </div>
             </div>
@@ -1609,7 +1609,7 @@ export default function SupplierRolesPermissionsPage() {
                   <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Audit log</div>
                   <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">High-signal events: role changes, invites, approvals, payouts, safety incidents.</div>
                 </div>
-                <SmallBtn icon={<Copy className="h-4 w-4" />} onClick={() => push("Export audit.")}>
+                <SmallBtn icon={<Copy className="h-4 w-4" />} onClick={() => push("Export audit (demo).")}>
                   Export
                 </SmallBtn>
               </div>

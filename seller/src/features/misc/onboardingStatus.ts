@@ -1,10 +1,9 @@
 // Lightweight helpers to keep registration flows on the onboarding track (per user)
 import type { UserRole } from "../../types/roles";
 import type { Session } from "../../types/session";
-import { hasSessionToken, readSession } from "../../auth/session";
-import { sellerBackendApi } from "../../lib/backendApi";
 
 const STATUS_DONE = ["APPROVED", "SUBMITTED"] as const;
+const STATUS_MAP_KEY = "onboarding_status_map_v1";
 export const ONBOARDING_KEYS: Record<UserRole, string> = {
   seller: "seller_onb_pro_v3",
   provider: "provider_onb_pro_v31",
@@ -12,31 +11,24 @@ export const ONBOARDING_KEYS: Record<UserRole, string> = {
 
 type StatusMap = Record<string, string>;
 
-let statusMapCache: StatusMap = {};
-let statusMapBootstrapped = false;
-
 const readMap = (): StatusMap => {
-  if (!statusMapBootstrapped && typeof window !== "undefined" && hasSessionToken(readSession())) {
-    statusMapBootstrapped = true;
-    void sellerBackendApi
-      .getUiState()
-      .then((payload) => {
-        const next = (payload.onboarding as { statusMap?: StatusMap } | undefined)?.statusMap;
-        if (next && typeof next === "object") {
-          statusMapCache = next;
-        }
-      })
-      .catch(() => undefined);
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(STATUS_MAP_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === "object" ? obj : {};
+  } catch {
+    return {};
   }
-  return statusMapCache;
 };
 
 const writeMap = (map: StatusMap) => {
-  statusMapCache = map;
-  if (!hasSessionToken(readSession())) {
-    return;
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STATUS_MAP_KEY, JSON.stringify(map));
+  } catch {
+    /* noop */
   }
-  void sellerBackendApi.patchUiState({ onboarding: { statusMap: map } }).catch(() => undefined);
 };
 
 const getUserKey = (role: UserRole = "seller", userInput: Session | null = null) => {
@@ -48,8 +40,20 @@ const getUserKey = (role: UserRole = "seller", userInput: Session | null = null)
 
 const readLegacyStatus = (role: UserRole = "seller", userInput: Session | null = null) => {
   const user = userInput || {};
-  const key = getUserKey(role, user);
-  return statusMapCache[key] || null;
+  if (typeof window === "undefined") return null;
+  const storageKey = role === "provider" ? ONBOARDING_KEYS.provider : ONBOARDING_KEYS.seller;
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const status = parsed?.status;
+    const owner = (parsed?.email || parsed?.contactEmail || parsed?.userId || "").toLowerCase();
+    const userId = (user.userId || user.email || user.phone || "").toLowerCase();
+    if (owner && userId && owner !== userId) return null; // different user, ignore legacy state
+    return status || null;
+  } catch {
+    return null;
+  }
 };
 
 export const onboardingPathForRole = (role: UserRole = "seller") =>
@@ -69,9 +73,11 @@ export const readOnboardingStatus = (role: UserRole = "seller", userInput: Sessi
     return legacy;
   }
 
-  // If we have no server/recorded status, don't assume onboarding is required.
-  // Sign-up flow explicitly marks onboarding via `onboardingRequired` + recordOnboardingStatus.
-  return "";
+  if (user.userId || user.email || user.phone) {
+    map[key] = "DRAFT";
+    writeMap(map);
+  }
+  return "DRAFT";
 };
 
 export const recordOnboardingStatus = (
@@ -95,22 +101,7 @@ export const clearOnboardingStatus = (role: UserRole = "seller", userInput: Sess
 };
 
 export const needsOnboarding = (role: UserRole = "seller", userInput: Session | null = null) => {
-  const user = userInput || {};
-  if (typeof user.onboardingRequired === "boolean") {
-    return user.onboardingRequired;
-  }
-  if (typeof user.onboardingCompleted === "boolean") {
-    return !user.onboardingCompleted;
-  }
-  const approvalStatus = String(user.approvalStatus || "").toUpperCase();
-  if (approvalStatus === "APPROVED") {
-    return false;
-  }
-  if (approvalStatus) {
-    return true;
-  }
   const status = readOnboardingStatus(role, userInput || {});
-  if (!status) return false;
   return !STATUS_DONE.includes(status || "");
 };
 

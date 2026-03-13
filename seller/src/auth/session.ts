@@ -2,26 +2,12 @@ import { useEffect, useState } from "react";
 import type { Session } from "../types/session";
 import type { UserRole } from "../types/roles";
 
+const SESSION_KEY = "session";
 const SESSION_EVENT = "session-changed";
-const STORAGE_KEY = "session";
 
 type SessionListener = () => void;
 
 const VALID_ROLES: UserRole[] = ["seller", "provider"];
-
-let inMemorySession: Session | null = null;
-
-const readStoredSession = (): Session | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Session | null;
-    return isValidSession(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-};
 
 export const isValidSession = (session: Session | null | undefined): session is Session => {
   if (!session || typeof session !== "object") return false;
@@ -29,9 +15,6 @@ export const isValidSession = (session: Session | null | undefined): session is 
     (value) => typeof value === "string" && value.trim().length > 0
   );
   if (!hasIdentity) return false;
-
-  const token = session.accessToken || session.token;
-  if (typeof token !== "string" || token.trim().length === 0) return false;
 
   const role = session.role;
   if (typeof role !== "string" || !VALID_ROLES.includes(role as UserRole)) return false;
@@ -46,38 +29,38 @@ export const isValidSession = (session: Session | null | undefined): session is 
   return true;
 };
 
-export const hasSessionToken = (session: Session | null | undefined): boolean =>
-  Boolean(
-    session &&
-      typeof (session.accessToken || session.token) === "string" &&
-      String(session.accessToken || session.token).trim().length > 0
-  );
-
 export const readSession = (): Session | null => {
-  if (!isValidSession(inMemorySession)) {
-    inMemorySession = readStoredSession();
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Session;
+    if (!isValidSession(parsed)) {
+      window.localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
   }
-  return inMemorySession;
 };
 
 export const writeSession = (session: Session | null) => {
-  inMemorySession = session && isValidSession(session) ? session : null;
-  if (typeof window !== "undefined") {
-    try {
-      if (inMemorySession) {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(inMemorySession));
-      } else {
-        window.localStorage.removeItem(STORAGE_KEY);
-      }
-      window.dispatchEvent(new Event(SESSION_EVENT));
-    } catch {
-      // ignore dispatch errors
+  if (typeof window === "undefined") return;
+  try {
+    if (!session) {
+      window.localStorage.removeItem(SESSION_KEY);
+    } else {
+      window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     }
+    window.dispatchEvent(new Event(SESSION_EVENT));
+  } catch {
+    // ignore storage errors
   }
 };
 
 export const updateSession = (partial: Partial<Session>) => {
-  const current = readSession() || ({} as Session);
+  const current = readSession() || {};
   writeSession({ ...current, ...partial });
 };
 
@@ -87,8 +70,10 @@ export const useSession = () => {
   useEffect(() => {
     const sync: SessionListener = () => setSession(readSession());
     if (typeof window === "undefined") return;
+    window.addEventListener("storage", sync);
     window.addEventListener(SESSION_EVENT, sync);
     return () => {
+      window.removeEventListener("storage", sync);
       window.removeEventListener(SESSION_EVENT, sync);
     };
   }, []);

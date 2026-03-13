@@ -1,11 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { sellerBackendApi as backendApi } from '../../../lib/backendApi';
-import {
-  buildCampaignBuilderPayload,
-  buildCampaignPayload,
-  mapCampaignBuilderRecord,
-  mapCampaignWorkspace,
-} from './runtime';
 const ORANGE = '#f77f00';
 
 declare global {
@@ -67,7 +60,8 @@ const DISCOUNT_TYPE_OPTIONS = [
 ];
 
 const GIVEAWAY_SUPPORTED_CAMPAIGN_TYPES = ['Live Sessionz', 'Live + Shoppables.'];
-const SELLER_CAMPAIGN_BUILDER_ID = 'seller_campaign_builder_default';
+const SUPPLIER_CAMPAIGN_PICKER_KEY = 'mldz:supplierCampaignBuilder:draft:v1';
+const ASSET_PICK_KEY = 'mldz:assetPicker:payload:v1';
 
 function campaignTypeSupportsGiveaways(type) {
   return GIVEAWAY_SUPPORTED_CAMPAIGN_TYPES.includes(String(type || ''));
@@ -86,6 +80,14 @@ function parsePositiveInt(value) {
   if (!/^[0-9]+$/.test(raw)) return null;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 1 ? n : null;
+}
+
+function safeParseJSON(raw, fallback = null) {
+  try {
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function coercePickedImageAsset(payload) {
@@ -758,7 +760,6 @@ const CATALOG_ITEMS = [
 /* ------------------------- Catalog Page modal (selection) ------------------------- */
 
 function CatalogCampaignPickerPage({
-  catalogItems,
   open,
   onClose,
   initialKind,
@@ -798,7 +799,7 @@ function CatalogCampaignPickerPage({
     });
 
     // ensure all visible items have state
-    catalogItems.forEach((it) => {
+    CATALOG_ITEMS.forEach((it) => {
       if (byId[it.id]) return;
       byId[it.id] = {
         selected: false,
@@ -810,18 +811,18 @@ function CatalogCampaignPickerPage({
 
     setDraft(byId);
     setQ('');
-  }, [open, initialKind, allowProducts, allowServices, existingSelectedItems, promoDefaults, catalogItems]);
+  }, [open, initialKind, allowProducts, allowServices, existingSelectedItems, promoDefaults]);
 
   const items = useMemo(() => {
     const qq = q.trim().toLowerCase();
-    return catalogItems.filter((it) => {
+    return CATALOG_ITEMS.filter((it) => {
       if (activeKind === 'Product' && it.kind !== 'Product') return false;
       if (activeKind === 'Service' && it.kind !== 'Service') return false;
       if (!qq) return true;
       const hay = `${it.title} ${it.subtitle} ${it.category} ${it.region} ${it.sku}`.toLowerCase();
       return hay.includes(qq);
     });
-  }, [activeKind, q, catalogItems]);
+  }, [activeKind, q]);
 
   const selectedItems = useMemo(() => {
     const out: Array<any> = [];
@@ -1128,62 +1129,113 @@ function CatalogCampaignPickerPage({
   );
 }
 
-/* ------------------------- campaigns ------------------------- */
+/* ------------------------- seed campaigns ------------------------- */
 
-export function createEmptySupplierCampaignBuilder() {
-  return {
-    name: '',
-    type: 'Shoppable Adz',
-    region: 'East Africa',
-    currency: 'USD',
-    estValue: 1000,
-    internalReference: '',
-    commerceMode: 'Retail',
-    bundleMode: 'Single item',
-    startDate: todayYMD(),
-    durationDays: 7,
-    startTime: '09:00',
-    endTime: '21:00',
-    timezone: 'Africa/Kampala',
-    flashWindows: '',
-    marketRegions: ['East Africa'],
-    shippingConstraints: [],
-    contentLanguages: ['English'],
-    promoType: 'Discount',
-    promoArrangement: 'PercentOff',
-    promoCode: '',
-    shippingThreshold: 0,
-    giftNote: '',
-    offerScope: 'Products',
-    defaultDiscountMode: 'percent',
-    defaultDiscountValue: 10,
-    items: [],
-    hasGiveaways: false,
-    giveaways: [],
-    regulatedDocsConfirmed: false,
-    regulatedDisclaimersAccepted: false,
-    regulatedDeskNotes: '',
+const INIT_CAMPAIGNS = [
+  {
+    id: 'S-201',
+    name: 'Beauty Flash Week (Combo)',
+    stage: 'Execution',
+    approvalStatus: 'Approved',
     creatorUsageDecision: 'I will use a Creator',
     collabMode: 'Open for Collabs',
     approvalMode: 'Manual',
-    allowMultiCreators: true,
-    notes: '',
-    internalOwner: 'Supplier Manager',
-  };
-}
-
-const emptySupplierCampaignBuilderValue = createEmptySupplierCampaignBuilder();
-const emptySupplierCampaignBuilderStep = 1;
+    offerScope: 'Products',
+    promoType: 'Discount',
+    promoArrangement: 'PercentOff',
+    currency: 'USD',
+    estValue: 2400,
+    region: 'East Africa',
+    type: 'Live + Shoppables.',
+    startDate: '2026-02-10',
+    durationDays: 14,
+    endDate: computeEndDate('2026-02-10', 14),
+    items: [
+      {
+        ...CATALOG_ITEMS[2],
+        plannedQty: 40,
+        discount: { mode: 'percent', value: 15 },
+        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[2].price, 'percent', 15),
+        discountLabel: formatDiscount('percent', 15, 'USD'),
+      },
+      {
+        ...CATALOG_ITEMS[3],
+        plannedQty: 25,
+        discount: { mode: 'amount', value: 5 },
+        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[3].price, 'amount', 5),
+        discountLabel: formatDiscount('amount', 5, 'USD'),
+      },
+    ],
+    creatorsCount: 2,
+    pitchesCount: 7,
+    invitesSent: 0,
+    invitesAccepted: 0,
+    proposalsCount: 2,
+    contractCount: 1,
+    pendingSupplierApproval: true,
+    pendingAdminApproval: false,
+    adminRejected: false,
+    creatorRejected: false,
+    renegotiation: false,
+    health: 'on-track',
+    nextAction: 'Approve Creator Clip #3',
+    lastActivity: 'Assets submitted · 2h',
+    lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
+  },
+  {
+    id: 'S-202',
+    name: 'Tech Friday Mega Live',
+    stage: 'Draft',
+    approvalStatus: 'Pending',
+    creatorUsageDecision: 'I will use a Creator',
+    collabMode: 'Invite-only',
+    approvalMode: 'Manual',
+    offerScope: 'Products',
+    promoType: 'Coupon',
+    promoArrangement: 'InfluencerCode',
+    promoCode: 'TECHFRIDAY',
+    currency: 'USD',
+    estValue: 3100,
+    region: 'Africa / Asia',
+    type: 'Live Sessionz',
+    startDate: '2026-02-25',
+    durationDays: 10,
+    endDate: computeEndDate('2026-02-25', 10),
+    items: [
+      {
+        ...CATALOG_ITEMS[1],
+        plannedQty: 60,
+        discount: { mode: 'percent', value: 10 },
+        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[1].price, 'percent', 10),
+        discountLabel: formatDiscount('percent', 10, 'USD'),
+      },
+    ],
+    creatorsCount: 0,
+    pitchesCount: 0,
+    invitesSent: 0,
+    invitesAccepted: 0,
+    proposalsCount: 0,
+    contractCount: 0,
+    pendingSupplierApproval: false,
+    pendingAdminApproval: true,
+    adminRejected: false,
+    creatorRejected: false,
+    renegotiation: false,
+    health: 'at-risk',
+    nextAction: 'Await Admin approval',
+    lastActivity: 'Submitted for approval · 1d',
+    lastActivityAt: Date.now() - 1 * 24 * 60 * 60 * 1000,
+    queuedStageAfterApproval: 'Collabs',
+    queuedNextActionAfterApproval: 'Invite creators',
+  },
+];
 
 /* ------------------------- main component ------------------------- */
 
 export default function SupplierMyCampaignsPage() {
   const { toasts, push } = useToasts();
 
-  const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [catalogItems, setCatalogItems] = useState<any[]>([]);
-  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [campaigns, setCampaigns] = useState<any[]>(INIT_CAMPAIGNS as any[]);
 
   const [activeStageFilter, setActiveStageFilter] = useState('All');
   const [search, setSearch] = useState('');
@@ -1200,9 +1252,69 @@ export default function SupplierMyCampaignsPage() {
   const [catalogKind, setCatalogKind] = useState('Product');
   const overlayOpen = builderOpen || detailsOpen || catalogOpen;
 
-  const [builderStep, setBuilderStep] = useState(emptySupplierCampaignBuilderStep);
-  const [builder, setBuilder] = useState<any>(emptySupplierCampaignBuilderValue);
-  const builderHashRef = useRef('');
+  const [builderStep, setBuilderStep] = useState(1);
+  const [builder, setBuilder] = useState<any>(() => ({
+    name: '',
+    type: 'Shoppable Adz',
+    region: 'East Africa',
+    currency: 'USD',
+    estValue: 1000,
+
+    // internal reference
+    internalReference: '',
+
+    // commerce model (Retail or Wholesale)
+    commerceMode: 'Retail',
+    bundleMode: 'Single item',
+
+    // duration
+    startDate: todayYMD(),
+    durationDays: 7, // min 1 max 45
+
+    // timing + targeting
+    startTime: '09:00',
+    endTime: '21:00',
+    timezone: 'Africa/Kampala',
+    flashWindows: '',
+    marketRegions: ['East Africa'],
+    shippingConstraints: [],
+    contentLanguages: ['English'],
+
+    // promo
+    promoType: 'Discount',
+    promoArrangement: 'PercentOff',
+    promoCode: '',
+    shippingThreshold: 0,
+    giftNote: '',
+
+    // offer scope
+    offerScope: 'Products',
+
+    // discount defaults (used by catalog)
+    defaultDiscountMode: 'percent',
+    defaultDiscountValue: 10,
+
+    // selected items (campaign catalog)
+    items: [],
+
+    // giveaways (only applicable to live campaign types)
+    hasGiveaways: false,
+    giveaways: [],
+
+    // compliance (only required when regulated items are present)
+    regulatedDocsConfirmed: false,
+    regulatedDisclaimersAccepted: false,
+    regulatedDeskNotes: '',
+
+    // flow
+    creatorUsageDecision: 'I will use a Creator',
+    collabMode: 'Open for Collabs',
+    approvalMode: 'Manual',
+    allowMultiCreators: true,
+
+    notes: '',
+    internalOwner: 'Supplier Manager',
+  }));
 
   const giveawaysSupported = useMemo(
     () => campaignTypeSupportsGiveaways(builder.type),
@@ -1256,132 +1368,6 @@ export default function SupplierMyCampaignsPage() {
   const featuredGiveawayQtyValue = parsePositiveInt(featuredGiveawayQuantity);
   const customGiveawayQtyValue = parsePositiveInt(customGiveawayDraft.quantity);
 
-  const builderDraftPayload = useMemo(
-    () =>
-      buildCampaignBuilderPayload({
-        id: SELLER_CAMPAIGN_BUILDER_ID,
-        builderStep,
-        builder,
-        giveawayUi: {
-          giveawayAddMode,
-          featuredGiveawayItemId,
-          featuredGiveawayQuantity,
-          customGiveawayDraft,
-        },
-      }),
-    [
-      builder,
-      builderStep,
-      customGiveawayDraft,
-      featuredGiveawayItemId,
-      featuredGiveawayQuantity,
-      giveawayAddMode,
-    ]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadWorkspace() {
-      setWorkspaceLoaded(false);
-      setWorkspaceError(null);
-
-      try {
-        const [workspaceResult, draftResult] = await Promise.allSettled([
-          backendApi.getCampaignWorkspace(),
-          backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID),
-        ]);
-
-        if (cancelled) return;
-        const workspace =
-          workspaceResult.status === 'fulfilled' ? workspaceResult.value : null;
-        const draft = draftResult.status === 'fulfilled' ? draftResult.value : null;
-        if (!workspace) {
-          throw new Error('Failed to load campaign workspace');
-        }
-
-        const mappedWorkspace = mapCampaignWorkspace(workspace);
-        setCampaigns(mappedWorkspace.campaigns);
-        setCatalogItems(mappedWorkspace.catalogItems);
-
-        if (draft) {
-          const mappedDraft = mapCampaignBuilderRecord(draft);
-          if (mappedDraft.builder && Object.keys(mappedDraft.builder).length) {
-            setBuilder(mappedDraft.builder);
-          }
-          if (mappedDraft.builderStep) {
-            setBuilderStep(mappedDraft.builderStep);
-          }
-          const ui = mappedDraft.giveawayUi || {};
-          if (ui.giveawayAddMode === 'featured' || ui.giveawayAddMode === 'custom') {
-            setGiveawayAddMode(ui.giveawayAddMode);
-          }
-          if (typeof ui.featuredGiveawayItemId === 'string') {
-            setFeaturedGiveawayItemId(ui.featuredGiveawayItemId);
-          }
-          if (typeof ui.featuredGiveawayQuantity === 'string') {
-            setFeaturedGiveawayQuantity(ui.featuredGiveawayQuantity);
-          }
-          if (ui.customGiveawayDraft && typeof ui.customGiveawayDraft === 'object') {
-            setCustomGiveawayDraft({
-              title: typeof ui.customGiveawayDraft.title === 'string' ? ui.customGiveawayDraft.title : '',
-              quantity: typeof ui.customGiveawayDraft.quantity === 'string' ? ui.customGiveawayDraft.quantity : '1',
-              imageUrl: typeof ui.customGiveawayDraft.imageUrl === 'string' ? ui.customGiveawayDraft.imageUrl : '',
-              posterAssetId:
-                typeof ui.customGiveawayDraft.posterAssetId === 'string'
-                  ? ui.customGiveawayDraft.posterAssetId
-                  : '',
-              assetName: typeof ui.customGiveawayDraft.assetName === 'string' ? ui.customGiveawayDraft.assetName : '',
-            });
-          }
-          builderHashRef.current = JSON.stringify(
-            buildCampaignBuilderPayload({
-              id: mappedDraft.id,
-              builderStep: mappedDraft.builderStep || 1,
-              builder: mappedDraft.builder,
-              giveawayUi: mappedDraft.giveawayUi,
-            })
-          );
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setWorkspaceError(error instanceof Error ? error.message : 'Unable to load campaigns workspace');
-        push('Unable to load campaigns workspace from backend.', 'error');
-      } finally {
-        if (!cancelled) {
-          setWorkspaceLoaded(true);
-        }
-      }
-    }
-
-    void loadWorkspace();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [push]);
-
-  useEffect(() => {
-    if (!workspaceLoaded) return;
-    const nextHash = JSON.stringify(builderDraftPayload);
-    if (nextHash === builderHashRef.current) return;
-
-    const timer = window.setTimeout(() => {
-      void backendApi
-        .saveLiveBuilder(builderDraftPayload)
-        .then(() => {
-          builderHashRef.current = nextHash;
-        })
-        .catch(() => {
-          push('Unable to persist campaign builder draft.', 'error');
-        });
-    }, 350);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [builderDraftPayload, push, workspaceLoaded]);
-
   useEffect(() => {
     if (!Array.isArray(builder.items) || builder.items.length === 0) {
       setFeaturedGiveawayItemId('');
@@ -1392,10 +1378,32 @@ export default function SupplierMyCampaignsPage() {
     setFeaturedGiveawayItemId(builder.items[0]?.id || '');
   }, [builder.items, featuredGiveawayItemId]);
 
-  const persistBuilderForAssetPicker = useCallback(async () => {
-    await backendApi.saveLiveBuilder(builderDraftPayload);
-    builderHashRef.current = JSON.stringify(builderDraftPayload);
-  }, [builderDraftPayload]);
+  const persistBuilderForAssetPicker = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const payload = {
+        ts: Date.now(),
+        builder,
+        builderStep,
+        giveawayUi: {
+          giveawayAddMode,
+          featuredGiveawayItemId,
+          featuredGiveawayQuantity,
+          customGiveawayDraft,
+        },
+      };
+      sessionStorage.setItem(SUPPLIER_CAMPAIGN_PICKER_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  }, [
+    builder,
+    builderStep,
+    giveawayAddMode,
+    featuredGiveawayItemId,
+    featuredGiveawayQuantity,
+    customGiveawayDraft,
+  ]);
 
   const buildReturnToUrl = useCallback(() => {
     if (typeof window === 'undefined') return '';
@@ -1407,9 +1415,9 @@ export default function SupplierMyCampaignsPage() {
   }, []);
 
   const openAssetLibraryPicker = useCallback(
-    async (applyTo = 'campaignGiveawayPoster') => {
+    (applyTo = 'campaignGiveawayPoster') => {
       if (typeof window === 'undefined') return;
-      await persistBuilderForAssetPicker();
+      persistBuilderForAssetPicker();
       const picker = new URL('/supplier/deliverables/assets', window.location.origin);
       picker.searchParams.set('mode', 'picker');
       picker.searchParams.set('target', 'supplierCampaign');
@@ -1428,17 +1436,15 @@ export default function SupplierMyCampaignsPage() {
     const shouldRestore = sp.get('restoreCampaignBuilder') === '1' || sp.has('assetId');
     if (!shouldRestore) return;
 
-    void (async () => {
-      const saved = await backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID);
-      const mapped = saved ? mapCampaignBuilderRecord(saved) : null;
-      if (mapped?.builder && Object.keys(mapped.builder).length) {
-        setBuilder(mapped.builder);
-        if (mapped.builderStep) setBuilderStep(mapped.builderStep);
-        setBuilderOpen(true);
-      }
+    const saved = safeParseJSON(sessionStorage.getItem(SUPPLIER_CAMPAIGN_PICKER_KEY), null);
+    if (saved?.builder) {
+      setBuilder(saved.builder);
+      if (saved?.builderStep) setBuilderStep(saved.builderStep);
+      setBuilderOpen(true);
+    }
 
-      const ui = mapped?.giveawayUi;
-      if (ui && typeof ui === 'object') {
+    const ui = saved?.giveawayUi;
+    if (ui && typeof ui === 'object') {
       if (ui.giveawayAddMode === 'featured' || ui.giveawayAddMode === 'custom')
         setGiveawayAddMode(ui.giveawayAddMode);
       if (typeof ui.featuredGiveawayItemId === 'string')
@@ -1467,39 +1473,31 @@ export default function SupplierMyCampaignsPage() {
               : '',
         });
       }
-      }
+    }
 
-      const assetId = sp.get('assetId') || '';
-      const applyTo = sp.get('applyTo') || '';
-      if (assetId && applyTo === 'campaignGiveawayPoster') {
-        const assets = await backendApi.getMediaAssets();
-        const rawAsset = assets.find((entry) => String(entry.id || '') === assetId);
-        const asset = rawAsset
-          ? coercePickedImageAsset({
-              id: rawAsset.id,
-              title: rawAsset.name,
-              previewUrl: rawAsset.url,
-            })
-          : null;
-        if (asset) {
-          setCustomGiveawayDraft((prev) => ({
-            ...prev,
-            imageUrl: asset.previewUrl,
-            posterAssetId: asset.id || prev.posterAssetId,
-            assetName: asset.title || prev.assetName,
-          }));
-          push('Custom giveaway poster attached from Asset Library.', 'success');
-        }
+    const assetId = sp.get('assetId') || '';
+    const applyTo = sp.get('applyTo') || '';
+    if (assetId && applyTo === 'campaignGiveawayPoster') {
+      const parsed = safeParseJSON(sessionStorage.getItem(ASSET_PICK_KEY), null);
+      const asset = coercePickedImageAsset(parsed);
+      if (asset && (!asset.id || asset.id === assetId)) {
+        setCustomGiveawayDraft((prev) => ({
+          ...prev,
+          imageUrl: asset.previewUrl,
+          posterAssetId: asset.id || prev.posterAssetId,
+          assetName: asset.title || prev.assetName,
+        }));
+        push('Custom giveaway poster attached from Asset Library.', 'success');
       }
+    }
 
-      const clean = new URL(window.location.href);
-      clean.searchParams.delete('restoreCampaignBuilder');
-      clean.searchParams.delete('assetId');
-      clean.searchParams.delete('applyTo');
-      clean.searchParams.delete('returnTo');
-      const qs = clean.searchParams.toString();
-      window.history.replaceState({}, '', clean.pathname + (qs ? `?${qs}` : '') + clean.hash);
-    })();
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('restoreCampaignBuilder');
+    clean.searchParams.delete('assetId');
+    clean.searchParams.delete('applyTo');
+    clean.searchParams.delete('returnTo');
+    const qs = clean.searchParams.toString();
+    window.history.replaceState({}, '', clean.pathname + (qs ? `?${qs}` : '') + clean.hash);
   }, [push]);
 
   function removeCampaignGiveaway(giveawayId) {
@@ -1760,18 +1758,6 @@ export default function SupplierMyCampaignsPage() {
     setDetailsOpen(true);
   }
 
-  function persistCampaignUpdate(campaign, patch) {
-    setCampaigns((xs) =>
-      xs.map((entry) => (entry.id === campaign.id ? { ...entry, ...patch } : entry))
-    );
-    void backendApi
-      .patchCampaign(campaign.id, buildCampaignPayload({ ...campaign, ...patch }))
-      .then((saved) => {
-        setCampaigns((xs) => xs.map((entry) => (entry.id === campaign.id ? { ...entry, ...saved } : entry)));
-      })
-      .catch(() => push('Unable to persist campaign update.', 'error'));
-  }
-
   function allowProducts(scope) {
     return scope === 'Products' || scope === 'Both';
   }
@@ -1936,14 +1922,14 @@ export default function SupplierMyCampaignsPage() {
   }
 
   function saveDraft() {
-    void upsertCampaign({ submitForApproval: false });
+    upsertCampaign({ submitForApproval: false });
   }
 
   function submitForApproval() {
-    void upsertCampaign({ submitForApproval: true });
+    upsertCampaign({ submitForApproval: true });
   }
 
-  async function upsertCampaign({ submitForApproval }) {
+  function upsertCampaign({ submitForApproval }) {
     const name = String(builder.name || '').trim();
     if (!name) {
       push('Campaign name is required.', 'error');
@@ -2186,86 +2172,75 @@ export default function SupplierMyCampaignsPage() {
       internalOwner: builder.internalOwner,
     };
 
-    try {
-      const savedCampaign = await backendApi.createCampaign(buildCampaignPayload(newCampaign));
-      const nextCampaign = {
-        ...newCampaign,
-        ...savedCampaign,
-      };
-      setCampaigns((xs) => [nextCampaign, ...xs.filter((entry) => entry.id !== nextCampaign.id)]);
-      setBuilderOpen(false);
-      push(
-        submitForApproval ? 'Campaign submitted for Admin approval.' : 'Draft saved.',
-        submitForApproval ? 'success' : 'info'
-      );
-      setTimeout(() => {
-        openDetails(nextCampaign);
-      }, 0);
-    } catch {
-      push('Unable to persist campaign to backend.', 'error');
-    }
+    setCampaigns((xs) => [newCampaign, ...xs]);
+    setBuilderOpen(false);
+    push(
+      submitForApproval ? 'Campaign submitted for Admin approval.' : 'Draft saved.',
+      submitForApproval ? 'success' : 'info'
+    );
+
+    setTimeout(() => {
+      openDetails(newCampaign);
+    }, 0);
   }
 
-  function handleAdminDecision(c, decision) {
+  function simulateAdminDecision(c, decision) {
     if (decision === 'approve') {
-      const nextCampaign = {
-        ...c,
-        approvalStatus: 'Approved',
-        pendingAdminApproval: false,
-        stage: c.queuedStageAfterApproval || c.stage,
-        nextAction: c.queuedNextActionAfterApproval || c.nextAction,
-        lastActivity: 'Admin approved · now',
-        lastActivityAt: Date.now(),
-        health: 'on-track',
-      };
-      void backendApi
-        .patchCampaign(c.id, buildCampaignPayload(nextCampaign))
-        .then((saved) => {
-          push('Admin approved (preview).', 'success');
-          setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
+      push('Admin approved (preview).', 'success');
+      setCampaigns((xs) =>
+        xs.map((x) => {
+          if (x.id !== c.id) return x;
+          return {
+            ...x,
+            approvalStatus: 'Approved',
+            pendingAdminApproval: false,
+            stage: x.queuedStageAfterApproval || x.stage,
+            nextAction: x.queuedNextActionAfterApproval || x.nextAction,
+            lastActivity: 'Admin approved · now',
+            lastActivityAt: Date.now(),
+            health: 'on-track',
+          };
         })
-        .catch(() => push('Unable to persist admin approval.', 'error'));
+      );
       return;
     }
 
-    const nextCampaign = {
-      ...c,
-      approvalStatus: 'Rejected',
-      pendingAdminApproval: false,
-      adminRejected: true,
-      stage: 'Draft',
-      nextAction: 'Fix and resubmit',
-      lastActivity: 'Admin rejected · now',
-      lastActivityAt: Date.now(),
-      health: 'at-risk',
-    };
-    void backendApi
-      .patchCampaign(c.id, buildCampaignPayload(nextCampaign))
-      .then((saved) => {
-        push('Admin rejected (preview).', 'warn');
-        setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
+    push('Admin rejected (preview).', 'warn');
+    setCampaigns((xs) =>
+      xs.map((x) => {
+        if (x.id !== c.id) return x;
+        return {
+          ...x,
+          approvalStatus: 'Rejected',
+          pendingAdminApproval: false,
+          adminRejected: true,
+          stage: 'Draft',
+          nextAction: 'Fix and resubmit',
+          lastActivity: 'Admin rejected · now',
+          lastActivityAt: Date.now(),
+          health: 'at-risk',
+        };
       })
-      .catch(() => push('Unable to persist admin rejection.', 'error'));
+    );
   }
 
   function resubmitAfterRejection(c) {
-    const nextCampaign = {
-      ...c,
-      approvalStatus: 'Pending',
-      pendingAdminApproval: true,
-      adminRejected: false,
-      nextAction: 'Await Admin approval',
-      lastActivity: 'Resubmitted · now',
-      lastActivityAt: Date.now(),
-      health: 'on-track',
-    };
-    void backendApi
-      .patchCampaign(c.id, buildCampaignPayload(nextCampaign))
-      .then((saved) => {
-        push('Resubmitted for approval (preview).', 'success');
-        setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
+    push('Resubmitted for approval (preview).', 'success');
+    setCampaigns((xs) =>
+      xs.map((x) => {
+        if (x.id !== c.id) return x;
+        return {
+          ...x,
+          approvalStatus: 'Pending',
+          pendingAdminApproval: true,
+          adminRejected: false,
+          nextAction: 'Await Admin approval',
+          lastActivity: 'Resubmitted · now',
+          lastActivityAt: Date.now(),
+          health: 'on-track',
+        };
       })
-      .catch(() => push('Unable to persist resubmission.', 'error'));
+    );
   }
 
   const promoDefaultsForCatalog = useMemo(() => {
@@ -2284,16 +2259,6 @@ export default function SupplierMyCampaignsPage() {
     builder.defaultDiscountMode,
     builder.defaultDiscountValue,
   ]);
-
-  if (!workspaceLoaded) {
-    return (
-      <div className="min-h-screen grid place-items-center bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-5 text-sm font-bold">
-          Loading campaigns workspace…
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors overflow-x-hidden">
@@ -2337,11 +2302,6 @@ export default function SupplierMyCampaignsPage() {
       />
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
-        {workspaceError ? (
-          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-            {workspaceError}
-          </div>
-        ) : null}
         <div className="w-full max-w-full flex flex-col gap-3">
           {/* Summary */}
           <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
@@ -2511,14 +2471,25 @@ export default function SupplierMyCampaignsPage() {
                         }
                         const nextMode =
                           c.collabMode === 'Invite-only' ? 'Open for Collabs' : 'Invite-only';
-                        persistCampaignUpdate(c, {
-                          collabMode: nextMode,
-                          lastActivity: `Collab mode switched → ${nextMode} · now`,
-                          lastActivityAt: Date.now(),
-                        });
+                        setCampaigns((xs) =>
+                          xs.map((x) =>
+                            x.id === c.id
+                              ? {
+                                  ...x,
+                                  collabMode: nextMode,
+                                  lastActivity: `Collab mode switched → ${nextMode} · now`,
+                                  lastActivityAt: Date.now(),
+                                }
+                              : x
+                          )
+                        );
                         push(`Collab mode switched to ${nextMode}.`, 'success');
                       }}
-                      onUpdate={(patch) => persistCampaignUpdate(c, patch)}
+                      onUpdate={(patch) =>
+                        setCampaigns((xs) =>
+                          xs.map((x) => (x.id === c.id ? { ...x, ...patch } : x))
+                        )
+                      }
                       push={push}
                     />
                   ))}
@@ -2539,7 +2510,6 @@ export default function SupplierMyCampaignsPage() {
 
       {/* Catalog page modal */}
       <CatalogCampaignPickerPage
-        catalogItems={catalogItems}
         open={catalogOpen}
         onClose={() => setCatalogOpen(false)}
         initialKind={catalogKind}
@@ -4748,13 +4718,13 @@ export default function SupplierMyCampaignsPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Btn
                     tone="primary"
-                    onClick={() => handleAdminDecision(activeCampaign, 'approve')}
+                    onClick={() => simulateAdminDecision(activeCampaign, 'approve')}
                   >
                     ✅ Simulate Approve
                   </Btn>
                   <Btn
                     tone="danger"
-                    onClick={() => handleAdminDecision(activeCampaign, 'reject')}
+                    onClick={() => simulateAdminDecision(activeCampaign, 'reject')}
                   >
                     ❌ Simulate Reject
                   </Btn>

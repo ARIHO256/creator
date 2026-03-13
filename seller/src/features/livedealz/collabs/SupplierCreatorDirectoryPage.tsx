@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierCreatorDirectoryPage.jsx
@@ -18,11 +17,11 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Save/Follow becomes “Save creator” (feeds “My Creators” page).
  * - Invite is “Invite to Campaign” with campaign context + mandatory campaign-level rules:
  *   Creator Usage Decision + Collaboration Mode + Content Approval Mode.
- * - Supports edge cases: creator rejects, changes requested, renegotiation.
+ * - Supports edge cases (demo states): creator rejects, changes requested, renegotiation.
  *
  * Notes:
  * - Dependency-free (no lucide-react). Emoji icons used to avoid CDN issues.
- * - Replace live data with API data in the real project.
+ * - Replace demo data with API data in the real project.
  */
 
 const ORANGE = "#f77f00";
@@ -319,7 +318,6 @@ function InviteModal({ creator, campaigns, onClose }) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [submitError, setSubmitError] = useState("");
   const [simOutcome, setSimOutcome] = useState("sent"); // sent | rejected | changes | renegotiate
 
   useScrollLock(true);
@@ -330,46 +328,12 @@ function InviteModal({ creator, campaigns, onClose }) {
 
   const handleSendInvite = () => {
     if (!message.trim() || !canInvite) return;
-    setSubmitError("");
     setIsSubmitting(true);
-    void sellerBackendApi
-      .createCreatorInvite({
-        creatorHandle: creator.handle,
-        campaignId,
-        campaignTitle: selectedCampaign?.name || "MyLiveDealz campaign",
-        title: `Invite to collaborate on ${selectedCampaign?.name || "MyLiveDealz campaign"}`,
-        message,
-        type: model,
-        category: creator.categories?.[0] || "General",
-        region: creator.region || "Global",
-        baseFee: Number(budget || 0),
-        currency,
-        estimatedValue: Number(budget || 0),
-        fitScore: creator.fitScore || 75,
-        fitReason: creator.fitReason || "Creator fits the campaign audience and category.",
-        messageShort: `Invitation from supplier for ${selectedCampaign?.name || "MyLiveDealz campaign"}.`,
-        supplierDescription: "Seller invite from MyLiveDealz supplier workspace.",
-        supplierRating: creator.rating || 0,
-        metadata: {
-          creatorUsageDecision,
-          collabMode,
-          approvalMode,
-          commercialModel: model,
-          deadlineDays: Number(deadline || 7),
-          simOutcome
-        }
-      })
-      .then(() => {
-        setSimOutcome("sent");
-        setIsSuccess(true);
-        setTimeout(() => onClose(), 1600);
-      })
-      .catch((error) => {
-        setSubmitError(error instanceof Error ? error.message : "Failed to send invite.");
-      })
-      .finally(() => {
-        setIsSubmitting(false);
-      });
+    setTimeout(() => {
+      setIsSubmitting(false);
+      setIsSuccess(true);
+      setTimeout(() => onClose(), 1600);
+    }, 1200);
   };
 
   const outcomeCopy =
@@ -625,12 +589,6 @@ function InviteModal({ creator, campaigns, onClose }) {
             </div>
           </section>
 
-          {submitError ? (
-            <div className="rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 p-3 text-[11px] font-semibold text-rose-700 dark:text-rose-300">
-              {submitError}
-            </div>
-          ) : null}
-
           <button
             className={cx(
               "w-full py-2.5 rounded-full text-white text-sm font-semibold transition-all",
@@ -638,7 +596,15 @@ function InviteModal({ creator, campaigns, onClose }) {
                 ? "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
                 : "bg-[#f77f00] hover:bg-[#e26f00]"
             )}
-            onClick={handleSendInvite}
+            onClick={() => {
+              if (!canInvite) return;
+              // simulate outcome mapping
+              setIsSubmitting(true);
+              setTimeout(() => {
+                setIsSubmitting(false);
+                setIsSuccess(true);
+              }, 900);
+            }}
             disabled={isSubmitting || !canInvite}
             type="button"
           >
@@ -848,7 +814,7 @@ export default function SupplierCreatorDirectoryPage() {
         languages: ["English"],
         relationship: "1 Tech Friday series",
         fitScore: 90,
-        fitReason: "High CTR in Tech. Strong live showcase rhythm and conversion consistency.",
+        fitReason: "High CTR in Tech. Strong live demo rhythm and conversion consistency.",
         followersTrend: "up",
         livesTrend: "up",
         orderTrend: "up",
@@ -1077,7 +1043,7 @@ export default function SupplierCreatorDirectoryPage() {
         type="button"
         className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 text-[11px] font-extrabold"
         onClick={() => setDataState((s) => (s === "error" ? "ready" : "error"))}
-        title="Simulate error state"
+        title="Simulate error state (demo)"
       >
         ⚠️ Test
       </button>

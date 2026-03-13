@@ -1,12 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { clearSession, useSession } from '../../auth/session';
 import { recordOnboardingStatus } from '../misc/onboardingStatus';
-import { sellerBackendApi } from '../../lib/backendApi';
-import { authClient } from '../../lib/authApi';
 import { useLocalization } from '../../localization/LocalizationProvider';
 import { useThemeMode } from '../../theme/themeMode';
-import { useProviderServiceTaxonomy } from '../../data/taxonomy';
 import type { Session } from '../../types/session';
 import SellerOnboardingTaxonomyNavigator from '../misc/SellerOnboardingTaxonomyNavigator';
 import {
@@ -566,51 +562,130 @@ const REGION_OPTIONS = [
   { code: 'US', label: 'United States' },
 ];
 
-type ServiceCategoryOption = {
-  id: string;
-  label: string;
-  desc: string;
-  flags: {
-    fieldWork?: boolean;
-    electrical?: boolean;
-    regulated?: boolean;
-    training?: boolean;
-    remoteOk?: boolean;
-  };
-};
-
-function collectServiceCategories(nodes: Array<{ id: string; name: string; description?: string; metadata?: Record<string, unknown> | null; children?: any[] }>) {
-  const items: ServiceCategoryOption[] = [];
-  const seen = new Set<string>();
-
-  const visit = (node) => {
-    const children = Array.isArray(node?.children) ? node.children : [];
-    const metadata =
-      node?.metadata && typeof node.metadata === 'object'
-        ? (node.metadata as Record<string, unknown>)
-        : null;
-    const categoryId = typeof metadata?.categoryId === 'string' ? metadata.categoryId : null;
-    const flags =
-      metadata?.flags && typeof metadata.flags === 'object'
-        ? (metadata.flags as ServiceCategoryOption['flags'])
-        : {};
-
-    if (categoryId && !seen.has(categoryId)) {
-      seen.add(categoryId);
-      items.push({
-        id: categoryId,
-        label: String(node?.name || categoryId),
-        desc: String(node?.description || ''),
-        flags,
-      });
-    }
-
-    children.forEach(visit);
-  };
-
-  nodes.forEach(visit);
-  return items;
-}
+const SERVICE_CATEGORIES = [
+  {
+    id: 'charger_install',
+    label: 'Charger Installation',
+    desc: 'Site survey, mounting, wiring, commissioning and testing.',
+    flags: { fieldWork: true, electrical: true },
+  },
+  {
+    id: 'charger_maintenance',
+    label: 'Charger Maintenance',
+    desc: 'Preventive maintenance, troubleshooting, parts replacement.',
+    flags: { fieldWork: true, electrical: true },
+  },
+  {
+    id: 'ev_diagnostics',
+    label: 'EV Diagnostics',
+    desc: 'Diagnostics, calibration, firmware checks, inspections.',
+    flags: { fieldWork: true },
+  },
+  {
+    id: 'battery_service',
+    label: 'Battery Service',
+    desc: 'Battery health assessment, BMS checks, safe handling guidance.',
+    flags: { fieldWork: true, regulated: true },
+  },
+  {
+    id: 'software_integration',
+    label: 'Software and CPMS Integration',
+    desc: 'OCPP setup, backend integration, dashboards, monitoring.',
+    flags: { remoteOk: true },
+  },
+  {
+    id: 'training',
+    label: 'Training',
+    desc: 'EV, charger, maintenance, safety and operations training.',
+    flags: { training: true },
+  },
+  {
+    id: 'consulting',
+    label: 'Consulting',
+    desc: 'Feasibility, procurement guidance, rollout planning.',
+    flags: { remoteOk: true },
+  },
+  {
+    id: 'other',
+    label: 'Other',
+    desc: 'Any service that does not fit the categories above.',
+    flags: {},
+  },
+];
+const SERVICE_CATEGORY_MAP = Object.fromEntries(
+  SERVICE_CATEGORIES.map((entry) => [entry.id, entry])
+);
+const buildServiceNode = (id) => ({
+  id,
+  type: 'Service',
+  name: SERVICE_CATEGORY_MAP[id]?.label || id,
+  description: SERVICE_CATEGORY_MAP[id]?.desc || '',
+  children: [],
+});
+const SERVICE_TAXONOMY = [
+  {
+    id: 'service-marketplace-evzone',
+    type: 'Service Marketplace',
+    name: 'EVzone Services',
+    description: 'Services for EVzone buyers.',
+    children: [
+      {
+        id: 'service-family-field',
+        type: 'Service Family',
+        name: 'Field & Installation',
+        description: 'On-site delivery, maintenance, and diagnostics.',
+        children: [
+          {
+            id: 'service-category-chargers',
+            type: 'Service Category',
+            name: 'Charger Operations',
+            description: 'Installation and maintenance services.',
+            children: [
+              buildServiceNode('charger_install'),
+              buildServiceNode('charger_maintenance'),
+            ],
+          },
+          {
+            id: 'service-category-diagnostics',
+            type: 'Service Category',
+            name: 'Diagnostics & Health',
+            description: 'Diagnostics and battery services.',
+            children: [buildServiceNode('ev_diagnostics'), buildServiceNode('battery_service')],
+          },
+        ],
+      },
+      {
+        id: 'service-family-digital',
+        type: 'Service Family',
+        name: 'Digital & Advisory',
+        description: 'Remote, training, and advisory services.',
+        children: [
+          {
+            id: 'service-category-software',
+            type: 'Service Category',
+            name: 'Software & Integrations',
+            description: 'Software integration and monitoring.',
+            children: [buildServiceNode('software_integration')],
+          },
+          {
+            id: 'service-category-advisory',
+            type: 'Service Category',
+            name: 'Training & Consulting',
+            description: 'Training and advisory services.',
+            children: [buildServiceNode('training'), buildServiceNode('consulting')],
+          },
+          {
+            id: 'service-category-other',
+            type: 'Service Category',
+            name: 'Other Services',
+            description: 'Specialized or custom services.',
+            children: [buildServiceNode('other')],
+          },
+        ],
+      },
+    ],
+  },
+];
 
 const PRICING_MODELS = [
   { id: 'quote', label: 'Quote required' },
@@ -723,38 +798,6 @@ function safeJsonParse<T = any>(str: string | null): T | null {
   }
 }
 
-function readStoredDraft<T = any>(key: string): T | null {
-  if (typeof window === 'undefined') return null;
-  return safeJsonParse<T>(window.localStorage.getItem(key));
-}
-
-function writeStoredDraft(key: string, value: unknown) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function clearStoredDraft(keys: string[]) {
-  if (typeof window === 'undefined') return;
-  keys.forEach((key) => {
-    try {
-      window.localStorage.removeItem(key);
-    } catch {
-      // ignore storage failures
-    }
-  });
-}
-
-function draftMatchesActiveUser(draft: Record<string, unknown> | null, activeUserId: string) {
-  if (!draft || typeof draft !== 'object') return false;
-  if (!activeUserId) return true;
-  const owner = String(draft.owner || draft.email || '').toLowerCase();
-  return !owner || owner === activeUserId;
-}
-
 function clamp(n: number, a: number, b: number) {
   return Math.min(b, Math.max(a, n));
 }
@@ -852,12 +895,10 @@ function buildRequiredProviderDocTypes({
   taxpayerType,
   categories = [],
   serviceLines = [],
-  categoryMap = {},
 }: {
   taxpayerType?: string;
   categories?: string[];
   serviceLines?: ServiceLine[];
-  categoryMap?: Record<string, ServiceCategoryOption>;
 }) {
   const required = new Set<string>();
 
@@ -871,7 +912,7 @@ function buildRequiredProviderDocTypes({
   const catFlags = new Set();
   const cats = Array.isArray(categories) ? categories : [];
   cats.forEach((id) => {
-    const c = categoryMap[id];
+    const c = SERVICE_CATEGORIES.find((x) => x.id === id);
     if (c?.flags?.fieldWork) catFlags.add('fieldWork');
     if (c?.flags?.electrical) catFlags.add('electrical');
     if (c?.flags?.regulated) catFlags.add('regulated');
@@ -910,8 +951,8 @@ function buildRequiredProviderDocTypes({
   return Array.from(required);
 }
 
-function formatCategoryLabel(id: string, categoryMap: Record<string, ServiceCategoryOption>) {
-  const c = categoryMap[id];
+function formatCategoryLabel(id: string) {
+  const c = SERVICE_CATEGORIES.find((x) => x.id === id);
   return c ? c.label : id;
 }
 
@@ -1147,23 +1188,7 @@ function AvailabilityPresetBar({
   );
 }
 
-function ServiceLinesEditor({
-  value,
-  onChange,
-  disabled,
-  defaultCurrency,
-  showErrors,
-  categoryOptions,
-  categoryMap,
-}: {
-  value: ServiceLine[];
-  onChange: (next: ServiceLine[]) => void;
-  disabled?: boolean;
-  defaultCurrency?: string;
-  showErrors?: boolean;
-  categoryOptions: ServiceCategoryOption[];
-  categoryMap: Record<string, ServiceCategoryOption>;
-}) {
+function ServiceLinesEditor({ value, onChange, disabled, defaultCurrency, showErrors }) {
   const { t } = useLocalization();
   const lines = Array.isArray(value) ? value : [];
 
@@ -1242,7 +1267,7 @@ function ServiceLinesEditor({
                   <div className="min-w-0">
                     <div className="text-sm font-black truncate">{l.title || t('New service')}</div>
                     <div className="text-xs text-[var(--ev-subtle)]">
-                      {l.category ? t(formatCategoryLabel(l.category, categoryMap)) : t('Pick a category')}
+                      {l.category ? t(formatCategoryLabel(l.category)) : t('Pick a category')}
                     </div>
                   </div>
                   <button
@@ -1282,7 +1307,7 @@ function ServiceLinesEditor({
                       disabled={disabled}
                     >
                       <option value="">{t('Select')}</option>
-                      {categoryOptions.map((c) => (
+                      {SERVICE_CATEGORIES.map((c) => (
                         <option key={c.id} value={c.id}>
                           {t(c.label)}
                         </option>
@@ -2713,33 +2738,47 @@ function PayoutTaxStep({
 }
 
 export default function ProviderOnboardingProV4_JS() {
-  const { t, language, setLanguage } = useLocalization();
+  const { t } = useLocalization();
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
-  const serviceTaxonomyQuery = useProviderServiceTaxonomy();
-  const serviceTaxonomy = serviceTaxonomyQuery.taxonomy;
-  const sessionUser = useSession();
+
+  const [lang, setLang] = useState('en');
+  useEffect(() => {
+    setLang(localStorage.getItem('ev_lang') || 'en');
+  }, []);
+  useEffect(() => {
+    localStorage.setItem('ev_lang', lang);
+  }, [lang]);
 
   const [ui, setUi] = useState<{ step: number }>(() => {
+    const saved = safeJsonParse<{ step?: number }>(localStorage.getItem(STORAGE.ui));
     return {
-      step: 1,
+      step: Number(saved?.step || 1) || 1,
     };
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE.ui, JSON.stringify(ui));
+    } catch {
+      // ignore
+    }
+  }, [ui]);
+
+  const [sessionUser] = useState<Session | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const s = localStorage.getItem('session');
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
   });
 
   const activeUserId = useMemo(() => {
     const val = sessionUser?.userId || sessionUser?.email || sessionUser?.phone || '';
     return String(val || '').toLowerCase();
   }, [sessionUser]);
-
-  const serviceCategories = useMemo<ServiceCategoryOption[]>(
-    () => collectServiceCategories(serviceTaxonomy),
-    [serviceTaxonomy]
-  );
-  const serviceCategoryMap = useMemo<Record<string, ServiceCategoryOption>>(
-    () => Object.fromEntries(serviceCategories.map((entry) => [entry.id, entry])),
-    [serviceCategories]
-  );
 
   const createEmptyProfile = useCallback(
     (): ProviderProfile => ({
@@ -2763,7 +2802,7 @@ export default function ProviderOnboardingProV4_JS() {
       // Step 2: Services & Pricing
       categories: [],
       otherCategory: '',
-      languages: [],
+      languages: ['en'],
       serviceCurrency: 'USD',
       serviceLines: [],
       team: {
@@ -2868,12 +2907,56 @@ export default function ProviderOnboardingProV4_JS() {
     [activeUserId]
   );
 
-  const [profile, setProfile] = useState<ProviderProfile>(() => createEmptyProfile());
+  const load = useCallback((): ProviderProfile => {
+    const s4 = safeJsonParse<Partial<ProviderProfile>>(localStorage.getItem(STORAGE.form));
+    const s3 = safeJsonParse<Partial<ProviderProfile>>(localStorage.getItem(STORAGE.legacy));
+    const parsed = s4 || s3;
+    const base = createEmptyProfile();
+
+    if (!parsed) return base;
+
+    const owner = String(parsed.owner || parsed.email || '').toLowerCase();
+    const isOtherUser = activeUserId && owner && owner !== activeUserId;
+    const legacyMismatch =
+      activeUserId &&
+      !owner &&
+      parsed.status &&
+      parsed.status !== 'DRAFT' &&
+      parsed.email &&
+      String(parsed.email).toLowerCase() !== activeUserId;
+
+    if (isOtherUser || legacyMismatch) return base;
+
+    const merged = {
+      ...base,
+      ...parsed,
+      support: { ...base.support, ...(parsed.support || {}) },
+      hq: { ...base.hq, ...(parsed.hq || {}) },
+      team: { ...base.team, ...(parsed.team || {}) },
+      servicePolicies: { ...base.servicePolicies, ...(parsed.servicePolicies || {}) },
+      coverage: { ...base.coverage, ...(parsed.coverage || {}) },
+      availability: { ...base.availability, ...(parsed.availability || {}) },
+      docs: { list: Array.isArray(parsed?.docs?.list) ? parsed.docs.list : base.docs.list },
+      payout: hydratePayoutData(base.payout, parsed.payout || {}),
+      tax: { ...base.tax, ...(parsed.tax || {}) },
+      acceptance: { ...base.acceptance, ...(parsed.acceptance || {}) },
+    };
+
+    merged.owner = activeUserId || owner || merged.owner;
+
+    if (!Array.isArray(merged.languages) || !merged.languages.length) merged.languages = ['en'];
+    if (!Array.isArray(merged.regions) || !merged.regions.length) merged.regions = ['UG'];
+
+    if (!Array.isArray(merged.categories)) merged.categories = [];
+    if (!Array.isArray(merged.serviceLines)) merged.serviceLines = [];
+
+    return merged;
+  }, [activeUserId, createEmptyProfile]);
+
+  const [profile, setProfile] = useState<ProviderProfile>(load);
   const [lastSaved, setLastSaved] = useState('');
   const [toast, setToast] = useState<ToastState | null>(null);
   const [stepErrors, setStepErrors] = useState<Record<string, boolean>>({});
-  const [hydrated, setHydrated] = useState(false);
-  const saveReadyRef = useRef(false);
 
   const setF = (
     patch:
@@ -2887,9 +2970,27 @@ export default function ProviderOnboardingProV4_JS() {
       return next;
     });
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE.form, JSON.stringify(profile));
+      localStorage.setItem(STORAGE.legacy, JSON.stringify(profile));
+      setLastSaved(ts());
+    } catch {
+      // ignore
+    }
+  }, [profile]);
+
   const [review, setReview] = useState(() => {
-    return { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 };
+    const s = safeJsonParse(localStorage.getItem(STORAGE.review));
+    return s || { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 };
   });
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE.review, JSON.stringify(review));
+    } catch {
+      // ignore
+    }
+  }, [review]);
 
   useEffect(() => {
     if (profile.status === 'SUBMITTED' && location.pathname === '/provider/onboarding') {
@@ -2897,244 +2998,8 @@ export default function ProviderOnboardingProV4_JS() {
     }
   }, [profile.status, navigate, location.pathname]);
 
-  useEffect(() => {
-    if (hydrated) return;
-    let cancelled = false;
-
-    const hydrate = async () => {
-      try {
-        const storedProfile = readStoredDraft<Record<string, unknown>>(STORAGE.form);
-        const storedUi = readStoredDraft<{ step?: number }>(STORAGE.ui);
-        const storedReview = readStoredDraft<Record<string, unknown>>(STORAGE.review);
-        const [payloadResult, accountApprovalResult] = await Promise.allSettled([
-          sellerBackendApi.getWorkflowScreenState('provider-onboarding'),
-          sellerBackendApi.getAccountApproval(),
-        ]);
-        if (cancelled) return;
-        const payload = payloadResult.status === 'fulfilled' ? payloadResult.value : null;
-        const accountApproval =
-          accountApprovalResult.status === 'fulfilled' ? accountApprovalResult.value : null;
-        const sourcePayload =
-          payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-
-        const nextProfile =
-          sourcePayload.form && typeof sourcePayload.form === 'object'
-            ? (sourcePayload.form as Partial<ProviderProfile>)
-            : null;
-        const nextUi =
-          sourcePayload.ui && typeof sourcePayload.ui === 'object'
-            ? (sourcePayload.ui as { step?: number })
-            : null;
-        const nextReview =
-          sourcePayload.review && typeof sourcePayload.review === 'object'
-            ? sourcePayload.review
-            : null;
-        const approvalPayload =
-          accountApproval && typeof accountApproval === 'object'
-            ? (accountApproval as Record<string, unknown>)
-            : null;
-
-        if (nextProfile) {
-          const base = createEmptyProfile();
-          const owner = String(nextProfile.owner || nextProfile.email || '').toLowerCase();
-          if (!activeUserId || !owner || owner === activeUserId) {
-            const mergedBackendProfile = {
-              ...base,
-              ...nextProfile,
-              owner: activeUserId || owner || base.owner,
-              support: { ...base.support, ...(nextProfile.support || {}) },
-              hq: { ...base.hq, ...(nextProfile.hq || {}) },
-              team: { ...base.team, ...(nextProfile.team || {}) },
-              servicePolicies: { ...base.servicePolicies, ...(nextProfile.servicePolicies || {}) },
-              coverage: { ...base.coverage, ...(nextProfile.coverage || {}) },
-              availability: { ...base.availability, ...(nextProfile.availability || {}) },
-              docs: { list: Array.isArray(nextProfile?.docs?.list) ? nextProfile.docs.list : base.docs.list },
-              payout: hydratePayoutData(base.payout, nextProfile.payout || {}),
-              tax: { ...base.tax, ...(nextProfile.tax || {}) },
-              acceptance: { ...base.acceptance, ...(nextProfile.acceptance || {}) },
-            };
-            const resolvedProfile = draftMatchesActiveUser(storedProfile, activeUserId)
-              ? {
-                  ...mergedBackendProfile,
-                  ...(storedProfile as object),
-                  owner:
-                    activeUserId ||
-                    String((storedProfile as Record<string, unknown>).owner || mergedBackendProfile.owner || ''),
-                  support: {
-                    ...mergedBackendProfile.support,
-                    ...(((storedProfile as Record<string, unknown>).support as object) || {}),
-                  },
-                  hq: {
-                    ...mergedBackendProfile.hq,
-                    ...(((storedProfile as Record<string, unknown>).hq as object) || {}),
-                  },
-                  team: {
-                    ...mergedBackendProfile.team,
-                    ...(((storedProfile as Record<string, unknown>).team as object) || {}),
-                  },
-                  servicePolicies: {
-                    ...mergedBackendProfile.servicePolicies,
-                    ...(((storedProfile as Record<string, unknown>).servicePolicies as object) || {}),
-                  },
-                  coverage: {
-                    ...mergedBackendProfile.coverage,
-                    ...(((storedProfile as Record<string, unknown>).coverage as object) || {}),
-                  },
-                  availability: {
-                    ...mergedBackendProfile.availability,
-                    ...(((storedProfile as Record<string, unknown>).availability as object) || {}),
-                  },
-                  docs: {
-                    list: Array.isArray(
-                      ((storedProfile as Record<string, unknown>).docs as { list?: unknown[] } | undefined)?.list
-                    )
-                      ? ((((storedProfile as Record<string, unknown>).docs as { list?: unknown[] }).list ??
-                          []) as typeof mergedBackendProfile.docs.list)
-                      : mergedBackendProfile.docs.list,
-                  },
-                  payout: hydratePayoutData(
-                    mergedBackendProfile.payout,
-                    (((storedProfile as Record<string, unknown>).payout as object) || {}) as Partial<
-                      typeof mergedBackendProfile.payout
-                    >
-                  ),
-                  tax: {
-                    ...mergedBackendProfile.tax,
-                    ...(((storedProfile as Record<string, unknown>).tax as object) || {}),
-                  },
-                  acceptance: {
-                    ...mergedBackendProfile.acceptance,
-                    ...(((storedProfile as Record<string, unknown>).acceptance as object) || {}),
-                  },
-                }
-              : mergedBackendProfile;
-            setProfile(resolvedProfile);
-          }
-        } else if (draftMatchesActiveUser(storedProfile, activeUserId)) {
-          const base = createEmptyProfile();
-          setProfile({
-            ...base,
-            ...(storedProfile as object),
-            owner:
-              activeUserId ||
-              String((storedProfile as Record<string, unknown>).owner || base.owner || ''),
-            support: { ...base.support, ...(((storedProfile as Record<string, unknown>).support as object) || {}) },
-            hq: { ...base.hq, ...(((storedProfile as Record<string, unknown>).hq as object) || {}) },
-            team: { ...base.team, ...(((storedProfile as Record<string, unknown>).team as object) || {}) },
-            servicePolicies: {
-              ...base.servicePolicies,
-              ...(((storedProfile as Record<string, unknown>).servicePolicies as object) || {}),
-            },
-            coverage: {
-              ...base.coverage,
-              ...(((storedProfile as Record<string, unknown>).coverage as object) || {}),
-            },
-            availability: {
-              ...base.availability,
-              ...(((storedProfile as Record<string, unknown>).availability as object) || {}),
-            },
-            docs: {
-              list: Array.isArray(
-                ((storedProfile as Record<string, unknown>).docs as { list?: unknown[] } | undefined)?.list
-              )
-                ? ((((storedProfile as Record<string, unknown>).docs as { list?: unknown[] }).list ??
-                    []) as ProviderProfile['docs']['list'])
-                : base.docs.list,
-            },
-            payout: hydratePayoutData(
-              base.payout,
-              (((storedProfile as Record<string, unknown>).payout as object) || {}) as Partial<
-                ProviderProfile['payout']
-              >
-            ),
-            tax: { ...base.tax, ...(((storedProfile as Record<string, unknown>).tax as object) || {}) },
-            acceptance: {
-              ...base.acceptance,
-              ...(((storedProfile as Record<string, unknown>).acceptance as object) || {}),
-            },
-          });
-        }
-        if (nextUi) {
-          setUi({
-            step: 1,
-          });
-        }
-        if (nextReview && typeof nextReview === 'object') {
-          const normalizedReview = { ...(nextReview as object) } as Record<string, unknown>;
-          if (
-            String(approvalPayload?.status || '').toLowerCase() === 'approved' &&
-            !normalizedReview.approvedAt
-          ) {
-            normalizedReview.inReviewAt = null;
-            normalizedReview.approvedAt =
-              String(approvalPayload?.approvedAt || approvalPayload?.submittedAt || new Date().toISOString()) || null;
-          }
-          setReview((prev) => ({
-            ...prev,
-            ...(normalizedReview as object),
-            ...(storedReview && typeof storedReview === 'object' ? (storedReview as object) : {}),
-          }));
-        }
-      } catch {
-        if (!cancelled) {
-          setToast({
-            tone: 'error',
-            title: t('Backend sync failed'),
-            message: t('We could not load your provider onboarding draft from the backend.'),
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setHydrated(true);
-          window.setTimeout(() => {
-            saveReadyRef.current = true;
-          }, 0);
-        }
-      }
-    };
-
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeUserId, createEmptyProfile, hydrated, t]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    writeStoredDraft(STORAGE.form, profile);
-    writeStoredDraft(STORAGE.ui, ui);
-    writeStoredDraft(STORAGE.review, review);
-  }, [hydrated, profile, review, ui]);
-
-  useEffect(() => {
-    if (!hydrated || !saveReadyRef.current) return;
-    const timeoutId = window.setTimeout(() => {
-      void sellerBackendApi
-        .patchWorkflowScreenState('provider-onboarding', {
-          form: profile,
-          ui,
-          review,
-        })
-        .then(() => setLastSaved(ts()))
-        .catch(() => {
-          setToast({
-            tone: 'error',
-            title: t('Autosave failed'),
-            message: t('Changes are not syncing to the backend right now.'),
-          });
-        });
-    }, 450);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [hydrated, profile, review, t, ui]);
-
   const step = clamp(ui.step || 1, 1, 6);
   const setStep = (n) => setUi((p) => ({ ...p, step: clamp(Number(n) || 1, 1, 6) }));
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [step]);
 
   const isLocked = profile.status !== 'DRAFT';
 
@@ -3180,7 +3045,6 @@ export default function ProviderOnboardingProV4_JS() {
     if (!activeUserId) return;
     const owner = String(profile.owner || profile.email || '').toLowerCase();
     if (owner && owner !== activeUserId) {
-      clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
       const fresh = createEmptyProfile();
       setProfile(fresh);
       recordOnboardingStatus(
@@ -3263,32 +3127,24 @@ export default function ProviderOnboardingProV4_JS() {
     r.readAsText(f);
   };
 
-  const resetDraft = async () => {
+  const resetDraft = () => {
     if (
       !window.confirm(
-        t('Reset this onboarding draft? This clears the saved draft on this device and the backend draft for this workspace.')
+        t('Reset this onboarding draft? This clears your local draft on this device.')
       )
     )
       return;
+    try {
+      localStorage.removeItem(STORAGE.form);
+      localStorage.removeItem(STORAGE.legacy);
+      localStorage.removeItem(STORAGE.review);
+    } catch {
+      // ignore
+    }
     const fresh = createEmptyProfile();
     setProfile(fresh);
     setReview({ submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 });
     setStep(1);
-    clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
-    try {
-      await sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
-        form: fresh,
-        ui: { step: 1 },
-        review: { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 },
-      });
-    } catch {
-      setToast({
-        tone: 'error',
-        title: t('Reset failed'),
-        message: t('We could not reset the provider onboarding draft from the backend.'),
-      });
-      return;
-    }
     recordOnboardingStatus(
       'provider',
       sessionUser || { userId: activeUserId || '', email: activeUserId || '' },
@@ -3301,21 +3157,9 @@ export default function ProviderOnboardingProV4_JS() {
     });
   };
 
-  const withdraw = async () => {
+  const withdraw = () => {
     setF({ status: 'DRAFT' });
     setReview((r) => ({ ...r, submittedAt: null, inReviewAt: null, approvedAt: null }));
-    try {
-      await sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
-        review: { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 },
-      });
-    } catch {
-      setToast({
-        tone: 'error',
-        title: t('Withdraw failed'),
-        message: t('We could not reopen the provider onboarding draft from the backend.'),
-      });
-      return;
-    }
     recordOnboardingStatus(
       'provider',
       sessionUser || {
@@ -3346,7 +3190,7 @@ export default function ProviderOnboardingProV4_JS() {
     setF((prev) => {
       const cur = Array.isArray(prev.languages) ? prev.languages : [];
       const next = toggleInArray(cur, code);
-      return { languages: next };
+      return { languages: next.length ? next : ['en'] };
     });
   };
 
@@ -3365,9 +3209,8 @@ export default function ProviderOnboardingProV4_JS() {
         taxpayerType: profile.tax?.taxpayerType,
         categories: profile.categories,
         serviceLines: profile.serviceLines,
-        categoryMap: serviceCategoryMap,
       }),
-    [profile.tax?.taxpayerType, profile.categories, profile.serviceLines, serviceCategoryMap]
+    [profile.tax?.taxpayerType, profile.categories, profile.serviceLines]
   );
 
   const docsStats = useMemo(() => {
@@ -3814,7 +3657,7 @@ export default function ProviderOnboardingProV4_JS() {
     return missingFields;
   }, [profile, requiredOk, t]);
 
-  const submit = async () => {
+  const submit = () => {
     const blockers = {
       profile: requiredOk.profile,
       services: requiredOk.services,
@@ -3850,81 +3693,20 @@ export default function ProviderOnboardingProV4_JS() {
       return;
     }
 
-    const submittedDocs = (profile.docs.list || []).map((d) => ({ ...d, status: 'Submitted' }));
-    const submittedAt = new Date().toISOString();
-
     try {
-      await Promise.all([
-        sellerBackendApi.submitOnboarding({
-          profileType: 'PROVIDER',
-          status: 'submitted',
-          owner: profile.owner,
-          storeName: profile.displayName,
-          email: profile.email,
-          phone: profile.phone,
-          website: profile.website,
-          about: profile.about,
-          brandColor: profile.brandColor,
-          logoUrl: profile.logoUrl,
-          coverUrl: profile.coverUrl,
-          support: profile.support,
-          languages: profile.languages,
-          docs: { list: submittedDocs },
-          payout: profile.payout,
-          tax: profile.tax,
-          acceptance: {
-            sellerTerms: profile.acceptance.providerTerms,
-            contentPolicy: profile.acceptance.servicePolicy,
-            dataProcessing: profile.acceptance.dataProcessing,
-          },
-          providerServices: profile.categories,
-          metadata: {
-            providerProfile: {
-              ...profile,
-              docs: { list: submittedDocs },
-            },
-            qualityStandards: profile.acceptance.qualityStandards,
-            regions: profile.regions,
-            coverage: profile.coverage,
-            availability: profile.availability,
-            team: profile.team,
-            servicePolicies: profile.servicePolicies,
-            serviceLines: profile.serviceLines,
-          },
-        }),
-        sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
-          form: {
-            ...profile,
-            status: 'SUBMITTED',
-            docs: { list: submittedDocs },
-          },
-          ui,
-          review: {
-            ...review,
-            submittedAt,
-            inReviewAt: null,
-            approvedAt: submittedAt,
-          },
-        }),
-      ]);
-    } catch {
-      setToast({
-        tone: 'error',
-        title: t('Submit failed'),
-        message: t('Your onboarding could not be submitted to the backend.'),
+      setF({
+        docs: { list: (profile.docs.list || []).map((d) => ({ ...d, status: 'Submitted' })) },
       });
-      return;
+    } catch {
+      // ignore
     }
 
-    setF({
-      status: 'SUBMITTED',
-      docs: { list: submittedDocs },
-    });
+    setF({ status: 'SUBMITTED' });
     setReview((r) => ({
       ...r,
-      submittedAt,
+      submittedAt: new Date().toISOString(),
       inReviewAt: null,
-      approvedAt: submittedAt,
+      approvedAt: null,
     }));
     recordOnboardingStatus(
       'provider',
@@ -3938,14 +3720,9 @@ export default function ProviderOnboardingProV4_JS() {
     setToast({
       tone: 'success',
       title: t('Submitted'),
-      message: t('Your onboarding is active. Please sign in again to continue.'),
+      message: t('Your onboarding has been submitted for review.'),
     });
-    await authClient.signOut(
-      typeof sessionUser?.refreshToken === 'string' ? sessionUser.refreshToken : undefined,
-      typeof sessionUser?.accessToken === 'string' ? sessionUser.accessToken : undefined
-    );
-    clearSession();
-    navigate('/auth?intent=signin', { replace: true, state: { defaultTab: 'signin' } });
+    navigate('/provider/onboarding');
   };
 
   const asideTips = useMemo(() => {
@@ -4220,8 +3997,8 @@ export default function ProviderOnboardingProV4_JS() {
                 </div>
               </div>
               <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
                 className="btn-ghost"
                 aria-label="Language"
               >
@@ -4750,8 +4527,7 @@ export default function ProviderOnboardingProV4_JS() {
                         selections={taxonomySelections}
                         onChange={(next) => setF({ categories: next.map((entry) => entry.nodeId) })}
                         disabled={isLocked}
-                        taxonomyData={serviceTaxonomy}
-                        onRetry={serviceTaxonomyQuery.refetch}
+                        taxonomyData={SERVICE_TAXONOMY}
                         types={{
                           marketplace: 'Service Marketplace',
                           family: 'Service Family',
@@ -4904,8 +4680,6 @@ export default function ProviderOnboardingProV4_JS() {
                     disabled={isLocked}
                     defaultCurrency={profile.serviceCurrency}
                     showErrors={showServicesErrors}
-                    categoryOptions={serviceCategories}
-                    categoryMap={serviceCategoryMap}
                   />
 
                   <div className="card-mini">

@@ -1,10 +1,1 @@
-export default function HealthMartPharmacyItems() {
-  return (
-    <div className="w-full px-[0.55%] py-6">
-      <h1 className="text-2xl font-extrabold">HealthMart Pharmacy Items</h1>
-      <p className="mt-2 text-gray-500 dark:text-slate-400">
-        This section is unavailable until a DB-backed implementation is added.
-      </p>
-    </div>
-  );
-}
+export { default } from "./health_mart_pharmacy_desk_licensing_restricted_items_policy_rules_escalations_previewable";

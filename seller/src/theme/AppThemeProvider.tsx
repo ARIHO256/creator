@@ -1,14 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CssBaseline, ThemeProvider } from "@mui/material";
-import { hasSessionToken, readSession } from "../auth/session";
-import { sellerBackendApi } from "../lib/backendApi";
 import { createAppTheme } from "../theme";
 import {
   ThemeModeContext,
+  THEME_MODE_STORAGE_KEY,
   applyResolvedThemeToDocument,
   getSystemPreference,
   getThemeModeMediaQuery,
-  isThemeMode,
+  readThemeModeFromStorage,
   resolveThemeMode,
   type ThemeMode,
   type ResolvedThemeMode,
@@ -19,7 +18,8 @@ type Props = {
 };
 
 function getInitialThemeMode(): ThemeMode {
-  return "system";
+  if (typeof window === "undefined") return "system";
+  return readThemeModeFromStorage(window.localStorage);
 }
 
 function getInitialSystemMode(): ResolvedThemeMode {
@@ -31,7 +31,6 @@ export function AppThemeProvider({ children }: Props) {
   const [mode, setMode] = useState<ThemeMode>(getInitialThemeMode);
   const [systemMode, setSystemMode] =
     useState<ResolvedThemeMode>(getInitialSystemMode);
-  const [uiStateHydrated, setUiStateHydrated] = useState(false);
 
   const resolvedMode = useMemo(
     () => resolveThemeMode(mode, systemMode === "dark"),
@@ -59,47 +58,26 @@ export function AppThemeProvider({ children }: Props) {
   }, [mode]);
 
   useEffect(() => {
-    if (!hasSessionToken(readSession())) {
-      setUiStateHydrated(true);
-      return;
-    }
-    let active = true;
-    void sellerBackendApi
-      .getUiState()
-      .then((payload) => {
-        if (!active || !payload || typeof payload !== "object") return;
-        const appearance =
-          payload.appearance && typeof payload.appearance === "object"
-            ? (payload.appearance as Record<string, unknown>)
-            : {};
-        const backendMode = appearance.themeMode ?? payload.themeMode;
-        if (isThemeMode(backendMode)) {
-          setMode(backendMode);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) {
-          setUiStateHydrated(true);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!uiStateHydrated || !hasSessionToken(readSession())) return;
-    void sellerBackendApi
-      .patchUiState({ appearance: { themeMode: mode } })
-      .catch(() => undefined);
-  }, [mode, uiStateHydrated]);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+  }, [mode]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     applyResolvedThemeToDocument(resolvedMode);
   }, [resolvedMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== THEME_MODE_STORAGE_KEY) return;
+      setMode(readThemeModeFromStorage(window.localStorage));
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   const toggleMode = useCallback(() => {
     setMode((currentMode) => {

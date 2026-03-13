@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
-import { sellerBackendApi } from "../../lib/backendApi";
+import { useMockState } from "../../mocks";
 
 type ServiceDetail = {
   id: string;
@@ -14,59 +14,35 @@ type ServiceDetail = {
   lastUpdated: string;
 };
 
+const SEED_SERVICES: ServiceDetail[] = [
+  {
+    id: "SRV-401",
+    title: "EV Charger Installation",
+    category: "Installations",
+    rate: 180,
+    currency: "USD",
+    duration: "2 hours",
+    status: "Active",
+    lastUpdated: "Today, 09:10",
+  },
+  {
+    id: "SRV-402",
+    title: "Fleet Energy Audit",
+    category: "Consulting",
+    rate: 320,
+    currency: "USD",
+    duration: "Half day",
+    status: "Paused",
+    lastUpdated: "Yesterday",
+  },
+];
+
 export default function ProviderListingDetailView() {
   const { id } = useParams();
   const { t, formatCurrency } = useLocalization();
-  const [services, setServices] = React.useState<ServiceDetail[]>([]);
-  const [loaded, setLoaded] = React.useState(false);
 
-  React.useEffect(() => {
-    let active = true;
-
-    void sellerBackendApi
-      .getSellerWorkspaceListings()
-      .then((rows) => {
-        if (!active) return;
-        const mapped = rows
-          .filter((row) => String((row as { listingType?: unknown }).listingType ?? "").toLowerCase() === "service")
-          .map((row) => {
-            const payload = (((row as { data?: unknown }).data ?? {}) as Record<string, unknown>);
-            return {
-              id: String((row as { id?: unknown }).id ?? payload.id ?? ""),
-              title: String((row as { title?: unknown }).title ?? payload.title ?? "Service listing"),
-              category: String(payload.category ?? "Services"),
-              rate: Number(payload.price ?? payload.rate ?? 0),
-              currency: String((row as { currency?: unknown }).currency ?? payload.currency ?? "USD"),
-              duration: String(payload.duration ?? "Custom"),
-              status: String((row as { status?: unknown }).status ?? payload.status ?? "Draft"),
-              lastUpdated: new Date(String((row as { updatedAt?: unknown }).updatedAt ?? payload.updatedAt ?? new Date().toISOString())).toLocaleString(undefined, {
-                month: "short",
-                day: "2-digit",
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-            } satisfies ServiceDetail;
-          });
-        setServices(mapped);
-      })
-      .finally(() => {
-        if (active) setLoaded(true);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
+  const [services] = useMockState<ServiceDetail[]>("provider.listings.services", SEED_SERVICES);
   const detail = useMemo(() => services.find((item) => item.id === id) || services[0], [id, services]);
-
-  if (!detail && loaded) {
-    return <div className="w-full px-[0.55%] py-6 text-sm font-semibold text-slate-500">{t("No service listing found.")}</div>;
-  }
-
-  if (!detail) {
-    return <div className="w-full px-[0.55%] py-6 text-sm font-semibold text-slate-500">{t("Loading service listing...")}</div>;
-  }
 
   return (
     <div className="w-full px-[0.55%] py-6">

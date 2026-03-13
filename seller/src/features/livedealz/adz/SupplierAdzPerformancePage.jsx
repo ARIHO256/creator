@@ -667,7 +667,7 @@ function SupplierAdzPerformance({
 
           {/* Supplier settlement preview */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Card title="Settlement preview" subtitle="Estimated from contract compensation terms." right={<Pill text="Supplier view" tone="neutral" />}>
+            <Card title="Settlement preview" subtitle="Estimated from contract compensation terms (demo)." right={<Pill text="Supplier view" tone="neutral" />}>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="rounded-2xl border border-slate-200 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 dark:border-slate-700 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-400">Est. creator payout</div>
@@ -744,7 +744,7 @@ function SupplierAdzPerformance({
               </div>
             </Card>
 
-            <Card title="By item" subtitle="Bundle-aware split attribution.">
+            <Card title="By item" subtitle="Bundle-aware split attribution (demo).">
               <div className="space-y-2">
                 {byItem.slice(0, 8).map((r) => (
                   <div key={r.name} className="rounded-2xl border transition-colors border-slate-200 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 dark:border-slate-700 p-3">
@@ -762,7 +762,7 @@ function SupplierAdzPerformance({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-            <Card title="By creative version" subtitle="A/B attribution (split model).">
+            <Card title="By creative version" subtitle="A/B attribution (split model demo).">
               <div className="space-y-2">
                 {byCreative.map((v) => (
                   <div key={v.id} className="rounded-2xl border transition-colors border-slate-200 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 dark:border-slate-700 p-3">
@@ -1002,7 +1002,7 @@ export default function SupplierAdzPerformancePage() {
             canView={true}
             entityLabelSingular="Ad"
             entityLabelPlural="Adz"
-            headerHint="Supplier view (live data)"
+            headerHint="Supplier view (demo data)"
             showOpenFullPage={false}
             toast={toast}
           />

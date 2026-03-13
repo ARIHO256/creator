@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierSettingsSafetyPage.jsx
@@ -12,7 +11,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Sticky header with status badges + completeness progress
  * - Left anchor sidebar navigation with identical section depth
  * - Scroll-to-bottom policy review gating inside a modal (compliance-friendly)
- * - Autosave to backend settings + export data (JSON)
+ * - Autosave to localStorage + export data (JSON)
  * - Devices management + sign-out
  *
  * Supplier adaptations (minimal + required):
@@ -35,6 +34,9 @@ import { sellerBackendApi } from "../../../lib/backendApi";
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
+
+const STORAGE_KEY = "mldz_supplier_settings_v2_4";
+const STORAGE_KEY_LEGACY = "mldz_supplier_onboarding_v2_3";
 
 /* ------------------------- Icon stubs (replace with your icon system in-app) ------------------------- */
 
@@ -580,7 +582,7 @@ function policyAllSeen(form) {
 
 /* ------------------------- Default form (Supplier) ------------------------- */
 
-function createEmptySupplierSettingsForm() {
+function defaultForm() {
   return {
     profile: {
       businessName: "",
@@ -712,9 +714,8 @@ function createEmptySupplierSettingsForm() {
 export default function SupplierSettingsSafetyPage() {
   const { toasts, push } = useToasts();
 
-  const [form, setForm] = useState(createEmptySupplierSettingsForm());
+  const [form, setForm] = useState(() => defaultForm());
   const [saved, setSaved] = useState(true);
-  const [hydrated, setHydrated] = useState(false);
 
   const [openPolicy, setOpenPolicy] = useState(null); // platform | content | payout | full | null
   const [policyScrollPct, setPolicyScrollPct] = useState(0);
@@ -745,58 +746,34 @@ export default function SupplierSettingsSafetyPage() {
     return { done, total, pct: Math.round((done / total) * 100) };
   }, [form, primarySocial]);
 
+  // Load from onboarding storage
   useEffect(() => {
-    let cancelled = false;
-
-    const hydrate = async () => {
-      try {
-        const payload = await sellerBackendApi.getSettings();
-        if (cancelled) return;
-        const nextForm =
-          payload &&
-          typeof payload === "object" &&
-          payload.profile &&
-          typeof payload.profile === "object" &&
-          (payload.profile as { supplierSettings?: unknown }).supplierSettings &&
-          typeof (payload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
-            ? deepMerge(createEmptySupplierSettingsForm(), (payload.profile as { supplierSettings: unknown }).supplierSettings)
-            : createEmptySupplierSettingsForm();
-        setForm(nextForm);
-      } catch {
-        if (!cancelled) {
-          setForm(createEmptySupplierSettingsForm());
-          push("Could not load supplier settings from the backend.", "error");
-        }
-      } finally {
-        if (!cancelled) {
-          setHydrated(true);
-        }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setForm(deepMerge(defaultForm(), parsed));
+        push("Settings loaded from onboarding.", "success");
       }
-    };
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
-  }, [push]);
-
+  // Autosave
   useEffect(() => {
-    if (!hydrated) return;
     setSaved(false);
     const t = setTimeout(() => {
-      void sellerBackendApi
-        .patchSettings({
-          profile: {
-            supplierSettings: form,
-          },
-        })
-        .then(() => setSaved(true))
-        .catch(() => {
-          push("Supplier settings could not be saved to the backend.", "error");
-        });
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+      } catch {
+        // ignore
+      }
+      setSaved(true);
     }, 450);
     return () => clearTimeout(t);
-  }, [form, hydrated, push]);
+  }, [form]);
 
   function update(path, value) {
     setForm((prev) => setDeep(prev, path, value));
@@ -933,15 +910,26 @@ export default function SupplierSettingsSafetyPage() {
   }
 
   function resetAll() {
-    setForm(createEmptySupplierSettingsForm());
-    addAudit("Settings reset", "Restored backend baseline");
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setForm(defaultForm());
+    addAudit("Settings reset", "Restored defaults");
     push("Settings reset to defaults.", "success");
     setConfirmReset(false);
   }
 
   function deleteWorkspace() {
+    // UI preview: simulate the action + wipe local storage
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     addAudit("Workspace delete requested", "Support ticket created");
-    push("Delete request submitted to Support.", "success");
+    push("Delete request submitted to Support (demo).", "success");
     setConfirmDelete(false);
   }
 
@@ -1126,7 +1114,7 @@ export default function SupplierSettingsSafetyPage() {
       <Modal
         open={confirmDelete}
         title="Delete workspace"
-        subtitle="High impact. Creates a support ticket and revokes access."
+        subtitle="High impact. Creates a support ticket and revokes access (demo)."
         onClose={() => setConfirmDelete(false)}
         footer={
           <div className="flex justify-end gap-2">
@@ -1206,7 +1194,7 @@ export default function SupplierSettingsSafetyPage() {
 
             <GhostButton
               onClick={() => {
-                push("Opening Supplier onboarding.", "success");
+                push("Opening Supplier onboarding (demo).", "success");
               }}
             >
               <ExternalLink className="h-4 w-4" /> Open onboarding
@@ -1919,7 +1907,7 @@ export default function SupplierSettingsSafetyPage() {
                     onChange={(v) => {
                       update("settings.calendar.googleConnected", v);
                       addAudit("Calendar sync updated", v ? "connected" : "disconnected");
-                      push(v ? "Google Calendar connected." : "Google Calendar disconnected.", "success");
+                      push(v ? "Google Calendar connected (demo)." : "Google Calendar disconnected (demo).", "success");
                     }}
                   />
                 </div>
@@ -2327,7 +2315,7 @@ export default function SupplierSettingsSafetyPage() {
                         }
                         update("payout.verification.status", "code_sent");
                         addAudit("Verification code sent", `${form.payout.verification.method || "Email"} → ${form.payout.verification.lastSentTo}`);
-                        push("Verification code sent.", "success");
+                        push("Verification code sent (demo).", "success");
                       }}
                     >
                       <ShieldCheck className="h-4 w-4" /> Send code
@@ -2624,7 +2612,7 @@ export default function SupplierSettingsSafetyPage() {
               <div className="mt-4 flex justify-end gap-2">
                 <GhostButton
                   onClick={() => {
-                    push("Support chat opened.", "success");
+                    push("Support chat opened (demo).", "success");
                     addAudit("Support contacted", "Supplier Success");
                   }}
                 >
@@ -2646,7 +2634,7 @@ export default function SupplierSettingsSafetyPage() {
                   </PrimaryButton>
                   <GhostButton
                     onClick={() => {
-                      push("Copying JSON.", "success");
+                      push("Copying JSON (demo).", "success");
                       try {
                         navigator.clipboard?.writeText(JSON.stringify(form, null, 2));
                       } catch {
@@ -2668,7 +2656,7 @@ export default function SupplierSettingsSafetyPage() {
                   </GhostButton>
                   <GhostButton
                     onClick={() => {
-                      push("Incident report created.", "success");
+                      push("Incident report created (demo).", "success");
                       addAudit("Incident reported", "Deliverables / disputes");
                     }}
                   >

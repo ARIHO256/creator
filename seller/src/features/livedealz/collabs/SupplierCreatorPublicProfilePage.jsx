@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierCreatorProfilePage.jsx
@@ -21,7 +20,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Invite-only correction: creators ACCEPT invites to collaborate (not proposal response).
  * - Drawer supports selecting a Supplier campaign (must be “Use Creator” or “Not sure yet”).
  * - Campaign governance surfaced: Collab Mode + Content Approval Mode (Manual/Auto).
- * - Simulation button kept: “Mark Accepted” to emulate acceptance → negotiation entry.
+ * - Simulation button kept: “Mark Accepted (demo)” to emulate acceptance → negotiation entry.
  *
  * Canvas-safe:
  * - No MUI. Uses lightweight toast + drawer.
@@ -302,16 +301,96 @@ function SocialStat({ icon, label, value }) {
   );
 }
 
-/* ----------------------------- Supplier campaign data ----------------------------- */
+/* ----------------------------- Supplier domain mocks ----------------------------- */
 
-const PROFILE_CAMPAIGNS = [];
+const MOCK_CAMPAIGNS = [
+  {
+    id: "S-201",
+    name: "Beauty Flash Week (Combo)",
+    stage: "Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-only",
+    approvalMode: "Manual",
+    currency: "USD",
+    budget: 2400,
+    region: "East Africa",
+    type: "Live + Shoppables.",
+    startDate: "2026-02-10",
+    endDate: "2026-02-23"
+  },
+  {
+    id: "S-204",
+    name: "ShopNow Groceries Soft Promo",
+    stage: "Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Auto",
+    currency: "USD",
+    budget: 1200,
+    region: "East Africa",
+    type: "Shoppable Adz",
+    startDate: "2026-03-01",
+    endDate: "2026-03-21"
+  },
+  {
+    id: "S-203",
+    name: "Supplier-only Promo Sprint",
+    stage: "Execution",
+    creatorUsageDecision: "I will NOT use a Creator",
+    collabMode: "—",
+    approvalMode: "Auto",
+    currency: "USD",
+    budget: 800,
+    region: "East Africa",
+    type: "Shoppable Adz",
+    startDate: "2026-02-23",
+    endDate: "2026-02-27"
+  },
+  {
+    id: "S-212",
+    name: "New Launch (Creator plan pending)",
+    stage: "Draft",
+    creatorUsageDecision: "I am NOT SURE yet",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    currency: "USD",
+    budget: 1600,
+    region: "Africa / Asia",
+    type: "Live Sessionz",
+    startDate: todayYMD(),
+    endDate: ""
+  }
+];
 
-const DELIVERABLE_PACKS = [];
+const DELIVERABLE_PACKS = [
+  {
+    id: "pack-live",
+    name: "Live session pack",
+    description: "1 live (60–90 mins) + 3 highlight clips",
+    items: ["1x Live Session", "3x Clips (15–30s)"]
+  },
+  {
+    id: "pack-ads",
+    name: "Shoppable Adz bundle",
+    description: "3 ad creatives + CTA + caption pack",
+    items: ["3x Ad Creatives", "CTA + Captions", "Link Pack"]
+  },
+  {
+    id: "pack-full",
+    name: "Full launch package",
+    description: "Live + 3 clips + 2 stories + 1 post",
+    items: ["1x Live Session", "3x Clips", "2x Stories", "1x Post"]
+  }
+];
 
 /* ----------------------------- Cards (Right column) ----------------------------- */
 
 function SocialLinksCard({ onAction }) {
-  const socials = [];
+  const socials = [
+    { id: "tiktok", name: "TikTok", handle: "@ronald.creates", tag: "TT", color: "bg-slate-900" },
+    { id: "instagram", name: "Instagram", handle: "@ronald.creates", tag: "IG", color: "bg-pink-500" },
+    { id: "youtube", name: "YouTube", handle: "Ronald Creates", tag: "YT", color: "bg-red-600" }
+  ];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
@@ -343,7 +422,11 @@ function SocialLinksCard({ onAction }) {
 }
 
 function PastCampaignsCard({ onAction }) {
-  const campaigns = [];
+  const campaigns = [
+    { id: 1, title: "Glow Essentials – Serum + Toner Bundle", period: "Mar 14 – Mar 18 · Host", gmv: "$6,200", ctr: "4.1%", conv: "2.8%" },
+    { id: 2, title: "Weekend Mask Bar Live", period: "Feb 3 – Feb 4 · Guest creator", gmv: "$4,200", ctr: "3.5%", conv: "2.2%" },
+    { id: 3, title: "Black Friday Beauty Mega Stream", period: "Nov 23 – Nov 25 · Lead host", gmv: "$11,150", ctr: "4.8%", conv: "3.1%" }
+  ];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
@@ -380,7 +463,7 @@ function PastCampaignsCard({ onAction }) {
 }
 
 function InterestTagsCard() {
-  const tags = [];
+  const tags = ["#EV", "#Tech", "#Live shopping", "#Discount hunts", "#Cross-border"];
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Interest tags</h2>
@@ -533,65 +616,33 @@ function InviteDrawer({ open, onClose, creator, campaigns, onInviteSent, toast }
     // Permission note (RBAC): In production, only Supplier Owner/Collabs Manager can send invites.
 
     setPending(true);
-    try {
-      const response = await sellerBackendApi.createCreatorInvite({
-        creatorHandle: creator?.handle,
-        campaignId: selectedCampaign.id,
-        campaignTitle: selectedCampaign.name,
-        title: `Invite to collaborate on ${selectedCampaign.name}`,
-        message,
-        type: pack.name,
-        category: creator?.categories?.[0] || "General",
-        region: creator?.region || "Global",
-        baseFee: fee,
-        currency: "USD",
-        commissionPct: commission,
-        estimatedValue: fee,
-        fitScore: creator?.fitScore || 80,
-        fitReason: creator?.fitReason || "Strong campaign and audience alignment.",
-        messageShort: `Invitation from supplier for ${selectedCampaign.name}.`,
-        supplierDescription: "Seller invite from MyLiveDealz supplier workspace.",
-        metadata: {
-          collabMode,
-          approvalMode,
-          creatorUsageDecision: selectedCampaign.creatorUsageDecision,
-          paymentSplit,
-          exclusivityDays,
-          usageRightsDays,
-          packId: pack.id,
-          packName: pack.name,
-          attachments
-        }
-      });
+    await sleep(900);
 
-      const record = {
-        id: String(response?.id || ""),
-        campaignId: selectedCampaign.id,
-        campaignName: selectedCampaign.name,
-        status: "Pending acceptance",
-        sentAt: new Date().toLocaleString(),
-        collabMode,
-        approvalMode,
-        packName: pack.name,
-        fee,
-        commission
-      };
+    const record = {
+      id: `INV-${Math.random().toString(16).slice(2, 7).toUpperCase()}`,
+      campaignId: selectedCampaign.id,
+      campaignName: selectedCampaign.name,
+      status: "Pending acceptance",
+      sentAt: new Date().toLocaleString(),
+      collabMode,
+      approvalMode,
+      packName: pack.name,
+      fee,
+      commission
+    };
 
-      setInviteRecord(record);
-      onInviteSent?.(record);
-      toast?.("Invite sent. Waiting for creator to accept.", "success");
-    } catch (error) {
-      toast?.(error instanceof Error ? error.message : "Failed to send invite.", "error");
-    } finally {
-      setPending(false);
-    }
+    setInviteRecord(record);
+    setPending(false);
+
+    onInviteSent?.(record);
+    toast?.("Invite sent. Waiting for creator to accept.", "success");
   };
 
   const markAccepted = () => {
     if (!inviteRecord) return;
     const next = { ...inviteRecord, status: "Accepted" };
     setInviteRecord(next);
-    toast?.("Invite accepted. You can now negotiate terms.", "success");
+    toast?.("Invite accepted (demo). You can now negotiate terms.", "success");
   };
 
   const openNegotiation = () => {
@@ -863,7 +914,7 @@ function InviteDrawer({ open, onClose, creator, campaigns, onInviteSent, toast }
             <div className="mt-3 flex flex-wrap gap-2">
               {/* ✅ Keep simulation button */}
               <Btn onClick={markAccepted} disabled={inviteRecord.status === "Accepted"} title="Simulate creator acceptance">
-                ✅ Mark Accepted
+                ✅ Mark Accepted (demo)
               </Btn>
               <Btn
                 tone="primary"
@@ -1224,7 +1275,7 @@ export default function SupplierCreatorProfilePage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         creator={creator}
-        campaigns={PROFILE_CAMPAIGNS}
+        campaigns={MOCK_CAMPAIGNS}
         onInviteSent={() => {
           // Optional: in production, update My Creators / Invites state stores
         }}
@@ -1244,7 +1295,7 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
   assert(typeof ORANGE === "string" && ORANGE.length > 0, "ORANGE exists");
   assert(typeof GREEN === "string" && GREEN.length > 0, "GREEN exists");
-  assert(Array.isArray(PROFILE_CAMPAIGNS), "campaign data exists");
-  assert(Array.isArray(DELIVERABLE_PACKS), "deliverable packs exist");
+  assert(Array.isArray(MOCK_CAMPAIGNS) && MOCK_CAMPAIGNS.length > 0, "campaign mocks exist");
+  assert(Array.isArray(DELIVERABLE_PACKS) && DELIVERABLE_PACKS.length > 0, "deliverable packs exist");
   console.log("✅ SupplierCreatorProfilePage self-tests passed");
 }

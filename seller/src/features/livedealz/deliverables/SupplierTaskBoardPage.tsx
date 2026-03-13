@@ -43,6 +43,92 @@ function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
+/* ----------------------------- Mock Contracts ----------------------------- */
+
+const CONTRACTS = [
+  {
+    id: "C-901",
+    status: "Active",
+    campaign: "EV Charger Flash Drop",
+    brand: "EV World Store",
+    currency: "UGX",
+    value: 7200000,
+    totalTasks: 6,
+    creator: { name: "Luna Ade", handle: "@lunaade", avatarUrl: "https://i.pravatar.cc/120?img=7" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Live Session (EV charger demo)", done: false },
+      { id: 2, label: "Video Clip (30s highlight)", done: false },
+      { id: 3, label: "Story (countdown + CTA)", done: false },
+      { id: 4, label: "Post (product grid)", done: true }
+    ]
+  },
+  {
+    id: "C-902",
+    status: "Active",
+    campaign: "Back-to-Work Essentials",
+    brand: "Urban Supply",
+    currency: "UGX",
+    value: 5400000,
+    totalTasks: 5,
+    creator: { name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Invite-Only",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Video Clip (unboxing)", done: false },
+      { id: 2, label: "Story (3-item roundup)", done: false },
+      { id: 3, label: "Post (bundle offer)", done: false }
+    ]
+  },
+  {
+    id: "C-903",
+    status: "Active",
+    campaign: "Home Essentials Drop",
+    brand: "HomePro",
+    currency: "UGX",
+    value: 3600000,
+    totalTasks: 4,
+    creator: { name: "(Supplier-hosted)", handle: "@homepro", avatarUrl: "https://i.pravatar.cc/120?img=46" },
+    governance: {
+      hostRole: "Supplier",
+      creatorUsage: "I will NOT use a Creator",
+      collabMode: "(n/a)",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Live Session (kitchen bundle)", done: false },
+      { id: 2, label: "Video Clip (best moments)", done: false },
+      { id: 3, label: "Post (bundle pricing)", done: false }
+    ]
+  },
+  {
+    id: "C-904",
+    status: "Terminated",
+    campaign: "Old Campaign (terminated)",
+    brand: "Do Not Show",
+    currency: "UGX",
+    value: 0,
+    totalTasks: 0,
+    creator: { name: "N/A", handle: "@na", avatarUrl: "https://i.pravatar.cc/120?img=20" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
+    },
+    deliverables: []
+  }
+];
+
 /* ----------------------------- Types / Config ----------------------------- */
 
 const COLUMNS = [
@@ -67,7 +153,7 @@ const PRIORITY = [
   { k: "Critical", pill: "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-300" }
 ];
 
-// Helper to get a deterministic due date based on a seed
+// Helper to get deterministic due date for demo based on a seed
 const getDeterministicDue = (seed) => {
   // Range: -2 to 7 days
   const days = (seed % 10) - 2;
@@ -282,12 +368,11 @@ function Toast({ text, onClose }) {
 /* ----------------------------- Main Page ----------------------------- */
 
 export default function SupplierTaskBoardPage() {
-  const contracts = useMemo<Array<Record<string, any>>>(() => [], []);
   // 1) Derive all tasks from contracts
   const allDerivedTasks = useMemo(() => {
     const tasks = [];
 
-    contracts.forEach((contract) => {
+    CONTRACTS.forEach((contract) => {
       if (contract.status === "Terminated") return;
 
       (contract.deliverables || []).forEach((d) => {
@@ -329,7 +414,7 @@ export default function SupplierTaskBoardPage() {
           collabMode: contract.governance?.collabMode || "Open for Collabs",
           approvalMode: contract.governance?.approvalMode || "Manual",
 
-          // Submission preview entries
+          // Submission mocks
           submission: {
             status: d.done ? "Approved" : "In progress",
             link: `https://drive.example.com/${encodeURIComponent(contract.id)}/${d.id}`,
@@ -353,7 +438,7 @@ export default function SupplierTaskBoardPage() {
     });
 
     return tasks;
-  }, [contracts]);
+  }, []);
 
   // 2) Distribute into columns (mirrors creator logic)
   const [columns, setColumns] = useState(() => {
@@ -385,7 +470,22 @@ export default function SupplierTaskBoardPage() {
   const [contentLink, setContentLink] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState([]);
 
-  const [comments, setComments] = useState<Array<Record<string, any>>>([]);
+  const [comments, setComments] = useState([
+    {
+      id: 1,
+      from: "creator",
+      name: "@lunaade",
+      body: "I added the ingredient highlight in the first 30 seconds as requested.",
+      time: "Yesterday"
+    },
+    {
+      id: 2,
+      from: "supplier",
+      name: "You",
+      body: "Looks good. Please tighten the hook and add price overlay at 00:05.",
+      time: "Yesterday"
+    }
+  ]);
   const [commentDraft, setCommentDraft] = useState("");
 
   const [toast, setToast] = useState(null);
@@ -538,8 +638,8 @@ export default function SupplierTaskBoardPage() {
         }
         right={
           <>
-            <Btn tone="neutral" onClick={() => setToast("Open Asset Library")}>Asset Library</Btn>
-            <Btn tone="neutral" onClick={() => setToast("Open Links Hub")}>Links Hub</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open Asset Library (demo)")}>Asset Library</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open Links Hub (demo)")}>Links Hub</Btn>
             <Btn tone="brand" onClick={() => setNewTaskOpen(true)}>New task</Btn>
           </>
         }
@@ -626,7 +726,7 @@ export default function SupplierTaskBoardPage() {
       <NewTaskDrawer
         open={newTaskOpen}
         onClose={() => setNewTaskOpen(false)}
-        contracts={contracts.filter((c) => c.status !== "Terminated")}
+        contracts={CONTRACTS.filter((c) => c.status !== "Terminated")}
         existingTasks={allTasksFlat}
         onCreate={(payload) => addNewTaskToBoard(payload)}
         setToast={setToast}
@@ -819,7 +919,7 @@ function TaskSidePanel({
                 <Btn
                   tone="neutral"
                   onClick={() => {
-                    setToast("Queued for Admin review");
+                    setToast("Queued for Admin review (demo)");
                   }}
                   title="After supplier approval (manual), Admin review follows"
                 >
@@ -838,8 +938,8 @@ function TaskSidePanel({
             ) : null}
 
             {/* Always available */}
-            <Btn tone="neutral" onClick={() => setToast("Open campaign")}>Open campaign</Btn>
-            <Btn tone="neutral" onClick={() => setToast("Open contract")}>Open contract</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open campaign (demo)")}>Open campaign</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open contract (demo)")}>Open contract</Btn>
           </div>
 
           <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -914,14 +1014,14 @@ function TaskSidePanel({
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2">
-                <Btn tone="neutral" onClick={() => setToast("Open preview player")}>Preview</Btn>
+                <Btn tone="neutral" onClick={() => setToast("Open preview player (demo)")}>Preview</Btn>
                 <Btn
                   tone="neutral"
                   onClick={() => {
                     try {
                       navigator.clipboard?.writeText(task.submission?.link || "");
                     } catch {}
-                    setToast("Submission link copied");
+                    setToast("Submission link copied (demo)");
                   }}
                 >
                   Copy link

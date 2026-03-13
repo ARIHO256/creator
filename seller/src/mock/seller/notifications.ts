@@ -1,0 +1,78 @@
+import type { NotificationsContent } from "../shared/types";
+
+const now = Date.now();
+
+export const sellerNotificationsContent: NotificationsContent = {
+  categories: ["Orders", "RFQs", "Finance", "MyLiveDealz", "Security", "System"],
+  items: [
+    {
+      id: "n1",
+      title: "New order received",
+      message: "Order #10492 needs confirmation.",
+      category: "Orders",
+      priority: "high",
+      createdAt: new Date(now - 1000 * 60 * 15).toISOString(),
+      unread: true,
+      route: "/orders",
+      actor: "Buyer: Amina",
+    },
+    {
+      id: "n2",
+      title: "RFQ follow-up",
+      message: "Buyer asked for updated MOQ and pricing tiers.",
+      category: "RFQs",
+      priority: "medium",
+      createdAt: new Date(now - 1000 * 60 * 44).toISOString(),
+      unread: true,
+      route: "/wholesale/rfq",
+      actor: "Buyer: Kwame",
+    },
+    {
+      id: "n3",
+      title: "Payout scheduled",
+      message: "Next settlement is scheduled for Friday.",
+      category: "Finance",
+      priority: "medium",
+      createdAt: new Date(now - 1000 * 60 * 85).toISOString(),
+      unread: false,
+      route: "/finance/wallets",
+    },
+    {
+      id: "n4",
+      title: "Security reminder",
+      message: "Enable 2FA to protect payouts and contracts.",
+      category: "Security",
+      priority: "high",
+      createdAt: new Date(now - 1000 * 60 * 140).toISOString(),
+      unread: true,
+      route: "/settings/security",
+    },
+    {
+      id: "n5",
+      title: "MyLiveDealz live starts soon",
+      message: "Your live session starts in 30 minutes.",
+      category: "MyLiveDealz",
+      priority: "high",
+      createdAt: new Date(now - 1000 * 60 * 190).toISOString(),
+      unread: false,
+      route: "/mldz/live/schedule",
+    },
+    {
+      id: "n6",
+      title: "System update",
+      message: "New export format is now available.",
+      category: "System",
+      priority: "low",
+      createdAt: new Date(now - 1000 * 60 * 280).toISOString(),
+      unread: false,
+      route: "/ops/exports",
+    },
+  ],
+  watches: [
+    { id: "w1", name: "High value orders", desc: "Notify when orders exceed your threshold.", enabled: true, category: "Orders" },
+    { id: "w2", name: "SLA at risk", desc: "Alert when reply SLA is under 10 minutes.", enabled: true, category: "System" },
+    { id: "w3", name: "Payout and holds", desc: "Any payout hold, reversal or failed transfer.", enabled: true, category: "Finance" },
+    { id: "w4", name: "Security posture", desc: "New device sign-in and policy changes.", enabled: false, category: "Security" },
+    { id: "w5", name: "MyLiveDealz events", desc: "Live schedule changes and creator deliverables.", enabled: true, category: "MyLiveDealz" },
+  ],
+};

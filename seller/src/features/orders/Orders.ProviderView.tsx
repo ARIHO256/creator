@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useLocalization } from "../../localization/LocalizationProvider";
-import { useRolePageContent } from "../../data/pageContent";
+import { useRolePageContent } from "../../mock/shared/pageContent";
 
 // Provider — Bookings & Orders (role-shared Orders page)
 

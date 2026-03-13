@@ -51,10 +51,9 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useRolePageContent } from '../../data/pageContent';
-import type { DashboardQuickAction, DashboardContent } from '../../data/pageTypes';
+import { useRolePageContent } from '../../mock/shared/pageContent';
+import type { DashboardQuickAction } from '../../mock/shared/types';
 import type { UserRole } from '../../types/roles';
-import { sellerBackendApi } from '../../lib/backendApi';
 
 const TOKENS = {
   green: '#03CD8C',
@@ -64,6 +63,9 @@ const TOKENS = {
   black: '#0B0F14',
 };
 const MIX_TREND_CARD_HEIGHT = 260;
+
+const STORAGE_DEFAULT_VIEW = 'evz_supplier_dashboard_default_view';
+const STORAGE_CUSTOM_VIEWS = 'evz_supplier_dashboard_custom_views_v1';
 
 type ViewFilters = {
   marketplaces: string[];
@@ -114,11 +116,10 @@ type KpiInput = {
   seriesBase: number;
   drift: number;
   vol: number;
-  seriesOffset: number;
-  explicitSeries?: number[];
+  seedAdd: number;
   drilldown: KpiDrilldown;
 };
-type Kpi = Omit<KpiInput, 'seriesBase' | 'drift' | 'vol' | 'seriesOffset'> & { series: number[] };
+type Kpi = Omit<KpiInput, 'seriesBase' | 'drift' | 'vol' | 'seedAdd'> & { series: number[] };
 
 type DonutTopItem = { label: string; value: string };
 type DonutAction = { label: string; to: string; icon: React.ElementType };
@@ -974,7 +975,6 @@ export default function SupplierHubDashboardPage({
   const [viewId, setViewId] = useState('all');
   const [defaultViewId, setDefaultViewId] = useState('all');
   const [customViews, setCustomViews] = useState<CustomView[]>([]);
-  const [dashboardSummary, setDashboardSummary] = useState<Record<string, any> | null>(null);
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
   const [insightsTab, setInsightsTab] = useState('recommended');
@@ -1008,67 +1008,58 @@ export default function SupplierHubDashboardPage({
   };
 
   useEffect(() => {
-    let active = true;
+    if (typeof window === 'undefined') return;
 
-    void Promise.allSettled([
-      sellerBackendApi.getSavedViews(),
-      sellerBackendApi.getUiState(),
-    ]).then(([savedViewsResult, uiStateResult]) => {
-      if (!active) return;
+    // Load custom views (saved locally)
+    const storedCustom = safeJsonParse(window.localStorage.getItem(STORAGE_CUSTOM_VIEWS), []);
+    const safeCustom: CustomView[] = Array.isArray(storedCustom) ? storedCustom : [];
+    setCustomViews(safeCustom);
 
-      const safeCustom: CustomView[] = savedViewsResult.status === "fulfilled" && Array.isArray(savedViewsResult.value.views)
-        ? (savedViewsResult.value.views as CustomView[])
-        : [];
-      setCustomViews(safeCustom);
+    // Resolve default view (preset or custom)
+    const savedDefault = window.localStorage.getItem(STORAGE_DEFAULT_VIEW);
+    const universe = [...PRESET_VIEWS, ...safeCustom];
+    const resolvedDefault =
+      savedDefault && universe.some((v) => v.id === savedDefault) ? savedDefault : 'all';
+    setDefaultViewId(resolvedDefault);
+    setViewId(resolvedDefault);
 
-      const uiStatePayload = uiStateResult.status === "fulfilled" ? uiStateResult.value : {};
-      const savedDefault = String(((uiStatePayload as Record<string, any>)?.dashboard as { defaultViewId?: string } | undefined)?.defaultViewId || 'all');
-      const universe = [...PRESET_VIEWS, ...safeCustom];
-      const resolvedDefault =
-        savedDefault && universe.some((v) => v.id === savedDefault) ? savedDefault : 'all';
-      setDefaultViewId(resolvedDefault);
-      setViewId(resolvedDefault);
+    // Apply shared view from URL (supports both search params and hash-router params)
+    const params = getShareParamsFromLocation();
+    const hasShare =
+      params.has('range') ||
+      params.has('from') ||
+      params.has('to') ||
+      params.has('m') ||
+      params.has('w') ||
+      params.has('c');
+    if (hasShare) {
+      applyingView.current = true;
 
-      const params = getShareParamsFromLocation();
-      const hasShare =
-        params.has('range') ||
-        params.has('from') ||
-        params.has('to') ||
-        params.has('m') ||
-        params.has('w') ||
-        params.has('c');
-      if (hasShare) {
-        applyingView.current = true;
+      const nextRange = params.get('range');
+      if (isTimeRangeKey(nextRange)) setRange(nextRange);
 
-        const nextRange = params.get('range');
-        if (isTimeRangeKey(nextRange)) setRange(nextRange);
+      const from = params.get('from');
+      const to = params.get('to');
+      if (from) setCustomFrom(from);
+      if (to) setCustomTo(to);
 
-        const from = params.get('from');
-        const to = params.get('to');
-        if (from) setCustomFrom(from);
-        if (to) setCustomTo(to);
+      setFilters({
+        marketplaces: parseCommaList(params.get('m')),
+        warehouses: parseCommaList(params.get('w')),
+        channels: parseCommaList(params.get('c')),
+      });
 
-        setFilters({
-          marketplaces: parseCommaList(params.get('m')),
-          warehouses: parseCommaList(params.get('w')),
-          channels: parseCommaList(params.get('c')),
-        });
-
-        setViewId('custom');
-        window.setTimeout(() => {
-          applyingView.current = false;
-        }, 0);
-        showToast('View loaded from link');
-      }
-    });
-
-    return () => {
-      active = false;
-    };
+      setViewId('custom');
+      window.setTimeout(() => {
+        applyingView.current = false;
+      }, 0);
+      showToast('View loaded from link');
+    }
   }, []);
 
   useEffect(() => {
-    void sellerBackendApi.patchSavedViews({ views: customViews }).catch(() => undefined);
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(STORAGE_CUSTOM_VIEWS, JSON.stringify(customViews));
   }, [customViews]);
   // Apply preset views (and treat any manual change as a "custom" view)
   useEffect(() => {
@@ -1086,37 +1077,6 @@ export default function SupplierHubDashboardPage({
     }, 0);
   }, [viewId, customViews]);
 
-  useEffect(() => {
-    let active = true;
-
-    const loadSummary = async () => {
-      try {
-        if (role === 'provider') {
-          const payload = await sellerBackendApi.getDashboardSummary();
-          if (active) setDashboardSummary(payload);
-          return;
-        }
-
-        const payload = await sellerBackendApi.getSellerDashboardSummary({
-          range,
-          from: range === 'custom' ? customFrom : '',
-          to: range === 'custom' ? customTo : '',
-          marketplaces: filters.marketplaces.join(','),
-          warehouses: filters.warehouses.join(','),
-          channels: filters.channels.join(','),
-        });
-        if (active) setDashboardSummary(payload);
-      } catch {
-        if (active) setDashboardSummary(null);
-      }
-    };
-
-    void loadSummary();
-    return () => {
-      active = false;
-    };
-  }, [role, range, customFrom, customTo, filters]);
-
   const rangeMeta = useMemo(
     () => computeRangeMeta(range, customFrom, customTo),
     [range, customFrom, customTo]
@@ -1126,7 +1086,7 @@ export default function SupplierHubDashboardPage({
 
   // Data model (reactive to controls)
   const model = useMemo(() => {
-    const seriesSeedBase = hashStr(
+    const seedBase = hashStr(
       `${role}|${currency}|${range}|${customFrom}|${customTo}|${filters.marketplaces.join(',')}|${filters.warehouses.join(',')}|${filters.channels.join(',')}`
     );
 
@@ -1134,16 +1094,14 @@ export default function SupplierHubDashboardPage({
     const riskBoost = filterMeta.riskBoost;
 
     const makeKpi = (k: KpiInput): Kpi => {
-      const series = Array.isArray(k.explicitSeries)
-        ? k.explicitSeries
-        : generateSeries(
-            rangeMeta.sparkPoints,
-            k.seriesBase,
-            k.drift,
-            k.vol,
-            seriesSeedBase + k.seriesOffset
-          );
-      const { seriesBase, drift, vol, seriesOffset, explicitSeries, ...rest } = k;
+      const series = generateSeries(
+        rangeMeta.sparkPoints,
+        k.seriesBase,
+        k.drift,
+        k.vol,
+        seedBase + k.seedAdd
+      );
+      const { seriesBase, drift, vol, seedAdd, ...rest } = k;
       return { ...rest, series };
     };
 
@@ -1156,74 +1114,41 @@ export default function SupplierHubDashboardPage({
       'new-booking': CalendarRange,
     };
 
-    const quickActions = (content.quickActions || []).map((action: DashboardQuickAction) => ({
+    const quickActions = content.quickActions.map((action: DashboardQuickAction) => ({
       ...action,
       icon: quickActionIconByKey[action.key] ?? Plus,
     }));
-    const basesContent = content.bases || { revenueBase: 0, ordersBase: 0, trustBase: 0 };
-
-    const summaryBases = (dashboardSummary?.bases ?? {}) as Record<string, unknown>;
-    const summaryCounts = (dashboardSummary?.counts ?? {}) as Record<string, any>;
-    const summaryRevenue = (dashboardSummary?.revenue ?? {}) as Record<string, number>;
-    const summaryTrend = (dashboardSummary?.trend ?? {}) as Record<string, unknown>;
-    const summaryCashflow = Array.isArray(dashboardSummary?.cashflow) ? dashboardSummary.cashflow : [];
-    const summaryChannels = Array.isArray(dashboardSummary?.channels) ? dashboardSummary.channels : [];
-    const providerSummary = (dashboardSummary?.provider ?? {}) as Record<string, any>;
-    const providerRevenue = (providerSummary.revenue ?? {}) as Record<string, number>;
-    const providerBookingStatuses = (providerSummary.bookingStatuses ?? {}) as Record<string, number>;
-    const providerQuoteStatuses = (providerSummary.quoteStatuses ?? {}) as Record<string, number>;
-
-    // KPI values come from backend summary data. When there is no data, they remain exact zero.
-    const revenueBase =
-      Number(
-        role === 'provider'
-          ? providerRevenue.total ?? summaryBases.revenueBase ?? basesContent.revenueBase
-          : summaryRevenue.total ?? summaryBases.revenueBase ?? basesContent.revenueBase
-      ) || 0;
-    const ordersBase =
-      Number(
-        role === 'provider'
-          ? providerSummary.bookingsActive ?? summaryBases.ordersBase ?? basesContent.ordersBase
-          : summaryCounts.orders ?? summaryBases.ordersBase ?? basesContent.ordersBase
-      ) || 0;
-    const trustBase =
-      Number(summaryBases.trustBase ?? basesContent.trustBase) || 0;
-
-    const revenueRaw = revenueBase;
-    const ordersRaw = Math.max(0, Math.round(ordersBase));
-    const trustRaw = clamp(trustBase, 0, 100);
-    const trendLabels = Array.isArray(summaryTrend.labels)
-      ? summaryTrend.labels.map((entry) => String(entry))
-      : [];
-    const trendRevenue = Array.isArray(summaryTrend.revenue)
-      ? summaryTrend.revenue.map((entry) => Number(entry ?? 0))
-      : [];
-    const trendOrders = Array.isArray(summaryTrend.orders)
-      ? summaryTrend.orders.map((entry) => Number(entry ?? 0))
-      : [];
-    const sparkSeriesRevenue = trendRevenue.length > 0 ? trendRevenue : Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => 0);
-    const sparkSeriesOrders = trendOrders.length > 0 ? trendOrders : Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => 0);
 
     // HERO
-    const heroContent = content.hero || ({} as DashboardContent['hero']);
-    const featuredContent = content.featured || ({} as DashboardContent['featured']);
     const hero = {
       title: 'Congratulations',
-      name: heroContent.name || '',
-      sub: heroContent.sub || '',
-      cta: { label: heroContent.ctaLabel || '', to: heroContent.ctaTo || '' },
-      miniBar: (sparkSeriesRevenue.length > 0 ? sparkSeriesRevenue.slice(-6) : [0, 0, 0, 0, 0, 0]).map((n) => Math.round(n)),
+      name: content.hero.name,
+      sub: content.hero.sub,
+      cta: { label: content.hero.ctaLabel, to: content.hero.ctaTo },
+      miniBar: generateSeries(6, 10 * scale, 1.2, 2.4, seedBase + 11).map((n) => Math.round(n)),
       chip: {
         label: 'MyLiveDealz',
-        value: filterMeta.hasMLDZ ? (heroContent.chipWhenMLDZ || '') : (heroContent.chipWhenNoMLDZ || ''),
+        value: filterMeta.hasMLDZ ? content.hero.chipWhenMLDZ : content.hero.chipWhenNoMLDZ,
       },
     };
 
     const featured = {
-      title: featuredContent.title || '',
-      sub: featuredContent.sub || '',
-      cta: { label: featuredContent.ctaLabel || '', to: featuredContent.ctaTo || '' },
+      title: content.featured.title,
+      sub: content.featured.sub,
+      cta: { label: content.featured.ctaLabel, to: content.featured.ctaTo },
     };
+
+    // KPI values that actually move with controls
+    const revenueBase = content.bases.revenueBase;
+    const ordersBase = content.bases.ordersBase;
+    const trustBase = content.bases.trustBase;
+
+    const revenueRaw = revenueBase * scale;
+    const ordersRaw = Math.max(
+      1,
+      Math.round(ordersBase * Math.max(0.4, rangeMeta.scale) * filterMeta.scale)
+    );
+    const trustRaw = clamp(trustBase + (filterMeta.hasMLDZ ? 3 : 0) - riskBoost * 10, 55, 98);
 
     const kpis =
       role === 'provider'
@@ -1233,22 +1158,21 @@ export default function SupplierHubDashboardPage({
               label: 'Bookings',
               format: 'count',
               valueRaw: ordersRaw,
-              targetRaw: ordersRaw,
-              delta: 0,
+              targetRaw: Math.max(ordersRaw + 3, 15),
+              delta: 9.4,
               variant: 'light',
               stroke: TOKENS.green,
-              seriesBase: 0,
-              drift: 0,
-              vol: 0,
-              seriesOffset: 21,
-              explicitSeries: sparkSeriesOrders,
+              seriesBase: 8 * scale,
+              drift: 0.45,
+              vol: 1.2,
+              seedAdd: 21,
               drilldown: {
-                headline: 'Bookings from the database',
-                sub: 'All provider booking counts are scoped to this account.',
+                headline: 'Bookings are increasing',
+                sub: 'Improve response speed to keep acceptance high.',
                 breakdown: [
-                  { label: 'Requested', value: `${Number(providerBookingStatuses.requested ?? 0)}` },
-                  { label: 'Confirmed', value: `${Number(providerBookingStatuses.confirmed ?? 0)}` },
-                  { label: 'In progress', value: `${Number(providerBookingStatuses.in_progress ?? providerBookingStatuses['in-progress'] ?? 0)}` },
+                  { label: 'New requests', value: `${Math.round(ordersRaw * 0.32)}` },
+                  { label: 'Confirmed', value: `${Math.round(ordersRaw * 0.52)}` },
+                  { label: 'In progress', value: `${Math.round(ordersRaw * 0.16)}` },
                 ],
                 actions: [
                   { label: 'My Bookings', to: '/provider/bookings', icon: ClipboardList },
@@ -1261,23 +1185,22 @@ export default function SupplierHubDashboardPage({
               id: 'quotes',
               label: 'Quotes',
               format: 'count',
-              valueRaw: Number(providerSummary.quotesOpen ?? 0),
-              targetRaw: Number(providerSummary.quotesTotal ?? providerSummary.quotesOpen ?? 0),
-              delta: 0,
+              valueRaw: Math.max(2, Math.round(ordersRaw * 0.6)),
+              targetRaw: Math.max(10, Math.round(ordersRaw * 0.75) + 2),
+              delta: 6.1,
               variant: 'light',
               stroke: TOKENS.greenDeep,
-              seriesBase: 0,
-              drift: 0,
-              vol: 0,
-              seriesOffset: 22,
-              explicitSeries: Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => Number(providerSummary.quotesOpen ?? 0)),
+              seriesBase: 4 * scale,
+              drift: 0.35,
+              vol: 1.0,
+              seedAdd: 22,
               drilldown: {
-                headline: 'Quotes from the database',
-                sub: 'Open and accepted quotes come from provider quote records.',
+                headline: 'Quotes are converting',
+                sub: 'Follow up quickly to improve acceptance.',
                 breakdown: [
-                  { label: 'Draft', value: `${Number(providerQuoteStatuses.draft ?? 0)}` },
-                  { label: 'Negotiating', value: `${Number(providerQuoteStatuses.negotiating ?? 0)}` },
-                  { label: 'Accepted', value: `${Number(providerQuoteStatuses.accepted ?? 0)}` },
+                  { label: 'New', value: `${Math.max(1, Math.round(ordersRaw * 0.15))}` },
+                  { label: 'Negotiating', value: `${Math.max(1, Math.round(ordersRaw * 0.25))}` },
+                  { label: 'Accepted', value: `${Math.max(1, Math.round(ordersRaw * 0.2))}` },
                 ],
                 actions: [
                   { label: 'Provider Quotes', to: '/provider/quotes', icon: BarChart3 },
@@ -1292,21 +1215,20 @@ export default function SupplierHubDashboardPage({
               format: 'percent',
               valueRaw: trustRaw,
               targetRaw: 90,
-              delta: 0,
+              delta: -1.2,
               variant: 'dark',
               stroke: TOKENS.orange,
-              seriesBase: 0,
-              drift: 0,
-              vol: 0,
-              seriesOffset: 23,
-              explicitSeries: Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => trustRaw),
+              seriesBase: trustRaw,
+              drift: -0.2,
+              vol: 1.0,
+              seedAdd: 23,
               drilldown: {
-                headline: 'Trust score from reviews and response behaviour',
-                sub: 'The provider trust card reflects backend review aggregates.',
+                headline: 'Protect payouts and ranking',
+                sub: 'Complete identity and maintain response quality.',
                 breakdown: [
-                  { label: 'Open consultations', value: `${Number(providerSummary.consultationsOpen ?? 0)}` },
-                  { label: 'Portfolio items', value: `${Number(providerSummary.portfolioItems ?? 0)}` },
-                  { label: 'Unread messages', value: `${Number(dashboardSummary?.messagesUnread ?? 0)}` },
+                  { label: 'KYC / KYB', value: 'In review', note: '1 item pending' },
+                  { label: 'Response time', value: 'Good', note: '< 2h avg' },
+                  { label: 'Disputes', value: 'Low', note: '0 open' },
                 ],
                 actions: [
                   { label: 'Security', to: '/settings/security', icon: ShieldCheck },
@@ -1322,22 +1244,33 @@ export default function SupplierHubDashboardPage({
               label: 'Revenue',
               format: 'money',
               valueRaw: revenueRaw,
-              targetRaw: revenueRaw,
-              delta: 0,
+              targetRaw: revenueRaw * 1.18,
+              delta: 12.7,
               variant: 'light',
               stroke: TOKENS.green,
-              seriesBase: 0,
-              drift: 0,
-              vol: 0,
-              seriesOffset: 31,
-              explicitSeries: sparkSeriesRevenue,
+              seriesBase: 10 * scale,
+              drift: 0.8,
+              vol: 2.5,
+              seedAdd: 31,
               drilldown: {
-                headline: 'Revenue from seller transactions',
-                sub: 'Amounts come directly from pending, available, and paid transaction rows.',
+                headline: 'Revenue is trending up',
+                sub: 'Drivers are marketplace conversions, wholesale pipeline, and promo uplift.',
                 breakdown: [
-                  { label: 'Pending', value: formatMoney(Number(summaryRevenue.pending ?? 0), currency) },
-                  { label: 'Available', value: formatMoney(Number(summaryRevenue.available ?? 0), currency) },
-                  { label: 'Paid', value: formatMoney(Number(summaryRevenue.paid ?? 0), currency) },
+                  {
+                    label: 'Marketplace orders',
+                    value: formatMoney(6_140_000 * scale, currency),
+                    note: '~65%',
+                  },
+                  {
+                    label: 'Wholesale pipeline',
+                    value: formatMoney(2_520_000 * scale, currency),
+                    note: '~27%',
+                  },
+                  {
+                    label: 'MyLiveDealz uplift',
+                    value: formatMoney(820_000 * scale, currency),
+                    note: '~8%',
+                  },
                 ],
                 actions: [
                   { label: 'Open Orders', to: '/orders', icon: Package },
@@ -1351,22 +1284,24 @@ export default function SupplierHubDashboardPage({
               label: 'Active orders',
               format: 'count',
               valueRaw: ordersRaw,
-              targetRaw: ordersRaw,
-              delta: 0,
+              targetRaw: Math.max(30, ordersRaw + 10),
+              delta: 4.1,
               variant: 'light',
               stroke: TOKENS.greenDeep,
-              seriesBase: 0,
-              drift: 0,
-              vol: 0,
-              seriesOffset: 32,
-              explicitSeries: sparkSeriesOrders,
+              seriesBase: 18 * Math.max(0.6, rangeMeta.scale),
+              drift: 0.3,
+              vol: 1.6,
+              seedAdd: 32,
               drilldown: {
-                headline: 'Order counts from the database',
-                sub: 'Status counts are read from seller orders, without generated filler values.',
+                headline: 'Order flow is healthy',
+                sub: 'Prioritize the items near SLA risk to protect delivery rate.',
                 breakdown: [
-                  { label: 'Pending confirmation', value: `${Number(summaryCounts.orderStatuses?.NEW ?? 0) + Number(summaryCounts.orderStatuses?.CONFIRMED ?? 0)}` },
-                  { label: 'Packed', value: `${Number(summaryCounts.orderStatuses?.PACKED ?? 0)}` },
-                  { label: 'In transit', value: `${Number(summaryCounts.orderStatuses?.SHIPPED ?? 0) + Number(summaryCounts.orderStatuses?.OUT_FOR_DELIVERY ?? 0)}` },
+                  {
+                    label: 'Pending confirmation',
+                    value: `${Math.max(1, Math.round(ordersRaw * 0.28))}`,
+                  },
+                  { label: 'Packed', value: `${Math.max(1, Math.round(ordersRaw * 0.42))}` },
+                  { label: 'In transit', value: `${Math.max(1, Math.round(ordersRaw * 0.3))}` },
                 ],
                 actions: [
                   { label: 'Go to Orders', to: '/orders', icon: ClipboardList },
@@ -1381,21 +1316,20 @@ export default function SupplierHubDashboardPage({
               format: 'percent',
               valueRaw: trustRaw,
               targetRaw: 90,
-              delta: 0,
+              delta: -2.0,
               variant: 'dark',
               stroke: TOKENS.orange,
-              seriesBase: 0,
-              drift: 0,
-              vol: 0,
-              seriesOffset: 33,
-              explicitSeries: Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => trustRaw),
+              seriesBase: trustRaw,
+              drift: -0.35,
+              vol: 1.3,
+              seedAdd: 33,
               drilldown: {
-                headline: 'Trust score from reviews',
-                sub: 'Trust is calculated from average rating, response rate, and negative review pressure.',
+                headline: 'Resolve blockers to protect payouts',
+                sub: 'KYC is incomplete and one integration is degraded.',
                 breakdown: [
-                  { label: 'Average rating', value: `${Number(summaryCounts.reviews?.averageRating ?? 0).toFixed(1)}`, note: `${Number(summaryCounts.reviews?.total ?? 0)} reviews` },
-                  { label: 'Response rate', value: `${Number(summaryCounts.reviews?.responseRate ?? 0)}%`, note: `${Number(summaryCounts.reviews?.needsReply ?? 0)} need reply` },
-                  { label: 'Flagged reviews', value: `${Number(summaryCounts.reviews?.flagged ?? 0)}`, note: 'Quality watch' },
+                  { label: 'KYC / KYB', value: 'Pending', note: 'Upload 2 docs' },
+                  { label: 'Payout method', value: 'Configured', note: 'OK' },
+                  { label: 'Webhooks', value: 'Degraded', note: 'Retry failed' },
                 ],
                 actions: [
                   { label: 'Open KYC', to: '/settings/kyc', icon: ShieldCheck },
@@ -1412,12 +1346,12 @@ export default function SupplierHubDashboardPage({
         ? [
             {
               name: 'New',
-              value: Number(providerQuoteStatuses.draft ?? 0),
+              value: Math.max(1, Math.round(ordersRaw * 0.25)),
               hint: 'Requests waiting for first response',
               to: '/provider/quotes?stage=new',
               top: [
-                { label: 'Draft quotes', value: `${Number(providerQuoteStatuses.draft ?? 0)}` },
-                { label: 'Open quotes', value: `${Number(providerSummary.quotesOpen ?? 0)}` },
+                { label: 'Top source', value: filterMeta.hasMLDZ ? 'MyLiveDealz' : 'Marketplace' },
+                { label: 'Avg response', value: '1h 18m' },
               ],
               actions: [
                 { label: 'Open new quotes', to: '/provider/quotes?stage=new', icon: BarChart3 },
@@ -1426,12 +1360,12 @@ export default function SupplierHubDashboardPage({
             },
             {
               name: 'Negotiating',
-              value: Number(providerQuoteStatuses.negotiating ?? 0),
+              value: Math.max(1, Math.round(ordersRaw * 0.38)),
               hint: 'Active negotiations',
               to: '/provider/quotes?stage=negotiating',
               top: [
-                { label: 'Negotiating', value: `${Number(providerQuoteStatuses.negotiating ?? 0)}` },
-                { label: 'Accepted', value: `${Number(providerQuoteStatuses.accepted ?? 0)}` },
+                { label: 'Most asked', value: 'Delivery time' },
+                { label: 'Win rate', value: '43%' },
               ],
               actions: [
                 {
@@ -1444,12 +1378,12 @@ export default function SupplierHubDashboardPage({
             },
             {
               name: 'Accepted',
-              value: Number(providerBookingStatuses.confirmed ?? 0),
+              value: Math.max(1, Math.round(ordersRaw * 0.22)),
               hint: 'Ready to fulfill',
               to: '/provider/bookings?status=confirmed',
               top: [
-                { label: 'Confirmed bookings', value: `${Number(providerBookingStatuses.confirmed ?? 0)}` },
-                { label: 'Completed bookings', value: `${Number(providerBookingStatuses.completed ?? 0)}` },
+                { label: 'SLA', value: '92%' },
+                { label: 'Next payout', value: 'In 2 days' },
               ],
               actions: [
                 { label: 'Go to bookings', to: '/provider/bookings', icon: ClipboardList },
@@ -1457,73 +1391,99 @@ export default function SupplierHubDashboardPage({
               ],
             },
           ]
-        : (summaryChannels.length > 0
-            ? summaryChannels.slice(0, 3).map((entry: Record<string, unknown>) => ({
-                name: String(entry.name ?? 'Channel'),
-                value: Number(entry.revenue ?? 0),
-                hint: `${Number(entry.orders ?? 0)} orders`,
-                to: '/orders',
-                top: [
-                  { label: 'Orders', value: `${Number(entry.orders ?? 0)}` },
-                  { label: 'Revenue share', value: `${Number(entry.revenue ?? 0) > 0 && revenueRaw > 0 ? ((Number(entry.revenue ?? 0) / revenueRaw) * 100).toFixed(1) : '0.0'}%` },
-                ],
-                actions: [
-                  { label: 'View orders', to: '/orders', icon: Package },
-                  { label: 'Open analytics', to: '/analytics', icon: BarChart3 },
-                ],
-              }))
-            : [
-                {
-                  name: 'No revenue yet',
-                  value: 0,
-                  hint: 'No seller transactions recorded',
-                  to: '/orders',
-                  top: [
-                    { label: 'Orders', value: '0' },
-                    { label: 'Revenue share', value: '0.0%' },
-                  ],
-                  actions: [
-                    { label: 'View orders', to: '/orders', icon: Package },
-                    { label: 'Open listings', to: '/listings', icon: Store },
-                  ],
-                },
-              ]);
+        : [
+            {
+              name: 'Marketplace orders',
+              value: 6_140_000 * scale,
+              hint: 'Direct purchases',
+              to: '/orders?source=marketplace',
+              top: [
+                { label: 'Conversion', value: filterMeta.hasMLDZ ? '3.1%' : '2.4%' },
+                { label: 'Top region', value: 'East Africa' },
+              ],
+              actions: [
+                { label: 'View orders', to: '/orders', icon: Package },
+                { label: 'Improve listings', to: '/listings', icon: Store },
+              ],
+            },
+            {
+              name: 'Wholesale pipeline',
+              value: 2_520_000 * scale,
+              hint: 'Quotes and RFQs',
+              to: '/wholesale',
+              top: [
+                { label: 'Open RFQs', value: '9' },
+                { label: 'Avg ticket', value: formatMoney(320000 * scale, currency) },
+              ],
+              actions: [
+                { label: 'Open wholesale', to: '/wholesale', icon: Globe },
+                { label: 'Quotes received', to: '/wholesale/quotes', icon: BarChart3 },
+              ],
+            },
+            {
+              name: 'MyLiveDealz uplift',
+              value: 820_000 * scale,
+              hint: 'Live + Adz impact',
+              to: '/mldz/ads',
+              top: [
+                { label: 'Active promos', value: filterMeta.hasMLDZ ? 'Focused' : '6' },
+                { label: 'CTR', value: '4.8%' },
+              ],
+              actions: [
+                { label: 'Start promo', to: '/mldz/promos/new', icon: Flame },
+                { label: 'Adz performance', to: '/mldz/adz-performance', icon: BarChart3 },
+              ],
+            },
+          ];
 
     // Trend chart (clickable)
     const trendTitle = range === 'ytd' ? 'Yearly sales' : 'Sales trend';
-    const trend = trendLabels.map((m, i) => ({
-      m,
-      income: Math.round(trendRevenue[i] ?? 0),
-      expense: 0,
-    }));
+    const trendLabels =
+      range === 'today'
+        ? Array.from({ length: rangeMeta.trendPoints }, (_, i) => `${i + 1}h`)
+        : range === '7d'
+          ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+          : range === '30d'
+            ? Array.from({ length: rangeMeta.trendPoints }, (_, i) => `W${i + 1}`)
+            : range === 'ytd'
+              ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+              : Array.from({ length: rangeMeta.trendPoints }, (_, i) => `P${i + 1}`);
+
+    const trend = trendLabels.map((m, i) => {
+      const income = Math.round(
+        (revenueBase * 0.06 + i * revenueBase * 0.005) * scale * (0.9 + (i % 3) * 0.07)
+      );
+      const expense = Math.round(income * (0.38 + (i % 2) * 0.05));
+      return { m, income, expense };
+    });
 
     // Operational Command Center
     const opsPipeline = [
       {
         key: 'orders',
         label: 'Orders',
-        count: Number(role === 'provider' ? providerSummary.bookingsActive ?? 0 : summaryCounts.openOrders ?? 0),
+        count: Math.max(1, Math.round(ordersRaw * (1.1 + riskBoost))),
         sla: '< 2h',
         to: '/orders',
       },
       {
         key: 'packed',
         label: 'Packed',
-        count: Number(summaryCounts.orderStatuses?.PACKED ?? 0),
+        count: Math.max(1, Math.round(ordersRaw * 0.45)),
         sla: '6h avg',
         to: '/orders',
       },
       {
         key: 'shipped',
         label: 'Shipped',
-        count: Number(summaryCounts.orderStatuses?.SHIPPED ?? 0),
+        count: Math.max(1, Math.round(ordersRaw * 0.35)),
         sla: '18h avg',
         to: '/ops/shipping',
       },
       {
         key: 'delivered',
         label: 'Delivered',
-        count: Number(summaryCounts.orderStatuses?.DELIVERED ?? 0),
+        count: Math.max(1, Math.round(ordersRaw * 0.65 * rangeMeta.scale)),
         sla: '2.4d avg',
         to: '/orders',
       },
@@ -1533,40 +1493,44 @@ export default function SupplierHubDashboardPage({
       {
         key: 'sla',
         label: 'SLA risk',
-        score: Number(summaryCounts.orderStatuses?.ON_HOLD ?? 0) > 0 ? 70 : 0,
-        count: Number(summaryCounts.orderStatuses?.ON_HOLD ?? 0),
+        score: clamp(35 + riskBoost * 140, 10, 92),
+        count: Math.max(1, Math.round(4 + riskBoost * 10)),
         hint: 'Orders approaching breach',
         to: '/orders?filter=sla_risk',
       },
       {
         key: 'disputes',
         label: 'Disputes',
-        score: Number(summaryCounts.disputesOpen ?? 0) > 0 ? 60 : 0,
-        count: Number(summaryCounts.disputesOpen ?? 0),
+        score: clamp(18 + riskBoost * 90, 5, 80),
+        count: Math.max(0, Math.round(1 + riskBoost * 6)),
         hint: 'Open cases and escalations',
         to: '/ops/disputes',
       },
       {
         key: 'returns',
         label: 'Returns',
-        score: Number(summaryCounts.returnsOpen ?? 0) > 0 ? 55 : 0,
-        count: Number(summaryCounts.returnsOpen ?? 0),
+        score: clamp(22 + riskBoost * 70, 6, 75),
+        count: Math.max(0, Math.round(2 + riskBoost * 6)),
         hint: 'RMAs pending action',
         to: '/ops/returns',
       },
       {
         key: 'stockouts',
         label: 'Stockouts',
-        score: Number(summaryCounts.outOfStockListings ?? 0) > 0 ? 65 : 0,
-        count: Number(summaryCounts.outOfStockListings ?? 0),
+        score: clamp(
+          28 + riskBoost * 80 + (filters.marketplaces.includes('GadgetMart') ? 8 : 0),
+          6,
+          86
+        ),
+        count: Math.max(0, Math.round(3 + riskBoost * 8)),
         hint: 'Low stock items',
         to: '/inventory?filter=low_stock',
       },
       {
         key: 'holds',
         label: 'Payment holds',
-        score: Number(summaryRevenue.pending ?? 0) > 0 ? 35 : 0,
-        count: Number(summaryRevenue.pending ?? 0) > 0 ? 1 : 0,
+        score: clamp(14 + riskBoost * 60 + (trustRaw < 75 ? 10 : 0), 4, 78),
+        count: Math.max(0, Math.round(trustRaw < 75 ? 2 : 1)),
         hint: 'Payout or compliance holds',
         to: '/finance/holds',
       },
@@ -1576,34 +1540,49 @@ export default function SupplierHubDashboardPage({
       {
         key: 'low',
         label: 'Low stock',
-        count: Number(summaryCounts.lowStockListings ?? 0),
+        count: Math.max(0, Math.round(6 + riskBoost * 10)),
         hint: 'Restock fast movers',
         to: '/inventory?filter=low_stock',
-        top: [],
+        top: [
+          { sku: 'EVCS-220', note: '< 5 units' },
+          { sku: 'E-BIKE-NT', note: '< 8 units' },
+          { sku: 'GAD-USB-C', note: '< 12 units' },
+        ],
       },
       {
         key: 'over',
         label: 'Overstock',
-        count: 0,
+        count: Math.max(0, Math.round(3 + (filterMeta.hasWholesale ? 2 : 1))),
         hint: 'Discount or bundle',
         to: '/inventory?filter=overstock',
-        top: [],
+        top: [
+          { sku: 'GEN-CABLE', note: '+420 units' },
+          { sku: 'LIV-LAMP', note: '+180 units' },
+          { sku: 'STY-SHOE', note: '+90 units' },
+        ],
       },
       {
         key: 'fast',
         label: 'Fast movers',
-        count: Number(summaryCounts.activeListings ?? 0),
+        count: Math.max(0, Math.round(4 + (filterMeta.hasMLDZ ? 3 : 1))),
         hint: 'Prioritize reorders',
         to: '/inventory?filter=fast_movers',
-        top: [],
+        top: [
+          { sku: 'EV-ACC-01', note: 'High demand' },
+          { sku: 'GAD-EAR-02', note: 'Trend spike' },
+          { sku: 'GEN-KITCH', note: 'Repeat buyers' },
+        ],
       },
       {
         key: 'dead',
         label: 'Dead stock',
-        count: Number(summaryCounts.draftListings ?? 0),
+        count: Math.max(0, Math.round(2 + (filters.marketplaces.includes('LivingMart') ? 2 : 0))),
         hint: 'Clearance campaign',
         to: '/inventory?filter=dead_stock',
-        top: [],
+        top: [
+          { sku: 'LIV-DECOR-9', note: '90d no sales' },
+          { sku: 'GEN-OLD-1', note: '120d no sales' },
+        ],
       },
     ];
 
@@ -1612,7 +1591,7 @@ export default function SupplierHubDashboardPage({
       {
         key: 'pending',
         label: 'Pending settlement',
-        amount: Number(role === 'provider' ? providerRevenue.pending ?? 0 : summaryRevenue.pending ?? 0),
+        amount: revenueRaw * 0.18,
         date: isoDaysAgo(0),
         hint: 'Awaiting confirmation',
         to: '/finance/statements?status=pending',
@@ -1620,7 +1599,7 @@ export default function SupplierHubDashboardPage({
       {
         key: 'processing',
         label: 'Processing',
-        amount: Number(role === 'provider' ? providerRevenue.available ?? 0 : summaryRevenue.available ?? 0),
+        amount: revenueRaw * 0.11,
         date: isoDaysAgo(1),
         hint: 'Bank processing',
         to: '/finance/statements?status=processing',
@@ -1628,67 +1607,59 @@ export default function SupplierHubDashboardPage({
       {
         key: 'paid',
         label: 'Paid out',
-        amount: Number(role === 'provider' ? providerRevenue.paid ?? 0 : summaryRevenue.paid ?? 0),
+        amount: revenueRaw * 0.46,
         date: isoDaysAgo(5),
         hint: 'Completed payouts',
         to: '/finance/statements?status=paid',
       },
     ];
 
-    const cashflow =
-      summaryCashflow.length > 0
-        ? summaryCashflow.map((entry: Record<string, unknown>) => ({
-            day: String(entry.day ?? ''),
-            inflow: Number(entry.inflow ?? 0),
-            payout: Number(entry.payout ?? 0),
-          }))
-        : Array.from({ length: 7 }).map((_, i) => ({
-            day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i],
-            inflow: 0,
-            payout: 0,
-          }));
+    const cashflow = Array.from({ length: 7 }).map((_, i) => {
+      const day = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i];
+      const inflow = Math.round(revenueBase * 0.05 * scale * (0.85 + (i % 3) * 0.11));
+      const payout = Math.round(inflow * (0.42 + (i % 2) * 0.08));
+      return { day, inflow, payout };
+    });
 
     const feeBreakdown = [
       {
         key: 'platform',
         label: 'Platform fees',
-        value: 0,
+        value: revenueRaw * 0.025,
         hint: 'Listing + service charges',
         to: '/finance/statements?type=platform',
       },
       {
         key: 'logistics',
         label: 'Logistics',
-        value: 0,
+        value: revenueRaw * (filterMeta.hasWarehouseA ? 0.032 : 0.026),
         hint: 'Warehousing + shipping',
         to: '/finance/statements?type=logistics',
       },
       {
         key: 'payments',
         label: 'Payment fees',
-        value: 0,
+        value: revenueRaw * 0.014,
         hint: 'Processor charges',
         to: '/finance/statements?type=payments',
       },
       {
         key: 'tax',
         label: 'Taxes',
-        value: 0,
+        value: revenueRaw * 0.018,
         hint: 'VAT/withholding where applicable',
         to: '/finance/tax-reports',
       },
     ];
 
     const totalFees = feeBreakdown.reduce((sum, fee) => sum + fee.value, 0);
-    const avgOrderValue = Number(role === 'provider'
-      ? providerRevenue.averageBookingValue ?? 0
-      : summaryRevenue.averageOrderValue ?? (ordersRaw > 0 ? revenueRaw / ordersRaw : 0));
+    const avgOrderValue = revenueRaw / Math.max(1, ordersRaw);
     const nextPayout = settlementStages[0]?.amount ?? revenueRaw * 0.1;
     const financeHighlights = [
       {
         key: 'available',
         label: 'Available balance',
-        value: formatMoney(Number(role === 'provider' ? providerRevenue.available ?? 0 : summaryRevenue.available ?? 0), currency),
+        value: formatMoney(revenueRaw * 0.22, currency),
         hint: 'Across wallets',
         icon: Wallet,
         tone: 'emerald',
@@ -1705,7 +1676,7 @@ export default function SupplierHubDashboardPage({
         key: 'fees',
         label: 'Fees this period',
         value: formatMoney(totalFees, currency),
-        hint: 'No fee rows are synthesized when the database has none',
+        hint: 'Platform + logistics',
         icon: Receipt,
         tone: 'orange',
       },
@@ -1713,7 +1684,7 @@ export default function SupplierHubDashboardPage({
         key: 'aov',
         label: 'Avg order value',
         value: formatMoney(avgOrderValue, currency),
-        hint: role === 'provider' ? `${ordersRaw} active bookings` : `${ordersRaw} tracked orders`,
+        hint: `${ordersRaw} active orders`,
         icon: TrendingUp,
         tone: 'blue',
       },
@@ -1725,40 +1696,40 @@ export default function SupplierHubDashboardPage({
         ? [
             {
               icon: Clock,
-              title: `${Number(providerSummary.quotesOpen ?? 0)} provider quotes are open`,
-              detail: 'This count comes directly from provider quote rows.',
+              title: '2 quotes waiting for reply',
+              detail: 'Reply within 2 hours to keep acceptance high.',
               action: { label: 'Open', to: '/messages' },
             },
             {
               icon: ShieldCheck,
-              title: `${Number(providerSummary.consultationsOpen ?? 0)} consultations need action`,
-              detail: 'Open consultations are counted from the provider workspace.',
+              title: 'Enable 2FA for higher trust',
+              detail: 'Security improves ranking and payout confidence.',
               action: { label: 'Enable', to: '/settings/security' },
             },
             {
               icon: Boxes,
-              title: `${Number(providerSummary.portfolioItems ?? 0)} portfolio items are active`,
-              detail: 'Portfolio activity is read directly from provider records.',
+              title: 'Upgrade your listing',
+              detail: 'Add portfolio proof and availability to rank higher.',
               action: { label: 'Improve', to: '/provider/listings' },
             },
           ]
         : [
             {
               icon: ShieldCheck,
-              title: `${Number(summaryCounts.reviews?.needsReply ?? 0)} reviews need replies`,
-              detail: 'Review-response counts are scoped to this seller account.',
+              title: 'KYC pending',
+              detail: 'Upload documents to prevent payout delays.',
               action: { label: 'Continue', to: '/settings/kyc' },
             },
             {
               icon: AlertTriangle,
-              title: `${riskItems.find((r) => r.key === 'sla')?.count ?? 0} orders are on hold`,
-              detail: 'Order-status counts are read from the database without filler rows.',
+              title: `${riskItems.find((r) => r.key === 'sla')?.count ?? 4} orders near SLA risk`,
+              detail: 'Prioritize packing and handover for top-risk orders.',
               action: { label: 'Open', to: '/orders?filter=sla_risk' },
             },
             {
               icon: Store,
-              title: `${Number(summaryCounts.activeListings ?? 0)} active listings are live`,
-              detail: 'Listing totals come from seller marketplace listings.',
+              title: 'Regulated desk check',
+              detail: 'HealthMart Desk may require extra proofs for pharmacy items.',
               action: { label: 'Review', to: '/regulatory' },
             },
           ];
@@ -1766,8 +1737,8 @@ export default function SupplierHubDashboardPage({
     // Health snapshot
     const health = {
       trust: clamp(trustRaw, 0, 100),
-      response: clamp(Number(summaryCounts.reviews?.responseRate ?? 0), 0, 100),
-      sla: clamp(ordersRaw > 0 ? Math.max(0, 100 - (Number(summaryCounts.orderStatuses?.ON_HOLD ?? 0) / Math.max(1, ordersRaw)) * 100) : 100, 0, 100),
+      response: clamp(88 - riskBoost * 18 + (filterMeta.hasMLDZ ? 3 : 0), 50, 99),
+      sla: clamp(84 - riskBoost * 20, 40, 98),
     };
 
     // Tools
@@ -1809,9 +1780,62 @@ export default function SupplierHubDashboardPage({
     const volumePrev = Math.max(1, Math.round(volumeSeries[volumeSeries.length - 2] ?? volumeNow));
     const aov = primaryNow / Math.max(1, volumeNow);
 
-    const conversionSeries = Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => 0);
-    const cancellationsSeries = Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => 0);
-    const disputesSeries = Array.from({ length: Math.max(1, rangeMeta.sparkPoints) }, () => 0);
+    const conversionSeries = generateSeries(
+      rangeMeta.sparkPoints,
+      filterMeta.hasMLDZ ? 3.2 : 2.6,
+      filterMeta.hasMLDZ ? 0.02 : -0.01,
+      0.18 + riskBoost * 0.35,
+      seedBase + 91
+    ).map((n) => clamp(n, 0.4, 12));
+
+    const cancelRateSeries = generateSeries(
+      rangeMeta.sparkPoints,
+      5.1 + riskBoost * 4.2,
+      -0.01,
+      0.38 + riskBoost * 0.7,
+      seedBase + 92
+    ).map((n) => clamp(n, 1.2, 18));
+    const disputeRateSeries = generateSeries(
+      rangeMeta.sparkPoints,
+      1.2 + riskBoost * 2.0,
+      0.0,
+      0.18 + riskBoost * 0.5,
+      seedBase + 93
+    ).map((n) => clamp(n, 0.2, 7));
+
+    const cancellationsSeries = volumeSeries.length
+      ? volumeSeries.map((o, i) =>
+          Math.max(
+            0,
+            Math.round(
+              (o * (cancelRateSeries[i] ?? cancelRateSeries[cancelRateSeries.length - 1])) / 100
+            )
+          )
+        )
+      : generateSeries(
+          rangeMeta.sparkPoints,
+          Math.max(1, volumeNow * 0.06),
+          0.2,
+          2.4 + riskBoost * 4,
+          seedBase + 94
+        ).map((n) => Math.round(n));
+
+    const disputesSeries = volumeSeries.length
+      ? volumeSeries.map((o, i) =>
+          Math.max(
+            0,
+            Math.round(
+              (o * (disputeRateSeries[i] ?? disputeRateSeries[disputeRateSeries.length - 1])) / 100
+            )
+          )
+        )
+      : generateSeries(
+          rangeMeta.sparkPoints,
+          Math.max(0, volumeNow * 0.012),
+          0.08,
+          1.2 + riskBoost * 2,
+          seedBase + 95
+        ).map((n) => Math.round(n));
 
     const convNow = conversionSeries[conversionSeries.length - 1] ?? 0;
     const convPrev = conversionSeries[conversionSeries.length - 2] ?? convNow;
@@ -2126,7 +2150,7 @@ export default function SupplierHubDashboardPage({
     return {
       hero,
       featured,
-      seriesSeedBase,
+      seedBase,
       smart,
       trustSignals,
       quickActions,
@@ -2178,8 +2202,8 @@ export default function SupplierHubDashboardPage({
 
   const setDefaultView = () => {
     const v = allViews.some((x) => x.id === viewId) ? viewId : 'all';
+    if (typeof window !== 'undefined') window.localStorage.setItem(STORAGE_DEFAULT_VIEW, v);
     setDefaultViewId(v);
-    void sellerBackendApi.patchUiState({ dashboard: { defaultViewId: v } }).catch(() => undefined);
     showToast('Default view saved');
   };
 

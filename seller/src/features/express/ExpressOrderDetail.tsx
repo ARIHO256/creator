@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
-import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -202,122 +202,145 @@ function riskMeta(promisedBy: string): RiskMeta {
   return { risk: "ok", riskLabel: "On track", mins };
 }
 
-function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+function seedExpressOrders(): Order[] {
+  const now = Date.now();
+  const agoM = (m: number) => new Date(now - m * 60_000).toISOString();
+  const inM = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
 
-function mapBackendOrderStatus(status: unknown): OrderStatus {
-  const normalized = String(status || "").toUpperCase();
-  if (normalized === "CONFIRMED") return "Confirmed";
-  if (normalized === "PICKING") return "Picking";
-  if (normalized === "PACKED") return "Packed";
-  if (normalized === "OUT_FOR_DELIVERY") return "Out for Delivery";
-  if (normalized === "DELIVERED") return "Delivered";
-  if (normalized === "FAILED") return "Failed";
-  if (normalized === "CANCELLED") return "Cancelled";
-  return "New";
-}
-
-function mapUiOrderStatus(status: OrderStatus) {
-  if (status === "Confirmed") return "CONFIRMED";
-  if (status === "Picking") return "PICKING";
-  if (status === "Packed") return "PACKED";
-  if (status === "Out for Delivery") return "OUT_FOR_DELIVERY";
-  if (status === "Delivered") return "DELIVERED";
-  if (status === "Failed") return "FAILED";
-  if (status === "Cancelled") return "CANCELLED";
-  return "NEW";
-}
-
-function mapBackendExpressOrder(value: Record<string, unknown>): Order {
-  const metadata = asObject(value.metadata);
-  const proof = asObject(metadata.proof);
-  const feedback = asObject(metadata.feedback);
-  const promisedBy =
-    typeof metadata.promisedBy === "string"
-      ? metadata.promisedBy
-      : typeof value.updatedAt === "string"
-        ? value.updatedAt
-        : new Date().toISOString();
-
-  return {
-    id: String(value.id || ""),
-    customer: String(metadata.customer || "Buyer"),
-    phone: String(metadata.phone || ""),
-    address: String(metadata.address || ""),
-    zone: String(metadata.zone || ""),
-    hub: String(metadata.hub || value.warehouse || ""),
-    items: Number(value.itemCount || 0),
-    total: Number(value.total || 0),
-    currency: String(value.currency || "USD"),
-    status: mapBackendOrderStatus(value.status),
-    slot: String(metadata.slot || ""),
-    channel: String(value.channel || "ExpressMart"),
-    updatedAt:
-      typeof value.updatedAt === "string" ? value.updatedAt : new Date().toISOString(),
-    promisedBy,
-    rider: typeof metadata.rider === "string" ? metadata.rider : null,
-    payment: String(metadata.payment || ""),
-    proof: {
-      photo: typeof proof.photo === "string" ? proof.photo : null,
-      signature: !!proof.signature,
-      otp: String(proof.otp || ""),
+  const base: Array<Omit<Order, "risk" | "riskLabel" | "mins">> = [
+    {
+      id: "EX-24018",
+      customer: "Amina K.",
+      phone: "+256 700 123 456",
+      address: "Nsambya Road, Kampala",
+      zone: "Kampala Central",
+      hub: "Kampala Hub",
+      items: 6,
+      total: 186000,
+      currency: "UGX",
+      status: "New",
+      slot: "19:00 - 20:00",
+      channel: "EVzone",
+      updatedAt: agoM(9),
+      promisedBy: inM(55),
+      rider: null,
+      payment: "EVzone Pay Wallet",
+      proof: { photo: null, signature: false, otp: "" },
+      feedback: { rating: null, note: "", followUp: "none" },
     },
-    feedback: {
-      rating:
-        typeof feedback.rating === "number" && Number.isFinite(feedback.rating)
-          ? feedback.rating
-          : null,
-      note: String(feedback.note || ""),
-      followUp:
-        feedback.followUp === "callback" ||
-        feedback.followUp === "refund" ||
-        feedback.followUp === "replacement"
-          ? (feedback.followUp as FollowUpKey)
-          : "none",
+    {
+      id: "EX-24017",
+      customer: "Kato S.",
+      phone: "+256 781 098 221",
+      address: "Bukoto, Kampala",
+      zone: "Nakawa",
+      hub: "Kampala Hub",
+      items: 2,
+      total: 54000,
+      currency: "UGX",
+      status: "Confirmed",
+      slot: "18:00 - 19:00",
+      channel: "WhatsApp",
+      updatedAt: agoM(24),
+      promisedBy: inM(95),
+      rider: "Rider 03 · Moses",
+      payment: "Cashless",
+      proof: { photo: null, signature: false, otp: "" },
+      feedback: { rating: null, note: "", followUp: "none" },
     },
-    ...riskMeta(promisedBy),
-  };
+    {
+      id: "EX-24016",
+      customer: "Sarah T.",
+      phone: "+256 704 555 111",
+      address: "Bugolobi, Kampala",
+      zone: "Nakawa",
+      hub: "Kampala Hub",
+      items: 4,
+      total: 122000,
+      currency: "UGX",
+      status: "Picking",
+      slot: "19:00 - 20:00",
+      channel: "EVzone",
+      updatedAt: agoM(38),
+      promisedBy: inM(150),
+      rider: "Rider 01 · Asha",
+      payment: "CorporatePay",
+      proof: { photo: null, signature: false, otp: "" },
+      feedback: { rating: null, note: "", followUp: "none" },
+    },
+    {
+      id: "EX-24015",
+      customer: "Ibrahim H.",
+      phone: "+256 752 000 909",
+      address: "Kira Road, Kampala",
+      zone: "Kampala Central",
+      hub: "Kampala Hub",
+      items: 1,
+      total: 18000,
+      currency: "UGX",
+      status: "Packed",
+      slot: "18:00 - 19:00",
+      channel: "API",
+      updatedAt: agoM(62),
+      promisedBy: inM(25),
+      rider: "Rider 02 · Kato",
+      payment: "EVzone Pay Wallet",
+      proof: { photo: null, signature: false, otp: "" },
+      feedback: { rating: null, note: "", followUp: "none" },
+    },
+    {
+      id: "EX-24014",
+      customer: "Joy A.",
+      phone: "+256 774 321 100",
+      address: "Muyenga, Kampala",
+      zone: "Makindye",
+      hub: "Kampala Hub",
+      items: 3,
+      total: 76000,
+      currency: "UGX",
+      status: "Out for Delivery",
+      slot: "18:00 - 19:00",
+      channel: "EVzone",
+      updatedAt: agoM(88),
+      promisedBy: inM(15),
+      rider: "Rider 01 · Asha",
+      payment: "Cashless",
+      proof: { photo: null, signature: false, otp: "" },
+      feedback: { rating: null, note: "", followUp: "none" },
+    },
+    {
+      id: "EX-24013",
+      customer: "Chen L.",
+      phone: "+86 177 000 000",
+      address: "Kololo, Kampala",
+      zone: "Kampala Central",
+      hub: "Main Warehouse",
+      items: 7,
+      total: 268000,
+      currency: "UGX",
+      status: "Delivered",
+      slot: "17:00 - 18:00",
+      channel: "EVzone",
+      updatedAt: agoM(180),
+      promisedBy: agoM(30),
+      rider: "Rider 05 · Ben",
+      payment: "EVzone Pay Wallet",
+      proof: { photo: "POD_photo.jpg", signature: true, otp: "" },
+      feedback: { rating: 5, note: "Fast delivery", followUp: "none" },
+    },
+  ];
+
+  return base.map((o) => ({ ...o, ...riskMeta(o.promisedBy) }));
 }
 
-function mapBackendRider(value: Record<string, unknown>): Rider {
-  return {
-    id: String(value.id || ""),
-    name: String(value.name || ""),
-    zone: String(value.zone || ""),
-    status: value.status === "Busy" ? "Busy" : "Online",
-    capacity: Number(value.capacity || 0),
-  };
-}
-
-function buildExpressOrderMetadata(order: Order) {
-  return {
-    customer: order.customer,
-    phone: order.phone,
-    address: order.address,
-    zone: order.zone,
-    hub: order.hub,
-    slot: order.slot,
-    payment: order.payment,
-    promisedBy: order.promisedBy,
-    rider: order.rider,
-    proof: order.proof,
-    feedback: order.feedback,
-  };
-}
-
-function hashOrderForSync(order: Order) {
-  return JSON.stringify({
-    id: order.id,
-    status: order.status,
-    rider: order.rider,
-    proof: order.proof,
-    feedback: order.feedback,
-    promisedBy: order.promisedBy,
-    payment: order.payment,
-  });
+function seedRiders(): Rider[] {
+  return [
+    { id: "r1", name: "Rider 01 · Asha", zone: "Makindye", status: "Online", capacity: 6 },
+    { id: "r2", name: "Rider 02 · Kato", zone: "Kampala Central", status: "Online", capacity: 4 },
+    { id: "r3", name: "Rider 03 · Moses", zone: "Nakawa", status: "Online", capacity: 5 },
+    { id: "r4", name: "Rider 04 · Susan", zone: "Nakawa", status: "Busy", capacity: 0 },
+    { id: "r5", name: "Rider 05 · Ben", zone: "Kampala Central", status: "Online", capacity: 3 },
+  ];
 }
 
 function Badge({ children, tone = "slate" }: BadgeProps) {
@@ -472,7 +495,7 @@ function Modal({ open, title, children, onClose }: ModalProps) {
               <div className="flex items-start justify-between gap-3 border-b border-slate-200/70 p-4">
                 <div>
                   <div className="text-sm font-black text-slate-900">{title}</div>
-                  <div className="mt-1 text-xs font-semibold text-slate-500">Premium ops modal.</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">Premium ops modal (demo).</div>
                 </div>
                 <IconButton label="Close" onClick={onClose}>
                   <X className="h-4 w-4" />
@@ -1406,7 +1429,7 @@ function ExpressMartOrders({
       <Drawer
         open={assignOpen}
         title="Assign rider"
-        subtitle="Assign selected orders to a rider."
+        subtitle="Assign selected orders to a rider (demo)."
         onClose={() => setAssignOpen(false)}
       >
         <div className="space-y-3">
@@ -1683,7 +1706,7 @@ function ExpressMartOrderDetail({
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-sm font-black text-slate-900">Totals</div>
-                            <div className="mt-1 text-xs font-semibold text-slate-500">Includes taxes and delivery fee.</div>
+                            <div className="mt-1 text-xs font-semibold text-slate-500">Includes taxes and delivery fee (demo).</div>
                           </div>
                           <Badge tone="slate">{order.currency}</Badge>
                         </div>
@@ -1710,7 +1733,7 @@ function ExpressMartOrderDetail({
                           type="button"
                           onClick={() => {
                             setOrder({ status: "Delivered", proof: { ...order.proof, signature: true } });
-                            pushToast({ title: "Delivered", message: "Marked delivered.", tone: "success" });
+                            pushToast({ title: "Delivered", message: "Marked delivered (demo).", tone: "success" });
                           }}
                           className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
                           style={{ background: TOKENS.green }}
@@ -1721,7 +1744,7 @@ function ExpressMartOrderDetail({
                         <button
                           type="button"
                           onClick={() => {
-                            pushToast({ title: "Issue reported", message: "Create incident.", tone: "warning" });
+                            pushToast({ title: "Issue reported", message: "Create incident (demo).", tone: "warning" });
                             setOrder({ status: "Failed" });
                           }}
                           className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-extrabold text-rose-700"
@@ -1738,7 +1761,7 @@ function ExpressMartOrderDetail({
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="text-sm font-black text-slate-900">Items</div>
-                          <div className="mt-1 text-xs font-semibold text-slate-500">Line items.</div>
+                          <div className="mt-1 text-xs font-semibold text-slate-500">Line items (demo).</div>
                         </div>
                         <Badge tone="slate">{items.length} lines</Badge>
                       </div>
@@ -1791,7 +1814,7 @@ function ExpressMartOrderDetail({
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-sm font-black text-slate-900">Proof of delivery</div>
-                            <div className="mt-1 text-xs font-semibold text-slate-500">Photo, signature and OTP.</div>
+                            <div className="mt-1 text-xs font-semibold text-slate-500">Photo, signature and OTP (demo).</div>
                           </div>
                           <Badge tone={canProof ? "slate" : "orange"}>{canProof ? "Active" : "Available after dispatch"}</Badge>
                         </div>
@@ -1829,7 +1852,7 @@ function ExpressMartOrderDetail({
                             onClick={() => {
                               if (!canProof) return;
                               setOrder({ proof: { ...order.proof, signature: !order.proof?.signature } });
-                              pushToast({ title: "Signature toggled", message: "Updated signature flag.", tone: "default" });
+                              pushToast({ title: "Signature toggled", message: "Updated signature flag (demo).", tone: "default" });
                             }}
                             disabled={!canProof}
                             className={cx(
@@ -1859,7 +1882,7 @@ function ExpressMartOrderDetail({
                                 onClick={() => {
                                   if (!canProof) return;
                                   setOrder({ proof: { ...order.proof, otp } });
-                                  pushToast({ title: "OTP saved", message: "OTP stored.", tone: "success" });
+                                  pushToast({ title: "OTP saved", message: "OTP stored (demo).", tone: "success" });
                                 }}
                                 disabled={!canProof}
                                 className={cx("rounded-2xl px-3 py-2 text-xs font-extrabold text-white", !canProof && "opacity-60")}
@@ -2069,7 +2092,7 @@ function ExpressMartOrderDetail({
                 tone: order.risk === "risk" ? "danger" : order.risk === "watch" ? "orange" : "green",
                 action: {
                   label: "Create ETA message",
-                  onClick: () => pushToast({ title: "ETA draft", message: "Draft created.", tone: "success" }),
+                  onClick: () => pushToast({ title: "ETA draft", message: "Draft created (demo).", tone: "success" }),
                 },
               }].map((p) => (
                 <div
@@ -2164,58 +2187,8 @@ export default function ExpressMartPagesPreviewable() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [riders, setRiders] = useState<Rider[]>([]);
-  const syncedOrderHashesRef = useRef<Record<string, string>>({});
-  const syncingRef = useRef(false);
-
-  const loadExpressData = async () => {
-    const [ordersPayload, ridersPayload] = await Promise.all([
-      sellerBackendApi.getExpressOrders().catch(() => ({ orders: [] })),
-      sellerBackendApi.getExpressRiders().catch(() => ({ riders: [] })),
-    ]);
-    const nextOrders = Array.isArray(ordersPayload?.orders)
-      ? ordersPayload.orders.map((entry) => mapBackendExpressOrder(entry))
-      : [];
-    const nextRiders = Array.isArray(ridersPayload?.riders)
-      ? ridersPayload.riders.map((entry) => mapBackendRider(entry))
-      : [];
-    syncedOrderHashesRef.current = Object.fromEntries(
-      nextOrders.map((order) => [order.id, hashOrderForSync(order)])
-    );
-    setOrders(nextOrders);
-    setRiders(nextRiders);
-  };
-
-  useEffect(() => {
-    void loadExpressData();
-  }, []);
-
-  useEffect(() => {
-    if (syncingRef.current || orders.length === 0) return;
-    const changed = orders.filter(
-      (order) => syncedOrderHashesRef.current[order.id] !== hashOrderForSync(order)
-    );
-    if (changed.length === 0) return;
-
-    syncingRef.current = true;
-    void Promise.all(
-      changed.map((order) =>
-        sellerBackendApi.patchExpressOrder(order.id, {
-          status: mapUiOrderStatus(order.status),
-          metadata: buildExpressOrderMetadata(order),
-        })
-      )
-    )
-      .then(() => {
-        changed.forEach((order) => {
-          syncedOrderHashesRef.current[order.id] = hashOrderForSync(order);
-        });
-      })
-      .finally(() => {
-        syncingRef.current = false;
-      });
-  }, [orders]);
+  const [orders, setOrders] = useMockState<Order[]>("express.orders", seedExpressOrders());
+  const [riders] = useMockState<Rider[]>("express.riders", seedRiders());
 
   const [selectedOrderId, setSelectedOrderId] = useState<string>(() => orders[0]?.id || "");
 
@@ -2223,12 +2196,6 @@ export default function ExpressMartPagesPreviewable() {
     // Ensure path is inside /expressmart for this preview
     if (!path.startsWith("/expressmart")) navigate("/expressmart");
   }, [path]);
-
-  useEffect(() => {
-    if (!orders.find((order) => order.id === selectedOrderId)) {
-      setSelectedOrderId(orders[0]?.id || "");
-    }
-  }, [orders, selectedOrderId]);
 
   const activeOrderId = useMemo(() => {
     if (path.startsWith("/expressmart/orders/")) return path.split("/").slice(-1)[0] || selectedOrderId;

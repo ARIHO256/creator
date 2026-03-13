@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation } from "react-router-dom";
-import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BarChart3,
@@ -38,7 +38,7 @@ import {
  * - Category playbooks
  *
  * Notes:
- * - Actions stay local until backend workflows are added.
+ * - All actions are demo-safe and local.
  * - Styling aligned to EVzone (green primary, orange accent).
  */
 
@@ -262,7 +262,7 @@ function priorityTone(p) {
   return "slate";
 }
 
-function buildStatus() {
+function seedStatus() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
 
@@ -296,7 +296,7 @@ function buildStatus() {
   };
 }
 
-function buildArticles() {
+function seedArticles() {
   const now = Date.now();
   const ago = (h) => new Date(now - h * 3600_000).toISOString();
 
@@ -354,7 +354,7 @@ function buildArticles() {
   ];
 }
 
-function buildPlaybooks() {
+function seedPlaybooks() {
   return [
     {
       id: "PB-ORD-01",
@@ -435,7 +435,7 @@ function buildPlaybooks() {
   ];
 }
 
-function buildTickets() {
+function seedTickets() {
   const now = Date.now();
   const ago = (m) => new Date(now - m * 60_000).toISOString();
   const inM = (m) => new Date(now + m * 60_000).toISOString();
@@ -751,107 +751,10 @@ export default function SupportCenterPage() {
   };
   const dismissToast = (id) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [status, setStatus] = useState({ overall: "Operational", services: [], incidents: [] });
-  const [tickets, setTickets] = useState([]);
-  const [articles, setArticles] = useState([]);
-  const [playbooks, setPlaybooks] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const mapTicketStatus = (value) => {
-      const statusValue = String(value || "OPEN").toUpperCase();
-      if (statusValue === "RESOLVED" || statusValue === "CLOSED") return "Resolved";
-      if (statusValue === "WAITING") return "Waiting on support";
-      if (statusValue === "ESCALATED") return "Waiting on support";
-      return "Open";
-    };
-    const mapSeverity = (value) => {
-      const sev = String(value || "medium").toLowerCase();
-      if (sev === "critical") return "Critical";
-      if (sev === "high") return "High";
-      return "Normal";
-    };
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [statusPayload, contentPayload, helpPayload] = await Promise.all([
-          sellerBackendApi.getStatusCenter(),
-          sellerBackendApi.getHelpSupportContent(),
-          sellerBackendApi.getSettingsHelp(),
-        ]);
-        if (cancelled) return;
-        if (Array.isArray(statusPayload.providers) || Array.isArray(statusPayload.incidents)) {
-          setStatus({
-            overall: Array.isArray(statusPayload.incidents) && statusPayload.incidents.some((entry) => String(entry.status).toLowerCase() !== "resolved") ? "Degraded" : "Operational",
-            services: Array.isArray(statusPayload.providers)
-              ? statusPayload.providers.map((entry) => ({
-                  key: String(entry.id ?? entry.name ?? makeId("svc")),
-                  name: String(entry.name ?? "Service"),
-                  status: String(entry.status ?? "Operational"),
-                  updatedAt: String(entry.lastCheckAt ?? new Date().toISOString()),
-                }))
-              : [],
-            incidents: Array.isArray(statusPayload.incidents)
-              ? statusPayload.incidents.map((entry) => ({
-                  id: String(entry.id ?? makeId("inc")),
-                  title: String(entry.title ?? "Incident"),
-                  severity: String(entry.severity ?? "Minor"),
-                  startedAt: String(entry.updatedAt ?? new Date().toISOString()),
-                  status: String(entry.status ?? "Investigating"),
-                  summary: String(entry.summary ?? ""),
-                }))
-              : [],
-          });
-        }
-        if (Array.isArray(contentPayload.kb)) {
-          setArticles(
-            contentPayload.kb.map((entry) => ({
-              id: String(entry.id ?? makeId("kb")),
-              title: String(entry.title ?? "Article"),
-              category: String(entry.metadata?.category ?? entry.metadata?.module ?? "General"),
-              tags: Array.isArray(entry.metadata?.tags) ? entry.metadata.tags : [],
-              excerpt: String(entry.metadata?.excerpt ?? entry.body ?? ""),
-              updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
-              body: String(entry.body ?? ""),
-            }))
-          );
-        }
-        if (Array.isArray(contentPayload.tickets)) {
-          setTickets(
-            contentPayload.tickets.map((entry) => ({
-              id: String(entry.id ?? makeId("SUP")),
-              subject: String(entry.subject ?? "Support ticket"),
-              category: String(entry.category ?? "Support"),
-              priority: mapSeverity(entry.severity),
-              status: mapTicketStatus(entry.status),
-              createdAt: String(entry.createdAt ?? new Date().toISOString()),
-              updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
-              channel: String(entry.marketplace ?? "Portal"),
-              slaDueAt: String(entry.lastResponseAt ?? entry.updatedAt ?? new Date().toISOString()),
-              last: String(entry.ref ?? entry.subject ?? ""),
-              conversation: [],
-              meta: { org: "EVzone Supplier", region: "Global", product: entry.category ?? "Support" },
-            }))
-          );
-        }
-        if (Array.isArray(helpPayload.playbooks)) {
-          setPlaybooks(helpPayload.playbooks);
-        }
-      } catch {
-        setStatus({ overall: "Operational", services: [], incidents: [] });
-        setTickets([]);
-        setArticles([]);
-        setPlaybooks([]);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [status, setStatus] = useMockState("support.status", seedStatus());
+  const [tickets, setTickets] = useMockState("support.tickets", seedTickets());
+  const [articles] = useMockState("support.articles", seedArticles());
+  const [playbooks] = useMockState("support.playbooks", seedPlaybooks());
 
   const stats = useMemo(() => computeTicketStats(tickets), [tickets]);
 
@@ -918,7 +821,7 @@ export default function SupportCenterPage() {
     window.setTimeout(() => replyRef.current?.focus?.(), 60);
   }, [ticketOpen, activeTicket?.id]);
 
-  const sendReply = async () => {
+  const sendReply = () => {
     if (!activeTicket) return;
     const text = replyDraft.trim();
     if (!text) {
@@ -926,42 +829,27 @@ export default function SupportCenterPage() {
       return;
     }
 
-    try {
-      const thread = await sellerBackendApi.replyMessageThread(activeTicket.id, { text });
-      const messages = Array.isArray(thread.messages) ? thread.messages : [];
-      setTickets((prev) =>
-        prev.map((t) =>
-          t.id !== activeTicket.id
-            ? t
-            : {
-                ...t,
-                conversation: messages.map((message) => ({
-                  id: String(message.id ?? makeId("msg")),
-                  from: String(message.senderRole ?? "").toLowerCase() === "owner" ? "you" : "support",
-                  at: String(message.createdAt ?? new Date().toISOString()),
-                  text: String(message.body ?? ""),
-                })),
-                last: text,
-                updatedAt: new Date().toISOString(),
-                status: "Waiting on support",
-              }
-        )
-      );
-      setReplyDraft("");
-      pushToast({ title: "Message sent", message: "Support has been notified.", tone: "success" });
-    } catch (error) {
-      pushToast({ title: "Reply failed", message: error instanceof Error ? error.message : "Unable to send reply", tone: "danger" });
-    }
+    setTickets((prev) =>
+      prev.map((t) => {
+        if (t.id !== activeTicket.id) return t;
+        const nextConv = [{ id: makeId("msg"), from: "you", at: new Date().toISOString(), text }, ...(t.conversation || [])];
+        return {
+          ...t,
+          conversation: nextConv,
+          last: text,
+          updatedAt: new Date().toISOString(),
+          status: t.status === "Resolved" ? "Open" : "Waiting on support",
+        };
+      })
+    );
+
+    setReplyDraft("");
+    pushToast({ title: "Message sent", message: "Support has been notified (demo).", tone: "success" });
   };
 
-  const closeTicket = async (id) => {
-    try {
-      await sellerBackendApi.patchSupportTicket(id, { status: "RESOLVED" });
-      setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, status: "Resolved", updatedAt: new Date().toISOString() } : t)));
-      pushToast({ title: "Ticket closed", message: "Marked as Resolved.", tone: "success" });
-    } catch (error) {
-      pushToast({ title: "Close failed", message: error instanceof Error ? error.message : "Unable to close ticket", tone: "danger" });
-    }
+  const closeTicket = (id) => {
+    setTickets((prev) => prev.map((t) => (t.id === id ? { ...t, status: "Resolved", updatedAt: new Date().toISOString() } : t)));
+    pushToast({ title: "Ticket closed", message: "Marked as Resolved.", tone: "success" });
   };
 
   // Contact support form
@@ -996,7 +884,7 @@ export default function SupportCenterPage() {
   }, [location.key, location.state, setTab]);
   const fileRef = useRef(null);
 
-  const submitContact = async () => {
+  const submitContact = () => {
     const subj = contactSubject.trim();
     const msg = contactMessage.trim();
     if (!subj || !msg) {
@@ -1023,41 +911,23 @@ export default function SupportCenterPage() {
       attachments: contactFiles.map((f) => ({ id: makeId("att"), name: f.name, size: f.size })),
     };
 
-    try {
-      const created = await sellerBackendApi.createHelpSupportTicket({
-        id,
-        marketplace: contactChannel,
-        category: contactCategory,
-        subject: subj,
-        severity: contactPriority.toLowerCase(),
-        ref: msg,
-      });
-      setTickets((prev) => [
-        {
-          ...ticket,
-          id: String(created.id ?? id),
-          status: "Open",
-        },
-        ...prev,
-      ]);
-      setActiveTicketId(String(created.id ?? id));
-      setTab("Tickets");
-      pushToast({
-        title: "Ticket created",
-        message: `${created.id ?? id} created and added to your inbox.`,
-        tone: "success",
-        action: { label: "Open", onClick: () => setTicketOpen(true) },
-      });
-      setContactSubject("");
-      setContactMessage("");
-      setContactFiles([]);
-    } catch (error) {
-      pushToast({ title: "Ticket create failed", message: error instanceof Error ? error.message : "Unable to create ticket", tone: "danger" });
-    }
+    setTickets((prev) => [ticket, ...prev]);
+    setActiveTicketId(id);
+    setTab("Tickets");
+    pushToast({
+      title: "Ticket created",
+      message: `${id} created and added to your inbox.`,
+      tone: "success",
+      action: { label: "Open", onClick: () => setTicketOpen(true) },
+    });
+
+    setContactSubject("");
+    setContactMessage("");
+    setContactFiles([]);
   };
 
   // Troubleshooter (super premium)
-  const TROUBLE_CATS = ["Payments", "Orders", "MyLiveDealz", "Integrations", "Security"]; // categories
+  const TROUBLE_CATS = ["Payments", "Orders", "MyLiveDealz", "Integrations", "Security"]; // demo
 
   const troubleDefs = useMemo(
     () => ({
@@ -1238,7 +1108,6 @@ export default function SupportCenterPage() {
                 <Badge tone="slate">/support</Badge>
                 <Badge tone="slate">Core</Badge>
                 <Badge tone="orange">Super premium</Badge>
-                {loading ? <Badge tone="slate">Loading</Badge> : <Badge tone="green">Backend</Badge>}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">
                 Tickets, knowledge base, contact support, guided troubleshooting, and category playbooks.
@@ -1262,7 +1131,7 @@ export default function SupportCenterPage() {
                 type="button"
                 onClick={() => {
                   safeCopy(JSON.stringify({ tickets: tickets.length, open: stats.open, overall }, null, 2));
-                  pushToast({ title: "Export", message: "Summary copied.", tone: "success" });
+                  pushToast({ title: "Export", message: "Summary copied (demo).", tone: "success" });
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
@@ -1272,76 +1141,8 @@ export default function SupportCenterPage() {
               <button
                 type="button"
                 onClick={() => {
-                  void Promise.all([
-                    sellerBackendApi.getStatusCenter(),
-                    sellerBackendApi.getHelpSupportContent(),
-                    sellerBackendApi.getSettingsHelp(),
-                  ])
-                    .then(([statusPayload, contentPayload, helpPayload]) => {
-                      setStatus({
-                        overall:
-                          Array.isArray(statusPayload.incidents) &&
-                          statusPayload.incidents.some((entry) => String(entry.status).toLowerCase() !== "resolved")
-                            ? "Degraded"
-                            : "Operational",
-                        services: Array.isArray(statusPayload.providers)
-                          ? statusPayload.providers.map((entry) => ({
-                              key: String(entry.id ?? entry.name ?? makeId("svc")),
-                              name: String(entry.name ?? "Service"),
-                              status: String(entry.status ?? "Operational"),
-                              updatedAt: String(entry.lastCheckAt ?? new Date().toISOString()),
-                            }))
-                          : [],
-                        incidents: Array.isArray(statusPayload.incidents)
-                          ? statusPayload.incidents.map((entry) => ({
-                              id: String(entry.id ?? makeId("inc")),
-                              title: String(entry.title ?? "Incident"),
-                              severity: String(entry.severity ?? "Minor"),
-                              startedAt: String(entry.updatedAt ?? new Date().toISOString()),
-                              status: String(entry.status ?? "Investigating"),
-                              summary: String(entry.summary ?? ""),
-                            }))
-                          : [],
-                      });
-                      if (Array.isArray(contentPayload.kb)) {
-                        setArticles(
-                          contentPayload.kb.map((entry) => ({
-                            id: String(entry.id ?? makeId("kb")),
-                            title: String(entry.title ?? "Article"),
-                            category: String(entry.metadata?.category ?? entry.metadata?.module ?? "General"),
-                            tags: Array.isArray(entry.metadata?.tags) ? entry.metadata.tags : [],
-                            excerpt: String(entry.metadata?.excerpt ?? entry.body ?? ""),
-                            updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
-                            body: String(entry.body ?? ""),
-                          }))
-                        );
-                      }
-                      if (Array.isArray(contentPayload.tickets)) {
-                        setTickets(
-                          contentPayload.tickets.map((entry) => ({
-                            id: String(entry.id ?? makeId("SUP")),
-                            subject: String(entry.subject ?? "Support ticket"),
-                            category: String(entry.category ?? "Support"),
-                            priority: mapSeverity(entry.severity),
-                            status: mapTicketStatus(entry.status),
-                            createdAt: String(entry.createdAt ?? new Date().toISOString()),
-                            updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
-                            channel: String(entry.marketplace ?? "Portal"),
-                            slaDueAt: String(entry.lastResponseAt ?? entry.updatedAt ?? new Date().toISOString()),
-                            last: String(entry.ref ?? entry.subject ?? ""),
-                            conversation: [],
-                            meta: { org: "EVzone Supplier", region: "Global", product: entry.category ?? "Support" },
-                          }))
-                        );
-                      }
-                      if (Array.isArray(helpPayload.playbooks)) {
-                        setPlaybooks(helpPayload.playbooks);
-                      }
-                      pushToast({ title: "Refreshed", message: "Latest support data loaded.", tone: "success" });
-                    })
-                    .catch(() => {
-                      pushToast({ title: "Refresh failed", message: "Could not reload support data.", tone: "warning" });
-                    });
+                  setStatus(seedStatus());
+                  pushToast({ title: "Refreshed", message: "Latest status loaded (demo).", tone: "success" });
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
@@ -1388,7 +1189,7 @@ export default function SupportCenterPage() {
               <div>
                 <div className="text-xs font-extrabold text-slate-600">Resolved</div>
                 <div className="mt-1 text-2xl font-black text-slate-900">{stats.resolved}</div>
-                <div className="mt-1 text-[11px] font-semibold text-slate-500">This period</div>
+                <div className="mt-1 text-[11px] font-semibold text-slate-500">This period (demo)</div>
               </div>
             </div>
           </GlassCard>
@@ -1589,7 +1390,7 @@ export default function SupportCenterPage() {
                     <span className="ml-auto"><Badge tone="slate">Creates a ticket</Badge></span>
                   </div>
                   <div className="mt-2 text-xs font-semibold text-slate-500">
-                    Provide a clear subject, steps to reproduce, and any references. Attachments remain local until backend uploads are added.
+                    Provide a clear subject, steps to reproduce, and any references. Attachments are local in this demo.
                   </div>
                 </GlassCard>
 
@@ -2336,7 +2137,7 @@ export default function SupportCenterPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        pushToast({ title: "Escalation", message: "Escalation queued.", tone: "default" });
+                        pushToast({ title: "Escalation", message: "Escalation queued (demo).", tone: "default" });
                       }}
                       className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-orange-700"
                     >
@@ -2474,7 +2275,7 @@ export default function SupportCenterPage() {
                   type="button"
                   onClick={() => {
                     safeCopy(`/support/kb/${activeArticle.id}`);
-                    pushToast({ title: "Link copied", message: "Article route copied.", tone: "success" });
+                    pushToast({ title: "Link copied", message: "Article route copied (demo).", tone: "success" });
                   }}
                   className="ml-auto inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                 >

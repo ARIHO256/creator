@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
-import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzMarketplacePage.jsx
@@ -17,11 +15,11 @@ import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from 
  * - Cart dock inside preview (not checkout dock), wholesale constraints (MOQ/step)
  * - Video viewer (hero/offer) with overlays: countdown, stock, love/share, mode toggle, CTA buttons
  * - Toast feedback
- * - Ad Builder drawer (premium module) opened from header or preview
+ * - Ad Builder drawer (premium stub) opened from header or preview
  *
  * Supplier adaptations (minimal, necessary):
  * - Adds Supplier campaign governance context: creatorUsage, collabMode, approvalMode, hostRole
- * - Routes are supplier-safe (router-safe actions for the app; replace safeNav with react-router navigate)
+ * - Routes are supplier-safe (stubbed as toasts for canvas; replace safeNav with react-router navigate)
  * - Copy link disabled until Generated; publishing/generation notes reflect Supplier approvals workflow
  */
 
@@ -674,7 +672,7 @@ function ShoppableAdPreview({
   );
 }
 
-/* ------------------------------ Builder drawer (premium module) -------------- */
+/* ------------------------------ Builder drawer (premium stub) -------------- */
 
 function Drawer({ open, title, onClose, children }) {
   useEffect(() => {
@@ -1014,15 +1012,323 @@ function CheckRow({ ok, label, hint }) {
   );
 }
 
-/* --------------------------------- Ad data ------------------------------ */
+/* --------------------------------- Mock data ------------------------------ */
 
-const EMPTY_ADS: Array<Record<string, any>> = [];
+const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+
+const DEMO_ADS = [
+  {
+    id: "ad_1",
+    rank: 1,
+    status: "Generated",
+    campaignName: "Valentine Glow Week",
+    campaignSubtitle: "GlowUp Hub · Limited-time drops",
+    supplier: {
+      name: "GlowUp Hub",
+      category: "Beauty",
+      logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "Amina K.",
+      handle: "@amina.dealz",
+      avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    // Supplier additions
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+
+    platforms: ["Instagram", "TikTok"],
+    startISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
+    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
+    heroDesktopMode: "fullscreen",
+    ctaPrimaryLabel: "Buy now",
+    ctaSecondaryLabel: "Add to cart",
+    kpis: [
+      { label: "Views", value: "410K" },
+      { label: "Saves", value: "18K" },
+      { label: "CTR", value: "3.6%" }
+    ],
+    offers: [
+      {
+        id: "o1",
+        type: "PRODUCT",
+        name: "Glow Serum (30ml)",
+        price: 38000,
+        basePrice: 52000,
+        currency: "UGX",
+        stockLeft: 12,
+        sold: 86,
+        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "RETAIL",
+        wholesale: {
+          moq: 10,
+          step: 5,
+          leadTimeLabel: "Ships in 3–5 days",
+          tiers: [
+            { minQty: 10, unitPrice: 32000 },
+            { minQty: 25, unitPrice: 29500 },
+            { minQty: 50, unitPrice: 27000 }
+          ]
+        }
+      },
+      {
+        id: "o2",
+        type: "PRODUCT",
+        name: "Hydra Cleanser",
+        price: 24000,
+        basePrice: 32000,
+        currency: "UGX",
+        stockLeft: 5,
+        sold: 123,
+        posterUrl: "https://images.unsplash.com/photo-1601612628452-9e99ced43524?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL"],
+        defaultSellingMode: "RETAIL"
+      },
+      {
+        id: "o3",
+        type: "SERVICE",
+        name: "Skin consult (30min)",
+        price: 60000,
+        currency: "UGX",
+        stockLeft: -1,
+        sold: 44,
+        posterUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal"
+      },
+      {
+        id: "o4",
+        type: "PRODUCT",
+        name: "Bundle: Glow Kit",
+        price: 120000,
+        basePrice: 160000,
+        currency: "UGX",
+        stockLeft: 0,
+        sold: 210,
+        posterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 6,
+          step: 2,
+          leadTimeLabel: "Ships in 5–7 days",
+          tiers: [
+            { minQty: 6, unitPrice: 98000 },
+            { minQty: 12, unitPrice: 92000 },
+            { minQty: 24, unitPrice: 88000 }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    id: "ad_2",
+    rank: 2,
+    status: "Scheduled",
+    campaignName: "Back-to-Work Essentials",
+    campaignSubtitle: "Urban Supply · Bags & Accessories",
+    supplier: {
+      name: "Urban Supply",
+      category: "Accessories",
+      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "Chris M.",
+      handle: "@chris.finds",
+      avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=256&auto=format&fit=crop",
+      verified: false
+    },
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Invite-Only",
+    approvalMode: "Manual",
+
+    platforms: ["Instagram"],
+    startISO: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 40 * 3600 * 1000).toISOString(),
+    heroImageUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
+    heroDesktopMode: "modal",
+    ctaPrimaryLabel: "Buy now",
+    ctaSecondaryLabel: "Add to cart",
+    kpis: [
+      { label: "Views", value: "92K" },
+      { label: "Saves", value: "3.2K" },
+      { label: "CTR", value: "2.1%" }
+    ],
+    offers: [
+      {
+        id: "o5",
+        type: "PRODUCT",
+        name: "Laptop Backpack",
+        price: 180000,
+        basePrice: 220000,
+        currency: "UGX",
+        stockLeft: 18,
+        sold: 51,
+        posterUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "RETAIL",
+        wholesale: {
+          moq: 5,
+          step: 1,
+          leadTimeLabel: "Ships in 2–4 days",
+          tiers: [
+            { minQty: 5, unitPrice: 155000 },
+            { minQty: 10, unitPrice: 149000 },
+            { minQty: 25, unitPrice: 139000 }
+          ]
+        }
+      },
+      {
+        id: "o6",
+        type: "PRODUCT",
+        name: "Daily Tote",
+        price: 95000,
+        currency: "UGX",
+        stockLeft: 4,
+        sold: 98,
+        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL"],
+        defaultSellingMode: "RETAIL"
+      },
+      {
+        id: "o7",
+        type: "SERVICE",
+        name: "Personal styling consult",
+        price: 120000,
+        currency: "UGX",
+        stockLeft: -1,
+        sold: 21,
+        posterUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal"
+      },
+      {
+        id: "o8",
+        type: "PRODUCT",
+        name: "USB‑C Hub",
+        price: 68000,
+        currency: "UGX",
+        stockLeft: 33,
+        sold: 71,
+        posterUrl: "https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 10,
+          step: 5,
+          leadTimeLabel: "Ships in 2–4 days",
+          tiers: [
+            { minQty: 10, unitPrice: 52000 },
+            { minQty: 25, unitPrice: 49000 },
+            { minQty: 50, unitPrice: 46500 }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    id: "ad_3",
+    rank: 3,
+    status: "Draft",
+    campaignName: "Home Essentials Drop",
+    campaignSubtitle: "HomePro · Kitchen upgrade bundles",
+    supplier: {
+      name: "HomePro",
+      category: "Home",
+      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "(Supplier-hosted)",
+      handle: "@homepro",
+      avatarUrl: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    hostRole: "Supplier",
+    creatorUsage: "I will NOT use a Creator",
+    collabMode: "(n/a)",
+    approvalMode: "Manual",
+
+    platforms: ["TikTok"],
+    startISO: new Date(Date.now() + 30 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 54 * 3600 * 1000).toISOString(),
+    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
+    heroDesktopMode: "modal",
+    ctaPrimaryLabel: "Buy now",
+    ctaSecondaryLabel: "Add to cart",
+    kpis: [
+      { label: "Views", value: "18K" },
+      { label: "Saves", value: "430" },
+      { label: "CTR", value: "1.2%" }
+    ],
+    offers: [
+      {
+        id: "o9",
+        type: "PRODUCT",
+        name: "6‑Speed Blender",
+        price: 240000,
+        currency: "UGX",
+        stockLeft: 10,
+        sold: 18,
+        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 3,
+          step: 1,
+          leadTimeLabel: "Ships in 3–6 days",
+          tiers: [
+            { minQty: 3, unitPrice: 210000 },
+            { minQty: 6, unitPrice: 199000 },
+            { minQty: 12, unitPrice: 189000 }
+          ]
+        }
+      },
+      {
+        id: "o10",
+        type: "SERVICE",
+        name: "Installation consult (remote)",
+        price: 90000,
+        currency: "UGX",
+        stockLeft: -1,
+        sold: 7,
+        posterUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal"
+      }
+    ]
+  }
+];
 
 /* --------------------------------- Page ----------------------------------- */
 
 export default function SupplierAdzMarketplacePage() {
   const navigate = useNavigate();
-  const [syncedAds, setSyncedAds] = useState<Record<string, string>>({});
   const safeNav = (url) => {
     if (!url) return;
     const target = /^https?:\/\//i.test(url) ? url : url.startsWith("/") ? url : `/${url}`;
@@ -1042,43 +1348,8 @@ export default function SupplierAdzMarketplacePage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useState<typeof EMPTY_ADS>([]);
-  const [selectedId, setSelectedId] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-
-    void sellerBackendApi
-      .getAdzMarketplace()
-      .then((payload) => {
-        if (cancelled) return;
-        const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
-        if (nextAds.length) {
-          setAds(nextAds as typeof EMPTY_ADS);
-          setSyncedAds(Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)])));
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    ads.forEach((ad) => {
-      const nextHash = hashAdzCampaign(ad);
-      if (syncedAds[String(ad.id)] === nextHash) return;
-      setSyncedAds((prev) => ({ ...prev, [String(ad.id)]: nextHash }));
-      void sellerBackendApi.patchAdzCampaign(String(ad.id), buildAdzCampaignPayload(ad));
-    });
-  }, [ads, syncedAds]);
-
-  useEffect(() => {
-    if (!ads.length) return;
-    if (!ads.find((ad) => ad.id === selectedId)) {
-      setSelectedId(ads[0]?.id || "");
-    }
-  }, [ads, selectedId]);
+  const [ads, setAds] = useState(DEMO_ADS);
+  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
 
   const [modeByOffer, setModeByOffer] = useState({});
@@ -1143,7 +1414,7 @@ export default function SupplierAdzMarketplacePage() {
 
     const qty = mode === "WHOLESALE" && offer.type === "PRODUCT" && offer.wholesale ? offer.wholesale.moq : 1;
     const url = `/checkout?offerId=${encodeURIComponent(offerId)}&mode=${encodeURIComponent(mode)}&qty=${encodeURIComponent(String(qty))}`;
-    setToast(`Buyer checkout preview → ${offer.name} (${mode}) · qty ${qty} · ${url}`);
+    setToast(`Buyer checkout preview → ${offer.name} (${mode}) · qty ${qty} · ${url} (demo)`);
   };
 
   const shareAd = (ad) => {
@@ -1152,7 +1423,7 @@ export default function SupplierAdzMarketplacePage() {
       return;
     }
     const base = `https://mldz.link/${encodeURIComponent(ad.id)}`;
-    setToast(`Share link copied: ${base}`);
+    setToast(`Share link copied: ${base} (demo)`);
     try {
       navigator.clipboard?.writeText(base);
     } catch {
@@ -1403,7 +1674,7 @@ export default function SupplierAdzMarketplacePage() {
         startISO: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
         endISO: new Date(Date.now() + 30 * 3600 * 1000).toISOString(),
         heroImageUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
-        heroIntroVideoUrl: "",
+        heroIntroVideoUrl: SAMPLE_VIDEO,
         heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
         heroDesktopMode: "modal",
         ctaPrimaryLabel: "Buy now",

@@ -233,11 +233,75 @@ function FeedItem({
 
 /* ------------------------------ Mock Feed Data ------------------------------ */
 
-const allFeedItems = [];
+const allFeedItems = [
+  {
+    id: 201,
+    type: "live",
+    title: "Creator Spotlight: Tech Friday Mega Live (Cross-border orders)",
+    brand: "@TechWithBrian · Creator",
+    viewers: "842",
+    time: "Live now · 32 min",
+    tag: "High match · Tech",
+    category: "Tech"
+  },
+  {
+    id: 202,
+    type: "upcoming",
+    title: "Upcoming: Beauty Flash Dealz (Pitch window closes soon)",
+    brand: "@GlowUpHub · Creator",
+    viewers: "Scheduled",
+    time: "Today · 18:30",
+    tag: "Recommended · Beauty",
+    category: "Beauty"
+  },
+  {
+    id: 203,
+    type: "replay",
+    title: "Replay: EV Charger Deals · 500 units moved (B2B + Retail)",
+    brand: "EV World Store · Supplier",
+    viewers: "2.3k views",
+    time: "Replay · 1 day ago",
+    tag: "Your top converting line",
+    category: "EV"
+  }
+];
 
 /* ------------------------- Followed Creators "DB" -------------------------- */
 
-const allCreatorsDb = [];
+const allCreatorsDb = [
+  {
+    id: 1,
+    name: "TechWithBrian",
+    type: "Creator",
+    category: "Tech & Gadgets",
+    status: "Live now · Tech Friday",
+    viewers: 320
+  },
+  {
+    id: 2,
+    name: "GlowUpHub",
+    type: "Creator",
+    category: "Beauty & Skincare",
+    status: "Upcoming · Today 18:30",
+    viewers: null
+  },
+  {
+    id: 3,
+    name: "FaithWithGrace",
+    type: "Creator",
+    category: "Faith & Wellness",
+    status: "Offline",
+    viewers: null
+  },
+  {
+    id: 4,
+    name: "MotoDealsEast",
+    type: "Creator",
+    category: "Mobility & EV",
+    status: "Offline",
+    viewers: null
+  }
+];
 
 /* ----------------------------- Page Components ------------------------------ */
 
@@ -782,12 +846,12 @@ export default function SupplierLiveDealzFeedPage() {
     }
   };
 
-  // Supplier role awareness for the "Supplier acting as Creator" toggle.
+  // Supplier role awareness: simulate "Supplier acting as Creator" toggle.
   // In the real app this is driven by campaign Creator Usage Decision.
   const [supplierActsAsCreator, setSupplierActsAsCreator] = useState(false);
 
   // Follow state (mirrors Creator useCreator + followedSellerIds pattern)
-  const [followedCreatorIds, setFollowedCreatorIds] = useState<number[]>([]);
+  const [followedCreatorIds, setFollowedCreatorIds] = useState([1, 2]);
   const followedCreators = useMemo(
     () => allCreatorsDb.filter((c) => followedCreatorIds.includes(c.id)),
     [followedCreatorIds]
@@ -929,7 +993,7 @@ export default function SupplierLiveDealzFeedPage() {
             <section className="space-y-3">
               <CreatorsDiscoveryCard onChangePage={onChangePage} />
               <AIAssistantCard
-                onAsk={() => showInfo("AI Assistant prompt sent")}
+                onAsk={() => showInfo("AI Assistant prompt sent (demo)")}
               />
               <CategoryInsightsCard onChangePage={onChangePage} />
             </section>

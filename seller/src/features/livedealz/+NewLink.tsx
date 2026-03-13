@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState, type ReactNode, type Chang
  * Link Tools (Supplier) — Previewable (Orange Primary)
  * Controlled Mirroring Mode (Creator → Supplier)
  * ------------------------------------------------
- * Primary blueprint: link tools creator orange primary
+ * Primary blueprint: 3_link_tools_creator_orange_primary_previewable (2).tsx
  *
  * Mirror-first preserved:
  * - Top toolbox card: campaign selector + link variant selector
@@ -718,7 +718,7 @@ export default function SupplierLinkToolsOrangePrimaryPreviewable() {
       // fall through
     }
     await safeCopy(urlToShare);
-    showToast("Copied (share)");
+    showToast("Copied (share fallback)");
   };
 
   const canCreateCreatorLinks = campaign?.creatorUsageDecision === "I will use a Creator";
@@ -993,7 +993,7 @@ export default function SupplierLinkToolsOrangePrimaryPreviewable() {
               >
                 Copy link
               </BrandOutlineButton>
-              <Button variant="primary" onClick={() => shareLink(link)} disabled={!link} title="Share via system share (share if available)">
+              <Button variant="primary" onClick={() => shareLink(link)} disabled={!link} title="Share via system share (fallback copies)">
                 <Icon.Share className="w-4 h-4" /> Share
               </Button>
             </div>
@@ -1044,7 +1044,7 @@ export default function SupplierLinkToolsOrangePrimaryPreviewable() {
               <Button variant="neutral" onClick={() => copy(link, "Link copied")} disabled={!link} title="Copy link">
                 <Icon.Copy className="w-4 h-4" /> Copy link
               </Button>
-              <Button variant="primary" onClick={() => shareLink(qrUrl)} disabled={!qrUrl} title="Share QR image link (share if available)">
+              <Button variant="primary" onClick={() => shareLink(qrUrl)} disabled={!qrUrl} title="Share QR image link (fallback copies)">
                 <Icon.Share className="w-4 h-4" /> Share QR
               </Button>
             </div>
@@ -1368,8 +1368,8 @@ if (typeof window !== "undefined") {
       const url2 = appendParam("https://x.com?a=1", "src", "tiktok");
       t("appendParam adds &", url2 === "https://x.com?a=1&src=tiktok");
 
-      const s1 = shortLinkFromUrl("https://mylivedealz.com/a/link");
-      const s2 = shortLinkFromUrl("https://mylivedealz.com/a/link");
+      const s1 = shortLinkFromUrl("https://mylivedealz.com/a/demo");
+      const s2 = shortLinkFromUrl("https://mylivedealz.com/a/demo");
       t("shortLink deterministic", s1 === s2);
 
       window.__LINK_TOOLS_SUPPLIER_TESTS__ = tests;

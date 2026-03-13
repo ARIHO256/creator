@@ -14,7 +14,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * - Reminder Pipeline (T-24h, T-1h, T-10m, Live Now, Deal Drop, Replay Ready)
  * - Messaging Blueprint (template packs)
  * - Deployment Bricks (links + QR) + Protocol Synopsis panel
- * - Protocol drawer (phone previews + checklist + toolkit)
+ * - Protocol Simulation drawer (phone mockups + checklist + toolkit)
  * - Toast behavior
  *
  * Supplier adaptations (minimal, required):
@@ -642,7 +642,7 @@ export default function SupplierAudienceNotificationsPage() {
         supportsQr: false,
         supportsButtons: false,
         proOnly: true,
-        note: "Pro: RCS/SMS delivery note. Buttons vary by device; keep copy short.",
+        note: "Pro: RCS/SMS fallback. Buttons vary by device; keep copy short.",
       },
     ],
     []
@@ -1776,7 +1776,7 @@ export default function SupplierAudienceNotificationsPage() {
                         <div className="whitespace-pre-wrap text-[13px] font-bold text-slate-800 dark:text-slate-200 leading-relaxed italic">“{initiationPromptText}”</div>
                         <div
                           className="rounded-xl bg-orange-500 p-4 ring-1 ring-orange-600 shadow-lg shadow-orange-500/20 text-center transition hover:brightness-105 cursor-pointer"
-                          onClick={() => setToast("Prompt tapped")}
+                          onClick={() => setToast("Prompt tapped (demo)")}
                         >
                           <div className="flex items-center justify-center gap-2 text-sm font-black text-white uppercase tracking-widest">
                             <Link2 className="h-4 w-4" />

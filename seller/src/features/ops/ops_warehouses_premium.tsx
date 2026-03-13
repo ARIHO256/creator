@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
-import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -297,7 +297,59 @@ function Toggle({ on, setOn, label }) {
   );
 }
 
-function buildRules(): RoutingRule[] {
+// ------------------------ Seed data ------------------------
+
+function seedWarehouses(): Warehouse[] {
+  return [
+    {
+      id: "WH-UG-KLA",
+      code: "KLA",
+      name: "Kampala Hub",
+      country: "Uganda",
+      city: "Kampala",
+      active: true,
+      cutOffLocal: "16:00",
+      processingDays: 1,
+      capabilities: { ship: true, pickup: true, returns: true },
+      constraints: { hazmat: false, batteries: true },
+      serviceCountries: ["Uganda", "Kenya", "Rwanda"],
+      blockedCountries: [],
+      updatedAt: new Date(Date.now() - 1000 * 60 * 28).toISOString(),
+    },
+    {
+      id: "WH-KE-NBO",
+      code: "NBO",
+      name: "Nairobi Hub",
+      country: "Kenya",
+      city: "Nairobi",
+      active: true,
+      cutOffLocal: "15:00",
+      processingDays: 1,
+      capabilities: { ship: true, pickup: false, returns: true },
+      constraints: { hazmat: false, batteries: true },
+      serviceCountries: ["Kenya", "Uganda", "Tanzania"],
+      blockedCountries: [],
+      updatedAt: new Date(Date.now() - 1000 * 60 * 84).toISOString(),
+    },
+    {
+      id: "WH-CN-WUXI",
+      code: "WUX",
+      name: "Wuxi Main",
+      country: "China",
+      city: "Wuxi",
+      active: true,
+      cutOffLocal: "18:00",
+      processingDays: 2,
+      capabilities: { ship: true, pickup: false, returns: false },
+      constraints: { hazmat: false, batteries: true },
+      serviceCountries: ["China", "United States", "United Kingdom", "Germany", "France", "Uganda", "Kenya"],
+      blockedCountries: [],
+      updatedAt: new Date(Date.now() - 1000 * 60 * 210).toISOString(),
+    },
+  ];
+}
+
+function seedRules(): RoutingRule[] {
   return [
     {
       id: "RR-1",
@@ -329,7 +381,7 @@ function buildRules(): RoutingRule[] {
   ];
 }
 
-function buildBuyerPrefs(): BuyerPref[] {
+function seedBuyerPrefs(): BuyerPref[] {
   const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
   return [
     { id: "B-1001", name: "Amina K.", preferredWarehouseId: "WH-UG-KLA", lastOrderAt: ago(320), note: "Fast pickup" },
@@ -408,9 +460,9 @@ function evaluateRouting({
   }
 
   // Fallback
-  const defaultWarehouse = warehouses.find((w) => warehouseAllows(w, country, category).ok) || warehouses[0];
-  explain.push({ step: "Default", ok: true, note: defaultWarehouse ? `Selected ${defaultWarehouse.code}` : "No warehouses" });
-  return { warehouseId: defaultWarehouse?.id || null, reason: "Default warehouse selected.", explain };
+  const fallback = warehouses.find((w) => warehouseAllows(w, country, category).ok) || warehouses[0];
+  explain.push({ step: "Fallback", ok: true, note: fallback ? `Selected ${fallback.code}` : "No warehouses" });
+  return { warehouseId: fallback?.id || null, reason: "Fallback warehouse selected.", explain };
 }
 
 // ------------------------ Main page ------------------------
@@ -424,54 +476,9 @@ export default function OpsWarehousesPremium() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [rules, setRules] = useState<RoutingRule[]>([]);
-  const [buyerPrefs, setBuyerPrefs] = useState<BuyerPref[]>([]);
-  useEffect(() => {
-    let active = true;
-
-    void sellerBackendApi.getOpsWarehouses().then((payload) => {
-      if (!active) return;
-      const rows = Array.isArray((payload as { warehouses?: unknown[] }).warehouses)
-        ? ((payload as { warehouses?: Array<Record<string, unknown>> }).warehouses ?? [])
-        : [];
-      setWarehouses(
-        rows.map((entry) => {
-          const address = ((entry.address ?? {}) as Record<string, unknown>);
-          const meta = ((entry.metadata ?? {}) as Record<string, unknown>);
-          return {
-            id: String(entry.id ?? ""),
-            code: String(entry.code ?? ""),
-            name: String(entry.name ?? "Warehouse"),
-            country: String(address.country ?? ""),
-            city: String(address.city ?? ""),
-            active: String(entry.status ?? "ACTIVE").toUpperCase() === "ACTIVE",
-            cutOffLocal: String(meta.cutOffLocal ?? "17:00"),
-            processingDays: Number(meta.processingDays ?? 1),
-            capabilities: (meta.capabilities as Warehouse["capabilities"] | undefined) ?? { ship: true, pickup: false, returns: false },
-            constraints: (meta.constraints as Warehouse["constraints"] | undefined) ?? { hazmat: false, batteries: false },
-            serviceCountries: Array.isArray(meta.serviceCountries) ? meta.serviceCountries.map((item) => String(item)) : [],
-            blockedCountries: Array.isArray(meta.blockedCountries) ? meta.blockedCountries.map((item) => String(item)) : [],
-            updatedAt: String(entry.updatedAt ?? new Date().toISOString()),
-          } satisfies Warehouse;
-        })
-      );
-      setRules(
-        Array.isArray((payload as { rules?: unknown[] }).rules)
-          ? ((payload as { rules?: Array<RoutingRule> }).rules ?? [])
-          : []
-      );
-      setBuyerPrefs(
-        Array.isArray((payload as { buyerPrefs?: unknown[] }).buyerPrefs)
-          ? ((payload as { buyerPrefs?: Array<BuyerPref> }).buyerPrefs ?? [])
-          : []
-      );
-    });
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const [warehouses, setWarehouses] = useMockState<Warehouse[]>("ops.warehouses.list", seedWarehouses());
+  const [rules, setRules] = useMockState<RoutingRule[]>("ops.warehouses.rules", seedRules());
+  const [buyerPrefs, setBuyerPrefs] = useMockState<BuyerPref[]>("ops.warehouses.buyerPrefs", seedBuyerPrefs());
 
   const [q, setQ] = useState("");
   const [onlyActive, setOnlyActive] = useState(false);
@@ -686,7 +693,7 @@ export default function OpsWarehousesPremium() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "WMS status refreshed.", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "WMS status refreshed (demo).", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1137,7 +1144,7 @@ export default function OpsWarehousesPremium() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => pushToast({ title: "Saved", message: "Simulator scenario saved.", tone: "success" })}
+                    onClick={() => pushToast({ title: "Saved", message: "Simulator scenario saved (demo).", tone: "success" })}
                     className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                     style={{ background: TOKENS.orange }}
                   >
@@ -1320,7 +1327,7 @@ export default function OpsWarehousesPremium() {
                     placeholder="Uganda, Kenya, Rwanda"
                     className="mt-2 h-11 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-800 outline-none"
                   />
-                  <div className="mt-1 text-[11px] font-semibold text-slate-500">If empty, the warehouse is treated as global.</div>
+                  <div className="mt-1 text-[11px] font-semibold text-slate-500">If empty, the warehouse is treated as global (demo).</div>
                 </div>
 
                 <div>
@@ -1468,7 +1475,7 @@ export default function OpsWarehousesPremium() {
                 </div>
                 <div>
                   <div className="text-sm font-black text-orange-900">Tip</div>
-                  <div className="mt-1 text-xs font-semibold text-orange-900/70">Leave match fields empty to make a broad default rule.</div>
+                  <div className="mt-1 text-xs font-semibold text-orange-900/70">Leave match fields empty to make a broad fallback rule.</div>
                 </div>
               </div>
             </div>

@@ -24,7 +24,7 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { useRolePageContent } from '../../data/pageContent';
+import { useRolePageContent } from '../../mock/shared/pageContent';
 
 /**
  * Orders + Ops Preview Host (PREVIEWABLE)
@@ -70,7 +70,7 @@ function exportInvoiceFile(order) {
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
   try {
     const lines = [
-      'EVzone Invoice',
+      'EVzone Invoice (Demo)',
       `Order: ${order.id}`,
       `Customer: ${order.customer}`,
       `Channel: ${order.channel}`,
@@ -148,16 +148,166 @@ function withRisk(rows) {
   return rows.map((o) => ({ ...o, ...riskMeta(o.slaDueAt) }));
 }
 
-function buildOrders() {
-  return [];
+function seedOrders() {
+  const now = Date.now();
+  const hoursAgo = (h) => new Date(now - h * 3600_000).toISOString();
+  const dueIn = (m) => new Date(Date.now() + m * 60_000).toISOString();
+
+  return [
+    {
+      id: 'ORD-10512',
+      customer: 'Amina K.',
+      channel: 'EVzone',
+      items: 5,
+      total: 2480,
+      currency: 'USD',
+      status: 'New',
+      warehouse: 'Main Warehouse',
+      updatedAt: hoursAgo(0.3),
+      slaDueAt: dueIn(70),
+    },
+    {
+      id: 'ORD-10511',
+      customer: 'Kato S.',
+      channel: 'WhatsApp',
+      items: 1,
+      total: 320,
+      currency: 'USD',
+      status: 'Confirmed',
+      warehouse: 'Kampala Hub',
+      updatedAt: hoursAgo(1.6),
+      slaDueAt: dueIn(330),
+    },
+    {
+      id: 'ORD-10510',
+      customer: 'Moses N.',
+      channel: 'API',
+      items: 9,
+      total: 12650,
+      currency: 'CNY',
+      status: 'Packed',
+      warehouse: 'Main Warehouse',
+      updatedAt: hoursAgo(3.2),
+      slaDueAt: dueIn(980),
+    },
+    {
+      id: 'ORD-10509',
+      customer: 'Sarah T.',
+      channel: 'EVzone',
+      items: 2,
+      total: 560,
+      currency: 'USD',
+      status: 'Shipped',
+      warehouse: 'Nairobi Hub',
+      updatedAt: hoursAgo(12),
+      slaDueAt: dueIn(1440),
+    },
+    {
+      id: 'ORD-10508',
+      customer: 'Ibrahim H.',
+      channel: 'WhatsApp',
+      items: 3,
+      total: 980,
+      currency: 'USD',
+      status: 'On Hold',
+      warehouse: 'Kampala Hub',
+      updatedAt: hoursAgo(4.5),
+      slaDueAt: dueIn(30),
+    },
+    {
+      id: 'ORD-10507',
+      customer: 'Joy A.',
+      channel: 'EVzone',
+      items: 1,
+      total: 210,
+      currency: 'USD',
+      status: 'Cancelled',
+      warehouse: 'Main Warehouse',
+      updatedAt: hoursAgo(30),
+      slaDueAt: dueIn(9999),
+    },
+    {
+      id: 'ORD-10506',
+      customer: 'Chen L.',
+      channel: 'API',
+      items: 12,
+      total: 8620,
+      currency: 'CNY',
+      status: 'Delivered',
+      warehouse: 'Main Warehouse',
+      updatedAt: hoursAgo(90),
+      slaDueAt: dueIn(9999),
+    },
+  ].map((o) => ({ ...o, ...riskMeta(o.slaDueAt) }));
 }
 
-function buildReturns() {
-  return [];
+function seedReturns() {
+  const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
+  return [
+    {
+      id: 'RMA-2201',
+      orderId: 'ORD-10511',
+      status: 'Requested',
+      reason: 'Damaged item',
+      pathway: 'Refund to Wallet',
+      amount: 320,
+      currency: 'USD',
+      createdAt: ago(220),
+    },
+    {
+      id: 'RMA-2200',
+      orderId: 'ORD-10510',
+      status: 'Approved',
+      reason: 'Wrong variant',
+      pathway: 'Exchange',
+      amount: 248,
+      currency: 'CNY',
+      createdAt: ago(780),
+    },
+    {
+      id: 'RMA-2199',
+      orderId: 'ORD-10509',
+      status: 'In Transit',
+      reason: 'Not as described',
+      pathway: 'Refund to Bank',
+      amount: 560,
+      currency: 'USD',
+      createdAt: ago(1440),
+    },
+  ];
 }
 
-function buildDisputes() {
-  return [];
+function seedDisputes() {
+  const ago = (m) => new Date(Date.now() - m * 60_000).toISOString();
+  return [
+    {
+      id: 'DSP-901',
+      orderId: 'ORD-10512',
+      type: 'Item not received',
+      status: 'Open',
+      risk: 82,
+      createdAt: ago(180),
+      updatedAt: ago(25),
+    },
+    {
+      id: 'DSP-900',
+      orderId: 'ORD-10508',
+      type: 'Payment dispute',
+      status: 'Under review',
+      risk: 64,
+      createdAt: ago(620),
+      updatedAt: ago(120),
+    },
+    {
+      id: 'DSP-899',
+      orderId: 'ORD-10509',
+      type: 'Quality dispute',
+      status: 'Resolved',
+      risk: 18,
+      createdAt: ago(2200),
+      updatedAt: ago(900),
+    },
+  ];
 }
 
 function Badge({ children, tone = 'slate' }) {
@@ -594,7 +744,7 @@ function OrdersTable({ rows, selected, setSelected, toggleAll, allVisibleSelecte
   );
 }
 
-function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
+function OrdersList({ orders, openOrder, pushToast }) {
   const [view, setView] = useState('list');
   const [grouped, setGrouped] = useState(true);
 
@@ -773,12 +923,6 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
           </>
         }
       />
-
-      {offlineNotice ? (
-        <div className="mt-4 rounded-3xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-          {offlineNotice}
-        </div>
-      ) : null}
 
       <div className="grid gap-3 lg:grid-cols-12">
         <div className="lg:col-span-5">
@@ -1002,7 +1146,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
                 setExportOpen(false);
                 pushToast({
                   title: `Export started (${x.t})`,
-                  message: 'Generating file.',
+                  message: 'Generating file (demo).',
                   tone: 'success',
                 });
               }}
@@ -1032,7 +1176,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
             <Truck className="h-4 w-4 text-slate-700" />
             <div className="text-sm font-black text-slate-900">Wave planning</div>
             <span className="ml-auto">
-              <Badge tone="slate">Batching</Badge>
+              <Badge tone="slate">Demo</Badge>
             </span>
           </div>
           <div className="mt-2 text-xs font-semibold text-slate-500">
@@ -1105,7 +1249,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
             setSelected({});
             pushToast({
               title: 'Batches finalized',
-              message: 'Batch planning completed.',
+              message: 'Batch planning completed (demo).',
               tone: 'success',
             });
           }}
@@ -1170,29 +1314,43 @@ function Row({ label, value, strong }) {
 }
 
 function OrderDetail({ orderId, orders, onBack, pushToast }) {
-  const order = useMemo(() => orders.find((o) => o.id === orderId) || null, [orders, orderId]);
+  const order = useMemo(() => orders.find((o) => o.id === orderId) || orders[0], [orders, orderId]);
 
   const [tab, setTab] = useState('Overview');
   const [translate, setTranslate] = useState(true);
   const [draft, setDraft] = useState('');
 
-  const [proofs, setProofs] = useState([]);
+  const [proofs, setProofs] = useState([
+    {
+      id: 'p1',
+      name: 'Invoice.pdf',
+      uploadedAt: new Date(Date.now() - 55 * 60_000).toISOString(),
+      visibility: 'buyer',
+    },
+  ]);
   const fileRef = useRef(null);
   const handleProofUpload = () => {
     setTab('Proofs');
     fileRef.current?.click?.();
   };
 
-  const items = useMemo(() => [], []);
+  const items = useMemo(
+    () => [
+      { sku: 'EBK-48V-20AH', name: 'E-Bike Battery Pack 48V 20Ah', qty: 2, unit: 280 },
+      { sku: 'CHG-54V-5A', name: 'Fast Charger 54.6V 5A', qty: 1, unit: 85 },
+      { sku: 'CAB-TYPEC', name: 'Type-C Cable (Premium)', qty: 2, unit: 8 },
+    ],
+    []
+  );
 
   const pricing = useMemo(() => {
     const subtotal = items.reduce((s, i) => s + i.qty * i.unit, 0);
-    const taxes = 0;
-    const shipping = 0;
+    const taxes = Math.round(subtotal * 0.02 * 100) / 100;
+    const shipping = 35;
     return { subtotal, taxes, shipping, total: subtotal + taxes + shipping };
   }, [items]);
 
-  const meta = order ? riskMeta(order.slaDueAt) : { risk: 'ok', label: 'On track', mins: 0 };
+  const meta = riskMeta(order.slaDueAt);
 
   const missingTracking = true;
 
@@ -1248,33 +1406,59 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     return list;
   }, [meta.risk, missingTracking, pushToast, handleProofUpload]);
 
-  const messages = useMemo(() => [], []);
+  const messages = useMemo(
+    () => [
+      {
+        id: 'm1',
+        from: 'buyer',
+        at: new Date(Date.now() - 5 * 3600_000).toISOString(),
+        text: 'Hi, when will this ship?',
+        lang: 'en',
+      },
+      {
+        id: 'm2',
+        from: 'supplier',
+        at: new Date(Date.now() - 4.7 * 3600_000).toISOString(),
+        text: "Confirming stock now. We'll update you with ETA soon.",
+        lang: 'en',
+      },
+      {
+        id: 'm3',
+        from: 'buyer',
+        at: new Date(Date.now() - 35 * 60_000).toISOString(),
+        text: 'Please share tracking once available.',
+        lang: 'en',
+      },
+    ],
+    []
+  );
 
-  const audit = useMemo(() => [], []);
-
-  if (!order) {
-    return (
-      <div>
-        <SectionHeader
-          title="Order"
-          subtitle="Per-order detail."
-          right={
-            <button
-              type="button"
-              onClick={onBack}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Back to Orders
-            </button>
-          }
-        />
-        <GlassCard className="p-5">
-          <EmptyState title="No order data" message="This account does not have data for the selected order." />
-        </GlassCard>
-      </div>
-    );
-  }
+  const audit = useMemo(
+    () => [
+      {
+        id: 'a1',
+        at: new Date(Date.now() - 6 * 3600_000).toISOString(),
+        actor: 'System',
+        action: 'order created',
+        detail: `Channel: ${order.channel}`,
+      },
+      {
+        id: 'a2',
+        at: new Date(Date.now() - 4 * 3600_000).toISOString(),
+        actor: 'Supplier',
+        action: 'status updated',
+        detail: `New → ${order.status}`,
+      },
+      {
+        id: 'a3',
+        at: new Date(Date.now() - 20 * 60_000).toISOString(),
+        actor: 'Supplier',
+        action: 'message sent',
+        detail: 'ETA soon',
+      },
+    ],
+    [order]
+  );
 
   return (
     <div>
@@ -1297,7 +1481,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                 const ok = exportInvoiceFile(order);
                 pushToast({
                   title: ok ? 'Invoice exported' : 'Export failed',
-                  message: ok ? 'Invoice text file downloaded.' : 'Unable to export invoice.',
+                  message: ok ? 'Invoice text file downloaded (demo).' : 'Unable to export invoice.',
                   tone: ok ? 'success' : 'danger',
                 });
               }}
@@ -1924,7 +2108,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
                       onClick={() =>
                         pushToast({
                           title: 'Approved',
-                          message: `${r.id} approved.`,
+                          message: `${r.id} approved (demo).`,
                           tone: 'success',
                         })
                       }
@@ -1937,7 +2121,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
                       onClick={() =>
                         pushToast({
                           title: 'Rejected',
-                          message: `${r.id} rejected.`,
+                          message: `${r.id} rejected (demo).`,
                           tone: 'warning',
                         })
                       }
@@ -2051,7 +2235,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
       <Drawer open={drawer} title="Create RMA" onClose={() => setDrawer(false)}>
         <div className="space-y-3">
           <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
-            <div className="text-sm font-black text-slate-900">RMA wizard</div>
+            <div className="text-sm font-black text-slate-900">RMA wizard (demo)</div>
             <div className="mt-1 text-xs font-semibold text-slate-500">
               In production: stepper with autosave, eligibility checks, and policies.
             </div>
@@ -2060,7 +2244,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
             <label className="text-xs font-extrabold text-slate-600">Order ID</label>
             <input
               className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none"
-              placeholder="Order ID"
+              placeholder="ORD-10512"
             />
             <label className="text-xs font-extrabold text-slate-600">Reason</label>
             <input
@@ -2081,7 +2265,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
               setDrawer(false);
               pushToast({
                 title: 'RMA created',
-                message: 'New RMA created.',
+                message: 'New RMA created (demo).',
                 tone: 'success',
               });
             }}
@@ -2099,7 +2283,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
 function Disputes({ disputesList, pushToast }) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('All');
-  const [active, setActive] = useState(null);
+  const [active, setActive] = useState(disputesList[0] || null);
   const [playbooksOpen, setPlaybooksOpen] = useState(false);
   const fileRef = useRef(null);
 
@@ -2163,6 +2347,10 @@ function Disputes({ disputesList, pushToast }) {
     });
   }, [disputesList, q, status]);
 
+  useEffect(() => {
+    if (!active && disputesList.length) setActive(disputesList[0]);
+  }, [active, disputesList]);
+
   const riskTone = (score) => (score >= 70 ? 'danger' : score >= 40 ? 'orange' : 'green');
   const visiblePlaybooks = useMemo(() => {
     if (!active?.type) return playbooks;
@@ -2204,7 +2392,7 @@ function Disputes({ disputesList, pushToast }) {
                   <div className="text-sm font-black text-slate-900">{pb.title}</div>
                   <div className="mt-1 text-xs font-semibold text-slate-500">{pb.summary}</div>
                 </div>
-                <Badge tone="slate">Template</Badge>
+                <Badge tone="slate">Mocked</Badge>
               </div>
               <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-700">
                 {pb.steps.map((step) => (
@@ -2222,7 +2410,7 @@ function Disputes({ disputesList, pushToast }) {
                     onClick={() =>
                       pushToast({
                         title: pb.title,
-                        message: `${action.label} applied.`,
+                        message: `${action.label} applied (demo).`,
                         tone: 'success',
                       })
                     }
@@ -2364,7 +2552,7 @@ function Disputes({ disputesList, pushToast }) {
                     onClick={() =>
                       pushToast({
                         title: 'Exported evidence pack',
-                        message: 'Evidence pack generated.',
+                        message: 'PDF bundle generated (demo).',
                         tone: 'success',
                       })
                     }
@@ -2390,7 +2578,7 @@ function Disputes({ disputesList, pushToast }) {
                     onClick={() =>
                       pushToast({
                         title: 'Partial refund',
-                        message: 'Resolution applied.',
+                        message: 'Resolution applied (demo).',
                         tone: 'success',
                       })
                     }
@@ -2404,7 +2592,7 @@ function Disputes({ disputesList, pushToast }) {
                     onClick={() =>
                       pushToast({
                         title: 'Replacement',
-                        message: 'Replacement started.',
+                        message: 'Replacement started (demo).',
                         tone: 'success',
                       })
                     }
@@ -2417,7 +2605,7 @@ function Disputes({ disputesList, pushToast }) {
                     onClick={() =>
                       pushToast({
                         title: 'Denied',
-                        message: 'Denied with reason.',
+                        message: 'Denied with reason (demo).',
                         tone: 'warning',
                       })
                     }
@@ -2448,9 +2636,9 @@ export default function OrdersOpsPreviewableV4({ initialScreen = 'orders' }) {
   const returnsList = useMemo(() => content.returns || [], [content]);
   const disputesList = useMemo(() => content.disputes || [], [content]);
 
-  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [selectedOrderId, setSelectedOrderId] = useState(orders[0]?.id || '');
   useEffect(() => {
-    setSelectedOrderId('');
+    setSelectedOrderId(orders[0]?.id || '');
   }, [orders]);
 
   const [toasts, setToasts] = useState([]);
@@ -2484,12 +2672,7 @@ export default function OrdersOpsPreviewableV4({ initialScreen = 'orders' }) {
             transition={{ duration: 0.16 }}
           >
             {screen === 'orders' ? (
-              <OrdersList
-                orders={orders}
-                openOrder={openOrder}
-                pushToast={pushToast}
-                offlineNotice={content.offlineNotice}
-              />
+              <OrdersList orders={orders} openOrder={openOrder} pushToast={pushToast} />
             ) : null}
             {screen === 'orderDetail' ? (
               <OrderDetail

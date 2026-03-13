@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useMockState } from "../../mocks";
 import { AnimatePresence, motion } from "framer-motion";
-import { sellerBackendApi } from "../../lib/backendApi";
 import {
   ArrowRight,
   BadgeCheck,
@@ -71,7 +71,7 @@ type PolicyRule = {
 
 type ShippingPolicy = {
   mode: string;
-  defaultWarehouseId: string | null;
+  fallbackWarehouseId: string | null;
   rules: PolicyRule[];
 };
 
@@ -95,19 +95,6 @@ type ZoneDraft = {
   pricing?: ZonePricing;
   lead?: ZoneLead;
   notes?: string;
-};
-
-type Warehouse = {
-  id: string;
-  name: string;
-  code?: string;
-  country: string;
-  city: string;
-  active: boolean;
-  cutOffLocal: string;
-  processingDays: number;
-  capabilities: Record<string, boolean>;
-  constraints: Record<string, boolean>;
 };
 
 function cx(...classes) {
@@ -314,6 +301,153 @@ function ToastCenter({ toasts, dismiss }) {
   );
 }
 
+// ------------------------ Data ------------------------
+
+function seedWarehouses() {
+  return [
+    {
+      id: "WH-UG-KLA",
+      name: "Kampala Hub",
+      code: "KLA",
+      country: "Uganda",
+      city: "Kampala",
+      active: true,
+      cutOffLocal: "16:00",
+      processingDays: 1,
+      capabilities: { ship: true, pickup: true, returns: true },
+      constraints: { hazmat: false, batteries: true },
+      updatedAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    },
+    {
+      id: "WH-KE-NBO",
+      name: "Nairobi Hub",
+      code: "NBO",
+      country: "Kenya",
+      city: "Nairobi",
+      active: true,
+      cutOffLocal: "15:00",
+      processingDays: 1,
+      capabilities: { ship: true, pickup: false, returns: true },
+      constraints: { hazmat: false, batteries: true },
+      updatedAt: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
+    },
+    {
+      id: "WH-CN-WUXI",
+      name: "Wuxi Main",
+      code: "WUX",
+      country: "China",
+      city: "Wuxi",
+      active: true,
+      cutOffLocal: "18:00",
+      processingDays: 2,
+      capabilities: { ship: true, pickup: false, returns: false },
+      constraints: { hazmat: false, batteries: true },
+      updatedAt: new Date(Date.now() - 1000 * 60 * 210).toISOString(),
+    },
+  ];
+}
+
+function seedProfiles(warehouses: Array<{ id: string }>): ShippingProfile[] {
+  const whUG = warehouses.find((w) => w.id === "WH-UG-KLA");
+  const whKE = warehouses.find((w) => w.id === "WH-KE-NBO");
+  const whCN = warehouses.find((w) => w.id === "WH-CN-WUXI");
+
+  return [
+    {
+      id: "SHIP-STD-AFR",
+      name: "Standard Parcel Africa",
+      status: "Active",
+      currency: "USD",
+      serviceType: "Parcel",
+      updatedAt: new Date(Date.now() - 1000 * 60 * 44).toISOString(),
+      zones: [
+        {
+          id: "Z-UG",
+          name: "Uganda",
+          countries: ["Uganda"],
+          pricing: { mode: "weight", base: 3.5, perKg: 0.6, perItem: 0 },
+          lead: { minDays: 1, maxDays: 3 },
+          notes: "Local delivery",
+        },
+        {
+          id: "Z-EA",
+          name: "East Africa",
+          countries: ["Kenya", "Tanzania", "Rwanda"],
+          pricing: { mode: "weight", base: 6.0, perKg: 0.9, perItem: 0 },
+          lead: { minDays: 2, maxDays: 5 },
+          notes: "Regional",
+        },
+      ],
+      policy: {
+        mode: "auto",
+        fallbackWarehouseId: whUG?.id ?? null,
+        rules: [
+          {
+            id: "R-1",
+            priority: 10,
+            title: "Kenya uses Nairobi",
+            when: { zoneId: "Z-EA", country: "Kenya", maxWeightKg: 35 },
+            then: { warehouseId: whKE?.id },
+          },
+          {
+            id: "R-2",
+            priority: 30,
+            title: "Uganda uses Kampala",
+            when: { zoneId: "Z-UG" },
+            then: { warehouseId: whUG?.id },
+          },
+        ],
+      },
+    },
+    {
+      id: "SHIP-EXP-INTL",
+      name: "Express International",
+      status: "Active",
+      currency: "USD",
+      serviceType: "Express",
+      updatedAt: new Date(Date.now() - 1000 * 60 * 130).toISOString(),
+      zones: [
+        {
+          id: "Z-AFR",
+          name: "Africa",
+          countries: ["Uganda", "Kenya", "Nigeria", "Ghana", "South Africa"],
+          pricing: { mode: "weight", base: 14, perKg: 3.5, perItem: 0 },
+          lead: { minDays: 3, maxDays: 7 },
+          notes: "Air express",
+        },
+        {
+          id: "Z-GLB",
+          name: "Global",
+          countries: ["China", "United States", "United Kingdom", "Germany", "France"],
+          pricing: { mode: "weight", base: 18, perKg: 4.2, perItem: 0 },
+          lead: { minDays: 4, maxDays: 9 },
+          notes: "Air express",
+        },
+      ],
+      policy: {
+        mode: "buyer_preferred",
+        fallbackWarehouseId: whCN?.id ?? null,
+        rules: [
+          {
+            id: "R-3",
+            priority: 10,
+            title: "Africa ships from Kampala if available",
+            when: { zoneId: "Z-AFR", maxWeightKg: 20 },
+            then: { warehouseId: whUG?.id },
+          },
+          {
+            id: "R-4",
+            priority: 20,
+            title: "Global ships from Wuxi",
+            when: { zoneId: "Z-GLB" },
+            then: { warehouseId: whCN?.id },
+          },
+        ],
+      },
+    },
+  ];
+}
+
 function zoneMatch(profile, country) {
   if (!profile) return null;
   const c = String(country || "").trim();
@@ -333,68 +467,12 @@ function computeZoneCost(zone, weightKg, items) {
   return Math.max(0, Number(p.base || 0) + w * Number(p.perKg || 0));
 }
 
-function mapWarehouse(entry: Record<string, any>): Warehouse {
-  const metadata = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
-  const address = entry.address && typeof entry.address === "object" ? entry.address : {};
-  return {
-    id: String(entry.id || ""),
-    name: String(entry.name || "Warehouse"),
-    code: typeof entry.code === "string" ? entry.code : undefined,
-    country: String(address.country || ""),
-    city: String(address.city || ""),
-    active: String(entry.status || "").toUpperCase() !== "INACTIVE",
-    cutOffLocal: String(metadata.cutOffLocal || "17:00"),
-    processingDays: Number(metadata.processingDays || 1),
-    capabilities: (metadata.capabilities as Record<string, boolean>) || {},
-    constraints: (metadata.constraints as Record<string, boolean>) || {},
-  };
-}
-
-function mapShippingProfile(entry: Record<string, any>): ShippingProfile {
-  const metadata = entry.metadata && typeof entry.metadata === "object" ? entry.metadata : {};
-  return {
-    id: String(entry.id || ""),
-    name: String(entry.name || "Shipping profile"),
-    status: String(entry.status || "ACTIVE").toUpperCase() === "INACTIVE" ? "Inactive" : "Active",
-    currency: String(metadata.currency || entry.currency || "USD"),
-    serviceType: String(metadata.serviceType || entry.serviceLevel || "Parcel"),
-    updatedAt: String(entry.updatedAt || new Date().toISOString()),
-    zones: Array.isArray(metadata.zones) ? (metadata.zones as ShippingZone[]) : [],
-    policy:
-      metadata.policy && typeof metadata.policy === "object"
-        ? (metadata.policy as ShippingPolicy)
-        : { mode: "auto", defaultWarehouseId: null, rules: [] },
-  };
-}
-
-function toShippingProfilePayload(profile: ShippingProfile) {
-  const countries = Array.from(new Set(profile.zones.flatMap((zone) => zone.countries || [])));
-  return {
-    name: profile.name,
-    description: `${profile.serviceType} shipping profile`,
-    status: profile.status === "Inactive" ? "INACTIVE" : "ACTIVE",
-    carrier: "EV Hub Logistics",
-    serviceLevel: profile.serviceType,
-    handlingTimeDays: Math.max(
-      1,
-      ...profile.zones.map((zone) => Number(zone.lead?.minDays || 0)).filter((value) => Number.isFinite(value))
-    ),
-    regions: countries,
-    metadata: {
-      currency: profile.currency,
-      serviceType: profile.serviceType,
-      zones: profile.zones,
-      policy: profile.policy,
-    },
-  };
-}
-
 function selectWarehouse(profile, ctx) {
   const { zone, country, weightKg, items, buyerPreferredWarehouseId, warehouses } = ctx;
   const policy = profile?.policy;
   const whMap = new Map((warehouses || []).map((w) => [w.id, w]));
 
-  const defaultWarehouseId = policy?.defaultWarehouseId && whMap.get(policy.defaultWarehouseId) ? policy.defaultWarehouseId : (warehouses?.[0]?.id || null);
+  const fallback = policy?.fallbackWarehouseId && whMap.get(policy.fallbackWarehouseId) ? policy.fallbackWarehouseId : (warehouses?.[0]?.id || null);
 
   const w = Math.max(0, Number(weightKg || 0));
   const it = Math.max(0, Math.floor(Number(items || 0)));
@@ -427,8 +505,8 @@ function selectWarehouse(profile, ctx) {
   }
 
   return {
-    warehouseId: defaultWarehouseId,
-    reason: `Default warehouse selected (${defaultWarehouseId}).`,
+    warehouseId: fallback,
+    reason: `Fallback warehouse selected (${fallback}).`,
   };
 }
 
@@ -438,10 +516,10 @@ function policyHealth(profile, warehouses) {
   const rules = policy?.rules || [];
 
   const missing = rules.filter((r) => r?.then?.warehouseId && !whSet.has(r.then.warehouseId)).length;
-  const hasDefaultWarehouse = !!(policy?.defaultWarehouseId && whSet.has(policy.defaultWarehouseId));
+  const hasFallback = !!(policy?.fallbackWarehouseId && whSet.has(policy.fallbackWarehouseId));
 
   const scoreBase = 70;
-  const score = clamp(scoreBase + (hasDefaultWarehouse ? 12 : -10) - missing * 10 + Math.min(14, rules.length * 4), 30, 99);
+  const score = clamp(scoreBase + (hasFallback ? 12 : -10) - missing * 10 + Math.min(14, rules.length * 4), 30, 99);
 
   const tone = score >= 85 ? "green" : score >= 65 ? "orange" : "danger";
   return { score, tone, missing, hasFallback };
@@ -545,38 +623,9 @@ export default function OpsShippingProfilesPremium() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [role, setRole] = useState("seller");
-  const [loading, setLoading] = useState(true);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [profiles, setProfiles] = useState<ShippingProfile[]>([]);
 
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    Promise.all([sellerBackendApi.getOpsWarehouses(), sellerBackendApi.getShippingProfiles()])
-      .then(([warehousePayload, profilePayload]) => {
-        if (!mounted) return;
-        setWarehouses(
-          Array.isArray(warehousePayload?.warehouses)
-            ? (warehousePayload.warehouses as Array<Record<string, any>>).map(mapWarehouse)
-            : []
-        );
-        setProfiles(
-          Array.isArray(profilePayload?.profiles)
-            ? (profilePayload.profiles as Array<Record<string, any>>).map(mapShippingProfile)
-            : []
-        );
-      })
-      .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Shipping profiles unavailable", message: "Could not load shipping data.", tone: "danger" });
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const [warehouses] = useMockState("ops.shipping.warehouses", seedWarehouses());
+  const [profiles, setProfiles] = useMockState<ShippingProfile[]>("ops.shipping.profiles", seedProfiles(warehouses));
 
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
@@ -660,7 +709,7 @@ export default function OpsShippingProfilesPremium() {
       serviceType: "Parcel",
       updatedAt: new Date().toISOString(),
       zones: [],
-      policy: { mode: "auto", defaultWarehouseId: warehouses[0]?.id || null, rules: [] },
+      policy: { mode: "auto", fallbackWarehouseId: warehouses[0]?.id || null, rules: [] },
     }),
     [warehouses]
   );
@@ -681,7 +730,7 @@ export default function OpsShippingProfilesPremium() {
     setEditorOpen(true);
   };
 
-  const saveDraft = async () => {
+  const saveDraft = () => {
     const cleanedName = String(draft.name || "").trim();
     if (!cleanedName) {
       pushToast({ title: "Name required", message: "Add a profile name to continue.", tone: "warning" });
@@ -691,23 +740,15 @@ export default function OpsShippingProfilesPremium() {
 
     const now = new Date().toISOString();
     const next = { ...draft, name: cleanedName, updatedAt: now };
-    try {
-      const payload = toShippingProfilePayload(next);
-      const response =
-        editorMode === "edit"
-          ? await sellerBackendApi.patchShippingProfile(next.id, payload)
-          : await sellerBackendApi.createShippingProfile(payload);
-      const saved = mapShippingProfile(response as Record<string, any>);
-      setProfiles((prev) => {
-        if (editorMode === "edit") return prev.map((item) => (item.id === saved.id ? saved : item));
-        return [saved, ...prev];
-      });
-      setActiveId(saved.id);
-      setEditorOpen(false);
-      pushToast({ title: "Saved", message: "Shipping profile updated.", tone: "success" });
-    } catch {
-      pushToast({ title: "Save failed", message: "Could not persist shipping profile.", tone: "danger" });
-    }
+
+    setProfiles((prev) => {
+      if (editorMode === "edit") return prev.map((x) => (x.id === next.id ? next : x));
+      return [next, ...prev];
+    });
+
+    setActiveId(next.id);
+    setEditorOpen(false);
+    pushToast({ title: "Saved", message: "Shipping profile updated.", tone: "success" });
   };
 
   // Zone editor inside drawer
@@ -791,7 +832,7 @@ export default function OpsShippingProfilesPremium() {
         priority: rules.length ? Math.max(...rules.map((r) => Number(r.priority || 0))) + 10 : 10,
         title: "New rule",
         when: { zoneId: s.zones?.[0]?.id || "" },
-        then: { warehouseId: s.policy?.defaultWarehouseId || warehouses[0]?.id || "" },
+        then: { warehouseId: s.policy?.fallbackWarehouseId || warehouses[0]?.id || "" },
       };
       return { ...s, policy: { ...s.policy, rules: [...rules, next] } };
     });
@@ -868,7 +909,7 @@ export default function OpsShippingProfilesPremium() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest carrier sync loaded.", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest carrier sync loaded (demo).", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -990,11 +1031,11 @@ export default function OpsShippingProfilesPremium() {
               <div className="text-sm font-black text-slate-900">Policy quality</div>
               <span className="ml-auto">{active ? <Badge tone={policyHealth(active, warehouses).tone}>{policyHealth(active, warehouses).score}</Badge> : <AwareEmpty />}</span>
             </div>
-            <div className="mt-2 text-xs font-semibold text-slate-500">Super premium: validate missing warehouses and default routing.</div>
+            <div className="mt-2 text-xs font-semibold text-slate-500">Super premium: validate missing warehouses and fallback routing.</div>
             {active ? (
               <div className="mt-3 grid gap-2">
                 <MiniRow label="Rules" value={(active.policy?.rules || []).length} />
-                <MiniRow label="Default" value={active.policy?.defaultWarehouseId ? "Set" : "Not set"} />
+                <MiniRow label="Fallback" value={active.policy?.fallbackWarehouseId ? "Set" : "Not set"} />
                 <MiniRow label="Missing targets" value={policyHealth(active, warehouses).missing} />
               </div>
             ) : null}
@@ -1118,7 +1159,7 @@ export default function OpsShippingProfilesPremium() {
                         <div className="mt-1 text-xs font-semibold text-slate-500">Service type: {active.serviceType} · {active.zones.length} zones</div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Badge tone="slate">Policy mode: {active.policy?.mode || "auto"}</Badge>
-                          <Badge tone="slate">Default: {active.policy?.defaultWarehouseId || "-"}</Badge>
+                          <Badge tone="slate">Fallback: {active.policy?.fallbackWarehouseId || "-"}</Badge>
                           <Badge tone={policyHealth(active, warehouses).tone}>Policy score {policyHealth(active, warehouses).score}</Badge>
                         </div>
                       </div>
@@ -1229,7 +1270,7 @@ export default function OpsShippingProfilesPremium() {
                           <div className="mt-2 flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => pushToast({ title: "Saved", message: "Quote preview saved as a test case.", tone: "success" })}
+                              onClick={() => pushToast({ title: "Saved", message: "Quote preview saved as a test case (demo).", tone: "success" })}
                               className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                               style={{ background: TOKENS.orange }}
                             >
@@ -1529,8 +1570,8 @@ export default function OpsShippingProfilesPremium() {
                           <FieldLabel>Fallback warehouse</FieldLabel>
                           <div className="mt-2">
                             <SmallSelect
-                              value={draft?.policy?.defaultWarehouseId || ""}
-                              onChange={(v) => setDraft((s) => ({ ...s, policy: { ...(s.policy || {}), defaultWarehouseId: v } }))}
+                              value={draft?.policy?.fallbackWarehouseId || ""}
+                              onChange={(v) => setDraft((s) => ({ ...s, policy: { ...(s.policy || {}), fallbackWarehouseId: v } }))}
                             >
                               {warehouses.map((w) => (
                                 <option key={w.id} value={w.id}>
@@ -1711,7 +1752,7 @@ export default function OpsShippingProfilesPremium() {
                         ))}
 
                       {(draft?.policy?.rules || []).length === 0 ? (
-                        <EmptyState title="No rules yet" message="Add at least one rule, or rely on default warehouse." action={{ label: "Add rule", onClick: addPolicyRule }} />
+                        <EmptyState title="No rules yet" message="Add at least one rule, or rely on fallback warehouse." action={{ label: "Add rule", onClick: addPolicyRule }} />
                       ) : null}
                     </div>
                   </div>

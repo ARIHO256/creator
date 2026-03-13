@@ -118,7 +118,7 @@ function memberStatusPillCls(status) {
 function hasCapability(member, crewRole) {
   // Premium idea:
   // - Workspace roleId comes from Roles & Permissions.
-  // - Capability rules can be more complex (capabilities matrix).
+  // - Capability rules can be more complex (capabilities matrix). This is a mock.
   if (!member) return false;
   if (crewRole === "Host") return ["owner", "manager", "host"].includes(member.roleId);
   if (crewRole === "Producer") return ["owner", "manager", "producer"].includes(member.roleId);
@@ -1515,7 +1515,7 @@ export default function SupplierCrewManagerPage() {
               </div>
               {/* TODO(nav): Wire this button to the dedicated advanced roster filters surface once its route is finalized.
                   Consider: open an in-page filters drawer, or navigate to the team filters page if/when introduced. */}
-              <SoftButton onClick={() => push("Advanced filters")}
+              <SoftButton onClick={() => push("Advanced filters (demo)")}
               >
                 <Search className="h-4 w-4" />
                 Filter

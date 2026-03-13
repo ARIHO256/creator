@@ -101,9 +101,14 @@ const AVAILABLE_INTERIOR_COLORS = [
 ];
 
 // -----------------------------------------------------------------------------
-// Seller markets come from the workspace. Start empty until live data exists.
+// Mock seller markets – in real app, load from seller's Profile & Storefront
 // -----------------------------------------------------------------------------
-const SELLER_MARKETS: Array<{ id: string; name: string }> = [];
+const MOCK_SELLER_MARKETS = [
+  { id: "market-ug", name: "Uganda" },
+  { id: "market-ke", name: "Kenya" },
+  { id: "market-rw", name: "Rwanda" },
+  { id: "market-tz", name: "Tanzania" },
+];
 
 // -----------------------------------------------------------------------------
 // Wizard steps – in real app this comes from Admin Wizard Builder
@@ -175,7 +180,7 @@ const INITIAL_FORM = {
   // Markets & Delivery
   markets: {
     allActive: true,
-    selectedIds: SELLER_MARKETS.map((m) => m.id),
+    selectedIds: MOCK_SELLER_MARKETS.map((m) => m.id),
   },
   allowPickup: true,
   allowDelivery: true,
@@ -517,7 +522,7 @@ function SellerProductListingWizardPage() {
       ...prev,
       markets: {
         allActive: checked,
-        selectedIds: checked ? SELLER_MARKETS.map((m) => m.id) : [],
+        selectedIds: checked ? MOCK_SELLER_MARKETS.map((m) => m.id) : [],
       },
     }));
   };
@@ -532,8 +537,8 @@ const handleMarketToggle = (id) => (event) => {
         currentSelected.delete(id);
       }
       const allActive =
-        currentSelected.size === SELLER_MARKETS.length &&
-        SELLER_MARKETS.every((m) => currentSelected.has(m.id));
+        currentSelected.size === MOCK_SELLER_MARKETS.length &&
+        MOCK_SELLER_MARKETS.every((m) => currentSelected.has(m.id));
       return {
         ...prev,
         markets: {
@@ -1704,7 +1709,7 @@ const handleMarketToggle = (id) => (event) => {
                         label={t("All my active markets")}
                       />
                       <Box className="pl-4">
-                        {SELLER_MARKETS.map((m) => (
+                        {MOCK_SELLER_MARKETS.map((m) => (
                           <FormControlLabel
                             key={m.id}
                             control={

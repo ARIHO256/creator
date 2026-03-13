@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   ArrowRight,
@@ -124,14 +123,6 @@ type Toast = {
   tone?: "default" | "success" | "warning" | "danger";
   action?: { label: string; onClick: () => void };
 };
-
-const REVIEW_REPLY_TEMPLATES: Template[] = [
-  { id: "TPL-01", title: "Thank you (positive)", tags: ["positive"], body: "Thank you for your review. We appreciate your support and are glad you had a good experience." },
-  { id: "TPL-02", title: "Apology + fix steps (issue)", tags: ["negative", "issue"], body: "We are sorry for the experience. We are reviewing what happened and will propose a fix within 24 hours. Please share your reference ID and preferred resolution." },
-  { id: "TPL-03", title: "CorporatePay response (organization)", tags: ["corporatepay", "wholesale"], body: "Thank you for the feedback. We will improve update frequency for your organization. We can also align on SLA and escalation contacts for future orders and RFQs." },
-  { id: "TPL-04", title: "MyLiveDealz Live Sessionz reply", tags: ["mldz", "live"], body: "Thanks for joining the live. We appreciate your feedback. We will keep improving clarity, pacing, and Q&A in future sessions." },
-  { id: "TPL-05", title: "MyLiveDealz Shoppables reply", tags: ["mldz", "shoppables"], body: "Thanks for the feedback. We will add clearer specs and sizing to the listing and highlight them in the next live." },
-];
 
 function Badge({ children, tone = "slate" }: { children: React.ReactNode; tone?: Tone }) {
   return (
@@ -379,143 +370,7 @@ function trustScore(reviews: Review[]) {
   return clamp(Math.round(avg * 16 + repliedPct * 0.35 - negativePct * 0.45), 0, 100);
 }
 
-function normalizeRoleTarget(value: unknown): Role {
-  return String(value ?? "").toLowerCase() === "provider" ? "Provider" : "Seller";
-}
-
-function normalizeItemType(value: unknown): ItemType {
-  return String(value ?? "").toLowerCase() === "services" ? "Services" : "Products";
-}
-
-function normalizeChannel(value: unknown): Channel {
-  const raw = String(value ?? "").trim();
-  if (raw === "Wholesale" || raw === "CorporatePay" || raw === "MyLiveDealz") return raw;
-  return "Retail";
-}
-
-function normalizeMldzSurface(value: unknown): MldzSurface | undefined {
-  const raw = String(value ?? "").trim();
-  return raw === "Live Sessionz" || raw === "Shoppables" ? raw : undefined;
-}
-
-function normalizeBuyerType(value: unknown): Review["buyerType"] {
-  return String(value ?? "").toLowerCase() === "organization" ? "Organization" : "Personal";
-}
-
-function normalizeSentiment(value: unknown): Review["sentiment"] {
-  const raw = String(value ?? "").toLowerCase();
-  if (raw === "negative") return "Negative";
-  if (raw === "neutral") return "Neutral";
-  return "Positive";
-}
-
-function normalizeReviewStatus(row: Record<string, unknown>): ReviewStatus {
-  if (row.resolvedAt) return "Resolved";
-  if (String(row.status ?? "").toUpperCase() === "FLAGGED" || row.flaggedAt) return "Flagged";
-  if (Array.isArray(row.replies) && row.replies.length > 0) return "Replied";
-  return "New";
-}
-
-function buildReviewReference(row: Record<string, unknown>): Review["reference"] {
-  if (row.orderId) return { kind: "Order", id: String(row.orderId) };
-  if (row.sessionId) return { kind: "Booking", id: String(row.sessionId) };
-  if (row.campaignId) {
-    return {
-      kind: normalizeMldzSurface(row.mldzSurface) === "Live Sessionz" ? "LiveSession" : "Campaign",
-      id: String(row.campaignId),
-    };
-  }
-  return { kind: "Order", id: String(row.subjectId ?? row.id ?? "") };
-}
-
-function mapBackendReview(row: Record<string, unknown>): Review {
-  const replies = Array.isArray(row.replies) ? (row.replies as Array<Record<string, unknown>>) : [];
-  const latestReply = replies[0];
-  const tags = [
-    ...(Array.isArray(row.quickTags) ? row.quickTags.map((item) => String(item)) : []),
-    ...(Array.isArray(row.issueTags) ? row.issueTags.map((item) => String(item)) : []),
-  ];
-  return {
-    id: String(row.id ?? ""),
-    buyerName: String(row.buyerName ?? "Customer"),
-    buyerType: normalizeBuyerType(row.buyerType),
-    roleTarget: normalizeRoleTarget(row.roleTarget),
-    itemType: normalizeItemType(row.itemType),
-    channel: normalizeChannel(row.channel),
-    mldzSurface: normalizeMldzSurface(row.mldzSurface),
-    marketplace: String(row.marketplace ?? "Seller"),
-    rating: Number(row.ratingOverall ?? 0),
-    title: String(row.title ?? ""),
-    body: String(row.reviewText ?? ""),
-    createdAt: String(row.createdAt ?? new Date().toISOString()),
-    verified: Boolean(row.orderId || row.sessionId || row.campaignId),
-    reference: buildReviewReference(row),
-    tags: tags.length ? tags : ["Support"],
-    status: normalizeReviewStatus(row),
-    sentiment: normalizeSentiment(row.sentiment),
-    requiresResponse: Boolean(row.requiresResponse),
-    response: latestReply
-      ? {
-          at: String(latestReply.createdAt ?? new Date().toISOString()),
-          by: "Supplier Team",
-          text: String(latestReply.body ?? ""),
-        }
-      : undefined,
-  };
-}
-
-function buildClusters(reviews: Review[]): Cluster[] {
-  const counts = new Map<string, number>();
-  reviews.forEach((review) => {
-    (review.tags || []).forEach((tag) => {
-      const key = String(tag).trim();
-      if (!key) return;
-      counts.set(key, (counts.get(key) || 0) + 1);
-    });
-  });
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([label, count]) => ({
-      label,
-      count,
-      tone: /wrong|late|sla|issue|delay|return/i.test(label) ? "danger" : count >= 3 ? "green" : "orange",
-    }));
-}
-
-function buildRatingBuckets(reviews: Review[]): RatingBucket[] {
-  return [5, 4, 3, 2, 1].map((stars) => {
-    const count = reviews.filter((review) => Math.ceil(review.rating) === stars).length;
-    return {
-      stars,
-      count,
-      pct: reviews.length ? Math.round((count / reviews.length) * 100) : 0,
-    };
-  });
-}
-
-function buildTrend(reviews: Review[]): TrendPoint[] {
-  const buckets = new Map<string, { total: number; volume: number }>();
-  reviews.forEach((review) => {
-    const date = new Date(review.createdAt);
-    if (Number.isNaN(date.getTime())) return;
-    const key = date.toISOString().slice(0, 10);
-    const current = buckets.get(key) ?? { total: 0, volume: 0 };
-    current.total += review.rating;
-    current.volume += 1;
-    buckets.set(key, current);
-  });
-  return Array.from(buckets.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-7)
-    .map(([day, bucket]) => ({
-      day: new Date(day).toLocaleDateString(undefined, { weekday: "short" }),
-      rating: bucket.volume ? Math.round((bucket.total / bucket.volume) * 10) / 10 : 0,
-      volume: bucket.volume,
-    }));
-}
-
-function buildReviews() {
+function seedReviews() {
   const now = Date.now();
   const agoH = (h: number) => new Date(now - h * 3600_000).toISOString();
 
@@ -793,7 +648,7 @@ function EmptyState({ title, message, onClear }: { title: string; message: strin
 }
 
 export default function ReviewsHubUnifiedSupplierReputationV3() {
-  const templates = REVIEW_REPLY_TEMPLATES;
+  const { reviews: seeded, clusters, templates, ratingBuckets, trend } = useMemo(() => seedReviews(), []);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -803,31 +658,11 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [reviews, setReviews] = useState<Review[]>([]);
-
+  const [reviews, setReviews] = useState<Review[]>(() => seeded);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const payload = await sellerBackendApi.getReviews("received");
-        if (cancelled) return;
-        const rows = Array.isArray(payload) ? payload : [];
-        setReviews(rows.map((row) => mapBackendReview(row as Record<string, unknown>)));
-      } catch {
-        if (!cancelled) {
-          setReviews([]);
-          pushToast({ title: "Backend unavailable", message: "Could not fetch reviews.", tone: "warning" });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const clusters = useMemo(() => buildClusters(reviews), [reviews]);
-  const ratingBuckets = useMemo(() => buildRatingBuckets(reviews), [reviews]);
-  const trend = useMemo(() => buildTrend(reviews), [reviews]);
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("seller.reviews.count", String(reviews.length));
+  }, [reviews]);
 
   // Filters
   const [role, setRole] = useState<Role | "All">("All");
@@ -927,22 +762,8 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
   };
 
   const bulkActions = {
-    markResolved: async () => {
+    markResolved: () => {
       if (!selectedIds.length) return;
-      try {
-        await Promise.all(
-          selectedIds.map((id) =>
-            sellerBackendApi.patchReview(id, {
-              status: "PUBLISHED",
-              requiresResponse: false,
-              resolvedAt: new Date().toISOString(),
-            })
-          )
-        );
-      } catch {
-        pushToast({ title: "Update failed", message: "Could not mark selected reviews as resolved.", tone: "danger" });
-        return;
-      }
       setReviews((prev) => prev.map((r) => (selectedIds.includes(r.id) ? { ...r, status: "Resolved", requiresResponse: false } : r)));
       setSelected({});
       pushToast({ title: "Resolved", message: "Selected reviews marked as resolved.", tone: "success" });
@@ -968,7 +789,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
         note: "Demo evidence bundle. In production: PDFs, signatures, chain of custody.",
       };
       safeCopy(JSON.stringify(bundle, null, 2));
-      pushToast({ title: "Evidence bundle ready", message: "Copied as JSON.", tone: "success" });
+      pushToast({ title: "Evidence bundle ready", message: "Copied as JSON (demo).", tone: "success" });
     },
   };
 
@@ -1020,10 +841,10 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
     const closing = " Please share your preferred resolution and reference ID so we can assist quickly.";
 
     setReply(`${base}${add}${closing}`);
-    pushToast({ title: "AI suggestion", message: "Draft response generated.", tone: "default" });
+    pushToast({ title: "AI suggestion", message: "Draft response generated (demo).", tone: "default" });
   };
 
-  const sendReply = async () => {
+  const sendReply = () => {
     if (!active) return;
     const text = reply.trim();
     if (!text) {
@@ -1033,17 +854,6 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
 
     const final = useAutoTranslate ? `${text}\n\n(Translated automatically)` : text;
 
-    try {
-      await sellerBackendApi.replyReview(active.id, { body: final, visibility: "PUBLIC" });
-      await sellerBackendApi.patchReview(active.id, {
-        status: active.status === "Flagged" ? "FLAGGED" : "PUBLISHED",
-        requiresResponse: false,
-      });
-    } catch {
-      pushToast({ title: "Send failed", message: "Could not persist the response.", tone: "danger" });
-      return;
-    }
-
     setReviews((prev) =>
       prev.map((r) =>
         r.id === active.id
@@ -1052,7 +862,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
       )
     );
 
-    pushToast({ title: "Response sent", message: "Reply posted to buyer.", tone: "success" });
+    pushToast({ title: "Response sent", message: "Reply posted to buyer (demo).", tone: "success" });
     setDetailOpen(false);
   };
 
@@ -1103,7 +913,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest reviews loaded.", tone: "success" })}
+                onClick={() => pushToast({ title: "Refreshed", message: "Latest reviews loaded (demo).", tone: "success" })}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
@@ -1711,17 +1521,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
 
                 <button
                   type="button"
-                  onClick={async () => {
-                    try {
-                      await sellerBackendApi.patchReview(active.id, {
-                        status: "PUBLISHED",
-                        requiresResponse: false,
-                        resolvedAt: new Date().toISOString(),
-                      });
-                    } catch {
-                      pushToast({ title: "Resolve failed", message: "Could not update review status.", tone: "danger" });
-                      return;
-                    }
+                  onClick={() => {
                     setReviews((prev) => prev.map((r) => (r.id === active.id ? { ...r, status: "Resolved", requiresResponse: false } : r)));
                     pushToast({ title: "Resolved", message: "Marked as resolved.", tone: "success" });
                   }}

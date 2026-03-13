@@ -1,45 +1,26 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocalization } from "../../../localization/LocalizationProvider";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 export default function SellerCatalogTemplatesEVzoneV1_JS() {
   const brand = useMemo(() => ({ green: '#03CD8C', orange: '#F77F00', grey: '#A6A6A6', greyLight: '#F2F2F2', black: '#111827' }), []);
   const { t, language, setLanguage, languageOptions } = useLocalization();
 
+  // --- Data (JS only) ---
+  const KEY = 'catalog_attr_templates_v1';
+  
   type TemplateAttr = { name: string; type: string; required: boolean; options: string };
   type Template = { id: string; name: string; category: string; notes?: string; attrs: TemplateAttr[] };
-  const mapTemplate = (row: any): Template => ({
-    id: String(row.id),
-    name: String(row.name || ""),
-    category: String(row.category || ""),
-    notes: row.notes || "",
-    attrs: Array.isArray(row.attrs)
-      ? row.attrs
-      : Array.isArray(row.attributes)
-        ? row.attributes
-        : Array.isArray(row.payload?.attrs)
-          ? row.payload.attrs
-          : [],
-  });
-  const [rows, setRows] = useState<Template[]>([]);
-  const [backendError, setBackendError] = useState("");
-  useEffect(() => {
-    let active = true;
-    void sellerBackendApi
-      .getCatalogTemplates()
-      .then((payload) => {
-        if (!active) return;
-        setBackendError("");
-        setRows(Array.isArray(payload.templates) ? payload.templates.map(mapTemplate) : []);
-      })
-      .catch((error) => {
-        if (!active) return;
-        setBackendError(error instanceof Error ? error.message : "Failed to load templates");
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+
+  const seed: Template[] = [
+    {
+      id: 'TMP-1001', name: 'Wallbox Specs', category: 'EVmart/Chargers', notes: 'Common for 7/11kW', attrs: [
+        { name: 'Power', type: 'number', required: true, options: '' },
+        { name: 'Color', type: 'select', required: false, options: 'Black|White' },
+      ]
+    },
+  ];
+  const load = (): Template[] => { try { const s = localStorage.getItem(KEY); if (s) return JSON.parse(s); } catch { } return seed; };
+  const [rows, setRows] = useState<Template[]>(load()); useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch { } }, [rows]);
 
   // --- UI state ---
   const [q, setQ] = useState('');
@@ -50,69 +31,10 @@ export default function SellerCatalogTemplatesEVzoneV1_JS() {
 
   // --- Actions ---
   const addTemplate = () => { const id = 'TMP-' + (1000 + rows.length + 1); setOpen({ id, name: '', category: '', notes: '', attrs: [] }); };
-  const saveTemplate = async () => {
-    if (!open) return;
-    if (!open.name || !open.category) { toastIt(t('Name + category required')); return; }
-    const payload = { name: open.name, category: open.category, notes: open.notes || "", kind: "ATTRIBUTE_SET", attrs: open.attrs };
-    let saved;
-    try {
-      saved = rows.some((entry) => entry.id === open.id)
-        ? await sellerBackendApi.patchCatalogTemplate(open.id, payload)
-        : await sellerBackendApi.createCatalogTemplate(payload);
-    } catch {
-      toastIt(t('Failed'));
-      return;
-    }
-    const next = mapTemplate(saved);
-    setRows((list) => {
-      const idx = list.findIndex((x) => x.id === open.id || x.id === next.id);
-      if (idx >= 0) {
-        const copy = [...list];
-        copy[idx] = next;
-        return copy;
-      }
-      return [next, ...list];
-    });
-    setOpen(null);
-    toastIt(t('Saved'));
-  };
-  const delTemplate = async (id) => {
-    let result;
-    try {
-      result = await sellerBackendApi.deleteCatalogTemplate(id);
-    } catch {
-      toastIt(t('Failed'));
-      return;
-    }
-    if (!result?.deleted) { toastIt(t('Failed')); return; }
-    setRows((list) => list.filter((x) => x.id !== id));
-  };
-  const dupTemplate = async (item) => {
-    const copy = JSON.parse(JSON.stringify(item));
-    copy.name = item.name + ' (Copy)';
-    let created;
-    try {
-      created = await sellerBackendApi.createCatalogTemplate({
-        name: copy.name,
-        category: copy.category,
-        notes: copy.notes || "",
-        kind: "ATTRIBUTE_SET",
-        attrs: copy.attrs || [],
-      });
-    } catch {
-      toastIt(t('Failed'));
-      return;
-    }
-    setRows((list) => [mapTemplate(created), ...list]);
-  };
-  const pushToWizard = async (item) => {
-    try {
-      await sellerBackendApi.patchUiState({ catalog: { wizardTemplate: item } });
-      toastIt(t('Pushed to wizard'));
-    } catch {
-      toastIt(t('Failed'));
-    }
-  };
+  const saveTemplate = () => { if (!open) return; if (!open.name || !open.category) { toastIt(t('Name + category required')); return; } setRows(list => { const idx = list.findIndex(x => x.id === open.id); if (idx >= 0) { const n = [...list]; n[idx] = open; return n; } return [open, ...list]; }); setOpen(null); toastIt(t('Saved')); };
+  const delTemplate = (id) => setRows(list => list.filter(x => x.id !== id));
+  const dupTemplate = (item) => { const copy = JSON.parse(JSON.stringify(item)); copy.id = 'TMP-' + (1000 + rows.length + 1); copy.name = item.name + ' (Copy)'; setRows(list => [copy, ...list]); };
+  const pushToWizard = (item) => { try { localStorage.setItem('catalog_attr_templates', JSON.stringify(item)); toastIt(t('Pushed to wizard')); } catch { toastIt(t('Failed')); } };
 
   // --- Attribute helpers ---
   const addAttr = () => setOpen(o => o ? { ...o, attrs: [...(o.attrs || []), { name: '', type: 'text', required: false, options: '' }] } : o);
@@ -131,7 +53,6 @@ export default function SellerCatalogTemplatesEVzoneV1_JS() {
       <header className="sticky top-0 z-20 border-b bg-white dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white dark:bg-slate-900/60"><div className="w-full max-w-none px-[0.55%] py-3 flex items-center gap-3"><div className="text-sm"><div className="font-extrabold" style={{ color: 'var(--ev-ink)' }}>{t('Templates')}</div><div className="text-xs text-gray-500">{t('Attribute sets for fast listing')}</div></div><div className="ml-auto inline-flex items-center gap-2"><input value={q} onChange={e => setQ(e.target.value)} placeholder={t('Search templates…')} className="input" /><select value={language} onChange={e => setLanguage(e.target.value)} className="rounded-lg border border-gray-200 dark:border-slate-800 px-2 py-1 text-sm">{languageOptions.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}</select><button onClick={addTemplate} className="btn-primary">{t('+ New')}</button><button onClick={exportJSON} className="btn-ghost">{t('Export')}</button><label className="btn-ghost"><input type="file" accept="application/json" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) importJSON(f); }} />{t('Import')}</label></div></div></header>
 
       <main className="w-full max-w-none px-[0.55%] py-6">
-        {backendError ? <div className="mb-3 text-xs text-amber-600">{backendError}</div> : null}
         {/* Grid */}
         <section>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

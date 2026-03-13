@@ -1,10 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { clearSession, useSession } from "../../auth/session";
 import { recordOnboardingStatus } from "./onboardingStatus";
-import { sellerBackendApi } from "../../lib/backendApi";
-import { authClient } from "../../lib/authApi";
-import { useSellerTaxonomy } from "../../data/taxonomy";
 import SellerOnboardingTaxonomyNavigator from "./SellerOnboardingTaxonomyNavigator";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { useThemeMode } from "../../theme/themeMode";
@@ -229,29 +225,6 @@ type CountryDialOption = {
   search: string;
 };
 type ShippingProfile = { id: string; name: string; isDefault?: boolean; archived?: boolean };
-type LabeledValueOption = { value: string; label: string; helper?: string };
-type PolicyPresetOption = {
-  id: string;
-  label: string;
-  desc: string;
-  patch: {
-    returnsDays: string;
-    warrantyDays: string;
-    handlingTimeDays: string;
-  };
-};
-type OnboardingLookups = {
-  payoutMethods: LabeledValueOption[];
-  payoutCurrencies: string[];
-  payoutRhythms: LabeledValueOption[];
-  mobileMoneyProviders: LabeledValueOption[];
-  mobileIdTypes: LabeledValueOption[];
-  payoutRegions: {
-    alipay: LabeledValueOption[];
-    wechat: LabeledValueOption[];
-  };
-  policyPresets: PolicyPresetOption[];
-};
 type ToastState = { tone?: "success" | "error" | "info"; title: string; message?: string };
 
 export const COUNTRY_DIAL_CODES = [
@@ -605,7 +578,7 @@ const IconSparkles = () => <IconShell>✨</IconShell>;
 const IconCheck = () => <IconShell>✅</IconShell>;
 const IconWarn = () => <IconShell>⚠️</IconShell>;
 
-const DEFAULT_PAYOUT_METHODS: LabeledValueOption[] = [
+const PAYOUT_METHODS = [
   {
     value: "bank_account",
     label: "Bank account",
@@ -638,9 +611,9 @@ const DEFAULT_PAYOUT_METHODS: LabeledValueOption[] = [
   },
 ];
 
-const DEFAULT_PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "RWF", "ZAR"];
+const PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "ZAR"];
 
-const DEFAULT_PAYOUT_RHYTHMS: LabeledValueOption[] = [
+const PAYOUT_RHYTHMS = [
   { value: "daily", label: "Daily", helper: "Payouts generated every business day." },
   { value: "weekly", label: "Weekly", helper: "Payouts grouped once per week." },
   { value: "monthly", label: "Monthly", helper: "Payouts grouped at month end." },
@@ -659,14 +632,6 @@ const PAYOUT_METHOD_LABELS = {
   other_local: "Other method",
 };
 
-const PAYOUT_METHOD_ICONS: Record<string, React.ReactNode> = {
-  bank_account: <IconBank />,
-  mobile_money: <IconWallet />,
-  alipay: <IconGlobe />,
-  wechat_pay: <IconGlobe />,
-  other_local: <IconWallet />,
-};
-
 const LEGACY_PAYOUT_METHOD_MAP = {
   bank: "bank_account",
   mobile: "mobile_money",
@@ -674,7 +639,7 @@ const LEGACY_PAYOUT_METHOD_MAP = {
   wechat: "wechat_pay",
 };
 
-const DEFAULT_POLICY_PRESETS: PolicyPresetOption[] = [
+const POLICY_PRESETS = [
   {
     id: "standard",
     label: "Standard",
@@ -707,41 +672,6 @@ const DEFAULT_POLICY_PRESETS: PolicyPresetOption[] = [
   },
 ];
 
-const DEFAULT_ONBOARDING_LOOKUPS: OnboardingLookups = {
-  payoutMethods: DEFAULT_PAYOUT_METHODS,
-  payoutCurrencies: DEFAULT_PAYOUT_CURRENCIES,
-  payoutRhythms: DEFAULT_PAYOUT_RHYTHMS,
-  mobileMoneyProviders: [
-    { value: "MTN Mobile Money", label: "MTN Mobile Money" },
-    { value: "Airtel Money", label: "Airtel Money" },
-    { value: "M-Pesa", label: "M-Pesa" },
-    { value: "Safaricom", label: "Safaricom" },
-    { value: "Orange Money", label: "Orange Money" },
-    { value: "Wave", label: "Wave" },
-  ],
-  mobileIdTypes: [
-    { value: "national_id", label: "National ID" },
-    { value: "passport", label: "Passport" },
-    { value: "drivers_license", label: "Driver's License" },
-    { value: "tax_id", label: "Tax ID" },
-    { value: "residence_permit", label: "Residence Permit" },
-    { value: "voter_id", label: "Voter ID" },
-  ],
-  payoutRegions: {
-    alipay: [
-      { value: "mainland", label: "Mainland China" },
-      { value: "hong_kong", label: "Hong Kong SAR" },
-      { value: "other", label: "Other region" },
-    ],
-    wechat: [
-      { value: "mainland", label: "Mainland China" },
-      { value: "hong_kong", label: "Hong Kong SAR" },
-      { value: "other", label: "Other region" },
-    ],
-  },
-  policyPresets: DEFAULT_POLICY_PRESETS,
-};
-
 function safeJsonParse(str) {
   if (!str) return null;
   try {
@@ -749,38 +679,6 @@ function safeJsonParse(str) {
   } catch {
     return null;
   }
-}
-
-function readStoredDraft(key) {
-  if (typeof window === "undefined") return null;
-  return safeJsonParse(window.localStorage.getItem(key));
-}
-
-function writeStoredDraft(key, value) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function clearStoredDraft(keys) {
-  if (typeof window === "undefined") return;
-  keys.forEach((key) => {
-    try {
-      window.localStorage.removeItem(key);
-    } catch {
-      // ignore storage failures
-    }
-  });
-}
-
-function draftMatchesActiveUser(draft, activeUserId) {
-  if (!draft || typeof draft !== "object") return false;
-  if (!activeUserId) return true;
-  const owner = String(draft.owner || draft.email || "").toLowerCase();
-  return !owner || owner === activeUserId;
 }
 
 function clamp(n, a, b) {
@@ -799,70 +697,6 @@ function isEmail(v) {
   const s = String(v || "").trim();
   if (!s) return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
-}
-
-function sanitizeEmail(v) {
-  const s = String(v || "").trim();
-  return isEmail(s) ? s : undefined;
-}
-
-function isBackendUrl(v) {
-  const s = String(v || "").trim();
-  if (!s || s.startsWith("blob:")) return false;
-  try {
-    const url = new URL(s);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function sanitizeBackendUrl(v) {
-  const s = String(v || "").trim();
-  return isBackendUrl(s) ? s : undefined;
-}
-
-function findTaxonomyPath(tree, id, path = []) {
-  if (!id) return [];
-  for (const node of tree || []) {
-    const currentPath = [...path, node];
-    if (node.id === id) return currentPath;
-    if (Array.isArray(node.children) && node.children.length) {
-      const childPath = findTaxonomyPath(node.children, id, currentPath);
-      if (childPath.length) return childPath;
-    }
-  }
-  return [];
-}
-
-function normalizeSelectionsAgainstTaxonomy(selections, taxonomyTree) {
-  const rows = Array.isArray(selections) ? selections : [];
-  if (!Array.isArray(taxonomyTree) || taxonomyTree.length === 0) return rows;
-
-  return rows
-    .map((entry, index) => {
-      const nodeId = String(entry?.nodeId || "");
-      if (!nodeId) return null;
-      const pathNodes = findTaxonomyPath(taxonomyTree, nodeId);
-      if (!pathNodes.length) return null;
-      const normalizedPathNodes = pathNodes.map((node) => ({
-        id: String(node.id),
-        name: String(node.name),
-        type: String(node.type),
-      }));
-      const marketplaceNode = normalizedPathNodes[0];
-      return {
-        id: entry?.id ? String(entry.id) : `${nodeId}-${index}`,
-        nodeId,
-        label: typeof entry?.label === "string" ? entry.label : normalizedPathNodes[normalizedPathNodes.length - 1]?.name,
-        path: normalizedPathNodes.map((node) => node.name),
-        pathNodes: normalizedPathNodes,
-        marketplace: marketplaceNode?.name || "",
-        marketplaceId: marketplaceNode?.id || "",
-        slug: typeof entry?.slug === "string" ? entry.slug : undefined,
-      };
-    })
-    .filter(Boolean);
 }
 
 function isExpired(expiry) {
@@ -886,14 +720,14 @@ function isExpiringSoon(expiry, days = 30) {
   return diffDays >= 0 && diffDays <= days;
 }
 
-function splitPhoneNumber(value, defaultValueCode = DEFAULT_DIAL_CODE) {
+function splitPhoneNumber(value, fallbackCode = DEFAULT_DIAL_CODE) {
   const raw = String(value || "").trim();
-  if (!raw) return { code: defaultValueCode, number: "" };
+  if (!raw) return { code: fallbackCode, number: "" };
   const match = COUNTRY_DIAL_CODES.find((item) => raw.startsWith(item.dial));
   if (match) {
     return { code: match.dial, number: raw.slice(match.dial.length).trim() };
   }
-  return { code: defaultValueCode, number: raw };
+  return { code: fallbackCode, number: raw };
 }
 
 function combinePhoneNumber(code, number) {
@@ -1187,415 +1021,46 @@ function ChipButton({ active, children, onClick, disabled }) {
   );
 }
 
-const DEFAULT_REVIEW_STATE = {
-  submittedAt: null,
-  inReviewAt: null,
-  approvedAt: null,
-  slaHours: 48,
-};
-
-function toUiOnboardingStatus(value: unknown) {
-  const normalized = String(value || "").toLowerCase();
-  return normalized === "submitted" || normalized === "resubmitted" || normalized === "approved"
-    ? "SUBMITTED"
-    : "DRAFT";
-}
-
-function toWorkflowOnboardingStatus(value: unknown) {
-  const normalized = String(value || "").toLowerCase();
-  return normalized === "submitted" || normalized === "resubmitted" ? "submitted" : "draft";
-}
-
-function compactValue<T>(value: T): T | undefined {
-  if (value === null || value === undefined) return undefined;
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return (trimmed ? trimmed : undefined) as T | undefined;
-  }
-  if (Array.isArray(value)) {
-    const next = value
-      .map((entry) => compactValue(entry))
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
-    return (next.length ? next : undefined) as T | undefined;
-  }
-  if (typeof value === "object") {
-    const next = Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .map(([key, entry]) => [key, compactValue(entry)])
-        .filter(([, entry]) => entry !== undefined)
-    );
-    return (Object.keys(next).length ? next : undefined) as T | undefined;
-  }
-  return value;
-}
-
-function parseOptionalInt(value: string) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return undefined;
-  const parsed = Number.parseInt(trimmed, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function parseOptionalNumber(value: string) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed) return undefined;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function toOnboardingDocsPayload(docs: DocItem[]) {
-  return {
-    list: docs.map((doc) => ({
-      id: doc.id,
-      type: doc.type,
-      name: doc.name,
-      file: doc.file,
-      fileUrl: sanitizeBackendUrl(doc.fileUrl),
-      status: doc.status,
-      expiry: doc.expiry,
-      uploadedAt: doc.uploadedAt,
-      notes: doc.notes,
-    })),
-  };
-}
-
-function toOnboardingPayload(form: SellerForm, taxonomyTree = []) {
-  const normalizedTaxonomySelections = normalizeSelectionsAgainstTaxonomy(
-    form.taxonomySelections,
-    taxonomyTree
-  );
-  const normalizedTaxonomySelection =
-    form.taxonomySelection?.nodeId && Array.isArray(taxonomyTree) && taxonomyTree.length > 0
-      ? normalizeSelectionsAgainstTaxonomy([form.taxonomySelection], taxonomyTree)[0]
-      : form.taxonomySelection;
-
-  return compactValue({
-    owner: form.owner,
-    profileType: "SELLER",
-    status: toWorkflowOnboardingStatus(form.status),
-    storeName: form.storeName,
-    storeSlug: form.storeSlug,
-    email: sanitizeEmail(form.email),
-    phone: form.phone,
-    website: sanitizeBackendUrl(form.website),
-    about: form.about,
-    brandColor: form.brandColor,
-    logoUrl: sanitizeBackendUrl(form.logoUrl),
-    coverUrl: sanitizeBackendUrl(form.coverUrl),
-    support: {
-      whatsapp: form.support.whatsapp,
-      email: sanitizeEmail(form.support.email),
-      phone: form.support.phone,
-    },
-    shipFrom: {
-      country: form.shipFrom.country,
-      province: form.shipFrom.province,
-      city: form.shipFrom.city,
-      address1: form.shipFrom.address1,
-      address2: form.shipFrom.address2,
-      postalCode: form.shipFrom.postalCode,
-    },
-    channels: form.channels,
-    languages: form.languages,
-    taxonomySelection: normalizedTaxonomySelection?.nodeId
-      ? {
-          nodeId: normalizedTaxonomySelection.nodeId,
-          label:
-            typeof normalizedTaxonomySelection.label === "string"
-              ? normalizedTaxonomySelection.label
-              : undefined,
-          path: Array.isArray(normalizedTaxonomySelection.path)
-            ? normalizedTaxonomySelection.path.map(String)
-            : undefined,
-          slug:
-            typeof normalizedTaxonomySelection.slug === "string"
-              ? normalizedTaxonomySelection.slug
-              : undefined,
-          pathNodes: Array.isArray(normalizedTaxonomySelection.pathNodes)
-            ? normalizedTaxonomySelection.pathNodes
-                .filter((entry) => entry?.id && entry?.name && entry?.type)
-                .map((entry) => ({ id: String(entry.id), name: String(entry.name), type: String(entry.type) }))
-            : undefined,
-        }
-      : undefined,
-    taxonomySelections: Array.isArray(normalizedTaxonomySelections)
-      ? normalizedTaxonomySelections
-          .filter((entry) => entry?.nodeId)
-          .map((entry) => ({
-            nodeId: String(entry.nodeId),
-            label: typeof entry.label === "string" ? entry.label : undefined,
-            path: Array.isArray(entry.path) ? entry.path.map(String) : undefined,
-            slug: typeof entry.slug === "string" ? entry.slug : undefined,
-            pathNodes: Array.isArray(entry.pathNodes)
-              ? entry.pathNodes
-                  .filter((node) => node?.id && node?.name && node?.type)
-                  .map((node) => ({ id: String(node.id), name: String(node.name), type: String(node.type) }))
-              : undefined,
-          }))
-      : undefined,
-    docs: toOnboardingDocsPayload(form.docs.list),
-    shipping: {
-      profileId: form.shipping.profileId,
-      expressReady: form.shipping.expressReady,
-      handlingTimeDays: parseOptionalInt(form.shipping.handlingTimeDays),
-    },
-    policies: {
-      returnsDays: parseOptionalInt(form.policies.returnsDays),
-      warrantyDays: parseOptionalInt(form.policies.warrantyDays),
-      termsUrl: sanitizeBackendUrl(form.policies.termsUrl),
-      privacyUrl: sanitizeBackendUrl(form.policies.privacyUrl),
-      policyNotes: form.policies.policyNotes,
-    },
-    payout: {
-      method: form.payout.method,
-      currency: form.payout.currency,
-      rhythm: form.payout.rhythm,
-      thresholdAmount: parseOptionalNumber(form.payout.thresholdAmount),
-      bankName: form.payout.bankName,
-      bankCountry: form.payout.bankCountry,
-      bankBranch: form.payout.bankBranch,
-      accountName: form.payout.accountName,
-      accountNo: form.payout.accountNo,
-      swiftBic: form.payout.swiftBic,
-      iban: form.payout.iban,
-      mobileProvider: form.payout.mobileProvider,
-      mobileCountryCode: form.payout.mobileCountryCode,
-      mobileNo: form.payout.mobileNo,
-      mobileIdType: form.payout.mobileIdType,
-      mobileIdNumber: form.payout.mobileIdNumber,
-      alipayRegion: form.payout.alipayRegion,
-      alipayLogin: form.payout.alipayLogin,
-      wechatRegion: form.payout.wechatRegion,
-      wechatId: form.payout.wechatId,
-      otherMethod: form.payout.otherMethod,
-      otherProvider: form.payout.otherProvider,
-      otherCountry: form.payout.otherCountry,
-      otherNotes: form.payout.otherNotes,
-      notificationsEmail: sanitizeEmail(form.payout.notificationsEmail),
-      notificationsWhatsApp: form.payout.notificationsWhatsApp,
-      confirmDetails: form.payout.confirmDetails,
-      otherDetails: form.payout.otherDetails,
-      otherDescription: form.payout.otherDescription,
-    },
-    tax: {
-      taxpayerType: form.tax.taxpayerType,
-      legalName: form.tax.legalName,
-      taxCountry: form.tax.taxCountry,
-      taxId: form.tax.taxId,
-      vatNumber: form.tax.vatNumber,
-      legalAddress: form.tax.legalAddress,
-      contact: form.tax.contact,
-      contactEmail: sanitizeEmail(form.tax.contactEmail),
-      contactSameAsOwner: form.tax.contactSameAsOwner,
-    },
-    acceptance: {
-      sellerTerms: form.acceptance.sellerTerms,
-      contentPolicy: form.acceptance.contentPolicy,
-      dataProcessing: form.acceptance.dataProcessing,
-    },
-  }) ?? {};
-}
-
-function normalizeSellerFormPayload(
-  payload: Record<string, unknown> | null | undefined,
-  base: SellerForm,
-  activeUserId: string
-): SellerForm {
-  const parsed = payload && typeof payload === "object" ? (payload as Partial<SellerForm>) : null;
-  if (!parsed) return base;
-
-  const owner = String(parsed.owner || parsed.email || "").toLowerCase();
-  if (activeUserId && owner && owner !== activeUserId) {
-    return base;
-  }
-
-  const merged = {
-    ...base,
-    ...parsed,
-    owner: activeUserId || owner || base.owner,
-    status: toUiOnboardingStatus(parsed.status),
-    shipFrom: { ...base.shipFrom, ...(parsed.shipFrom || {}) },
-    support: { ...base.support, ...(parsed.support || {}) },
-    shipping: {
-      ...base.shipping,
-      ...(parsed.shipping || {}),
-      handlingTimeDays:
-        parsed.shipping && parsed.shipping.handlingTimeDays != null
-          ? String(parsed.shipping.handlingTimeDays)
-          : base.shipping.handlingTimeDays,
-    },
-    policies: {
-      ...base.policies,
-      ...(parsed.policies || {}),
-      returnsDays:
-        parsed.policies && parsed.policies.returnsDays != null
-          ? String(parsed.policies.returnsDays)
-          : base.policies.returnsDays,
-      warrantyDays:
-        parsed.policies && parsed.policies.warrantyDays != null
-          ? String(parsed.policies.warrantyDays)
-          : base.policies.warrantyDays,
-    },
-    docs: { list: Array.isArray(parsed?.docs?.list) ? parsed.docs.list : base.docs.list },
-    payout: hydratePayoutData(base.payout, parsed.payout || {}),
-    tax: { ...base.tax, ...(parsed.tax || {}) },
-    acceptance: { ...base.acceptance, ...(parsed.acceptance || {}) },
-  } satisfies SellerForm;
-
-  if (
-    merged.taxonomySelection?.nodeId &&
-    (!Array.isArray(merged.taxonomySelections) || merged.taxonomySelections.length === 0)
-  ) {
-    merged.taxonomySelections = [merged.taxonomySelection];
-  }
-
-  if (!Array.isArray(merged.channels)) {
-    merged.channels = [];
-  }
-  if (!Array.isArray(merged.languages)) {
-    merged.languages = [];
-  }
-
-  return merged;
-}
-
-function normalizeScreenUi(payload: Record<string, unknown> | null | undefined) {
-  const screen = payload && typeof payload === "object" ? payload : {};
-  const ui = screen && typeof screen.ui === "object" ? (screen.ui as Record<string, unknown>) : {};
-  const review =
-    screen && typeof screen.review === "object"
-      ? (screen.review as Record<string, unknown>)
-      : DEFAULT_REVIEW_STATE;
-
-  return {
-    ui: {
-      theme: String(ui.theme || "light"),
-      step: Number(ui.step || 1) || 1,
-      compactAside: Boolean(ui.compactAside),
-    },
-    review: {
-      ...DEFAULT_REVIEW_STATE,
-      ...(review || {}),
-    },
-  };
-}
-
-function normalizeShippingProfiles(payload: Record<string, unknown> | null | undefined): ShippingProfile[] {
-  const rows =
-    payload && typeof payload === "object" && Array.isArray((payload as { profiles?: unknown[] }).profiles)
-      ? ((payload as { profiles?: Array<Record<string, unknown>> }).profiles ?? [])
-      : [];
-
-  return rows.map((entry) => ({
-    id: String(entry.id || ""),
-    name: String(entry.name || "Shipping Profile"),
-    isDefault: Boolean(entry.isDefault),
-    archived: String(entry.status || "").toUpperCase() === "ARCHIVED",
-  }));
-}
-
-function normalizeLabeledValueOptions(
-  value: unknown,
-  defaultValue: LabeledValueOption[]
-): LabeledValueOption[] {
-  if (!Array.isArray(value)) return defaultValue;
-  const rows = value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const item = entry as Record<string, unknown>;
-      const optionValue = String(item.value || "").trim();
-      const label = String(item.label || optionValue || "").trim();
-      if (!optionValue || !label) return null;
-      return {
-        value: optionValue,
-        label,
-        helper: item.helper ? String(item.helper) : undefined,
-      };
-    })
-    .filter((entry): entry is LabeledValueOption => Boolean(entry));
-  return rows.length ? rows : defaultValue;
-}
-
-function normalizeStringOptions(value: unknown, defaultValue: string[]): string[] {
-  if (!Array.isArray(value)) return defaultValue;
-  const rows = value
-    .map((entry) => String(entry || "").trim().toUpperCase())
-    .filter(Boolean);
-  return rows.length ? rows : defaultValue;
-}
-
-function normalizePolicyPresets(value: unknown, defaultValue: PolicyPresetOption[]): PolicyPresetOption[] {
-  if (!Array.isArray(value)) return defaultValue;
-  const rows = value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const item = entry as Record<string, unknown>;
-      const patch =
-        item.patch && typeof item.patch === "object" && !Array.isArray(item.patch)
-          ? (item.patch as Record<string, unknown>)
-          : {};
-      const id = String(item.id || "").trim();
-      const label = String(item.label || id || "").trim();
-      if (!id || !label) return null;
-      return {
-        id,
-        label,
-        desc: String(item.desc || "").trim(),
-        patch: {
-          returnsDays: String(patch.returnsDays || ""),
-          warrantyDays: String(patch.warrantyDays || ""),
-          handlingTimeDays: String(patch.handlingTimeDays || ""),
-        },
-      };
-    })
-    .filter((entry): entry is PolicyPresetOption => Boolean(entry));
-  return rows.length ? rows : defaultValue;
-}
-
-function normalizeOnboardingLookups(payload: Record<string, unknown> | null | undefined): OnboardingLookups {
-  const source = payload && typeof payload === "object" ? payload : {};
-  const payoutRegions =
-    source.payoutRegions && typeof source.payoutRegions === "object" && !Array.isArray(source.payoutRegions)
-      ? (source.payoutRegions as Record<string, unknown>)
-      : {};
-
-  return {
-    payoutMethods: normalizeLabeledValueOptions(source.payoutMethods, DEFAULT_ONBOARDING_LOOKUPS.payoutMethods),
-    payoutCurrencies: normalizeStringOptions(source.payoutCurrencies, DEFAULT_ONBOARDING_LOOKUPS.payoutCurrencies),
-    payoutRhythms: normalizeLabeledValueOptions(source.payoutRhythms, DEFAULT_ONBOARDING_LOOKUPS.payoutRhythms),
-    mobileMoneyProviders: normalizeLabeledValueOptions(
-      source.mobileMoneyProviders,
-      DEFAULT_ONBOARDING_LOOKUPS.mobileMoneyProviders
-    ),
-    mobileIdTypes: normalizeLabeledValueOptions(source.mobileIdTypes, DEFAULT_ONBOARDING_LOOKUPS.mobileIdTypes),
-    payoutRegions: {
-      alipay: normalizeLabeledValueOptions(
-        payoutRegions.alipay,
-        DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.alipay
-      ),
-      wechat: normalizeLabeledValueOptions(
-        payoutRegions.wechat,
-        DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.wechat
-      ),
-    },
-    policyPresets: normalizePolicyPresets(source.policyPresets, DEFAULT_ONBOARDING_LOOKUPS.policyPresets),
-  };
-}
-
 export default function SellerOnboardingProV4_JS() {
-  const { t, language, setLanguage } = useLocalization();
+  const { t } = useLocalization();
   const { resolvedMode } = useThemeMode();
   const navigate = useNavigate();
   const location = useLocation();
-  const sessionUser = useSession();
-  const sellerTaxonomyQuery = useSellerTaxonomy();
-  const sellerTaxonomy = sellerTaxonomyQuery.taxonomy;
 
-  const [ui, setUi] = useState(() => ({
-    theme: "light",
-    step: 1,
-    compactAside: false,
-  }));
+  // Language selector (stored)
+  const [lang, setLang] = useState("en");
+  useEffect(() => {
+    setLang(localStorage.getItem("ev_lang") || "en");
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("ev_lang", lang);
+  }, [lang]);
+
+  const [ui, setUi] = useState(() => {
+    const saved = safeJsonParse(localStorage.getItem(STORAGE.ui));
+    return {
+      theme: saved?.theme || "light",
+      step: Number(saved?.step || 1) || 1,
+      compactAside: !!saved?.compactAside,
+    };
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE.ui, JSON.stringify(ui));
+    } catch {
+      // ignore
+    }
+  }, [ui]);
+
+  const [sessionUser] = useState(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const s = localStorage.getItem("session");
+      return s ? JSON.parse(s) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const activeUserId = useMemo(() => {
     const val = sessionUser?.userId || sessionUser?.email || sessionUser?.phone || "";
@@ -1632,8 +1097,8 @@ export default function SellerOnboardingProV4_JS() {
       },
 
       // Step 2: Catalog & Channels
-      channels: [],
-      languages: [],
+      channels: ["marketplace_retail"],
+      languages: ["en"],
       taxonomySelection: null, // legacy single
       taxonomySelections: [], // multi
 
@@ -1644,11 +1109,11 @@ export default function SellerOnboardingProV4_JS() {
       shipping: {
         profileId: "",
         expressReady: false,
-        handlingTimeDays: "",
+        handlingTimeDays: "2",
       },
       policies: {
-        returnsDays: "",
-        warrantyDays: "",
+        returnsDays: "7",
+        warrantyDays: "90",
         termsUrl: "",
         privacyUrl: "",
         policyNotes: "",
@@ -1713,12 +1178,65 @@ export default function SellerOnboardingProV4_JS() {
     [activeUserId]
   );
 
-  const [form, setForm] = useState<SellerForm>(() => createEmptyForm());
+  const load = useCallback((): SellerForm => {
+    const s4 = safeJsonParse(localStorage.getItem(STORAGE.form));
+    const s3 = safeJsonParse(localStorage.getItem(STORAGE.legacy));
+    const parsed = s4 || s3;
+    const base = createEmptyForm();
+
+    if (!parsed) return base;
+
+    const owner = String(parsed.owner || parsed.email || "").toLowerCase();
+    const isOtherUser = activeUserId && owner && owner !== activeUserId;
+    const legacyMismatch =
+      activeUserId &&
+      !owner &&
+      parsed.status &&
+      parsed.status !== "DRAFT" &&
+      parsed.email &&
+      String(parsed.email).toLowerCase() !== activeUserId;
+
+    if (isOtherUser || legacyMismatch) return base;
+
+    const merged = {
+      ...base,
+      ...parsed,
+      shipFrom: { ...base.shipFrom, ...(parsed.shipFrom || {}) },
+      support: { ...base.support, ...(parsed.support || {}) },
+      shipping: { ...base.shipping, ...(parsed.shipping || {}) },
+      policies: { ...base.policies, ...(parsed.policies || {}) },
+      docs: { list: Array.isArray(parsed?.docs?.list) ? parsed.docs.list : base.docs.list },
+      payout: hydratePayoutData(base.payout, parsed.payout || {}),
+      tax: { ...base.tax, ...(parsed.tax || {}) },
+      acceptance: { ...base.acceptance, ...(parsed.acceptance || {}) },
+    };
+
+    // Backward compatibility: taxonomySelection -> taxonomySelections
+    if (
+      merged.taxonomySelection?.nodeId &&
+      (!Array.isArray(merged.taxonomySelections) || merged.taxonomySelections.length === 0)
+    ) {
+      merged.taxonomySelections = [merged.taxonomySelection];
+    }
+
+    // Owner
+    merged.owner = activeUserId || owner || merged.owner;
+
+    // Ensure channels and languages
+    if (!Array.isArray(merged.channels) || !merged.channels.length) {
+      merged.channels = ["marketplace_retail"];
+    }
+    if (!Array.isArray(merged.languages) || !merged.languages.length) {
+      merged.languages = ["en"];
+    }
+
+    return merged;
+  }, [activeUserId, createEmptyForm]);
+
+  const [form, setForm] = useState<SellerForm>(load);
   const [lastSaved, setLastSaved] = useState("");
   const [toast, setToast] = useState<ToastState | null>(null);
   const [stepErrors, setStepErrors] = useState<Record<number, boolean>>({});
-  const [hydrated, setHydrated] = useState(false);
-  const saveReadyRef = useRef(false);
 
   const setF = (
     patch: Partial<SellerForm> | ((prev: SellerForm) => Partial<SellerForm> | null)
@@ -1731,6 +1249,17 @@ export default function SellerOnboardingProV4_JS() {
       return changed ? nextState : prev;
     });
 
+  // Autosave
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE.form, JSON.stringify(form));
+      localStorage.setItem(STORAGE.legacy, JSON.stringify(form));
+      setLastSaved(ts());
+    } catch {
+      // ignore
+    }
+  }, [form]);
+
   // Keep the current onboarding screen as the single source of truth.
   useEffect(() => {
     if (form.status === "SUBMITTED" && location.pathname === "/seller/onboarding") {
@@ -1738,16 +1267,22 @@ export default function SellerOnboardingProV4_JS() {
     }
   }, [form.status, navigate, location.pathname]);
 
-  const [review, setReview] = useState(DEFAULT_REVIEW_STATE);
+  // Review timeline state
+  const [review, setReview] = useState(() => {
+    const s = safeJsonParse(localStorage.getItem(STORAGE.review));
+    return s || { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 };
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE.review, JSON.stringify(review));
+    } catch {
+      // ignore
+    }
+  }, [review]);
 
   // Step
   const step = clamp(ui.step || 1, 1, 6);
   const setStep = (n) => setUi((p) => ({ ...p, step: clamp(Number(n) || 1, 1, 6) }));
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, [step]);
 
   const isLocked = form.status !== "DRAFT";
 
@@ -1814,208 +1349,50 @@ export default function SellerOnboardingProV4_JS() {
     [setF]
   );
 
-  const [profiles, setProfiles] = useState<ShippingProfile[]>([]);
-  const [lookups, setLookups] = useState<OnboardingLookups>(DEFAULT_ONBOARDING_LOOKUPS);
-  const payoutMethodLabels = useMemo(
-    () =>
-      lookups.payoutMethods.reduce<Record<string, string>>((acc, method) => {
-        acc[method.value] = method.label;
-        return acc;
-      }, { ...PAYOUT_METHOD_LABELS }),
-    [lookups.payoutMethods]
+  // Shipping Profiles
+  const defaultShippingProfiles = useMemo<ShippingProfile[]>(
+    () => [{ id: "SHP-DEFAULT", name: "Standard Shipping", isDefault: true }],
+    []
   );
+  const [profiles, setProfiles] = useState<ShippingProfile[]>([]);
   useEffect(() => {
-    if (hydrated) return;
-    let cancelled = false;
+    try {
+      const latest = safeJsonParse(localStorage.getItem("shipping_profiles_latest")) || [];
+      const sellerProfiles = safeJsonParse(localStorage.getItem("seller_shipping_profiles_v1")) || [];
 
-    const hydrate = async () => {
-      try {
-        const storedForm = readStoredDraft(STORAGE.form);
-        const storedUi = readStoredDraft(STORAGE.ui);
-        const storedReview = readStoredDraft(STORAGE.review);
-        const [
-          onboardingResult,
-          lookupsResult,
-          screenStateResult,
-          shippingResult,
-          accountApprovalResult,
-        ] = await Promise.allSettled([
-          sellerBackendApi.getOnboarding(),
-          sellerBackendApi.getOnboardingLookups(),
-          sellerBackendApi.getWorkflowScreenState("seller-onboarding"),
-          sellerBackendApi.getShippingProfiles(),
-          sellerBackendApi.getAccountApproval(),
-        ]);
+      let list: ShippingProfile[] =
+        Array.isArray(latest) && latest.length
+          ? latest
+          : Array.isArray(sellerProfiles)
+            ? sellerProfiles.filter((p) => !p.archived)
+            : [];
 
-        if (cancelled) return;
-        const onboarding = onboardingResult.status === "fulfilled" ? onboardingResult.value : null;
-        const lookupPayload = lookupsResult.status === "fulfilled" ? lookupsResult.value : null;
-        const screenState = screenStateResult.status === "fulfilled" ? screenStateResult.value : null;
-        const shippingPayload = shippingResult.status === "fulfilled" ? shippingResult.value : null;
-        const accountApproval =
-          accountApprovalResult.status === "fulfilled" ? accountApprovalResult.value : null;
-
-        const base = createEmptyForm();
-        const normalizedForm = normalizeSellerFormPayload(
-          onboarding as Record<string, unknown> | null,
-          base,
-          activeUserId
-        );
-        const normalizedLookups = normalizeOnboardingLookups(
-          lookupPayload as Record<string, unknown> | null
-        );
-        const normalizedScreen = normalizeScreenUi(screenState as Record<string, unknown> | null);
-        const normalizedStoredScreen = normalizeScreenUi({
-          ui: storedUi && typeof storedUi === "object" ? storedUi : {},
-          review: storedReview && typeof storedReview === "object" ? storedReview : {},
-        });
-        const approvalPayload =
-          accountApproval && typeof accountApproval === "object"
-            ? (accountApproval as Record<string, unknown>)
-            : null;
-        if (
-          String(approvalPayload?.status || "").toLowerCase() === "approved" &&
-          !normalizedScreen.review.approvedAt
-        ) {
-          normalizedScreen.review = {
-            ...normalizedScreen.review,
-            inReviewAt: null,
-            approvedAt:
-              String(approvalPayload?.approvedAt || approvalPayload?.submittedAt || normalizedForm.updatedAt || "") || null,
-          };
-        }
-        const nextProfiles = normalizeShippingProfiles(
-          shippingPayload as Record<string, unknown> | null
-        ).filter((profile) => !profile.archived);
-        const resolvedForm = draftMatchesActiveUser(storedForm, activeUserId)
-          ? normalizeSellerFormPayload(
-              storedForm as Record<string, unknown>,
-              normalizedForm,
-              activeUserId
-            )
-          : normalizedForm;
-        const resolvedUi =
-          storedUi && typeof storedUi === "object"
-            ? { ...normalizedScreen.ui, ...normalizedStoredScreen.ui, step: 1 }
-            : { ...normalizedScreen.ui, step: 1 };
-        const resolvedReview =
-          storedReview && typeof storedReview === "object"
-            ? { ...normalizedScreen.review, ...normalizedStoredScreen.review }
-            : normalizedScreen.review;
-        if (
-          String(approvalPayload?.status || "").toLowerCase() === "approved" &&
-          !resolvedReview.approvedAt
-        ) {
-          resolvedReview.inReviewAt = null;
-          resolvedReview.approvedAt =
-            String(
-              approvalPayload?.approvedAt ||
-                approvalPayload?.submittedAt ||
-                resolvedForm.updatedAt ||
-                ""
-            ) || null;
-        }
-
-        setForm(resolvedForm);
-        setLookups(normalizedLookups);
-        setUi(resolvedUi);
-        setReview(resolvedReview);
-        setProfiles(nextProfiles);
-      } catch {
-        if (!cancelled) {
-          setToast({
-            tone: "error",
-            title: "Backend sync failed",
-            message: "We could not load your onboarding draft from the backend.",
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          setHydrated(true);
-          window.setTimeout(() => {
-            saveReadyRef.current = true;
-          }, 0);
-        }
+      if (!Array.isArray(list)) list = [];
+      if (!list.length) {
+        list = defaultShippingProfiles;
+        localStorage.setItem("shipping_profiles_latest", JSON.stringify(list));
+        localStorage.setItem("shipping_profile_default", list[0].id);
       }
-    };
 
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeUserId, createEmptyForm, hydrated]);
+      setProfiles(list);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    writeStoredDraft(STORAGE.form, form);
-    writeStoredDraft(STORAGE.ui, ui);
-    writeStoredDraft(STORAGE.review, review);
-  }, [form, hydrated, review, ui]);
-
-  useEffect(() => {
-    if (!hydrated || !saveReadyRef.current) return;
-    const timeoutId = window.setTimeout(() => {
-      void sellerBackendApi
-        .patchOnboarding(toOnboardingPayload(form, sellerTaxonomy))
-        .then(() => setLastSaved(ts()))
-        .catch(() => {
-          setToast({
-            tone: "error",
-            title: "Autosave failed",
-            message: "Changes are not syncing to the backend right now.",
-          });
-        });
-    }, 450);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [form, hydrated, sellerTaxonomy]);
-
-  useEffect(() => {
-    if (!hydrated || !sellerTaxonomy.length) return;
-    setF((prev) => {
-      const normalizedSelections = normalizeSelectionsAgainstTaxonomy(prev.taxonomySelections, sellerTaxonomy);
-      const normalizedCurrent = prev.taxonomySelection?.nodeId
-        ? normalizeSelectionsAgainstTaxonomy([prev.taxonomySelection], sellerTaxonomy)[0] || null
-        : null;
-      const nextCurrent =
-        normalizedCurrent ||
-        normalizedSelections.find((entry) => entry.nodeId === prev.taxonomySelection?.nodeId) ||
-        normalizedSelections[normalizedSelections.length - 1] ||
-        null;
-
-      const sameSelections =
-        JSON.stringify(normalizedSelections) === JSON.stringify(prev.taxonomySelections || []);
-      const sameCurrent =
-        JSON.stringify(nextCurrent) === JSON.stringify(prev.taxonomySelection || null);
-
-      if (sameSelections && sameCurrent) return null;
-
-      return {
-        taxonomySelections: normalizedSelections,
-        taxonomySelection: nextCurrent,
-      };
-    });
-  }, [hydrated, sellerTaxonomy]);
-
-  useEffect(() => {
-    if (!hydrated || !saveReadyRef.current) return;
-    const timeoutId = window.setTimeout(() => {
-      void sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
-        ui,
-        review,
-      }).catch(() => {
-        setToast({
-          tone: "error",
-          title: "State sync failed",
-          message: "Onboarding review state could not be saved to the backend.",
-        });
+      setF((prev) => {
+        if (prev.shipping?.profileId) return null;
+        const fallback =
+          localStorage.getItem("shipping_profile_default") ||
+          list.find((p) => p.isDefault)?.id ||
+          list[0]?.id ||
+          "";
+        if (!fallback) return null;
+        localStorage.setItem("shipping_profile_default", fallback);
+        return { shipping: { ...prev.shipping, profileId: fallback } };
       });
-    }, 250);
+    } catch {
+      // ignore
+    }
+  }, [defaultShippingProfiles]);
 
-    return () => window.clearTimeout(timeoutId);
-  }, [hydrated, review, ui]);
-
-  // Slug validation + availability
+  // Slug validation + mock availability
   const [slugState, setSlugState] = useState({ status: "idle", message: "" });
   useEffect(() => {
     const slug = String(form.storeSlug || "").trim();
@@ -2035,38 +1412,17 @@ export default function SellerOnboardingProV4_JS() {
       return;
     }
 
-    let cancelled = false;
     setSlugState({ status: "checking", message: "Checking availability..." });
-    const id = window.setTimeout(() => {
-      void sellerBackendApi
-        .getSlugAvailability(slug)
-        .then((result) => {
-          if (cancelled) return;
-          if (result?.available) {
-            setSlugState({ status: "ok", message: "Available." });
-            return;
-          }
-          if (result?.reason === "reserved") {
-            setSlugState({ status: "taken", message: "This handle is reserved." });
-            return;
-          }
-          if (result?.reason === "taken") {
-            setSlugState({ status: "taken", message: "This handle is already taken." });
-            return;
-          }
-          setSlugState({ status: "invalid", message: "This handle is invalid." });
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setSlugState({ status: "invalid", message: "Could not verify this handle right now." });
-          }
-        });
-    }, 350);
+    const id = setTimeout(() => {
+      const taken = slug.endsWith("-official") || slug.endsWith("-store") || slug.startsWith("test-");
+      setSlugState(
+        taken
+          ? { status: "taken", message: "This handle looks taken. Try a different one." }
+          : { status: "ok", message: "Available." }
+      );
+    }, 450);
 
-    return () => {
-      cancelled = true;
-      window.clearTimeout(id);
-    };
+    return () => clearTimeout(id);
   }, [form.storeSlug]);
 
   // Required docs
@@ -2367,7 +1723,6 @@ export default function SellerOnboardingProV4_JS() {
     if (!activeUserId) return;
     const owner = String(form.owner || form.email || "").toLowerCase();
     if (owner && owner !== activeUserId) {
-      clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
       const fresh = createEmptyForm();
       setForm(fresh);
       const id = activeUserId || form.email || form.storeName || "";
@@ -2419,54 +1774,26 @@ export default function SellerOnboardingProV4_JS() {
     r.readAsText(f);
   };
 
-  const resetDraft = async () => {
-    if (!window.confirm("Reset this onboarding draft? This clears the saved draft on this device and the backend draft.")) return;
+  const resetDraft = () => {
+    if (!window.confirm("Reset this onboarding draft? This clears your local draft on this device.")) return;
+    try {
+      localStorage.removeItem(STORAGE.form);
+      localStorage.removeItem(STORAGE.legacy);
+      localStorage.removeItem(STORAGE.review);
+    } catch {
+      // ignore
+    }
     const fresh = createEmptyForm();
     setForm(fresh);
-    setReview(DEFAULT_REVIEW_STATE);
+    setReview({ submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 });
     setStep(1);
-    clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
-    try {
-      await Promise.all([
-        sellerBackendApi.resetOnboarding(),
-        sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
-          ui: { ...ui, step: 1 },
-          review: DEFAULT_REVIEW_STATE,
-        }),
-      ]);
-    } catch {
-      setToast({
-        tone: "error",
-        title: "Reset failed",
-        message: "We could not reset the backend onboarding draft.",
-      });
-      return;
-    }
     recordOnboardingStatus("seller", sessionUser || { userId: activeUserId || "" }, "DRAFT");
     setToast({ tone: "success", title: "Reset complete", message: "A fresh draft has been created." });
   };
 
-  const withdraw = async () => {
+  const withdraw = () => {
     setF({ status: "DRAFT" });
     setReview((r) => ({ ...r, submittedAt: null, inReviewAt: null, approvedAt: null }));
-    try {
-      await Promise.all([
-        sellerBackendApi.patchOnboarding({
-          status: "draft",
-          profileType: "SELLER",
-        }),
-        sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
-          review: { ...DEFAULT_REVIEW_STATE },
-        }),
-      ]);
-    } catch {
-      setToast({
-        tone: "error",
-        title: "Withdraw failed",
-        message: "We could not reopen the onboarding draft from the backend.",
-      });
-      return;
-    }
     recordOnboardingStatus(
       "seller",
       sessionUser || { userId: activeUserId || form.email, email: activeUserId || form.email },
@@ -2559,7 +1886,7 @@ export default function SellerOnboardingProV4_JS() {
     return missingFields;
   }, [form, requiredOk, slugState.status, t]);
 
-  const submit = async () => {
+  const submit = () => {
     const nextState = ensureMinimum();
 
     const blockers = {
@@ -2593,41 +1920,15 @@ export default function SellerOnboardingProV4_JS() {
       return;
     }
 
-    const submittedDocs = (nextState.docs.list || []).map((doc) => ({ ...doc, status: "Submitted" }));
-    const submittedAt = new Date().toISOString();
-
+    // Mark documents submitted
     try {
-      await Promise.all([
-        sellerBackendApi.submitOnboarding({
-          ...toOnboardingPayload(nextState, sellerTaxonomy),
-          docs: toOnboardingDocsPayload(submittedDocs),
-          status: "submitted",
-        }),
-        sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
-          ui,
-          review: {
-            ...review,
-            submittedAt,
-            inReviewAt: null,
-            approvedAt: submittedAt,
-          },
-        }),
-      ]);
-    } catch (submitError) {
-      console.error("[SellerOnboarding] Submit failed:", submitError);
-      setToast({
-        tone: "error",
-        title: "Submit failed",
-        message: "Your onboarding could not be submitted to the backend.",
-      });
-      return;
+      setF({ docs: { list: (nextState.docs.list || []).map((d) => ({ ...d, status: "Submitted" })) } });
+    } catch {
+      // ignore
     }
 
-    setF({
-      status: "SUBMITTED",
-      docs: { list: submittedDocs },
-    });
-    setReview((r) => ({ ...r, submittedAt, inReviewAt: null, approvedAt: submittedAt }));
+    setF({ status: "SUBMITTED" });
+    setReview((r) => ({ ...r, submittedAt: new Date().toISOString(), inReviewAt: null, approvedAt: null }));
     recordOnboardingStatus(
       "seller",
       sessionUser || { userId: activeUserId || form.email, email: activeUserId || form.email },
@@ -2637,14 +1938,10 @@ export default function SellerOnboardingProV4_JS() {
     setToast({
       tone: "success",
       title: "Submitted",
-      message: "Your onboarding is active. Please sign in again to continue.",
+      message: "Your onboarding has been submitted for review.",
     });
-    await authClient.signOut(
-      typeof sessionUser?.refreshToken === "string" ? sessionUser.refreshToken : undefined,
-      typeof sessionUser?.accessToken === "string" ? sessionUser.accessToken : undefined
-    );
-    clearSession();
-    navigate("/auth?intent=signin", { replace: true, state: { defaultTab: "signin" } });
+
+    navigate("/seller/onboarding");
   };
 
   const storefrontUrl = useMemo(() => {
@@ -2664,7 +1961,7 @@ export default function SellerOnboardingProV4_JS() {
     setF((prev) => {
       const cur = Array.isArray(prev.channels) ? prev.channels : [];
       const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-      return { channels: next };
+      return { channels: next.length ? next : ["marketplace_retail"] };
     });
   };
 
@@ -2674,12 +1971,12 @@ export default function SellerOnboardingProV4_JS() {
     setF((prev) => {
       const cur = Array.isArray(prev.languages) ? prev.languages : [];
       const next = cur.includes(code) ? cur.filter((x) => x !== code) : [...cur, code];
-      return { languages: next };
+      return { languages: next.length ? next : ["en"] };
     });
   };
 
   const applyPolicyPreset = (presetId) => {
-    const p = lookups.policyPresets.find((x) => x.id === presetId);
+    const p = POLICY_PRESETS.find((x) => x.id === presetId);
     if (!p || isLocked) return;
     setF((prev) => ({
       shipping: { ...prev.shipping, handlingTimeDays: p.patch.handlingTimeDays },
@@ -2981,8 +2278,8 @@ export default function SellerOnboardingProV4_JS() {
                 </div>
               </div>
               <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
                 className="btn-ghost"
                 aria-label="Language"
               >
@@ -3063,7 +2360,7 @@ export default function SellerOnboardingProV4_JS() {
               </div>
             </div>
             <div className="mt-2 text-xs text-[var(--ev-subtle)]">
-              {t("Approval tracking becomes available after you submit onboarding.")}
+              {t("Track detailed approvals in")} <span onClick={() => navigate("/compliance")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Compliance Center")}</span>.
             </div>
           </div>
         </div>
@@ -3536,8 +2833,6 @@ export default function SellerOnboardingProV4_JS() {
                     <SellerOnboardingTaxonomyNavigator
                       selections={form.taxonomySelections || []}
                       onChange={handleTaxonomySelectionsUpdate}
-                      taxonomyData={sellerTaxonomy}
-                      onRetry={sellerTaxonomyQuery.refetch}
                       disabled={isLocked}
                     />
                     <div className="mt-2 text-xs text-[var(--ev-subtle)]">
@@ -3712,7 +3007,9 @@ export default function SellerOnboardingProV4_JS() {
                   />
 
                   <div className="flex items-center gap-2 text-xs text-[var(--ev-subtle)] flex-wrap">
-                    <span>{t("Approval and admin review screens unlock after submission.")}</span>
+                    <span onClick={() => navigate("/compliance")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Track approvals in Compliance Center")}</span>
+                    <span className="text-[var(--ev-muted)]">•</span>
+                    <span onClick={() => navigate("/market-panel/approvals")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Market Panel (Admin)")}</span>
                   </div>
                 </div>
               </Section>
@@ -3747,7 +3044,7 @@ export default function SellerOnboardingProV4_JS() {
                         ))}
                       </select>
                       <div className="mt-2 text-xs text-[var(--ev-subtle)]">
-                        {t("Starter shipping profiles are provisioned automatically. Detailed rate editing unlocks after onboarding approval.")}
+                        {t("Edit detailed rates in")} <span onClick={() => navigate("/shipping")} className="underline cursor-pointer text-blue-600 hover:text-blue-800">{t("Settings -> Shipping Profiles")}</span>.
                       </div>
                     </Field>
 
@@ -3795,7 +3092,7 @@ export default function SellerOnboardingProV4_JS() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {lookups.policyPresets.map((p) => (
+                      {POLICY_PRESETS.map((p) => (
                         <button
                           type="button"
                           key={p.id}
@@ -3898,7 +3195,6 @@ export default function SellerOnboardingProV4_JS() {
                   form={form}
                   setF={setF}
                   isLocked={isLocked}
-                  lookups={lookups}
                   ownerContactName={ownerContactName}
                   ownerContactEmail={ownerContactEmail}
                   payoutErrors={payoutErrors}
@@ -4007,7 +3303,7 @@ export default function SellerOnboardingProV4_JS() {
                         </button>
                       </div>
                       <div className="mt-2 text-xs text-[var(--ev-subtle)]">
-                        {t("Payout")}: <b className="text-[var(--ev-text)]">{t(payoutMethodLabels[form.payout?.method] || "N/A")}</b>
+                        {t("Payout")}: <b className="text-[var(--ev-text)]">{t(PAYOUT_METHOD_LABELS[form.payout?.method] || "N/A")}</b>
                       </div>
                       <div className="mt-1 text-xs text-[var(--ev-subtle)]">
                         {t("Currency")}: <b className="text-[var(--ev-text)]">{form.payout?.currency || "N/A"}</b>
@@ -4185,7 +3481,7 @@ export default function SellerOnboardingProV4_JS() {
                 <li>{t("Once approved, listings, promos, wholesale and payouts unlock.")}</li>
               </ol>
               <div className="mt-3 text-xs">
-                {t("Approval tracking unlocks after submission.")}
+                <span onClick={() => navigate("/compliance")} className="underline font-bold cursor-pointer text-blue-600 hover:text-blue-800">{t("Compliance Center")}</span>
               </div>
             </div>
           </aside>
@@ -4199,7 +3495,6 @@ function PayoutTaxStep({
   form,
   setF,
   isLocked,
-  lookups,
   ownerContactName,
   ownerContactEmail,
   payoutErrors,
@@ -4309,22 +3604,15 @@ function PayoutTaxStep({
             <Stack direction="column" spacing={2}>
               <TextField
                 label={t("Wallet provider")}
-                select
                 fullWidth
                 size="small"
                 value={payout.mobileProvider}
                 onChange={(e) => updatePayout({ mobileProvider: e.target.value })}
+                placeholder={t("e.g. MTN, Airtel")}
                 disabled={isLocked}
                 error={showPayoutErrors && !!payoutErrors.mobileProvider}
                 helperText={showPayoutErrors && payoutErrors.mobileProvider ? payoutErrors.mobileProvider : ""}
-              >
-                <MenuItem value="">{t("Select wallet provider")}</MenuItem>
-                {lookups.mobileMoneyProviders.map((provider) => (
-                  <MenuItem key={provider.value} value={provider.value}>
-                    {t(provider.label)}
-                  </MenuItem>
-                ))}
-              </TextField>
+              />
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
                 <Box sx={{ minWidth: 180, width: "100%" }}>
                   <CountryCodeAutocomplete
@@ -4357,11 +3645,12 @@ function PayoutTaxStep({
                 disabled={isLocked}
               >
                 <MenuItem value="">{t("Select ID type")}</MenuItem>
-                {lookups.mobileIdTypes.map((item) => (
-                  <MenuItem key={item.value} value={item.value}>
-                    {t(item.label)}
-                  </MenuItem>
-                ))}
+                <MenuItem value="national_id">{t("National ID")}</MenuItem>
+                <MenuItem value="passport">{t("Passport")}</MenuItem>
+                <MenuItem value="drivers_license">{t("Driver's License")}</MenuItem>
+                <MenuItem value="tax_id">{t("Tax ID")}</MenuItem>
+                <MenuItem value="residence_permit">{t("Residence Permit")}</MenuItem>
+                <MenuItem value="voter_id">{t("Voter ID")}</MenuItem>
               </TextField>
               <TextField
                 label={t("ID number")}
@@ -4397,11 +3686,9 @@ function PayoutTaxStep({
               onChange={(e) => updatePayout({ alipayRegion: e.target.value })}
               disabled={isLocked}
             >
-              {lookups.payoutRegions.alipay.map((region) => (
-                <MenuItem key={region.value} value={region.value}>
-                  {t(region.label)}
-                </MenuItem>
-              ))}
+              <MenuItem value="mainland">{t("Mainland China")}</MenuItem>
+              <MenuItem value="hong_kong">{t("Hong Kong SAR")}</MenuItem>
+              <MenuItem value="other">{t("Other region")}</MenuItem>
             </TextField>
             <TextField
               label={t("Alipay login (phone or email)")}
@@ -4446,11 +3733,9 @@ function PayoutTaxStep({
               onChange={(e) => updatePayout({ wechatRegion: e.target.value })}
               disabled={isLocked}
             >
-              {lookups.payoutRegions.wechat.map((region) => (
-                <MenuItem key={region.value} value={region.value}>
-                  {t(region.label)}
-                </MenuItem>
-              ))}
+              <MenuItem value="mainland">{t("Mainland China")}</MenuItem>
+              <MenuItem value="hong_kong">{t("Hong Kong SAR")}</MenuItem>
+              <MenuItem value="other">{t("Other region")}</MenuItem>
             </TextField>
             <TextField
               label={t("WeChat ID")}
@@ -4578,7 +3863,7 @@ function PayoutTaxStep({
           </Typography>
 
           <Stack spacing={1.2}>
-            {lookups.payoutMethods.map((method) => {
+            {PAYOUT_METHODS.map((method) => {
               const selected = payout.method === method.value;
               return (
                 <Paper
@@ -4601,7 +3886,7 @@ function PayoutTaxStep({
                       size="small"
                       disabled={isLocked}
                     />
-                    {PAYOUT_METHOD_ICONS[method.value] || <IconWallet />}
+                    {method.icon}
                     <Box className="flex flex-col flex-1 min-w-0">
                       <Typography variant="body2" sx={{ color: EV_COLORS.textMain, fontWeight: selected ? 800 : 600 }}>
                         {t(method.label)}
@@ -4615,7 +3900,7 @@ function PayoutTaxStep({
                           overflow: "hidden",
                         }}
                       >
-                        {t(method.helper || "")}
+                        {t(method.helper)}
                       </Typography>
                     </Box>
                   </Box>
@@ -4643,7 +3928,7 @@ function PayoutTaxStep({
             <MenuItem value="">
               <em>{t("Choose currency")}</em>
             </MenuItem>
-            {lookups.payoutCurrencies.map((cur) => (
+            {PAYOUT_CURRENCIES.map((cur) => (
               <MenuItem key={cur} value={cur}>
                 {cur}
               </MenuItem>
@@ -4797,7 +4082,7 @@ function PayoutTaxStep({
         </Typography>
 
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ xs: "stretch", md: "flex-start" }}>
-          {lookups.payoutRhythms.map((rhythm) => {
+          {PAYOUT_RHYTHMS.map((rhythm) => {
             const selected = payout.rhythm === rhythm.value;
             return (
               <Paper

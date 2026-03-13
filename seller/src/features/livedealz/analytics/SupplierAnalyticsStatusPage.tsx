@@ -193,7 +193,7 @@ export default function AnalyticsRankDetailPage() {
   const [category, setCategory] = useState<Category>("All");
   const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("sales");
 
-  // Rank / tier live data
+  // Rank / tier demo data
   const nextTier: Rank["nextTier"] = rankTier === "Bronze" ? "Silver" : rankTier === "Silver" ? "Gold" : "Platinum";
   const rank: Rank = {
     currentTier: rankTier,
@@ -1067,7 +1067,7 @@ function MetricCard({
       : card.value.toLocaleString();
 
   const sparkValues = useMemo(() => {
-    // Lightweight spark values. In real use, pass series points.
+    // Lightweight spark values (demo). In real use, pass series points.
     const base = card.series === "views" ? 22 : card.series === "clicks" ? 10 : card.series === "conversions" ? 8 : 14;
     return Array.from({ length: 10 }).map((_, i) => {
       const t = i / 9;
@@ -1167,7 +1167,7 @@ function ConversionsByCampaignPanel({ campaigns, mode }: { campaigns: CampaignRo
   // Convert to a chart-friendly series.
   const items = useMemo(() => {
     return campaigns.map((c) => {
-      // Approx conversions: sales / avg basket. In real, use real conversions.
+      // Approx conversions: sales / avg basket (demo). In real, use real conversions.
       const conversions = Math.max(1, Math.round(c.sales / 120));
       return {
         label: c.name,

@@ -484,7 +484,7 @@ export default function WholesaleHomePage() {
                   <div className="min-w-0">
                     <div className="text-sm font-black text-orange-900">Daily Command</div>
                     <div className="mt-1 text-xs font-semibold text-orange-900/70">
-                      Suggested next actions
+                      Suggested next actions (demo)
                     </div>
                     <div className="mt-3 space-y-2">
                       <Row left="Respond to urgent RFQs" right="2" sub="1 expires today" />

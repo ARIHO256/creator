@@ -8,25 +8,32 @@ import { AppThemeProvider } from "./theme/AppThemeProvider";
 import "./styles/theme.css";
 import "./index.css";
 
+const shouldEnableMocks =
+  import.meta.env.DEV ||
+  import.meta.env.VITE_ENABLE_MOCKS === "1" ||
+  String(import.meta.env.VITE_USE_MOCKS || "").toLowerCase() === "true";
+
+if (shouldEnableMocks) {
+  // Load mock modules lazily so production and first paint do not pay this cost.
+  void import("./mocks").then(({ initMocks }) => {
+    initMocks();
+  });
+}
+
 const container = document.getElementById("root");
 if (!container) {
   throw new Error("Root element #root not found");
 }
 
 const root = createRoot(container);
-
-const renderApp = () => {
-  root.render(
-    <AppThemeProvider>
-      <BrowserRouter>
-        <LocalizationProvider>
-          <ToastProvider>
-            <App />
-          </ToastProvider>
-        </LocalizationProvider>
-      </BrowserRouter>
-    </AppThemeProvider>
-  );
-};
-
-renderApp();
+root.render(
+  <AppThemeProvider>
+    <BrowserRouter>
+      <LocalizationProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </LocalizationProvider>
+    </BrowserRouter>
+  </AppThemeProvider>
+);

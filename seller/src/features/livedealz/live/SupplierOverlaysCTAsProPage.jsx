@@ -21,7 +21,7 @@ import React, { useEffect, useMemo, useState } from "react";
  *
  * Canvas-safe:
  * - No lucide-react imports. Inline SVG icons are provided.
- * - Replace local state with real session/campaign/store.
+ * - No backend. Replace demo state with real session/campaign/store.
  */
 
 const ORANGE = "#F77F00";
@@ -470,7 +470,7 @@ export default function SupplierOverlaysCTAsPro() {
 
             <Btn
               tone="primary"
-              onClick={() => setToast("Saved overlays")}
+              onClick={() => setToast("Saved overlays (demo)")}
               left={<CheckCircle2 className="h-4 w-4" />}
               disabled={!canSave}
               title={!canSave ? "Fix Preflight items" : "Save"}
@@ -605,7 +605,7 @@ export default function SupplierOverlaysCTAsPro() {
                     </Btn>
                     <Btn
                       tone="ghost"
-                      onClick={() => setToast("Created Asset Library task")}
+                      onClick={() => setToast("Created Asset Library task (demo)")}
                       left={<Download className="h-4 w-4" />}
                       title="In production: create a Deliverables → Asset Library item for the creator"
                     >
@@ -733,7 +733,7 @@ export default function SupplierOverlaysCTAsPro() {
                     >
                       Copy URL
                     </Btn>
-                    <Btn tone="ghost" onClick={() => setToast("Download QR overlay")} left={<Download className="h-4 w-4" />}>
+                    <Btn tone="ghost" onClick={() => setToast("Download QR overlay (demo)")} left={<Download className="h-4 w-4" />}>
                       Download PNG
                     </Btn>
                   </div>
@@ -834,7 +834,7 @@ export default function SupplierOverlaysCTAsPro() {
                       >
                         Copy
                       </Btn>
-                      <Btn tone="ghost" onClick={() => setToast("Open link in new tab")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => setToast("Open link in new tab (demo)")} left={<ExternalLink className="h-4 w-4" />}>
                         Open
                       </Btn>
                     </div>
@@ -1028,7 +1028,7 @@ export default function SupplierOverlaysCTAsPro() {
                         </Pill>
                       </div>
                       <input type="range" min={0} max={100} defaultValue={50} className="mt-2 w-full accent-[#F77F00]" />
-                      <div className="mt-1 text-[10px] text-neutral-600 dark:text-slate-500">A 50% • B 50%</div>
+                      <div className="mt-1 text-[10px] text-neutral-600 dark:text-slate-500">A 50% • B 50% (demo)</div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1037,7 +1037,7 @@ export default function SupplierOverlaysCTAsPro() {
                         <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Default for new sessions.</div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Btn onClick={() => setVariant("A")} left={<Eye className="h-4 w-4" />}>Preview A</Btn>
-                          <Btn tone="ghost" onClick={() => setToast("Exported Variant A")} left={<Download className="h-4 w-4" />}>Export</Btn>
+                          <Btn tone="ghost" onClick={() => setToast("Exported Variant A (demo)")} left={<Download className="h-4 w-4" />}>Export</Btn>
                         </div>
                       </div>
 
@@ -1049,7 +1049,7 @@ export default function SupplierOverlaysCTAsPro() {
                         <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Try different CTA copy/placement.</div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Btn onClick={() => setVariant("B")} left={<Eye className="h-4 w-4" />}>Preview B</Btn>
-                          <Btn tone="danger" onClick={() => setToast("Reset Variant B")} left={<Trash2 className="h-4 w-4" />}>Reset</Btn>
+                          <Btn tone="danger" onClick={() => setToast("Reset Variant B (demo)")} left={<Trash2 className="h-4 w-4" />}>Reset</Btn>
                         </div>
                       </div>
                     </div>
@@ -1178,7 +1178,7 @@ export default function SupplierOverlaysCTAsPro() {
                     </div>
 
                     <div className="mt-3 grid grid-cols-3 gap-2">
-                      <Btn tone="neutral" onClick={() => setToast("Fullscreen preview")} left={<Eye className="h-4 w-4" />}>Fullscreen</Btn>
+                      <Btn tone="neutral" onClick={() => setToast("Fullscreen preview (demo)")} left={<Eye className="h-4 w-4" />}>Fullscreen</Btn>
                       <Btn
                         tone="neutral"
                         onClick={async () => {
@@ -1189,7 +1189,7 @@ export default function SupplierOverlaysCTAsPro() {
                       >
                         Copy CTA
                       </Btn>
-                      <Btn tone="ghost" onClick={() => setToast("Open docs")} left={<ExternalLink className="h-4 w-4" />}>Docs</Btn>
+                      <Btn tone="ghost" onClick={() => setToast("Open docs (demo)")} left={<ExternalLink className="h-4 w-4" />}>Docs</Btn>
                     </div>
                   </div>
                 </div>
@@ -1231,7 +1231,7 @@ export default function SupplierOverlaysCTAsPro() {
                       {proBadge}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Btn tone="primary" onClick={() => setToast("Exported overlay pack")} left={<Download className="h-4 w-4" />}>Export pack</Btn>
+                      <Btn tone="primary" onClick={() => setToast("Exported overlay pack (demo)")} left={<Download className="h-4 w-4" />}>Export pack</Btn>
                       <Btn
                         onClick={async () => {
                           const spec = {

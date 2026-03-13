@@ -61,7 +61,7 @@ const IconSeo = () => <IconShell>🔎</IconShell>;
 // -----------------------------------------------------------------------------
 // Mock data – this mimics what comes from Admin Schema + Wizard Builder
 // -----------------------------------------------------------------------------
-const FORM_TABS = [
+const MOCK_TABS = [
   {
     id: "core",
     label: "Core Features",
@@ -106,7 +106,7 @@ const FORM_TABS = [
   },
 ];
 
-const STANDARD_STEPS = [
+const MOCK_STANDARD_STEPS = [
   {
     id: "pricing",
     label: "Pricing",
@@ -155,10 +155,10 @@ function SellerFormPreviewPage() {
   const location = useLocation();
   const wizardState = location?.state;
 
-  const [selectedTabId, setSelectedTabId] = useState(FORM_TABS[0].id);
+  const [selectedTabId, setSelectedTabId] = useState(MOCK_TABS[0].id);
 
   const selectedTab =
-    FORM_TABS.find((t) => t.id === selectedTabId) || FORM_TABS[0];
+    MOCK_TABS.find((t) => t.id === selectedTabId) || MOCK_TABS[0];
 
   const handleStartListing = () => {
     navigate("/listings/wizard", { state: wizardState });
@@ -251,7 +251,7 @@ function SellerFormPreviewPage() {
             </Box>
 
             <Box className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              {FORM_TABS.map((tab) => {
+              {MOCK_TABS.map((tab) => {
                 const isActive = tab.id === selectedTabId;
                 return (
                   <Paper
@@ -478,7 +478,7 @@ function SellerFormPreviewPage() {
               </Typography>
 
               <Box className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {STANDARD_STEPS.map((step) => (
+                {MOCK_STANDARD_STEPS.map((step) => (
                   <Paper
                     key={step.id}
                     elevation={0}

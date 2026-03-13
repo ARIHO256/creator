@@ -247,7 +247,11 @@ function MetricCard({ label, value, sub }) {
 /* ----------------------------- Cards ----------------------------- */
 
 function SocialLinksCard({ onAction }) {
-  const socials = [];
+  const socials = [
+    { id: "web", name: "Website", handle: "glowuphub.example", tag: "WEB", color: "bg-slate-900" },
+    { id: "ig", name: "Instagram", handle: "@glowuphub", tag: "IG", color: "bg-pink-500" },
+    { id: "tt", name: "TikTok", handle: "@glowuphub", tag: "TT", color: "bg-slate-900" }
+  ];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
@@ -279,7 +283,11 @@ function SocialLinksCard({ onAction }) {
 }
 
 function PastCampaignsCard({ onAction }) {
-  const campaigns = [];
+  const campaigns = [
+    { id: 1, title: "Autumn Beauty Flash", period: "Feb 10 – Feb 23 · Combo", gmv: "$12,400", payout: "<48h", rating: "4.9" },
+    { id: 2, title: "Weekend Mask Bar", period: "Jan 18 – Jan 21 · Live", gmv: "$7,800", payout: "<72h", rating: "4.7" },
+    { id: 3, title: "Holiday Bundle Drop", period: "Nov 23 – Nov 25 · Shoppable Adz", gmv: "$18,900", payout: "<48h", rating: "4.8" }
+  ];
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
@@ -318,7 +326,7 @@ function PastCampaignsCard({ onAction }) {
 }
 
 function TagsCard() {
-  const tags = [];
+  const tags = ["#Beauty", "#Skincare", "#FastPayouts", "#Bundles", "#FlashDealz"];
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Tags</h2>
@@ -452,7 +460,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
   const markAccepted = () => {
     if (!record) return;
     setRecord({ ...record, status: "Accepted" });
-    toast?.("Supplier accepted.", "success");
+    toast?.("Supplier accepted (demo).", "success");
   };
 
   const openNegotiation = () => {
@@ -654,7 +662,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
             <div className="mt-3 flex flex-wrap gap-2">
               {/* ✅ Keep simulation button */}
               <Btn onClick={markAccepted} disabled={record.status === "Accepted"} title="Simulate supplier acceptance">
-                ✅ Mark Accepted
+                ✅ Mark Accepted (demo)
               </Btn>
               <Btn tone="primary" onClick={openNegotiation} disabled={record.status !== "Accepted"}>
                 🗣️ Open Negotiation Room
@@ -662,7 +670,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
               <Btn
                 onClick={() => {
                   go("/supplier/collabs/invites-from-creators");
-                  toast?.("Opening supplier inbox…", "info");
+                  toast?.("Opening supplier inbox (demo)…", "info");
                 }}
               >
                 📥 View Supplier Inbox
@@ -767,7 +775,7 @@ export default function SupplierPublicProfilePage() {
         <>
           <Btn
             onClick={() => {
-              toast("Public link copied", "success");
+              toast("Public link copied (demo)", "success");
             }}
           >
             🔗 Copy link
@@ -775,7 +783,7 @@ export default function SupplierPublicProfilePage() {
           <Btn
             tone="primary"
             onClick={() => {
-              toast("Opening profile editor", "info");
+              toast("Opening profile editor (demo)", "info");
             }}
           >
             ✏️ Edit
@@ -793,7 +801,7 @@ export default function SupplierPublicProfilePage() {
         rightContent={headerRight}
         onBack={() => {
           go(viewerMode === "Creator" ? "/creator/suppliers" : "/supplier/settings");
-          toast("Back", "info");
+          toast("Back (demo)", "info");
         }}
       />
 
@@ -922,7 +930,7 @@ export default function SupplierPublicProfilePage() {
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Collab preferences</h3>
                     <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
-                      Bundles + discounts, clear claims, before/after showcases, and audience Q&A.
+                      Bundles + discounts, clear claims, before/after demos, and audience Q&A.
                     </p>
                   </div>
                   <div>
@@ -982,7 +990,7 @@ export default function SupplierPublicProfilePage() {
                   <PortfolioRow
                     title="Weekend Mask Bar"
                     meta="Live Sessionz · East Africa"
-                    body="Education-first showcase. Low return rate and high repeat orders."
+                    body="Education-first demo. Low return rate and high repeat orders."
                     kpis={["GMV $7.8k", "Return 1.4%", "Rating 4.7"]}
                     onAction={() => handleAction("View Dealz")}
                   />
@@ -1050,7 +1058,7 @@ export default function SupplierPublicProfilePage() {
                       <div className="flex items-center gap-2">
                         <Btn
                           onClick={() => {
-                            toast("Opening pitch drawer", "info");
+                            toast("Opening pitch drawer (demo)", "info");
                             go(`/creator/opportunities/${op.id}`);
                           }}
                         >
@@ -1059,7 +1067,7 @@ export default function SupplierPublicProfilePage() {
                         {viewerMode === "Supplier" ? (
                           <Btn
                             tone="ghost"
-                            onClick={() => toast("Edit opportunity", "info")}
+                            onClick={() => toast("Edit opportunity (demo)", "info")}
                           >
                             ⚙️
                           </Btn>

@@ -1,9 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { UserRole } from "../../types/roles";
-import { useRolePageContent } from "../../data/pageContent";
-import type { AlertRuleConfig, AnalyticsAttributionRow, AnalyticsCohortContent, AnalyticsHighlights, AnalyticsKpi } from "../../data/pageTypes";
-import { sellerBackendApi } from "../../lib/backendApi";
+import { useRolePageContent } from "../../mock/shared/pageContent";
+import type { AlertRuleConfig, AnalyticsAttributionRow, AnalyticsCohortContent, AnalyticsHighlights, AnalyticsKpi } from "../../mock/shared/types";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -398,6 +397,32 @@ function Modal({
   );
 }
 
+function buildSeries(range: Range, role: Role) {
+  const len = range === "Today" ? 12 : range === "7D" ? 7 : range === "30D" ? 12 : 12;
+  const isProvider = role === "provider";
+  const base = isProvider
+    ? range === "Today"
+      ? 12
+      : range === "7D"
+        ? 52
+        : range === "30D"
+          ? 140
+          : 210
+    : range === "Today"
+      ? 18
+      : range === "7D"
+        ? 80
+        : range === "30D"
+          ? 220
+          : 360;
+  return Array.from({ length: len }).map((_, i) => {
+    const wave = Math.sin(i / 1.4) * 10;
+    const trend = i * (range === "90D" ? 2.3 : 1.3);
+    const jitter = ((i * 17) % 9) - 4;
+    return Math.max(1, base + wave + trend + jitter);
+  });
+}
+
 export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn }) {
   const navigate: NavigateFn =
     onNavigate ??
@@ -442,14 +467,8 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const series = useMemo(() => {
-    const keyed = content.seriesByRange?.[range];
-    return Array.isArray(keyed) ? keyed : [];
-  }, [content, range]);
-  const mini = useMemo(() => {
-    const keyed = content.seriesByRange?.["7D"];
-    return Array.isArray(keyed) ? keyed.slice(0, 10) : [];
-  }, [content]);
+  const series = useMemo(() => buildSeries(range, role), [range, role]);
+  const mini = useMemo(() => buildSeries("7D", role).slice(0, 10), [role]);
 
   const overviewKpis = useMemo<AnalyticsKpi[]>(() => content.overviewKpis, [content]);
   const highlights = useMemo<AnalyticsHighlights>(() => content.highlights, [content]);
@@ -458,10 +477,6 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
   const [rules, setRules] = useState<AlertRule[]>(() => defaultRules);
   const [addOpen, setAddOpen] = useState(false);
   const [draft, setDraft] = useState<AlertRule>(() => defaultDraft);
-  const persistRules = (next: AlertRule[]) => {
-    setRules(next);
-    void sellerBackendApi.patchAnalyticsPage({ alertRules: next }).catch(() => undefined);
-  };
   useEffect(() => {
     setRules(defaultRules);
     setDraft(defaultDraft);
@@ -795,7 +810,7 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
                         <button
                           type="button"
                           onClick={() => {
-                            persistRules(rules.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)));
+                            setRules((s) => s.map((x) => (x.id === r.id ? { ...x, enabled: !x.enabled } : x)));
                             pushToast({ title: "Rule updated", message: r.name, tone: "success" });
                           }}
                           className={cx(
@@ -819,8 +834,8 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
                           type="button"
                           onClick={() => {
                             const prev = rules;
-                            persistRules(rules.filter((x) => x.id !== r.id));
-                            pushToast({ title: "Rule deleted", tone: "warning", action: { label: "Undo", onClick: () => persistRules(prev) } });
+                            setRules((s) => s.filter((x) => x.id !== r.id));
+                            pushToast({ title: "Rule deleted", tone: "warning", action: { label: "Undo", onClick: () => setRules(prev) } });
                           }}
                           className="ml-auto rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700"
                         >
@@ -883,7 +898,7 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
                 <div className="mt-2 text-xs font-semibold text-slate-500">Escalate high severity alerts to your support workflow and audit.</div>
                 <button
                   type="button"
-                  onClick={() => pushToast({ title: "Escalation", message: "Wire to email, SMS, WhatsApp or Slack.", tone: "default" })}
+                  onClick={() => pushToast({ title: "Escalation demo", message: "Wire to email, SMS, WhatsApp or Slack.", tone: "default" })}
                   className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                 >
                   Configure
@@ -994,11 +1009,11 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
               onClick={() => {
                 const name = draft.name.trim() || `${draft.metric} ${draft.condition}`;
                 if (draft.id) {
-                  persistRules(rules.map((x) => (x.id === draft.id ? { ...draft, name } : x)));
+                  setRules((s) => s.map((x) => (x.id === draft.id ? { ...draft, name } : x)));
                   pushToast({ title: "Rule updated", message: name, tone: "success" });
                 } else {
                   const next = { ...draft, id: makeId("rule"), name };
-                  persistRules([next, ...rules]);
+                  setRules((s) => [next, ...s]);
                   pushToast({ title: "Rule created", message: name, tone: "success" });
                 }
                 setAddOpen(false);
