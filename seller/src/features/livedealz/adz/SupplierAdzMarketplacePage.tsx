@@ -1351,7 +1351,7 @@ export default function SupplierAdzMarketplacePage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useState(DEMO_ADS);
+  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;

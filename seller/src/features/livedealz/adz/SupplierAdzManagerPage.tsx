@@ -523,7 +523,7 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useState(DEMO_ADS);
+  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;

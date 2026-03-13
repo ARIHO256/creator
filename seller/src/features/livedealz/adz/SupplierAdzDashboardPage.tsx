@@ -1279,7 +1279,7 @@ export default function SupplierAdzDashboardPage() {
   const [drawer, setDrawer] = useState(null); // null | calendar | quickLinks | performance | builder
   const [drawerData, setDrawerData] = useState(undefined); // adId
 
-  const [ads, setAds] = useState(DEMO_ADS);
+  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;
