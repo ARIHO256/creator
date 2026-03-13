@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 /**
  * SupplierContractsPage.jsx
@@ -26,6 +27,9 @@ import React, { useMemo, useState, useEffect } from "react";
  */
 
 const ORANGE = "#f77f00";
+const ROUTES = {
+  proposals: "/mldz/collab/proposals",
+};
 
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
@@ -685,7 +689,7 @@ function ContractDetail({ contract, onUpdateContract }) {
                     className="px-3 py-1.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] font-extrabold"
                     onClick={() => {
                       setTerminationStatus("Resolved");
-                      toast("Termination resolved (demo)");
+                      toast("Termination resolved");
                     }}
                     disabled={terminationStatus === "Resolved"}
                   >
@@ -699,7 +703,7 @@ function ContractDetail({ contract, onUpdateContract }) {
                       setNotificationsSentTo([]);
                       setTerminationExplanation("");
                       setTerminationReason("for-cause");
-                      toast("Termination flow reset (demo)");
+                      toast("Termination flow reset");
                     }}
                   >
                     Reset
@@ -746,6 +750,7 @@ function ContractDetail({ contract, onUpdateContract }) {
 /* -------------------------------- Main ---------------------------------- */
 
 export default function SupplierContractsPage() {
+  const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState("Active");
   const [selectedContractId, setSelectedContractId] = useState("");
 
@@ -787,27 +792,9 @@ export default function SupplierContractsPage() {
             <button
               type="button"
               className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 transition-colors"
-              onClick={() => toast("Open Proposals (demo)")}
+              onClick={() => navigate(ROUTES.proposals)}
             >
               Proposals
-            </button>
-            <button
-              type="button"
-              className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white font-extrabold hover:bg-[#e26f00]"
-              onClick={() => toast("Create contract (demo)")}
-            >
-              New Contract
-            </button>
-            <button
-              type="button"
-              className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 transition-colors"
-              onClick={() => {
-                setDataState((s) => (s === "ready" ? "loading" : s === "loading" ? "error" : "ready"));
-                toast("Toggled data state (demo)");
-              }}
-              title="Toggle loading/error (demo)"
-            >
-              ⚙️
             </button>
           </>
         }
@@ -857,7 +844,7 @@ export default function SupplierContractsPage() {
             {dataState === "error" ? (
               <div className="rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 p-3">
                 <div className="text-sm font-extrabold text-rose-900 dark:text-rose-200">Contracts failed to load</div>
-                <div className="text-xs text-rose-800 dark:text-rose-300 mt-1">Check connectivity or retry. (Demo error state)</div>
+                <div className="text-xs text-rose-800 dark:text-rose-300 mt-1">Check connectivity or retry.</div>
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
@@ -865,13 +852,6 @@ export default function SupplierContractsPage() {
                     onClick={() => setDataState("ready")}
                   >
                     Retry
-                  </button>
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-full border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-900 text-[11px] font-extrabold text-rose-700 dark:text-rose-300"
-                    onClick={() => toast("Open AI helper (demo)")}
-                  >
-                    Open AI helper
                   </button>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 /**
  * SupplierProposalsPage.jsx
@@ -30,6 +31,11 @@ import React, { useEffect, useMemo, useState } from "react";
  */
 
 const ORANGE = "#f77f00";
+const ROUTES = {
+  campaignsBoard: "/mldz/collab/campaigns",
+  contracts: "/mldz/collab/contracts",
+  negotiationRoom: "/mldz/collab/negotiation-room",
+};
 
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
@@ -662,7 +668,7 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, onOpenDr
         {proposal.status === "In negotiation" ? (
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
             <button
-              onClick={() => toast("Go to Negotiation Room (demo)")}
+              onClick={() => window.location.assign(ROUTES.negotiationRoom)}
               className="w-full px-4 py-2 rounded-xl border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/10 text-amber-700 dark:text-amber-400 font-bold text-[11px] hover:bg-amber-100 dark:hover:bg-amber-900/20 transition-all"
               type="button"
             >
@@ -773,16 +779,9 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, onOpenDr
             <button
               type="button"
               className="px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[11px] font-extrabold text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800"
-              onClick={() => toast("Open Contracts (demo)")}
+              onClick={() => window.location.assign(ROUTES.contracts)}
             >
               View Contract
-            </button>
-            <button
-              type="button"
-              className="px-4 py-2 rounded-2xl bg-[#f77f00] text-white text-[11px] font-extrabold hover:bg-[#e26f00]"
-              onClick={() => toast("Generate Contract from proposal (demo)")}
-            >
-              Generate / Confirm Contract
             </button>
           </div>
         ) : null}
@@ -813,6 +812,7 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, onOpenDr
 /* -------------------------------- Main ---------------------------------- */
 
 export default function SupplierProposalsPage() {
+  const navigate = useNavigate();
   const [proposals, setProposals] = useState<Array<Record<string, any>>>([]);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -940,7 +940,7 @@ export default function SupplierProposalsPage() {
             </span>
             <button
               className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors"
-              onClick={() => toast("Open Campaigns Board (demo)")}
+              onClick={() => navigate(ROUTES.campaignsBoard)}
               type="button"
             >
               View Campaigns Board
@@ -969,7 +969,7 @@ export default function SupplierProposalsPage() {
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <button
                 className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors"
-                onClick={() => toast("Open Contracts (demo)")}
+                onClick={() => navigate(ROUTES.contracts)}
                 type="button"
               >
                 Open Contracts

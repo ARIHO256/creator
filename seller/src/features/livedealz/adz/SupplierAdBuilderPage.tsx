@@ -1744,13 +1744,20 @@ export default function AdBuilder({
       setRuntimeError(null);
 
       try {
-        const [campaignRecords, mediaAssets, builderRecord] = await Promise.all([
+        const [campaignRecordsResult, mediaAssetsResult, builderRecordResult] = await Promise.allSettled([
           backendApi.getAdzCampaigns(),
           backendApi.getMediaAssets(),
-          backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID).catch(() => null),
+          backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID),
         ]);
 
         if (cancelled) return;
+        if (campaignRecordsResult.status !== "fulfilled" || mediaAssetsResult.status !== "fulfilled") {
+          throw new Error("Failed to load ad builder runtime");
+        }
+        const campaignRecords = campaignRecordsResult.value;
+        const mediaAssets = mediaAssetsResult.value;
+        const builderRecord =
+          builderRecordResult.status === "fulfilled" ? builderRecordResult.value : null;
 
         const mappedScope = mapAdzBuilderScope(campaignRecords);
         const mappedAssets = mediaAssets
@@ -2093,7 +2100,9 @@ export default function AdBuilder({
 
     void (async () => {
         if (shouldRestore) {
-          const saved = await backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID).catch(() => null);
+          const savedResult = await Promise.allSettled([backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID)]);
+          const saved =
+            savedResult[0].status === "fulfilled" ? savedResult[0].value : null;
           if (saved) {
             const mapped = mapBackendAdzBuilder(saved);
           if (mapped.builder && Object.keys(mapped.builder).length) {

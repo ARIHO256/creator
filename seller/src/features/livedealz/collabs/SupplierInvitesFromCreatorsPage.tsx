@@ -29,7 +29,8 @@ import { useNavigate } from "react-router-dom";
 
 const ORANGE = "#f77f00";
 const ROUTES = {
-  campaignsBoard: "/mldz/collab/campaigns"
+  campaignsBoard: "/mldz/collab/campaigns",
+  creatorDirectory: "/mldz/creators/directory",
 };
 
 function cx(...xs) {
@@ -436,7 +437,7 @@ function InviteDetailPanel({ invite, onNegotiate, onAccept, onDecline, isPending
               className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 hover:text-[#f77f00] hover:border-[#f77f00] dark:hover:text-[#f77f00] dark:hover:border-[#f77f00] transition-all shadow-sm group"
               title="View Creator"
               type="button"
-              onClick={() => toast(`Open creator profile: ${invite.creator} (demo)`)}
+              onClick={() => window.location.assign(ROUTES.creatorDirectory)}
             >
               <span className="text-sm group-hover:scale-110 transition-transform">👁️</span>
             </button>
@@ -548,7 +549,7 @@ function InviteDetailPanel({ invite, onNegotiate, onAccept, onDecline, isPending
           <button
             type="button"
             className="text-xs font-bold text-[#f77f00] hover:underline flex items-center gap-1"
-            onClick={() => toast("AI Assistant opened (demo)")}
+            onClick={() => window.location.assign(ROUTES.campaignsBoard)}
           >
             Ask AI Assistant 🪄
           </button>
@@ -708,7 +709,7 @@ export default function SupplierInvitesFromCreatorsPage() {
               <button
                 type="button"
                 className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors"
-                onClick={() => toast("Open Creator Directory (demo)")}
+                onClick={() => safeNavTo(navigate, ROUTES.creatorDirectory)}
               >
                 Open Creator Directory
               </button>
