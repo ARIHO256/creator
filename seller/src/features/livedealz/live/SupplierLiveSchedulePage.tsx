@@ -38,7 +38,6 @@ const AI_SLOTS: Array<Record<string, any>> = [];
  * - "Supplier" when Supplier chose “I will NOT use a Creator” (supplier acts as creator)
  * - "Creator" when Supplier is using a creator
  */
-const SESSIONS: Array<Record<string, any>> = [];
 
 /* --------------------------------- Toast ---------------------------------- */
 
@@ -178,6 +177,7 @@ function QRCodeMock({ value, size = 160 }) {
 
 export default function SupplierLiveScheduleCalendarPage() {
   const navigate = useNavigate();
+  const sessions = useMemo<Array<Record<string, any>>>(() => [], []);
   const [viewMode, setViewMode] = useState("week"); // week | month | agenda
   const [selectedSession, setSelectedSession] = useState(null);
   const [toast, setToast] = useState(null);
@@ -197,41 +197,41 @@ export default function SupplierLiveScheduleCalendarPage() {
 
   const conflicts = useMemo(() => {
     const msgs = [];
-    const heavy = SESSIONS.filter((s) => s.workloadScore >= 4);
+    const heavy = sessions.filter((s) => s.workloadScore >= 4);
     if (heavy.length) {
       msgs.push("You have heavy workload on Tech Friday. Consider spacing prep and lives.");
     }
 
-    const conflictSessions = SESSIONS.filter((s) => s.conflict);
+    const conflictSessions = sessions.filter((s) => s.conflict);
     if (conflictSessions.length) {
       msgs.push("Some sessionz may overlap with prep windows. Review supplier-hosted Tech Friday schedule.");
     }
 
-    const pendingAssets = SESSIONS.filter((s) => !s.assetsReady && s.status !== "Ended");
+    const pendingAssets = sessions.filter((s) => !s.assetsReady && s.status !== "Ended");
     if (pendingAssets.length) {
       msgs.push("Some sessionz are missing assets. If approval mode is Manual, delays can block Admin review.");
     }
 
     return msgs;
-  }, []);
+  }, [sessions]);
 
   const sessionsByDay = useMemo(() => {
     const map = {};
     WEEK_DAYS.forEach((d) => (map[d] = []));
-    SESSIONS.forEach((s) => {
+    sessions.forEach((s) => {
       if (!map[s.weekday]) map[s.weekday] = [];
       map[s.weekday].push(s);
     });
     return map;
-  }, []);
+  }, [sessions]);
 
   const agendaSessions = useMemo(() => {
-    return [...SESSIONS].sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       const order = WEEK_DAYS.indexOf(a.weekday) - WEEK_DAYS.indexOf(b.weekday);
       if (order !== 0) return order;
       return a.time.localeCompare(b.time);
     });
-  }, []);
+  }, [sessions]);
 
   const handleStartRehearsal = (session) => {
     showToast(`Entering rehearsal for "${session.title}"`);
@@ -348,7 +348,7 @@ export default function SupplierLiveScheduleCalendarPage() {
           <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start text-sm">
             {/* Calendar View (Week, Month, or Agenda) */}
             {viewMode === "month" ? (
-              <MonthView sessions={SESSIONS} onSelectSession={setSelectedSession} />
+              <MonthView sessions={sessions} onSelectSession={setSelectedSession} />
             ) : viewMode === "agenda" ? (
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
                 <div className="flex items-center justify-between mb-2">

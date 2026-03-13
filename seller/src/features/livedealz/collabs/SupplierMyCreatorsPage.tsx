@@ -145,10 +145,6 @@ function ConfirmationModal({ isOpen, onClose, onConfirm, title, message, confirm
   );
 }
 
-/* ------------------------------- Data ----------------------------------- */
-
-const INITIAL_MY_CREATORS = [];
-
 /* ---------------------------- Invite Drawer ------------------------------ */
 
 function useScrollLock(locked) {
@@ -789,7 +785,7 @@ function CreatorDetailPanel({ creator, onNavigate, onInvite, onStopCollaboration
 
 export default function SupplierMyCreatorsPage() {
   const navigate = useNavigate();
-  const [myCreators, setMyCreators] = useState(INITIAL_MY_CREATORS);
+  const [myCreators, setMyCreators] = useState<Array<Record<string, any>>>([]);
   const [search, setSearch] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState("All"); // All | Active collab | Past collab
   const [viewTab, setViewTab] = useState("all"); // all | active | past

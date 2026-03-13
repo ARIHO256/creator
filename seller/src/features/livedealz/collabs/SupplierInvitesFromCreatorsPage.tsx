@@ -129,10 +129,6 @@ function PageHeader({ pageTitle, badge, right }) {
   );
 }
 
-/* ------------------------------- Data ----------------------------------- */
-
-const INVITES = [];
-
 const TABS = [
   { id: "all", label: "All" },
   { id: "new", label: "New" },
@@ -604,7 +600,7 @@ export default function SupplierInvitesFromCreatorsPage() {
   const navigate = useNavigate();
   const safeNav = (url) => safeNavTo(navigate, url);
   // In production: fetch from /supplier/collabs/invites-from-creators
-  const [invites, setInvites] = useState(INVITES);
+  const [invites, setInvites] = useState<Array<Record<string, any>>>([]);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");

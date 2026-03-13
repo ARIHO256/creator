@@ -111,8 +111,6 @@ function PageHeader({ pageTitle, badge, right }) {
 
 /* ------------------------------- Data ----------------------------------- */
 
-const PROPOSALS: Array<Record<string, any>> = [];
-
 const TABS = [
   { id: "all", label: "All" },
   { id: "from-creators", label: "From Creators" },
@@ -815,12 +813,12 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, onOpenDr
 /* -------------------------------- Main ---------------------------------- */
 
 export default function SupplierProposalsPage() {
-  const [proposals, setProposals] = useState<Array<Record<string, any>>>(PROPOSALS);
+  const [proposals, setProposals] = useState<Array<Record<string, any>>>([]);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [minBudget, setMinBudget] = useState("");
-  const [selectedProposalId, setSelectedProposalId] = useState(PROPOSALS[0]?.id ?? null);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [expandedProposalId, setExpandedProposalId] = useState(null);
 
   const [drawerOpen, setDrawerOpen] = useState(false);

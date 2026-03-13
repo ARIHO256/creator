@@ -1565,7 +1565,7 @@ export default function SupplierMyCampaignsPage() {
       const assetId = sp.get('assetId') || '';
       const applyTo = sp.get('applyTo') || '';
       if (assetId && applyTo === 'campaignGiveawayPoster') {
-        const assets = await backendApi.getMediaAssets().catch(() => []);
+        const assets = await backendApi.getMediaAssets();
         const rawAsset = assets.find((entry) => String(entry.id || '') === assetId);
         const asset = rawAsset
           ? coercePickedImageAsset({

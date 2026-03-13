@@ -2114,7 +2114,7 @@ export default function AdBuilder({
       }
 
       if (assetId) {
-        const rawAssets = await backendApi.getMediaAssets().catch(() => []);
+        const rawAssets = await backendApi.getMediaAssets();
         const picked = rawAssets.find((entry) => String(entry.id || "") === assetId);
         if (picked) {
           const asset = coerceAssetFromPickerPayload({

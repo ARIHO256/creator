@@ -14,17 +14,8 @@ export type SellerCart = {
 
 const CART_KEY = "commerce.cart";
 
-const emptyCart = (): SellerCart => ({
-  id: "cart_default",
-  items: [],
-  updatedAt: new Date().toISOString(),
-});
-
 export async function getSellerCart() {
-  const payload = await sellerBackendApi.getSellerCart().catch(() => null);
-  if (!payload) {
-    return emptyCart();
-  }
+  const payload = await sellerBackendApi.getSellerCart();
   const items = Array.isArray(payload.items)
     ? payload.items
         .map((item) => {
@@ -45,10 +36,7 @@ export async function getSellerCart() {
 }
 
 export async function addSellerCartItem(listingId: string, qty = 1) {
-  const payload = await sellerBackendApi.addSellerCartItem({ listingId, qty }).catch(() => null);
-  if (!payload) {
-    return getSellerCart();
-  }
+  const payload = await sellerBackendApi.addSellerCartItem({ listingId, qty });
   const items = Array.isArray(payload.items)
     ? payload.items
         .map((item) => {

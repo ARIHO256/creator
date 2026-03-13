@@ -123,10 +123,6 @@ function healthWidth(item) {
   return "18%";
 }
 
-/* -------------------------------- Mock Data ------------------------------ */
-
-const INITIAL_ITEMS = [];
-
 /* -------------------------------- UI Primitives -------------------------- */
 
 function PageHeader({ pageTitle, badge, rightContent }) {

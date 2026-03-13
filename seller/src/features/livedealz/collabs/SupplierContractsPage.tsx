@@ -132,8 +132,6 @@ function ConfirmModal({ isOpen, title, message, confirmText = "Confirm", confirm
 
 const CONTRACT_FILTERS = ["All", "Active", "Upcoming", "Completed", "Terminated"];
 
-const MOCK_CONTRACTS = [];
-
 /* ----------------------------- Subcomponents ---------------------------- */
 
 function ContractHealthPill({ health, score }) {
@@ -753,7 +751,7 @@ export default function SupplierContractsPage() {
 
   const [dataState, setDataState] = useState("ready"); // ready | loading | error
 
-  const [contracts, setContracts] = useState(MOCK_CONTRACTS);
+  const [contracts, setContracts] = useState<Array<Record<string, any>>>([]);
 
   const filteredContracts = useMemo(() => {
     return contracts.filter((c) => {
@@ -927,7 +925,5 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
 
   assert(cx("a", false && "b", "c") === "a c", "cx joins truthy");
-  assert(Array.isArray(MOCK_CONTRACTS), "contracts seed is an array");
-
   console.log("✅ SupplierContractsPage self-tests passed");
 }

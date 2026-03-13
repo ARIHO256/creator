@@ -43,10 +43,6 @@ function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
-/* ----------------------------- Mock Contracts ----------------------------- */
-
-const CONTRACTS: Array<Record<string, any>> = [];
-
 /* ----------------------------- Types / Config ----------------------------- */
 
 const COLUMNS = [
@@ -286,11 +282,12 @@ function Toast({ text, onClose }) {
 /* ----------------------------- Main Page ----------------------------- */
 
 export default function SupplierTaskBoardPage() {
+  const contracts = useMemo<Array<Record<string, any>>>(() => [], []);
   // 1) Derive all tasks from contracts
   const allDerivedTasks = useMemo(() => {
     const tasks = [];
 
-    CONTRACTS.forEach((contract) => {
+    contracts.forEach((contract) => {
       if (contract.status === "Terminated") return;
 
       (contract.deliverables || []).forEach((d) => {
@@ -356,7 +353,7 @@ export default function SupplierTaskBoardPage() {
     });
 
     return tasks;
-  }, []);
+  }, [contracts]);
 
   // 2) Distribute into columns (mirrors creator logic)
   const [columns, setColumns] = useState(() => {
@@ -629,7 +626,7 @@ export default function SupplierTaskBoardPage() {
       <NewTaskDrawer
         open={newTaskOpen}
         onClose={() => setNewTaskOpen(false)}
-        contracts={CONTRACTS.filter((c) => c.status !== "Terminated")}
+        contracts={contracts.filter((c) => c.status !== "Terminated")}
         existingTasks={allTasksFlat}
         onCreate={(payload) => addNewTaskToBoard(payload)}
         setToast={setToast}

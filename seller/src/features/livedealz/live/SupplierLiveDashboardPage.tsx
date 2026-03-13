@@ -312,21 +312,11 @@ function BarList({ items }) {
   );
 }
 
-/* ---------------------------------- Seed ---------------------------------- */
-
-const suppliersSeed = [];
-
-const campaignsSeed = [];
-
-const hostsSeed = [];
-
 function isoNowPlus(ms) {
   return new Date(Date.now() + ms).toISOString();
 }
 
 const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-
-const sessionsSeed = [];
 
 /* ------------------------------ UI primitives ------------------------------ */
 
@@ -1228,7 +1218,10 @@ export default function SupplierLiveDashboardPage() {
   const toastApi = useToast();
   const { run, isPending } = useAsyncAction(toastApi);
 
-  const [sessions, setSessions] = useState(sessionsSeed);
+  const [sessions, setSessions] = useState<Array<Record<string, any>>>([]);
+  const suppliers = useMemo<Array<Record<string, any>>>(() => [], []);
+  const campaigns = useMemo<Array<Record<string, any>>>(() => [], []);
+  const hosts = useMemo<Array<Record<string, any>>>(() => [], []);
 
   // Filters
   const [tab, setTab] = useState("All");
@@ -1324,9 +1317,9 @@ export default function SupplierLiveDashboardPage() {
   }, [sessions, tab, supplierId, q]);
 
   const active = useMemo(() => (activeId ? sessions.find((s) => s.id === activeId) || null : null), [sessions, activeId]);
-  const activeSupplier = useMemo(() => (active ? suppliersSeed.find((p) => p.id === active.supplierId) : undefined), [active]);
-  const activeCampaign = useMemo(() => (active?.campaignId ? campaignsSeed.find((c) => c.id === active.campaignId) : undefined), [active]);
-  const activeHost = useMemo(() => (active ? hostsSeed.find((h) => h.id === active.hostId) : undefined), [active]);
+  const activeSupplier = useMemo(() => (active ? suppliers.find((p) => p.id === active.supplierId) : undefined), [active, suppliers]);
+  const activeCampaign = useMemo(() => (active?.campaignId ? campaigns.find((c) => c.id === active.campaignId) : undefined), [active, campaigns]);
+  const activeHost = useMemo(() => (active ? hosts.find((h) => h.id === active.hostId) : undefined), [active, hosts]);
 
   const kpis = useMemo(() => {
     const live = sessions.filter((s) => s.status === "Live").length;
@@ -1357,9 +1350,9 @@ export default function SupplierLiveDashboardPage() {
   }, [sessions]);
 
   const toolSession = useMemo(() => sessions.find((s) => s.id === toolSessionId) || null, [sessions, toolSessionId]);
-  const toolSupplier = useMemo(() => (toolSession ? suppliersSeed.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession]);
-  const toolHost = useMemo(() => (toolSession ? hostsSeed.find((h) => h.id === toolSession.hostId) : undefined), [toolSession]);
-  const toolCampaign = useMemo(() => (toolSession?.campaignId ? campaignsSeed.find((c) => c.id === toolSession.campaignId) : undefined), [toolSession]);
+  const toolSupplier = useMemo(() => (toolSession ? suppliers.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession, suppliers]);
+  const toolHost = useMemo(() => (toolSession ? hosts.find((h) => h.id === toolSession.hostId) : undefined), [toolSession, hosts]);
+  const toolCampaign = useMemo(() => (toolSession?.campaignId ? campaigns.find((c) => c.id === toolSession.campaignId) : undefined), [toolSession, campaigns]);
 
   const waPrompt = useMemo(() => {
     if (!toolSession) return null;
@@ -1847,7 +1840,7 @@ export default function SupplierLiveDashboardPage() {
                   onChange={(e) => setSupplierId(e.target.value)}
                 >
                   <option value="all">All suppliers</option>
-                  {suppliersSeed.map((p) => (
+                  {suppliers.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -1879,8 +1872,8 @@ export default function SupplierLiveDashboardPage() {
 
                   <tbody className="divide-y divide-slate-100">
                     {filtered.map((s) => {
-                      const p = suppliersSeed.find((x) => x.id === s.supplierId);
-                      const h = hostsSeed.find((x) => x.id === s.hostId);
+                      const p = suppliers.find((x) => x.id === s.supplierId);
+                      const h = hosts.find((x) => x.id === s.hostId);
                       const tone = s.status === "Live" ? "good" : s.status === "Scheduled" ? "warn" : s.status === "Ended" ? "neutral" : "neutral";
 
                       return (
@@ -1910,7 +1903,7 @@ export default function SupplierLiveDashboardPage() {
                               {p?.avatarUrl ? <img src={p.avatarUrl} className="h-7 w-7 rounded-full border border-slate-200 object-cover" alt={p.name} /> : null}
                               <div className="min-w-0">
                                 <div className="text-[12px] font-bold truncate text-slate-900 dark:text-slate-100">{p?.name || "—"}</div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaignsSeed.find((c) => c.id === s.campaignId)?.name || "—"}</div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaigns.find((c) => c.id === s.campaignId)?.name || "—"}</div>
                               </div>
                             </div>
                           </td>
@@ -1978,9 +1971,9 @@ export default function SupplierLiveDashboardPage() {
         <NewLiveSessionDrawer
           open={newOpen}
           onClose={() => setNewOpen(false)}
-          suppliers={suppliersSeed}
-          campaigns={campaignsSeed}
-          hosts={hostsSeed}
+          suppliers={suppliers}
+          campaigns={campaigns}
+          hosts={hosts}
           onCreate={onCreateSession}
         />
 
@@ -2008,7 +2001,7 @@ export default function SupplierLiveDashboardPage() {
           session={sessions.find((s) => s.id === (builderSessionId || "")) || null}
           campaign={
             builderSessionId
-              ? campaignsSeed.find((c) => c.id === sessions.find((s) => s.id === builderSessionId)?.campaignId)
+              ? campaigns.find((c) => c.id === sessions.find((s) => s.id === builderSessionId)?.campaignId)
               : null
           }
           toastApi={toastApi}

@@ -183,10 +183,6 @@ function makeId(prefix = "ID") {
   return `${prefix}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
 }
 
-/* ----------------------------- Seed data ----------------------------- */
-
-const INITIAL_CAMPAIGNS = [];
-
 /* -------------------------- Row + KPI pills -------------------------- */
 
 function KpiPill({ label, value }) {
@@ -1387,7 +1383,7 @@ export default function SupplierCampaignsBoardPage() {
     minPitches: ""
   });
 
-  const [campaigns, setCampaigns] = useState(INITIAL_CAMPAIGNS);
+  const [campaigns, setCampaigns] = useState<Array<Record<string, any>>>([]);
 
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
