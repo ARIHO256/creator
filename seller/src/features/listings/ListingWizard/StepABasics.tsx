@@ -812,7 +812,7 @@ export default function ProductListingFromProductLinesPage() {
                 {t(copy.nextStepsTitle)}
               </Typography>
               <Stack spacing={1}>
-                {copy.nextSteps.map((s) => (
+                {(copy.nextSteps ?? []).map((s) => (
                   <Box key={s.title} sx={{ display: 'flex', gap: 1.25 }}>
                     <Box
                       sx={{

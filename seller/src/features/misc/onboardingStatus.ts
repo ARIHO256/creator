@@ -69,11 +69,9 @@ export const readOnboardingStatus = (role: UserRole = "seller", userInput: Sessi
     return legacy;
   }
 
-  if (user.userId || user.email || user.phone) {
-    map[key] = "DRAFT";
-    writeMap(map);
-  }
-  return "DRAFT";
+  // If we have no server/recorded status, don't assume onboarding is required.
+  // Sign-up flow explicitly marks onboarding via `onboardingRequired` + recordOnboardingStatus.
+  return "";
 };
 
 export const recordOnboardingStatus = (
@@ -98,6 +96,9 @@ export const clearOnboardingStatus = (role: UserRole = "seller", userInput: Sess
 
 export const needsOnboarding = (role: UserRole = "seller", userInput: Session | null = null) => {
   const user = userInput || {};
+  if (typeof user.onboardingRequired === "boolean") {
+    return user.onboardingRequired;
+  }
   if (typeof user.onboardingCompleted === "boolean") {
     return !user.onboardingCompleted;
   }
@@ -109,6 +110,7 @@ export const needsOnboarding = (role: UserRole = "seller", userInput: Session | 
     return true;
   }
   const status = readOnboardingStatus(role, userInput || {});
+  if (!status) return false;
   return !STATUS_DONE.includes(status || "");
 };
 

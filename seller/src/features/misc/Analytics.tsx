@@ -398,32 +398,6 @@ function Modal({
   );
 }
 
-function buildSeries(range: Range, role: Role) {
-  const len = range === "Today" ? 12 : range === "7D" ? 7 : range === "30D" ? 12 : 12;
-  const isProvider = role === "provider";
-  const base = isProvider
-    ? range === "Today"
-      ? 12
-      : range === "7D"
-        ? 52
-        : range === "30D"
-          ? 140
-          : 210
-    : range === "Today"
-      ? 18
-      : range === "7D"
-        ? 80
-        : range === "30D"
-          ? 220
-          : 360;
-  return Array.from({ length: len }).map((_, i) => {
-    const wave = Math.sin(i / 1.4) * 10;
-    const trend = i * (range === "90D" ? 2.3 : 1.3);
-    const jitter = ((i * 17) % 9) - 4;
-    return Math.max(1, base + wave + trend + jitter);
-  });
-}
-
 export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn }) {
   const navigate: NavigateFn =
     onNavigate ??
@@ -468,8 +442,14 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const series = useMemo(() => buildSeries(range, role), [range, role]);
-  const mini = useMemo(() => buildSeries("7D", role).slice(0, 10), [role]);
+  const series = useMemo(() => {
+    const keyed = content.seriesByRange?.[range];
+    return Array.isArray(keyed) ? keyed : [];
+  }, [content, range]);
+  const mini = useMemo(() => {
+    const keyed = content.seriesByRange?.["7D"];
+    return Array.isArray(keyed) ? keyed.slice(0, 10) : [];
+  }, [content]);
 
   const overviewKpis = useMemo<AnalyticsKpi[]>(() => content.overviewKpis, [content]);
   const highlights = useMemo<AnalyticsHighlights>(() => content.highlights, [content]);

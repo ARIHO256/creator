@@ -68,6 +68,7 @@ const INITIAL_PAGE_CONTENT: { [K in PageKey]: PageContentByKey<K> } = {
     cohort: { subtitle: "", bullets: [] },
     alertRules: [],
     metricOptions: [],
+    seriesByRange: { Today: [], "7D": [], "30D": [], "90D": [] },
   },
   helpSupport: {
     kb: [],
@@ -132,30 +133,56 @@ const INITIAL_PAGE_CONTENT: { [K in PageKey]: PageContentByKey<K> } = {
     taxonomy: [],
     baseLines: [],
     copy: {
-      heroTitle: "",
-      heroSubtitle: "",
-      manageLinesLabel: "",
-      approvedLinesTitle: "",
-      approvedLinesSubtitle: "",
-      selectedLineTitle: "",
-      selectedLineEmptyTitle: "",
-      selectedLineEmptySubtitle: "",
-      searchPlaceholder: "",
-      emptyTitle: "",
-      emptySubtitle: "",
-      suspendedHint: "",
-      eligibleHint: "",
-      tipText: "",
-      addLineLabel: "",
-      listingIntentLabel: "",
-      listingIntentOptions: [],
-      suspendedCardTitle: "",
-      suspendedCardBody: "",
-      previewCta: "",
-      startCta: "",
-      nextStepsTitle: "",
-      nextSteps: [],
-      taxonomyFallback: "",
+      heroTitle: "New listing",
+      heroSubtitle:
+        "Choose one of your approved product lines. You can only list within the taxonomy coverage you set during onboarding or in your storefront settings.",
+      manageLinesLabel: "Manage product lines",
+      approvedLinesTitle: "Your approved product lines",
+      approvedLinesSubtitle: "Pick a product line, then preview the form or start listing.",
+      selectedLineTitle: "Selected product line",
+      selectedLineEmptyTitle: "Select a product line to continue",
+      selectedLineEmptySubtitle:
+        "Choose an active product line from the list to preview the listing form.",
+      searchPlaceholder: "Search product lines (e.g., chargers, desktops)",
+      emptyTitle: "No product lines found",
+      emptySubtitle:
+        "Try adjusting your filters, or add/activate product lines in your storefront settings.",
+      suspendedHint: "Suspended",
+      eligibleHint: "Eligible for listing",
+      tipText:
+        "Tip: If you don’t see a product line, check onboarding approvals and your taxonomy coverage settings.",
+      addLineLabel: "Add product line",
+      listingIntentLabel: "What do you want to do?",
+      listingIntentOptions: [
+        { value: "new", label: "Create a new listing" },
+        { value: "restock", label: "Restock an existing listing" },
+        { value: "variant", label: "Add a variant to an existing listing" },
+      ],
+      suspendedCardTitle: "This product line is suspended",
+      suspendedCardBody:
+        "You can’t start new listings from a suspended product line. Contact support or resolve any compliance requirements to reactivate it.",
+      previewCta: "Preview form",
+      startCta: "Start listing",
+      nextStepsTitle: "What happens next",
+      nextSteps: [
+        {
+          title: "Form generated",
+          description: "EVzone generates a tailored listing form for the selected product line.",
+        },
+        {
+          title: "Add product details",
+          description: "Fill specifications, variants, photos, pricing and inventory.",
+        },
+        {
+          title: "Compliance checks",
+          description: "Some categories require extra documents or approvals.",
+        },
+        {
+          title: "Publish",
+          description: "Once approved, your product becomes visible on the marketplace.",
+        },
+      ],
+      taxonomyFallback: "Uncategorized",
     },
   },
   orders: {
@@ -248,7 +275,7 @@ async function loadDashboardContent(role: UserRole): Promise<DashboardContent> {
       bases: {
         revenueBase: bookings.reduce((sum, entry) => sum + Number(entry.price ?? 0), 0),
         ordersBase: bookings.length,
-        trustBase: 88,
+        trustBase: 0,
       },
     };
   }
@@ -338,7 +365,51 @@ async function loadComplianceContent(): Promise<ComplianceContent> {
 }
 
 async function loadListingWizardContent(): Promise<ListingWizardContent> {
-  return (await sellerBackendApi.getSellerListingWizard()) as ListingWizardContent;
+  const defaults = INITIAL_PAGE_CONTENT.listingWizard;
+  const payload = (await sellerBackendApi.getSellerListingWizard()) as Partial<ListingWizardContent> | null;
+
+  const fallbackString = (value: unknown, fallback: string) =>
+    typeof value === "string" && value.trim().length > 0 ? value : fallback;
+
+  const copyDefaults = defaults.copy;
+  const copyPayload = ((payload?.copy ?? {}) as Partial<ListingWizardContent["copy"]>) || {};
+
+  return {
+    taxonomy: Array.isArray(payload?.taxonomy) ? payload!.taxonomy : defaults.taxonomy,
+    baseLines: Array.isArray(payload?.baseLines) ? payload!.baseLines : defaults.baseLines,
+    copy: {
+      heroTitle: fallbackString(copyPayload.heroTitle, copyDefaults.heroTitle),
+      heroSubtitle: fallbackString(copyPayload.heroSubtitle, copyDefaults.heroSubtitle),
+      manageLinesLabel: fallbackString(copyPayload.manageLinesLabel, copyDefaults.manageLinesLabel),
+      approvedLinesTitle: fallbackString(copyPayload.approvedLinesTitle, copyDefaults.approvedLinesTitle),
+      approvedLinesSubtitle: fallbackString(copyPayload.approvedLinesSubtitle, copyDefaults.approvedLinesSubtitle),
+      selectedLineTitle: fallbackString(copyPayload.selectedLineTitle, copyDefaults.selectedLineTitle),
+      selectedLineEmptyTitle: fallbackString(copyPayload.selectedLineEmptyTitle, copyDefaults.selectedLineEmptyTitle),
+      selectedLineEmptySubtitle: fallbackString(copyPayload.selectedLineEmptySubtitle, copyDefaults.selectedLineEmptySubtitle),
+      searchPlaceholder: fallbackString(copyPayload.searchPlaceholder, copyDefaults.searchPlaceholder),
+      emptyTitle: fallbackString(copyPayload.emptyTitle, copyDefaults.emptyTitle),
+      emptySubtitle: fallbackString(copyPayload.emptySubtitle, copyDefaults.emptySubtitle),
+      suspendedHint: fallbackString(copyPayload.suspendedHint, copyDefaults.suspendedHint),
+      eligibleHint: fallbackString(copyPayload.eligibleHint, copyDefaults.eligibleHint),
+      tipText: fallbackString(copyPayload.tipText, copyDefaults.tipText),
+      addLineLabel: fallbackString(copyPayload.addLineLabel, copyDefaults.addLineLabel),
+      listingIntentLabel: fallbackString(copyPayload.listingIntentLabel, copyDefaults.listingIntentLabel),
+      listingIntentOptions:
+        Array.isArray(copyPayload.listingIntentOptions) && copyPayload.listingIntentOptions.length > 0
+          ? copyPayload.listingIntentOptions
+          : copyDefaults.listingIntentOptions,
+      suspendedCardTitle: fallbackString(copyPayload.suspendedCardTitle, copyDefaults.suspendedCardTitle),
+      suspendedCardBody: fallbackString(copyPayload.suspendedCardBody, copyDefaults.suspendedCardBody),
+      previewCta: fallbackString(copyPayload.previewCta, copyDefaults.previewCta),
+      startCta: fallbackString(copyPayload.startCta, copyDefaults.startCta),
+      nextStepsTitle: fallbackString(copyPayload.nextStepsTitle, copyDefaults.nextStepsTitle),
+      nextSteps:
+        Array.isArray(copyPayload.nextSteps) && copyPayload.nextSteps.length > 0
+          ? copyPayload.nextSteps
+          : copyDefaults.nextSteps,
+      taxonomyFallback: fallbackString(copyPayload.taxonomyFallback, copyDefaults.taxonomyFallback),
+    },
+  } as ListingWizardContent;
 }
 
 async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {

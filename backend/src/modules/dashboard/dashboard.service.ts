@@ -248,7 +248,7 @@ export class DashboardService {
         ? await this.prisma.seller.findFirst({ where: { userId, kind: { not: SellerKind.PROVIDER } } })
         : null;
 
-      const [campaignCount, pendingProposals, openTasks] = await Promise.all([
+      const [campaignCount, pendingProposals, openTasks, unreadThreads, unreadNotifications] = await Promise.all([
         this.prisma.campaign.count({
           where: {
             ...(sellerProfile
@@ -272,7 +272,12 @@ export class DashboardService {
             OR: [{ assigneeUserId: userId }, { createdByUserId: userId }],
             status: { not: 'COMPLETED' }
           }
-        })
+        }),
+        this.prisma.messageThread.findMany({
+          where: { userId, lastMessageAt: { not: null } },
+          select: { lastReadAt: true, lastMessageAt: true }
+        }),
+        this.prisma.notification.count({ where: { userId, readAt: null } })
       ]);
 
       const groupedTransactions = await this.prisma.transaction.groupBy({
@@ -334,6 +339,10 @@ export class DashboardService {
         campaignsActive: campaignCount,
         proposalsPending: pendingProposals,
         tasksOpen: openTasks,
+        messagesUnread: unreadThreads.filter((entry) =>
+          !entry.lastReadAt || (entry.lastMessageAt && entry.lastReadAt < entry.lastMessageAt)
+        ).length,
+        notificationsUnread: unreadNotifications,
         earnings,
         reviews: {
           total: reviewTotal,
@@ -576,18 +585,53 @@ export class DashboardService {
   }
 
   private async buildProviderMetrics(userId: string) {
-    const [openQuotes, activeBookings, openConsultations, portfolioItems] = await Promise.all([
-      this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
-      this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } }),
+    const [quotes, bookings, openConsultations, portfolioItems, groupedTransactions] = await Promise.all([
+      this.prisma.providerQuote.findMany({ where: { userId }, select: { status: true } }),
+      this.prisma.providerBooking.findMany({ where: { userId }, select: { status: true, amount: true } }),
       this.prisma.providerConsultation.count({ where: { userId, status: { in: ['open', 'active'] } } }),
-      this.prisma.providerPortfolioItem.count({ where: { userId } })
+      this.prisma.providerPortfolioItem.count({ where: { userId } }),
+      this.prisma.transaction.groupBy({
+        by: ['status'],
+        where: { userId, sellerId: null, status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] } },
+        _sum: { amount: true }
+      })
     ]);
 
+    const quoteStatuses = quotes.reduce<Record<string, number>>((acc, quote) => {
+      const key = String(quote.status || '').toLowerCase();
+      if (!key) return acc;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    const bookingStatuses = bookings.reduce<Record<string, number>>((acc, booking) => {
+      const key = String(booking.status || '').toLowerCase();
+      if (!key) return acc;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    const revenueByStatus = new Map(
+      groupedTransactions.map((entry) => [entry.status, Number(entry._sum.amount ?? 0)])
+    );
+    const totalBookingValue = bookings.reduce((sum, booking) => sum + Number(booking.amount ?? 0), 0);
+
     return {
-      quotesOpen: openQuotes,
-      bookingsActive: activeBookings,
+      quotesOpen: quotes.filter((quote) => ['draft', 'sent', 'negotiating'].includes(String(quote.status))).length,
+      quotesTotal: quotes.length,
+      quoteStatuses,
+      bookingsActive: bookings.filter((booking) => ['requested', 'confirmed'].includes(String(booking.status))).length,
+      bookingStatuses,
       consultationsOpen: openConsultations,
-      portfolioItems
+      portfolioItems,
+      revenue: {
+        pending: revenueByStatus.get(TransactionStatus.PENDING) ?? 0,
+        available: revenueByStatus.get(TransactionStatus.AVAILABLE) ?? 0,
+        paid: revenueByStatus.get(TransactionStatus.PAID) ?? 0,
+        total: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID].reduce(
+          (sum, status) => sum + (revenueByStatus.get(status) ?? 0),
+          0
+        ),
+        averageBookingValue: bookings.length > 0 ? Number((totalBookingValue / bookings.length).toFixed(2)) : 0
+      }
     };
   }
 

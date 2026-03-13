@@ -154,6 +154,7 @@ export type AnalyticsContent = {
   cohort: AnalyticsCohortContent;
   alertRules: AlertRuleConfig[];
   metricOptions: string[];
+  seriesByRange?: Partial<Record<"Today" | "7D" | "30D" | "90D", number[]>>;
 };
 
 export type HelpSupportKBItem = { id: string; cat: string; title: string; url: string };

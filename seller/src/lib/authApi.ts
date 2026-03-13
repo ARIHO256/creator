@@ -77,7 +77,10 @@ function mapSession(tokens: LoginResponse, profile: MeResponse): Session {
       profile.email ||
       profile.id,
     approvalStatus: profile.approvalStatus || undefined,
-    onboardingCompleted: Boolean(profile.onboardingCompleted),
+    onboardingCompleted:
+      typeof profile.onboardingCompleted === "boolean"
+        ? profile.onboardingCompleted
+        : undefined,
     role,
     roles,
     accessToken: tokens.accessToken,

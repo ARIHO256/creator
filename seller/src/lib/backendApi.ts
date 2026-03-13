@@ -80,6 +80,16 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getSellerDashboard: () => request<Record<string, unknown>>("/api/seller/dashboard"),
+  getSellerDashboardSummary: (query?: Record<string, string>) => {
+    const params = new URLSearchParams();
+    Object.entries(query ?? {}).forEach(([key, value]) => {
+      if (!value) return;
+      params.set(key, value);
+    });
+    const suffix = params.toString();
+    return request<Record<string, unknown>>(`/api/seller/dashboard/summary${suffix ? `?${suffix}` : ""}`);
+  },
+  getDashboardSummary: () => request<Record<string, unknown>>("/api/dashboard/summary"),
   getSellerOrders: () =>
     request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
       "/api/seller/orders"
