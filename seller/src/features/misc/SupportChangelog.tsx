@@ -495,7 +495,7 @@ export default function SupportChangelogPage() {
   }, [items.length, loaded]);
 
   const shareBase = useMemo(() => {
-    // demo base link
+    // base link
     return "https://evzone.example/support/changelog";
   }, []);
 

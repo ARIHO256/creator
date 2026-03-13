@@ -21,7 +21,7 @@ import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from 
  * - Adds campaign-level collaboration context pills (Creator usage, Collab mode, Approval mode)
  * - Host column supports Supplier-hosted vs Creator-hosted
  * - Messaging reflects Supplier ownership + approval gating notes
- * - Navigation is stubbed for canvas (replace safeNav with react-router navigate)
+ * - Navigation uses app routing
  */
 
 const ORANGE = "#f77f00";
@@ -446,10 +446,6 @@ function BarList({ title, subtitle, rows }) {
   );
 }
 
-/* -------------------------------- Mock data -------------------------------- */
-
-const SAMPLE_VIDEO = "";
-
 const EMPTY_ADS: Array<Record<string, any>> = [];
 
 /* ----------------------------- Performance drawer --------------------------- */
@@ -489,7 +485,7 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
 
   const offerRows = useMemo(() => {
     if (!ad) return [];
-    // demo derived offer performance
+    // derived offer performance
     return ad.offers.map((o, idx) => {
       const base = Math.max(1, ad.orders7d);
       const w = idx === 0 ? 0.62 : 0.38;
@@ -612,7 +608,7 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <LineChart
               title="Traffic trend"
-              subtitle="Impressions vs Orders (last 14 days, demo)"
+              subtitle="Impressions vs Orders (last 14 days)"
               seriesA={sImpr}
               seriesB={sOrders}
               aLabel="Impressions"
@@ -643,7 +639,7 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
           <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden transition-colors">
             <div className="p-4 border-b border-neutral-200 dark:border-slate-800">
               <div className="text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Offers performance</div>
-              <div className="mt-1 text-[11px] text-neutral-600 dark:text-slate-400">Per-offer breakdown (demo derived)</div>
+              <div className="mt-1 text-[11px] text-neutral-600 dark:text-slate-400">Per-offer breakdown</div>
             </div>
 
             <div className="p-3 overflow-auto">

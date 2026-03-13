@@ -38,7 +38,7 @@ import {
  * - Category playbooks
  *
  * Notes:
- * - All actions are demo-safe and local.
+ * - Actions stay local until backend workflows are added.
  * - Styling aligned to EVzone (green primary, orange accent).
  */
 
@@ -1057,7 +1057,7 @@ export default function SupportCenterPage() {
   };
 
   // Troubleshooter (super premium)
-  const TROUBLE_CATS = ["Payments", "Orders", "MyLiveDealz", "Integrations", "Security"]; // demo
+  const TROUBLE_CATS = ["Payments", "Orders", "MyLiveDealz", "Integrations", "Security"]; // categories
 
   const troubleDefs = useMemo(
     () => ({
@@ -1589,7 +1589,7 @@ export default function SupportCenterPage() {
                     <span className="ml-auto"><Badge tone="slate">Creates a ticket</Badge></span>
                   </div>
                   <div className="mt-2 text-xs font-semibold text-slate-500">
-                    Provide a clear subject, steps to reproduce, and any references. Attachments are local in this demo.
+                    Provide a clear subject, steps to reproduce, and any references. Attachments remain local until backend uploads are added.
                   </div>
                 </GlassCard>
 

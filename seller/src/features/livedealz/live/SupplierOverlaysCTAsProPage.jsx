@@ -21,7 +21,7 @@ import React, { useEffect, useMemo, useState } from "react";
  *
  * Canvas-safe:
  * - No lucide-react imports. Inline SVG icons are provided.
- * - No backend. Replace demo state with real session/campaign/store.
+ * - Replace local state with real session/campaign/store.
  */
 
 const ORANGE = "#F77F00";

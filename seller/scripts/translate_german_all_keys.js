@@ -103,10 +103,10 @@ console.log(`\n⚠️  To complete translations:`);
 console.log(`   1. Use the export file with Google Translate API, DeepL API, or similar`);
 console.log(`   2. Or use an online translation service to translate the keys`);
 console.log(`   3. Import the translated values back into german.js`);
-console.log(`\n💡 For now, the dictionary uses English as fallback for untranslated keys.`);
+console.log(`\n💡 For now, the dictionary uses English as default English for untranslated keys.`);
 
-// Write updated dictionary (with English fallbacks for now)
+// Write updated dictionary (with English default Englishs for now)
 writeDictionary(germanPath, newGermanDict);
-console.log(`\n✅ German dictionary updated (${preserved} translations preserved, ${needsTranslation} using English fallback)`);
+console.log(`\n✅ German dictionary updated (${preserved} translations preserved, ${needsTranslation} using English default English)`);
 
 

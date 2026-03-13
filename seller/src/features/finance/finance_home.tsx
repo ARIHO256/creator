@@ -729,7 +729,7 @@ export default function FinanceHomeOverview() {
                 <BarChart3 className="h-4 w-4 text-slate-700" />
                 <div className="text-sm font-black text-slate-900">Multi-currency preview</div>
                 <Badge tone="slate">Core</Badge>
-                <span className="ml-auto"><Badge tone="slate">FX demo</Badge></span>
+                <span className="ml-auto"><Badge tone="slate">FX</Badge></span>
               </div>
               <div className="mt-2 text-xs font-semibold text-slate-500">Balances shown by currency. Convert before payouts where relevant.</div>
 

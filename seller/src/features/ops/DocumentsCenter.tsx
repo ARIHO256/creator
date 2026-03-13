@@ -1,1 +1,10 @@
-export { default } from "./ops_documents_center_invoice_formats_packing_lists_export_doc_presets_previewable (1)";
+export default function DocumentsCenter() {
+  return (
+    <div className="w-full px-[0.55%] py-6">
+      <h1 className="text-2xl font-extrabold">Documents Center</h1>
+      <p className="mt-2 text-gray-500 dark:text-slate-400">
+        This section is unavailable until a DB-backed implementation is added.
+      </p>
+    </div>
+  );
+}

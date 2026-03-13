@@ -208,9 +208,7 @@ function Avatar({ src, alt }) {
   return <img src={src} alt={alt} className="h-10 w-10 rounded-2xl object-cover ring-1 ring-neutral-200 dark:ring-slate-700" />;
 }
 
-/* --------------------------------- Mock Data ------------------------------ */
-
-const SAMPLE_VIDEO = "";
+/* --------------------------------- Ad data ------------------------------ */
 
 const EMPTY_ADS: Array<Record<string, any>> = [];
 
@@ -1221,7 +1219,7 @@ function AdBuilderDrawer({ open, onClose, initialAd, onSave, onNavigate }) {
       price: 55000,
       stockLeft: 20,
       posterUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=900&auto=format&fit=crop",
-      videoUrl: SAMPLE_VIDEO,
+      videoUrl: "",
       desktopMode: "modal",
       sellingModes: ["RETAIL", "WHOLESALE"],
       defaultSellingMode: "RETAIL",
@@ -1256,7 +1254,7 @@ function AdBuilderDrawer({ open, onClose, initialAd, onSave, onNavigate }) {
       endISO,
       timezone,
       heroImageUrl: initialAd?.heroImageUrl || "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
-      heroIntroVideoUrl: initialAd?.heroIntroVideoUrl || SAMPLE_VIDEO,
+      heroIntroVideoUrl: initialAd?.heroIntroVideoUrl || "",
       heroDesktopMode: initialAd?.heroDesktopMode || "modal",
       creator: initialAd?.creator || {
         name: hostRole === "Supplier" ? "(Supplier-hosted)" : "Creator TBD",
@@ -1299,7 +1297,7 @@ function AdBuilderDrawer({ open, onClose, initialAd, onSave, onNavigate }) {
       endISO,
       timezone,
       heroImageUrl: initialAd?.heroImageUrl || "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
-      heroIntroVideoUrl: initialAd?.heroIntroVideoUrl || SAMPLE_VIDEO,
+      heroIntroVideoUrl: initialAd?.heroIntroVideoUrl || "",
       heroDesktopMode: initialAd?.heroDesktopMode || "modal",
       creator: initialAd?.creator || {
         name: hostRole === "Supplier" ? "(Supplier-hosted)" : "Creator TBD",

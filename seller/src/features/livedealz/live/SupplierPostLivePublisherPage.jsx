@@ -724,7 +724,7 @@ export default function SupplierPostLivePublisherPage() {
                         setSubmittedToAdmin(true);
                         setAdminRejected(false);
                         setAdminApproved(false);
-                        // demo: admin approves shortly after
+                        // admin approves shortly after
                         await new Promise((r) => setTimeout(r, 450));
                         setAdminApproved(true);
                       }
@@ -732,7 +732,7 @@ export default function SupplierPostLivePublisherPage() {
                       if (executionMode === "creator_hosted") {
                         setSupplierApproved(true);
                         setCreatorPublishRequested(true);
-                        // demo: creator publishes shortly after
+                        // creator publishes shortly after
                         await new Promise((r) => setTimeout(r, 350));
                       }
 
@@ -1174,7 +1174,7 @@ export default function SupplierPostLivePublisherPage() {
                       onClick={() =>
                         run(
                           async () => {
-                            // demo
+                            // local transition
                             await new Promise((r) => setTimeout(r, 450));
                           },
                           {

@@ -922,7 +922,7 @@ export default function SupplierPublicProfilePage() {
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Collab preferences</h3>
                     <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
-                      Bundles + discounts, clear claims, before/after demos, and audience Q&A.
+                      Bundles + discounts, clear claims, before/after showcases, and audience Q&A.
                     </p>
                   </div>
                   <div>
@@ -982,7 +982,7 @@ export default function SupplierPublicProfilePage() {
                   <PortfolioRow
                     title="Weekend Mask Bar"
                     meta="Live Sessionz · East Africa"
-                    body="Education-first demo. Low return rate and high repeat orders."
+                    body="Education-first showcase. Low return rate and high repeat orders."
                     kpis={["GMV $7.8k", "Return 1.4%", "Rating 4.7"]}
                     onAction={() => handleAction("View Dealz")}
                   />

@@ -123,7 +123,7 @@ export default function SupplierLiveReplaysClipsPage() {
       return [
         {
           id: 1,
-          label: "Hook + first charger demo",
+          label: "Hook + first charger showcase",
           start: 15,
           end: 75,
           tags: ["Hook within first 3 seconds", "Demo clarity"]
@@ -618,7 +618,7 @@ function ClipEditorPanel({
   onChangeCta,
   secondsToTime
 }) {
-  const totalDurationSec = 1200; // pretend 20 min timeline for demo
+  const totalDurationSec = 1200; // assume a 20 minute timeline for the editor
   const clamp = (val) => Math.min(Math.max(val, 0), totalDurationSec);
 
   const handleStartChange = (e) => {

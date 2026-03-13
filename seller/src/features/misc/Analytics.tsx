@@ -903,7 +903,7 @@ export default function AnalyticsPage({ onNavigate }: { onNavigate?: NavigateFn 
                 <div className="mt-2 text-xs font-semibold text-slate-500">Escalate high severity alerts to your support workflow and audit.</div>
                 <button
                   type="button"
-                  onClick={() => pushToast({ title: "Escalation demo", message: "Wire to email, SMS, WhatsApp or Slack.", tone: "default" })}
+                  onClick={() => pushToast({ title: "Escalation", message: "Wire to email, SMS, WhatsApp or Slack.", tone: "default" })}
                   className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                 >
                   Configure

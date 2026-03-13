@@ -526,7 +526,7 @@ const PLAN_META: Record<
     name: "Basic",
     emoji: "🟦",
     tagline: "Launch supplier-led selling with essential MyLiveDealz tools.",
-    bestFor: "Suppliers testing live selling, product demos, and small catalog promotions.",
+    bestFor: "Suppliers starting live selling and small catalog promotions.",
     monthly: 0,
     yearly: 0,
     highlights: [
@@ -955,7 +955,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
     });
 
     if (next === "basic") {
-      showWarning("Switched to Basic (Free). Pro tools remain visible in demo but are intended to be gated.");
+      showWarning("Switched to Basic (Free). Access controls should hide restricted tools for this plan.");
     } else if (next === "pro") {
       showSuccess("Welcome to Pro. Unlimited supplier Dealz and premium commerce tools are now unlocked.");
     } else {
@@ -1696,7 +1696,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
         subtitle="View and download invoices"
         footer={
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-slate-600 dark:text-slate-300">Showing demo invoices</div>
+            <div className="text-xs text-slate-600 dark:text-slate-300">Showing invoices</div>
             <GhostButton onClick={() => setDrawerInvoices(false)}>Close</GhostButton>
           </div>
         }

@@ -18,7 +18,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Save/Follow becomes “Save creator” (feeds “My Creators” page).
  * - Invite is “Invite to Campaign” with campaign context + mandatory campaign-level rules:
  *   Creator Usage Decision + Collaboration Mode + Content Approval Mode.
- * - Supports edge cases (demo states): creator rejects, changes requested, renegotiation.
+ * - Supports edge cases: creator rejects, changes requested, renegotiation.
  *
  * Notes:
  * - Dependency-free (no lucide-react). Emoji icons used to avoid CDN issues.
@@ -848,7 +848,7 @@ export default function SupplierCreatorDirectoryPage() {
         languages: ["English"],
         relationship: "1 Tech Friday series",
         fitScore: 90,
-        fitReason: "High CTR in Tech. Strong live demo rhythm and conversion consistency.",
+        fitReason: "High CTR in Tech. Strong live showcase rhythm and conversion consistency.",
         followersTrend: "up",
         livesTrend: "up",
         orderTrend: "up",

@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState, type ReactNode, type Chang
  * Link Tools (Supplier) — Previewable (Orange Primary)
  * Controlled Mirroring Mode (Creator → Supplier)
  * ------------------------------------------------
- * Primary blueprint: 3_link_tools_creator_orange_primary_previewable (2).tsx
+ * Primary blueprint: link tools creator orange primary
  *
  * Mirror-first preserved:
  * - Top toolbox card: campaign selector + link variant selector
@@ -1368,8 +1368,8 @@ if (typeof window !== "undefined") {
       const url2 = appendParam("https://x.com?a=1", "src", "tiktok");
       t("appendParam adds &", url2 === "https://x.com?a=1&src=tiktok");
 
-      const s1 = shortLinkFromUrl("https://mylivedealz.com/a/demo");
-      const s2 = shortLinkFromUrl("https://mylivedealz.com/a/demo");
+      const s1 = shortLinkFromUrl("https://mylivedealz.com/a/link");
+      const s2 = shortLinkFromUrl("https://mylivedealz.com/a/link");
       t("shortLink deterministic", s1 === s2);
 
       window.__LINK_TOOLS_SUPPLIER_TESTS__ = tests;

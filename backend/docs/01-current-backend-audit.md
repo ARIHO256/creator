@@ -17,7 +17,7 @@ This audit captures the **existing backend before the refactor** that was presen
   - Auth/session helpers: `backend/src/legacy/lib/auth.js`
   - HTTP helpers: `backend/src/legacy/lib/http.js`
   - Utility helpers: `backend/src/legacy/lib/utils.js`
-  - Seed builder: `backend/prisma/seed.mjs`
+
   - Domain route files:
     - `auth.routes.js`
     - `dashboard.routes.js`

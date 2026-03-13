@@ -1910,7 +1910,7 @@ function NewDealzWizard({
                 />
                 <div className="mt-3 text-[11px] text-neutral-600 dark:text-slate-400">
                   Supplier: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
-                  {/* Supplier host is implicitly selected as current user, or 0 index for demo */}
+                  {/* Supplier host is implicitly selected as the current user */}
                   {/* · Supplier Host: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{creator.handle}</span> */}
                 </div>
               </div>

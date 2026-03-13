@@ -1014,9 +1014,7 @@ function CheckRow({ ok, label, hint }) {
   );
 }
 
-/* --------------------------------- Mock data ------------------------------ */
-
-const SAMPLE_VIDEO = "";
+/* --------------------------------- Ad data ------------------------------ */
 
 const EMPTY_ADS: Array<Record<string, any>> = [];
 
@@ -1405,7 +1403,7 @@ export default function SupplierAdzMarketplacePage() {
         startISO: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
         endISO: new Date(Date.now() + 30 * 3600 * 1000).toISOString(),
         heroImageUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
-        heroIntroVideoUrl: SAMPLE_VIDEO,
+        heroIntroVideoUrl: "",
         heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
         heroDesktopMode: "modal",
         ctaPrimaryLabel: "Buy now",

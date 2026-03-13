@@ -35,7 +35,7 @@ import {
  * - Versioning + Change Log
  * - Buyer Segmentation chips
  * - Margin Calculator (cost + target margin → recommended price)
- * - CSV Import button (demo wired)
+ * - CSV Import button
  */
 
 const TOKENS = {
@@ -468,7 +468,7 @@ export default function WholesalePriceListsPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
 
-  const segmentOptions = ["Standard", "Distributor", "Reseller", "VIP", "Africa", "EU"]; // demo
+  const segmentOptions = ["Standard", "Distributor", "Reseller", "VIP", "Africa", "EU"]; // segments
   const [activeSegments, setActiveSegments] = useState<string[]>(["Standard"]);
 
   const mult = useMemo(() => segmentRule(activeSegments), [activeSegments]);

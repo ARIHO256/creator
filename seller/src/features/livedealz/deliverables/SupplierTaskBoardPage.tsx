@@ -67,7 +67,7 @@ const PRIORITY = [
   { k: "Critical", pill: "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-300" }
 ];
 
-// Helper to get deterministic due date for demo based on a seed
+// Helper to get a deterministic due date based on a seed
 const getDeterministicDue = (seed) => {
   // Range: -2 to 7 days
   const days = (seed % 10) - 2;

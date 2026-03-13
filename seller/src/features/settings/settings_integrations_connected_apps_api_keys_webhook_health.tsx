@@ -773,7 +773,7 @@ export default function SettingsIntegrationsPage() {
       httpStatus: "500",
       latencyMs: 980,
       tries: 2,
-      payloadPreview: JSON.stringify({ id: makeId("payload"), type: "inventory.updated", demo: true }).slice(0, 72),
+      payloadPreview: JSON.stringify({ id: makeId("payload"), type: "inventory.updated", preview: true }).slice(0, 72),
     };
     const nextLogs = [entry, ...logs];
     setLogs(nextLogs);

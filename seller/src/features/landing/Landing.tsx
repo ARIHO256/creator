@@ -1558,7 +1558,7 @@ export default function EVzoneMyLiveDealzSellerLandingEnterpriseV3Full() {
                       <Button
                         variant="outline"
                         onClick={() => {
-                          const url = `https://wa.me/?text=${encodeURIComponent("Hi EVzone team — I would like a demo.")}`;
+                          const url = `https://wa.me/?text=${encodeURIComponent("Hi EVzone team — I would like a walkthrough.")}`;
                           window.open(url, "_blank", "noopener,noreferrer");
                         }}
                         className="w-full"
@@ -1837,7 +1837,7 @@ export default function EVzoneMyLiveDealzSellerLandingEnterpriseV3Full() {
                     </div>
                   </div>
                   <p className="mt-4 max-w-xl text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-                    Replace demo alerts with real navigation and routes. Connect onboarding to your verification and approvals flow, and link your final commission schedule.
+                    Replace alerts with real navigation and routes. Connect onboarding to your verification and approvals flow, and link your final commission schedule.
                   </p>
                 </div>
 

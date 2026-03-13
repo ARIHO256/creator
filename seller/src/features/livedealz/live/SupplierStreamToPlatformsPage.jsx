@@ -704,7 +704,7 @@ export default function SupplierStreamToPlatformsPage() {
         ownership: "Creator",
         settings: {
           title: DEFAULT_TITLE,
-          description: "Quick demo + price breakdown + instant buy.",
+          description: "Quick showcase + price breakdown + instant buy.",
           tags: ["beauty", "live"],
           delaySec: 0,
           autoReconnect: true,

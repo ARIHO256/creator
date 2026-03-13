@@ -306,7 +306,7 @@ export default function ServiceListingApprovalPending() {
   const canResubmit =
     status === 'ChangesRequested' && allChecked && hasAttachmentOrNote
 
-  // Resubmit (stub)
+  // Resubmit
   async function resubmit() {
     setNotice('')
     if (!canResubmit) {

@@ -1859,7 +1859,7 @@ export default function AdBuilder({
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);
 
-  // Build per-offer poster/video urls (prefer picked assets, fallback to catalog)
+  // Build per-offer poster/video urls (prefer picked assets, otherwise use catalog media)
   const perOfferPosterUrl = useMemo(() => {
     const out: Record<string, string> = {};
     selectedOffers.forEach((o) => {
@@ -3483,7 +3483,7 @@ export default function AdBuilder({
   return content;
 }
 
-// NOTE: lucide-react doesn't export Phone icon in some versions; provide a tiny fallback.
+// NOTE: lucide-react doesn't export Phone icon in some versions; provide a tiny local replacement.
 
 /** ------------------------------ Share Panel ------------------------------ */
 

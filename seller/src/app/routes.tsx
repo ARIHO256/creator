@@ -575,33 +575,15 @@ const SellerReviews = safeLazy(
   'Seller Reviews'
 );
 const FinanceHome = safeLazy(() => import('../features/finance/finance_home'), 'Finance Home');
-const FinanceWallets = safeLazy(
-  () => import('../features/finance/finance_statements_previewable'),
-  'Wallets & Payouts'
-);
-const FinanceHolds = safeLazy(
-  () => import('../features/finance/finance_payout_holds_previewable (1)'),
-  'Payout Holds'
-);
-const FinanceInvoices = safeLazy(
-  () => import('../features/finance/finance_invoices_previewable'),
-  'Invoices'
-);
-const FinanceStatements = safeLazy(
-  () => import('../features/finance/finance_statements_previewable'),
-  'Statements'
-);
-const FinanceTaxReports = safeLazy(
-  () => import('../features/finance/finance_tax_reports_previewable'),
-  'Tax Reports'
-);
+const FinanceWallets = scaffold('Wallets & Payouts');
+const FinanceHolds = scaffold('Payout Holds');
+const FinanceInvoices = scaffold('Invoices');
+const FinanceStatements = scaffold('Statements');
+const FinanceTaxReports = scaffold('Tax Reports');
 const Analytics = safeLazy(() => import('../features/misc/Analytics'), 'Analytics');
 const Messages = safeLazy(() => import('../features/misc/Messages'), 'Messages');
 const Notifications = safeLazy(() => import('../features/misc/Notifications'), 'Notifications');
-const TemplatesHub = safeLazy(
-  () => import('../features/settings/templates_hub_quote_message_contract_listing_previewable'),
-  'Templates Hub'
-);
+const TemplatesHub = scaffold('Templates Hub');
 const StorefrontOverview = safeLazy(
   () => import('../features/settings/Profile'),
   'Storefront Overview'
@@ -639,67 +621,22 @@ const SettingsProfile = safeLazy(
   () => import('../features/settings/Profile'),
   'Profile & Storefront'
 );
-const SettingsTeam = safeLazy(
-  () =>
-    import('../features/settings/teams_roles_supplier_custom_roles_permission_builder_previewable'),
-  'Team & Roles'
-);
-const SettingsPayoutMethods = safeLazy(
-  () =>
-    import('../features/settings/payout_methods_bank_setup_validation_test_payout_simulation_previewable'),
-  'Payout Methods'
-);
-const SettingsPreferences = safeLazy(
-  () =>
-    import('../features/settings/settings_preferences_language_currency_ui_workspaces_previewable'),
-  'Preferences'
-);
-const SettingsSecurity = safeLazy(
-  () =>
-    import('../features/settings/settings_security_2_fa_password_sessions_trust_policies_previewable'),
-  'Security'
-);
-const SettingsSecuritySessions = safeLazy(
-  () => import('../features/settings/device_sessions_session_list_trust_geo_anomaly_alerts_previewable'),
-  'Security Sessions'
-);
+const SettingsTeam = scaffold('Team & Roles');
+const SettingsPayoutMethods = scaffold('Payout Methods');
+const SettingsPreferences = scaffold('Preferences');
+const SettingsSecurity = scaffold('Security');
+const SettingsSecuritySessions = scaffold('Security Sessions');
 const SettingsIntegrations = safeLazy(
   () => import('../features/settings/settings_integrations_connected_apps_api_keys_webhook_health'),
   'Integrations'
 );
-const SettingsTax = safeLazy(
-  () =>
-    import('../features/settings/tax_hub_vat_profiles_invoice_compliance_compliance_pack_previewable'),
-  'Tax'
-);
-const SettingsKyc = safeLazy(
-  () => import('../features/settings/supplier_hub_kyc_kyb_previewable'),
-  'KYC / KYB'
-);
-const SettingsNotificationPreferences = safeLazy(
-  () =>
-    import('../features/settings/notification_preferences_categories_channels_rules_digest_previewable'),
-  'Notification Preferences'
-);
-const SettingsSavedViews = safeLazy(
-  () =>
-    import('../features/settings/saved_views_manager_rename_pin_share_compliance_lock_previewable'),
-  'Saved Views'
-);
-const SettingsAuditLog = safeLazy(
-  () =>
-    import('../features/settings/audit_log_explorer_filters_exports_evidence_bundles_previewable'),
-  'Audit Log'
-);
-const SettingsHelp = safeLazy(
-  () =>
-    import('../features/settings/help_support_kb_tickets_guided_troubleshooting_incident_history_previewable'),
-  'Settings Help & Support'
-);
-const SettingsStatusCenter = safeLazy(
-  () => import('../features/settings/support_system_status_previewable'),
-  'Status Center'
-);
+const SettingsTax = scaffold('Tax');
+const SettingsKyc = scaffold('KYC / KYB');
+const SettingsNotificationPreferences = scaffold('Notification Preferences');
+const SettingsSavedViews = scaffold('Saved Views');
+const SettingsAuditLog = scaffold('Audit Log');
+const SettingsHelp = scaffold('Settings Help & Support');
+const SettingsStatusCenter = scaffold('Status Center');
 
 const Fallback = () => {
   return null;

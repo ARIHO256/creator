@@ -499,7 +499,7 @@ export default function SupportSystemStatusPage() {
   const [openId, setOpenId] = useState(null);
   const openIncident = useMemo(() => incidents.find((x) => x.id === openId) || null, [incidents, openId]);
 
-  // “Refresh” demo
+  // refresh action
   const refresh = async () => {
     pushToast({ title: "Refreshing", message: "Fetching latest provider health and incidents.", tone: "default" });
     setLoading(true);

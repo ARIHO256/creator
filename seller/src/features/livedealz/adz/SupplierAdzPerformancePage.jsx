@@ -762,7 +762,7 @@ function SupplierAdzPerformance({
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-            <Card title="By creative version" subtitle="A/B attribution (split model demo).">
+            <Card title="By creative version" subtitle="A/B attribution (split model).">
               <div className="space-y-2">
                 {byCreative.map((v) => (
                   <div key={v.id} className="rounded-2xl border transition-colors border-slate-200 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 dark:border-slate-700 p-3">

@@ -757,7 +757,7 @@ export default function SupplierRolesPermissionsPage() {
   const [allowExternalInvites, setAllowExternalInvites] = useState(false);
   const [creatorGuestExpiryHours, setCreatorGuestExpiryHours] = useState(24);
 
-  // demo states
+  // local UI states
   const [dataState, setDataState] = useState("ready"); // ready | loading | error
 
   const permIndex = useMemo(() => {

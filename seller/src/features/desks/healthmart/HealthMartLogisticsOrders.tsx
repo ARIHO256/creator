@@ -1,1 +1,10 @@
-export { default } from "./health_mart_logistics_compliance_checklist_licenses_evidence_pack_previewable";
+export default function HealthMartLogisticsOrders() {
+  return (
+    <div className="w-full px-[0.55%] py-6">
+      <h1 className="text-2xl font-extrabold">HealthMart Logistics Orders</h1>
+      <p className="mt-2 text-gray-500 dark:text-slate-400">
+        This section is unavailable until a DB-backed implementation is added.
+      </p>
+    </div>
+  );
+}
