@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierTaskBoardPage.jsx
@@ -67,15 +68,141 @@ const PRIORITY = [
   { k: "Critical", pill: "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-300" }
 ];
 
-// Helper to get deterministic due date for demo based on a seed
-const getDeterministicDue = (seed) => {
-  // Range: -2 to 7 days
-  const days = (seed % 10) - 2;
-  return {
-    days,
-    label: days === 0 ? "Today" : days === 1 ? "Tomorrow" : days < 0 ? "Overdue" : `In ${days} days`
-  };
+const EMPTY_COLUMNS = {
+  todo: [],
+  "in-progress": [],
+  submitted: [],
+  approved: [],
+  "needs-changes": []
 };
+
+function mapTaskStatusToColumn(status) {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "IN_PROGRESS") return "in-progress";
+  if (normalized === "IN_REVIEW") return "submitted";
+  if (normalized === "APPROVED" || normalized === "COMPLETED") return "approved";
+  if (normalized === "BLOCKED") return "needs-changes";
+  return "todo";
+}
+
+function mapColumnToTaskStatus(columnId) {
+  if (columnId === "in-progress") return "IN_PROGRESS";
+  if (columnId === "submitted") return "IN_REVIEW";
+  if (columnId === "approved") return "APPROVED";
+  if (columnId === "needs-changes") return "BLOCKED";
+  return "TODO";
+}
+
+function mapPriority(priority) {
+  const normalized = String(priority || "").toUpperCase();
+  if (normalized === "LOW") return "Low";
+  if (normalized === "HIGH") return "High";
+  if (normalized === "URGENT") return "Critical";
+  return "Normal";
+}
+
+function serializeAttachmentSize(sizeBytes) {
+  if (!sizeBytes) return "1MB";
+  return `${Math.max(1, Math.round(Number(sizeBytes || 0) / (1024 * 1024)))}MB`;
+}
+
+function normalizeTaskRecord(task) {
+  const contract = task?.contract && typeof task.contract === "object" ? task.contract : {};
+  const campaign = task?.campaign && typeof task.campaign === "object" ? task.campaign : {};
+  const metadata = task?.metadata && typeof task.metadata === "object" ? task.metadata : {};
+  const dueAt = task?.dueAt ? new Date(task.dueAt) : null;
+  const dueDaysFromNow = dueAt ? daysFromNowForYMD(toYMD(dueAt)) : 0;
+  const columnId = mapTaskStatusToColumn(task?.status);
+  const submissionFiles = Array.isArray(task?.attachments)
+    ? task.attachments.map((attachment) => ({
+        name: String(attachment?.name || "attachment"),
+        size: serializeAttachmentSize(attachment?.sizeBytes),
+      }))
+    : [];
+  return {
+    id: String(task?.id || ""),
+    title: String(task?.title || "Untitled task"),
+    campaign: String(campaign?.title || contract?.campaign || contract?.campaignName || "Campaign"),
+    brand: String(contract?.brand || contract?.sellerName || campaign?.sellerName || "Seller workspace"),
+    brandInitials: brandInitials(contract?.brand || contract?.sellerName || campaign?.sellerName || "Seller"),
+    seller: String(task?.assignee?.handle || contract?.creatorHandle || campaign?.creatorHandle || "@creator"),
+    sellerInitials: initialsFromHandle(task?.assignee?.handle || contract?.creatorHandle || campaign?.creatorHandle || "@creator"),
+    type: String(metadata?.type || "post"),
+    dueLabel:
+      columnId === "submitted"
+        ? "Submitted"
+        : columnId === "approved"
+          ? "Approved"
+          : columnId === "needs-changes"
+            ? "Changes requested"
+            : dueAt
+              ? dueLabelFromDays(dueDaysFromNow)
+              : "No due date",
+    dueDaysFromNow,
+    earnings: Number(metadata?.estimatedValue || contract?.value || 0),
+    currency: String(contract?.currency || metadata?.currency || "USD"),
+    overdue: Boolean(dueAt && dueDaysFromNow < 0 && !["submitted", "approved", "needs-changes"].includes(columnId)),
+    hostRole: String(contract?.governance?.hostRole || campaign?.metadata?.hostRole || metadata?.hostRole || "Creator"),
+    creatorUsage: String(contract?.governance?.creatorUsage || campaign?.metadata?.creatorUsageDecision || metadata?.creatorUsage || "I will use a Creator"),
+    collabMode: String(contract?.governance?.collabMode || campaign?.metadata?.collabMode || metadata?.collabMode || "Open for Collabs"),
+    approvalMode: String(contract?.governance?.approvalMode || campaign?.metadata?.approvalMode || metadata?.approvalMode || "Manual"),
+    submission: {
+      status:
+        columnId === "approved"
+          ? "Approved"
+          : columnId === "submitted"
+            ? "Submitted"
+            : columnId === "needs-changes"
+              ? "Needs changes"
+              : "In progress",
+      link: String(metadata?.contentLink || metadata?.submissionLink || task?.attachments?.[0]?.url || ""),
+      files: submissionFiles
+    },
+    comments: Array.isArray(task?.comments)
+      ? task.comments.map((comment) => ({
+          id: String(comment?.id || ""),
+          from: comment?.author?.handle ? "creator" : "supplier",
+          name: String(comment?.author?.name || "You"),
+          body: String(comment?.body || ""),
+          time: comment?.createdAt ? new Date(comment.createdAt).toLocaleString() : "Now"
+        }))
+      : [],
+    attachments: Array.isArray(task?.attachments) ? task.attachments : [],
+    contractId: String(task?.contractId || contract?.id || ""),
+    campaignId: String(task?.campaignId || campaign?.id || ""),
+    assigneeUserId: String(task?.assigneeUserId || ""),
+    rawStatus: String(task?.status || "TODO"),
+    meta: {
+      priority: mapPriority(task?.priority),
+      checklist: Array.isArray(metadata?.checklist) ? metadata.checklist : [],
+      dependencies: Array.isArray(metadata?.dependencies) ? metadata.dependencies : [],
+      watchers: Array.isArray(metadata?.watchers) ? metadata.watchers : [],
+      reminders: String(metadata?.reminder || "6h"),
+      requireAdminReview: Boolean(metadata?.requireAdminReview),
+      description: String(task?.description || metadata?.description || ""),
+      scope: String(metadata?.scope || (task?.contractId ? "Linked" : "Internal")),
+      dueDate: dueAt ? toYMD(dueAt) : "",
+      dueTime: dueAt ? dueAt.toTimeString().slice(0, 5) : "18:00",
+      refLinks: Array.isArray(metadata?.refLinks) ? metadata.refLinks : [],
+      contentLink: String(metadata?.contentLink || ""),
+    }
+  };
+}
+
+function buildColumnsFromTasks(tasks) {
+  const next = {
+    todo: [],
+    "in-progress": [],
+    submitted: [],
+    approved: [],
+    "needs-changes": []
+  };
+  tasks.forEach((task) => {
+    const columnId = mapTaskStatusToColumn(task?.rawStatus || task?.status);
+    next[columnId].push(task);
+  });
+  return next;
+}
 
 // Simple AI time estimate based on deliverable type
 function estimateTimeMinutes(task) {
@@ -282,100 +409,8 @@ function Toast({ text, onClose }) {
 /* ----------------------------- Main Page ----------------------------- */
 
 export default function SupplierTaskBoardPage() {
-  const contracts = useMemo<Array<Record<string, any>>>(() => [], []);
-  // 1) Derive all tasks from contracts
-  const allDerivedTasks = useMemo(() => {
-    const tasks = [];
-
-    contracts.forEach((contract) => {
-      if (contract.status === "Terminated") return;
-
-      (contract.deliverables || []).forEach((d) => {
-        // Map type
-        let tType = "post";
-        const low = String(d.label || "").toLowerCase();
-        if (low.includes("live")) tType = "live";
-        else if (low.includes("video") || low.includes("clip")) tType = "vod";
-        else if (low.includes("story")) tType = "story";
-
-        // Map due date (deterministic)
-        const seed = String(contract.id).charCodeAt(String(contract.id).length - 1) + d.id * 7;
-        const dueInfo = getDeterministicDue(seed);
-
-        const creatorInitials = initialsFromHandle(contract.creator?.handle);
-        const supplierInitials = brandInitials(contract.brand);
-
-        const earnings = contract.totalTasks ? Math.round(contract.value / contract.totalTasks) : 0;
-
-        tasks.push({
-          id: `${contract.id}-${d.id}`,
-          title: d.label,
-          campaign: contract.campaign,
-          brand: contract.brand,
-          brandInitials: supplierInitials,
-          // Keep original property names for layout mirroring
-          seller: contract.creator?.handle || "@creator",
-          sellerInitials: creatorInitials,
-          type: tType,
-          dueLabel: dueInfo.label,
-          dueDaysFromNow: dueInfo.days,
-          earnings,
-          currency: contract.currency,
-          overdue: !d.done && dueInfo.days < 0,
-
-          // Supplier governance
-          hostRole: contract.governance?.hostRole || "Creator",
-          creatorUsage: contract.governance?.creatorUsage || "I will use a Creator",
-          collabMode: contract.governance?.collabMode || "Open for Collabs",
-          approvalMode: contract.governance?.approvalMode || "Manual",
-
-          // Submission mocks
-          submission: {
-            status: d.done ? "Approved" : "In progress",
-            link: `https://drive.example.com/${encodeURIComponent(contract.id)}/${d.id}`,
-            files: [
-              { name: `${tType}_draft_${d.id}.mp4`, size: "48MB" },
-              { name: `caption_${d.id}.txt`, size: "2KB" }
-            ]
-          },
-
-          // extra metadata used by New Task drawer (safe to ignore elsewhere)
-          meta: {
-            priority: "Normal",
-            checklist: [],
-            dependencies: [],
-            watchers: [],
-            reminders: "6h",
-            requireAdminReview: true
-          }
-        });
-      });
-    });
-
-    return tasks;
-  }, [contracts]);
-
-  // 2) Distribute into columns (mirrors creator logic)
-  const [columns, setColumns] = useState(() => {
-    const cols = {
-      todo: [],
-      "in-progress": [],
-      submitted: [],
-      approved: [],
-      "needs-changes": []
-    };
-
-    allDerivedTasks.forEach((task, i) => {
-      const mod = i % 5;
-      if (mod === 0) cols.todo.push(task);
-      else if (mod === 1) cols["in-progress"].push(task);
-      else if (mod === 2) cols.submitted.push(task);
-      else if (mod === 3) cols.approved.push(task);
-      else cols["needs-changes"].push(task);
-    });
-
-    return cols;
-  });
+  const [contracts, setContracts] = useState<Array<Record<string, any>>>([]);
+  const [columns, setColumns] = useState(EMPTY_COLUMNS);
 
   const [dragging, setDragging] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -392,6 +427,28 @@ export default function SupplierTaskBoardPage() {
 
   // ✅ New Task drawer state
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([sellerBackendApi.getCollaborationContracts(), sellerBackendApi.getCollaborationTasks()])
+      .then(([contractRecords, taskRecords]) => {
+        if (cancelled) return;
+        const nextContracts = Array.isArray(contractRecords) ? contractRecords : [];
+        const normalizedTasks = Array.isArray(taskRecords) ? taskRecords.map(normalizeTaskRecord) : [];
+        setContracts(nextContracts);
+        setColumns(buildColumnsFromTasks(normalizedTasks));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setContracts([]);
+        setColumns(EMPTY_COLUMNS);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const taskToColumn = useMemo(() => {
     const map = new Map();
@@ -413,33 +470,45 @@ export default function SupplierTaskBoardPage() {
     e.preventDefault();
   };
 
+  const replaceTask = (nextTask) => {
+    setColumns((prev) => {
+      const next = {
+        todo: prev.todo.filter((task) => task.id !== nextTask.id),
+        "in-progress": prev["in-progress"].filter((task) => task.id !== nextTask.id),
+        submitted: prev.submitted.filter((task) => task.id !== nextTask.id),
+        approved: prev.approved.filter((task) => task.id !== nextTask.id),
+        "needs-changes": prev["needs-changes"].filter((task) => task.id !== nextTask.id)
+      };
+      const targetColumn = mapTaskStatusToColumn(nextTask.rawStatus || nextTask.status);
+      next[targetColumn] = [...next[targetColumn], nextTask];
+      return next;
+    });
+    setSelectedTask((prev) => (prev?.id === nextTask.id ? nextTask : prev));
+  };
+
   const moveTask = (taskId, toColumn) => {
     const fromColumn = taskToColumn.get(taskId);
     if (!fromColumn || fromColumn === toColumn) return;
+    const task = allTasksFlat.find((entry) => entry.id === taskId);
+    if (!task) return;
+    const metadata = {
+      ...(task.meta || {}),
+      contentLink: contentLink || task?.submission?.link || "",
+      reviewNotes: uploadNote || ""
+    };
 
-    setColumns((prev) => {
-      const fromTasks = prev[fromColumn] || [];
-      const toTasks = prev[toColumn] || [];
-      const task = fromTasks.find((t) => t.id === taskId);
-      if (!task) return prev;
-
-      const updatedTask = { ...task };
-      if (toColumn === "submitted" || toColumn === "approved") {
-        updatedTask.overdue = false;
-        updatedTask.dueLabel = toColumn === "submitted" ? "Submitted" : "Approved";
-      } else if (toColumn === "needs-changes") {
-        updatedTask.dueLabel = "Changes requested";
-        updatedTask.overdue = false;
-      }
-
-      return {
-        ...prev,
-        [fromColumn]: fromTasks.filter((t) => t.id !== taskId),
-        [toColumn]: [...toTasks, updatedTask]
-      };
-    });
-
-    setToast(`Moved to “${COLUMNS.find((c) => c.id === toColumn)?.label || toColumn}”`);
+    void sellerBackendApi
+      .patchCollaborationTask(taskId, {
+        status: mapColumnToTaskStatus(toColumn),
+        metadata
+      })
+      .then((record) => {
+        replaceTask(normalizeTaskRecord(record));
+        setToast(`Moved to “${COLUMNS.find((c) => c.id === toColumn)?.label || toColumn}”`);
+      })
+      .catch((error) => {
+        setToast(error instanceof Error ? error.message : "Unable to update task.");
+      });
   };
 
   const handleDrop = (toColumn) => {
@@ -458,31 +527,58 @@ export default function SupplierTaskBoardPage() {
 
   const handleCardClick = (task) => {
     setSelectedTask(task);
-    setUploadNote("");
+    setUploadNote(task?.meta?.reviewNotes || "");
     setContentLink(task?.submission?.link || "");
-    setUploadedFiles([]);
+    setUploadedFiles(task?.attachments || []);
+    setComments(task?.comments || []);
   };
 
   const handleFileUpload = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
-    }
+    if (!selectedTask || !e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files || []);
+    void Promise.all(
+      files.map((file) =>
+        sellerBackendApi.createCollaborationTaskAttachment(selectedTask.id, {
+          name: file.name,
+          kind: file.type.startsWith("video/") ? "video" : file.type.startsWith("image/") ? "image" : "document",
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size || 1,
+          url: contentLink || `https://workspace.local/${encodeURIComponent(file.name)}`,
+          metadata: {
+            uploadedFrom: "supplier-task-board"
+          }
+        })
+      )
+    )
+      .then(() => sellerBackendApi.getCollaborationTask(selectedTask.id))
+      .then((record) => {
+        const nextTask = normalizeTaskRecord(record);
+        replaceTask(nextTask);
+        setUploadedFiles(nextTask.attachments || []);
+      })
+      .catch((error) => {
+        setToast(error instanceof Error ? error.message : "Unable to attach file.");
+      });
   };
 
   const handleAddComment = () => {
+    if (!selectedTask) return;
     const txt = commentDraft.trim();
     if (!txt) return;
-    setComments((prev) => [
-      ...prev,
-      {
-        id: prev.length + 1,
-        from: "supplier",
-        name: "You",
-        body: txt,
-        time: "Now"
-      }
-    ]);
-    setCommentDraft("");
+    void sellerBackendApi
+      .createCollaborationTaskComment(selectedTask.id, {
+        body: txt
+      })
+      .then(() => sellerBackendApi.getCollaborationTask(selectedTask.id))
+      .then((record) => {
+        const nextTask = normalizeTaskRecord(record);
+        replaceTask(nextTask);
+        setComments(nextTask.comments || []);
+        setCommentDraft("");
+      })
+      .catch((error) => {
+        setToast(error instanceof Error ? error.message : "Unable to add comment.");
+      });
   };
 
   const approveTask = (task) => {
@@ -502,23 +598,60 @@ export default function SupplierTaskBoardPage() {
   };
 
   const addNewTaskToBoard = ({ task, initialColumn, openAfter }) => {
-    const col = initialColumn || "todo";
-    setColumns((prev) => ({
-      ...prev,
-      [col]: [...(prev[col] || []), task]
-    }));
+    const contract = contracts.find((entry) => String(entry.id) === String(task?.meta?.contractId || ""));
+    const assigneeHandle = String(task?.seller || "");
+    const assigneeUserId =
+      assigneeHandle && assigneeHandle === contract?.creatorHandle
+        ? contract?.creatorUserId
+        : null;
 
-    setToast(`Task created in “${COLUMNS.find((c) => c.id === col)?.label || col}”`);
-
-    // close drawer
-    setNewTaskOpen(false);
-
-    if (openAfter) {
-      // open details panel
-      setTimeout(() => {
-        handleCardClick(task);
-      }, 0);
-    }
+    void sellerBackendApi
+      .createCollaborationTask({
+        contractId: task?.meta?.scope === "Linked" ? task?.meta?.contractId || null : null,
+        campaignId: contract?.campaignId || task?.campaignId || null,
+        assigneeUserId,
+        title: task?.title,
+        description: task?.meta?.description || "",
+        priority:
+          task?.meta?.priority === "Low"
+            ? "LOW"
+            : task?.meta?.priority === "High"
+              ? "HIGH"
+              : task?.meta?.priority === "Critical"
+                ? "URGENT"
+                : "MEDIUM",
+        status: mapColumnToTaskStatus(initialColumn || "todo"),
+        dueAt: task?.meta?.dueDate ? `${task.meta.dueDate}T${task.meta.dueTime || "18:00"}:00.000Z` : undefined,
+        metadata: {
+          ...task.meta,
+          type: task.type,
+          estimatedValue: task.earnings,
+          currency: task.currency,
+          hostRole: task.hostRole,
+          creatorUsage: task.creatorUsage,
+          collabMode: task.collabMode,
+          approvalMode: task.approvalMode,
+          contentLink: task?.submission?.link || "",
+          checklist: task?.meta?.checklist || [],
+          dependencies: task?.meta?.dependencies || [],
+          watchers: task?.meta?.watchers || [],
+          refLinks: task?.meta?.refLinks || []
+        }
+      })
+      .then((record) => {
+        const nextTask = normalizeTaskRecord(record);
+        replaceTask(nextTask);
+        setToast(`Task created in “${COLUMNS.find((c) => c.id === (initialColumn || "todo"))?.label || initialColumn}”`);
+        setNewTaskOpen(false);
+        if (openAfter) {
+          setTimeout(() => {
+            handleCardClick(nextTask);
+          }, 0);
+        }
+      })
+      .catch((error) => {
+        setToast(error instanceof Error ? error.message : "Unable to create task.");
+      });
   };
 
   return (
@@ -1982,10 +2115,6 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
 
   // estimator returns numbers
   assert(typeof estimateTimeMinutes({ type: "live" }) === "number", "estimateTimeMinutes returns number");
-
-  // due calculation range sanity
-  const d = getDeterministicDue(9);
-  assert(d.days >= -2 && d.days <= 7, "getDeterministicDue is within range");
 
   // due label helper
   assert(dueLabelFromDays(0) === "Today", "dueLabelFromDays Today");

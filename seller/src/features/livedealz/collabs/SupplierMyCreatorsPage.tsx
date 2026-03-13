@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierMyCreatorsPage.jsx
@@ -30,6 +31,47 @@ const ORANGE = "#f77f00";
 
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
+}
+
+function buildInitials(name, handle) {
+  const label = String(name || "").trim();
+  if (label) {
+    const parts = label.split(/\s+/g).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0]?.[0] || ""}${parts[1]?.[0] || ""}`.toUpperCase();
+  }
+  return String(handle || "").replace(/^@/, "").slice(0, 2).toUpperCase() || "CR";
+}
+
+function normalizeWorkspaceCreator(creator) {
+  return {
+    ...creator,
+    id: String(creator?.id || ""),
+    name: String(creator?.name || "Creator"),
+    handle: String(creator?.handle || "@creator"),
+    initials: String(creator?.initials || buildInitials(creator?.name, creator?.handle)),
+    tagline: String(creator?.tagline || ""),
+    categories: Array.isArray(creator?.categories) ? creator.categories.map(String) : [],
+    rating: Number(creator?.rating || 0),
+    relationship: String(creator?.relationship || "Past collab"),
+    following: Boolean(creator?.following),
+    favourite: Boolean(creator?.favourite),
+    nextLive: String(creator?.nextLive || "Not scheduled"),
+    nextAction: String(creator?.nextAction || "No active deliverables"),
+    lifetimeRevenue: Number(creator?.lifetimeRevenue || 0),
+    currentValue: Number(creator?.currentValue || 0),
+    activeContracts: Number(creator?.activeContracts || 0),
+    activeCampaigns: Array.isArray(creator?.activeCampaigns) ? creator.activeCampaigns : [],
+    queues:
+      creator?.queues && typeof creator.queues === "object"
+        ? {
+            pendingSupplier: Number(creator.queues.pendingSupplier || 0),
+            pendingAdmin: Number(creator.queues.pendingAdmin || 0),
+            changesRequested: Number(creator.queues.changesRequested || 0),
+          }
+        : { pendingSupplier: 0, pendingAdmin: 0, changesRequested: 0 },
+    activeContractIds: Array.isArray(creator?.activeContractIds) ? creator.activeContractIds.map(String) : [],
+  };
 }
 
 /* -------------------------------- Toast -------------------------------- */
@@ -796,8 +838,34 @@ export default function SupplierMyCreatorsPage() {
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteRecipient, setInviteRecipient] = useState(null);
+  const [supplierCampaigns, setSupplierCampaigns] = useState<Array<Record<string, any>>>([]);
 
-  const supplierCampaigns = useMemo(() => [], []);
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([sellerBackendApi.getMyCreatorsWorkspace(), sellerBackendApi.getCampaignWorkspace()])
+      .then(([workspace, campaignWorkspace]) => {
+        if (cancelled) return;
+        const creators = Array.isArray(workspace?.creators) ? workspace.creators.map(normalizeWorkspaceCreator) : [];
+        const campaigns = Array.isArray(campaignWorkspace?.campaigns) ? campaignWorkspace.campaigns : [];
+        setMyCreators(creators);
+        setSupplierCampaigns(
+          campaigns.map((campaign) => ({
+            id: String(campaign?.id || ""),
+            name: String(campaign?.title || campaign?.name || "MyLiveDealz campaign"),
+          }))
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMyCreators([]);
+        setSupplierCampaigns([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const stats = useMemo(() => {
     const active = myCreators.filter((c) => c.relationship === "Active collab");
@@ -836,7 +904,12 @@ export default function SupplierMyCreatorsPage() {
   }, [filteredCreators, selectedCreatorId]);
 
   const toggleFollow = (id) => {
-    setMyCreators((prev) => prev.map((c) => (c.id === id ? { ...c, following: !c.following } : c)));
+    const target = myCreators.find((creator) => creator.id === id);
+    const nextFollow = !target?.following;
+    setMyCreators((prev) => prev.map((c) => (c.id === id ? { ...c, following: nextFollow } : c)));
+    void sellerBackendApi.followCreator(id, { follow: nextFollow }).catch(() => {
+      setMyCreators((prev) => prev.map((c) => (c.id === id ? { ...c, following: !nextFollow } : c)));
+    });
   };
 
   const toggleFavourite = (id) => {
@@ -844,22 +917,56 @@ export default function SupplierMyCreatorsPage() {
   };
 
   const stopCollaboration = (id) => {
-    setMyCreators((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? {
-              ...c,
-              relationship: "Past collab",
-              activeContracts: 0,
-              currentValue: 0,
-              nextLive: "Not scheduled",
-              nextAction: "Collaboration stopped by supplier",
-              queues: { pendingSupplier: 0, pendingAdmin: 0, changesRequested: 0 },
-              activeCampaigns: []
-            }
-          : c
+    const creator = myCreators.find((entry) => entry.id === id);
+    const activeContractIds = Array.isArray(creator?.activeContractIds) ? creator.activeContractIds : [];
+
+    if (activeContractIds.length === 0) {
+      setMyCreators((prev) =>
+        prev.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                relationship: "Past collab",
+                activeContracts: 0,
+                currentValue: 0,
+                nextLive: "Not scheduled",
+                nextAction: "Collaboration stopped by supplier",
+                queues: { pendingSupplier: 0, pendingAdmin: 0, changesRequested: 0 },
+                activeCampaigns: [],
+              }
+            : c
+        )
+      );
+      return;
+    }
+
+    void Promise.all(
+      activeContractIds.map((contractId) =>
+        sellerBackendApi.terminateCollaborationContract(contractId, { reason: "Stopped from My Creators workspace" })
       )
-    );
+    )
+      .then(() => {
+        setMyCreators((prev) =>
+          prev.map((c) =>
+            c.id === id
+              ? {
+                  ...c,
+                  relationship: "Past collab",
+                  activeContracts: 0,
+                  currentValue: 0,
+                  nextLive: "Not scheduled",
+                  nextAction: "Collaboration stopped by supplier",
+                  queues: { pendingSupplier: 0, pendingAdmin: 0, changesRequested: 0 },
+                  activeCampaigns: [],
+                  activeContractIds: [],
+                }
+              : c
+          )
+        );
+      })
+      .catch(() => {
+        toast("Unable to stop collaboration");
+      });
   };
 
   const openInvite = (creator) => {

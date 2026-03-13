@@ -286,11 +286,11 @@ function svgAvatarDataUrl(label, seed = 'A') {
 
 function useToasts() {
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; tone: string }>>([]);
-  const push = (message, tone = 'info') => {
+  const push = useCallback((message, tone = 'info') => {
     const id = `${Date.now()}_${Math.random()}`;
     setToasts((t) => [...t, { id, message, tone }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
-  };
+  }, []);
   return { toasts, push };
 }
 
@@ -1130,107 +1130,9 @@ function CatalogCampaignPickerPage({
 
 /* ------------------------- campaigns ------------------------- */
 
-const INIT_CAMPAIGNS = [
-  {
-    id: 'S-201',
-    name: 'Beauty Flash Week (Combo)',
-    stage: 'Execution',
-    approvalStatus: 'Approved',
-    creatorUsageDecision: 'I will use a Creator',
-    collabMode: 'Open for Collabs',
-    approvalMode: 'Manual',
-    offerScope: 'Products',
-    promoType: 'Discount',
-    promoArrangement: 'PercentOff',
-    currency: 'USD',
-    estValue: 2400,
-    region: 'East Africa',
-    type: 'Live + Shoppables.',
-    startDate: '2026-02-10',
-    durationDays: 14,
-    endDate: computeEndDate('2026-02-10', 14),
-    items: [
-      {
-        ...CATALOG_ITEMS[2],
-        plannedQty: 40,
-        discount: { mode: 'percent', value: 15 },
-        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[2].price, 'percent', 15),
-        discountLabel: formatDiscount('percent', 15, 'USD'),
-      },
-      {
-        ...CATALOG_ITEMS[3],
-        plannedQty: 25,
-        discount: { mode: 'amount', value: 5 },
-        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[3].price, 'amount', 5),
-        discountLabel: formatDiscount('amount', 5, 'USD'),
-      },
-    ],
-    creatorsCount: 2,
-    pitchesCount: 7,
-    invitesSent: 0,
-    invitesAccepted: 0,
-    proposalsCount: 2,
-    contractCount: 1,
-    pendingSupplierApproval: true,
-    pendingAdminApproval: false,
-    adminRejected: false,
-    creatorRejected: false,
-    renegotiation: false,
-    health: 'on-track',
-    nextAction: 'Approve Creator Clip #3',
-    lastActivity: 'Assets submitted · 2h',
-    lastActivityAt: Date.now() - 2 * 60 * 60 * 1000,
-  },
-  {
-    id: 'S-202',
-    name: 'Tech Friday Mega Live',
-    stage: 'Draft',
-    approvalStatus: 'Pending',
-    creatorUsageDecision: 'I will use a Creator',
-    collabMode: 'Invite-only',
-    approvalMode: 'Manual',
-    offerScope: 'Products',
-    promoType: 'Coupon',
-    promoArrangement: 'InfluencerCode',
-    promoCode: 'TECHFRIDAY',
-    currency: 'USD',
-    estValue: 3100,
-    region: 'Africa / Asia',
-    type: 'Live Sessionz',
-    startDate: '2026-02-25',
-    durationDays: 10,
-    endDate: computeEndDate('2026-02-25', 10),
-    items: [
-      {
-        ...CATALOG_ITEMS[1],
-        plannedQty: 60,
-        discount: { mode: 'percent', value: 10 },
-        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[1].price, 'percent', 10),
-        discountLabel: formatDiscount('percent', 10, 'USD'),
-      },
-    ],
-    creatorsCount: 0,
-    pitchesCount: 0,
-    invitesSent: 0,
-    invitesAccepted: 0,
-    proposalsCount: 0,
-    contractCount: 0,
-    pendingSupplierApproval: false,
-    pendingAdminApproval: true,
-    adminRejected: false,
-    creatorRejected: false,
-    renegotiation: false,
-    health: 'at-risk',
-    nextAction: 'Await Admin approval',
-    lastActivity: 'Submitted for approval · 1d',
-    lastActivityAt: Date.now() - 1 * 24 * 60 * 60 * 1000,
-    queuedStageAfterApproval: 'Collabs',
-    queuedNextActionAfterApproval: 'Invite creators',
-  },
-];
-
 export function createEmptySupplierCampaignBuilder() {
   return {
+    campaignId: '',
     name: '',
     type: 'Shoppable Adz',
     region: 'East Africa',
@@ -1302,6 +1204,8 @@ export default function SupplierMyCampaignsPage() {
   const [builderStep, setBuilderStep] = useState(emptySupplierCampaignBuilderStep);
   const [builder, setBuilder] = useState<any>(emptySupplierCampaignBuilderValue);
   const builderHashRef = useRef('');
+  const workspaceLoadStartedRef = useRef(false);
+  const restoreBuilderStartedRef = useRef(false);
 
   const giveawaysSupported = useMemo(
     () => campaignTypeSupportsGiveaways(builder.type),
@@ -1379,6 +1283,9 @@ export default function SupplierMyCampaignsPage() {
   );
 
   useEffect(() => {
+    if (workspaceLoadStartedRef.current) return;
+    workspaceLoadStartedRef.current = true;
+
     let cancelled = false;
 
     async function loadWorkspace() {
@@ -1522,10 +1429,12 @@ export default function SupplierMyCampaignsPage() {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (restoreBuilderStartedRef.current) return;
 
     const sp = new URLSearchParams(window.location.search);
     const shouldRestore = sp.get('restoreCampaignBuilder') === '1' || sp.has('assetId');
     if (!shouldRestore) return;
+    restoreBuilderStartedRef.current = true;
 
     void (async () => {
       const saved = await backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID);
@@ -1808,6 +1717,7 @@ export default function SupplierMyCampaignsPage() {
 
     setBuilder((p) => ({
       ...p,
+      campaignId: '',
       name: '',
       estValue: 1000,
 
@@ -2182,7 +2092,7 @@ export default function SupplierMyCampaignsPage() {
       }
     }
 
-    const id = uid('S');
+    const id = String(builder.campaignId || '').trim() || uid('S');
 
     // after approval routing
     let queuedStageAfterApproval = 'Draft';
@@ -2234,6 +2144,8 @@ export default function SupplierMyCampaignsPage() {
 
       // offer scope
       offerScope: builder.offerScope,
+      defaultDiscountMode: builder.defaultDiscountMode,
+      defaultDiscountValue: builder.defaultDiscountValue,
 
       // promo
       promoType: builder.promoType,
@@ -2283,14 +2195,31 @@ export default function SupplierMyCampaignsPage() {
 
       notes: builder.notes,
       internalOwner: builder.internalOwner,
+      submissionSnapshot: {
+        builderStep,
+        builder: {
+          ...builder,
+          campaignId: id,
+          giveaways: effectiveGiveaways,
+          durationDays,
+          endDate,
+        },
+      },
     };
 
     try {
-      const savedCampaign = await backendApi.createCampaign(buildCampaignPayload(newCampaign));
+      const savedCampaign = String(builder.campaignId || '').trim()
+        ? await backendApi.patchCampaign(id, buildCampaignPayload(newCampaign))
+        : await backendApi.createCampaign(buildCampaignPayload(newCampaign));
       const nextCampaign = {
         ...newCampaign,
         ...savedCampaign,
+        id: String(savedCampaign?.id || id),
       };
+      setBuilder((prev) => ({
+        ...prev,
+        campaignId: nextCampaign.id,
+      }));
       setCampaigns((xs) => [nextCampaign, ...xs.filter((entry) => entry.id !== nextCampaign.id)]);
       setBuilderOpen(false);
       push(

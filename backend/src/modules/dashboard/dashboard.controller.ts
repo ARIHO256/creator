@@ -42,6 +42,16 @@ export class DashboardController {
     return this.dashboardService.feed(user.sub);
   }
 
+  @Get('dashboard/live-feed')
+  liveFeed(@CurrentUser() user: RequestUser) {
+    return this.dashboardService.liveFeed(user.sub);
+  }
+
+  @Get('dashboard/seller-public-profile')
+  sellerPublicProfile(@CurrentUser() user: RequestUser) {
+    return this.dashboardService.sellerPublicProfile(user.sub);
+  }
+
   @Get('dashboard/summary')
   summary(@CurrentUser() user: RequestUser) {
     return this.dashboardService.summary(user.sub);

@@ -61,6 +61,8 @@ export class SellersService {
 
   async createListing(userId: string, payload: CreateSellerListingDto) {
     const profile = await this.ensureSellerProfile(userId);
+    const nextStatus = this.normalizeListingStatus(payload.status);
+    const nextMetadata = this.normalizeListingMetadata(payload.metadata, nextStatus);
     if (payload.taxonomyNodeId) {
       await this.assertTaxonomyNodeAllowed(payload.taxonomyNodeId);
       await this.ensureCoverageForListing(profile.id, payload.taxonomyNodeId);
@@ -79,8 +81,8 @@ export class SellersService {
         price: payload.price,
         currency: payload.currency ?? 'USD',
         inventoryCount: payload.inventoryCount ?? 0,
-        status: (payload.status ?? 'DRAFT') as ListingStatus,
-        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+        status: nextStatus,
+        metadata: nextMetadata as Prisma.InputJsonValue | undefined
       }
     });
 
@@ -119,11 +121,15 @@ export class SellersService {
       throw new NotFoundException('Seller listing not found');
     }
 
+    const nextStatus = payload.status ? this.normalizeListingStatus(payload.status) : undefined;
+    const nextMetadata = this.normalizeListingMetadata(payload.metadata, nextStatus);
+
     const updated = await this.prisma.marketplaceListing.update({
       where: { id },
       data: {
         ...payload,
-        metadata: payload.metadata as Prisma.InputJsonValue | undefined
+        status: nextStatus,
+        metadata: nextMetadata as Prisma.InputJsonValue | undefined
       }
     });
 
@@ -342,6 +348,41 @@ export class SellersService {
     });
   }
 
+  private normalizeListingStatus(status?: string): ListingStatus {
+    const normalized = String(status || 'DRAFT').trim().toUpperCase();
+    if (normalized === 'IN_REVIEW') {
+      return ListingStatus.ACTIVE;
+    }
+    return normalized as ListingStatus;
+  }
+
+  private normalizeListingMetadata(
+    metadata: Record<string, unknown> | undefined,
+    status?: ListingStatus
+  ): Record<string, unknown> | undefined {
+    if (!metadata && !status) {
+      return metadata;
+    }
+
+    const next =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? { ...metadata }
+        : {};
+
+    if (status) {
+      next.displayStatus =
+        status === ListingStatus.ACTIVE
+          ? 'Live'
+          : status === ListingStatus.PAUSED
+            ? 'Paused'
+            : status === ListingStatus.ARCHIVED
+              ? 'Rejected'
+              : 'Draft';
+    }
+
+    return next;
+  }
+
   private async ensureUniqueHandle(value: string, currentId?: string) {
     const base = String(value || 'seller')
       .toLowerCase()
@@ -361,34 +402,10 @@ export class SellersService {
   }
 
   private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: { id: { in: SELLERFRONT_COMPAT_RECORD_IDS } },
-      select: { payload: true }
-    });
-
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload =
-        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
-          ? (record.payload as Record<string, unknown>)
-          : null;
-      const orders = Array.isArray(payload?.orders) ? payload.orders : [];
-      for (const entry of orders) {
-        const order =
-          entry && typeof entry === 'object' && !Array.isArray(entry)
-            ? (entry as Record<string, unknown>)
-            : null;
-        const id = typeof order?.id === 'string' ? order.id : '';
-        if (id) ids.add(id);
-      }
-    }
-
-    return Array.from(ids);
+    return [];
   }
 
   private async isCompatibilityOrderId(id: string) {
-    if (!id) return false;
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
-    return compatibilityOrderIds.includes(id);
+    return Boolean(id) && false;
   }
 }

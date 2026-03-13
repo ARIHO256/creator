@@ -1990,7 +1990,7 @@ export default function SupplierDealzMarketplace() {
   useEffect(() => {
     let active = true;
 
-    void sellerBackendApi.getLegacyDealzMarketplace().then((payload) => {
+    void sellerBackendApi.getDealzMarketplace().then((payload) => {
       if (!active) return;
       setDealz(Array.isArray((payload as { deals?: unknown[] }).deals) ? ((payload as { deals?: Deal[] }).deals ?? []) : []);
       setSelectedId(String((payload as { selectedId?: unknown }).selectedId ?? ""));
@@ -2019,7 +2019,7 @@ export default function SupplierDealzMarketplace() {
 
   useEffect(() => {
     if (!marketplaceReady) return;
-    void sellerBackendApi.patchLegacyDealzMarketplace({
+    void sellerBackendApi.patchDealzMarketplace({
       deals: dealz,
       selectedId,
       cart,

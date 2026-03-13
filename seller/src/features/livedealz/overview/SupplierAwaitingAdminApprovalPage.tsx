@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
 
@@ -337,13 +337,13 @@ const I = {
 function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = (message: string, tone: "default" | "success" | "error" = "default") => {
+  const push = useCallback((message: string, tone: "default" | "success" | "error" = "default") => {
     const id = `${Date.now()}_${Math.random()}`;
     setToasts((t) => [...t, { id, message, tone }]);
     window.setTimeout(() => {
       setToasts((t) => t.filter((x) => x.id !== id));
     }, 3200);
-  };
+  }, []);
 
   return { toasts, push };
 }
@@ -757,6 +757,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const [showSubmission, setShowSubmission] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const hydrateStartedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -799,6 +800,8 @@ export default function SupplierAwaitingAdminApprovalPremium() {
       }
     };
 
+    if (hydrateStartedRef.current) return;
+    hydrateStartedRef.current = true;
     void hydrate();
     return () => {
       cancelled = true;

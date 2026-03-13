@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar,
@@ -17,6 +17,7 @@ import {
   Divider,
 } from "@mui/material";
 import { useLocalization } from "../../localization/LocalizationProvider";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 // -----------------------------------------------------------------------------
 // EVzone brand palette (light mode)
@@ -59,92 +60,6 @@ const IconMarketsDelivery = () => <IconShell>🌍</IconShell>;
 const IconSeo = () => <IconShell>🔎</IconShell>;
 
 // -----------------------------------------------------------------------------
-// Mock data – this mimics what comes from Admin Schema + Wizard Builder
-// -----------------------------------------------------------------------------
-const MOCK_TABS = [
-  {
-    id: "core",
-    label: "Core Features",
-    description:
-      "Basic details like title, brand, model, body type and key selling points.",
-    requiredFields: 6,
-    optionalFields: 4,
-  },
-  {
-    id: "preOwned",
-    label: "Pre-Owned Info",
-    description:
-      "If this is a used vehicle, we will ask for mileage, previous owners and service history.",
-    requiredFields: 3,
-    optionalFields: 3,
-    conditionalSummary: "Visible only when you mark the car as pre-owned.",
-  },
-  {
-    id: "bev",
-    label: "BEV Data",
-    description:
-      "Battery capacity, range, charging times, connector types and charging ports.",
-    requiredFields: 5,
-    optionalFields: 4,
-    conditionalSummary: "Visible only when powertrain type = BEV.",
-  },
-  {
-    id: "extras",
-    label: "Extras",
-    description:
-      "Accessories, add-ons and additional perks you want to highlight.",
-    requiredFields: 0,
-    optionalFields: 6,
-  },
-  {
-    id: "gallery",
-    label: "Gallery",
-    description:
-      "Upload hero photos, interior and exterior shots, color variations and key details.",
-    requiredFields: 1,
-    optionalFields: 9,
-  },
-];
-
-const MOCK_STANDARD_STEPS = [
-  {
-    id: "pricing",
-    label: "Pricing",
-    icon: <IconPricing />,
-    description:
-      "Set your retail price, optional wholesale tiers and promo pricing windows for each variant.",
-  },
-  {
-    id: "warranty",
-    label: "Warranty",
-    icon: <IconWarranty />,
-    description:
-      "Add warranty period, coverage and conditions if you offer warranty.",
-  },
-  {
-    id: "inventory",
-    label: "Inventory",
-    icon: <IconInventory />,
-    description:
-      "Tell us how many units you have for each variant, along with their SKUs.",
-  },
-  {
-    id: "marketsDelivery",
-    label: "Markets & Delivery",
-    icon: <IconMarketsDelivery />,
-    description:
-      "Choose which markets you plan to sell to, then decide how you deliver (pickup, delivery, regions, cross-border).",
-  },
-  {
-    id: "searchDiscovery",
-    label: "Search & Discovery",
-    icon: <IconSeo />,
-    description:
-      "Set the title and short description buyers see in EVzone search, and optionally specify audience and key search terms.",
-  },
-];
-
-// -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
 function SellerFormPreviewPage() {
@@ -154,11 +69,64 @@ function SellerFormPreviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const wizardState = location?.state;
+  const [tabs, setTabs] = useState([]);
+  const [standardSteps, setStandardSteps] = useState([]);
+  const [selectedTabId, setSelectedTabId] = useState("");
 
-  const [selectedTabId, setSelectedTabId] = useState(MOCK_TABS[0].id);
+  useEffect(() => {
+    let active = true;
+    void sellerBackendApi
+      .getSellerListingWizard()
+      .then((payload) => {
+        if (!active) return;
+        const config =
+          payload?.config && typeof payload.config === "object" && !Array.isArray(payload.config)
+            ? payload.config
+            : {};
+        const steps = Array.isArray(config.steps) ? config.steps : [];
+        const nextTabs = steps
+          .filter((step) => String(step.type || "form") === "form")
+          .map((step) => ({
+            id: String(step.id || ""),
+            label: String(step.label || step.id || "Step"),
+            description: String(step.description || ""),
+            requiredFields: Number(step.requiredFields ?? 0),
+            optionalFields: Number(step.optionalFields ?? 0),
+            conditionalSummary: typeof step.conditionalSummary === "string" ? step.conditionalSummary : undefined,
+          }));
+        const nextStandardSteps = steps
+          .filter((step) => String(step.type || "form") !== "form")
+          .map((step) => ({
+            id: String(step.id || ""),
+            label: String(step.label || step.id || "Step"),
+            icon:
+              step.id === "pricing"
+                ? <IconPricing />
+                : step.id === "warranty"
+                  ? <IconWarranty />
+                  : step.id === "inventory"
+                    ? <IconInventory />
+                    : step.id === "delivery"
+                      ? <IconMarketsDelivery />
+                      : <IconSeo />,
+            description: String(step.description || ""),
+          }));
+        setTabs(nextTabs);
+        setStandardSteps(nextStandardSteps);
+        setSelectedTabId(nextTabs[0]?.id || "");
+      })
+      .catch(() => {
+        if (!active) return;
+        setTabs([]);
+        setStandardSteps([]);
+      });
 
-  const selectedTab =
-    MOCK_TABS.find((t) => t.id === selectedTabId) || MOCK_TABS[0];
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedTab = tabs.find((t) => t.id === selectedTabId) || tabs[0];
 
   const handleStartListing = () => {
     navigate("/listings/wizard", { state: wizardState });
@@ -251,7 +219,7 @@ function SellerFormPreviewPage() {
             </Box>
 
             <Box className="flex-1 overflow-y-auto p-3 space-y-1.5">
-              {MOCK_TABS.map((tab) => {
+              {tabs.map((tab) => {
                 const isActive = tab.id === selectedTabId;
                 return (
                   <Paper
@@ -396,19 +364,19 @@ function SellerFormPreviewPage() {
                 variant="subtitle1"
                 sx={{ color: EV_COLORS.textMain, fontWeight: 600, mb: 1 }}
               >
-                {selectedTab.label} – questions
+                {selectedTab?.label || "Step"} – questions
               </Typography>
               <Typography
                 variant="body2"
                 sx={{ color: EV_COLORS.textSubtle, mb: 1.5 }}
               >
-                {selectedTab.description}
+                {selectedTab?.description || ""}
               </Typography>
 
               <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
                 <Chip
                   size="small"
-                  label={`${selectedTab.requiredFields} required`}
+                  label={`${selectedTab?.requiredFields || 0} required`}
                   sx={{
                     backgroundColor: EV_COLORS.surfaceAlt,
                     color: EV_COLORS.textSubtle,
@@ -416,13 +384,13 @@ function SellerFormPreviewPage() {
                 />
                 <Chip
                   size="small"
-                  label={`${selectedTab.optionalFields} optional`}
+                  label={`${selectedTab?.optionalFields || 0} optional`}
                   sx={{
                     backgroundColor: EV_COLORS.surfaceAlt,
                     color: EV_COLORS.textSubtle,
                   }}
                 />
-                {selectedTab.conditionalSummary && (
+                {selectedTab?.conditionalSummary && (
                   <Chip
                     size="small"
                     label="Conditional section"
@@ -478,7 +446,7 @@ function SellerFormPreviewPage() {
               </Typography>
 
               <Box className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {MOCK_STANDARD_STEPS.map((step) => (
+                {standardSteps.map((step) => (
                   <Paper
                     key={step.id}
                     elevation={0}

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
-import { buildAdzCampaignPayload, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
+import { buildAdzCampaignPayload, deriveMetricSeries, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzDashboardPage.jsx
@@ -450,8 +450,6 @@ function BarList({ title, subtitle, rows }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS: Array<Record<string, any>> = [];
-
 /* ----------------------------- Performance drawer --------------------------- */
 
 function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder, onOpenMarketplace, onCopyLink }) {
@@ -464,8 +462,14 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
     setPlatform("All");
   }, [open, ad?.id]);
 
-  const sImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
-  const sOrders = useMemo(() => [3, 4, 5, 4, 6, 7, 8, 7, 10, 9, 12, 13, 14, 15], []);
+  const sImpr = useMemo(
+    () => deriveMetricSeries(Number(ad?.impressions7d ?? ad?.impressions ?? 0), 14, `${ad?.id || "drawer-impressions"}`),
+    [ad?.id, ad?.impressions, ad?.impressions7d]
+  );
+  const sOrders = useMemo(
+    () => deriveMetricSeries(Number(ad?.orders7d ?? ad?.orders ?? 0), 14, `${ad?.id || "drawer-orders"}-orders`),
+    [ad?.id, ad?.orders, ad?.orders7d]
+  );
 
   const kpis = useMemo(() => {
     if (!ad) return null;
@@ -489,12 +493,14 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
 
   const offerRows = useMemo(() => {
     if (!ad) return [];
-    // demo derived offer performance
     return ad.offers.map((o, idx) => {
-      const base = Math.max(1, ad.orders7d);
-      const w = idx === 0 ? 0.62 : 0.38;
-      const sold = Math.max(1, Math.round(base * w));
-      const estClicks = Math.max(1, Math.round(ad.clicks7d * (idx === 0 ? 0.55 : 0.45)));
+      const sold = Math.max(0, Number(o.sold ?? 0));
+      const estClicks =
+        Math.max(
+          0,
+          Number((o as Record<string, unknown>).clicks ?? 0)
+            || Math.round((ad.clicks7d || 0) / Math.max(1, ad.offers.length))
+        );
       const conv = estClicks ? sold / estClicks : 0;
       return {
         ...o,
@@ -1070,7 +1076,7 @@ export default function SupplierAdzDashboardPage() {
   const [drawer, setDrawer] = useState(null); // null | calendar | quickLinks | performance | builder
   const [drawerData, setDrawerData] = useState(undefined); // adId
 
-  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
+  const [ads, setAds] = useState<Array<Record<string, any>>>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;
@@ -1081,7 +1087,7 @@ export default function SupplierAdzDashboardPage() {
         if (cancelled) return;
         const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
         if (nextAds.length) {
-          setAds(nextAds as typeof DEMO_ADS);
+          setAds(nextAds as Array<Record<string, any>>);
           syncedAdsRef.current = Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)]));
         }
       })
@@ -1145,8 +1151,14 @@ export default function SupplierAdzDashboardPage() {
   }, [ads, q, status, onlyWholesaleReady]);
 
   // Global dashboard analytics
-  const seriesImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
-  const seriesOrders = useMemo(() => [3, 4, 5, 4, 6, 7, 8, 7, 10, 9, 12, 13, 14, 15], []);
+  const seriesImpr = useMemo(
+    () => deriveMetricSeries(ads.reduce((sum, ad) => sum + Number(ad.impressions7d ?? ad.impressions ?? 0), 0), 14, "dashboard-impressions"),
+    [ads]
+  );
+  const seriesOrders = useMemo(
+    () => deriveMetricSeries(ads.reduce((sum, ad) => sum + Number(ad.orders7d ?? ad.orders ?? 0), 0), 14, "dashboard-orders"),
+    [ads]
+  );
 
   const retailWholesaleSplit = useMemo(() => {
     let retail = 0;
@@ -1353,12 +1365,12 @@ export default function SupplierAdzDashboardPage() {
         </div>
 
         <div className="lg:col-span-7 space-y-4">
-          <LineChart
-            title="Traffic trend"
-            subtitle="Impressions vs Orders (last 14 days)"
-            seriesA={seriesImpr}
-            seriesB={seriesOrders}
-            aLabel="Impressions"
+        <LineChart
+          title="Traffic trend"
+          subtitle="Impressions vs Orders (last 14 days, demo)"
+          seriesA={seriesImpr}
+          seriesB={seriesOrders}
+          aLabel="Impressions"
             bLabel="Orders"
           />
 

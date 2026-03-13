@@ -134,6 +134,7 @@ export type AnalyticsHighlights = {
 export type AnalyticsCohortContent = {
   subtitle: string;
   bullets: string[];
+  grid: number[][];
 };
 
 export type AlertRuleConfig = {
@@ -154,6 +155,7 @@ export type AnalyticsContent = {
   cohort: AnalyticsCohortContent;
   alertRules: AlertRuleConfig[];
   metricOptions: string[];
+  seriesByRange: Partial<Record<AlertRuleConfig["window"], number[]>>;
 };
 
 export type HelpSupportKBItem = { id: string; cat: string; title: string; url: string };

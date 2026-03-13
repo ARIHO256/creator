@@ -21,6 +21,12 @@ export class CollaborationController {
   constructor(private readonly service: CollaborationService) {}
 
   @Get('campaigns/workspace') campaignWorkspace(@CurrentUser() user: RequestUser) { return this.service.campaignWorkspace(user.sub); }
+  @Get('campaigns/dealz-marketplace') dealzMarketplace(@CurrentUser() user: RequestUser) { return this.service.dealzMarketplace(user.sub); }
+  @Patch('campaigns/dealz-marketplace')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  updateDealzMarketplace(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updateDealzMarketplace(user.sub, body);
+  }
   @Get('campaigns/legacy-marketplace') legacyMarketplace(@CurrentUser() user: RequestUser) { return this.service.legacyMarketplace(user.sub); }
   @Patch('campaigns/legacy-marketplace')
   @RateLimit({ limit: 30, windowMs: 60_000 })

@@ -27,6 +27,7 @@ import {
   MenuItem,
 } from "@mui/material";
 import { useLocalization } from "../../localization/LocalizationProvider";
+import { sellerBackendApi } from "../../lib/backendApi";
 
 // -----------------------------------------------------------------------------
 // EVzone brand palette (light mode)
@@ -65,67 +66,6 @@ const IconStart = () => <IconShell>▶</IconShell>;
 const IconSave = () => <IconShell>💾</IconShell>;
 const IconBack = () => <IconShell>←</IconShell>;
 
-// -----------------------------------------------------------------------------
-// Variant attribute options (these will ultimately come from admin/schema)
-// -----------------------------------------------------------------------------
-const AVAILABLE_COLORS = [
-  { value: "white", label: "White" },
-  { value: "black", label: "Black" },
-  { value: "red", label: "Red" },
-  { value: "blue", label: "Blue" },
-  { value: "silver", label: "Silver" },
-];
-
-const AVAILABLE_TRIMS = [
-  { value: "standard", label: "Standard" },
-  { value: "long_range", label: "Long Range" },
-  { value: "performance", label: "Performance" },
-];
-
-const AVAILABLE_BATTERIES = [
-  { value: "60", label: "60 kWh" },
-  { value: "75", label: "75 kWh" },
-  { value: "90", label: "90 kWh" },
-];
-
-const AVAILABLE_WHEEL_SIZES = [
-  { value: "17", label: '17"' },
-  { value: "18", label: '18"' },
-  { value: "19", label: '19"' },
-];
-
-const AVAILABLE_INTERIOR_COLORS = [
-  { value: "black", label: "Black" },
-  { value: "beige", label: "Beige" },
-  { value: "white", label: "White" },
-];
-
-// -----------------------------------------------------------------------------
-// Mock seller markets – in real app, load from seller's Profile & Storefront
-// -----------------------------------------------------------------------------
-const MOCK_SELLER_MARKETS = [
-  { id: "market-ug", name: "Uganda" },
-  { id: "market-ke", name: "Kenya" },
-  { id: "market-rw", name: "Rwanda" },
-  { id: "market-tz", name: "Tanzania" },
-];
-
-// -----------------------------------------------------------------------------
-// Wizard steps – in real app this comes from Admin Wizard Builder
-// -----------------------------------------------------------------------------
-const WIZARD_STEPS = [
-  { id: "core", label: "Core Features", type: "form" },
-  { id: "preOwned", label: "Pre-Owned Info", type: "form", conditional: true },
-  { id: "bev", label: "BEV Data", type: "form", conditional: true },
-  { id: "extras", label: "Extras", type: "form" },
-  { id: "gallery", label: "Gallery", type: "form" },
-  { id: "pricing", label: "Pricing", type: "pricing" },
-  { id: "warranty", label: "Warranty", type: "warranty", conditional: true },
-  { id: "inventory", label: "Inventory", type: "inventory" },
-  { id: "delivery", label: "Markets & Delivery", type: "delivery" },
-  { id: "seo", label: "Search & Discovery", type: "seo" },
-];
-
 const MAX_WHOLESALE_TIERS = 4;
 const OPEN_ENDED_LABEL = "Above";
 const parseNum = (v) => {
@@ -139,138 +79,72 @@ const isTierMarkedFinal = (tier) =>
   !!tier?.isFinal ||
   String(tier?.maxQty || "").toLowerCase() === OPEN_ENDED_LABEL.toLowerCase();
 
-// NOTE: In a real integration, `variants` should be generated from answered
-// attributes and repeaters (e.g. colors, trims, battery packs, wheel sizes, etc).
-// Here we seed 3 example variants to demonstrate the UI.
-const INITIAL_FORM = {
-  // Core
-  title: "",
-  brand: "",
-  model: "",
-  bodyType: "",
-  keySellingPoint: "",
-  // Pre-owned
-  isUsed: false,
-  mileage: "",
-  owners: "",
-  serviceHistory: "",
-  // Powertrain
-  powertrainType: "BEV", // BEV / PHEV / OTHER
-  batteryCapacity: "",
-  range: "",
-  connectorType: "",
-  numPorts: "",
-  // Extras
-  extras: {
-    fastCharger: false,
-    floorMats: false,
-    roofRack: false,
-    extendedWarranty: false,
-  },
-  // Gallery
-  heroImageUploaded: false,
-  // Pricing (base)
-  price: "",
-  currency: "USD",
-  enableWholesale: false,
-  // Warranty (global toggle)
-  hasWarranty: false,
-  warrantyMonths: "",
-  warrantyDetails: "",
-  // Markets & Delivery
-  markets: {
-    allActive: true,
-    selectedIds: MOCK_SELLER_MARKETS.map((m) => m.id),
-  },
-  allowPickup: true,
-  allowDelivery: true,
-  deliveryRegions: {
-    local: true,
-    upcountry: false,
-    crossBorder: false,
-  },
-  deliverToBuyerWarehouse: false,
-  // Search & Discovery
-  seoTitle: "",
-  seoDescription: "",
-  seoAudience: "",
-  seoKeywords: "",
-  // Variants (all combinations/specs for cards)
-  variants: [
-    {
-      id: "v1",
-      name: "Standard Range",
-      color: "White",
-      trim: "Standard",
-      batteryPack: "60 kWh",
-      wheelSize: '17"',
-      interiorColor: "Black",
-      description: "Base configuration for daily city driving.",
-      specs: "60 kWh · 350 km range · Color: White · Trim: Standard",
-      price: "",
-      stockQty: "",
-      sku: "",
-      warrantyMonths: "",
-      wholesaleTiers: [
-        {
-          id: "v1-t1",
-          minQty: "1",
-          maxQty: "",
-          price: "",
-          isFinal: false,
-        },
-      ],
-    },
-    {
-      id: "v2",
-      name: "Long Range",
-      color: "Black",
-      trim: "Long Range",
-      batteryPack: "75 kWh",
-      wheelSize: '18"',
-      interiorColor: "Beige",
-      description: "Larger battery for longer trips.",
-      specs: "75 kWh · 450 km range · Color: Black · Trim: Long Range",
-      price: "",
-      stockQty: "",
-      sku: "",
-      warrantyMonths: "",
-      wholesaleTiers: [
-        {
-          id: "v2-t1",
-          minQty: "1",
-          maxQty: "",
-          price: "",
-          isFinal: false,
-        },
-      ],
-    },
-    {
-      id: "v3",
-      name: "Performance",
-      color: "Red",
-      trim: "Performance",
-      batteryPack: "90 kWh",
-      wheelSize: '19"',
-      interiorColor: "Black",
-      description: "High performance with stronger acceleration.",
-      specs: "90 kWh · Sport mode · Color: Red · Trim: Performance",
-      price: "",
-      stockQty: "",
-      sku: "",
-      warrantyMonths: "",
-      wholesaleTiers: [
-        {
-          id: "v3-t1",
-          minQty: "1",
-          maxQty: "",
-          price: "",
-          isFinal: false,
-        },
-      ],
-    },
-  ],
+const mapListingDisplayStatus = (status) => {
+  if (status === "ACTIVE") return "Live";
+  if (status === "PAUSED") return "Paused";
+  if (status === "ARCHIVED") return "Rejected";
+  if (status === "IN_REVIEW") return "In Review";
+  return "Draft";
 };
+
+const parseNumericValue = (value) => {
+  if (value === null || value === undefined || value === "") return 0;
+  const parsed = Number.parseFloat(String(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const buildWholesalePreview = (variants) => {
+  const sourceVariant = (variants || []).find(
+    (variant) =>
+      Array.isArray(variant?.wholesaleTiers) &&
+      variant.wholesaleTiers.some(
+        (tier) => String(tier?.minQty || "").trim() || String(tier?.price || "").trim()
+      )
+  ) || variants?.[0];
+
+  const tiers = Array.isArray(sourceVariant?.wholesaleTiers)
+    ? sourceVariant.wholesaleTiers
+        .map((tier) => ({
+          qty: parseNumericValue(tier?.minQty) || 1,
+          price: parseNumericValue(tier?.price),
+        }))
+        .filter((tier) => tier.qty > 0 && tier.price > 0)
+    : [];
+
+  return {
+    sourceVariant,
+    tiers,
+    moq: tiers[0]?.qty || 1,
+  };
+};
+
+function normalizeWizardConfig(payload) {
+  const config =
+    payload?.config && typeof payload.config === "object" && !Array.isArray(payload.config)
+      ? payload.config
+      : {};
+  const variantOptions =
+    config.variantOptions && typeof config.variantOptions === "object" && !Array.isArray(config.variantOptions)
+      ? config.variantOptions
+      : {};
+  const initialForm =
+    config.initialForm && typeof config.initialForm === "object" && !Array.isArray(config.initialForm)
+      ? config.initialForm
+      : null;
+
+  return {
+    markets: Array.isArray(config.markets) ? config.markets : [],
+    steps: Array.isArray(config.steps) ? config.steps : [],
+    variantOptions: {
+      colors: Array.isArray(variantOptions.colors) ? variantOptions.colors : [],
+      trims: Array.isArray(variantOptions.trims) ? variantOptions.trims : [],
+      batteries: Array.isArray(variantOptions.batteries) ? variantOptions.batteries : [],
+      wheelSizes: Array.isArray(variantOptions.wheelSizes) ? variantOptions.wheelSizes : [],
+      interiorColors: Array.isArray(variantOptions.interiorColors) ? variantOptions.interiorColors : [],
+    },
+    initialForm,
+  };
+}
 
 // -----------------------------------------------------------------------------
 // Component
@@ -334,15 +208,55 @@ function SellerProductListingWizardPage() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const location = useLocation();
-  const inboundState = location?.state;
+  const inboundState = (location?.state && typeof location.state === "object" ? location.state : {}) as Record<string, unknown>;
 
-  const [form, setForm] = useState(INITIAL_FORM);
+  const [wizardConfig, setWizardConfig] = useState<any>(null);
+  const [form, setForm] = useState<any>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [draftListingId, setDraftListingId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    void sellerBackendApi
+      .getSellerListingWizard()
+      .then((payload) => {
+        if (cancelled) return;
+        const nextConfig = normalizeWizardConfig(payload);
+        setWizardConfig(nextConfig);
+        setForm(nextConfig.initialForm);
+        setDraftListingId(typeof inboundState.listingId === "string" ? inboundState.listingId : "");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWizardConfig({ markets: [], steps: [], variantOptions: { colors: [], trims: [], batteries: [], wheelSizes: [], interiorColors: [] }, initialForm: null });
+        setForm(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inboundState.listingId]);
+
+  const sellerMarkets = wizardConfig?.markets || [];
+  const wizardSteps = wizardConfig?.steps || [];
+  const availableColors = wizardConfig?.variantOptions?.colors || [];
+  const availableTrims = wizardConfig?.variantOptions?.trims || [];
+  const availableBatteries = wizardConfig?.variantOptions?.batteries || [];
+  const availableWheelSizes = wizardConfig?.variantOptions?.wheelSizes || [];
+  const availableInteriorColors = wizardConfig?.variantOptions?.interiorColors || [];
 
   const visibleSteps = useMemo(() => {
-    return WIZARD_STEPS.filter((step) => {
+    if (!form) return [];
+    return wizardSteps.filter((step) => {
       if (step.id === "preOwned") {
         return form.isUsed; // only show when pre-owned
       }
@@ -354,7 +268,7 @@ function SellerProductListingWizardPage() {
       }
       return true;
     });
-  }, [form]);
+  }, [form, wizardSteps]);
 
   const activeStep = visibleSteps[currentIndex] || visibleSteps[0];
   const initialStepJumped = useRef(false);
@@ -369,6 +283,85 @@ function SellerProductListingWizardPage() {
     }
     initialStepJumped.current = true;
   }, [visibleSteps, inboundState?.intent]);
+
+  const isLastStep = currentIndex === visibleSteps.length - 1;
+
+  // Simple per-step validation
+  const isCurrentStepValid = useMemo(() => {
+    if (!form) return true;
+    const step = activeStep;
+    if (!step) return true;
+
+    const nonEmpty = (v) => typeof v === "string" && v.trim().length > 0;
+
+    switch (step.id) {
+      case "core":
+        return nonEmpty(form.title) && nonEmpty(form.brand) && nonEmpty(form.model);
+      case "preOwned":
+        if (!form.isUsed) return true;
+        return nonEmpty(form.mileage);
+      case "bev":
+        if (form.powertrainType !== "BEV") return true;
+        return nonEmpty(form.batteryCapacity) && nonEmpty(form.range);
+      case "gallery":
+        return !!form.heroImageUploaded;
+      case "pricing": {
+        if (!form.enableWholesale) {
+          return form.variants.every((v) => nonEmpty(v.price));
+        }
+        return form.variants.every((v) => {
+          const tiers = v.wholesaleTiers || [];
+          const used = tiers.filter(
+            (t) => nonEmpty(t.minQty) || nonEmpty(t.maxQty) || nonEmpty(t.price)
+          );
+          if (!used.length) return false;
+          return used.every(
+            (t) => nonEmpty(t.minQty) && nonEmpty(t.maxQty) && nonEmpty(t.price)
+          );
+        });
+      }
+      case "warranty":
+        if (!form.hasWarranty) return true;
+        return nonEmpty(form.warrantyMonths);
+      case "inventory":
+        return form.variants.every((v) => nonEmpty(v.stockQty));
+      case "delivery": {
+        const anyMode = form.allowPickup || form.allowDelivery;
+        const anyRegion = Object.values(form.deliveryRegions).some(Boolean);
+        const anyMarket = form.markets.selectedIds.length > 0;
+        return anyMode && anyRegion && anyMarket;
+      }
+      case "seo":
+        return nonEmpty(form.seoTitle) && nonEmpty(form.seoDescription);
+      default:
+        return true;
+    }
+  }, [activeStep, form]);
+
+  const canGoNext = isCurrentStepValid && !submitting;
+
+  if (loading || !form || !wizardConfig) {
+    return (
+      <Box sx={{ minHeight: "100vh", backgroundColor: EV_COLORS.bg, p: 3 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            maxWidth: 1180,
+            mx: "auto",
+            p: 3,
+            borderRadius: 3,
+            border: `1px solid ${EV_COLORS.border}`,
+            background: HERO_SURFACE,
+          }}
+        >
+          <Typography sx={{ fontWeight: 900, color: EV_COLORS.textMain }}>
+            {t("Loading listing wizard")}
+          </Typography>
+          <LinearProgress sx={{ mt: 2, bgcolor: EV_COLORS.surfaceAlt }} />
+        </Paper>
+      </Box>
+    );
+  }
 
   const handleFieldChange = (field) => (event) => {
     const value =
@@ -522,7 +515,7 @@ function SellerProductListingWizardPage() {
       ...prev,
       markets: {
         allActive: checked,
-        selectedIds: checked ? MOCK_SELLER_MARKETS.map((m) => m.id) : [],
+        selectedIds: checked ? sellerMarkets.map((m) => m.id) : [],
       },
     }));
   };
@@ -537,8 +530,8 @@ const handleMarketToggle = (id) => (event) => {
         currentSelected.delete(id);
       }
       const allActive =
-        currentSelected.size === MOCK_SELLER_MARKETS.length &&
-        MOCK_SELLER_MARKETS.every((m) => currentSelected.has(m.id));
+        currentSelected.size === sellerMarkets.length &&
+        sellerMarkets.every((m) => currentSelected.has(m.id));
       return {
         ...prev,
         markets: {
@@ -563,74 +556,199 @@ const handleMarketToggle = (id) => (event) => {
     }
   };
 
-  const handleSaveDraft = () => {
+  const buildListingRequest = (status) => {
+    const selectedMarketNames = sellerMarkets
+      .filter((market) => form.markets.selectedIds.includes(market.id))
+      .map((market) => market.name);
+    const selectedMarketLabel =
+      selectedMarketNames.length > 0 ? selectedMarketNames.join(", ") : "EVzone Marketplace";
+    const totalInventory = (form.variants || []).reduce(
+      (sum, variant) => sum + (Number.parseInt(String(variant.stockQty || "0"), 10) || 0),
+      0
+    );
+    const leafPath = Array.isArray(inboundState.taxonomyPath) ? inboundState.taxonomyPath : [];
+    const leafNode = leafPath[leafPath.length - 1];
+    const { sourceVariant, tiers: wholesaleTiers, moq } = buildWholesalePreview(form.variants || []);
+    const fallbackVariantRetail =
+      parseNumericValue(sourceVariant?.price) ||
+      (form.variants || []).map((variant) => parseNumericValue(variant?.price)).find((price) => price > 0) ||
+      0;
+    const retailPrice = parseNumericValue(form.price) || fallbackVariantRetail || wholesaleTiers[0]?.price || 0;
+    const title = String(form.title || "").trim() || "New product listing";
+    const description =
+      String(form.keySellingPoint || "").trim() ||
+      String(form.seoDescription || "").trim() ||
+      "Seller listing created from the product listing wizard.";
+    const complianceIssues = [];
+    if (!form.heroImageUploaded) complianceIssues.push("Missing hero image");
+    if (!String(form.seoTitle || "").trim()) complianceIssues.push("Missing SEO title");
+    if (!String(form.seoDescription || "").trim()) complianceIssues.push("Missing SEO description");
+    const complianceState = complianceIssues.length === 0 ? "ok" : "warn";
+    const inventoryRows = [
+      {
+        id: "main",
+        location: selectedMarketLabel,
+        onHand: totalInventory,
+        reserved: 0,
+      },
+    ];
+    const locales = {
+      en: {
+        title,
+        description,
+      },
+    };
+    const variantMatrix = {
+      enabled: true,
+      attributes: [],
+      variants: (form.variants || []).map((variant, index) => ({
+        id: String(variant?.id || `variant-${index + 1}`),
+        key: String(variant?.name || `Variant ${index + 1}`),
+        sku: String(variant?.sku || ""),
+        priceDelta: 0,
+        stock: Number.parseInt(String(variant?.stockQty || "0"), 10) || 0,
+        active: true,
+      })),
+    };
+
+    return {
+      title,
+      description,
+      kind: "PRODUCT",
+      category:
+        typeof leafNode?.name === "string" && leafNode.name
+          ? leafNode.name
+          : String(form.bodyType || "").trim(),
+      sku:
+        String(
+          form.variants?.[0]?.sku ||
+            form.model ||
+            form.title ||
+            "listing"
+        )
+          .trim()
+          .replace(/\s+/g, "-")
+          .toUpperCase(),
+      marketplace: selectedMarketLabel,
+      price: retailPrice,
+      currency: String(form.currency || "USD"),
+      inventoryCount: totalInventory,
+      status,
+      taxonomyNodeId:
+        typeof inboundState.taxonomyNodeId === "string" ? inboundState.taxonomyNodeId : undefined,
+      metadata: {
+        displayStatus: mapListingDisplayStatus(status),
+        wizardData: form,
+        kind: "Product",
+        listingIntent:
+          typeof inboundState.intent === "string" ? inboundState.intent : "new",
+        taxonomyPath: leafPath,
+        selectedMarkets: sellerMarkets.filter((market) => form.markets.selectedIds.includes(market.id)),
+        marketplace: selectedMarketLabel,
+        category:
+          typeof leafNode?.name === "string" && leafNode.name
+            ? leafNode.name
+            : String(form.bodyType || "").trim(),
+        currency: String(form.currency || "USD"),
+        retailPrice,
+        compareAt: 0,
+        moq,
+        wholesaleTiers,
+        stock: totalInventory,
+        inventory: inventoryRows,
+        images: form.heroImageUploaded ? 1 : 0,
+        translations: 1,
+        compliance: {
+          state: complianceState,
+          issues: complianceIssues,
+          lastScanAt: new Date().toISOString(),
+        },
+        kpis: {
+          views: 0,
+          addToCart: 0,
+          orders: 0,
+        },
+        trend: {
+          views: [0, 0, 0, 0],
+          orders: [0, 0, 0, 0],
+        },
+        locales,
+        variantMatrix,
+        approval:
+          status === "ACTIVE"
+            ? {
+                required: false,
+                state: "Approved",
+                reviewers: [],
+                history: [
+                  {
+                    id: "initial-approval",
+                    at: new Date().toISOString(),
+                    actor: "System",
+                    action: "Approved",
+                    note: "Listing published directly from seller workspace.",
+                  },
+                ],
+              }
+            : undefined,
+      },
+    };
+  };
+
+  const handleSaveDraft = async () => {
     setSavingDraft(true);
-    setTimeout(() => {
-      setSavingDraft(false);
+    try {
+      const payload = buildListingRequest("DRAFT");
+      const response = draftListingId
+        ? await sellerBackendApi.patchSellerWorkspaceListing(draftListingId, payload)
+        : await sellerBackendApi.createSellerWorkspaceListing(payload);
+      if (typeof response?.id === "string" && response.id) {
+        setDraftListingId(response.id);
+      }
       alert(t("Your listing has been saved as a draft. You can come back later."));
-    }, 900);
-  };
-
-  const handleSubmit = () => {
-    setSubmitting(true);
-    navigate("/listings/AwaitingApproval_ProductListing", { state: inboundState });
-  };
-
-  const isLastStep = currentIndex === visibleSteps.length - 1;
-
-  // Simple per-step validation
-  const isCurrentStepValid = useMemo(() => {
-    const step = activeStep;
-    if (!step) return true;
-
-    const nonEmpty = (v) => typeof v === "string" && v.trim().length > 0;
-
-    switch (step.id) {
-      case "core":
-        return nonEmpty(form.title) && nonEmpty(form.brand) && nonEmpty(form.model);
-      case "preOwned":
-        if (!form.isUsed) return true;
-        return nonEmpty(form.mileage);
-      case "bev":
-        if (form.powertrainType !== "BEV") return true;
-        return nonEmpty(form.batteryCapacity) && nonEmpty(form.range);
-      case "gallery":
-        return !!form.heroImageUploaded;
-      case "pricing": {
-        if (!form.enableWholesale) {
-          return form.variants.every((v) => nonEmpty(v.price));
-        }
-        // For wholesale: each variant needs at least one completed tier.
-        return form.variants.every((v) => {
-          const tiers = v.wholesaleTiers || [];
-          const used = tiers.filter(
-            (t) => nonEmpty(t.minQty) || nonEmpty(t.maxQty) || nonEmpty(t.price)
-          );
-          if (!used.length) return false;
-          return used.every(
-            (t) => nonEmpty(t.minQty) && nonEmpty(t.maxQty) && nonEmpty(t.price)
-          );
-        });
-      }
-      case "warranty":
-        if (!form.hasWarranty) return true;
-        return nonEmpty(form.warrantyMonths);
-      case "inventory":
-        return form.variants.every((v) => nonEmpty(v.stockQty));
-      case "delivery": {
-        const anyMode = form.allowPickup || form.allowDelivery;
-        const anyRegion = Object.values(form.deliveryRegions).some(Boolean);
-        const anyMarket = form.markets.selectedIds.length > 0;
-        return anyMode && anyRegion && anyMarket;
-      }
-      case "seo":
-        return nonEmpty(form.seoTitle) && nonEmpty(form.seoDescription);
-      default:
-        return true;
+    } catch {
+      alert(t("We could not save your listing draft right now."));
+    } finally {
+      setSavingDraft(false);
     }
-  }, [activeStep, form]);
+  };
 
-  const canGoNext = isCurrentStepValid && !submitting;
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    const selectedMarketNames = sellerMarkets.filter((market) =>
+      form.markets.selectedIds.includes(market.id)
+    ).map((market) => market.name);
+    const marketplaceLabel =
+      selectedMarketNames.length > 0 ? selectedMarketNames.join(", ") : "EVzone Marketplace";
+    const baseSummary = {
+      title: form.title?.trim() ? form.title.trim() : "New product listing",
+      marketplace: marketplaceLabel,
+      intent: typeof inboundState.intent === "string" ? inboundState.intent : "new",
+      price: form.price,
+      currency: form.currency,
+    };
+    try {
+      const payload = buildListingRequest("ACTIVE");
+      const response = draftListingId
+        ? await sellerBackendApi.patchSellerWorkspaceListing(draftListingId, payload)
+        : await sellerBackendApi.createSellerWorkspaceListing(payload);
+      if (typeof response?.id === "string" && response.id) {
+        setDraftListingId(response.id);
+      }
+      navigate("/listings", {
+        state: {
+          ...(inboundState || {}),
+          listingSubmitted: true,
+          submissionSummary: baseSummary,
+          listingId: typeof response?.id === "string" ? response.id : draftListingId,
+        },
+      });
+    } catch {
+      alert(t("We could not submit your listing right now."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Box
@@ -1178,7 +1296,7 @@ const handleMarketToggle = (id) => (event) => {
                           value={variant.color || ""}
                           onChange={handleVariantFieldChange(index, "color")}
                         >
-                          {AVAILABLE_COLORS.map((opt) => (
+                          {availableColors.map((opt) => (
                             <MenuItem key={opt.value} value={opt.label}>
                               {t(opt.label)}
                             </MenuItem>
@@ -1193,7 +1311,7 @@ const handleMarketToggle = (id) => (event) => {
                           value={variant.trim || ""}
                           onChange={handleVariantFieldChange(index, "trim")}
                         >
-                          {AVAILABLE_TRIMS.map((opt) => (
+                          {availableTrims.map((opt) => (
                             <MenuItem key={opt.value} value={opt.label}>
                               {t(opt.label)}
                             </MenuItem>
@@ -1211,7 +1329,7 @@ const handleMarketToggle = (id) => (event) => {
                             "batteryPack"
                           )}
                         >
-                          {AVAILABLE_BATTERIES.map((opt) => (
+                          {availableBatteries.map((opt) => (
                             <MenuItem key={opt.value} value={opt.label}>
                               {t(opt.label)}
                             </MenuItem>
@@ -1229,7 +1347,7 @@ const handleMarketToggle = (id) => (event) => {
                             "wheelSize"
                           )}
                         >
-                          {AVAILABLE_WHEEL_SIZES.map((opt) => (
+                          {availableWheelSizes.map((opt) => (
                             <MenuItem key={opt.value} value={opt.label}>
                               {t(opt.label)}
                             </MenuItem>
@@ -1247,7 +1365,7 @@ const handleMarketToggle = (id) => (event) => {
                             "interiorColor"
                           )}
                         >
-                          {AVAILABLE_INTERIOR_COLORS.map((opt) => (
+                          {availableInteriorColors.map((opt) => (
                             <MenuItem key={opt.value} value={opt.label}>
                               {t(opt.label)}
                             </MenuItem>
@@ -1709,7 +1827,7 @@ const handleMarketToggle = (id) => (event) => {
                         label={t("All my active markets")}
                       />
                       <Box className="pl-4">
-                        {MOCK_SELLER_MARKETS.map((m) => (
+                        {sellerMarkets.map((m) => (
                           <FormControlLabel
                             key={m.id}
                             control={

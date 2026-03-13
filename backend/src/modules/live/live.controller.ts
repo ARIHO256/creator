@@ -18,6 +18,8 @@ export class LiveController {
   @Get('live/campaigns/:campaignId/giveaways') campaignGiveaways(@CurrentUser() user: RequestUser, @Param('campaignId') campaignId: string) { return this.service.campaignGiveaways(user.sub, campaignId); }
 
   @Get('live/sessions') sessions(@CurrentUser() user: RequestUser) { return this.service.sessions(user.sub); }
+  @Get('live/schedule-workspace') scheduleWorkspace(@CurrentUser() user: RequestUser) { return this.service.scheduleWorkspace(user.sub); }
+  @Get('live/dashboard-workspace') dashboardWorkspace(@CurrentUser() user: RequestUser) { return this.service.dashboardWorkspace(user.sub); }
   @Get('live/sessions/:id') session(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.session(user.sub, id); }
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('live/sessions') createSession(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.createSession(user.sub, body); }
@@ -26,6 +28,8 @@ export class LiveController {
 
   @Get('live/studio/default') studioDefault(@CurrentUser() user: RequestUser) { return this.service.studio(user.sub, 'default'); }
   @Get('live/studio/:id') studio(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.studio(user.sub, id); }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  @Patch('live/studio/:id') updateStudio(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.updateStudio(user.sub, id, body); }
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('live/studio/:id/start') startStudio(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.startStudio(user.sub, id); }
   @RateLimit({ limit: 20, windowMs: 60_000 })

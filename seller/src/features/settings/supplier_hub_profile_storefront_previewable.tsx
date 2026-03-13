@@ -45,6 +45,12 @@ import {
   Store,
   X,
 } from 'lucide-react';
+import {
+  dedupeCatalogLines,
+  mapCoverageRecordToCatalogLine,
+  mapStorefrontTaxonomyToCatalogLine,
+  type CatalogLine,
+} from '../listings/catalogEntryStore';
 
 /**
  * SupplierHub Settings
@@ -65,9 +71,9 @@ type ToastTone = 'success' | 'warning' | 'danger' | 'default';
 type Toast = { id: string; title: string; message?: string; tone?: ToastTone; action?: { label: string; onClick: () => void } };
 type CustomSocial = { id: string; name: string; handle: string };
 type TaxonomyNode = ListingTaxonomyNode;
-type CatalogLine = { id: string; nodeId: string; path: Array<{ id: string; name: string; type: string }>; status: 'active' | 'suspended' };
 type StoreStatus = 'Active' | 'Planned';
 type StoreRecord = { id: string; name: string; handle: string; region: string; status: StoreStatus };
+type CoverageRecord = { id: string; taxonomyNodeId: string; status: string };
 const EV_COLORS = {
   primary: TOKENS.green,
   primarySoft: 'rgba(3, 205, 140, 0.12)',
@@ -165,6 +171,28 @@ function buildLine(tree: TaxonomyNode[], nodeId: string, status: 'active' | 'sus
     path,
     status,
   };
+}
+
+function buildProductLinesFromBackend(
+  coverage: Array<Record<string, unknown>>,
+  storefrontTaxonomy: Array<Record<string, unknown>>,
+  taxonomyTree: TaxonomyNode[]
+) {
+  const coverageLines = coverage
+    .map((entry) => mapCoverageRecordToCatalogLine(entry))
+    .filter((entry): entry is CatalogLine => Boolean(entry));
+  const storefrontLines = storefrontTaxonomy
+    .map((entry) => mapStorefrontTaxonomyToCatalogLine(entry))
+    .filter((entry): entry is CatalogLine => Boolean(entry));
+
+  const merged = dedupeCatalogLines([...coverageLines, ...storefrontLines]).map((line) => {
+    if (line.path.length > 0) {
+      return line;
+    }
+    return buildLine(taxonomyTree, line.nodeId, line.status) ?? line;
+  });
+
+  return dedupeCatalogLines(merged);
 }
 
 function Badge({ children, tone = 'slate' }) {
@@ -1302,12 +1330,14 @@ export default function SupplierHubProfileStorefrontPage() {
   const [branding, setBranding] = useState(emptyState.branding);
   const [addresses, setAddresses] = useState(emptyState.addresses);
   const [stores, setStores] = useState(emptyState.stores);
-  const [productLines, setProductLines] = useState(emptyState.productLines);
+  const [productLines, setProductLines] = useState<CatalogLine[]>(emptyState.productLines);
   const [regions, setRegions] = useState(emptyState.regions);
   const [supportHours, setSupportHours] = useState(emptyState.supportHours);
   const [socials, setSocials] = useState(emptyState.socials);
   const [customSocials, setCustomSocials] = useState<CustomSocial[]>(emptyState.customSocials || []);
   const [loading, setLoading] = useState(true);
+  const [coverageRecords, setCoverageRecords] = useState<CoverageRecord[]>([]);
+  const [storefrontRecord, setStorefrontRecord] = useState<Record<string, unknown> | null>(null);
   const [showCustomSocialForm, setShowCustomSocialForm] = useState(false);
   const [newSocialName, setNewSocialName] = useState('');
   const [newSocialHandle, setNewSocialHandle] = useState('');
@@ -1431,15 +1461,66 @@ export default function SupplierHubProfileStorefrontPage() {
     const load = async () => {
       setLoading(true);
       try {
-        const payload = await sellerBackendApi.getSettings();
+        const [payload, storefrontPayload, coveragePayload] = await Promise.all([
+          sellerBackendApi.getSettings(),
+          sellerBackendApi.getMyStorefront().catch(() => null),
+          sellerBackendApi.getTaxonomyCoverage().catch(() => []),
+        ]);
         const profile = (payload.profile as Record<string, unknown> | undefined) ?? null;
         if (!profile || cancelled) return;
+        const storefront =
+          storefrontPayload && typeof storefrontPayload === 'object'
+            ? (storefrontPayload as Record<string, unknown>)
+            : null;
+        const storefrontTaxonomy = Array.isArray(storefront?.taxonomy)
+          ? (storefront?.taxonomy as Array<Record<string, unknown>>)
+          : [];
+        const coverage = Array.isArray(coveragePayload)
+          ? (coveragePayload as Array<Record<string, unknown>>)
+          : [];
+        const derivedProductLines = buildProductLinesFromBackend(coverage, storefrontTaxonomy, taxonomy);
         const nextSnapshot = {
           identity: (profile.identity as typeof emptyState.identity | undefined) ?? emptyState.identity,
-          branding: (profile.branding as typeof emptyState.branding | undefined) ?? emptyState.branding,
+          branding: {
+            ...((profile.branding as typeof emptyState.branding | undefined) ?? emptyState.branding),
+            tagline:
+              typeof storefront?.tagline === 'string'
+                ? storefront.tagline
+                : ((profile.branding as typeof emptyState.branding | undefined)?.tagline ??
+                  emptyState.branding.tagline),
+            description:
+              typeof storefront?.description === 'string'
+                ? storefront.description
+                : ((profile.branding as typeof emptyState.branding | undefined)?.description ??
+                  emptyState.branding.description),
+          },
           addresses: (Array.isArray(profile.addresses) ? profile.addresses : emptyState.addresses) as typeof emptyState.addresses,
-          stores: (Array.isArray(profile.stores) ? profile.stores : emptyState.stores) as typeof emptyState.stores,
-          productLines: (Array.isArray(profile.productLines) ? profile.productLines : emptyState.productLines) as typeof emptyState.productLines,
+          stores:
+            storefront && typeof storefront.slug === 'string'
+              ? [
+                  {
+                    id:
+                      typeof storefront.id === 'string' && storefront.id
+                        ? storefront.id
+                        : 'primary-store',
+                    name:
+                      typeof storefront.name === 'string' && storefront.name
+                        ? storefront.name
+                        : emptyState.stores[0]?.name || '',
+                    handle: storefront.slug,
+                    region:
+                      (Array.isArray(profile.regions) ? String(profile.regions[0] ?? '') : '') ||
+                      emptyState.stores[0]?.region ||
+                      'Global',
+                    status:
+                      Boolean(storefront.isPublished) ||
+                      String((profile.identity as Record<string, unknown> | undefined)?.handle ?? '').length > 0
+                        ? 'Active'
+                        : 'Planned',
+                  },
+                ]
+              : (Array.isArray(profile.stores) ? profile.stores : emptyState.stores) as typeof emptyState.stores,
+          productLines: derivedProductLines,
           regions: (Array.isArray(profile.regions) ? profile.regions : emptyState.regions) as typeof emptyState.regions,
           supportHours: (profile.supportHours as typeof emptyState.supportHours | undefined) ?? emptyState.supportHours,
           socials: (profile.socials as typeof emptyState.socials | undefined) ?? emptyState.socials,
@@ -1454,6 +1535,16 @@ export default function SupplierHubProfileStorefrontPage() {
         setSupportHours(nextSnapshot.supportHours);
         setSocials(nextSnapshot.socials);
         setCustomSocials(nextSnapshot.customSocials);
+        setCoverageRecords(
+          coverage
+            .map((entry) => ({
+              id: String(entry.id ?? ''),
+              taxonomyNodeId: String(entry.taxonomyNodeId ?? ''),
+              status: String(entry.status ?? ''),
+            }))
+            .filter((entry) => entry.id && entry.taxonomyNodeId)
+        );
+        setStorefrontRecord(storefront);
         setSavedSnapshot(JSON.parse(JSON.stringify(nextSnapshot)));
       } catch {
         setIdentity(emptyState.identity);
@@ -1465,6 +1556,8 @@ export default function SupplierHubProfileStorefrontPage() {
         setSupportHours(emptyState.supportHours);
         setSocials(emptyState.socials);
         setCustomSocials(emptyState.customSocials);
+        setCoverageRecords([]);
+        setStorefrontRecord(null);
         setSavedSnapshot(JSON.parse(JSON.stringify({
           identity: emptyState.identity,
           branding: emptyState.branding,
@@ -1484,13 +1577,79 @@ export default function SupplierHubProfileStorefrontPage() {
     return () => {
       cancelled = true;
     };
-  }, [emptyState]);
+  }, [emptyState, taxonomy]);
 
   const saveAll = async () => {
     try {
-      await sellerBackendApi.patchSettings({
-        profile: snapshot,
+      const existingCoverageByNodeId = new Map(
+        coverageRecords.map((entry) => [entry.taxonomyNodeId, entry])
+      );
+      const nextNodeIds = Array.from(new Set(productLines.map((line) => line.nodeId).filter(Boolean)));
+      const activeNodeIds = productLines
+        .filter((line) => line.status === 'active')
+        .map((line) => line.nodeId);
+      const removedCoverage = coverageRecords.filter((entry) => !nextNodeIds.includes(entry.taxonomyNodeId));
+      const coverageWrites: Array<Promise<unknown>> = [];
+
+      productLines.forEach((line) => {
+        const existing = existingCoverageByNodeId.get(line.nodeId);
+        const status = line.status === 'active' ? 'ACTIVE' : 'SUSPENDED';
+        if (existing) {
+          if (String(existing.status).toUpperCase() !== status) {
+            coverageWrites.push(
+              sellerBackendApi.patchTaxonomyCoverage(existing.id, { status })
+            );
+          }
+          return;
+        }
+        coverageWrites.push(
+          sellerBackendApi.addTaxonomyCoverage({ taxonomyNodeId: line.nodeId, status })
+        );
       });
+
+      removedCoverage.forEach((entry) => {
+        coverageWrites.push(sellerBackendApi.removeTaxonomyCoverage(entry.id));
+      });
+
+      const primaryStore = stores[0];
+      await Promise.all([
+        sellerBackendApi.patchSettings({
+          profile: {
+            ...snapshot,
+            productLines: undefined,
+          },
+        }),
+        sellerBackendApi.patchMyStorefront({
+          slug: identity.handle || primaryStore?.handle || undefined,
+          name: primaryStore?.name || identity.displayName || storefrontRecord?.name || undefined,
+          tagline: branding.tagline || undefined,
+          description: branding.description || undefined,
+          taxonomyNodeIds: activeNodeIds,
+          primaryTaxonomyNodeId: activeNodeIds[0] || undefined,
+          isPublished: storefrontRecord?.isPublished ?? false,
+        }),
+        ...coverageWrites,
+      ]);
+
+      const refreshedCoveragePayload = await sellerBackendApi.getTaxonomyCoverage().catch(() => []);
+      const refreshedStorefront = await sellerBackendApi.getMyStorefront().catch(() => storefrontRecord);
+      const refreshedCoverage = Array.isArray(refreshedCoveragePayload)
+        ? (refreshedCoveragePayload as Array<Record<string, unknown>>)
+        : [];
+      setCoverageRecords(
+        refreshedCoverage
+          .map((entry) => ({
+            id: String(entry.id ?? ''),
+            taxonomyNodeId: String(entry.taxonomyNodeId ?? ''),
+            status: String(entry.status ?? ''),
+          }))
+          .filter((entry) => entry.id && entry.taxonomyNodeId)
+      );
+      setStorefrontRecord(
+        refreshedStorefront && typeof refreshedStorefront === 'object'
+          ? (refreshedStorefront as Record<string, unknown>)
+          : null
+      );
       setSavedSnapshot(JSON.parse(JSON.stringify(snapshot)));
       pushToast({ title: 'Saved', message: 'Profile and storefront updated.', tone: 'success' });
     } catch (error) {

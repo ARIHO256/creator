@@ -30,6 +30,59 @@ export type PageContentMap = {
 export type PageKey = keyof PageContentMap;
 export type PageContentByKey<K extends PageKey> = PageContentMap[K]["seller"];
 
+const DEFAULT_LISTING_WIZARD_COPY: ListingWizardContent["copy"] = {
+  heroTitle: "New listing",
+  heroSubtitle:
+    "Choose one of your approved product lines. You can only list within the taxonomy coverage you set during onboarding or in your storefront settings.",
+  manageLinesLabel: "Manage product lines",
+  approvedLinesTitle: "Your approved product lines",
+  approvedLinesSubtitle: "Pick a product line, then preview the form or start listing.",
+  selectedLineTitle: "Selected product line",
+  selectedLineEmptyTitle: "Select a product line to continue",
+  selectedLineEmptySubtitle:
+    "Choose an active product line from the list to preview the listing form.",
+  searchPlaceholder: "Search product lines (e.g., chargers, desktops)",
+  emptyTitle: "No product lines found",
+  emptySubtitle:
+    "Try adjusting your filters, or add/activate product lines in your storefront settings.",
+  suspendedHint: "Suspended",
+  eligibleHint: "Eligible for listing",
+  tipText:
+    "Tip: If you don’t see a product line, check onboarding approvals and your taxonomy coverage settings.",
+  addLineLabel: "Add product line",
+  listingIntentLabel: "What do you want to do?",
+  listingIntentOptions: [
+    { value: "new", label: "Create a new listing" },
+    { value: "restock", label: "Restock an existing listing" },
+    { value: "variant", label: "Add a variant to an existing listing" },
+  ],
+  suspendedCardTitle: "This product line is suspended",
+  suspendedCardBody:
+    "You can’t start new listings from a suspended product line. Contact support or resolve any compliance requirements to reactivate it.",
+  previewCta: "Preview form",
+  startCta: "Start listing",
+  nextStepsTitle: "What happens next",
+  nextSteps: [
+    {
+      title: "Form generated",
+      description: "EVzone generates a tailored listing form for the selected product line.",
+    },
+    {
+      title: "Add product details",
+      description: "Fill specifications, variants, photos, pricing and inventory.",
+    },
+    {
+      title: "Compliance checks",
+      description: "Some categories require extra documents or approvals.",
+    },
+    {
+      title: "Publish",
+      description: "Once approved, your product becomes visible on the marketplace.",
+    },
+  ],
+  taxonomyFallback: "Uncategorized",
+};
+
 const INITIAL_PAGE_CONTENT: { [K in PageKey]: PageContentByKey<K> } = {
   dashboard: {
     quickActions: [],
@@ -65,9 +118,10 @@ const INITIAL_PAGE_CONTENT: { [K in PageKey]: PageContentByKey<K> } = {
     overviewKpis: [],
     attributionRows: [],
     highlights: { topDriver: "", risk: "", recommendation: "" },
-    cohort: { subtitle: "", bullets: [] },
+    cohort: { subtitle: "", bullets: [], grid: [] },
     alertRules: [],
     metricOptions: [],
+    seriesByRange: {},
   },
   helpSupport: {
     kb: [],
@@ -131,32 +185,7 @@ const INITIAL_PAGE_CONTENT: { [K in PageKey]: PageContentByKey<K> } = {
   listingWizard: {
     taxonomy: [],
     baseLines: [],
-    copy: {
-      heroTitle: "",
-      heroSubtitle: "",
-      manageLinesLabel: "",
-      approvedLinesTitle: "",
-      approvedLinesSubtitle: "",
-      selectedLineTitle: "",
-      selectedLineEmptyTitle: "",
-      selectedLineEmptySubtitle: "",
-      searchPlaceholder: "",
-      emptyTitle: "",
-      emptySubtitle: "",
-      suspendedHint: "",
-      eligibleHint: "",
-      tipText: "",
-      addLineLabel: "",
-      listingIntentLabel: "",
-      listingIntentOptions: [],
-      suspendedCardTitle: "",
-      suspendedCardBody: "",
-      previewCta: "",
-      startCta: "",
-      nextStepsTitle: "",
-      nextSteps: [],
-      taxonomyFallback: "",
-    },
+    copy: DEFAULT_LISTING_WIZARD_COPY,
   },
   orders: {
     orders: [],
@@ -338,7 +367,23 @@ async function loadComplianceContent(): Promise<ComplianceContent> {
 }
 
 async function loadListingWizardContent(): Promise<ListingWizardContent> {
-  return (await sellerBackendApi.getSellerListingWizard()) as ListingWizardContent;
+  const payload = (await sellerBackendApi.getSellerListingWizard()) as Record<string, unknown>;
+  const copyPayload = (payload.copy as Record<string, unknown> | undefined) ?? {};
+
+  return {
+    taxonomy: Array.isArray(payload.taxonomy) ? (payload.taxonomy as ListingWizardContent["taxonomy"]) : [],
+    baseLines: Array.isArray(payload.baseLines) ? (payload.baseLines as ListingWizardContent["baseLines"]) : [],
+    copy: {
+      ...DEFAULT_LISTING_WIZARD_COPY,
+      ...copyPayload,
+      listingIntentOptions: Array.isArray(copyPayload.listingIntentOptions)
+        ? (copyPayload.listingIntentOptions as ListingWizardContent["copy"]["listingIntentOptions"])
+        : DEFAULT_LISTING_WIZARD_COPY.listingIntentOptions,
+      nextSteps: Array.isArray(copyPayload.nextSteps)
+        ? (copyPayload.nextSteps as ListingWizardContent["copy"]["nextSteps"])
+        : DEFAULT_LISTING_WIZARD_COPY.nextSteps,
+    },
+  };
 }
 
 async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {

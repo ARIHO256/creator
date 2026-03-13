@@ -59,6 +59,73 @@ type Toast = {
   message?: string;
   action?: { label: string; onClick: () => void };
 };
+type QuoteTemplate = {
+  id: string;
+  name: string;
+  badge?: string;
+  desc: string;
+  draftPatch?: Record<string, unknown>;
+};
+
+function createQuoteDraftScaffold() {
+  return {
+    meta: {
+      quoteId: "",
+      title: "",
+      currency: "USD",
+      language: "en",
+      status: "Draft",
+      createdAt: "",
+    },
+    client: {
+      name: "",
+      org: "",
+      email: "",
+      phone: "",
+      channel: "EVzone Messages",
+      referenceId: "",
+    },
+    scope: {
+      summary: "",
+      deliverables: [],
+      attachments: [],
+    },
+    pricingPolicy: {
+      enforceGuardrails: true,
+      minMarginPct: 18,
+      allowOverride: true,
+      overrideReason: "",
+    },
+    lines: [],
+    discount: { type: "none", value: 0 },
+    taxPct: 0,
+    timeline: {
+      startDate: "",
+      durationDays: 14,
+      milestones: [],
+      notes: "",
+    },
+    terms: {
+      payment: {
+        model: "milestones",
+        upfrontPct: 30,
+        netDays: 3,
+        acceptedMethods: ["EVzone Pay Wallet", "Bank Transfer"],
+      },
+      revisions: { included: 2, windowDays: 7 },
+      support: { included: true, windowDays: 14 },
+      confidentiality: true,
+      ip: "client",
+      cancellation: "",
+      additional: "",
+    },
+    premium: {
+      templateId: "",
+      autoConvertToContract: true,
+      contractType: "Standard Service Contract",
+    },
+  };
+}
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
@@ -154,190 +221,56 @@ function calcTotals(draft) {
   return { lines, revenue, cost, discountAmt, taxPct, taxes, total, margin };
 }
 
-function defaultDraft() {
-  const today = toISODate(new Date());
-  return {
-    meta: {
-      quoteId: `Q-${Math.floor(100000 + Math.random() * 900000)}`,
-      title: "Service quote",
-      currency: "USD",
-      language: "en",
-      status: "Draft", // Draft | Sent
-      createdAt: new Date().toISOString(),
-    },
-
-    client: {
-      name: "",
-      org: "",
-      email: "",
-      phone: "",
-      channel: "EVzone Messages", // EVzone Messages | Email | WhatsApp
-      referenceId: "", // RFQ/Booking/Order
-    },
-
-    scope: {
-      summary: "",
-      deliverables: [
-        { id: makeId("del"), title: "Discovery and requirements", detail: "Clarify scope, constraints, and success metrics." },
-        { id: makeId("del"), title: "Execution", detail: "Deliver service with progress updates." },
-      ],
-      attachments: [],
-    },
-
-    pricingPolicy: {
-      enforceGuardrails: true,
-      minMarginPct: 18,
-      allowOverride: true,
-      overrideReason: "",
-    },
-
-    lines: [
-      {
-        id: makeId("ln"),
-        name: "Service package",
-        qty: 1,
-        unitCost: 120,
-        priceMode: "markup", // markup | fixed
-        markupPct: 40,
-        unitPrice: 0,
-        notes: "",
-      },
-    ],
-
-    discount: { type: "none", value: 0 },
-    taxPct: 0,
-
-    timeline: {
-      startDate: today,
-      durationDays: 14,
-      milestones: [
-        { id: makeId("ms"), title: "Kickoff", dueInDays: 1, percent: 20 },
-        { id: makeId("ms"), title: "Delivery", dueInDays: 14, percent: 80 },
-      ],
-      notes: "",
-    },
-
-    terms: {
-      payment: {
-        model: "milestones", // milestones | upfront | completion
-        upfrontPct: 30,
-        netDays: 3,
-        acceptedMethods: ["EVzone Pay Wallet", "Bank Transfer"],
-      },
-      revisions: { included: 2, windowDays: 7 },
-      support: { included: true, windowDays: 14 },
-      confidentiality: true,
-      ip: "client", // client | provider
-      cancellation: "If the client cancels after kickoff, the kickoff milestone is non-refundable.",
-      additional: "",
-    },
-
-    premium: {
-      templateId: "tpl_standard",
-      autoConvertToContract: true,
-      contractType: "Standard Service Contract",
-    },
-  };
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
 }
 
-const TEMPLATE_LIBRARY = [
-  {
-    id: "tpl_standard",
-    name: "Standard Service Proposal",
-    badge: "Most used",
-    desc: "Balanced scope, milestones, and standard terms.",
-    apply: (d) => {
-      const next = JSON.parse(JSON.stringify(d));
-      next.meta.title = "Standard service quote";
-      next.timeline.durationDays = 14;
-      next.terms.payment.model = "milestones";
-      next.terms.revisions.included = 2;
-      next.pricingPolicy.minMarginPct = 18;
-      return next;
-    },
-  },
-  {
-    id: "tpl_install",
-    name: "Installation Quote",
-    badge: "Field work",
-    desc: "Site survey, install, testing, handover.",
-    apply: (d) => {
-      const next = JSON.parse(JSON.stringify(d));
-      next.meta.title = "Installation quote";
-      next.scope.deliverables = [
-        { id: makeId("del"), title: "Site survey", detail: "Assess site, safety, routing, and materials." },
-        { id: makeId("del"), title: "Installation", detail: "Install equipment and verify compliance." },
-        { id: makeId("del"), title: "Testing and handover", detail: "Functional tests and handover documents." },
-      ];
-      next.lines = [
-        { id: makeId("ln"), name: "Survey", qty: 1, unitCost: 80, priceMode: "markup", markupPct: 60, unitPrice: 0, notes: "" },
-        { id: makeId("ln"), name: "Installation labor", qty: 1, unitCost: 260, priceMode: "markup", markupPct: 35, unitPrice: 0, notes: "" },
-        { id: makeId("ln"), name: "Testing and commissioning", qty: 1, unitCost: 120, priceMode: "markup", markupPct: 35, unitPrice: 0, notes: "" },
-      ];
-      next.timeline.durationDays = 7;
-      next.timeline.milestones = [
-        { id: makeId("ms"), title: "Survey", dueInDays: 1, percent: 25 },
-        { id: makeId("ms"), title: "Install", dueInDays: 5, percent: 50 },
-        { id: makeId("ms"), title: "Handover", dueInDays: 7, percent: 25 },
-      ];
-      next.pricingPolicy.minMarginPct = 20;
-      next.terms.revisions.included = 1;
-      return next;
-    },
-  },
-  {
-    id: "tpl_consult",
-    name: "Consultation Quote",
-    badge: "Calls",
-    desc: "Fixed price consultation with clear boundaries.",
-    apply: (d) => {
-      const next = JSON.parse(JSON.stringify(d));
-      next.meta.title = "Consultation quote";
-      next.scope.deliverables = [
-        { id: makeId("del"), title: "Consultation call", detail: "60-90 minutes deep dive with summary." },
-        { id: makeId("del"), title: "Follow-up", detail: "One follow-up Q&A within 7 days." },
-      ];
-      next.lines = [
-        { id: makeId("ln"), name: "Consultation", qty: 1, unitCost: 40, priceMode: "fixed", markupPct: 0, unitPrice: 120, notes: "" },
-      ];
-      next.timeline.durationDays = 3;
-      next.timeline.milestones = [
-        { id: makeId("ms"), title: "Call", dueInDays: 2, percent: 70 },
-        { id: makeId("ms"), title: "Summary", dueInDays: 3, percent: 30 },
-      ];
-      next.terms.payment.model = "upfront";
-      next.terms.payment.upfrontPct = 100;
-      next.pricingPolicy.minMarginPct = 15;
-      return next;
-    },
-  },
-  {
-    id: "tpl_retainer",
-    name: "Monthly Retainer",
-    badge: "Premium",
-    desc: "Recurring support with SLA and monthly billing.",
-    apply: (d) => {
-      const next = JSON.parse(JSON.stringify(d));
-      next.meta.title = "Monthly retainer quote";
-      next.scope.deliverables = [
-        { id: makeId("del"), title: "Monthly support", detail: "Up to 20 hours support monthly." },
-        { id: makeId("del"), title: "SLA", detail: "Response within 4 business hours." },
-      ];
-      next.lines = [
-        { id: makeId("ln"), name: "Retainer (monthly)", qty: 1, unitCost: 600, priceMode: "markup", markupPct: 35, unitPrice: 0, notes: "Billed monthly" },
-      ];
-      next.timeline.durationDays = 30;
-      next.timeline.milestones = [
-        { id: makeId("ms"), title: "Month start", dueInDays: 1, percent: 100 },
-      ];
-      next.terms.payment.model = "upfront";
-      next.terms.payment.upfrontPct = 100;
-      next.terms.support.windowDays = 30;
-      next.pricingPolicy.minMarginPct = 22;
-      return next;
-    },
-  },
-];
+function deepMergeQuoteDraft(target, source) {
+  if (Array.isArray(source)) return cloneJson(source);
+  if (!source || typeof source !== "object") return source;
+  const base = target && typeof target === "object" && !Array.isArray(target) ? { ...target } : {};
+  Object.keys(source).forEach((key) => {
+    const nextSource = source[key];
+    if (Array.isArray(nextSource)) {
+      base[key] = cloneJson(nextSource);
+      return;
+    }
+    if (nextSource && typeof nextSource === "object") {
+      base[key] = deepMergeQuoteDraft(base[key], nextSource);
+      return;
+    }
+    base[key] = nextSource;
+  });
+  return base;
+}
+
+function applyTemplatePatch(draft, template: QuoteTemplate) {
+  const patch = template.draftPatch && typeof template.draftPatch === "object" ? template.draftPatch : {};
+  const next = deepMergeQuoteDraft(cloneJson(draft), patch);
+  next.premium = {
+    ...(next.premium || {}),
+    templateId: template.id,
+  };
+  if (Array.isArray(next.scope?.deliverables)) {
+    next.scope.deliverables = next.scope.deliverables.map((item) => ({
+      ...item,
+      id: makeId("del"),
+    }));
+  }
+  if (Array.isArray(next.lines)) {
+    next.lines = next.lines.map((item) => ({
+      ...item,
+      id: makeId("ln"),
+    }));
+  }
+  if (Array.isArray(next.timeline?.milestones)) {
+    next.timeline.milestones = next.timeline.milestones.map((item) => ({
+      ...item,
+      id: makeId("ms"),
+    }));
+  }
+  return next;
+}
 
 function Badge({ children, tone = "slate" }) {
   return (
@@ -699,15 +632,27 @@ export default function ProviderNewQuotePage() {
   };
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
-  const [draft, setDraft] = useState(() => defaultDraft());
+  const [draft, setDraft] = useState<any>(() => createQuoteDraftScaffold());
+  const [templates, setTemplates] = useState<QuoteTemplate[]>([]);
+  const draftHydratedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
 
-    void sellerBackendApi.getWorkflowScreenState("provider-new-quote").then((payload) => {
-      if (!active) return;
-      setDraft({ ...defaultDraft(), ...payload });
-    }).catch(() => undefined);
+    void Promise.all([
+      sellerBackendApi.getWorkflowScreenState("provider-new-quote"),
+      sellerBackendApi.getProviderQuoteTemplates(),
+    ])
+      .then(([draftPayload, templatePayload]) => {
+        if (!active) return;
+        setDraft(draftPayload as Record<string, unknown>);
+        draftHydratedRef.current = true;
+        const nextTemplates = Array.isArray((templatePayload as { templates?: unknown[] }).templates)
+          ? ((templatePayload as { templates?: QuoteTemplate[] }).templates ?? [])
+          : [];
+        setTemplates(nextTemplates);
+      })
+      .catch(() => undefined);
 
     return () => {
       active = false;
@@ -717,12 +662,13 @@ export default function ProviderNewQuotePage() {
   const [step, setStep] = useState(0);
   const steps = ["Scope", "Pricing", "Timeline", "Terms", "Send"]; // 0..4
 
-  const totals = useMemo(() => calcTotals(draft), [draft]);
+  const totals = useMemo(() => calcTotals(draft || {}), [draft]);
 
   // Autosave (debounced)
   const autosaveRef = useRef<number | null>(null);
   const [autosaveAt, setAutosaveAt] = useState<string | null>(null);
   useEffect(() => {
+    if (!draftHydratedRef.current) return;
     if (autosaveRef.current) window.clearTimeout(autosaveRef.current);
     autosaveRef.current = window.setTimeout(() => {
       void sellerBackendApi.patchWorkflowScreenState("provider-new-quote", draft).then(() => {
@@ -737,9 +683,9 @@ export default function ProviderNewQuotePage() {
   // Template drawer
   const [tplOpen, setTplOpen] = useState(false);
   const applyTemplate = (tplId) => {
-    const tpl = TEMPLATE_LIBRARY.find((t) => t.id === tplId);
+    const tpl = templates.find((t) => t.id === tplId);
     if (!tpl) return;
-    const next = tpl.apply({ ...draft, premium: { ...draft.premium, templateId: tplId } });
+    const next = applyTemplatePatch(draft, tpl);
     setDraft(next);
     pushToast({ title: "Template applied", message: tpl.name, tone: "success" });
   };
@@ -848,13 +794,17 @@ export default function ProviderNewQuotePage() {
   };
 
   const resetDraft = () => {
-    const fresh = defaultDraft();
-    setDraft(fresh);
-    void sellerBackendApi.patchWorkflowScreenState("provider-new-quote", fresh).catch(() => undefined);
-    pushToast({ title: "Draft reset", message: "A new quote draft was created.", tone: "default" });
+    void sellerBackendApi
+      .patchWorkflowScreenState("provider-new-quote", { __resetToDefault: true })
+      .then((fresh) => {
+        setDraft(fresh as Record<string, unknown>);
+        draftHydratedRef.current = true;
+        pushToast({ title: "Draft reset", message: "A new quote draft was created.", tone: "default" });
+      })
+      .catch(() => undefined);
   };
 
-  const contractText = useMemo(() => buildContractText(draft, totals), [draft, totals]);
+  const contractText = useMemo(() => buildContractText(draft || {}, totals), [draft, totals]);
 
   return (
     <div
@@ -1873,7 +1823,7 @@ export default function ProviderNewQuotePage() {
                             <span className="ml-auto flex items-center gap-2">
                               <Badge tone="slate">Template</Badge>
                               <div className="text-xs font-semibold text-slate-600">
-                                {TEMPLATE_LIBRARY.find((t) => t.id === draft.premium.templateId)?.name || "Custom"}
+                                {templates.find((t) => t.id === draft.premium.templateId)?.name || "Custom"}
                               </div>
                             </span>
                           </div>
@@ -2105,7 +2055,7 @@ export default function ProviderNewQuotePage() {
             </div>
           </div>
 
-          {TEMPLATE_LIBRARY.map((t) => {
+          {templates.map((t) => {
             const active = draft.premium?.templateId === t.id;
             return (
               <button

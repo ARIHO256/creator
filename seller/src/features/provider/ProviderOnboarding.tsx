@@ -29,7 +29,6 @@ import {
 // compliance documents, payout + tax, and a final review submission.
 // Notes:
 // - UI-first: connect your backend for verification, file uploads, admin approvals, and service catalog publishing.
-// - Reads legacy draft key (provider_onb_pro_v31) and writes to v4 key. Keeps review timeline key (provider_onb_review_v1).
 
 function ts() {
   const d = new Date();
@@ -64,13 +63,6 @@ const EV_COLORS = {
   textMain: '#0F172A',
   textSubtle: '#64748B',
   textMuted: '#94A3B8',
-};
-
-const STORAGE = {
-  form: 'provider_onb_pro_v4',
-  legacy: 'provider_onb_pro_v31',
-  review: 'provider_onb_review_v1',
-  ui: 'provider_onb_ui_v1',
 };
 
 const LANGS = [
@@ -713,47 +705,6 @@ const LEGACY_PAYOUT_METHOD_MAP = {
   other: 'other_local',
   wechat: 'wechat_pay',
 };
-
-function safeJsonParse<T = any>(str: string | null): T | null {
-  if (!str) return null;
-  try {
-    return JSON.parse(str) as T;
-  } catch {
-    return null;
-  }
-}
-
-function readStoredDraft<T = any>(key: string): T | null {
-  if (typeof window === 'undefined') return null;
-  return safeJsonParse<T>(window.localStorage.getItem(key));
-}
-
-function writeStoredDraft(key: string, value: unknown) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-function clearStoredDraft(keys: string[]) {
-  if (typeof window === 'undefined') return;
-  keys.forEach((key) => {
-    try {
-      window.localStorage.removeItem(key);
-    } catch {
-      // ignore storage failures
-    }
-  });
-}
-
-function draftMatchesActiveUser(draft: Record<string, unknown> | null, activeUserId: string) {
-  if (!draft || typeof draft !== 'object') return false;
-  if (!activeUserId) return true;
-  const owner = String(draft.owner || draft.email || '').toLowerCase();
-  return !owner || owner === activeUserId;
-}
 
 function clamp(n: number, a: number, b: number) {
   return Math.min(b, Math.max(a, n));
@@ -2903,9 +2854,6 @@ export default function ProviderOnboardingProV4_JS() {
 
     const hydrate = async () => {
       try {
-        const storedProfile = readStoredDraft<Record<string, unknown>>(STORAGE.form);
-        const storedUi = readStoredDraft<{ step?: number }>(STORAGE.ui);
-        const storedReview = readStoredDraft<Record<string, unknown>>(STORAGE.review);
         const [payloadResult, accountApprovalResult] = await Promise.allSettled([
           sellerBackendApi.getWorkflowScreenState('provider-onboarding'),
           sellerBackendApi.getAccountApproval(),
@@ -2953,110 +2901,14 @@ export default function ProviderOnboardingProV4_JS() {
               tax: { ...base.tax, ...(nextProfile.tax || {}) },
               acceptance: { ...base.acceptance, ...(nextProfile.acceptance || {}) },
             };
-            const resolvedProfile = draftMatchesActiveUser(storedProfile, activeUserId)
-              ? {
-                  ...mergedBackendProfile,
-                  ...(storedProfile as object),
-                  owner:
-                    activeUserId ||
-                    String((storedProfile as Record<string, unknown>).owner || mergedBackendProfile.owner || ''),
-                  support: {
-                    ...mergedBackendProfile.support,
-                    ...(((storedProfile as Record<string, unknown>).support as object) || {}),
-                  },
-                  hq: {
-                    ...mergedBackendProfile.hq,
-                    ...(((storedProfile as Record<string, unknown>).hq as object) || {}),
-                  },
-                  team: {
-                    ...mergedBackendProfile.team,
-                    ...(((storedProfile as Record<string, unknown>).team as object) || {}),
-                  },
-                  servicePolicies: {
-                    ...mergedBackendProfile.servicePolicies,
-                    ...(((storedProfile as Record<string, unknown>).servicePolicies as object) || {}),
-                  },
-                  coverage: {
-                    ...mergedBackendProfile.coverage,
-                    ...(((storedProfile as Record<string, unknown>).coverage as object) || {}),
-                  },
-                  availability: {
-                    ...mergedBackendProfile.availability,
-                    ...(((storedProfile as Record<string, unknown>).availability as object) || {}),
-                  },
-                  docs: {
-                    list: Array.isArray(
-                      ((storedProfile as Record<string, unknown>).docs as { list?: unknown[] } | undefined)?.list
-                    )
-                      ? ((((storedProfile as Record<string, unknown>).docs as { list?: unknown[] }).list ??
-                          []) as typeof mergedBackendProfile.docs.list)
-                      : mergedBackendProfile.docs.list,
-                  },
-                  payout: hydratePayoutData(
-                    mergedBackendProfile.payout,
-                    (((storedProfile as Record<string, unknown>).payout as object) || {}) as Partial<
-                      typeof mergedBackendProfile.payout
-                    >
-                  ),
-                  tax: {
-                    ...mergedBackendProfile.tax,
-                    ...(((storedProfile as Record<string, unknown>).tax as object) || {}),
-                  },
-                  acceptance: {
-                    ...mergedBackendProfile.acceptance,
-                    ...(((storedProfile as Record<string, unknown>).acceptance as object) || {}),
-                  },
-                }
-              : mergedBackendProfile;
-            setProfile(resolvedProfile);
+            setProfile(mergedBackendProfile);
           }
-        } else if (draftMatchesActiveUser(storedProfile, activeUserId)) {
-          const base = createEmptyProfile();
-          setProfile({
-            ...base,
-            ...(storedProfile as object),
-            owner:
-              activeUserId ||
-              String((storedProfile as Record<string, unknown>).owner || base.owner || ''),
-            support: { ...base.support, ...(((storedProfile as Record<string, unknown>).support as object) || {}) },
-            hq: { ...base.hq, ...(((storedProfile as Record<string, unknown>).hq as object) || {}) },
-            team: { ...base.team, ...(((storedProfile as Record<string, unknown>).team as object) || {}) },
-            servicePolicies: {
-              ...base.servicePolicies,
-              ...(((storedProfile as Record<string, unknown>).servicePolicies as object) || {}),
-            },
-            coverage: {
-              ...base.coverage,
-              ...(((storedProfile as Record<string, unknown>).coverage as object) || {}),
-            },
-            availability: {
-              ...base.availability,
-              ...(((storedProfile as Record<string, unknown>).availability as object) || {}),
-            },
-            docs: {
-              list: Array.isArray(
-                ((storedProfile as Record<string, unknown>).docs as { list?: unknown[] } | undefined)?.list
-              )
-                ? ((((storedProfile as Record<string, unknown>).docs as { list?: unknown[] }).list ??
-                    []) as ProviderProfile['docs']['list'])
-                : base.docs.list,
-            },
-            payout: hydratePayoutData(
-              base.payout,
-              (((storedProfile as Record<string, unknown>).payout as object) || {}) as Partial<
-                ProviderProfile['payout']
-              >
-            ),
-            tax: { ...base.tax, ...(((storedProfile as Record<string, unknown>).tax as object) || {}) },
-            acceptance: {
-              ...base.acceptance,
-              ...(((storedProfile as Record<string, unknown>).acceptance as object) || {}),
-            },
-          });
+        } else if (activeUserId) {
+          setProfile((prev) => ({ ...prev, owner: activeUserId }));
         }
         if (nextUi) {
           setUi({
-            step: 1,
+            step: clamp(Number(nextUi.step) || 1, 1, 6),
           });
         }
         if (nextReview && typeof nextReview === 'object') {
@@ -3072,7 +2924,6 @@ export default function ProviderOnboardingProV4_JS() {
           setReview((prev) => ({
             ...prev,
             ...(normalizedReview as object),
-            ...(storedReview && typeof storedReview === 'object' ? (storedReview as object) : {}),
           }));
         }
       } catch {
@@ -3098,13 +2949,6 @@ export default function ProviderOnboardingProV4_JS() {
       cancelled = true;
     };
   }, [activeUserId, createEmptyProfile, hydrated, t]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    writeStoredDraft(STORAGE.form, profile);
-    writeStoredDraft(STORAGE.ui, ui);
-    writeStoredDraft(STORAGE.review, review);
-  }, [hydrated, profile, review, ui]);
 
   useEffect(() => {
     if (!hydrated || !saveReadyRef.current) return;
@@ -3180,7 +3024,6 @@ export default function ProviderOnboardingProV4_JS() {
     if (!activeUserId) return;
     const owner = String(profile.owner || profile.email || '').toLowerCase();
     if (owner && owner !== activeUserId) {
-      clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
       const fresh = createEmptyProfile();
       setProfile(fresh);
       recordOnboardingStatus(
@@ -3274,7 +3117,6 @@ export default function ProviderOnboardingProV4_JS() {
     setProfile(fresh);
     setReview({ submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 });
     setStep(1);
-    clearStoredDraft([STORAGE.form, STORAGE.ui, STORAGE.review, STORAGE.legacy]);
     try {
       await sellerBackendApi.patchWorkflowScreenState('provider-onboarding', {
         form: fresh,

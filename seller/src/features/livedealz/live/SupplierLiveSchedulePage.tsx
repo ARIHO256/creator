@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierLiveScheduleCalendarPage.jsx
@@ -27,9 +28,12 @@ const ORANGE = "#f77f00";
 
 const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-/* --------------------------------- Mock Data -------------------------------- */
-
-const AI_SLOTS: Array<Record<string, any>> = [];
+function normalizeScheduleWorkspace(payload) {
+  return {
+    sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
+    aiSlots: Array.isArray(payload?.aiSlots) ? payload.aiSlots : []
+  };
+}
 
 /**
  * Supplier session model (mirrors Creator file shape + adds Supplier context)
@@ -177,11 +181,34 @@ function QRCodeMock({ value, size = 160 }) {
 
 export default function SupplierLiveScheduleCalendarPage() {
   const navigate = useNavigate();
-  const sessions = useMemo<Array<Record<string, any>>>(() => [], []);
+  const [workspace, setWorkspace] = useState(() => normalizeScheduleWorkspace({}));
   const [viewMode, setViewMode] = useState("week"); // week | month | agenda
   const [selectedSession, setSelectedSession] = useState(null);
   const [toast, setToast] = useState(null);
   const [rescheduleSession, setRescheduleSession] = useState(null);
+
+  const sessions = workspace.sessions;
+  const aiSlots = workspace.aiSlots;
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        const payload = await sellerBackendApi.getLiveScheduleWorkspace();
+        if (!active) return;
+        setWorkspace(normalizeScheduleWorkspace(payload));
+      } catch {
+        if (!active) return;
+        showToast("Unable to load live schedule");
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const showToast = (msg) => setToast(msg);
 
@@ -312,7 +339,7 @@ export default function SupplierLiveScheduleCalendarPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
-              {AI_SLOTS.map((slot) => (
+              {aiSlots.map((slot) => (
                 <div
                   key={slot.id}
                   className="border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 flex flex-col gap-0.5 transition-colors"
@@ -469,6 +496,7 @@ export default function SupplierLiveScheduleCalendarPage() {
       {rescheduleSession ? (
         <RescheduleDrawer
           session={rescheduleSession}
+          aiSlots={aiSlots}
           onClose={() => setRescheduleSession(null)}
           onSubmit={submitReschedule}
         />
@@ -620,14 +648,14 @@ function AgendaRow({ session, onSelect, onStartRehearsal, onOpenBuilder, onReque
 
 /* ------------------------------ Reschedule Drawer ---------------------------- */
 
-function RescheduleDrawer({ session, onClose, onSubmit }) {
+function RescheduleDrawer({ session, aiSlots, onClose, onSubmit }) {
   const [reason, setReason] = useState("");
   const [selectedSlot, setSelectedSlot] = useState(null);
 
   const handleSubmit = () => {
     if (!reason.trim() && !selectedSlot) return;
     const finalReason = selectedSlot
-      ? `Preferred slot: ${AI_SLOTS.find((s) => s.id === selectedSlot)?.label}. ${reason}`
+      ? `Preferred slot: ${aiSlots.find((s) => s.id === selectedSlot)?.label}. ${reason}`
       : reason;
     onSubmit(finalReason);
   };
@@ -679,7 +707,7 @@ function RescheduleDrawer({ session, onClose, onSubmit }) {
               <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">Suggested alternative slots</h4>
             </div>
             <div className="space-y-2">
-              {AI_SLOTS.map((slot) => (
+              {aiSlots.map((slot) => (
                 <button
                   key={slot.id}
                   type="button"

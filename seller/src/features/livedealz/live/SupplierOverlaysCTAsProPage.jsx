@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierOverlaysCTAsPro.jsx
@@ -21,7 +22,7 @@ import React, { useEffect, useMemo, useState } from "react";
  *
  * Canvas-safe:
  * - No lucide-react imports. Inline SVG icons are provided.
- * - No backend. Replace demo state with real session/campaign/store.
+ * - Backed by persisted live tool config via /api/tools/overlays.
  */
 
 const ORANGE = "#F77F00";
@@ -271,7 +272,10 @@ function Toggle({ value, onChange, disabled }) {
 /* ------------------------------ page ------------------------------ */
 
 export default function SupplierOverlaysCTAsPro() {
-  // Demo pro toggle
+  const toolHydratedRef = useRef(false);
+  const toolAutosaveRef = useRef(null);
+
+  // Tool config
   const [isPro, setIsPro] = useState(true);
 
   // Supplier execution mode
@@ -281,43 +285,14 @@ export default function SupplierOverlaysCTAsPro() {
   const [executionMode, setExecutionMode] = useState("use_creator");
   const [sharedToCreator, setSharedToCreator] = useState(false);
 
-  const session = useMemo(
-    () => ({
-      id: "LS-20418",
-      title: "Autumn Beauty Flash",
-      status: "Scheduled",
-      startISO: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-      endISO: new Date(Date.now() + 130 * 60 * 1000).toISOString(),
-    }),
-    []
-  );
-
-  const products = useMemo(
-    () => [
-      {
-        id: "p1",
-        name: "GlowUp Serum Bundle",
-        price: "$29.99",
-        stock: 18,
-        posterUrl: "https://images.unsplash.com/photo-1585232351009-aa87416fca90?auto=format&fit=crop&w=500&q=60",
-      },
-      {
-        id: "p2",
-        name: "Vitamin C Glow Kit",
-        price: "$24.50",
-        stock: 6,
-        posterUrl: "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=500&q=60",
-      },
-      {
-        id: "p3",
-        name: "Hydration Night Mask",
-        price: "$19.00",
-        stock: 0,
-        posterUrl: "https://images.unsplash.com/photo-1585386959984-a41552231691?auto=format&fit=crop&w=500&q=60",
-      },
-    ],
-    []
-  );
+  const [session, setSession] = useState({
+    id: "",
+    title: "",
+    status: "Draft",
+    startISO: new Date().toISOString(),
+    endISO: new Date().toISOString(),
+  });
+  const [products, setProducts] = useState([]);
 
   const [tab, setTab] = useState("qr"); // qr | links | timer | lower | ab
   const [variant, setVariant] = useState("A");
@@ -341,7 +316,7 @@ export default function SupplierOverlaysCTAsPro() {
   const [utmCampaign, setUtmCampaign] = useState("autumn_beauty_flash");
   const [utmContent, setUtmContent] = useState("reminder_t10m");
   const [shortDomain, setShortDomain] = useState("go.mylivedealz.com");
-  const [shortSlug, setShortSlug] = useState(makeSlug());
+  const [shortSlug, setShortSlug] = useState("");
 
   const utmLink = useMemo(
     () =>
@@ -365,7 +340,7 @@ export default function SupplierOverlaysCTAsPro() {
   // Lower third
   const [lowerEnabled, setLowerEnabled] = useState(true);
   const [lowerPlacement, setLowerPlacement] = useState("bottom");
-  const [lowerProductId, setLowerProductId] = useState(products[0].id);
+  const [lowerProductId, setLowerProductId] = useState("");
   const [ctaText, setCtaText] = useState("Buy now");
 
   // A/B
@@ -373,7 +348,17 @@ export default function SupplierOverlaysCTAsPro() {
   const [notesA, setNotesA] = useState("Variant A: QR top-right + lower-third.");
   const [notesB, setNotesB] = useState("Variant B: Countdown bar + shorter CTA.");
 
-  const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? products[0], [products, lowerProductId]);
+  const selected = useMemo(
+    () =>
+      products.find((p) => p.id === lowerProductId) ?? {
+        id: "",
+        name: "",
+        price: "",
+        stock: 0,
+        posterUrl: "",
+      },
+    [products, lowerProductId]
+  );
 
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -389,6 +374,141 @@ export default function SupplierOverlaysCTAsPro() {
     const t = setTimeout(() => setToast(null), 2200);
     return () => clearTimeout(t);
   }, [toast]);
+
+  useEffect(() => {
+    let active = true;
+
+    void sellerBackendApi
+      .getLiveToolConfig("overlays")
+      .then((payload) => {
+        if (!active) return;
+        const nextSession =
+          payload.session && typeof payload.session === "object" && !Array.isArray(payload.session)
+            ? payload.session
+            : null;
+        const nextProducts = Array.isArray(payload.products) ? payload.products : [];
+        setIsPro(payload.isPro === undefined ? true : Boolean(payload.isPro));
+        setExecutionMode(String(payload.executionMode ?? "use_creator"));
+        setSharedToCreator(Boolean(payload.sharedToCreator));
+        if (nextSession) {
+          setSession({
+            id: String(nextSession.id ?? ""),
+            title: String(nextSession.title ?? ""),
+            status: String(nextSession.status ?? "Draft"),
+            startISO: String(nextSession.startISO ?? new Date().toISOString()),
+            endISO: String(nextSession.endISO ?? new Date().toISOString()),
+          });
+        }
+        setProducts(nextProducts);
+        setTab(String(payload.tab ?? "qr"));
+        setVariant(String(payload.variant ?? "A"));
+        setQrEnabled(payload.qrEnabled === undefined ? true : Boolean(payload.qrEnabled));
+        setQrLabel(String(payload.qrLabel ?? ""));
+        setQrUrl(String(payload.qrUrl ?? ""));
+        setQrCorner(String(payload.qrCorner ?? "tr"));
+        setQrSize(Number(payload.qrSize ?? 180));
+        setDestUrl(String(payload.destUrl ?? ""));
+        setUtmSource(String(payload.utmSource ?? ""));
+        setUtmMedium(String(payload.utmMedium ?? ""));
+        setUtmCampaign(String(payload.utmCampaign ?? ""));
+        setUtmContent(String(payload.utmContent ?? ""));
+        setShortDomain(String(payload.shortDomain ?? ""));
+        setShortSlug(String(payload.shortSlug ?? ""));
+        setTimerEnabled(payload.timerEnabled === undefined ? true : Boolean(payload.timerEnabled));
+        setTimerStyle(String(payload.timerStyle ?? "pill"));
+        setTimerText(String(payload.timerText ?? ""));
+        setDealEndISO(String(payload.dealEndISO ?? nextSession?.endISO ?? new Date().toISOString()));
+        setLowerEnabled(payload.lowerEnabled === undefined ? true : Boolean(payload.lowerEnabled));
+        setLowerPlacement(String(payload.lowerPlacement ?? "bottom"));
+        setLowerProductId(String(payload.lowerProductId ?? nextProducts[0]?.id ?? ""));
+        setCtaText(String(payload.ctaText ?? ""));
+        setAbEnabled(payload.abEnabled === undefined ? true : Boolean(payload.abEnabled));
+        setNotesA(String(payload.notesA ?? ""));
+        setNotesB(String(payload.notesB ?? ""));
+        toolHydratedRef.current = true;
+      })
+      .catch(() => {
+        toolHydratedRef.current = true;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!toolHydratedRef.current) return;
+    if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
+    toolAutosaveRef.current = window.setTimeout(() => {
+      void sellerBackendApi.patchLiveToolConfig("overlays", {
+        isPro,
+        executionMode,
+        sharedToCreator,
+        session,
+        products,
+        tab,
+        variant,
+        qrEnabled,
+        qrLabel,
+        qrUrl,
+        qrCorner,
+        qrSize,
+        destUrl,
+        utmSource,
+        utmMedium,
+        utmCampaign,
+        utmContent,
+        shortDomain,
+        shortSlug,
+        timerEnabled,
+        timerStyle,
+        timerText,
+        dealEndISO,
+        lowerEnabled,
+        lowerPlacement,
+        lowerProductId,
+        ctaText,
+        abEnabled,
+        notesA,
+        notesB,
+      }).catch(() => undefined);
+    }, 450);
+
+    return () => {
+      if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
+    };
+  }, [
+    isPro,
+    executionMode,
+    sharedToCreator,
+    session,
+    products,
+    tab,
+    variant,
+    qrEnabled,
+    qrLabel,
+    qrUrl,
+    qrCorner,
+    qrSize,
+    destUrl,
+    utmSource,
+    utmMedium,
+    utmCampaign,
+    utmContent,
+    shortDomain,
+    shortSlug,
+    timerEnabled,
+    timerStyle,
+    timerText,
+    dealEndISO,
+    lowerEnabled,
+    lowerPlacement,
+    lowerProductId,
+    ctaText,
+    abEnabled,
+    notesA,
+    notesB,
+  ]);
 
   const preflight = useMemo(() => {
     const shareRequired = executionMode === "use_creator";

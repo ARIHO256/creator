@@ -10,11 +10,14 @@ import { AdzService } from './adz.service.js';
 export class AdzController {
   constructor(private readonly service: AdzService) {}
 
+  @Get('adz/builder-config') builderConfig() { return this.service.builderConfig(); }
   @Get('adz/builder/:id') builder(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.builder(id, user.sub); }
   @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('adz/builder/save') saveBuilder(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.saveBuilder(user.sub, body); }
   @RateLimit({ limit: 10, windowMs: 60_000 })
   @Post('adz/builder/:id/publish') publishBuilder(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.publishBuilder(user.sub, id, body); }
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  @Post('adz/validate-schedule') validateSchedule(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.validateSchedule(user.sub, body); }
 
   @Get('adz/campaigns') campaigns(@CurrentUser() user: RequestUser) { return this.service.campaigns(user.sub); }
   @Get('adz/campaigns/:id') campaign(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.campaign(user.sub, id); }

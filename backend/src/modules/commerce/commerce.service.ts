@@ -30,7 +30,174 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { ExportsService } from '../exports/exports.service.js';
 
-const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
+const DEFAULT_SELLER_LISTING_WIZARD_CONFIG = {
+  markets: [
+    { id: 'market-ug', name: 'Uganda' },
+    { id: 'market-ke', name: 'Kenya' },
+    { id: 'market-rw', name: 'Rwanda' },
+    { id: 'market-tz', name: 'Tanzania' }
+  ],
+  steps: [
+    { id: 'core', label: 'Core Features', type: 'form' },
+    { id: 'preOwned', label: 'Pre-Owned Info', type: 'form', conditional: true },
+    { id: 'bev', label: 'BEV Data', type: 'form', conditional: true },
+    { id: 'extras', label: 'Extras', type: 'form' },
+    { id: 'gallery', label: 'Gallery', type: 'form' },
+    { id: 'pricing', label: 'Pricing', type: 'pricing' },
+    { id: 'warranty', label: 'Warranty', type: 'warranty', conditional: true },
+    { id: 'inventory', label: 'Inventory', type: 'inventory' },
+    { id: 'delivery', label: 'Markets & Delivery', type: 'delivery' },
+    { id: 'seo', label: 'Search & Discovery', type: 'seo' }
+  ],
+  variantOptions: {
+    colors: [
+      { value: 'white', label: 'White' },
+      { value: 'black', label: 'Black' },
+      { value: 'red', label: 'Red' },
+      { value: 'blue', label: 'Blue' },
+      { value: 'silver', label: 'Silver' }
+    ],
+    trims: [
+      { value: 'standard', label: 'Standard' },
+      { value: 'long_range', label: 'Long Range' },
+      { value: 'performance', label: 'Performance' }
+    ],
+    batteries: [
+      { value: '60', label: '60 kWh' },
+      { value: '75', label: '75 kWh' },
+      { value: '90', label: '90 kWh' }
+    ],
+    wheelSizes: [
+      { value: '17', label: '17"' },
+      { value: '18', label: '18"' },
+      { value: '19', label: '19"' }
+    ],
+    interiorColors: [
+      { value: 'black', label: 'Black' },
+      { value: 'beige', label: 'Beige' },
+      { value: 'white', label: 'White' }
+    ]
+  },
+  initialForm: {
+    title: '',
+    brand: '',
+    model: '',
+    bodyType: '',
+    keySellingPoint: '',
+    isUsed: false,
+    mileage: '',
+    owners: '',
+    serviceHistory: '',
+    powertrainType: 'BEV',
+    batteryCapacity: '',
+    range: '',
+    connectorType: '',
+    numPorts: '',
+    extras: {
+      fastCharger: false,
+      floorMats: false,
+      roofRack: false,
+      extendedWarranty: false
+    },
+    heroImageUploaded: false,
+    price: '',
+    currency: 'USD',
+    enableWholesale: false,
+    hasWarranty: false,
+    warrantyMonths: '',
+    warrantyDetails: '',
+    markets: {
+      allActive: true,
+      selectedIds: ['market-ug', 'market-ke', 'market-rw', 'market-tz']
+    },
+    allowPickup: true,
+    allowDelivery: true,
+    deliveryRegions: {
+      local: true,
+      upcountry: false,
+      crossBorder: false
+    },
+    deliverToBuyerWarehouse: false,
+    seoTitle: '',
+    seoDescription: '',
+    seoAudience: '',
+    seoKeywords: '',
+    variants: [
+      {
+        id: 'v1',
+        name: 'Standard Range',
+        color: 'White',
+        trim: 'Standard',
+        batteryPack: '60 kWh',
+        wheelSize: '17"',
+        interiorColor: 'Black',
+        description: 'Base configuration for daily city driving.',
+        specs: '60 kWh · 350 km range · Color: White · Trim: Standard',
+        price: '',
+        stockQty: '',
+        sku: '',
+        warrantyMonths: '',
+        wholesaleTiers: [
+          {
+            id: 'v1-t1',
+            minQty: '1',
+            maxQty: '',
+            price: '',
+            isFinal: false
+          }
+        ]
+      },
+      {
+        id: 'v2',
+        name: 'Long Range',
+        color: 'Black',
+        trim: 'Long Range',
+        batteryPack: '75 kWh',
+        wheelSize: '18"',
+        interiorColor: 'Beige',
+        description: 'Larger battery for longer trips.',
+        specs: '75 kWh · 450 km range · Color: Black · Trim: Long Range',
+        price: '',
+        stockQty: '',
+        sku: '',
+        warrantyMonths: '',
+        wholesaleTiers: [
+          {
+            id: 'v2-t1',
+            minQty: '1',
+            maxQty: '',
+            price: '',
+            isFinal: false
+          }
+        ]
+      },
+      {
+        id: 'v3',
+        name: 'Performance',
+        color: 'Red',
+        trim: 'Performance',
+        batteryPack: '90 kWh',
+        wheelSize: '19"',
+        interiorColor: 'Black',
+        description: 'High performance with stronger acceleration.',
+        specs: '90 kWh · Sport mode · Color: Red · Trim: Performance',
+        price: '',
+        stockQty: '',
+        sku: '',
+        warrantyMonths: '',
+        wholesaleTiers: [
+          {
+            id: 'v3-t1',
+            minQty: '1',
+            maxQty: '',
+            price: '',
+            isFinal: false
+          }
+        ]
+      }
+    ]
+  }
+};
 
 @Injectable()
 export class CommerceService {
@@ -366,6 +533,7 @@ export class CommerceService {
 
   async listingWizard(userId: string) {
     const taxonomy = await this.taxonomyService.listingWizardTaxonomy();
+    const config = await this.getSellerListingWizardConfig();
     const page = await this.prisma.appRecord.findFirst({
       where: {
         userId,
@@ -385,7 +553,8 @@ export class CommerceService {
     return {
       taxonomy,
       baseLines,
-      copy: (pagePayload.copy as Record<string, unknown> | undefined) ?? {}
+      copy: (pagePayload.copy as Record<string, unknown> | undefined) ?? {},
+      config
     };
   }
 
@@ -1593,35 +1762,28 @@ export class CommerceService {
     };
   }
 
-  private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: { id: { in: SELLERFRONT_COMPAT_RECORD_IDS } },
-      select: { payload: true }
+  private async getSellerListingWizardConfig() {
+    const existing = await this.prisma.systemContent.findUnique({
+      where: { key: 'seller_listing_wizard_config' }
     });
-
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload =
-        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
-          ? (record.payload as Record<string, unknown>)
-          : null;
-      const orders = Array.isArray(payload?.orders) ? payload.orders : [];
-      for (const entry of orders) {
-        const order =
-          entry && typeof entry === 'object' && !Array.isArray(entry)
-            ? (entry as Record<string, unknown>)
-            : null;
-        const id = typeof order?.id === 'string' ? order.id : '';
-        if (id) ids.add(id);
-      }
+    if (existing) {
+      return existing.payload;
     }
 
-    return Array.from(ids);
+    const created = await this.prisma.systemContent.create({
+      data: {
+        key: 'seller_listing_wizard_config',
+        payload: DEFAULT_SELLER_LISTING_WIZARD_CONFIG as Prisma.InputJsonValue
+      }
+    });
+    return created.payload;
+  }
+
+  private async loadCompatibilityOrderIds() {
+    return [];
   }
 
   private async isCompatibilityOrderId(id: string) {
-    if (!id) return false;
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
-    return compatibilityOrderIds.includes(id);
+    return Boolean(id) && false;
   }
 }

@@ -1018,8 +1018,6 @@ function CheckRow({ ok, label, hint }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS: Array<Record<string, any>> = [];
-
 /* --------------------------------- Page ----------------------------------- */
 
 export default function SupplierAdzMarketplacePage() {
@@ -1044,7 +1042,7 @@ export default function SupplierAdzMarketplacePage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useState<typeof DEMO_ADS>([]);
+  const [ads, setAds] = useState<Array<Record<string, any>>>([]);
   const [selectedId, setSelectedId] = useState("");
   useEffect(() => {
     let cancelled = false;
@@ -1055,7 +1053,7 @@ export default function SupplierAdzMarketplacePage() {
         if (cancelled) return;
         const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
         if (nextAds.length) {
-          setAds(nextAds as typeof DEMO_ADS);
+          setAds(nextAds as Array<Record<string, any>>);
           setSyncedAds(Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)])));
         }
       })

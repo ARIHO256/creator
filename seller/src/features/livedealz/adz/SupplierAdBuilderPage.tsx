@@ -448,30 +448,6 @@ function parseLocalDateTime(dateStr: string, timeStr: string) {
   return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
 }
 
-/**
- * Mock backend validation call.
- * In a real system, this would be an async API call.
- */
-function mockValidateSchedule(campaignId: string, start: Date, end: Date, campaigns: Campaign[]) {
-  const campaign = campaigns.find((c) => c.id === campaignId);
-  if (!campaign) return { ok: false, error: "Invalid campaign selected" };
-
-  const campStart = new Date(campaign.startsAtISO);
-  const campEnd = new Date(campaign.endsAtISO);
-
-  if (start < campStart) {
-    return { ok: false, error: `Schedule starts before campaign window (${fmtLocal(campStart)})` };
-  }
-  if (end > campEnd) {
-    return { ok: false, error: `Schedule ends after campaign window (${fmtLocal(campEnd)})` };
-  }
-  if (start >= end) {
-    return { ok: false, error: "Start time must be before end time" };
-  }
-
-  return { ok: true };
-}
-
 function toDateInputValue(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
@@ -861,28 +837,6 @@ function Section({ title, subtitle, children, right }: { title: string; subtitle
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cx("rounded-2xl bg-white dark:bg-slate-900/80 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors", className)}>{children}</div>;
 }
-
-/** UTM presets library (premium) */
-const UTM_PRESETS: UTMTemplate[] = [
-  {
-    id: "utm1",
-    name: "Supplier IG Story",
-    description: "Strong host attribution for IG story swipes.",
-    params: { utm_source: "instagram", utm_medium: "story", utm_campaign: "host", utm_content: "amina" },
-  },
-  {
-    id: "utm2",
-    name: "TikTok Bio Link",
-    description: "Bio link tracking for TikTok host traffic.",
-    params: { utm_source: "tiktok", utm_medium: "bio", utm_campaign: "host", utm_content: "amina" },
-  },
-  {
-    id: "utm3",
-    name: "Marketplace Featured",
-    description: "Marketplace featured slot traffic.",
-    params: { utm_source: "marketplace", utm_medium: "featured", utm_campaign: "dealz", utm_content: "hero" },
-  },
-];
 
 // function PlayOverlayButton({ onClick, label }: { onClick: () => void; label: string }) {
 //   return (
@@ -1621,6 +1575,8 @@ export default function AdBuilder({
     campaignCreators: {},
   });
   const [assetLibraryAssets, setAssetLibraryAssets] = useState<Asset[]>([]);
+  const [utmPresets, setUtmPresets] = useState<UTMTemplate[]>([]);
+  const [scheduleValidation, setScheduleValidation] = useState<{ ok: boolean; error?: string }>({ ok: false });
   const persistHashRef = useRef("");
 
   const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
@@ -1744,10 +1700,11 @@ export default function AdBuilder({
       setRuntimeError(null);
 
       try {
-        const [campaignRecordsResult, mediaAssetsResult, builderRecordResult] = await Promise.allSettled([
+        const [campaignRecordsResult, mediaAssetsResult, builderRecordResult, builderConfigResult] = await Promise.allSettled([
           backendApi.getAdzCampaigns(),
           backendApi.getMediaAssets(),
           backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID),
+          backendApi.getAdzBuilderConfig(),
         ]);
 
         if (cancelled) return;
@@ -1758,6 +1715,8 @@ export default function AdBuilder({
         const mediaAssets = mediaAssetsResult.value;
         const builderRecord =
           builderRecordResult.status === "fulfilled" ? builderRecordResult.value : null;
+        const builderConfig =
+          builderConfigResult.status === "fulfilled" ? builderConfigResult.value : null;
 
         const mappedScope = mapAdzBuilderScope(campaignRecords);
         const mappedAssets = mediaAssets
@@ -1787,6 +1746,7 @@ export default function AdBuilder({
           ),
         });
         setAssetLibraryAssets(mappedAssets);
+        setUtmPresets(Array.isArray(builderConfig?.utmPresets) ? (builderConfig.utmPresets as UTMTemplate[]) : []);
 
         if (builderRecord) {
           const mappedBuilder = mapBackendAdzBuilder(builderRecord);
@@ -1889,8 +1849,11 @@ export default function AdBuilder({
   const countdownLabel = useMemo(() => (countdownState === "upcoming" ? "Starts in" : countdownState === "live" ? "Ends in" : "Session ended"), [countdownState]);
 
   // Tracking URL
-  const utmPreset = useMemo(() => UTM_PRESETS.find((p) => p.id === builder.utmPresetId) || UTM_PRESETS[0], [builder.utmPresetId]);
-  const mergedUtm = useMemo(() => ({ ...utmPreset.params, ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
+  const utmPreset = useMemo(
+    () => utmPresets.find((p) => p.id === builder.utmPresetId) || utmPresets[0] || { id: "", name: "", description: "", params: {} },
+    [builder.utmPresetId, utmPresets]
+  );
+  const mergedUtm = useMemo(() => ({ ...(utmPreset.params || {}), ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
   const shortLink = useMemo(() => buildShortLink(builder.shortDomain, builder.shortSlug, mergedUtm), [builder.shortDomain, builder.shortSlug, mergedUtm]);
 
   const effectivePlatforms = useMemo(() => {
@@ -1908,6 +1871,36 @@ export default function AdBuilder({
       return { platform: p, link, text };
     });
   }, [effectivePlatforms, mergedUtm, builder.shortDomain, builder.shortSlug, builder.ctaText]);
+
+  useEffect(() => {
+    if (!builder.campaignId || !builder.startDate || !builder.startTime || !builder.endDate || !builder.endTime) {
+      setScheduleValidation({ ok: false, error: "Schedule is incomplete" });
+      return;
+    }
+    let active = true;
+    void backendApi
+      .validateAdzSchedule({
+        campaignId: builder.campaignId,
+        startAt: startsAt.toISOString(),
+        endAt: endsAt.toISOString(),
+      })
+      .then((result) => {
+        if (!active) return;
+        setScheduleValidation({
+          ok: Boolean(result.ok),
+          error: typeof result.error === "string" ? result.error : undefined,
+        });
+      })
+      .catch(() => {
+        if (active) {
+          setScheduleValidation({ ok: false, error: "Unable to validate schedule" });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [builder.campaignId, builder.startDate, builder.startTime, builder.endDate, builder.endTime, startsAt, endsAt]);
 
   // Viewer state
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -2233,12 +2226,11 @@ export default function AdBuilder({
     issues.push({ label: "End date/time set", ok: !!builder.endDate && !!builder.endTime });
     issues.push({ label: "End after start", ok: endsAt.getTime() > startsAt.getTime(), fix: "Adjust schedule." });
 
-    const scheduleValidation = mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns);
     issues.push({ label: "Schedule within campaign window", ok: scheduleValidation.ok, fix: scheduleValidation.error });
 
     const ok = issues.every((i) => i.ok);
     return { ok, issues };
-  }, [assetById, builder, scope.campaigns, selectedOffers, startsAt, endsAt]);
+  }, [assetById, builder, scheduleValidation, selectedOffers, startsAt, endsAt]);
 
   const statusLabel = isApproved ? "Approved" : isSubmitted ? "Awaiting Admin" : preflight.ok ? "Ready" : "Draft";
   const statusTone: "good" | "warn" = isApproved ? "good" : isSubmitted ? "warn" : preflight.ok ? "good" : "warn";
@@ -3021,7 +3013,7 @@ export default function AdBuilder({
                   </div>
 
                   <div className="mt-3 space-y-2">
-                    {UTM_PRESETS.map((p) => {
+                    {utmPresets.map((p) => {
                       const active = p.id === builder.utmPresetId;
                       return (
                         <button
@@ -3139,7 +3131,7 @@ export default function AdBuilder({
                 </div>
 
                 {(() => {
-                  const val = mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns);
+                  const val = scheduleValidation;
                   if (!val.ok) {
                     return (
                       <div className="mt-4 flex items-start gap-2 rounded-2xl bg-rose-50 dark:bg-rose-900/20 p-3 text-xs text-rose-900 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800 transition-colors">
@@ -3163,8 +3155,8 @@ export default function AdBuilder({
                   tone="primary"
                   onClick={handleNext}
                   right={<ChevronRight className="h-4 w-4" />}
-                  disabled={!mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns).ok}
-                  title={!mockValidateSchedule(builder.campaignId, startsAt, endsAt, scope.campaigns).ok ? "Fix schedule issues" : undefined}
+                  disabled={!scheduleValidation.ok}
+                  title={!scheduleValidation.ok ? "Fix schedule issues" : undefined}
                 >
                   Next: Review
                 </Btn>
