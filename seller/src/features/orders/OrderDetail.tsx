@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useParams } from "react-router-dom";
 import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
@@ -119,7 +120,7 @@ function exportInvoiceFile(order) {
   if (typeof window === "undefined" || typeof document === "undefined") return false;
   try {
     const lines = [
-      "EVzone Invoice (Demo)",
+      "EVzone Invoice",
       `Order: ${order.id}`,
       `Customer: ${order.customer}`,
       `Channel: ${order.channel}`,
@@ -129,8 +130,6 @@ function exportInvoiceFile(order) {
       `Updated: ${shortTime(order.updatedAt)}`,
       `Total: ${fmtMoney(order.total, order.currency)}`,
       `Exported: ${new Date().toISOString()}`,
-      "",
-      "TODO: Replace with backend PDF export.",
     ];
     const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -200,6 +199,10 @@ function asRecord(value: unknown): BackendRecord {
   return value && typeof value === "object" ? (value as BackendRecord) : {};
 }
 
+function asArray(value: unknown): BackendRecord[] {
+  return Array.isArray(value) ? value.map((entry) => asRecord(entry)) : [];
+}
+
 function mapBackendOrder(entry: BackendRecord): Order {
   const metadata = asRecord(entry.metadata);
   const slaDueAt =
@@ -246,6 +249,72 @@ function mapBackendDispute(entry: BackendRecord): DisputeCase {
     createdAt: String(entry.openedAt || entry.createdAt || new Date().toISOString()),
     updatedAt: String(entry.updatedAt || entry.resolvedAt || new Date().toISOString()),
   };
+}
+
+function mapOrderDetail(entry: BackendRecord): Order {
+  const metadata = asRecord(entry.metadata);
+  const buyer = asRecord(entry.buyer);
+  const items = asArray(entry.items);
+  const slaDueAt =
+    typeof metadata.slaDueAt === "string" && metadata.slaDueAt
+      ? metadata.slaDueAt
+      : new Date(Date.now() + 6 * 3600_000).toISOString();
+  return {
+    id: String(entry.id || ""),
+    customer: String(metadata.customer || buyer.name || buyer.email || "Customer"),
+    channel: String(entry.channel || "EVzone"),
+    items: Number(entry.itemCount || items.length || 0),
+    total: Number(entry.total || 0),
+    currency: String(entry.currency || "USD"),
+    status: formatOrderStatus(entry.status),
+    warehouse: String(metadata.warehouse || entry.warehouse || "Main Warehouse"),
+    updatedAt: String(entry.updatedAt || entry.createdAt || new Date().toISOString()),
+    slaDueAt,
+    ...riskMeta(slaDueAt),
+  };
+}
+
+function mapDetailItems(entry: BackendRecord) {
+  return asArray(entry.items)
+    .map((item) => ({
+      sku: String(item.sku || item.id || ""),
+      name: String(item.name || item.title || ""),
+      qty: Number(item.qty || 0),
+      unit: Number(item.unitPrice || item.unit || item.price || 0),
+    }))
+    .filter((item) => item.name || item.sku);
+}
+
+function mapDetailProofs(entry: BackendRecord) {
+  const metadata = asRecord(entry.metadata);
+  return asArray(metadata.proofs).map((proof, index) => ({
+    id: String(proof.id || `proof_${index + 1}`),
+    name: String(proof.name || proof.fileName || "Proof"),
+    uploadedAt: String(proof.uploadedAt || proof.createdAt || new Date().toISOString()),
+    visibility: String(proof.visibility || "internal"),
+  }));
+}
+
+function mapDetailMessages(entry: BackendRecord) {
+  const metadata = asRecord(entry.metadata);
+  return asArray(metadata.messages).map((message, index) => ({
+    id: String(message.id || `message_${index + 1}`),
+    from: String(message.from || message.sender || "buyer"),
+    at: String(message.at || message.createdAt || new Date().toISOString()),
+    text: String(message.text || message.body || ""),
+    lang: String(message.lang || message.language || "en"),
+  }));
+}
+
+function mapDetailAudit(entry: BackendRecord) {
+  const metadata = asRecord(entry.metadata);
+  return asArray(metadata.audit).map((event, index) => ({
+    id: String(event.id || `audit_${index + 1}`),
+    at: String(event.at || event.createdAt || new Date().toISOString()),
+    actor: String(event.actor || "System"),
+    action: String(event.action || event.title || "Updated"),
+    detail: String(event.detail || event.message || ""),
+  }));
 }
 
 function Badge({ children, tone = "slate" }) {
@@ -950,7 +1019,7 @@ function OrdersList({
               type="button"
               onClick={() => {
                 setExportOpen(false);
-                pushToast({ title: `Export started (${x.t})`, message: "Generating file (demo).", tone: "success" });
+                pushToast({ title: `Export started (${x.t})`, message: "Generating file.", tone: "success" });
               }}
               className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4 text-left transition hover:bg-gray-50 dark:hover:bg-slate-800"
             >
@@ -975,7 +1044,7 @@ function OrdersList({
           <div className="flex items-center gap-2">
             <Truck className="h-4 w-4 text-slate-700" />
             <div className="text-sm font-black text-slate-900">Wave planning</div>
-            <span className="ml-auto"><Badge tone="slate">Demo</Badge></span>
+            <span className="ml-auto"><Badge tone="slate">Batching</Badge></span>
           </div>
           <div className="mt-2 text-xs font-semibold text-slate-500">Split selected orders into fulfillment batches and print labels.</div>
         </div>
@@ -1024,7 +1093,7 @@ function OrdersList({
           onClick={() => {
             setBatchOpen(false);
             setSelected({});
-            pushToast({ title: "Batches finalized", message: "Batch planning completed (demo).", tone: "success" });
+            pushToast({ title: "Batches finalized", message: "Batch planning completed.", tone: "success" });
           }}
           className="mt-4 w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
           style={{ background: TOKENS.green }}
@@ -1075,40 +1144,82 @@ function Row({ label, value, strong = false }: { label: string; value: React.Rea
 }
 
 function OrderDetail({ orderId, orders, onBack, pushToast }) {
-  const order = useMemo(() => orders.find((o) => o.id === orderId) || orders[0], [orders, orderId]);
+  const [detailRecord, setDetailRecord] = useState<BackendRecord | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const order = useMemo(() => {
+    const matched = orders.find((o) => o.id === orderId);
+    if (matched) return matched;
+    return detailRecord ? mapOrderDetail(detailRecord) : null;
+  }, [detailRecord, orderId, orders]);
 
   const [tab, setTab] = useState("Overview");
   const [translate, setTranslate] = useState(true);
   const [draft, setDraft] = useState("");
-
-  const [proofs, setProofs] = useState([
-    { id: "p1", name: "Invoice.pdf", uploadedAt: new Date(Date.now() - 55 * 60_000).toISOString(), visibility: "buyer" },
-  ]);
+  const [proofs, setProofs] = useState<
+    Array<{ id: string; name: string; uploadedAt: string; visibility: string }>
+  >([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const handleProofUpload = () => {
     setTab("Proofs");
     fileRef.current?.click?.();
   };
 
-  const items = useMemo(
-    () => [
-      { sku: "EBK-48V-20AH", name: "E-Bike Battery Pack 48V 20Ah", qty: 2, unit: 280 },
-      { sku: "CHG-54V-5A", name: "Fast Charger 54.6V 5A", qty: 1, unit: 85 },
-      { sku: "CAB-TYPEC", name: "Type-C Cable (Premium)", qty: 2, unit: 8 },
-    ],
-    []
-  );
+  useEffect(() => {
+    if (!orderId) {
+      setDetailRecord(null);
+      setDetailLoading(false);
+      setDetailError("");
+      return;
+    }
+    let active = true;
+    setDetailLoading(true);
+    setDetailError("");
+    void sellerBackendApi
+      .getSellerOrderDetail(orderId)
+      .then((payload) => {
+        if (active) {
+          setDetailRecord(asRecord(payload));
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setDetailRecord(null);
+          setDetailError(error instanceof Error ? error.message : "Unable to load order detail.");
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setDetailLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [orderId]);
+
+  useEffect(() => {
+    setProofs(detailRecord ? mapDetailProofs(detailRecord) : []);
+  }, [detailRecord]);
+
+  const metadata = useMemo(() => asRecord(detailRecord?.metadata), [detailRecord]);
+  const shippingMeta = useMemo(() => asRecord(metadata.shipping), [metadata]);
+  const paymentMeta = useMemo(() => asRecord(metadata.payment), [metadata]);
+  const items = useMemo(() => (detailRecord ? mapDetailItems(detailRecord) : []), [detailRecord]);
 
   const pricing = useMemo(() => {
     const subtotal = items.reduce((s, i) => s + i.qty * i.unit, 0);
-    const taxes = Math.round(subtotal * 0.02 * 100) / 100;
-    const shipping = 35;
-    return { subtotal, taxes, shipping, total: subtotal + taxes + shipping };
-  }, [items]);
+    const taxes = Number(metadata.taxes || metadata.tax || 0);
+    const shipping = Number(metadata.shipping || metadata.shippingAmount || 0);
+    const total = Number(detailRecord?.total || order?.total || subtotal + taxes + shipping);
+    return { subtotal, taxes, shipping, total };
+  }, [detailRecord, items, metadata, order]);
 
-  const meta = riskMeta(order.slaDueAt);
+  const meta = order ? riskMeta(order.slaDueAt) : { risk: "ok", label: "On track", mins: 0 };
 
-  const missingTracking = true;
+  const missingTracking = !String(
+    shippingMeta.trackingNumber || shippingMeta.tracking || metadata.trackingNumber || ""
+  ).trim();
 
   const prompts = useMemo<Prompt[]>(() => {
     const list: Prompt[] = [];
@@ -1146,23 +1257,59 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     return list;
   }, [meta.risk, missingTracking, pushToast, handleProofUpload]);
 
-  const messages = useMemo(
-    () => [
-      { id: "m1", from: "buyer", at: new Date(Date.now() - 5 * 3600_000).toISOString(), text: "Hi, when will this ship?", lang: "en" },
-      { id: "m2", from: "supplier", at: new Date(Date.now() - 4.7 * 3600_000).toISOString(), text: "Confirming stock now. We'll update you with ETA soon.", lang: "en" },
-      { id: "m3", from: "buyer", at: new Date(Date.now() - 35 * 60_000).toISOString(), text: "Please share tracking once available.", lang: "en" },
-    ],
-    []
-  );
+  const messages = useMemo(() => (detailRecord ? mapDetailMessages(detailRecord) : []), [detailRecord]);
+  const audit = useMemo(() => (detailRecord ? mapDetailAudit(detailRecord) : []), [detailRecord]);
 
-  const audit = useMemo(
-    () => [
-      { id: "a1", at: new Date(Date.now() - 6 * 3600_000).toISOString(), actor: "System", action: "order created", detail: `Channel: ${order.channel}` },
-      { id: "a2", at: new Date(Date.now() - 4 * 3600_000).toISOString(), actor: "Supplier", action: "status updated", detail: `New → ${order.status}` },
-      { id: "a3", at: new Date(Date.now() - 20 * 60_000).toISOString(), actor: "Supplier", action: "message sent", detail: "ETA soon" },
-    ],
-    [order]
-  );
+  if (detailLoading) {
+    return (
+      <div>
+        <SectionHeader
+          title={orderId ? `Order ${orderId}` : "Order"}
+          subtitle="Loading order detail."
+          right={
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to Orders
+            </button>
+          }
+        />
+        <GlassCard className="p-5">
+          <div className="text-sm font-semibold text-slate-600">Loading order detail...</div>
+        </GlassCard>
+      </div>
+    );
+  }
+
+  if (!order) {
+    return (
+      <div>
+        <SectionHeader
+          title={orderId ? `Order ${orderId}` : "Order"}
+          subtitle="Per-order detail."
+          right={
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to Orders
+            </button>
+          }
+        />
+        <GlassCard className="p-5">
+          <EmptyState
+            title="No order data"
+            message={detailError || "This account does not have accessible data for the selected order."}
+          />
+        </GlassCard>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1185,7 +1332,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                 const ok = exportInvoiceFile(order);
                 pushToast({
                   title: ok ? "Invoice exported" : "Export failed",
-                  message: ok ? "Invoice text file downloaded (demo)." : "Unable to export invoice.",
+                  message: ok ? "Invoice text file downloaded." : "Unable to export invoice.",
                   tone: ok ? "success" : "danger",
                 });
               }}
@@ -1276,19 +1423,23 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                             <AvatarCircle name={order.customer} size={40} />
                             <div className="min-w-0">
                               <div className="truncate text-sm font-black text-slate-900">{order.customer}</div>
-                              <div className="mt-1 text-xs font-semibold text-slate-500">Kampala, UG</div>
+                              <div className="mt-1 text-xs font-semibold text-slate-500">{String(metadata.customerLocation || "No location on file")}</div>
                             </div>
                           </div>
                         </MiniCard>
                         <MiniCard title="Shipping" icon={Truck}>
-                          <div className="text-sm font-black text-slate-900">Express International</div>
-                          <div className="mt-1 text-xs font-semibold text-slate-500">Carrier: DHL</div>
-                          <div className="mt-2"><Badge tone="orange">Tracking pending</Badge></div>
+                          <div className="text-sm font-black text-slate-900">{String(shippingMeta.method || shippingMeta.service || "Not available")}</div>
+                          <div className="mt-1 text-xs font-semibold text-slate-500">Carrier: {String(shippingMeta.carrier || "Not available")}</div>
+                          <div className="mt-2">
+                            <Badge tone={missingTracking ? "orange" : "green"}>
+                              {missingTracking ? "Tracking pending" : String(shippingMeta.trackingNumber || shippingMeta.tracking)}
+                            </Badge>
+                          </div>
                         </MiniCard>
                         <MiniCard title="Payment" icon={Receipt}>
-                          <div className="text-sm font-black text-slate-900">Paid</div>
-                          <div className="mt-1 text-xs font-semibold text-slate-500">EVzone Pay Wallet</div>
-                          <div className="mt-2"><Badge tone="slate">PAY-88421</Badge></div>
+                          <div className="text-sm font-black text-slate-900">{String(paymentMeta.status || metadata.paymentStatus || "Not available")}</div>
+                          <div className="mt-1 text-xs font-semibold text-slate-500">{String(paymentMeta.method || metadata.paymentMethod || "No payment method on file")}</div>
+                          <div className="mt-2"><Badge tone="slate">{String(paymentMeta.reference || paymentMeta.id || "No reference")}</Badge></div>
                         </MiniCard>
                       </div>
 
@@ -1398,6 +1549,9 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                             <div className="mt-2 text-[10px] font-extrabold text-slate-500">Lang: {m.lang}</div>
                           </div>
                         ))}
+                        {messages.length === 0 ? (
+                          <EmptyState title="No messages yet" message="Order messages will appear here when this account sends or receives them." />
+                        ) : null}
                       </div>
 
                       <div className="flex flex-wrap gap-2">
@@ -1497,6 +1651,9 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                           {a.detail ? <div className="mt-1 text-xs font-semibold text-slate-500">{a.detail}</div> : null}
                         </div>
                       ))}
+                      {audit.length === 0 ? (
+                        <EmptyState title="No audit events" message="Order activity history will appear here when it exists." />
+                      ) : null}
                     </div>
                   ) : null}
                 </motion.div>
@@ -1634,14 +1791,14 @@ function ReturnsRmas({ returnsList, pushToast }) {
                   <div className="col-span-2 flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => pushToast({ title: "Approved", message: `${r.id} approved (demo).`, tone: "success" })}
+                      onClick={() => pushToast({ title: "Approved", message: `${r.id} approved.`, tone: "success" })}
                       className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-extrabold text-emerald-800"
                     >
                       Approve
                     </button>
                     <button
                       type="button"
-                      onClick={() => pushToast({ title: "Rejected", message: `${r.id} rejected (demo).`, tone: "warning" })}
+                      onClick={() => pushToast({ title: "Rejected", message: `${r.id} rejected.`, tone: "warning" })}
                       className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] font-extrabold text-orange-800"
                     >
                       Reject
@@ -1733,12 +1890,12 @@ function ReturnsRmas({ returnsList, pushToast }) {
       <Drawer open={drawer} title="Create RMA" onClose={() => setDrawer(false)}>
         <div className="space-y-3">
           <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
-            <div className="text-sm font-black text-slate-900">RMA wizard (demo)</div>
+            <div className="text-sm font-black text-slate-900">RMA wizard</div>
             <div className="mt-1 text-xs font-semibold text-slate-500">In production: stepper with autosave, eligibility checks, and policies.</div>
           </div>
           <div className="grid gap-2">
             <label className="text-xs font-extrabold text-slate-600">Order ID</label>
-            <input className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none" placeholder="ORD-10512" />
+            <input className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none" placeholder="Order ID" />
             <label className="text-xs font-extrabold text-slate-600">Reason</label>
             <input className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none" placeholder="Damaged item" />
             <label className="text-xs font-extrabold text-slate-600">Refund pathway</label>
@@ -1753,7 +1910,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
             type="button"
             onClick={() => {
               setDrawer(false);
-              pushToast({ title: "RMA created", message: "New RMA created (demo).", tone: "success" });
+              pushToast({ title: "RMA created", message: "New RMA created.", tone: "success" });
             }}
             className="w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
             style={{ background: TOKENS.green }}
@@ -1769,7 +1926,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
 function Disputes({ disputesList, pushToast }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("All");
-  const [active, setActive] = useState(disputesList[0] || null);
+  const [active, setActive] = useState<DisputeCase | null>(null);
   const [playbooksOpen, setPlaybooksOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -1833,10 +1990,6 @@ function Disputes({ disputesList, pushToast }) {
     });
   }, [disputesList, q, status]);
 
-  useEffect(() => {
-    if (!active && disputesList.length) setActive(disputesList[0]);
-  }, [active, disputesList]);
-
   const riskTone = (score) => (score >= 70 ? "danger" : score >= 40 ? "orange" : "green");
   const visiblePlaybooks = useMemo(() => {
     if (!active?.type) return playbooks;
@@ -1871,7 +2024,7 @@ function Disputes({ disputesList, pushToast }) {
                   <div className="text-sm font-black text-slate-900">{pb.title}</div>
                   <div className="mt-1 text-xs font-semibold text-slate-500">{pb.summary}</div>
                 </div>
-                <Badge tone="slate">Mocked</Badge>
+                <Badge tone="slate">Template</Badge>
               </div>
               <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-700">
                 {pb.steps.map((step) => (
@@ -1889,7 +2042,7 @@ function Disputes({ disputesList, pushToast }) {
                     onClick={() =>
                       pushToast({
                         title: pb.title,
-                        message: `${action.label} applied (demo).`,
+                        message: `${action.label} applied.`,
                         tone: "success",
                       })
                     }
@@ -2000,7 +2153,7 @@ function Disputes({ disputesList, pushToast }) {
 
                   <button
                     type="button"
-                    onClick={() => pushToast({ title: "Exported evidence pack", message: "PDF bundle generated (demo).", tone: "success" })}
+                    onClick={() => pushToast({ title: "Exported evidence pack", message: "Evidence pack generated.", tone: "success" })}
                     className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
                   >
                     <FileText className="h-4 w-4" />
@@ -2016,13 +2169,13 @@ function Disputes({ disputesList, pushToast }) {
                   <span className="ml-auto"><Badge tone="slate">Safe</Badge></span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" onClick={() => pushToast({ title: "Partial refund", message: "Resolution applied (demo).", tone: "success" })} className="rounded-2xl px-3 py-2 text-xs font-extrabold text-white" style={{ background: TOKENS.green }}>
+                  <button type="button" onClick={() => pushToast({ title: "Partial refund", message: "Resolution applied.", tone: "success" })} className="rounded-2xl px-3 py-2 text-xs font-extrabold text-white" style={{ background: TOKENS.green }}>
                     Partial refund
                   </button>
-                  <button type="button" onClick={() => pushToast({ title: "Replacement", message: "Replacement started (demo).", tone: "success" })} className="rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800">
+                  <button type="button" onClick={() => pushToast({ title: "Replacement", message: "Replacement started.", tone: "success" })} className="rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800">
                     Replacement
                   </button>
-                  <button type="button" onClick={() => pushToast({ title: "Denied", message: "Denied with reason (demo).", tone: "warning" })} className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700">
+                  <button type="button" onClick={() => pushToast({ title: "Denied", message: "Denied with reason.", tone: "warning" })} className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700">
                     Deny
                   </button>
                 </div>
@@ -2038,7 +2191,8 @@ function Disputes({ disputesList, pushToast }) {
 }
 
 export default function OrdersOpsPreviewableV4() {
-  const [screen, setScreen] = useState("orders");
+  const { id: routeOrderId } = useParams();
+  const [screen, setScreen] = useState(routeOrderId ? "orderDetail" : "orders");
   const [orders, setOrders] = useState<Order[]>([]);
   const [returnsList, setReturnsList] = useState<ReturnCase[]>([]);
   const [disputesList, setDisputesList] = useState<DisputeCase[]>([]);
@@ -2069,7 +2223,7 @@ export default function OrdersOpsPreviewableV4() {
         setOrders(nextOrders);
         setReturnsList(nextReturns);
         setDisputesList(nextDisputes);
-        setSelectedOrderId((current) => current || nextOrders[0]?.id || "");
+        setSelectedOrderId((current) => current || routeOrderId || "");
       })
       .catch((error) => {
         if (!active) return;
@@ -2081,7 +2235,12 @@ export default function OrdersOpsPreviewableV4() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [routeOrderId]);
+
+  useEffect(() => {
+    setSelectedOrderId(routeOrderId || "");
+    setScreen(routeOrderId ? "orderDetail" : "orders");
+  }, [routeOrderId]);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {

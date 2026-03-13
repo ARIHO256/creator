@@ -6,6 +6,8 @@ import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { JobsWorker } from '../jobs/jobs.worker.js';
 
+const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
+
 @Injectable()
 export class DashboardService {
   constructor(
@@ -156,9 +158,16 @@ export class DashboardService {
     });
 
     if (user?.role === UserRole.SELLER) {
+      const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
       const [activeListings, openOrders] = await Promise.all([
         this.prisma.marketplaceListing.count({ where: { userId, status: 'ACTIVE' } }),
-        this.prisma.order.count({ where: { seller: { userId }, status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] } } })
+        this.prisma.order.count({
+          where: {
+            seller: { userId },
+            status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] },
+            ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+          }
+        })
       ]);
 
       return {
@@ -480,6 +489,7 @@ export class DashboardService {
   }
 
   private async buildSellerMetrics(userId: string, sellerId: string) {
+    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const openOrderStatuses: OrderStatus[] = [
       OrderStatus.NEW,
       OrderStatus.CONFIRMED,
@@ -492,7 +502,13 @@ export class DashboardService {
     ];
     const [activeListings, openOrders, openReturns, openDisputes] = await Promise.all([
       this.prisma.marketplaceListing.count({ where: { sellerId, status: 'ACTIVE' } }),
-      this.prisma.order.count({ where: { sellerId, status: { in: openOrderStatuses } } }),
+      this.prisma.order.count({
+        where: {
+          sellerId,
+          status: { in: openOrderStatuses },
+          ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+        }
+      }),
       this.prisma.sellerReturn.count({
         where: {
           sellerId,
@@ -531,6 +547,32 @@ export class DashboardService {
         paid: totalsByStatus.get(TransactionStatus.PAID) ?? 0
       }
     };
+  }
+
+  private async loadCompatibilityOrderIds() {
+    const records = await this.prisma.appRecord.findMany({
+      where: { id: { in: SELLERFRONT_COMPAT_RECORD_IDS } },
+      select: { payload: true }
+    });
+
+    const ids = new Set<string>();
+    for (const record of records) {
+      const payload =
+        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+          ? (record.payload as Record<string, unknown>)
+          : null;
+      const orders = Array.isArray(payload?.orders) ? payload.orders : [];
+      for (const entry of orders) {
+        const order =
+          entry && typeof entry === 'object' && !Array.isArray(entry)
+            ? (entry as Record<string, unknown>)
+            : null;
+        const id = typeof order?.id === 'string' ? order.id : '';
+        if (id) ids.add(id);
+      }
+    }
+
+    return Array.from(ids);
   }
 
   private async buildProviderMetrics(userId: string) {

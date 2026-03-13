@@ -70,3 +70,62 @@ test('SellersService.ensureSellerProfile rejects provider role with seller-kind 
     /Provider workspace is not enabled/
   );
 });
+
+test('SellersService.listOrders excludes sellerfront compatibility orders', async () => {
+  const prisma = {
+    user: {
+      async findUnique() {
+        return {
+          id: 'user-1',
+          role: 'SELLER',
+          roleAssignments: [{ role: 'SELLER' }],
+          sellerProfile: { id: 'seller-1', userId: 'user-1' }
+        };
+      }
+    },
+    appRecord: {
+      async findMany() {
+        return [{ payload: { orders: [{ id: 'ORD-10512' }] } }];
+      }
+    },
+    order: {
+      async findMany() {
+        return [{ id: 'real-order-1' }];
+      }
+    }
+  };
+
+  const searchService = { async enqueueListingIndex() {} };
+  const service = new SellersService(prisma as any, searchService as any);
+  const orders = await service.listOrders('user-1');
+  assert.deepEqual(orders, [{ id: 'real-order-1' }]);
+});
+
+test('SellersService.getOrder rejects sellerfront compatibility order ids', async () => {
+  const prisma = {
+    user: {
+      async findUnique() {
+        return {
+          id: 'user-1',
+          role: 'SELLER',
+          roleAssignments: [{ role: 'SELLER' }],
+          sellerProfile: { id: 'seller-1', userId: 'user-1' }
+        };
+      }
+    },
+    appRecord: {
+      async findMany() {
+        return [{ payload: { orders: [{ id: 'ORD-10512' }] } }];
+      }
+    },
+    order: {
+      async findFirst() {
+        throw new Error('should not fetch compatibility order');
+      }
+    }
+  };
+
+  const searchService = { async enqueueListingIndex() {} };
+  const service = new SellersService(prisma as any, searchService as any);
+  await assert.rejects(() => service.getOrder('user-1', 'ORD-10512'), /Order not found/);
+});

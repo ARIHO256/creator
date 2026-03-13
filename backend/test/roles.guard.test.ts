@@ -41,3 +41,26 @@ test('RolesGuard allows required roles', () => {
 
   assert.equal(guard.canActivate(context as any), true);
 });
+
+test('RolesGuard still enforces token roles when auth is disabled but a real auth context exists', () => {
+  const reflector = {
+    getAllAndOverride: () => ['SELLER']
+  };
+  const configService = {
+    get: (key: string) => (key === 'auth.disabled' ? true : undefined)
+  };
+  const guard = new RolesGuard(reflector as any, configService as any);
+
+  const context = {
+    switchToHttp: () => ({
+      getRequest: () => ({
+        headers: { authorization: 'Bearer real-token' },
+        user: { role: 'PROVIDER', roles: ['PROVIDER'] }
+      })
+    }),
+    getHandler: () => ({}),
+    getClass: () => ({})
+  };
+
+  assert.throws(() => guard.canActivate(context as any), /Insufficient role privileges/);
+});

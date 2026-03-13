@@ -170,6 +170,8 @@ const STARTER_SHIPPING_PROFILE_TEMPLATES: StarterShippingProfileTemplate[] = [
   }
 ];
 
+const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
+
 @Injectable()
 export class CommerceService {
   constructor(
@@ -182,9 +184,15 @@ export class CommerceService {
   ) {}
 
   async dashboard(userId: string) {
+    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const [listingCount, orderCount] = await Promise.all([
       this.prisma.marketplaceListing.count({ where: { userId } }),
-      this.prisma.order.count({ where: { seller: { userId } } })
+      this.prisma.order.count({
+        where: {
+          seller: { userId },
+          ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+        }
+      })
     ]);
 
     return {
@@ -220,6 +228,7 @@ export class CommerceService {
     const cacheKey = `seller:dashboardSummary:${userId}:${query?.range ?? ''}:${query?.from ?? ''}:${query?.to ?? ''}:${channels.join('|')}:${marketplaces.join('|')}`;
     return this.cache.getOrSet(cacheKey, 15_000, async () => {
       const seller = await this.sellersService.ensureSellerProfile(userId);
+      const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
       const dateRange = this.parseDateRange(query?.from, query?.to);
       const transactionWhere: Prisma.TransactionWhereInput = {
         sellerId: seller.id,
@@ -231,6 +240,7 @@ export class CommerceService {
       const orderWhere: Prisma.OrderWhereInput = {
         sellerId: seller.id,
         createdAt: dateRange ?? undefined,
+        ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {}),
         ...(channels.length > 0 ? { channel: { in: channels } } : {})
       };
 
@@ -462,9 +472,11 @@ export class CommerceService {
     const { skip, take } = normalizeListQuery(query);
     const channel = (query as SellerOrdersQueryDto | undefined)?.channel;
     const seller = await this.ensureSeller(userId);
+    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const orders = await this.prisma.order.findMany({
       where: {
         sellerId: seller.id,
+        ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {}),
         ...(channel ? { channel } : {})
       },
       skip,
@@ -497,6 +509,9 @@ export class CommerceService {
   }
 
   async orderDetail(userId: string, id: string, channel?: string) {
+    if (await this.isCompatibilityOrderId(id)) {
+      throw new NotFoundException('Order not found');
+    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: {
@@ -551,6 +566,9 @@ export class CommerceService {
   }
 
   async updateOrder(userId: string, id: string, payload: UpdateOrderDto, channel?: string) {
+    if (await this.isCompatibilityOrderId(id)) {
+      throw new NotFoundException('Order not found');
+    }
     const seller = await this.ensureSeller(userId);
 
     const order = await this.prisma.order.findFirst({
@@ -732,8 +750,12 @@ export class CommerceService {
 
   async financeInvoices(userId: string) {
     const seller = await this.ensureSeller(userId);
+    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const orders = await this.prisma.order.findMany({
-      where: { sellerId: seller.id },
+      where: {
+        sellerId: seller.id,
+        ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+      },
       orderBy: { createdAt: 'desc' },
       take: 50
     });
@@ -1175,6 +1197,9 @@ export class CommerceService {
   }
 
   async createReturn(userId: string, payload: CreateReturnDto) {
+    if (await this.isCompatibilityOrderId(payload.orderId)) {
+      throw new NotFoundException('Order not found');
+    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: { id: payload.orderId, sellerId: seller.id }
@@ -1223,6 +1248,9 @@ export class CommerceService {
   }
 
   async createDispute(userId: string, payload: CreateDisputeDto) {
+    if (await this.isCompatibilityOrderId(payload.orderId)) {
+      throw new NotFoundException('Order not found');
+    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: { id: payload.orderId, sellerId: seller.id }
@@ -1267,6 +1295,9 @@ export class CommerceService {
   }
 
   private async buildPrintPayload(userId: string, id: string) {
+    if (await this.isCompatibilityOrderId(id)) {
+      throw new NotFoundException('Order not found');
+    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: { id, sellerId: seller.id },
@@ -1464,5 +1495,37 @@ export class CommerceService {
       updatedAt:
         typeof payload?.updatedAt === 'string' ? payload.updatedAt : new Date().toISOString()
     };
+  }
+
+  private async loadCompatibilityOrderIds() {
+    const records = await this.prisma.appRecord.findMany({
+      where: { id: { in: SELLERFRONT_COMPAT_RECORD_IDS } },
+      select: { payload: true }
+    });
+
+    const ids = new Set<string>();
+    for (const record of records) {
+      const payload =
+        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+          ? (record.payload as Record<string, unknown>)
+          : null;
+      const orders = Array.isArray(payload?.orders) ? payload.orders : [];
+      for (const entry of orders) {
+        const order =
+          entry && typeof entry === 'object' && !Array.isArray(entry)
+            ? (entry as Record<string, unknown>)
+            : null;
+        const id = typeof order?.id === 'string' ? order.id : '';
+        if (id) ids.add(id);
+      }
+    }
+
+    return Array.from(ids);
+  }
+
+  private async isCompatibilityOrderId(id: string) {
+    if (!id) return false;
+    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
+    return compatibilityOrderIds.includes(id);
   }
 }

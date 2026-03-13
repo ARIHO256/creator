@@ -1,6 +1,5 @@
 import { readSession } from "../auth/session";
 import { resolveApiUrl } from "./apiRuntime";
-import { handleDevApiMock } from "./devApiMock";
 
 type BackendRequestError = Error & {
   status?: number;
@@ -20,9 +19,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const url = await resolveApiUrl(path);
-  if (!url) {
-    return handleDevApiMock<T>(path, { ...init, headers });
-  }
   const response = await fetch(url, { ...init, headers });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
@@ -58,6 +54,12 @@ export const sellerBackendApi = {
   getSellerListingWizard: () => request<Record<string, unknown>>("/api/seller/listing-wizard"),
   getSellerOrderDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}`),
+  getSellerPrintInvoice: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/invoice`),
+  getSellerPrintPackingSlip: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/packing-slip`),
+  getSellerPrintSticker: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/sticker`),
   getSellerReturns: () => request<Array<Record<string, unknown>>>("/api/seller/returns"),
   getSellerDisputes: () => request<Array<Record<string, unknown>>>("/api/seller/disputes"),
   getExpressOrders: () =>

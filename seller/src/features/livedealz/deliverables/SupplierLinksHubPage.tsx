@@ -1465,7 +1465,7 @@ export default function SupplierLinksHubPage() {
   const [pinnedIds, setPinnedIds] = useState([]);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
 
-  const [items, setItems] = useState(INITIAL_ITEMS);
+  const [items, setItems] = useState([]);
 
   // Review note per link
   const [reviewNotes, setReviewNotes] = useState({});

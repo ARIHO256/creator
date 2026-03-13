@@ -11,10 +11,6 @@ export class RolesGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    if (this.configService.get<boolean>('auth.disabled')) {
-      return true;
-    }
-
     const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass()
@@ -24,7 +20,17 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<{ user?: { role?: string; roles?: string[] } }>();
+    const request = context.switchToHttp().getRequest<{
+      headers?: Record<string, string | undefined>;
+      user?: { role?: string; roles?: string[] };
+    }>();
+    const authDisabled = this.configService.get<boolean>('auth.disabled');
+    const hasAuthToken = Boolean(request.headers?.authorization || request.headers?.cookie);
+
+    if (authDisabled && !hasAuthToken) {
+      return true;
+    }
+
     const activeRole = request.user?.role;
     const roles = Array.isArray(request.user?.roles) ? request.user!.roles : activeRole ? [activeRole] : [];
 

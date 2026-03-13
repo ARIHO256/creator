@@ -26,18 +26,8 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<{ headers: Record<string, string>; user?: RequestUser }>();
-
-    if (authDisabled) {
-      request.user = {
-        sub: this.configService.get<string>('auth.devUserId') ?? 'user_seller_evhub',
-        role: this.configService.get<string>('auth.devUserRole') ?? 'SELLER',
-        roles: [this.configService.get<string>('auth.devUserRole') ?? 'SELLER'],
-        email: null
-      };
-      return true;
-    }
-
     const authHeader = request.headers.authorization;
+    const cookies = parseCookieHeader(request.headers.cookie);
     let token = '';
 
     if (authHeader) {
@@ -47,11 +37,20 @@ export class JwtAuthGuard implements CanActivate {
       }
       token = bearerToken;
     } else {
-      const cookies = parseCookieHeader(request.headers.cookie);
       token = cookies[ACCESS_TOKEN_COOKIE_NAME] || '';
     }
 
     if (!token) {
+      if (authDisabled) {
+        const role = this.configService.get<string>('auth.devUserRole') ?? 'SELLER';
+        request.user = {
+          sub: this.configService.get<string>('auth.devUserId') ?? 'user_seller_evhub',
+          role,
+          roles: [role],
+          email: null
+        };
+        return true;
+      }
       throw new UnauthorizedException('Missing Authorization header');
     }
 
