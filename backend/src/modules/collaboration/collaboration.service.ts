@@ -52,6 +52,26 @@ export class CollaborationService {
     }));
   }
 
+  async campaign(userId: string, id: string) {
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id, ...this.workspaceAccessClause(userId) },
+      include: {
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        }
+      }
+    });
+
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    return this.serializeWorkspaceCampaign(campaign);
+  }
+
   async campaignWorkspace(userId: string) {
     const [campaigns, catalog] = await Promise.all([
       this.prisma.campaign.findMany({
