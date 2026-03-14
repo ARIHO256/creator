@@ -34,6 +34,7 @@ export class CollaborationController {
     return this.service.updateLegacyMarketplace(user.sub, body);
   }
   @Get('campaigns') campaigns(@CurrentUser() user: RequestUser) { return this.service.campaigns(user.sub); }
+  @Get('campaigns/:id') campaign(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.campaign(user.sub, id); }
   @Post('campaigns')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   createCampaign(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.createCampaign(user.sub, body); }

@@ -199,8 +199,7 @@ export default function SupplierLiveScheduleCalendarPage() {
         if (!active) return;
         setWorkspace(normalizeScheduleWorkspace(payload));
       } catch {
-        if (!active) return;
-        showToast("Unable to load live schedule");
+        return;
       }
     };
 

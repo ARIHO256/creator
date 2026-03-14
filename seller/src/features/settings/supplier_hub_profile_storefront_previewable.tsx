@@ -505,6 +505,7 @@ function ProductLinesManagerFullPage({
   productLines,
   setProductLines,
   resumeTarget,
+  onFinishPersist,
 }) {
   const HERO_GRADIENT = "transparent";
   const CARD_RADIUS = 2;
@@ -583,10 +584,17 @@ function ProductLinesManagerFullPage({
   };
 
   const handleFinish = () => {
-    onClose();
-    if (resumeTarget) {
-      navigate(resumeTarget);
-    }
+    const proceed = async () => {
+      if (onFinishPersist) {
+        const persisted = await onFinishPersist(productLines);
+        if (!persisted) return;
+      }
+      onClose();
+      if (resumeTarget) {
+        navigate(resumeTarget);
+      }
+    };
+    void proceed();
   };
 
   const syncQuickSelectorsFromNode = (nodeId) => {
@@ -1579,19 +1587,20 @@ export default function SupplierHubProfileStorefrontPage() {
     };
   }, [emptyState, taxonomy]);
 
-  const saveAll = async () => {
+  const persistSnapshot = async (nextSnapshot = snapshot) => {
     try {
       const existingCoverageByNodeId = new Map(
         coverageRecords.map((entry) => [entry.taxonomyNodeId, entry])
       );
-      const nextNodeIds = Array.from(new Set(productLines.map((line) => line.nodeId).filter(Boolean)));
-      const activeNodeIds = productLines
+      const nextProductLines = Array.isArray(nextSnapshot.productLines) ? nextSnapshot.productLines : [];
+      const nextNodeIds = Array.from(new Set(nextProductLines.map((line) => line.nodeId).filter(Boolean)));
+      const activeNodeIds = nextProductLines
         .filter((line) => line.status === 'active')
         .map((line) => line.nodeId);
       const removedCoverage = coverageRecords.filter((entry) => !nextNodeIds.includes(entry.taxonomyNodeId));
       const coverageWrites: Array<Promise<unknown>> = [];
 
-      productLines.forEach((line) => {
+      nextProductLines.forEach((line) => {
         const existing = existingCoverageByNodeId.get(line.nodeId);
         const status = line.status === 'active' ? 'ACTIVE' : 'SUSPENDED';
         if (existing) {
@@ -1611,25 +1620,27 @@ export default function SupplierHubProfileStorefrontPage() {
         coverageWrites.push(sellerBackendApi.removeTaxonomyCoverage(entry.id));
       });
 
-      const primaryStore = stores[0];
-      await Promise.all([
-        sellerBackendApi.patchSettings({
-          profile: {
-            ...snapshot,
-            productLines: undefined,
-          },
-        }),
-        sellerBackendApi.patchMyStorefront({
-          slug: identity.handle || primaryStore?.handle || undefined,
-          name: primaryStore?.name || identity.displayName || storefrontRecord?.name || undefined,
-          tagline: branding.tagline || undefined,
-          description: branding.description || undefined,
-          taxonomyNodeIds: activeNodeIds,
-          primaryTaxonomyNodeId: activeNodeIds[0] || undefined,
-          isPublished: storefrontRecord?.isPublished ?? false,
-        }),
-        ...coverageWrites,
-      ]);
+      const primaryStore = nextSnapshot.stores?.[0];
+      await sellerBackendApi.patchSettings({
+        profile: {
+          ...nextSnapshot,
+          productLines: undefined,
+        },
+      });
+
+      for (const write of coverageWrites) {
+        await write;
+      }
+
+      await sellerBackendApi.patchMyStorefront({
+        slug: nextSnapshot.identity.handle || primaryStore?.handle || undefined,
+        name: primaryStore?.name || nextSnapshot.identity.displayName || storefrontRecord?.name || undefined,
+        tagline: nextSnapshot.branding.tagline || undefined,
+        description: nextSnapshot.branding.description || undefined,
+        taxonomyNodeIds: activeNodeIds,
+        primaryTaxonomyNodeId: activeNodeIds[0] || undefined,
+        isPublished: storefrontRecord?.isPublished ?? false,
+      });
 
       const refreshedCoveragePayload = await sellerBackendApi.getTaxonomyCoverage().catch(() => []);
       const refreshedStorefront = await sellerBackendApi.getMyStorefront().catch(() => storefrontRecord);
@@ -1650,11 +1661,16 @@ export default function SupplierHubProfileStorefrontPage() {
           ? (refreshedStorefront as Record<string, unknown>)
           : null
       );
-      setSavedSnapshot(JSON.parse(JSON.stringify(snapshot)));
+      setSavedSnapshot(JSON.parse(JSON.stringify(nextSnapshot)));
       pushToast({ title: 'Saved', message: 'Profile and storefront updated.', tone: 'success' });
-    } catch (error) {
-      pushToast({ title: 'Save failed', message: error instanceof Error ? error.message : 'Unable to save profile', tone: 'danger' });
+      return true;
+    } catch {
+      return false;
     }
+  };
+
+  const saveAll = async () => {
+    await persistSnapshot(snapshot);
   };
 
   const setDefaultAddress = (id) => {
@@ -2942,6 +2958,13 @@ export default function SupplierHubProfileStorefrontPage() {
         productLines={productLines}
         setProductLines={updateProductLines}
         resumeTarget={resumeListingTarget}
+        onFinishPersist={async (nextProductLines) => {
+          if (!resumeListingTarget) return true;
+          return persistSnapshot({
+            ...snapshot,
+            productLines: nextProductLines,
+          });
+        }}
       />
 
       <Drawer

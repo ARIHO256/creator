@@ -697,8 +697,7 @@ export default function AuditLogExplorerPage() {
           })
         );
       } catch {
-        if (!active) return;
-        pushToast({ title: "Audit unavailable", message: "Could not load audit logs.", tone: "warning" });
+        return;
       }
     })();
     return () => {

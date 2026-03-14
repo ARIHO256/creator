@@ -2041,8 +2041,8 @@ export default function SupplierHubDashboardPage({
         : [
             {
               icon: ShieldCheck,
-              title: trustRaw < 80 ? 'KYC pending' : 'Trust profile healthy',
-              detail: trustRaw < 80 ? 'Upload documents to prevent payout delays.' : 'Trust score is supported by live reviews and response coverage.',
+              title: 'KYC pending',
+              detail: 'Upload documents to prevent payout delays.',
               action: { label: 'Continue', to: '/settings/kyc' },
             },
             {
@@ -2053,8 +2053,8 @@ export default function SupplierHubDashboardPage({
             },
             {
               icon: Store,
-              title: `${Number(sellerCounts.lowStockListings ?? 0) + Number(sellerCounts.outOfStockListings ?? 0)} listings need stock attention`,
-              detail: 'Restock or rebalance inventory to protect conversion and fulfillment.',
+              title: 'Regulated desk check',
+              detail: 'HealthMart Desk may require extra proofs for pharmacy items.',
               action: { label: 'Review', to: '/regulatory' },
             },
           ];

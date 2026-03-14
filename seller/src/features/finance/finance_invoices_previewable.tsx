@@ -395,10 +395,7 @@ export default function FinanceInvoicesPage() {
         if (!mounted) return;
         setRows(Array.isArray((payload as Record<string, any>)?.invoices) ? ((payload as Record<string, any>).invoices as any[]) : []);
       })
-      .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Invoices unavailable", message: "Could not load invoices.", tone: "danger" });
-      });
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };

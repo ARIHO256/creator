@@ -73,7 +73,7 @@ const ROUTES = {
   adBuilder: "/ad-builder",
   liveBuilder: "/live-builder",
   adzPerformance: "/adz-performance",
-  assetLibrary: "/asset-library"
+  assetLibrary: "/mldz/deliverables/asset-library"
 };
 
 // function safeNav(url: string) {
@@ -2859,8 +2859,36 @@ export default function SupplierDealzMarketplace() {
         creators={creators}
         templates={templates}
         onCreate={(d, behavior) => {
-          setDealz((prev) => [d, ...prev]);
+          const nextDealz = [d, ...dealz];
+          setDealz(nextDealz);
           setSelectedId(d.id);
+          void sellerBackendApi.createCampaign({
+            id: d.id,
+            title: d.title,
+            description: d.tagline,
+            status: "DRAFT",
+            startAt: d.startISO,
+            endAt: d.endISO,
+            metadata: {
+              source: "dealz-marketplace",
+              marketplaceType: d.type,
+              tagline: d.tagline,
+              notes: d.notes,
+              supplier: d.supplier,
+              creator: d.creator,
+              shoppable: d.shoppable ?? null,
+              live: d.live ?? null,
+            },
+          }).catch(() => {});
+          void sellerBackendApi.patchDealzMarketplace({
+            deals: nextDealz,
+            selectedId: d.id,
+            cart,
+            liveCart,
+            suppliers,
+            creators,
+            templates,
+          }).catch(() => {});
           setToast("Deal created.");
           if (behavior === "open-builder") {
             if (d.type === "Shoppable Adz") openAdBuilderFor(d);

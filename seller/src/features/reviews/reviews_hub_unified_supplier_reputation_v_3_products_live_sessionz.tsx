@@ -816,7 +816,6 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
       } catch {
         if (!cancelled) {
           setReviews([]);
-          pushToast({ title: "Backend unavailable", message: "Could not fetch reviews.", tone: "warning" });
         }
       }
     })();
@@ -940,7 +939,6 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
           )
         );
       } catch {
-        pushToast({ title: "Update failed", message: "Could not mark selected reviews as resolved.", tone: "danger" });
         return;
       }
       setReviews((prev) => prev.map((r) => (selectedIds.includes(r.id) ? { ...r, status: "Resolved", requiresResponse: false } : r)));
@@ -1040,7 +1038,6 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
         requiresResponse: false,
       });
     } catch {
-      pushToast({ title: "Send failed", message: "Could not persist the response.", tone: "danger" });
       return;
     }
 
@@ -1719,7 +1716,6 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
                         resolvedAt: new Date().toISOString(),
                       });
                     } catch {
-                      pushToast({ title: "Resolve failed", message: "Could not update review status.", tone: "danger" });
                       return;
                     }
                     setReviews((prev) => prev.map((r) => (r.id === active.id ? { ...r, status: "Resolved", requiresResponse: false } : r)));

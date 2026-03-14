@@ -508,7 +508,6 @@ export default function ProviderJointQuotePage() {
       setSowText(normalized.sowText);
       persistedRef.current = true;
     } catch {
-      pushToast({ title: "Save failed", message: "Could not persist joint quote.", tone: "danger" });
       return;
     }
     setDirty(false);
@@ -658,7 +657,6 @@ export default function ProviderJointQuotePage() {
         setQuote(createEmptyQuote());
         setVersions([]);
         setSowText(buildSowText(createEmptyQuote()));
-        pushToast({ title: "Backend unavailable", message: "Could not fetch joint quote.", tone: "warning" });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -708,7 +706,6 @@ export default function ProviderJointQuotePage() {
                 <Badge tone={quote.status === "Approved" ? "green" : quote.status === "In Review" ? "orange" : quote.status === "Changes Requested" ? "danger" : "slate"}>
                   {quote.status}
                 </Badge>
-                {loading ? <Badge tone="slate">Loading backend</Badge> : null}
                 <span className="ml-auto" />
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Collaboration builder with split responsibilities, approvals, versioning and SOW.</div>

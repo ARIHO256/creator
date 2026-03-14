@@ -779,7 +779,7 @@ export default function TeamsRolesSupplierPage() {
       pushToast({ title: "Role updated", message: name, tone: "green" });
       void refreshAudit();
     } catch (error) {
-      pushToast({ title: "Role update failed", message: error instanceof Error ? error.message : "Unable to update role", tone: "danger" });
+      return;
     }
   };
 
@@ -844,7 +844,7 @@ export default function TeamsRolesSupplierPage() {
       setRoles((s) => s.map((r) => (r.id === roleId ? mapped : r)));
       void refreshAudit();
     } catch (error) {
-      pushToast({ title: "Permission save failed", message: error instanceof Error ? error.message : "Unable to persist permission", tone: "danger" });
+      return;
     }
   };
 
@@ -911,7 +911,7 @@ export default function TeamsRolesSupplierPage() {
       pushToast({ title: "Preset applied", message: `${activeRole.name} updated`, tone: "green" });
       void refreshAudit();
     } catch (error) {
-      pushToast({ title: "Preset save failed", message: error instanceof Error ? error.message : "Unable to persist preset", tone: "danger" });
+      return;
     }
   };
 
@@ -929,7 +929,7 @@ export default function TeamsRolesSupplierPage() {
       pushToast({ title: value ? "Enabled group" : "Disabled group", message: groupName, tone: "default" });
       void refreshAudit();
     } catch (error) {
-      pushToast({ title: "Group save failed", message: error instanceof Error ? error.message : "Unable to persist group", tone: "danger" });
+      return;
     }
   };
 
@@ -962,7 +962,7 @@ export default function TeamsRolesSupplierPage() {
       pushToast({ title: "Role updated", message: `${m?.name ?? "Member"} -> ${r?.name ?? "Role"}`, tone: "green" });
       void refreshAudit();
     } catch (error) {
-      pushToast({ title: "Member update failed", message: error instanceof Error ? error.message : "Unable to update member", tone: "danger" });
+      return;
     }
   };
 
@@ -1711,7 +1711,7 @@ export default function TeamsRolesSupplierPage() {
                       pushToast({ title: "Policies saved", message: "Applied to org.", tone: "green" });
                       void refreshAudit();
                     } catch (error) {
-                      pushToast({ title: "Policies save failed", message: error instanceof Error ? error.message : "Unable to save policies", tone: "danger" });
+                      return;
                     }
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
@@ -1725,7 +1725,7 @@ export default function TeamsRolesSupplierPage() {
                   type="button"
                   onClick={() => {
                     setPolicies(mapBackendPolicies(null));
-                    pushToast({ title: "Reset", message: "Policies reset to current backend baseline.", tone: "default" });
+                    pushToast({ title: "Reset", message: "Policies reset to defaults.", tone: "default" });
                   }}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
                 >

@@ -96,7 +96,7 @@ function ToastViewport({ toasts, onDismiss }: { toasts: ToastWithId[]; onDismiss
           <button
             type="button"
             onClick={() => onDismiss(toast.id)}
-            className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs text-gray-500 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:focus-visible:ring-slate-500/50"
+            className="ml-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-xs text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:bg-slate-800 dark:hover:bg-slate-800 hover:text-gray-900 dark:text-slate-100 dark:hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400/40 dark:focus-visible:ring-slate-500/50"
             aria-label={t("Dismiss notification")}
           >
             ×

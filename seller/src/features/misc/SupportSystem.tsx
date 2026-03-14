@@ -444,7 +444,6 @@ export default function SupportSystemStatusPage() {
         if (!cancelled) {
           setProviders([]);
           setIncidents([]);
-          pushToast({ title: "Backend unavailable", message: "Could not fetch system status.", tone: "warning" });
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -509,7 +508,7 @@ export default function SupportSystemStatusPage() {
       if (Array.isArray(payload.incidents)) setIncidents(payload.incidents as any);
       pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
     } catch {
-      pushToast({ title: "Refresh failed", message: "Could not fetch status center.", tone: "danger" });
+      return;
     } finally {
       setLoading(false);
     }
@@ -535,7 +534,6 @@ export default function SupportSystemStatusPage() {
                 <div className="text-2xl font-black tracking-tight text-slate-900 md:text-3xl">System Status</div>
                 <Badge tone="slate">/support/status</Badge>
                 <Badge tone="orange">Super premium</Badge>
-                {loading ? <Badge tone="slate">Loading backend</Badge> : null}
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-500">Outages, incidents and provider health. Timeline and postmortems are included as premium placeholders.</div>
             </div>

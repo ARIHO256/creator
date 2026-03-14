@@ -704,7 +704,7 @@ function SessionDetailsDrawer({ open, onClose, session, supplier, campaign, host
         </div>
 
         <div className="space-y-3">
-          <Card title="KPIs" subtitle="Performance snapshot.">
+          <Card title="KPIs" subtitle="Performance snapshot (demo).">
             <div className="grid grid-cols-2 gap-3">
               <MetricBox label="Peak viewers" value={session.peakViewers ? session.peakViewers.toLocaleString() : "—"} />
               <MetricBox label="Avg watch" value={session.avgWatchMin ? `${session.avgWatchMin.toFixed(1)}m` : "—"} />
@@ -717,7 +717,7 @@ function SessionDetailsDrawer({ open, onClose, session, supplier, campaign, host
             <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-[11px] text-emerald-800 dark:text-emerald-200 flex items-start gap-2 transition-colors">
               <span className="text-sm">✅</span>
               <div>
-                <div className="font-bold text-emerald-900 dark:text-emerald-100">Ops-ready</div>
+                <div className="font-bold text-emerald-900 dark:text-emerald-100">Ops-ready (demo)</div>
                 <div>Assets approved. Stream outputs configured. Schedule set.</div>
               </div>
             </div>
@@ -849,7 +849,7 @@ export function LiveBuilderDrawer({
         if (!platforms.length) throw new Error("missing platforms");
         return true;
       },
-      { successMessage: "Preflight OK", errorMessage: "Preflight blocked: choose at least one platform", delay: 900 }
+      { successMessage: "Preflight OK (demo)", errorMessage: "Preflight blocked: choose at least one platform", delay: 900 }
     );
   };
 
@@ -968,7 +968,7 @@ export function LiveBuilderDrawer({
           ) : null}
 
           {tab === "Stream" ? (
-            <Card title="Stream to Platforms" subtitle="Keys, outputs, and health">
+            <Card title="Stream to Platforms" subtitle="Keys, outputs, and health (demo)">
               <div className="grid sm:grid-cols-2 gap-3">
                 {platforms.length ? (
                   platforms.map((p) => (
@@ -981,10 +981,10 @@ export function LiveBuilderDrawer({
                         className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100"
                       />
                       <div className="mt-2 flex items-center gap-2">
-                        <SoftButton onClick={() => toastApi.showInfo(`Test stream started for ${p}`)}>
+                        <SoftButton onClick={() => toastApi.showInfo(`Test stream started for ${p} (demo)`)}>
                           Test
                         </SoftButton>
-                        <SoftButton onClick={() => toastApi.showSuccess(`Health check OK for ${p}`)}>
+                        <SoftButton onClick={() => toastApi.showSuccess(`Health check OK for ${p} (demo)`)}>
                           Health
                         </SoftButton>
                       </div>
@@ -1045,7 +1045,7 @@ export function LiveBuilderDrawer({
                       <input type="checkbox" checked={slowMode} onChange={(e) => setSlowMode(e.target.checked)} />
                       Enable slow mode
                     </label>
-                    <SoftButton onClick={() => safeAsyncApi.run(async () => true, { successMessage: "Emergency mute activated", delay: 700 })}>
+                    <SoftButton onClick={() => safeAsyncApi.run(async () => true, { successMessage: "Emergency mute activated (demo)", delay: 700 })}>
                       Emergency mute
                     </SoftButton>
                     <SoftButton onClick={() => setIncidentOpen(true)}>Report incident</SoftButton>
@@ -1088,7 +1088,7 @@ export function LiveBuilderDrawer({
                   <div className="text-[12px] font-bold text-slate-900 dark:text-slate-100">Replay publish</div>
                   <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Auto publish to Replays & Clips once approved.</div>
                   <div className="mt-2 flex items-center gap-2">
-                    <SoftButton onClick={() => toastApi.showSuccess("Replay publish scheduled")}>Schedule</SoftButton>
+                    <SoftButton onClick={() => toastApi.showSuccess("Replay publish scheduled (demo)")}>Schedule</SoftButton>
                     <SoftButton onClick={() => setClipsOpen(true)}>Generate clips</SoftButton>
                   </div>
                 </div>
@@ -1096,8 +1096,8 @@ export function LiveBuilderDrawer({
                   <div className="text-[12px] font-bold text-slate-900 dark:text-slate-100">Boosters</div>
                   <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Retarget with Shoppable Adz cutdowns.</div>
                   <div className="mt-2 flex items-center gap-2">
-                    <SoftButton onClick={() => toastApi.showInfo("Create Adz Booster")}>Create booster</SoftButton>
-                    <SoftButton onClick={() => toastApi.showInfo("Export share cards")}>Export cards</SoftButton>
+                    <SoftButton onClick={() => toastApi.showInfo("Create Adz Booster (demo)")}>Create booster</SoftButton>
+                    <SoftButton onClick={() => toastApi.showInfo("Export share cards (demo)")}>Export cards</SoftButton>
                   </div>
                 </div>
               </div>
@@ -1300,8 +1300,7 @@ export default function SupplierLiveDashboardPage() {
         if (!active) return;
         setWorkspace(normalizeLiveDashboardWorkspace(payload));
       } catch {
-        if (!active) return;
-        toastApi.showError("Unable to load live dashboard");
+        return;
       }
     };
 
@@ -1530,7 +1529,7 @@ export default function SupplierLiveDashboardPage() {
           <main className="min-w-0">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 lg:gap-3">
               <div className="lg:col-span-7 space-y-2.5">
-                <Card title="Viewers trend" subtitle="Last 14 days">
+                <Card title="Viewers trend" subtitle="Last 14 days (demo)">
                   <MiniLineChart values={viewersTrend} height={78} />
                   <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <KpiTile label="Total GMV" value={`$${kpis.gmv.toLocaleString()}`} />
@@ -1785,7 +1784,7 @@ export default function SupplierLiveDashboardPage() {
                   </div>
                 </div>
 
-                <Card title="Platforms" subtitle="Where viewers are coming from">
+                <Card title="Platforms" subtitle="Where viewers are coming from (demo)">
                   <BarList items={byPlatform} />
                 </Card>
               </div>

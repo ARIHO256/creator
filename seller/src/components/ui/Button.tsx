@@ -45,7 +45,7 @@ export default function Button({
         "font-semibold",
         "rounded-lg", // 16px border radius
         "transition-all duration-200",
-        "focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900",
+        "focus:outline-none focus:ring-2 focus:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-50",
         // Size
         size === "sm" && "px-3 py-1.5 text-xs",
@@ -59,18 +59,18 @@ export default function Button({
         ],
         variant === "outlined" && [
           destructive
-            ? "border-2 border-error-500 text-error-600 hover:bg-error-50 dark:text-error-300 dark:hover:bg-error-950/40 focus:ring-error-500"
-            : "border-2 border-secondary-500 text-secondary-600 hover:bg-secondary-50 dark:text-secondary-300 dark:hover:bg-secondary-950/40 focus:ring-secondary-500",
+            ? "border-2 border-error-500 text-error-600 hover:bg-error-50 focus:ring-error-500"
+            : "border-2 border-secondary-500 text-secondary-600 hover:bg-secondary-50 focus:ring-secondary-500",
         ],
         variant === "ghost" && [
           destructive
-            ? "text-error-600 hover:bg-error-50 dark:text-error-300 dark:hover:bg-error-950/40 focus:ring-error-500"
-            : "text-secondary-600 hover:bg-secondary-50 dark:text-secondary-300 dark:hover:bg-secondary-950/40 focus:ring-secondary-500",
+            ? "text-error-600 hover:bg-error-50 focus:ring-error-500"
+            : "text-secondary-600 hover:bg-secondary-50 focus:ring-secondary-500",
         ],
         variant === "text" && [
           destructive
-            ? "text-error-600 hover:bg-error-50 dark:text-error-300 dark:hover:bg-error-950/40 focus:ring-error-500"
-            : "text-ink-700 hover:bg-ink-100 dark:text-slate-200 dark:hover:bg-slate-800/70 focus:ring-ink-500",
+            ? "text-error-600 hover:bg-error-50 focus:ring-error-500"
+            : "text-ink-700 hover:bg-ink-100 focus:ring-ink-500",
         ],
         // Full width
         fullWidth && "w-full",

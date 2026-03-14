@@ -279,7 +279,6 @@ export default function SupplierHubKycKybPage() {
       } catch {
         if (!active) return;
         setDocs([]);
-        pushToast({ title: "KYC unavailable", message: "Could not load KYC documents.", tone: "warning" });
       }
     })();
     return () => {

@@ -109,6 +109,11 @@ export const sellerBackendApi = {
   getSellerListingWizard: () => request<Record<string, unknown>>("/api/seller/listing-wizard"),
   getSellerOrderDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}`),
+  patchSellerOrder: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getSellerPrintInvoice: (id: string) =>
     request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/invoice`),
   getSellerPrintPackingSlip: (id: string) =>
@@ -116,7 +121,29 @@ export const sellerBackendApi = {
   getSellerPrintSticker: (id: string) =>
     request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}/print/sticker`),
   getSellerReturns: () => request<Array<Record<string, unknown>>>("/api/seller/returns"),
+  createSellerReturn: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/seller/returns", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchSellerReturn: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/seller/returns/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   getSellerDisputes: () => request<Array<Record<string, unknown>>>("/api/seller/disputes"),
+  createSellerDispute: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/seller/disputes", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  patchSellerDispute: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/seller/disputes/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  getSellerDisputeExportPack: (id: string) =>
+    request<Record<string, unknown>>(`/api/seller/disputes/${encodeURIComponent(id)}/export-pack`),
   getExpressOrders: () =>
     request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
       "/api/expressmart/orders"

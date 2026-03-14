@@ -2927,13 +2927,7 @@ export default function ProviderOnboardingProV4_JS() {
           }));
         }
       } catch {
-        if (!cancelled) {
-          setToast({
-            tone: 'error',
-            title: t('Backend sync failed'),
-            message: t('We could not load your provider onboarding draft from the backend.'),
-          });
-        }
+        if (!cancelled) console.error('[ProviderOnboarding] hydrate failed');
       } finally {
         if (!cancelled) {
           setHydrated(true);
@@ -2960,13 +2954,7 @@ export default function ProviderOnboardingProV4_JS() {
           review,
         })
         .then(() => setLastSaved(ts()))
-        .catch(() => {
-          setToast({
-            tone: 'error',
-            title: t('Autosave failed'),
-            message: t('Changes are not syncing to the backend right now.'),
-          });
-        });
+        .catch(() => undefined);
     }, 450);
 
     return () => window.clearTimeout(timeoutId);
@@ -3109,7 +3097,7 @@ export default function ProviderOnboardingProV4_JS() {
   const resetDraft = async () => {
     if (
       !window.confirm(
-        t('Reset this onboarding draft? This clears the saved draft on this device and the backend draft for this workspace.')
+        t('Reset this onboarding draft? This clears your local draft on this device.')
       )
     )
       return;
@@ -3124,11 +3112,7 @@ export default function ProviderOnboardingProV4_JS() {
         review: { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 },
       });
     } catch {
-      setToast({
-        tone: 'error',
-        title: t('Reset failed'),
-        message: t('We could not reset the provider onboarding draft from the backend.'),
-      });
+      console.error('[ProviderOnboarding] reset failed');
       return;
     }
     recordOnboardingStatus(
@@ -3151,11 +3135,7 @@ export default function ProviderOnboardingProV4_JS() {
         review: { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 },
       });
     } catch {
-      setToast({
-        tone: 'error',
-        title: t('Withdraw failed'),
-        message: t('We could not reopen the provider onboarding draft from the backend.'),
-      });
+      console.error('[ProviderOnboarding] withdraw failed');
       return;
     }
     recordOnboardingStatus(
@@ -3750,11 +3730,7 @@ export default function ProviderOnboardingProV4_JS() {
         }),
       ]);
     } catch {
-      setToast({
-        tone: 'error',
-        title: t('Submit failed'),
-        message: t('Your onboarding could not be submitted to the backend.'),
-      });
+      console.error('[ProviderOnboarding] submit failed');
       return;
     }
 

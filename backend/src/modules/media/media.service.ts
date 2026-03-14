@@ -22,21 +22,66 @@ export class MediaService {
   }
 
   async workspace(userId: string) {
-    const record = await this.prisma.workspaceSetting.findUnique({
-      where: {
-        userId_key: {
-          userId,
-          key: 'seller_asset_library_context'
+    const [record, seller, assets] = await Promise.all([
+      this.prisma.workspaceSetting.findUnique({
+        where: {
+          userId_key: {
+            userId,
+            key: 'seller_asset_library_context'
+          }
         }
-      }
-    });
+      }),
+      this.prisma.seller.findFirst({
+        where: { userId },
+        include: { storefront: true }
+      }),
+      this.prisma.mediaAsset.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
 
-    return (record?.payload as Record<string, unknown>) ?? {
-      creators: [],
-      suppliers: [],
-      campaigns: [],
-      deliverables: []
+    const campaigns = seller
+      ? await this.prisma.campaign.findMany({
+          where: { sellerId: seller.id },
+          include: {
+            creator: {
+              include: {
+                creatorProfile: true
+              }
+            },
+            contracts: true
+          },
+          orderBy: { updatedAt: 'desc' }
+        })
+      : [];
+
+    const stored = record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+      ? (record.payload as Record<string, unknown>)
+      : {};
+
+    const derived = {
+      creators: this.mergeWorkspaceRows(
+        this.readWorkspaceArray(stored.creators),
+        this.buildWorkspaceCreators(campaigns)
+      ),
+      suppliers: this.mergeWorkspaceRows(
+        this.readWorkspaceArray(stored.suppliers),
+        this.buildWorkspaceSuppliers(seller)
+      ),
+      campaigns: this.mergeWorkspaceRows(
+        this.readWorkspaceArray(stored.campaigns),
+        this.buildWorkspaceCampaigns(campaigns, seller)
+      ),
+      deliverables: this.mergeWorkspaceRows(
+        this.readWorkspaceArray(stored.deliverables),
+        this.buildWorkspaceDeliverables(campaigns)
+      ),
+      collections: this.buildWorkspaceCollections(assets),
+      activity: this.buildWorkspaceActivity(assets)
     };
+
+    return derived;
   }
 
   async listUploadSessions(userId: string) {
@@ -307,5 +352,237 @@ export class MediaService {
     }
 
     return timingSafeEqual(expectedBuffer, receivedBuffer);
+  }
+
+  private readWorkspaceArray(value: unknown) {
+    return Array.isArray(value)
+      ? value.filter((entry) => entry && typeof entry === 'object') as Array<Record<string, unknown>>
+      : [];
+  }
+
+  private mergeWorkspaceRows(
+    current: Array<Record<string, unknown>>,
+    fallback: Array<Record<string, unknown>>
+  ) {
+    const rows = [...current];
+    const seen = new Set(
+      rows.map((row) => String(row.id ?? '').trim()).filter(Boolean)
+    );
+
+    for (const entry of fallback) {
+      const id = String(entry.id ?? '').trim();
+      if (id && seen.has(id)) {
+        continue;
+      }
+      if (id) {
+        seen.add(id);
+      }
+      rows.push(entry);
+    }
+
+    return rows;
+  }
+
+  private buildWorkspaceSuppliers(seller: any) {
+    if (!seller) {
+      return [];
+    }
+
+    return [
+      {
+        id: seller.id,
+        name: seller.displayName || seller.storefrontName || seller.name,
+        kind: seller.kind ?? seller.type ?? 'Seller',
+        brand: seller.storefrontName || seller.displayName || seller.name,
+        logoUrl: seller.storefront?.logoUrl || seller.storefront?.coverUrl || ''
+      }
+    ];
+  }
+
+  private buildWorkspaceCreators(campaigns: any[]) {
+    const rows = new Map<string, Record<string, unknown>>();
+
+    for (const campaign of campaigns) {
+      const creator = campaign.creator;
+      if (!creator?.id) {
+        continue;
+      }
+      rows.set(creator.id, {
+        id: creator.id,
+        name: creator.creatorProfile?.name ?? creator.email ?? 'Creator',
+        handle: creator.creatorProfile?.handle ? `@${String(creator.creatorProfile.handle).replace(/^@/, '')}` : '@creator',
+        avatarUrl: '',
+      });
+    }
+
+    return Array.from(rows.values());
+  }
+
+  private buildWorkspaceCampaigns(campaigns: any[], seller: any) {
+    return campaigns.map((campaign) => {
+      const metadata =
+        campaign.metadata && typeof campaign.metadata === 'object' && !Array.isArray(campaign.metadata)
+          ? campaign.metadata as Record<string, unknown>
+          : {};
+      const reviewModeRaw =
+        typeof metadata.supplierReviewMode === 'string'
+          ? metadata.supplierReviewMode
+          : typeof metadata.approvalMode === 'string'
+            ? metadata.approvalMode
+            : 'Manual';
+
+      return {
+        id: campaign.id,
+        supplierId: seller?.id ?? '',
+        name: campaign.title,
+        brand:
+          typeof metadata.brand === 'string' && metadata.brand.trim()
+            ? metadata.brand.trim()
+            : seller?.storefrontName || seller?.displayName || seller?.name || 'Seller',
+        status: this.labelCampaignStatus(campaign.status),
+        supplierReviewMode: /^auto$/i.test(String(reviewModeRaw)) ? 'Auto' : 'Manual'
+      };
+    });
+  }
+
+  private buildWorkspaceDeliverables(campaigns: any[]) {
+    const rows: Array<Record<string, unknown>> = [];
+
+    for (const campaign of campaigns) {
+      for (const contract of campaign.contracts ?? []) {
+        const metadata =
+          contract.metadata && typeof contract.metadata === 'object' && !Array.isArray(contract.metadata)
+            ? contract.metadata as Record<string, unknown>
+            : {};
+        const deliverables = Array.isArray(metadata.deliverablesList)
+          ? metadata.deliverablesList
+          : Array.isArray(metadata.deliverables)
+            ? metadata.deliverables
+            : [];
+
+        deliverables.forEach((deliverable, index) => {
+          const label = this.readDeliverableLabel(deliverable, index);
+          rows.push({
+            id: `${contract.id}:${index}`,
+            campaignId: campaign.id,
+            label,
+            dueDateLabel: contract.endAt ? this.labelDueDate(contract.endAt) : 'No due date'
+          });
+        });
+      }
+    }
+
+    return rows;
+  }
+
+  private buildWorkspaceCollections(assets: any[]) {
+    const normalized = assets.map((asset) => this.readAssetState(asset));
+    const starterCandidates = normalized.filter((asset) =>
+      asset.status === 'approved' && ['hero', 'item_poster', 'overlay'].includes(asset.role)
+    );
+    const overlayAssets = normalized.filter((asset) =>
+      asset.kind === 'overlay' || asset.role === 'overlay' || asset.tags.includes('overlay')
+    );
+    const overlayReady = overlayAssets.length > 0 && overlayAssets.every((asset) => asset.status === 'approved');
+
+    return {
+      starterPack: {
+        assetCount: Math.min(2, starterCandidates.length),
+        status: starterCandidates.length >= 2 ? 'ready' : 'needs_review'
+      },
+      priceDropOverlays: {
+        assetCount: overlayAssets.length,
+        status: overlayReady ? 'ready' : 'needs_review'
+      }
+    };
+  }
+
+  private buildWorkspaceActivity(assets: any[]) {
+    const normalized = assets.map((asset) => this.readAssetState(asset));
+    const today = new Date();
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - 13);
+
+    const points = Array.from({ length: 14 }, () => 0);
+    let newCount = 0;
+    let approvedCount = 0;
+
+    for (const asset of normalized) {
+      if (asset.createdAt >= start) {
+        const index = this.diffInDays(start, asset.createdAt);
+        if (index >= 0 && index < points.length) {
+          points[index] += 1;
+          newCount += 1;
+        }
+      }
+
+      if (asset.status === 'approved' && asset.updatedAt >= start) {
+        approvedCount += 1;
+      }
+    }
+
+    return {
+      points,
+      newCount,
+      approvedCount,
+      pendingCount: normalized.filter((asset) => asset.status === 'pending_supplier' || asset.status === 'pending_admin').length
+    };
+  }
+
+  private readAssetState(asset: any) {
+    const metadata =
+      asset?.metadata && typeof asset.metadata === 'object' && !Array.isArray(asset.metadata)
+        ? asset.metadata as Record<string, unknown>
+        : {};
+    const tags = Array.isArray(metadata.tags) ? metadata.tags.map((tag) => String(tag).toLowerCase()) : [];
+    return {
+      status: String(metadata.status || 'draft').toLowerCase(),
+      role: typeof metadata.role === 'string' ? metadata.role : '',
+      kind: String(asset.kind || metadata.mediaType || 'image').toLowerCase(),
+      tags,
+      createdAt: asset.createdAt instanceof Date ? asset.createdAt : new Date(asset.createdAt ?? Date.now()),
+      updatedAt: asset.updatedAt instanceof Date ? asset.updatedAt : new Date(asset.updatedAt ?? asset.createdAt ?? Date.now())
+    };
+  }
+
+  private labelCampaignStatus(status: string) {
+    const raw = String(status || '').toLowerCase();
+    if (!raw) {
+      return 'Draft';
+    }
+    return raw
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private readDeliverableLabel(value: unknown, index: number) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const row = value as Record<string, unknown>;
+      for (const key of ['label', 'title', 'name']) {
+        if (typeof row[key] === 'string' && String(row[key]).trim()) {
+          return String(row[key]).trim();
+        }
+      }
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+
+    return `Deliverable ${index + 1}`;
+  }
+
+  private labelDueDate(value: Date) {
+    return `Due ${value.toISOString().slice(0, 10)}`;
+  }
+
+  private diffInDays(from: Date, to: Date) {
+    const start = new Date(from);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(to);
+    end.setHours(0, 0, 0, 0);
+    return Math.round((end.getTime() - start.getTime()) / 86_400_000);
   }
 }

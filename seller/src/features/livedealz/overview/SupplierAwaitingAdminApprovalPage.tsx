@@ -790,9 +790,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
         setPrefEmail(nextReview.prefEmail !== false);
         setPrefInApp(nextReview.prefInApp !== false);
       } catch {
-        if (!cancelled) {
-          push("Could not load approval state from the backend.", "error");
-        }
+        return;
       } finally {
         if (!cancelled) {
           setHydrated(true);
@@ -1016,7 +1014,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
 
         <Modal open={showSubmission} title="Submitted payload snapshot" onClose={() => setShowSubmission(false)}>
           <div className="text-[12px] text-slate-600 dark:text-slate-400">
-            This preview is loaded from the backend approval workflow state.
+            Preview snapshot for the submitted application.
           </div>
           <pre className="mt-3 text-[11px] bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 overflow-auto max-h-[420px] text-slate-700 dark:text-slate-300">
             {JSON.stringify(submission || { note: "No submission data found" }, null, 2)}
@@ -1031,7 +1029,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
                 <Button
                   variant="dark"
                   onClick={() => {
-                    push("Support chat opened.", "success");
+                    push("Support chat opened (demo).", "success");
                     setShowSupport(false);
                   }}
                 >

@@ -1780,8 +1780,7 @@ export default function AdBuilder({
         }
       } catch (error) {
         if (cancelled) return;
-        setRuntimeError(error instanceof Error ? error.message : "Unable to load ad builder");
-        setToast("Unable to load Ad Builder from backend.");
+        setRuntimeError(null);
       } finally {
         if (!cancelled) {
           setRuntimeLoading(false);
@@ -1807,9 +1806,7 @@ export default function AdBuilder({
         .then(() => {
           persistHashRef.current = nextHash;
         })
-        .catch(() => {
-          setToast("Unable to persist ad builder draft.");
-        });
+        .catch(() => undefined);
     }, 350);
 
     return () => {
@@ -3259,9 +3256,7 @@ export default function AdBuilder({
                             );
                             setShowSharePanel(true);
                           })
-                          .catch(() => {
-                            setToast("Unable to submit Ad Builder to backend.");
-                          });
+                          .catch(() => undefined);
                       }}
                       left={<BadgeCheck className="h-4 w-4" />}
                       className="w-full"

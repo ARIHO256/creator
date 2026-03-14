@@ -499,7 +499,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
   const markAccepted = () => {
     if (!record) return;
     setRecord({ ...record, status: "Accepted" });
-    toast?.("Supplier accepted.", "success");
+    toast?.("Supplier accepted (demo).", "success");
   };
 
   const openNegotiation = () => {
@@ -701,7 +701,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
             <div className="mt-3 flex flex-wrap gap-2">
               {/* ✅ Keep simulation button */}
               <Btn onClick={markAccepted} disabled={record.status === "Accepted"} title="Simulate supplier acceptance">
-                ✅ Mark Accepted
+                ✅ Mark Accepted (demo)
               </Btn>
               <Btn tone="primary" onClick={openNegotiation} disabled={record.status !== "Accepted"}>
                 🗣️ Open Negotiation Room
@@ -709,7 +709,7 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
               <Btn
                 onClick={() => {
                   go("/supplier/collabs/invites-from-creators");
-                  toast?.("Opening supplier inbox…", "info");
+                  toast?.("Opening supplier inbox (demo)…", "info");
                 }}
               >
                 📥 View Supplier Inbox
@@ -753,8 +753,7 @@ export default function SupplierPublicProfilePage() {
         if (!active) return;
         setProfileData(normalizeSupplierProfilePayload(payload));
       } catch {
-        if (!active) return;
-        toast("Unable to load supplier profile", "error");
+        return;
       }
     };
 
@@ -777,7 +776,7 @@ export default function SupplierPublicProfilePage() {
       setIsFollowing((s) => !s);
       toast(!isFollowing ? "Supplier saved to My Suppliers 🎉" : "Removed from My Suppliers", "success");
     } catch {
-      toast("Unable to update saved supplier", "error");
+      return;
     } finally {
       setPendingFollow(false);
     }
@@ -834,7 +833,7 @@ export default function SupplierPublicProfilePage() {
         <>
           <Btn
             onClick={() => {
-              toast("Public link copied", "success");
+              toast("Public link copied (demo)", "success");
             }}
           >
             🔗 Copy link
@@ -842,7 +841,7 @@ export default function SupplierPublicProfilePage() {
           <Btn
             tone="primary"
             onClick={() => {
-              toast("Opening profile editor", "info");
+              toast("Opening profile editor (demo)", "info");
             }}
           >
             ✏️ Edit
@@ -860,7 +859,7 @@ export default function SupplierPublicProfilePage() {
         rightContent={headerRight}
         onBack={() => {
           go(viewerMode === "Creator" ? "/creator/suppliers" : "/supplier/settings");
-          toast("Back", "info");
+          toast("Back (demo)", "info");
         }}
       />
 
@@ -1087,7 +1086,7 @@ export default function SupplierPublicProfilePage() {
                       <div className="flex items-center gap-2">
                         <Btn
                           onClick={() => {
-                            toast("Opening pitch drawer", "info");
+                            toast("Opening pitch drawer (demo)", "info");
                             go(`/creator/opportunities/${op.id}`);
                           }}
                         >
@@ -1096,7 +1095,7 @@ export default function SupplierPublicProfilePage() {
                         {viewerMode === "Supplier" ? (
                           <Btn
                             tone="ghost"
-                            onClick={() => toast("Edit opportunity", "info")}
+                            onClick={() => toast("Edit opportunity (demo)", "info")}
                           >
                             ⚙️
                           </Btn>

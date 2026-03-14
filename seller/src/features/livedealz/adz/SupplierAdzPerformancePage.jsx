@@ -1021,8 +1021,7 @@ export default function SupplierAdzPerformancePage() {
         );
         setEntities(mapped.filter((entry) => entry.id));
       } catch (error) {
-        if (!active) return;
-        toast(error instanceof Error ? error.message : "Unable to load Adz performance.", "warning");
+        return;
       }
     })();
 

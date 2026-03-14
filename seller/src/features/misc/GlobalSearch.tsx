@@ -132,9 +132,6 @@ export default function GlobalSearch() {
             Showing results for <span className="font-mono text-ev-ink">“{q}”</span>
           </p>
         )}
-        {backendError ? (
-          <p className="mt-1 text-xs text-amber-600">Backend request failed: {backendError}</p>
-        ) : null}
       </header>
 
       {!q.trim() && (

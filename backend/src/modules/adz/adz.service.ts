@@ -14,7 +14,7 @@ export class AdzService {
     if (existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)) {
       return existing.payload as Record<string, unknown>;
     }
-    const payload = this.defaultBuilderConfig();
+    const payload = { utmPresets: [] };
     const record = await this.prisma.systemContent.upsert({
       where: { key },
       update: { payload: payload as Prisma.InputJsonValue },
@@ -282,46 +282,6 @@ export class AdzService {
     const date = new Date(String(value));
     if (Number.isNaN(date.valueOf())) return null;
     return date;
-  }
-
-  private defaultBuilderConfig() {
-    return {
-      utmPresets: [
-        {
-          id: 'utm1',
-          name: 'Marketplace default',
-          description: 'Standard marketplace attribution for seller-paid traffic.',
-          params: {
-            utm_source: 'mylivedealz',
-            utm_medium: 'shoppable_adz',
-            utm_campaign: 'seller_launch',
-            utm_content: 'default'
-          }
-        },
-        {
-          id: 'utm2',
-          name: 'Creator collab',
-          description: 'Use when a creator is amplifying the ad.',
-          params: {
-            utm_source: 'creator',
-            utm_medium: 'shoppable_adz',
-            utm_campaign: 'creator_collab',
-            utm_content: 'cohost'
-          }
-        },
-        {
-          id: 'utm3',
-          name: 'Flash sale',
-          description: 'Short-window promo tagging for countdown drops.',
-          params: {
-            utm_source: 'mylivedealz',
-            utm_medium: 'flash_sale',
-            utm_campaign: 'limited_drop',
-            utm_content: 'countdown'
-          }
-        }
-      ]
-    };
   }
 
   private serializeBuilder(builder: {

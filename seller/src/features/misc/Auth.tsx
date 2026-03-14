@@ -8,7 +8,6 @@ import { getCurrentRole } from "../../auth/roles";
 import { readSession, writeSession } from "../../auth/session";
 import { authClient } from "../../lib/authApi";
 import { sellerBackendApi } from "../../lib/backendApi";
-import { useThemeMode } from "../../theme/themeMode";
 
 // EVzone — Auth Pro v4.4 — JS only (modern, relatable, mobile-first, role-aware)
 // Route: /auth
@@ -97,7 +96,6 @@ function buildAuthSecuritySession(user: Session, trusted: boolean): AuthSecurity
 export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = "default" }: AuthProps = {}) {
   const brand = useMemo(() => ({ green: '#03CD8C', orange: '#F77F00', ink: '#111827', mist: '#F7F7F7', bg1: '#FDFCFB', bg2: '#F3FAF8' }), []);
   const { t } = useLocalization();
-  const { resolvedMode } = useThemeMode();
   const location = useLocation();
 
   // Upper card now only shows Sign In and Register
@@ -332,8 +330,8 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
             <img src="/logo2.jpeg" alt={t("EVzone")} className="h-full w-full object-contain" />
           </span>
           <div className="text-sm">
-            <div className="font-extrabold tracking-tight text-[var(--auth-text)]">{t("EVzone")}</div>
-            <div className="text-xs text-[var(--auth-muted)]">{t("Sign in or register")}</div>
+            <div className="font-extrabold tracking-tight" style={{ color: brand.ink }}>{t("EVzone")}</div>
+            <div className="text-xs text-gray-500">{t("Sign in or register")}</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -362,7 +360,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   );
 
   const primaryCard = (
-    <section className="p-5">
+    <section className="card p-5">
       {tab === 'signin' && <SignIn userType={userType} onDone={(u) => handleAuthSuccess(u, t('Signed in'))} onFail={bump} needCaptcha={needCaptcha} onCaptchaPass={() => setTries(0)} hasWebAuthn={hasWebAuthn} onPasskey={signInPasskey} onForgot={() => setTab('recovery')} onSocial={handleSocialSignIn} />}
       {tab === 'signup' && (
         <SignUp
@@ -389,11 +387,11 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   if (variant !== "modal") {
     ancillaryContent = (
       <>
-        <div className="mt-3 grid grid-cols-1 gap-2 px-5 text-xs text-[var(--auth-subtle)]">
+        <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-600">
           <div className="font-semibold">{t("More ways to sign in")}</div>
         </div>
         {(tab === 'passwordless' || tab === '2fa' || tab === 'recovery') && (
-          <section className="mt-3 px-5 pb-5">
+          <section className="mt-3 card p-5">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-extrabold">{tab === 'passwordless' ? t('Passwordless options') : tab === '2fa' ? t('Two‑Factor Authentication') : t('Account recovery')}</div>
               <button className="btn btn-ghost text-xs" onClick={() => setTab('signin')}>{t("Close")}</button>
@@ -405,7 +403,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
           </section>
         )}
         {!(tab === 'passwordless' || tab === '2fa' || tab === 'recovery') && (
-          <div className="mt-2 grid grid-cols-1 gap-2 px-5 pb-5 text-xs">
+          <div className="mt-2 grid grid-cols-1 gap-2 text-xs">
             <div className="inline-flex flex-wrap items-center gap-3">
               <button className="underline" onClick={() => setTab('passwordless')}>{t("Use Magic Link / OTP / Passkey")}</button>
               <span className="text-gray-300">•</span>
@@ -424,7 +422,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-extrabold">{t("You're signed in")}</div>
-          <div className="text-xs text-[var(--auth-subtle)]">{t("Signed in as")} <b>{session.email || session.userId}</b></div>
+          <div className="text-xs text-gray-600">{t("Signed in as")} <b>{session.email || session.userId}</b></div>
         </div>
         <span className="inline-flex items-center gap-1 rounded-full bg-[var(--ev-green)] px-3 py-1 text-[11px] font-bold text-white">
           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
@@ -432,7 +430,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
         </span>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
-        <a href={resolvePostAuthRedirect(session)} className="btn btn-primary">{t("Continue")}</a>
+        <a href="/dashboard" className="btn btn-primary">{t("Go to Dashboard")}</a>
         <button
           className="btn btn-ghost"
           onClick={() => {
@@ -456,81 +454,47 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   );
 
   const footerNote = variant !== "modal" ? (
-    <div className="mt-6 text-center text-[11px] text-[var(--auth-muted)]">{t("Protected by EVzone security • Need help?")} <a className="underline" href="/help-support">{t("Help & Support")}</a></div>
+    <div className="mt-6 text-center text-[11px] text-gray-500">{t("Protected by EVzone security • Need help?")} <a className="underline" href="/help-support">{t("Help & Support")}</a></div>
   ) : null;
 
   const styles = `
     :root{ --ev-green:${brand.green}; --ev-orange:${brand.orange}; }
-    .auth-shell{
-      --auth-text: #111827;
-      --auth-subtle: #4b5563;
-      --auth-muted: #6b7280;
-      --auth-border: #e5e7eb;
-      --auth-border-soft: #eef2f7;
-      --auth-surface: rgba(255,255,255,.92);
-      --auth-surface-strong: #ffffff;
-      --auth-surface-soft: #f8fafc;
-      --auth-prompt: #fdfcfb;
-      --auth-prompt-2: ${brand.bg1};
-      --auth-prompt-3: ${brand.bg2};
-    }
-    .auth-shell[data-theme="dark"]{
-      --auth-text: #e5e7eb;
-      --auth-subtle: #cbd5e1;
-      --auth-muted: #94a3b8;
-      --auth-border: #334155;
-      --auth-border-soft: #1e293b;
-      --auth-surface: rgba(15,23,42,.9);
-      --auth-surface-strong: rgba(2,6,23,.96);
-      --auth-surface-soft: rgba(15,23,42,.72);
-      --auth-prompt: #020617;
-      --auth-prompt-2: #07111b;
-      --auth-prompt-3: #0b1726;
-    }
-    .bg-grad{ background: radial-gradient(1200px 600px at 90% -10%, var(--auth-prompt), var(--auth-prompt-2)), linear-gradient(180deg, var(--auth-prompt-2) 0%, var(--auth-prompt-3) 100%); }
-    .card{ border:1px solid var(--auth-border-soft); border-radius:16px; background:var(--auth-surface); box-shadow:0 6px 24px rgba(2,8,20,.06); color:var(--auth-text); }
-    .auth-frame{ border:1px solid var(--auth-border-soft); border-radius:20px; background:var(--auth-surface); box-shadow:0 18px 48px rgba(2,8,20,.14); color:var(--auth-text); overflow:hidden; }
-    .auth-frame-head{ padding:20px; border-bottom:1px solid var(--auth-border-soft); }
-    .auth-frame-body{ padding:0 0 20px 0; }
+    .bg-grad{ background: radial-gradient(1200px 600px at 90% -10%, #fff, ${brand.bg1}), linear-gradient(180deg, ${brand.bg1} 0%, ${brand.bg2} 100%); }
+    .card{ border:1px solid #eef2f7; border-radius:16px; background:var(--surface-1); box-shadow:0 6px 24px rgba(2,8,20,.06); }
     .btn{ border-radius:12px; padding:12px 14px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
     .btn-primary{ background:var(--ev-orange); color:#fff; }
-    .btn-ghost{ background:var(--auth-surface-strong); border:1px solid var(--auth-border); color:var(--auth-text); }
-    .btn-icon{ border:1px solid var(--auth-border); background:var(--auth-surface-strong); border-radius:12px; height:40px; display:inline-flex; align-items:center; gap:8px; padding:0 12px; color:var(--auth-text); }
-    .input{ border:1px solid var(--auth-border); border-radius:12px; padding:12px 40px 12px 40px; width:100%; background:var(--auth-surface-strong); color:var(--auth-text); }
+    .btn-ghost{ background:var(--surface-1); border:1px solid #e5e7eb; color:#111; }
+    .btn-icon{ border:1px solid #e5e7eb; background:var(--surface-1); border-radius:12px; height:40px; display:inline-flex; align-items:center; gap:8px; padding:0 12px; }
+    .input{ border:1px solid #e5e7eb; border-radius:12px; padding:12px 40px 12px 40px; width:100%; }
     .input:focus{ outline:3px solid rgba(3,205,140,.18); }
     .field{ position:relative; }
     .field .ico{ position:absolute; left:12px; top:50%; transform:translateY(-50%); opacity:.6; }
     .field .trail{ position:absolute; right:10px; top:50%; transform:translateY(-50%); opacity:.75; }
-    .pillbar{ display:flex; gap:8px; padding:6px; border:1px solid var(--auth-border); border-radius:14px; background:var(--auth-surface); }
-    .pill{ padding:8px 12px; border-radius:10px; font-weight:800; font-size:12px; color:var(--auth-subtle); }
+    .pillbar{ display:flex; gap:8px; padding:6px; border:1px solid #e5e7eb; border-radius:14px; background:var(--surface-1); }
+    .pill{ padding:8px 12px; border-radius:10px; font-weight:800; font-size:12px; color:#4b5563; }
     .pill.active{ background:#e8fff7; color:#065f46; border:1px solid var(--ev-green); }
-    .rolebar{ display:flex; gap:8px; padding:6px; border:1px dashed var(--auth-border); border-radius:14px; background:var(--auth-surface); }
-    .role{ padding:10px 14px; border-radius:10px; font-weight:800; font-size:13px; color:var(--auth-subtle); }
+    .rolebar{ display:flex; gap:8px; padding:6px; border:1px dashed #e5e7eb; border-radius:14px; background:var(--surface-1); }
+    .role{ padding:10px 14px; border-radius:10px; font-weight:800; font-size:13px; }
     .role.active{ background:#fff7ed; color:#9a3412; border:2px solid var(--ev-orange); }
-    .divider{ display:flex; align-items:center; gap:10px; color:var(--auth-muted); font-size:11px; }
-    .divider:before,.divider:after{ content:""; height:1px; background:var(--auth-border); flex:1; }
+    .divider{ display:flex; align-items:center; gap:10px; color:#6b7280; font-size:11px; }
+    .divider:before,.divider:after{ content:""; height:1px; background:#e5e7eb; flex:1; }
     input[type='checkbox']{ width:18px; height:18px; accent-color: #ffffff; }
     @media (max-width: 480px){ .wrap{ padding:16px !important; } .btn{ padding:12px; } }
-    .modal-shell{ border-radius:24px; border:1px solid var(--auth-border-soft); background:var(--auth-surface); box-shadow:0 30px 120px rgba(15,23,42,.18); max-height:90vh; overflow-y:auto; overscroll-behavior:contain; color:var(--auth-text); }
+    .modal-shell{ border-radius:24px; border:1px solid #f1f5f9; background:var(--surface-1); box-shadow:0 30px 120px rgba(15,23,42,.18); max-height:90vh; overflow-y:auto; overscroll-behavior:contain; }
   `;
 
   return (
     <div
-      className={`auth-shell ${isModal ? "w-full max-w-[430px]" : "min-h-screen"} text-[var(--auth-text)]`}
-      data-theme={resolvedMode}
+      className={`${isModal ? "w-full max-w-[430px]" : "min-h-screen"} text-[--ink]`}
       style={{ ["--ink" as "--ink"]: brand.ink } as React.CSSProperties}
     >
       <style>{styles}</style>
       {isModal ? (
         <div className="modal-shell">
           <div className="p-6 sm:p-8">
-            <div className="auth-frame">
-              <div className="auth-frame-head">{headerSection}</div>
-              <div className="auth-frame-body">
-                {primaryCard}
-                {ancillaryContent}
-              </div>
-            </div>
+            {headerSection}
+            {primaryCard}
+            {ancillaryContent}
             {sessionCard}
             {footerNote}
           </div>
@@ -538,13 +502,9 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
       ) : (
         <div className="bg-grad min-h-screen">
           <div className="wrap mx-auto w-full max-w-md px-3 py-8 sm:px-4 sm:py-10">
-            <div className="auth-frame">
-              <div className="auth-frame-head">{headerSection}</div>
-              <div className="auth-frame-body">
-                {primaryCard}
-                {ancillaryContent}
-              </div>
-            </div>
+            {headerSection}
+            {primaryCard}
+            {ancillaryContent}
             {sessionCard}
             {footerNote}
           </div>
@@ -746,7 +706,7 @@ function TwoFA({ totp, onSetup, onVerify }) {
     <section>
       <div className="text-lg font-extrabold">{t("Two‑Factor Authentication")}</div>
       <div className="text-xs text-gray-600">{totp.enabled ? t('Enter your 6‑digit code') : t('Setup with your authenticator app and then verify')}</div>
-      {!totp.enabled && (<div className="mt-2 rounded-lg border p-2 text-xs">{t("Secret: ")}<b>{totp.secret}</b></div>)}
+      {!totp.enabled && (<div className="mt-2 rounded-lg border p-2 text-xs">{t("Secret (demo): ")}<b>{totp.secret}</b></div>)}
       <div className="mt-2 inline-flex items-center gap-2 text-sm">
         {!totp.enabled && <button className="btn btn-ghost" onClick={onSetup}>{t("Setup")}</button>}
         <input className="input" placeholder={t("123456")} value={code} onChange={e => setCode(e.target.value)} />

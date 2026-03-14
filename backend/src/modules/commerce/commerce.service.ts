@@ -212,15 +212,46 @@ export class CommerceService {
 
   async dashboard(userId: string) {
     const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
-    const [listingCount, orderCount] = await Promise.all([
+    const [listingCount, orderCount, transactionTotals, reviewAverage, reviewTotal, repliedCount, negativeCount] = await Promise.all([
       this.prisma.marketplaceListing.count({ where: { userId } }),
       this.prisma.order.count({
         where: {
           seller: { userId },
           ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
         }
+      }),
+      this.prisma.transaction.aggregate({
+        where: {
+          seller: { userId },
+          status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] }
+        },
+        _sum: { amount: true }
+      }),
+      this.prisma.review.aggregate({
+        where: { subjectUserId: userId, subjectType: 'SELLER', status: 'PUBLISHED' },
+        _avg: { ratingOverall: true }
+      }),
+      this.prisma.review.count({
+        where: { subjectUserId: userId, subjectType: 'SELLER', status: 'PUBLISHED' }
+      }),
+      this.prisma.review.count({
+        where: { subjectUserId: userId, subjectType: 'SELLER', status: 'PUBLISHED', replies: { some: {} } }
+      }),
+      this.prisma.review.count({
+        where: {
+          subjectUserId: userId,
+          subjectType: 'SELLER',
+          status: 'PUBLISHED',
+          sentiment: { in: ['negative', 'NEGATIVE'] }
+        }
       })
     ]);
+
+    const revenueBase = Number(transactionTotals._sum.amount ?? 0);
+    const averageRating = Number(reviewAverage._avg.ratingOverall ?? 0);
+    const responseRate = reviewTotal ? Math.round((repliedCount / reviewTotal) * 100) : 0;
+    const negativePct = reviewTotal ? (negativeCount / reviewTotal) * 100 : 0;
+    const trustBase = this.computeTrustScore(averageRating, responseRate, negativePct);
 
     return {
       quickActions: [
@@ -242,9 +273,9 @@ export class CommerceService {
         ctaTo: '/ops'
       },
       bases: {
-        revenueBase: 100,
-        ordersBase: 100,
-        trustBase: 100
+        revenueBase,
+        ordersBase: orderCount,
+        trustBase
       }
     };
   }
@@ -954,6 +985,74 @@ export class CommerceService {
       },
       orderBy: { openedAt: 'desc' }
     });
+  }
+
+  async exportDisputePack(userId: string, id: string) {
+    const seller = await this.ensureSeller(userId);
+    const dispute = await this.prisma.sellerDispute.findFirst({
+      where: { id, sellerId: seller.id },
+      include: {
+        order: {
+          include: {
+            items: true,
+          },
+        },
+      },
+    });
+    if (!dispute) {
+      throw new NotFoundException('Dispute not found');
+    }
+
+    const metadata =
+      dispute.metadata && typeof dispute.metadata === 'object' && !Array.isArray(dispute.metadata)
+        ? (dispute.metadata as Record<string, unknown>)
+        : {};
+    const evidence = Array.isArray(metadata.evidence)
+      ? metadata.evidence
+          .map((entry) =>
+            entry && typeof entry === 'object' && !Array.isArray(entry)
+              ? (entry as Record<string, unknown>)
+              : null
+          )
+          .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+      : [];
+    const resolution =
+      metadata.resolution && typeof metadata.resolution === 'object' && !Array.isArray(metadata.resolution)
+        ? (metadata.resolution as Record<string, unknown>)
+        : {};
+
+    const lines = [
+      'EVzone Dispute Evidence Pack',
+      `Dispute ID: ${dispute.id}`,
+      `Order ID: ${dispute.orderId}`,
+      `Status: ${dispute.status}`,
+      `Reason: ${dispute.reason || 'Not provided'}`,
+      `Opened: ${dispute.openedAt.toISOString()}`,
+      `Updated: ${dispute.updatedAt.toISOString()}`,
+      `Order Total: ${Number(dispute.order.total || 0).toFixed(2)} ${dispute.order.currency}`,
+      `Items: ${dispute.order.items.map((item) => `${item.name} x${item.qty}`).join(', ') || 'None'}`,
+      '',
+      'Evidence',
+      ...(evidence.length
+        ? evidence.map((entry, index) => {
+            const name = String(entry.name || entry.fileName || `Evidence ${index + 1}`);
+            const uploadedAt = String(entry.uploadedAt || entry.createdAt || '');
+            const visibility = String(entry.visibility || 'internal');
+            return `- ${name} (${visibility}${uploadedAt ? `, ${uploadedAt}` : ''})`;
+          })
+        : ['- No evidence uploaded']),
+      '',
+      'Resolution',
+      `- Type: ${String(resolution.type || 'Not set')}`,
+      `- Notes: ${String(resolution.notes || 'Not set')}`,
+      `- Updated At: ${String(resolution.updatedAt || 'Not set')}`,
+    ];
+
+    return {
+      id: dispute.id,
+      filename: `dispute-pack-${dispute.id}.txt`,
+      content: lines.join('\n'),
+    };
   }
 
   async inventory(userId: string) {

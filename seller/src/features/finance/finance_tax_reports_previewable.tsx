@@ -382,10 +382,7 @@ export default function FinanceTaxReportsPage() {
         if (!mounted) return;
         setReports(Array.isArray((payload as Record<string, any>)?.reports) ? ((payload as Record<string, any>).reports as any[]) : []);
       })
-      .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Tax reports unavailable", message: "Could not load tax reports.", tone: "danger" });
-      });
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };

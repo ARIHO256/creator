@@ -721,8 +721,7 @@ export default function DeviceSessionsPage() {
         setSensitivity(Number(geo.sensitivity ?? 70));
         hydratedRef.current = true;
       } catch {
-        if (!active) return;
-        pushToast({ title: "Sessions unavailable", message: "Could not load device sessions.", tone: "warning" });
+        return;
       }
     })();
     return () => {
