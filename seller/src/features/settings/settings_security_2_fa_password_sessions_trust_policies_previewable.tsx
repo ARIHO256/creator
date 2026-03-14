@@ -394,8 +394,7 @@ export default function SettingsSecurityPage() {
         setPolicies((current) => ({ ...current, ...((metadata.policies as Record<string, unknown> | undefined) ?? {}) }));
         hydratedRef.current = true;
       } catch {
-        if (!active) return;
-        pushToast({ title: "Security unavailable", message: "Could not load security settings.", tone: "warning" });
+        return;
       }
     })();
     return () => {

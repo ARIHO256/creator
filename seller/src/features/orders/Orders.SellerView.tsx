@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRolePageContent } from '../../data/pageContent';
+import { sellerBackendApi } from '../../lib/backendApi';
 
 /**
  * Orders + Ops Preview Host (PREVIEWABLE)
@@ -142,6 +143,145 @@ function riskMeta(slaDueAt) {
   if (mins <= 120) return { risk: 'risk', label: '< 2h', mins };
   if (mins <= 480) return { risk: 'watch', label: '< 8h', mins };
   return { risk: 'ok', label: 'On track', mins };
+}
+
+function formatOrderStatus(value) {
+  const status = String(value || '')
+    .toLowerCase()
+    .replace(/_/g, ' ');
+  if (!status) return 'Draft';
+  return status.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function asRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value.map((entry) => asRecord(entry)) : [];
+}
+
+function mapBackendReturn(entry) {
+  const metadata = asRecord(entry.metadata);
+  return {
+    id: String(entry.id || ''),
+    orderId: String(entry.orderId || ''),
+    status: String(metadata.displayStatus || formatOrderStatus(entry.status)),
+    reason: String(entry.reason || 'Support case'),
+    pathway: String(metadata.pathway || 'Refund'),
+    amount: Number(metadata.amount || 0),
+    currency: String(metadata.currency || 'USD'),
+    createdAt: String(entry.requestedAt || entry.createdAt || new Date().toISOString()),
+    metadata,
+  };
+}
+
+function mapBackendDispute(entry) {
+  const metadata = asRecord(entry.metadata);
+  return {
+    id: String(entry.id || ''),
+    orderId: String(entry.orderId || ''),
+    type: String(entry.reason || 'Dispute'),
+    status: String(metadata.displayStatus || formatOrderStatus(entry.status)),
+    risk: Number(metadata.risk || 0),
+    createdAt: String(entry.openedAt || entry.createdAt || new Date().toISOString()),
+    updatedAt: String(entry.updatedAt || entry.resolvedAt || new Date().toISOString()),
+    metadata,
+  };
+}
+
+function mapOrderDetail(entry) {
+  const metadata = asRecord(entry.metadata);
+  const buyer = asRecord(entry.buyer);
+  const items = asArray(entry.items);
+  const slaDueAt =
+    typeof metadata.slaDueAt === 'string' && metadata.slaDueAt
+      ? metadata.slaDueAt
+      : new Date(Date.now() + 6 * 3600_000).toISOString();
+  return {
+    id: String(entry.id || ''),
+    customer: String(metadata.customer || buyer.name || buyer.email || 'Customer'),
+    channel: String(entry.channel || 'EVzone'),
+    items: Number(entry.itemCount || items.length || 0),
+    total: Number(entry.total || 0),
+    currency: String(entry.currency || 'USD'),
+    status: formatOrderStatus(entry.status),
+    warehouse: String(metadata.warehouse || entry.warehouse || 'Main Warehouse'),
+    updatedAt: String(entry.updatedAt || entry.createdAt || new Date().toISOString()),
+    slaDueAt,
+    ...riskMeta(slaDueAt),
+  };
+}
+
+function mapDetailItems(entry) {
+  return asArray(entry.items)
+    .map((item) => ({
+      sku: String(item.sku || item.id || ''),
+      name: String(item.name || item.title || ''),
+      qty: Number(item.qty || 0),
+      unit: Number(item.unitPrice || item.unit || item.price || 0),
+    }))
+    .filter((item) => item.name || item.sku);
+}
+
+function mapDetailProofs(entry) {
+  const metadata = asRecord(entry.metadata);
+  return asArray(metadata.proofs).map((proof, index) => ({
+    id: String(proof.id || `proof_${index + 1}`),
+    name: String(proof.name || proof.fileName || 'Proof'),
+    uploadedAt: String(proof.uploadedAt || proof.createdAt || new Date().toISOString()),
+    visibility: String(proof.visibility || 'internal'),
+    contentUrl: String(proof.contentUrl || proof.url || ''),
+  }));
+}
+
+function mapDetailMessages(entry) {
+  const metadata = asRecord(entry.metadata);
+  return asArray(metadata.messages).map((message, index) => ({
+    id: String(message.id || `message_${index + 1}`),
+    from: String(message.from || message.sender || 'buyer'),
+    at: String(message.at || message.createdAt || new Date().toISOString()),
+    text: String(message.text || message.body || ''),
+    lang: String(message.lang || message.language || 'en'),
+  }));
+}
+
+function mapDetailAudit(entry) {
+  const metadata = asRecord(entry.metadata);
+  return asArray(metadata.audit).map((event, index) => ({
+    id: String(event.id || `audit_${index + 1}`),
+    at: String(event.at || event.createdAt || new Date().toISOString()),
+    actor: String(event.actor || 'System'),
+    action: String(event.action || event.title || 'Updated'),
+    detail: String(event.detail || event.message || ''),
+  }));
+}
+
+async function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error || new Error('Unable to read file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function downloadTextFile(filename, content) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  try {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function withRisk(rows) {
@@ -1170,7 +1310,14 @@ function Row({ label, value, strong }) {
 }
 
 function OrderDetail({ orderId, orders, onBack, pushToast }) {
-  const order = useMemo(() => orders.find((o) => o.id === orderId) || null, [orders, orderId]);
+  const [detailRecord, setDetailRecord] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const order = useMemo(() => {
+    const matched = orders.find((o) => o.id === orderId) || null;
+    if (matched) return matched;
+    return detailRecord ? mapOrderDetail(detailRecord) : null;
+  }, [detailRecord, orders, orderId]);
 
   const [tab, setTab] = useState('Overview');
   const [translate, setTranslate] = useState(true);
@@ -1182,19 +1329,60 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     setTab('Proofs');
     fileRef.current?.click?.();
   };
+  useEffect(() => {
+    if (!orderId) {
+      setDetailRecord(null);
+      setDetailLoading(false);
+      setDetailError('');
+      return;
+    }
+    let active = true;
+    setDetailLoading(true);
+    setDetailError('');
+    void sellerBackendApi
+      .getSellerOrderDetail(orderId)
+      .then((payload) => {
+        if (active) {
+          setDetailRecord(asRecord(payload));
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setDetailRecord(null);
+          setDetailError(error instanceof Error ? error.message : 'Unable to load order detail.');
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setDetailLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [orderId]);
 
-  const items = useMemo(() => [], []);
+  useEffect(() => {
+    setProofs(detailRecord ? mapDetailProofs(detailRecord) : []);
+  }, [detailRecord]);
+
+  const metadata = useMemo(() => asRecord(detailRecord?.metadata), [detailRecord]);
+  const shippingMeta = useMemo(() => asRecord(metadata.shipping), [metadata]);
+  const items = useMemo(() => (detailRecord ? mapDetailItems(detailRecord) : []), [detailRecord]);
 
   const pricing = useMemo(() => {
     const subtotal = items.reduce((s, i) => s + i.qty * i.unit, 0);
-    const taxes = 0;
-    const shipping = 0;
-    return { subtotal, taxes, shipping, total: subtotal + taxes + shipping };
-  }, [items]);
+    const taxes = Number(metadata.taxes || metadata.tax || 0);
+    const shipping = Number(metadata.shipping || metadata.shippingAmount || 0);
+    const total = Number(detailRecord?.total || order?.total || subtotal + taxes + shipping);
+    return { subtotal, taxes, shipping, total };
+  }, [detailRecord, items, metadata, order]);
 
   const meta = order ? riskMeta(order.slaDueAt) : { risk: 'ok', label: 'On track', mins: 0 };
 
-  const missingTracking = true;
+  const missingTracking = !String(
+    shippingMeta.trackingNumber || shippingMeta.tracking || metadata.trackingNumber || ''
+  ).trim();
 
   const prompts = useMemo(() => {
     const list = [];
@@ -1248,9 +1436,52 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     return list;
   }, [meta.risk, missingTracking, pushToast, handleProofUpload]);
 
-  const messages = useMemo(() => [], []);
+  const messages = useMemo(() => (detailRecord ? mapDetailMessages(detailRecord) : []), [detailRecord]);
 
-  const audit = useMemo(() => [], []);
+  const audit = useMemo(() => (detailRecord ? mapDetailAudit(detailRecord) : []), [detailRecord]);
+
+  const syncProofs = async (nextProofs) => {
+    if (!orderId) return;
+    const payload = await sellerBackendApi.patchSellerOrder(orderId, {
+      metadata: {
+        ...metadata,
+        proofs: nextProofs.map((proof) => ({
+          id: proof.id,
+          name: proof.name,
+          uploadedAt: proof.uploadedAt,
+          visibility: proof.visibility,
+          contentUrl: proof.contentUrl || '',
+        })),
+      },
+    });
+    const record = asRecord(payload);
+    setProofs(mapDetailProofs({ ...detailRecord, ...record }));
+    setDetailRecord((current) => ({ ...(current || {}), ...record }));
+  };
+
+  if (detailLoading) {
+    return (
+      <div>
+        <SectionHeader
+          title={orderId ? `Order ${orderId}` : 'Order'}
+          subtitle="Loading order detail."
+          right={
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Back to Orders
+            </button>
+          }
+        />
+        <GlassCard className="p-5">
+          <div className="text-sm font-semibold text-slate-600">Loading order detail...</div>
+        </GlassCard>
+      </div>
+    );
+  }
 
   if (!order) {
     return (
@@ -1270,7 +1501,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
           }
         />
         <GlassCard className="p-5">
-          <EmptyState title="No order data" message="This account does not have data for the selected order." />
+          <EmptyState title="No order data" message={detailError || 'This account does not have data for the selected order.'} />
         </GlassCard>
       </div>
     );
@@ -1293,8 +1524,17 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
             </button>
             <button
               type="button"
-              onClick={() => {
-                const ok = exportInvoiceFile(order);
+              onClick={async () => {
+                let ok = false;
+                try {
+                  const payload = await sellerBackendApi.getSellerPrintInvoice(order.id);
+                  ok = downloadTextFile(
+                    `invoice-${order.id}.txt`,
+                    JSON.stringify(payload, null, 2)
+                  );
+                } catch {
+                  ok = false;
+                }
                 pushToast({
                   title: ok ? 'Invoice exported' : 'Export failed',
                   message: ok ? 'Invoice text file downloaded.' : 'Unable to export invoice.',
@@ -1316,21 +1556,33 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
         type="file"
         className="hidden"
         multiple
-        onChange={(e) => {
+        onChange={async (e) => {
           const files = Array.from(e.target.files || []);
           if (!files.length) return;
-          const next = files.map((f) => ({
-            id: makeId('proof'),
-            name: f.name,
-            uploadedAt: new Date().toISOString(),
-            visibility: 'internal',
-          }));
-          setProofs((s) => [...next, ...s]);
-          pushToast({
-            title: 'Proof added',
-            message: `${files.length} file(s) uploaded (local).`,
-            tone: 'success',
-          });
+          try {
+            const next = await Promise.all(
+              files.map(async (f) => ({
+                id: makeId('proof'),
+                name: f.name,
+                uploadedAt: new Date().toISOString(),
+                visibility: 'internal',
+                contentUrl: await readFileAsDataUrl(f),
+              }))
+            );
+            const merged = [...next, ...proofs];
+            await syncProofs(merged);
+            pushToast({
+              title: 'Proof added',
+              message: `${files.length} file(s) uploaded.`,
+              tone: 'success',
+            });
+          } catch (error) {
+            pushToast({
+              title: 'Upload failed',
+              message: error instanceof Error ? error.message : 'Unable to upload proofs.',
+              tone: 'danger',
+            });
+          }
           e.currentTarget.value = '';
         }}
       />
@@ -1689,19 +1941,25 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                             </div>
                             <button
                               type="button"
-                              onClick={() =>
-                                setProofs((s) =>
-                                  s.map((x) =>
-                                    x.id === p.id
-                                      ? {
-                                          ...x,
-                                          visibility:
-                                            x.visibility === 'internal' ? 'buyer' : 'internal',
-                                        }
-                                      : x
-                                  )
-                                )
-                              }
+                              onClick={async () => {
+                                const next = proofs.map((x) =>
+                                  x.id === p.id
+                                    ? {
+                                        ...x,
+                                        visibility: x.visibility === 'internal' ? 'buyer' : 'internal',
+                                      }
+                                    : x
+                                );
+                                try {
+                                  await syncProofs(next);
+                                } catch (error) {
+                                  pushToast({
+                                    title: 'Update failed',
+                                    message: error instanceof Error ? error.message : 'Unable to update proof visibility.',
+                                    tone: 'danger',
+                                  });
+                                }
+                              }}
                               className={cx(
                                 'rounded-2xl border px-3 py-2 text-xs font-extrabold',
                                 p.visibility === 'buyer'
@@ -1713,7 +1971,23 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                             </button>
                             <button
                               type="button"
-                              onClick={() => setProofs((s) => s.filter((x) => x.id !== p.id))}
+                              onClick={async () => {
+                                const next = proofs.filter((x) => x.id !== p.id);
+                                try {
+                                  await syncProofs(next);
+                                  pushToast({
+                                    title: 'Proof removed',
+                                    message: `${p.name} removed.`,
+                                    tone: 'success',
+                                  });
+                                } catch (error) {
+                                  pushToast({
+                                    title: 'Remove failed',
+                                    message: error instanceof Error ? error.message : 'Unable to remove proof.',
+                                    tone: 'danger',
+                                  });
+                                }
+                              }}
                               className="grid h-10 w-10 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700 hover:bg-gray-50 dark:bg-slate-950"
                               aria-label="Remove"
                             >
@@ -1817,12 +2091,15 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
   );
 }
 
-function ReturnsRmas({ returnsList, pushToast }) {
+function ReturnsRmas({ returnsList, setReturnsList, orders, pushToast }) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('All');
   const [drawer, setDrawer] = useState(false);
   const [eligibilityAuto, setEligibilityAuto] = useState(true);
   const [restockAuto, setRestockAuto] = useState(true);
+  const [draftOrderId, setDraftOrderId] = useState('');
+  const [draftReason, setDraftReason] = useState('');
+  const [draftPathway, setDraftPathway] = useState('Refund to Wallet');
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -1921,26 +2198,64 @@ function ReturnsRmas({ returnsList, pushToast }) {
                   <div className="col-span-2 flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        pushToast({
-                          title: 'Approved',
-                          message: `${r.id} approved.`,
-                          tone: 'success',
-                        })
-                      }
+                      onClick={async () => {
+                        try {
+                          const payload = await sellerBackendApi.patchSellerReturn(r.id, {
+                            status: 'APPROVED',
+                            metadata: {
+                              ...asRecord(r.metadata),
+                              displayStatus: 'Approved',
+                            },
+                          });
+                          const updated = mapBackendReturn(asRecord(payload));
+                          setReturnsList((current) =>
+                            current.map((entry) => (entry.id === updated.id ? updated : entry))
+                          );
+                          pushToast({
+                            title: 'Approved',
+                            message: `${r.id} approved.`,
+                            tone: 'success',
+                          });
+                        } catch (error) {
+                          pushToast({
+                            title: 'Approve failed',
+                            message: error instanceof Error ? error.message : 'Unable to approve RMA.',
+                            tone: 'danger',
+                          });
+                        }
+                      }}
                       className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-extrabold text-emerald-800"
                     >
                       Approve
                     </button>
                     <button
                       type="button"
-                      onClick={() =>
-                        pushToast({
-                          title: 'Rejected',
-                          message: `${r.id} rejected.`,
-                          tone: 'warning',
-                        })
-                      }
+                      onClick={async () => {
+                        try {
+                          const payload = await sellerBackendApi.patchSellerReturn(r.id, {
+                            status: 'REJECTED',
+                            metadata: {
+                              ...asRecord(r.metadata),
+                              displayStatus: 'Rejected',
+                            },
+                          });
+                          const updated = mapBackendReturn(asRecord(payload));
+                          setReturnsList((current) =>
+                            current.map((entry) => (entry.id === updated.id ? updated : entry))
+                          );
+                          pushToast({
+                            title: 'Rejected',
+                            message: `${r.id} rejected.`,
+                            tone: 'warning',
+                          });
+                        } catch (error) {
+                          pushToast({
+                            title: 'Reject failed',
+                            message: error instanceof Error ? error.message : 'Unable to reject RMA.',
+                            tone: 'danger',
+                          });
+                        }
+                      }}
                       className="rounded-2xl border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] font-extrabold text-orange-800"
                     >
                       Reject
@@ -2059,16 +2374,20 @@ function ReturnsRmas({ returnsList, pushToast }) {
           <div className="grid gap-2">
             <label className="text-xs font-extrabold text-slate-600">Order ID</label>
             <input
+              value={draftOrderId}
+              onChange={(e) => setDraftOrderId(e.target.value)}
               className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none"
               placeholder="Order ID"
             />
             <label className="text-xs font-extrabold text-slate-600">Reason</label>
             <input
+              value={draftReason}
+              onChange={(e) => setDraftReason(e.target.value)}
               className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none"
               placeholder="Damaged item"
             />
             <label className="text-xs font-extrabold text-slate-600">Refund pathway</label>
-            <select className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none">
+            <select value={draftPathway} onChange={(e) => setDraftPathway(e.target.value)} className="h-11 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/80 px-3 text-sm font-semibold text-slate-800 outline-none">
               <option>Refund to Wallet</option>
               <option>Refund to Bank</option>
               <option>Store Credit</option>
@@ -2077,13 +2396,37 @@ function ReturnsRmas({ returnsList, pushToast }) {
           </div>
           <button
             type="button"
-            onClick={() => {
-              setDrawer(false);
-              pushToast({
-                title: 'RMA created',
-                message: 'New RMA created.',
-                tone: 'success',
-              });
+            onClick={async () => {
+              const matchedOrder = orders.find((entry) => entry.id === draftOrderId);
+              try {
+                const payload = await sellerBackendApi.createSellerReturn({
+                  orderId: draftOrderId,
+                  reason: draftReason,
+                  metadata: {
+                    pathway: draftPathway,
+                    amount: Number(matchedOrder?.total || 0),
+                    currency: String(matchedOrder?.currency || 'USD'),
+                    displayStatus: 'Requested',
+                  },
+                });
+                const created = mapBackendReturn(asRecord(payload));
+                setReturnsList((current) => [created, ...current]);
+                setDraftOrderId('');
+                setDraftReason('');
+                setDraftPathway('Refund to Wallet');
+                setDrawer(false);
+                pushToast({
+                  title: 'RMA created',
+                  message: 'New RMA created.',
+                  tone: 'success',
+                });
+              } catch (error) {
+                pushToast({
+                  title: 'Create failed',
+                  message: error instanceof Error ? error.message : 'Unable to create RMA.',
+                  tone: 'danger',
+                });
+              }
             }}
             className="w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
             style={{ background: TOKENS.green }}
@@ -2096,7 +2439,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
   );
 }
 
-function Disputes({ disputesList, pushToast }) {
+function Disputes({ disputesList, setDisputesList, pushToast }) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('All');
   const [active, setActive] = useState(null);
@@ -2347,27 +2690,68 @@ function Disputes({ disputesList, pushToast }) {
                     type="file"
                     className="hidden"
                     multiple
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const files = Array.from(e.target.files || []);
                       if (!files.length) return;
-                      pushToast({
-                        title: 'Evidence uploaded',
-                        message: `${files.length} file(s) added (local).`,
-                        tone: 'success',
-                      });
+                      try {
+                        const evidence = await Promise.all(
+                          files.map(async (file) => ({
+                            id: makeId('evidence'),
+                            name: file.name,
+                            uploadedAt: new Date().toISOString(),
+                            visibility: 'internal',
+                            contentUrl: await readFileAsDataUrl(file),
+                          }))
+                        );
+                        const payload = await sellerBackendApi.patchSellerDispute(active.id, {
+                          metadata: {
+                            ...asRecord(active.metadata),
+                            evidence: [...asArray(active.metadata?.evidence), ...evidence],
+                          },
+                        });
+                        const updated = mapBackendDispute(asRecord(payload));
+                        setDisputesList((current) =>
+                          current.map((entry) => (entry.id === updated.id ? updated : entry))
+                        );
+                        setActive(updated);
+                        pushToast({
+                          title: 'Evidence uploaded',
+                          message: `${files.length} file(s) added.`,
+                          tone: 'success',
+                        });
+                      } catch (error) {
+                        pushToast({
+                          title: 'Upload failed',
+                          message: error instanceof Error ? error.message : 'Unable to upload evidence.',
+                          tone: 'danger',
+                        });
+                      }
                       e.currentTarget.value = '';
                     }}
                   />
 
                   <button
                     type="button"
-                    onClick={() =>
-                      pushToast({
-                        title: 'Exported evidence pack',
-                        message: 'Evidence pack generated.',
-                        tone: 'success',
-                      })
-                    }
+                    onClick={async () => {
+                      try {
+                        const payload = await sellerBackendApi.getSellerDisputeExportPack(active.id);
+                        const ok = downloadTextFile(
+                          String(payload.filename || `dispute-pack-${active.id}.txt`),
+                          String(payload.content || '')
+                        );
+                        pushToast({
+                          title: ok ? 'Exported evidence pack' : 'Export failed',
+                          message: ok ? 'Evidence pack generated.' : 'Unable to export evidence pack.',
+                          tone: ok ? 'success' : 'danger',
+                        });
+                      } catch (error) {
+                        pushToast({
+                          title: 'Export failed',
+                          message: error instanceof Error ? error.message : 'Unable to export evidence pack.',
+                          tone: 'danger',
+                        });
+                      }
+                    }}
                     className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-extrabold text-slate-800"
                   >
                     <FileText className="h-4 w-4" />
@@ -2387,13 +2771,37 @@ function Disputes({ disputesList, pushToast }) {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() =>
-                      pushToast({
-                        title: 'Partial refund',
-                        message: 'Resolution applied.',
-                        tone: 'success',
-                      })
-                    }
+                    onClick={async () => {
+                      try {
+                        const payload = await sellerBackendApi.patchSellerDispute(active.id, {
+                          status: 'RESOLVED',
+                          metadata: {
+                            ...asRecord(active.metadata),
+                            resolution: {
+                              type: 'partial_refund',
+                              updatedAt: new Date().toISOString(),
+                            },
+                            displayStatus: 'Resolved',
+                          },
+                        });
+                        const updated = mapBackendDispute(asRecord(payload));
+                        setDisputesList((current) =>
+                          current.map((entry) => (entry.id === updated.id ? updated : entry))
+                        );
+                        setActive(updated);
+                        pushToast({
+                          title: 'Partial refund',
+                          message: 'Resolution applied.',
+                          tone: 'success',
+                        });
+                      } catch (error) {
+                        pushToast({
+                          title: 'Resolution failed',
+                          message: error instanceof Error ? error.message : 'Unable to resolve dispute.',
+                          tone: 'danger',
+                        });
+                      }
+                    }}
                     className="rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                     style={{ background: TOKENS.green }}
                   >
@@ -2401,26 +2809,74 @@ function Disputes({ disputesList, pushToast }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      pushToast({
-                        title: 'Replacement',
-                        message: 'Replacement started.',
-                        tone: 'success',
-                      })
-                    }
+                    onClick={async () => {
+                      try {
+                        const payload = await sellerBackendApi.patchSellerDispute(active.id, {
+                          status: 'RESOLVED',
+                          metadata: {
+                            ...asRecord(active.metadata),
+                            resolution: {
+                              type: 'replacement',
+                              updatedAt: new Date().toISOString(),
+                            },
+                            displayStatus: 'Resolved',
+                          },
+                        });
+                        const updated = mapBackendDispute(asRecord(payload));
+                        setDisputesList((current) =>
+                          current.map((entry) => (entry.id === updated.id ? updated : entry))
+                        );
+                        setActive(updated);
+                        pushToast({
+                          title: 'Replacement',
+                          message: 'Replacement started.',
+                          tone: 'success',
+                        });
+                      } catch (error) {
+                        pushToast({
+                          title: 'Resolution failed',
+                          message: error instanceof Error ? error.message : 'Unable to update dispute.',
+                          tone: 'danger',
+                        });
+                      }
+                    }}
                     className="rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                   >
                     Replacement
                   </button>
                   <button
                     type="button"
-                    onClick={() =>
-                      pushToast({
-                        title: 'Denied',
-                        message: 'Denied with reason.',
-                        tone: 'warning',
-                      })
-                    }
+                    onClick={async () => {
+                      try {
+                        const payload = await sellerBackendApi.patchSellerDispute(active.id, {
+                          status: 'REJECTED',
+                          metadata: {
+                            ...asRecord(active.metadata),
+                            resolution: {
+                              type: 'denied',
+                              updatedAt: new Date().toISOString(),
+                            },
+                            displayStatus: 'Rejected',
+                          },
+                        });
+                        const updated = mapBackendDispute(asRecord(payload));
+                        setDisputesList((current) =>
+                          current.map((entry) => (entry.id === updated.id ? updated : entry))
+                        );
+                        setActive(updated);
+                        pushToast({
+                          title: 'Denied',
+                          message: 'Denied with reason.',
+                          tone: 'warning',
+                        });
+                      } catch (error) {
+                        pushToast({
+                          title: 'Resolution failed',
+                          message: error instanceof Error ? error.message : 'Unable to deny dispute.',
+                          tone: 'danger',
+                        });
+                      }
+                    }}
                     className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700"
                   >
                     Deny
@@ -2443,10 +2899,41 @@ function Disputes({ disputesList, pushToast }) {
 export default function OrdersOpsPreviewableV4({ initialScreen = 'orders' }) {
   const { content } = useRolePageContent('orders', 'seller');
   const [screen, setScreen] = useState(initialScreen);
+  const [orders, setOrders] = useState(() => withRisk(content.orders || []));
+  const [returnsList, setReturnsList] = useState(() =>
+    Array.isArray(content.returns) ? content.returns.map((entry) => mapBackendReturn(asRecord(entry))) : []
+  );
+  const [disputesList, setDisputesList] = useState(() =>
+    Array.isArray(content.disputes) ? content.disputes.map((entry) => mapBackendDispute(asRecord(entry))) : []
+  );
 
-  const orders = useMemo(() => withRisk(content.orders || []), [content]);
-  const returnsList = useMemo(() => content.returns || [], [content]);
-  const disputesList = useMemo(() => content.disputes || [], [content]);
+  useEffect(() => {
+    setOrders(withRisk(content.orders || []));
+  }, [content]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([sellerBackendApi.getSellerReturns(), sellerBackendApi.getSellerDisputes()])
+      .then(([returnsPayload, disputesPayload]) => {
+        if (!active) return;
+        setReturnsList(
+          Array.isArray(returnsPayload)
+            ? returnsPayload.map((entry) => mapBackendReturn(asRecord(entry)))
+            : []
+        );
+        setDisputesList(
+          Array.isArray(disputesPayload)
+            ? disputesPayload.map((entry) => mapBackendDispute(asRecord(entry)))
+            : []
+        );
+      })
+      .catch(() => {
+        // Keep the existing page payload if the secondary fetch fails.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [selectedOrderId, setSelectedOrderId] = useState('');
   useEffect(() => {
@@ -2500,10 +2987,19 @@ export default function OrdersOpsPreviewableV4({ initialScreen = 'orders' }) {
               />
             ) : null}
             {screen === 'returns' ? (
-              <ReturnsRmas returnsList={returnsList} pushToast={pushToast} />
+              <ReturnsRmas
+                returnsList={returnsList}
+                setReturnsList={setReturnsList}
+                orders={orders}
+                pushToast={pushToast}
+              />
             ) : null}
             {screen === 'disputes' ? (
-              <Disputes disputesList={disputesList} pushToast={pushToast} />
+              <Disputes
+                disputesList={disputesList}
+                setDisputesList={setDisputesList}
+                pushToast={pushToast}
+              />
             ) : null}
           </motion.div>
         </AnimatePresence>

@@ -158,8 +158,31 @@ const EMPTY_ASSET_LIBRARY_CONTEXT = {
   creators: [],
   suppliers: [],
   campaigns: [],
-  deliverables: []
+  deliverables: [],
+  collections: {
+    starterPack: { assetCount: 0, status: "needs_review" },
+    priceDropOverlays: { assetCount: 0, status: "needs_review" }
+  },
+  activity: {
+    points: Array.from({ length: 14 }, () => 0),
+    newCount: 0,
+    approvedCount: 0,
+    pendingCount: 0
+  }
 };
+
+async function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
 
 function mapBackendAsset(asset) {
   const metadata = asset?.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
@@ -826,6 +849,8 @@ export default function SupplierAssetLibraryPage() {
   const suppliers = Array.isArray(workspace.suppliers) ? workspace.suppliers : [];
   const campaigns = Array.isArray(workspace.campaigns) ? workspace.campaigns : [];
   const deliverables = Array.isArray(workspace.deliverables) ? workspace.deliverables : [];
+  const collections = workspace.collections && typeof workspace.collections === "object" ? workspace.collections : EMPTY_ASSET_LIBRARY_CONTEXT.collections;
+  const activity = workspace.activity && typeof workspace.activity === "object" ? workspace.activity : EMPTY_ASSET_LIBRARY_CONTEXT.activity;
 
   const [selectedCreatorId, setSelectedCreatorId] = useState("");
   const [selectedSupplierId, setSelectedSupplierId] = useState("");
@@ -873,14 +898,15 @@ export default function SupplierAssetLibraryPage() {
           creators: Array.isArray(workspacePayload?.creators) ? workspacePayload.creators : [],
           suppliers: Array.isArray(workspacePayload?.suppliers) ? workspacePayload.suppliers : [],
           campaigns: Array.isArray(workspacePayload?.campaigns) ? workspacePayload.campaigns : [],
-          deliverables: Array.isArray(workspacePayload?.deliverables) ? workspacePayload.deliverables : []
+          deliverables: Array.isArray(workspacePayload?.deliverables) ? workspacePayload.deliverables : [],
+          collections: workspacePayload?.collections && typeof workspacePayload.collections === "object" ? workspacePayload.collections : EMPTY_ASSET_LIBRARY_CONTEXT.collections,
+          activity: workspacePayload?.activity && typeof workspacePayload.activity === "object" ? workspacePayload.activity : EMPTY_ASSET_LIBRARY_CONTEXT.activity
         });
         setAssets(rows.map(mapBackendAsset));
       } catch {
         if (!cancelled) {
           setWorkspace(EMPTY_ASSET_LIBRARY_CONTEXT);
           setAssets([]);
-          setToast({ title: "Backend unavailable", body: "Could not fetch media assets." });
         }
       }
     };
@@ -969,7 +995,6 @@ export default function SupplierAssetLibraryPage() {
         metadata: buildAssetMetadata(nextAsset, note),
       });
     } catch {
-      setToast({ title: "Update failed", body: "Could not persist asset review status." });
       return;
     }
     setAssets((prev) => prev.map((a) => (a.id === assetId ? nextAsset : a)));
@@ -1000,8 +1025,13 @@ export default function SupplierAssetLibraryPage() {
       return;
     }
 
-    if (pickerMode) {
-      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id}` });
+    if (pickerMode && returnTo) {
+      const targetUrl = new URL(returnTo, window.location.origin);
+      targetUrl.searchParams.set("assetId", activeAsset.id);
+      if (applyTo) {
+        targetUrl.searchParams.set("applyTo", applyTo);
+      }
+      window.location.assign(targetUrl.toString());
       return;
     }
 
@@ -1177,7 +1207,11 @@ export default function SupplierAssetLibraryPage() {
 
     const previewKind = submitDraft.mediaType === "video" ? "video" : "image";
     const previewUrl =
-      submitDraft.mediaType === "link" ? submitDraft.linkUrl : submitDraft.files[0] ? URL.createObjectURL(submitDraft.files[0]) : submitDraft.postUrl;
+      submitDraft.mediaType === "link"
+        ? submitDraft.linkUrl
+        : submitDraft.files[0]
+          ? await readFileAsDataUrl(submitDraft.files[0])
+          : submitDraft.postUrl;
 
     const dims = submitImageMeta ? { width: submitImageMeta.width, height: submitImageMeta.height } : undefined;
 
@@ -1215,7 +1249,6 @@ export default function SupplierAssetLibraryPage() {
       setAssets((prev) => [mapBackendAsset(created), ...prev]);
       setActiveAssetId(String(created.id || nextAsset.id));
     } catch {
-      setToast({ title: "Submit failed", body: "Could not persist the media asset." });
       return;
     }
 
@@ -1286,7 +1319,7 @@ export default function SupplierAssetLibraryPage() {
                   </span>
                 ) : null}
                 {returnTo ? (
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder" })}>
+                  <Btn tone="neutral" onClick={() => window.location.assign(returnTo)}>
                     ← Back
                   </Btn>
                 ) : null}
@@ -1582,11 +1615,17 @@ export default function SupplierAssetLibraryPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Starter pack</div>
-                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">2 assets · poster + overlay</div>
+                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">{collections.starterPack?.assetCount ?? 0} assets · poster + overlay</div>
                     </div>
-                    <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800">
-                      Ready
-                    </span>
+                    {collections.starterPack?.status === "ready" ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800">
+                        Ready
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800">
+                        Needs review
+                      </span>
+                    )}
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Use for shoppable ads and short lives.</div>
@@ -1600,11 +1639,17 @@ export default function SupplierAssetLibraryPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Price-drop overlays</div>
-                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">2 assets · overlay variants</div>
+                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">{collections.priceDropOverlays?.assetCount ?? 0} assets · overlay variants</div>
                     </div>
-                    <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800">
-                      Needs review
-                    </span>
+                    {collections.priceDropOverlays?.status === "ready" ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800">
+                        Ready
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800">
+                        Needs review
+                      </span>
+                    )}
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Complete review to unlock this collection.</div>
@@ -1647,20 +1692,20 @@ export default function SupplierAssetLibraryPage() {
                 </span>
               </div>
               <div className="mt-3 rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3 text-slate-700 dark:text-slate-100">
-                <MiniChart points={[4, 3, 2, 5, 7, 6, 5, 8, 7, 6, 9, 10, 8, 11]} />
+                <MiniChart points={Array.isArray(activity.points) ? activity.points : EMPTY_ASSET_LIBRARY_CONTEXT.activity.points} />
               </div>
               <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
                 <div className="rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">New</div>
-                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">+11</div>
+                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">+{Number(activity.newCount || 0)}</div>
                 </div>
                 <div className="rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">Approved</div>
-                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">8</div>
+                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">{Number(activity.approvedCount || 0)}</div>
                 </div>
                 <div className="rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">Pending</div>
-                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">3</div>
+                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">{Number(activity.pendingCount || 0)}</div>
                 </div>
               </div>
             </div>

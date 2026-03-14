@@ -456,10 +456,7 @@ export default function FinanceHomeOverview() {
         if (!mounted) return;
         setData({ ...emptyFinanceData, ...(payload as Record<string, any>) });
       })
-      .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Finance unavailable", message: "Could not load finance overview.", tone: "danger" });
-      });
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };

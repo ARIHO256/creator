@@ -503,10 +503,10 @@ export default function SettingsIntegrationsPage() {
       setKeys(Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.keys) ? ((payload.metadata as Record<string, unknown>).keys as ApiKey[]) : []);
       setLogs(Array.isArray((payload.metadata as Record<string, unknown> | undefined)?.logs) ? ((payload.metadata as Record<string, unknown>).logs as WebhookLog[]) : []);
       if (!quiet) {
-        pushToast({ title: "Refreshed", message: "Latest integration status loaded.", tone: "success" });
+        pushToast({ title: "Refreshed", message: "Latest integration status loaded (demo).", tone: "success" });
       }
     } catch {
-      pushToast({ title: "Integrations unavailable", message: "Could not load integrations.", tone: "warning" });
+      return;
     }
   };
   useEffect(() => {
@@ -625,7 +625,7 @@ export default function SettingsIntegrationsPage() {
     setNewKeyOpen(false);
     pushToast({
       title: "API key created",
-      message: "Copy it now. You will not see the full secret again.",
+      message: "Copy it now. You will not see the full secret again (demo).",
       tone: "success",
       action: {
         label: "Copy",
@@ -685,7 +685,7 @@ export default function SettingsIntegrationsPage() {
     const ev = logs.find((l) => l.id === id);
     if (!ev) return;
 
-    // Add a new success attempt as replay
+    // Add a new success attempt as replay (demo)
     const replay: WebhookLog = {
       ...ev,
       id: makeId("evt_replay"),
@@ -699,7 +699,7 @@ export default function SettingsIntegrationsPage() {
     const nextLogs = [replay, ...logs];
     setLogs(nextLogs);
     void persistIntegrations(apps, keys, endpoints, nextLogs);
-    pushToast({ title: "Replay queued", message: `${ev.eventType} sent again.`, tone: "success" });
+    pushToast({ title: "Replay queued", message: `${ev.eventType} sent again (demo).`, tone: "success" });
   };
 
   const addEndpointOpenRef = useRef(false);

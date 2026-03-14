@@ -88,13 +88,7 @@ export class LiveService {
   async scheduleWorkspace(userId: string) {
     const [workspace, config] = await Promise.all([
       this.buildDashboardWorkspace(userId),
-      this.ensureWorkspaceSetting(userId, 'seller_live_schedule', {
-        aiSlots: [
-          { id: 'slot-1', label: 'Tue 19:00 - 20:30', reason: 'Best overlap for your audience.', recommendedFor: 'Prime-time launches' },
-          { id: 'slot-2', label: 'Thu 18:30 - 20:00', reason: 'Strong creator + buyer overlap.', recommendedFor: 'Creator-hosted lives' },
-          { id: 'slot-3', label: 'Sat 11:00 - 12:30', reason: 'Weekend engagement stays high.', recommendedFor: 'Demo and Q&A sessions' }
-        ]
-      })
+      this.readWorkspaceSetting(userId, 'seller_live_schedule')
     ]);
 
     return {
@@ -121,7 +115,10 @@ export class LiveService {
         dateLabel: session.dateLabel,
         time: session.timeLabel
       })),
-      aiSlots: Array.isArray(config.aiSlots) ? config.aiSlots : []
+      aiSlots:
+        Array.isArray(config?.aiSlots) && config.aiSlots.length > 0
+          ? config.aiSlots
+          : this.buildAiSlotsFromSessions(workspace.sessions)
     };
   }
 
@@ -411,24 +408,22 @@ export class LiveService {
     const existing = await this.prisma.liveToolConfig.findUnique({
       where: { userId_key: { userId, key } }
     });
-    const defaults = this.defaultToolPayload(key);
-    const hasDefaults = Object.keys(defaults).length > 0;
     const currentData =
       existing?.data && typeof existing.data === 'object' && !Array.isArray(existing.data)
         ? (existing.data as Record<string, unknown>)
         : {};
 
-    if (existing && (Object.keys(currentData).length > 0 || !hasDefaults)) {
+    if (existing) {
       return currentData;
     }
 
     const record = await this.prisma.liveToolConfig.upsert({
       where: { userId_key: { userId, key } },
-      update: { data: defaults as Prisma.InputJsonValue },
+      update: { data: {} as Prisma.InputJsonValue },
       create: {
         userId,
         key,
-        data: defaults as Prisma.InputJsonValue
+        data: {} as Prisma.InputJsonValue
       }
     });
     return (record.data as Record<string, unknown>) ?? {};
@@ -1473,6 +1468,45 @@ export class LiveService {
       }
     });
     return (record.payload as Record<string, unknown>) ?? payload;
+  }
+
+  private async readWorkspaceSetting(userId: string, key: string) {
+    const existing = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    return existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
+      ? (existing.payload as Record<string, unknown>)
+      : null;
+  }
+
+  private buildAiSlotsFromSessions(
+    sessions: Array<{ weekday?: string; startISO?: string; durationMin?: number; title?: string }>
+  ) {
+    const upcoming = sessions
+      .map((session) => ({
+        session,
+        start: this.parseDate(session.startISO)
+      }))
+      .filter((entry) => entry.start && entry.start.getTime() > Date.now())
+      .sort((left, right) => left.start!.getTime() - right.start!.getTime())
+      .slice(0, 3);
+
+    return upcoming.map((entry, index) => {
+      const start = entry.start as Date;
+      const end = new Date(start.getTime() + Math.max(30, Number(entry.session.durationMin ?? 90)) * 60_000);
+      const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][start.getDay()];
+      return {
+        id: `slot-${index + 1}`,
+        label: `${weekday} ${start.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })} - ${end.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false })}`,
+        reason: `Based on scheduled live session activity already stored for this workspace.`,
+        recommendedFor: entry.session.title || 'Scheduled live session'
+      };
+    });
   }
 
   private readString(value: unknown, key?: string) {

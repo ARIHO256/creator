@@ -579,7 +579,7 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
                   </select>
                 </div>
 
-                <Btn tone="neutral" left={<span>🧾</span>} onClick={() => toastApi.info("Export CSV")}>Export</Btn>
+                <Btn tone="neutral" left={<span>🧾</span>} onClick={() => toastApi.info("Export CSV (demo)")}>Export</Btn>
                 <Btn tone="neutral" left={<span>🧩</span>} onClick={() => onOpenMarketplace(ad.id)}>Preview</Btn>
                 <Btn tone="neutral" left={<span>🛠️</span>} onClick={() => onOpenBuilder(ad.id)} disabled={!!ad.lock?.locked} title={ad.lock?.locked ? ad.lock.reason : "Edit in Builder"}>Edit</Btn>
                 <Btn tone="neutral" left={<span>🔗</span>} onClick={() => onCopyLink(ad)}>Copy link</Btn>
@@ -979,7 +979,7 @@ function AdBuilderDrawer({ open, onClose, ad, toastApi, onSaveDraft, onGenerate 
               </div>
 
               <div className="md:col-span-2 rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="text-[11px] font-extrabold">Media validation</div>
+                <div className="text-[11px] font-extrabold">Media validation (demo)</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <label className="inline-flex items-center gap-2 text-[12px] font-extrabold">
                     <input type="checkbox" checked={heroOk} onChange={(e) => setHeroOk(e.target.checked)} />
@@ -1025,8 +1025,8 @@ function AdBuilderDrawer({ open, onClose, ad, toastApi, onSaveDraft, onGenerate 
                   <Btn tone="primary" left={<span>✨</span>} onClick={() => onGenerate()}>
                     Generate now
                   </Btn>
-                  <Btn tone="neutral" left={<span>🔎</span>} onClick={() => toastApi.info("Open preview surface")}>Preview surfaces</Btn>
-                  <Btn tone="neutral" left={<span>📤</span>} onClick={() => toastApi.info("Submit for approvals")}>Submit for approvals</Btn>
+                  <Btn tone="neutral" left={<span>🔎</span>} onClick={() => toastApi.info("Open preview surface (demo)")}>Preview surfaces</Btn>
+                  <Btn tone="neutral" left={<span>📤</span>} onClick={() => toastApi.info("Submit for approvals (demo)")}>Submit for approvals</Btn>
                 </div>
               </div>
             </div>
@@ -1237,7 +1237,7 @@ export default function SupplierAdzDashboardPage() {
     } catch {
       // ignore
     }
-    toastApi.success("Share link copied. ");
+    toastApi.success("Share link copied (demo). ");
   }
 
   function generateAd(adId) {
@@ -1359,18 +1359,18 @@ export default function SupplierAdzDashboardPage() {
                 </span>
               </div>
               <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-slate-100">{k.value}</div>
-              <div className="mt-1 text-[11px] text-neutral-600 dark:text-slate-400">Premium snapshot</div>
+              <div className="mt-1 text-[11px] text-neutral-600 dark:text-slate-400">Premium snapshot (demo)</div>
             </div>
           ))}
         </div>
 
         <div className="lg:col-span-7 space-y-4">
-        <LineChart
-          title="Traffic trend"
-          subtitle="Impressions vs Orders (last 14 days, demo)"
-          seriesA={seriesImpr}
-          seriesB={seriesOrders}
-          aLabel="Impressions"
+          <LineChart
+            title="Traffic trend"
+            subtitle="Impressions vs Orders (last 14 days)"
+            seriesA={seriesImpr}
+            seriesB={seriesOrders}
+            aLabel="Impressions"
             bLabel="Orders"
           />
 
@@ -1701,10 +1701,10 @@ export default function SupplierAdzDashboardPage() {
         onClose={() => setDrawer(null)}
         ad={builderAd}
         toastApi={toastApi}
-        onSaveDraft={(payload) => toastApi.success(`Draft saved: ${payload.name || "Untitled"}`)}
+        onSaveDraft={(payload) => toastApi.success(`Draft saved (demo): ${payload.name || "Untitled"}`)}
         onGenerate={() => {
           if (!builderAd) {
-            toastApi.success("Generated. Create will happen on save in production.");
+            toastApi.success("Generated (demo). Create will happen on save in production.");
             return;
           }
           generateAd(builderAd.id);

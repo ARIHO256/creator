@@ -478,8 +478,7 @@ export default function TaxHubPreviewable() {
         });
         hydratedRef.current = true;
       } catch {
-        if (!active) return;
-        pushToast({ title: "Tax settings unavailable", message: "Could not load tax settings.", tone: "warning" });
+        return;
       }
     })();
     return () => {

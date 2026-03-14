@@ -58,6 +58,9 @@ export class CommerceController {
   @Get('orders/:id/print/sticker') printSticker(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printSticker(user.sub, id); }
   @Get('returns') returns(@CurrentUser() user: RequestUser, @Query() query: SellerReturnsQueryDto) { return this.service.returns(user.sub, query); }
   @Get('disputes') disputes(@CurrentUser() user: RequestUser, @Query() query: SellerDisputesQueryDto) { return this.service.disputes(user.sub, query); }
+  @Get('disputes/:id/export-pack') exportDisputePack(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.service.exportDisputePack(user.sub, id);
+  }
   @Get('inventory') inventory(@CurrentUser() user: RequestUser) { return this.service.inventory(user.sub); }
   @Get('shipping-profiles') shippingProfiles(@CurrentUser() user: RequestUser) { return this.service.shippingProfiles(user.sub); }
   @RateLimit({ limit: 30, windowMs: 60_000 })

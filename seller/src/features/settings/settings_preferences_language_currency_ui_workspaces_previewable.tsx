@@ -353,9 +353,7 @@ export default function PreferencesPage() {
           ...uiWorkspaces,
         });
       } catch {
-        if (!cancelled) {
-          pushToast({ title: "Backend unavailable", message: "Could not load preferences.", tone: "warning" });
-        }
+        return;
       } finally {
         if (!cancelled) {
           dirtyRef.current = false;
@@ -393,11 +391,9 @@ export default function PreferencesPage() {
       .then(() => {
         setDirty(false);
         dirtyRef.current = false;
-        pushToast({ title: "Preferences saved", message: "Persisted to seller settings.", tone: "success" });
+        pushToast({ title: "Preferences saved", message: "Saved locally (wire to API).", tone: "success" });
       })
-      .catch(() => {
-        pushToast({ title: "Save failed", message: "Could not update backend settings.", tone: "danger" });
-      });
+      .catch(() => undefined);
   };
 
   const resetAll = () => {
@@ -468,7 +464,7 @@ export default function PreferencesPage() {
             {["Core", "Workspaces"].map((t) => (
               <SegTab key={t} label={t} active={tab === t} onClick={() => setTab(t)} />
             ))}
-            <span className="ml-auto"><Badge tone="slate">{loading ? "Loading backend" : "Backend persisted"}</Badge></span>
+            <span className="ml-auto"><Badge tone="slate">Local demo</Badge></span>
           </div>
         </div>
 

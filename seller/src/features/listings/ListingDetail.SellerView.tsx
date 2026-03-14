@@ -701,7 +701,7 @@ function ListingDetailDrawer({
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-black text-slate-900">Buyer preview</div>
-                        <div className="mt-1 text-xs font-semibold text-slate-500">Retail + wholesale preview.</div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500">Retail + wholesale preview (demo).</div>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
                           <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 p-4">
                             <div className="text-[11px] font-extrabold text-slate-600">Retail</div>
@@ -1215,7 +1215,7 @@ function ListingEditDrawer({
       return next;
     });
     pushApprovalHistory("Supplier", "Requested review", "Submitted for approval");
-    pushToast({ title: "Submitted", message: "Sent for review.", tone: "default" });
+    pushToast({ title: "Submitted", message: "Sent for review (demo).", tone: "default" });
   };
 
   const approveNow = () => {
@@ -1230,7 +1230,7 @@ function ListingEditDrawer({
       };
     });
     pushApprovalHistory("Reviewer", "Approved", "Approved for publishing");
-    pushToast({ title: "Approved", message: "Approval granted.", tone: "success" });
+    pushToast({ title: "Approved", message: "Approval granted (demo).", tone: "success" });
   };
 
   const requestChanges = () => {
@@ -1240,7 +1240,7 @@ function ListingEditDrawer({
       approval: { ...(s.approval || approval), state: "Draft" as ApprovalState },
     }));
     pushApprovalHistory("Reviewer", "Requested changes", "Please address the flagged items");
-    pushToast({ title: "Changes requested", message: "Moved back to Draft.", tone: "warning" });
+    pushToast({ title: "Changes requested", message: "Moved back to Draft (demo).", tone: "warning" });
   };
 
   const rejectNow = () => {
@@ -1250,7 +1250,7 @@ function ListingEditDrawer({
       approval: { ...(s.approval || approval), state: "Rejected" as ApprovalState },
     }));
     pushApprovalHistory("Reviewer", "Rejected", "Rejected with reasons");
-    pushToast({ title: "Rejected", message: "Listing rejected.", tone: "danger" });
+    pushToast({ title: "Rejected", message: "Listing rejected (demo).", tone: "danger" });
   };
 
   const headerRight = (
@@ -1916,7 +1916,7 @@ function ListingEditDrawer({
                         type="button"
                         onClick={() => {
                           setField("compliance", { ...draft.compliance, state: "ok", issues: [], lastScanAt: new Date().toISOString() });
-                          pushToast({ title: "Compliance updated", message: "Marked as OK.", tone: "success" });
+                          pushToast({ title: "Compliance updated", message: "Marked as OK (demo).", tone: "success" });
                         }}
                         className="inline-flex items-center justify-center gap-2 rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                         style={{ background: TOKENS.green }}
@@ -1929,7 +1929,7 @@ function ListingEditDrawer({
                         type="button"
                         onClick={() => {
                           setField("compliance", { ...draft.compliance, state: "warn", issues: ["Missing document upload"], lastScanAt: new Date().toISOString() });
-                          pushToast({ title: "Compliance updated", message: "Added a warning issue.", tone: "warning" });
+                          pushToast({ title: "Compliance updated", message: "Added a warning issue (demo).", tone: "warning" });
                         }}
                         className="inline-flex items-center justify-center gap-2 rounded-3xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-extrabold text-orange-800"
                       >

@@ -52,17 +52,17 @@ const BRAND = {
 
 const EV_COLORS = {
   primary: BRAND.green,
-  primarySoft: "var(--ev-primary-soft)",
+  primarySoft: "rgba(3, 205, 140, 0.10)",
   primaryStrong: "#059669",
   accent: BRAND.orange,
-  accentSoft: "var(--ev-accent-soft)",
-  bg: "var(--ev-surface-page)",
-  surface: "var(--ev-surface)",
-  surfaceAlt: "var(--ev-surface-alt)",
-  border: "var(--ev-border-strong)",
-  textMain: "var(--ev-text-main)",
-  textSubtle: "var(--ev-text-subtle)",
-  textMuted: "var(--ev-text-muted)",
+  accentSoft: "rgba(247, 127, 0, 0.12)",
+  bg: "#F5F7FB",
+  surface: "#FFFFFF",
+  surfaceAlt: "#F9FBFF",
+  border: "#E2E8F0",
+  textMain: "#0F172A",
+  textSubtle: "#64748B",
+  textMuted: "#94A3B8",
 };
 
 const STORAGE = {
@@ -1862,13 +1862,7 @@ export default function SellerOnboardingProV4_JS() {
         setReview(resolvedReview);
         setProfiles(nextProfiles);
       } catch {
-        if (!cancelled) {
-          setToast({
-            tone: "error",
-            title: "Backend sync failed",
-            message: "We could not load your onboarding draft from the backend.",
-          });
-        }
+        if (!cancelled) console.error("[SellerOnboarding] hydrate failed");
       } finally {
         if (!cancelled) {
           setHydrated(true);
@@ -1891,13 +1885,7 @@ export default function SellerOnboardingProV4_JS() {
       void sellerBackendApi
         .patchOnboarding(toOnboardingPayload(form, sellerTaxonomy))
         .then(() => setLastSaved(ts()))
-        .catch(() => {
-          setToast({
-            tone: "error",
-            title: "Autosave failed",
-            message: "Changes are not syncing to the backend right now.",
-          });
-        });
+        .catch(() => undefined);
     }, 450);
 
     return () => window.clearTimeout(timeoutId);
@@ -1936,13 +1924,7 @@ export default function SellerOnboardingProV4_JS() {
       void sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
         ui,
         review,
-      }).catch(() => {
-        setToast({
-          tone: "error",
-          title: "State sync failed",
-          message: "Onboarding review state could not be saved to the backend.",
-        });
-      });
+      }).catch(() => undefined);
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
@@ -2352,7 +2334,7 @@ export default function SellerOnboardingProV4_JS() {
   };
 
   const resetDraft = async () => {
-    if (!window.confirm("Reset this onboarding draft? This clears the saved draft on this device and the backend draft.")) return;
+    if (!window.confirm("Reset this onboarding draft? This clears your local draft on this device.")) return;
     const fresh = createEmptyForm();
     setForm(fresh);
     setReview(DEFAULT_REVIEW_STATE);
@@ -2366,11 +2348,7 @@ export default function SellerOnboardingProV4_JS() {
         }),
       ]);
     } catch {
-      setToast({
-        tone: "error",
-        title: "Reset failed",
-        message: "We could not reset the backend onboarding draft.",
-      });
+      console.error("[SellerOnboarding] reset failed");
       return;
     }
     recordOnboardingStatus("seller", sessionUser || { userId: activeUserId || "" }, "DRAFT");
@@ -2391,11 +2369,7 @@ export default function SellerOnboardingProV4_JS() {
         }),
       ]);
     } catch {
-      setToast({
-        tone: "error",
-        title: "Withdraw failed",
-        message: "We could not reopen the onboarding draft from the backend.",
-      });
+      console.error("[SellerOnboarding] withdraw failed");
       return;
     }
     recordOnboardingStatus(
@@ -2546,11 +2520,6 @@ export default function SellerOnboardingProV4_JS() {
       ]);
     } catch (submitError) {
       console.error("[SellerOnboarding] Submit failed:", submitError);
-      setToast({
-        tone: "error",
-        title: "Submit failed",
-        message: "Your onboarding could not be submitted to the backend.",
-      });
       return;
     }
 

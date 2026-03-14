@@ -647,10 +647,7 @@ export default function ProviderServiceCommandPage() {
             : []
         );
       })
-      .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Service command unavailable", message: "Could not load provider queue.", tone: "danger" });
-      });
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };

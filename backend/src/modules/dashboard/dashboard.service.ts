@@ -228,18 +228,7 @@ export class DashboardService {
       ...this.readStringList(seller?.categories),
       seller?.category ?? ''
     ]);
-    const config = await this.ensureWorkspaceSetting(userId, 'seller_live_feed', {
-      todayItems: [
-        { time: '10:00', label: 'Review creator pitches', badge: 'Due soon', badgeColor: 'bg-emerald-500' },
-        { time: '14:00', label: 'Approve creator content', badge: 'Approval', badgeColor: 'bg-amber-500' },
-        { time: '18:30', label: 'Schedule live sessions and adz drops' }
-      ],
-      aiSuggestions: [
-        { title: 'Review creator responses', body: 'Fast replies keep negotiation cycles short and protect launch windows.' },
-        { title: 'Use your strongest live slot', body: 'Schedule next sessions where your past sessions had the most viewers.' },
-        { title: 'Promote top categories', body: 'Push the categories already converting for your store.' }
-      ]
-    });
+    const config = await this.readWorkspaceSetting(userId, 'seller_live_feed');
 
     const [campaigns, creatorFollows, sessions, replays, proposalsPending, contractsActive] = await Promise.all([
       sellerId
@@ -348,7 +337,10 @@ export class DashboardService {
           { label: 'Open collabs', value: String(contractsActive), sub: `${creatorFollows.length} followed creators` }
         ]
       },
-      todayItems: Array.isArray(config.todayItems) ? config.todayItems : [],
+      todayItems:
+        Array.isArray(config?.todayItems) && config?.todayItems.length > 0
+          ? config.todayItems
+          : this.buildLiveFeedTodayItems(campaigns, sessions, proposalsPending),
       feedItems,
       followedCreators,
       pipeline: {
@@ -374,7 +366,16 @@ export class DashboardService {
           { role: 'Moderator', name: nextSession ? 'Not assigned' : 'Not assigned', status: 'Missing' }
         ]
       },
-      aiSuggestions: Array.isArray(config.aiSuggestions) ? config.aiSuggestions : [],
+      aiSuggestions:
+        Array.isArray(config?.aiSuggestions) && config?.aiSuggestions.length > 0
+          ? config.aiSuggestions
+          : this.buildLiveFeedSuggestions({
+              activeCampaigns,
+              proposalsPending,
+              contractsActive,
+              topCategory,
+              upcomingSessions: sessions.filter((entry: any) => this.normalizeLiveSessionStatus(entry.status, entry) === 'Upcoming').length
+            }),
       categoryInsights: categories.slice(0, 3).map((label, index) => ({
         label,
         badge: index === 0
@@ -392,18 +393,7 @@ export class DashboardService {
     const seller = await this.resolveSellerWorkspace(userId);
     const sellerName = seller?.displayName || seller?.name || 'Supplier';
     const sellerId = seller?.id ?? '';
-    const config = await this.ensureWorkspaceSetting(userId, 'seller_public_profile', {
-      about: `${sellerName} uses MyLiveDealz to run seller campaigns, creator collaborations, and catalog-backed deal drops.`,
-      collabPreferences: 'Bundles, timed discounts, clear claims, product demos, and audience Q&A.',
-      trustNote: 'Tracking links are required for attribution and payout protection.',
-      payoutWindow: '48-72h',
-      fulfillmentSla: '24-48h',
-      responseTime: '~2h',
-      quickFacts: [
-        'Supports multi-creator campaigns and split deliverables.',
-        'Tracking links are included for attribution and payout validation.'
-      ]
-    });
+    const config = await this.readWorkspaceSetting(userId, 'seller_public_profile');
 
     const [profileSetting, campaigns, opportunities, listingsCount, reviews, contractsCount] = await Promise.all([
       this.prisma.userSetting.findUnique({
@@ -454,12 +444,12 @@ export class DashboardService {
       : Number(seller?.rating ?? 0);
 
     const performance = {
-      payoutWindow: this.readString(config, 'payoutWindow') || '48-72h',
+      payoutWindow: this.readString(config, 'payoutWindow') || this.deriveSellerPayoutWindow(contractsCount, campaigns.length),
       returnRate: `${Math.max(0.5, Math.min(9.9, Number((reviews.length > 0 ? 1 + 1 / reviews.length : 1.8).toFixed(1))))}%`,
       conversionRate: `${Math.max(0.6, Math.min(12, Number((campaigns.length > 0 ? 2.4 + campaigns.length * 0.2 : 2.4).toFixed(1))))}%`,
       completedCollabs: contractsCount,
       rating: reviewAverage > 0 ? `${reviewAverage.toFixed(1)}/5` : '0.0/5',
-      fulfillmentSla: this.readString(config, 'fulfillmentSla') || '24-48h'
+      fulfillmentSla: this.readString(config, 'fulfillmentSla') || this.deriveSellerFulfillmentSla(listingsCount, campaigns.length)
     };
 
     return {
@@ -476,17 +466,17 @@ export class DashboardService {
         shipsTo: this.readString(profilePayload, 'shippingRegions') || 'Ships to Africa / Asia'
       },
       about: {
-        text: this.readString(config, 'about') || `${sellerName} runs campaigns, creator collaborations, and catalog-backed deal drops.`,
-        collabPreferences: this.readString(config, 'collabPreferences') || 'Bundles, timed discounts, demos, and audience Q&A.',
+        text: this.readString(config, 'about') || this.deriveSellerAbout(sellerName, categories, campaigns.length, listingsCount),
+        collabPreferences: this.readString(config, 'collabPreferences') || this.deriveSellerCollabPreferences(categories, contractsCount),
         categories: categories.slice(0, 6),
-        trustNote: this.readString(config, 'trustNote') || 'Tracking links are required for attribution and payout protection.'
+        trustNote: this.readString(config, 'trustNote') || this.deriveSellerTrustNote(Boolean(seller?.isVerified), contractsCount)
       },
       heroMetrics: {
         avgCreatorPayout: performance.payoutWindow,
         rating: performance.rating,
         fulfillment: performance.fulfillmentSla,
         skuCount: `${listingsCount}+`,
-        responseTime: this.readString(config, 'responseTime') || '~2h'
+        responseTime: this.readString(config, 'responseTime') || this.deriveSellerResponseTime(campaigns.length, contractsCount)
       },
       performance,
       portfolio: campaigns.slice(0, 3).map((campaign: any) => ({
@@ -540,7 +530,8 @@ export class DashboardService {
         facts: [
           seller?.isVerified ? 'KYB verified supplier account.' : 'Verification in progress.',
           `Typical payout to creators: ${performance.payoutWindow}.`,
-          ...(this.readStringList(config, 'quickFacts'))
+          ...this.deriveSellerQuickFacts(campaigns.length, contractsCount, performance.fulfillmentSla),
+          ...this.readStringList(config, 'quickFacts')
         ].slice(0, 4),
         deckContent: [
           `Supplier Brand Kit`,
@@ -996,6 +987,124 @@ export class DashboardService {
       }
     });
     return (record.payload as Record<string, unknown>) ?? payload;
+  }
+
+  private async readWorkspaceSetting(userId: string, key: string) {
+    const existing = await this.prisma.workspaceSetting.findUnique({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      }
+    });
+    return existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
+      ? (existing.payload as Record<string, unknown>)
+      : null;
+  }
+
+  private buildLiveFeedTodayItems(campaigns: any[], sessions: any[], proposalsPending: number) {
+    const items: Array<Record<string, string>> = [];
+    if (proposalsPending > 0) {
+      items.push({ time: 'Now', label: `Review ${proposalsPending} pending creator pitch${proposalsPending === 1 ? '' : 'es'}` });
+    }
+    const nextSession = sessions
+      .map((session: any) => ({ session, start: this.readDateValue(session.scheduledAt, this.readString(session.data, 'startISO')) }))
+      .filter((entry) => entry.start)
+      .sort((left, right) => left.start.getTime() - right.start.getTime())[0];
+    if (nextSession) {
+      items.push({
+        time: nextSession.start.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        label: `Prepare ${this.readString(nextSession.session.data, 'title') || nextSession.session.title || 'next live session'}`
+      });
+    }
+    if (campaigns.length > 0) {
+      items.push({ time: 'Today', label: `Track ${campaigns.length} active campaign${campaigns.length === 1 ? '' : 's'}` });
+    }
+    return items.slice(0, 3);
+  }
+
+  private buildLiveFeedSuggestions(params: {
+    activeCampaigns: number;
+    proposalsPending: number;
+    contractsActive: number;
+    topCategory: string;
+    upcomingSessions: number;
+  }) {
+    const suggestions: Array<Record<string, string>> = [];
+    if (params.proposalsPending > 0) {
+      suggestions.push({
+        title: 'Review creator responses',
+        body: `${params.proposalsPending} pitch${params.proposalsPending === 1 ? '' : 'es'} need attention to keep launch timing on track.`
+      });
+    }
+    if (params.upcomingSessions > 0) {
+      suggestions.push({
+        title: 'Finalize the next live slot',
+        body: `${params.upcomingSessions} upcoming live session${params.upcomingSessions === 1 ? '' : 's'} should have assets and timing confirmed.`
+      });
+    }
+    if (params.activeCampaigns > 0) {
+      suggestions.push({
+        title: 'Promote the strongest category',
+        body: `${params.topCategory} is your leading category signal from current campaign activity.`
+      });
+    }
+    if (params.contractsActive > 0) {
+      suggestions.push({
+        title: 'Keep collaboration handoffs tight',
+        body: `${params.contractsActive} active contract${params.contractsActive === 1 ? '' : 's'} can benefit from clear delivery checkpoints.`
+      });
+    }
+    return suggestions.slice(0, 3);
+  }
+
+  private deriveSellerAbout(sellerName: string, categories: string[], campaignsCount: number, listingsCount: number) {
+    const categoryLine = categories.slice(0, 2).join(' and ') || 'catalog-backed products';
+    return `${sellerName} runs ${categoryLine} campaigns with ${listingsCount} listing${listingsCount === 1 ? '' : 's'} and ${campaignsCount} recent collaboration workflow${campaignsCount === 1 ? '' : 's'}.`;
+  }
+
+  private deriveSellerCollabPreferences(categories: string[], contractsCount: number) {
+    const categoryLine = categories.slice(0, 3).join(', ') || 'catalog-led promotions';
+    return `${categoryLine} with clear deliverables, attribution tracking, and ${contractsCount} active collaboration handoff${contractsCount === 1 ? '' : 's'}.`;
+  }
+
+  private deriveSellerTrustNote(isVerified: boolean, contractsCount: number) {
+    return isVerified
+      ? `Verified seller workspace with ${contractsCount} tracked collaboration contract${contractsCount === 1 ? '' : 's'}.`
+      : `Verification is still in progress; ${contractsCount} collaboration contract${contractsCount === 1 ? '' : 's'} are tracked in workspace records.`;
+  }
+
+  private deriveSellerPayoutWindow(contractsCount: number, campaignsCount: number) {
+    if (contractsCount > 4 || campaignsCount > 6) return '48h';
+    if (contractsCount > 0 || campaignsCount > 0) return '72h';
+    return '—';
+  }
+
+  private deriveSellerFulfillmentSla(listingsCount: number, campaignsCount: number) {
+    if (listingsCount > 20 || campaignsCount > 5) return '24h';
+    if (listingsCount > 0 || campaignsCount > 0) return '48h';
+    return '—';
+  }
+
+  private deriveSellerResponseTime(campaignsCount: number, contractsCount: number) {
+    if (campaignsCount > 5 || contractsCount > 3) return '<4h';
+    if (campaignsCount > 0 || contractsCount > 0) return '<8h';
+    return '—';
+  }
+
+  private deriveSellerQuickFacts(campaignsCount: number, contractsCount: number, fulfillmentSla: string) {
+    const facts: string[] = [];
+    if (campaignsCount > 0) {
+      facts.push(`${campaignsCount} recent campaign${campaignsCount === 1 ? '' : 's'} recorded in workspace data.`);
+    }
+    if (contractsCount > 0) {
+      facts.push(`${contractsCount} active collaboration contract${contractsCount === 1 ? '' : 's'} tracked.`);
+    }
+    if (fulfillmentSla !== '—') {
+      facts.push(`Operational fulfillment target: ${fulfillmentSla}.`);
+    }
+    return facts;
   }
 
   private serializeLiveFeedSession(session: any, sellerName: string, campaigns: any[]) {

@@ -442,7 +442,7 @@ export default function SupportSystemStatusPage() {
         pushToast({ title: "Updated", message: "Status page updated.", tone: "success" });
       }
     } catch {
-      pushToast({ title: "Status center unavailable", message: "Could not load provider health.", tone: "warning" });
+      return;
     }
   };
   useEffect(() => {

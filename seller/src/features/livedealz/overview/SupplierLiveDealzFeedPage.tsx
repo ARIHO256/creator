@@ -321,7 +321,7 @@ function HeroSummaryCard({ onChangePage, hero }) {
 
 function HeroKpi({ label, value, sub }) {
   return (
-    <div className="w-full aspect-[20/7] bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl transition-colors px-3 py-3 flex flex-col justify-between">
+    <div className="w-full aspect-square bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 rounded-xl transition-colors px-3 py-3 flex flex-col justify-between">
       <div className="text-xs text-slate-500 dark:text-slate-300 mb-1">{label}</div>
       <div className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-1">{value}</div>
       <div className="text-xs text-emerald-600 dark:text-emerald-400">{sub}</div>
@@ -728,8 +728,7 @@ export default function SupplierLiveDealzFeedPage() {
         setFeedData(normalized);
         setFollowedCreatorIds(normalized.followedCreators.map((creator) => creator.id));
       } catch {
-        if (!active) return;
-        showInfo("Unable to load feed workspace");
+        return;
       }
     };
 
@@ -748,7 +747,7 @@ export default function SupplierLiveDealzFeedPage() {
       );
       showSuccess("Follow list updated");
     } catch {
-      showInfo("Unable to update follow list");
+      return;
     }
   };
 
@@ -879,7 +878,7 @@ export default function SupplierLiveDealzFeedPage() {
               <CreatorsDiscoveryCard onChangePage={onChangePage} />
               <AIAssistantCard
                 suggestions={feedData.aiSuggestions}
-                onAsk={() => showInfo("AI Assistant prompt sent")}
+                onAsk={() => showInfo("AI Assistant prompt sent (demo)")}
               />
               <CategoryInsightsCard insights={feedData.categoryInsights} onChangePage={onChangePage} />
             </section>

@@ -500,8 +500,7 @@ export default function PayoutMethodsPreviewable() {
         });
         hydratedRef.current = true;
       } catch {
-        if (!active) return;
-        pushToast({ title: "Payout methods unavailable", message: "Could not load payout methods.", tone: "warning" });
+        return;
       }
     })();
     return () => {

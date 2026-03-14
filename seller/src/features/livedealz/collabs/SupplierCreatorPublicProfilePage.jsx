@@ -1037,7 +1037,7 @@ export default function SupplierCreatorProfilePage() {
           isFollowing: !nextFollow
         }
       }));
-      toast(error instanceof Error ? error.message : "Unable to update creator follow state.", "error");
+      return;
     } finally {
       setPendingFollow(false);
     }

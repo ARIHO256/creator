@@ -2,10 +2,8 @@ import React, { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import Layout from "./app/Layout";
 import RoutesConfig from "./app/routes";
-import { getCurrentRole } from "./auth/roles";
 import type { Session } from "./types/session";
-import { isValidSession, readSession } from "./auth/session";
-import { needsOnboarding } from "./features/misc/onboardingStatus";
+import { readSession } from "./auth/session";
 
 export default function App() {
   const location = useLocation();
@@ -28,9 +26,8 @@ export default function App() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  const isAuthenticated = isValidSession(session);
-  const role = getCurrentRole(session);
-  const onboardingLocked = isAuthenticated && needsOnboarding(role, session);
+  const isAuthenticated =
+    session && typeof session === "object" && Object.keys(session).length > 0;
 
   const onboardingPaths = ["/seller/onboarding", "/provider/onboarding"];
   const isOnboardingRoute = onboardingPaths.some((path) =>
@@ -53,7 +50,7 @@ export default function App() {
     );
   }
 
-  if (isOnboardingRoute || onboardingLocked) {
+  if (isOnboardingRoute) {
     return (
       <>
         <RoutesConfig session={session} />

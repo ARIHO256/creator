@@ -719,10 +719,7 @@ export default function FinanceStatementsPage() {
         if (!mounted) return;
         setRows(Array.isArray((payload as Record<string, any>)?.statements) ? ((payload as Record<string, any>).statements as any[]) : []);
       })
-      .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Statements unavailable", message: "Could not load statements.", tone: "danger" });
-      });
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };

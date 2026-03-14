@@ -214,7 +214,7 @@ export class TaxonomyService {
     const status = payload.status ?? 'ACTIVE';
     const pathSnapshot = await this.buildPathSnapshot(node.id);
 
-    return this.prisma.sellerTaxonomyCoverage.upsert({
+    const record = await this.prisma.sellerTaxonomyCoverage.upsert({
       where: {
         sellerId_taxonomyNodeId: {
           sellerId: seller.id,
@@ -237,6 +237,8 @@ export class TaxonomyService {
         pathSnapshot
       }
     });
+    await this.syncStorefrontTaxonomyFromCoverage(userId, seller.id);
+    return record;
   }
 
   async updateCoverage(userId: string, id: string, payload: UpdateTaxonomyCoverageDto) {
@@ -250,7 +252,7 @@ export class TaxonomyService {
     }
 
     const status = payload.status ?? existing.status;
-    return this.prisma.sellerTaxonomyCoverage.update({
+    const record = await this.prisma.sellerTaxonomyCoverage.update({
       where: { id: existing.id },
       data: {
         status,
@@ -259,6 +261,8 @@ export class TaxonomyService {
         removedAt: status === 'REMOVED' ? new Date() : null
       }
     });
+    await this.syncStorefrontTaxonomyFromCoverage(userId, seller.id);
+    return record;
   }
 
   async removeCoverage(userId: string, id: string) {
@@ -499,6 +503,19 @@ export class TaxonomyService {
         });
       })
     );
+  }
+
+  private async syncStorefrontTaxonomyFromCoverage(userId: string, sellerId: string) {
+    const activeCoverage = await this.prisma.sellerTaxonomyCoverage.findMany({
+      where: {
+        sellerId,
+        status: 'ACTIVE',
+        removedAt: null
+      },
+      orderBy: [{ addedAt: 'asc' }, { createdAt: 'asc' }]
+    });
+    const nodeIds = activeCoverage.map((entry) => entry.taxonomyNodeId);
+    await this.syncStorefrontTaxonomy(userId, nodeIds, nodeIds[0]);
   }
 
   private async getActiveTree() {

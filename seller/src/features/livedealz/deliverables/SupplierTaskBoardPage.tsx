@@ -506,9 +506,7 @@ export default function SupplierTaskBoardPage() {
         replaceTask(normalizeTaskRecord(record));
         setToast(`Moved to “${COLUMNS.find((c) => c.id === toColumn)?.label || toColumn}”`);
       })
-      .catch((error) => {
-        setToast(error instanceof Error ? error.message : "Unable to update task.");
-      });
+      .catch(() => undefined);
   };
 
   const handleDrop = (toColumn) => {

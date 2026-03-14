@@ -640,10 +640,7 @@ export default function FinancePayoutHoldsPage() {
         if (!mounted) return;
         setHolds(Array.isArray((payload as Record<string, any>)?.holds) ? ((payload as Record<string, any>).holds as any[]) : []);
       })
-      .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Holds unavailable", message: "Could not load payout holds.", tone: "danger" });
-      });
+      .catch(() => undefined);
     return () => {
       mounted = false;
     };

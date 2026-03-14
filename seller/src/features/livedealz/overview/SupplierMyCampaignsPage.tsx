@@ -1352,7 +1352,6 @@ export default function SupplierMyCampaignsPage() {
       } catch (error) {
         if (cancelled) return;
         setWorkspaceError(error instanceof Error ? error.message : 'Unable to load campaigns workspace');
-        push('Unable to load campaigns workspace from backend.', 'error');
       } finally {
         if (!cancelled) {
           setWorkspaceLoaded(true);
@@ -1378,9 +1377,7 @@ export default function SupplierMyCampaignsPage() {
         .then(() => {
           builderHashRef.current = nextHash;
         })
-        .catch(() => {
-          push('Unable to persist campaign builder draft.', 'error');
-        });
+        .catch(() => undefined);
     }, 350);
 
     return () => {
@@ -1778,7 +1775,7 @@ export default function SupplierMyCampaignsPage() {
       .then((saved) => {
         setCampaigns((xs) => xs.map((entry) => (entry.id === campaign.id ? { ...entry, ...saved } : entry)));
       })
-      .catch(() => push('Unable to persist campaign update.', 'error'));
+      .catch(() => undefined);
   }
 
   function allowProducts(scope) {
@@ -2230,7 +2227,7 @@ export default function SupplierMyCampaignsPage() {
         openDetails(nextCampaign);
       }, 0);
     } catch {
-      push('Unable to persist campaign to backend.', 'error');
+      return;
     }
   }
 
@@ -2248,11 +2245,11 @@ export default function SupplierMyCampaignsPage() {
       };
       void backendApi
         .patchCampaign(c.id, buildCampaignPayload(nextCampaign))
-        .then((saved) => {
-          push('Admin approved (preview).', 'success');
-          setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
-        })
-        .catch(() => push('Unable to persist admin approval.', 'error'));
+      .then((saved) => {
+        push('Admin approved (preview).', 'success');
+        setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
+      })
+      .catch(() => undefined);
       return;
     }
 
@@ -2273,7 +2270,7 @@ export default function SupplierMyCampaignsPage() {
         push('Admin rejected (preview).', 'warn');
         setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
       })
-      .catch(() => push('Unable to persist admin rejection.', 'error'));
+      .catch(() => undefined);
   }
 
   function resubmitAfterRejection(c) {
@@ -2293,7 +2290,7 @@ export default function SupplierMyCampaignsPage() {
         push('Resubmitted for approval (preview).', 'success');
         setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
       })
-      .catch(() => push('Unable to persist resubmission.', 'error'));
+      .catch(() => undefined);
   }
 
   const promoDefaultsForCatalog = useMemo(() => {
@@ -2312,16 +2309,6 @@ export default function SupplierMyCampaignsPage() {
     builder.defaultDiscountMode,
     builder.defaultDiscountValue,
   ]);
-
-  if (!workspaceLoaded) {
-    return (
-      <div className="min-h-screen grid place-items-center bg-gray-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 py-5 text-sm font-bold">
-          Loading campaigns workspace…
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors overflow-x-hidden">
@@ -2365,11 +2352,6 @@ export default function SupplierMyCampaignsPage() {
       />
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
-        {workspaceError ? (
-          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-            {workspaceError}
-          </div>
-        ) : null}
         <div className="w-full max-w-full flex flex-col gap-3">
           {/* Summary */}
           <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">

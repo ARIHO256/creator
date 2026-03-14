@@ -574,7 +574,6 @@ export default function TemplatesHubPage() {
       } catch {
         if (!cancelled) {
           setTemplates([]);
-          pushToast({ title: "Backend unavailable", message: "Could not load templates.", tone: "warning" });
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -752,7 +751,6 @@ export default function TemplatesHubPage() {
         return prev.map((t) => (t.id === persisted.id ? persisted : t));
       });
     } catch {
-      pushToast({ title: "Save failed", message: "Could not persist template.", tone: "danger" });
       return;
     }
 
@@ -808,7 +806,7 @@ export default function TemplatesHubPage() {
       setTemplates((prev) => [persisted, ...prev]);
       pushToast({ title: "Duplicated", message: "New draft created.", tone: "success", action: { label: "Edit", onClick: () => openEdit(persisted.id) } });
     } catch {
-      pushToast({ title: "Duplicate failed", message: "Could not create backend copy.", tone: "danger" });
+      return;
     }
   };
 
@@ -881,9 +879,9 @@ export default function TemplatesHubPage() {
         return prev.map((t) => (t.id === persisted.id ? persisted : t));
       });
       setDraft(persisted);
-      pushToast({ title: "Updated", message: "Template state synced to backend.", tone: "success" });
+      pushToast({ title: "Updated", message: "Template state synced to list.", tone: "success" });
     } catch {
-      pushToast({ title: "Sync failed", message: "Could not update template.", tone: "danger" });
+      return;
     }
   };
 
@@ -932,9 +930,7 @@ export default function TemplatesHubPage() {
                       setTemplates(rows.map((row) => mapBackendTemplate(row as Record<string, unknown>)));
                       pushToast({ title: "Refreshed", message: "Latest templates loaded.", tone: "success" });
                     })
-                    .catch(() => {
-                      pushToast({ title: "Refresh failed", message: "Could not fetch templates.", tone: "danger" });
-                    })
+                    .catch(() => undefined)
                     .finally(() => setLoading(false));
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"

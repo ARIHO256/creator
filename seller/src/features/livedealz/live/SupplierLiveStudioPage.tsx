@@ -433,7 +433,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
         : sellerBackendApi.endLiveStudio(studioSessionId);
     void action
       .then(() => setMode(nextMode))
-      .catch(() => showToast("Unable to update live studio status."));
+      .catch(() => undefined);
   };
 
   const handleOpenFlashConfig = () => setFlashConfigOpen(true);

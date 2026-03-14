@@ -765,7 +765,6 @@ export default function SupplierSettingsSafetyPage() {
       } catch {
         if (!cancelled) {
           setForm(createEmptySupplierSettingsForm());
-          push("Could not load supplier settings from the backend.", "error");
         }
       } finally {
         if (!cancelled) {
@@ -791,9 +790,7 @@ export default function SupplierSettingsSafetyPage() {
           },
         })
         .then(() => setSaved(true))
-        .catch(() => {
-          push("Supplier settings could not be saved to the backend.", "error");
-        });
+        .catch(() => undefined);
     }, 450);
     return () => clearTimeout(t);
   }, [form, hydrated, push]);
@@ -934,14 +931,14 @@ export default function SupplierSettingsSafetyPage() {
 
   function resetAll() {
     setForm(createEmptySupplierSettingsForm());
-    addAudit("Settings reset", "Restored backend baseline");
+    addAudit("Settings reset", "Restored defaults");
     push("Settings reset to defaults.", "success");
     setConfirmReset(false);
   }
 
   function deleteWorkspace() {
     addAudit("Workspace delete requested", "Support ticket created");
-    push("Delete request submitted to Support.", "success");
+    push("Delete request submitted to Support (demo).", "success");
     setConfirmDelete(false);
   }
 
@@ -1126,7 +1123,7 @@ export default function SupplierSettingsSafetyPage() {
       <Modal
         open={confirmDelete}
         title="Delete workspace"
-        subtitle="High impact. Creates a support ticket and revokes access."
+        subtitle="High impact. Creates a support ticket and revokes access (demo)."
         onClose={() => setConfirmDelete(false)}
         footer={
           <div className="flex justify-end gap-2">
@@ -1206,7 +1203,7 @@ export default function SupplierSettingsSafetyPage() {
 
             <GhostButton
               onClick={() => {
-                push("Opening Supplier onboarding.", "success");
+                push("Opening Supplier onboarding (demo).", "success");
               }}
             >
               <ExternalLink className="h-4 w-4" /> Open onboarding
@@ -1919,7 +1916,7 @@ export default function SupplierSettingsSafetyPage() {
                     onChange={(v) => {
                       update("settings.calendar.googleConnected", v);
                       addAudit("Calendar sync updated", v ? "connected" : "disconnected");
-                      push(v ? "Google Calendar connected." : "Google Calendar disconnected.", "success");
+                      push(v ? "Google Calendar connected (demo)." : "Google Calendar disconnected (demo).", "success");
                     }}
                   />
                 </div>
@@ -2327,7 +2324,7 @@ export default function SupplierSettingsSafetyPage() {
                         }
                         update("payout.verification.status", "code_sent");
                         addAudit("Verification code sent", `${form.payout.verification.method || "Email"} → ${form.payout.verification.lastSentTo}`);
-                        push("Verification code sent.", "success");
+                        push("Verification code sent (demo).", "success");
                       }}
                     >
                       <ShieldCheck className="h-4 w-4" /> Send code
@@ -2624,7 +2621,7 @@ export default function SupplierSettingsSafetyPage() {
               <div className="mt-4 flex justify-end gap-2">
                 <GhostButton
                   onClick={() => {
-                    push("Support chat opened.", "success");
+                    push("Support chat opened (demo).", "success");
                     addAudit("Support contacted", "Supplier Success");
                   }}
                 >
@@ -2646,7 +2643,7 @@ export default function SupplierSettingsSafetyPage() {
                   </PrimaryButton>
                   <GhostButton
                     onClick={() => {
-                      push("Copying JSON.", "success");
+                      push("Copying JSON (demo).", "success");
                       try {
                         navigator.clipboard?.writeText(JSON.stringify(form, null, 2));
                       } catch {
@@ -2668,7 +2665,7 @@ export default function SupplierSettingsSafetyPage() {
                   </GhostButton>
                   <GhostButton
                     onClick={() => {
-                      push("Incident report created.", "success");
+                      push("Incident report created (demo).", "success");
                       addAudit("Incident reported", "Deliverables / disputes");
                     }}
                   >

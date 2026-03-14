@@ -567,8 +567,7 @@ export default function OpsShippingProfilesPremium() {
         );
       })
       .catch(() => {
-        if (!mounted) return;
-        pushToast({ title: "Shipping profiles unavailable", message: "Could not load shipping data.", tone: "danger" });
+        return;
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -706,7 +705,7 @@ export default function OpsShippingProfilesPremium() {
       setEditorOpen(false);
       pushToast({ title: "Saved", message: "Shipping profile updated.", tone: "success" });
     } catch {
-      pushToast({ title: "Save failed", message: "Could not persist shipping profile.", tone: "danger" });
+      return;
     }
   };
 

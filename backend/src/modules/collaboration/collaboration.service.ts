@@ -103,7 +103,19 @@ export class CollaborationService {
   }
 
   async dealzMarketplace(userId: string) {
-    return this.readDealzMarketplace(userId, 'seller_dealz_marketplace');
+    const payload = await this.readDealzMarketplace(userId, 'seller_dealz_marketplace') as Record<string, unknown>;
+    const [suppliers, creators, campaigns] = await Promise.all([
+      this.loadDealzMarketplaceSuppliers(userId),
+      this.loadDealzMarketplaceCreators(),
+      this.loadDealzMarketplaceCampaigns(userId)
+    ]);
+
+    return {
+      ...payload,
+      deals: this.mergeMarketplaceDeals(payload.deals, campaigns),
+      suppliers: this.mergeMarketplaceActors(payload.suppliers, suppliers, 'name'),
+      creators: this.mergeMarketplaceActors(payload.creators, creators, 'handle')
+    };
   }
 
   async updateDealzMarketplace(userId: string, payload: Record<string, unknown>) {
@@ -208,7 +220,25 @@ export class CollaborationService {
       }
     }
 
-    return { deals: [], selectedId: '', cart: {}, liveCart: {} };
+    const emptyState = { deals: [], selectedId: '', cart: {}, liveCart: {} };
+    const created = await this.prisma.workspaceSetting.upsert({
+      where: {
+        userId_key: {
+          userId,
+          key
+        }
+      },
+      update: {
+        payload: emptyState as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        key,
+        payload: emptyState as Prisma.InputJsonValue
+      }
+    });
+
+    return (created.payload as Record<string, unknown>) ?? emptyState;
   }
 
   async createCampaign(userId: string, payload: Record<string, unknown>) {
@@ -946,6 +976,202 @@ export class CollaborationService {
       creators: Array.isArray(safe.creators) ? safe.creators : [],
       templates: safe.templates && typeof safe.templates === 'object' && !Array.isArray(safe.templates) ? safe.templates : {}
     };
+  }
+
+  private async loadDealzMarketplaceSuppliers(userId: string) {
+    const seller = await this.prisma.seller.findFirst({
+      where: { userId },
+      include: { storefront: true }
+    });
+
+    if (!seller) {
+      return [];
+    }
+
+    return [
+      {
+        id: seller.id,
+        name: seller.displayName || seller.storefrontName || seller.name,
+        category: seller.category || 'Seller',
+        logoUrl: seller.storefront?.logoUrl || seller.storefront?.coverUrl || ''
+      }
+    ];
+  }
+
+  private async loadDealzMarketplaceCreators() {
+    const profiles = await this.prisma.creatorProfile.findMany({
+      take: 12,
+      orderBy: [{ followers: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
+    });
+
+    return profiles.map((profile) => ({
+      id: profile.userId,
+      name: profile.name || profile.handle || 'Creator',
+      handle: profile.handle ? `@${profile.handle.replace(/^@/, '')}` : '@creator',
+      avatarUrl: '',
+      verified: Boolean(profile.isKycVerified)
+    }));
+  }
+
+  private async loadDealzMarketplaceCampaigns(userId: string) {
+    const campaigns = await this.prisma.campaign.findMany({
+      where: this.workspaceAccessClause(userId),
+      include: {
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        }
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    return campaigns
+      .map((campaign) => this.serializeDealzMarketplaceCampaign(campaign))
+      .filter(Boolean) as Array<Record<string, unknown>>;
+  }
+
+  private mergeMarketplaceActors(
+    current: unknown,
+    fallback: Array<Record<string, unknown>>,
+    key: 'name' | 'handle'
+  ) {
+    const primary = Array.isArray(current) ? current.filter((entry) => entry && typeof entry === 'object') as Array<Record<string, unknown>> : [];
+    const seen = new Set(
+      primary
+        .map((entry) => String(entry[key] ?? '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    const extras = fallback.filter((entry) => {
+      const value = String(entry[key] ?? '').trim().toLowerCase();
+      if (!value || seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    });
+
+    return [...primary, ...extras];
+  }
+
+  private mergeMarketplaceDeals(current: unknown, fallback: Array<Record<string, unknown>>) {
+    const primary = Array.isArray(current)
+      ? current.filter((entry) => entry && typeof entry === 'object') as Array<Record<string, unknown>>
+      : [];
+    const seen = new Set(
+      primary
+        .map((entry) => String(entry.id ?? '').trim())
+        .filter(Boolean)
+    );
+
+    const extras = fallback.filter((entry) => {
+      const id = String(entry.id ?? '').trim();
+      if (!id || seen.has(id)) {
+        return false;
+      }
+      seen.add(id);
+      return true;
+    });
+
+    return [...primary, ...extras];
+  }
+
+  private serializeDealzMarketplaceCampaign(campaign: any) {
+    const metadata = this.normalizeCampaignMetadata(campaign.metadata);
+    const source = typeof metadata.source === 'string' ? metadata.source.trim().toLowerCase() : '';
+    const marketplaceType = this.resolveDealzMarketplaceType(metadata);
+    if (source !== 'dealz-marketplace' && !marketplaceType) {
+      return null;
+    }
+
+    const supplierPayload =
+      metadata.supplier && typeof metadata.supplier === 'object' && !Array.isArray(metadata.supplier)
+        ? metadata.supplier as Record<string, unknown>
+        : {};
+    const creatorPayload =
+      metadata.creator && typeof metadata.creator === 'object' && !Array.isArray(metadata.creator)
+        ? metadata.creator as Record<string, unknown>
+        : {};
+    const shoppable =
+      metadata.shoppable && typeof metadata.shoppable === 'object' && !Array.isArray(metadata.shoppable)
+        ? metadata.shoppable as Record<string, unknown>
+        : null;
+    const live =
+      metadata.live && typeof metadata.live === 'object' && !Array.isArray(metadata.live)
+        ? metadata.live as Record<string, unknown>
+        : null;
+
+    return {
+      id: campaign.id,
+      type: marketplaceType,
+      title: campaign.title,
+      tagline:
+        typeof metadata.tagline === 'string' && metadata.tagline.trim()
+          ? metadata.tagline.trim()
+          : typeof campaign.description === 'string' && campaign.description.trim()
+            ? campaign.description.trim()
+            : 'Deal draft',
+      supplier: {
+        name:
+          typeof supplierPayload.name === 'string' && supplierPayload.name.trim()
+            ? supplierPayload.name.trim()
+            : campaign.seller?.displayName ?? campaign.seller?.storefrontName ?? 'Seller',
+        category:
+          typeof supplierPayload.category === 'string' && supplierPayload.category.trim()
+            ? supplierPayload.category.trim()
+            : campaign.seller?.category ?? 'Seller',
+        logoUrl:
+          typeof supplierPayload.logoUrl === 'string'
+            ? supplierPayload.logoUrl
+            : ''
+      },
+      creator: {
+        name:
+          typeof creatorPayload.name === 'string' && creatorPayload.name.trim()
+            ? creatorPayload.name.trim()
+            : campaign.creator?.creatorProfile?.name ?? campaign.creator?.email ?? 'Creator',
+        handle:
+          typeof creatorPayload.handle === 'string' && creatorPayload.handle.trim()
+            ? creatorPayload.handle.trim()
+            : campaign.creator?.creatorProfile?.handle
+              ? `@${String(campaign.creator.creatorProfile.handle).replace(/^@/, '')}`
+              : '@creator',
+        avatarUrl:
+          typeof creatorPayload.avatarUrl === 'string'
+            ? creatorPayload.avatarUrl
+            : '',
+        verified:
+          typeof creatorPayload.verified === 'boolean'
+            ? creatorPayload.verified
+            : Boolean(campaign.creator?.creatorProfile?.isKycVerified)
+      },
+      startISO: campaign.startAt?.toISOString?.() ?? campaign.startAt ?? new Date().toISOString(),
+      endISO: campaign.endAt?.toISOString?.() ?? campaign.endAt ?? new Date().toISOString(),
+      notes: typeof metadata.notes === 'string' ? metadata.notes : '',
+      shoppable,
+      live
+    };
+  }
+
+  private resolveDealzMarketplaceType(metadata: Record<string, unknown>) {
+    const raw = typeof metadata.marketplaceType === 'string' ? metadata.marketplaceType.trim() : '';
+    if (raw === 'Shoppable Adz' || raw === 'Live Sessionz' || raw === 'Live + Shoppables') {
+      return raw;
+    }
+    const hasShoppable = Boolean(metadata.shoppable && typeof metadata.shoppable === 'object' && !Array.isArray(metadata.shoppable));
+    const hasLive = Boolean(metadata.live && typeof metadata.live === 'object' && !Array.isArray(metadata.live));
+    if (hasShoppable && hasLive) {
+      return 'Live + Shoppables';
+    }
+    if (hasShoppable) {
+      return 'Shoppable Adz';
+    }
+    if (hasLive) {
+      return 'Live Sessionz';
+    }
+    return null;
   }
 
   private resolveCampaignTitle(

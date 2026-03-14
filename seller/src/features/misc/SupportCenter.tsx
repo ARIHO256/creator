@@ -1339,9 +1339,7 @@ export default function SupportCenterPage() {
                       }
                       pushToast({ title: "Refreshed", message: "Latest support data loaded.", tone: "success" });
                     })
-                    .catch(() => {
-                      pushToast({ title: "Refresh failed", message: "Could not reload support data.", tone: "warning" });
-                    });
+                    .catch(() => undefined);
                 }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >

@@ -178,14 +178,14 @@ type GuardProps = {
 };
 
 const LiveDealzGuard = ({ children }: GuardProps) =>
-  isValidSession(useSession()) ? children : <Navigate to="/auth" replace />;
+  isValidSession(useSession()) ? children : <Navigate to="/dashboard" replace />;
 const ChannelGuard = ({
   channelKey,
   children,
 }: {
   channelKey: string;
   children: React.ReactElement;
-}) => (useChannels()[channelKey] ? children : <Navigate to="/auth" replace />);
+}) => (useChannels()[channelKey] ? children : <Navigate to="/dashboard" replace />);
 
 // Landing
 const Landing = safeLazy(() => import('../features/landing/Landing'), 'Landing');
@@ -612,6 +612,14 @@ const SellerOnboarding = safeLazy(
   () => import('../features/misc/SellerOnboarding'),
   'Seller Onboarding'
 );
+const SellerOnboardingReview = safeLazy(
+  () => import('../features/misc/SellerOnboardingReview'),
+  'Seller Onboarding Review'
+);
+const ProviderOnboardingReview = safeLazy(
+  () => import('../features/provider/ProviderOnboardingReview'),
+  'Provider Onboarding Review'
+);
 const Auth = safeLazy<AuthProps>(() => import('../features/misc/Auth'), 'Auth');
 const GlobalSearch = safeLazy(() => import('../features/misc/GlobalSearch'), 'Search');
 
@@ -725,10 +733,11 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
   const status = readOnboardingStatus(role, session);
   const targetOnboarding = nextOnboardingRoute(role, status) || onboardingPath;
   const onOnboardingRoute = location.pathname.startsWith(onboardingPath);
-  const onAuthRoute = location.pathname.startsWith('/auth');
-  const enforceOnboarding = isAuthenticated && needsOnboarding(role, session);
+  const enforceOnboarding =
+    isAuthenticated && session?.onboardingRequired && needsOnboarding(role, session);
   const mldzPriorityPrefetchedRef = useRef(false);
-  if (enforceOnboarding && !onOnboardingRoute && !onAuthRoute) {
+
+  if (enforceOnboarding && !onOnboardingRoute) {
     return <Navigate to={targetOnboarding} replace />;
   }
 
@@ -822,31 +831,17 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
       <Routes location={location}>
         {isAuthenticated ? (
           <>
-            <Route path="/" element={<Navigate to={enforceOnboarding ? targetOnboarding : "/dashboard"} replace />} />
-            <Route
-              path="/auth"
-              element={enforceOnboarding ? <Navigate to={targetOnboarding} replace /> : <Navigate to="/dashboard" replace />}
-            />
-            <Route
-              path="/auth/*"
-              element={enforceOnboarding ? <Navigate to={targetOnboarding} replace /> : <Navigate to="/dashboard" replace />}
-            />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/auth" element={<Navigate to="/dashboard" replace />} />
             <Route path="/landing" element={<Landing />} />
             <Route path="/dashboard" element={<Dashboard role={role} />} />
             <Route path="/status-center" element={<SettingsStatusCenter />} />
             <Route path="/trust" element={<TrustCenter />} />
             <Route path="/account/health" element={<Navigate to="/status-center" replace />} />
             <Route path="/market-panel/approvals" element={<MarketPanelApprovals />} />
-            <Route
-              path="/seller/onboarding"
-              element={
-                enforceOnboarding ? (
-                  <SellerOnboarding />
-                ) : (
-                  <Navigate to="/dashboard" replace />
-                )
-              }
-            />
+            <Route path="/seller/onboarding" element={<SellerOnboarding />} />
+            <Route path="/seller/onboarding/review" element={<SellerOnboardingReview />} />
+            <Route path="/provider/onboarding/review" element={<ProviderOnboardingReview />} />
 
             <Route
               path="/listings"
@@ -2222,6 +2217,8 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
             <Route path="/auth" element={<Auth defaultTab="signin" />} />
             <Route path="/auth/*" element={<Auth defaultTab="signin" />} />
             <Route path="/p/:sku" element={<ProductShare />} />
+            <Route path="/seller/onboarding/review" element={<SellerOnboardingReview />} />
+            <Route path="/provider/onboarding/review" element={<ProviderOnboardingReview />} />
             <Route path="*" element={<Navigate to="/auth" replace />} />
           </>
         )}

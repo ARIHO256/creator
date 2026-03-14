@@ -402,8 +402,7 @@ export default function HelpSupportPage() {
         setKb(Array.isArray(payload.kb) ? payload.kb as any[] : []);
         setIncidents(Array.isArray(payload.incidents) ? payload.incidents as any[] : []);
       } catch {
-        if (!active) return;
-        pushToast({ title: "Help unavailable", message: "Could not load help content.", tone: "warning" });
+        return;
       }
     })();
     return () => {
@@ -481,7 +480,7 @@ export default function HelpSupportPage() {
       pushToast({ title: "Ticket submitted", message: `${id} created. SLA: ${estSla(ticket.priority)}.`, tone: "success" });
       setTicket({ subject: "", area: ticket.area, priority: "Normal", message: "", attachments: [] });
     } catch {
-      pushToast({ title: "Submit failed", message: "Could not create support ticket.", tone: "danger" });
+      return;
     }
   };
 

@@ -453,8 +453,7 @@ export default function NotificationPreferencesPage() {
           rules: Array.isArray(next.rules) ? next.rules as PrefsState["rules"] : defaults.rules,
         });
       } catch {
-        if (!active) return;
-        pushToast({ title: "Notifications unavailable", message: "Could not load notification preferences.", tone: "warning" });
+        return;
       }
     })();
     return () => {
@@ -479,7 +478,7 @@ export default function NotificationPreferencesPage() {
       setDirty(false);
       pushToast({ title: "Preferences saved", message: "Your notification settings were updated.", tone: "success" });
     } catch {
-      pushToast({ title: "Save failed", message: "Could not update notification preferences.", tone: "danger" });
+      return;
     }
   };
 
