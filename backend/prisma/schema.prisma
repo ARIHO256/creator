@@ -834,7 +834,9 @@ model Campaign {
   @@index([opportunityId])
   @@index([status])
   @@index([sellerId, updatedAt])
+  @@index([sellerId, status, updatedAt])
   @@index([creatorId, updatedAt])
+  @@index([creatorId, status, updatedAt])
 }
 
 model Proposal {
@@ -865,7 +867,9 @@ model Proposal {
   @@index([submittedByUserId])
   @@index([status])
   @@index([sellerId, updatedAt])
+  @@index([sellerId, status, updatedAt])
   @@index([creatorId, updatedAt])
+  @@index([creatorId, status, updatedAt])
 }
 
 model ProposalMessage {
@@ -1075,6 +1079,7 @@ model Order {
   @@index([sellerId, channel])
   @@index([channel, updatedAt])
   @@index([sellerId, updatedAt])
+  @@index([sellerId, status, updatedAt])
   @@index([buyerUserId, updatedAt])
 }
 
@@ -1122,6 +1127,8 @@ model Transaction {
   @@index([type, status])
   @@index([userId, createdAt])
   @@index([sellerId, createdAt])
+  @@index([userId, status, createdAt])
+  @@index([sellerId, status, createdAt])
 }
 
 model DashboardSnapshot {
@@ -1390,6 +1397,7 @@ model AnalyticsEvent {
   @@index([userId, eventType])
   @@index([createdAt])
   @@index([userId, createdAt])
+  @@index([userId, createdAt, eventType])
 }
 
 model MediaAsset {
@@ -1937,6 +1945,7 @@ model ProviderQuote {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
+  @@index([userId, status, updatedAt])
 }
 
 model ProviderBooking {
@@ -1955,6 +1964,7 @@ model ProviderBooking {
   fulfillment ProviderFulfillment?
 
   @@index([userId, status])
+  @@index([userId, status, updatedAt])
 }
 
 model ProviderConsultation {
@@ -1969,6 +1979,7 @@ model ProviderConsultation {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
+  @@index([userId, status, updatedAt])
 }
 
 model ProviderPortfolioItem {
@@ -2090,6 +2101,7 @@ model LiveSession {
   replay  LiveReplay?
 
   @@index([userId, status])
+  @@index([userId, updatedAt])
 }
 
 model LiveStudio {
@@ -2138,6 +2150,7 @@ model LiveReplay {
   session LiveSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
+  @@index([userId, updatedAt])
   @@index([sessionId])
 }
 
@@ -2332,6 +2345,7 @@ model Review {
   @@index([reviewerUserId, createdAt])
   @@index([status, createdAt])
   @@index([subjectUserId, status, createdAt])
+  @@index([subjectUserId, subjectType, status, createdAt])
   @@index([channel])
   @@index([marketplace])
   @@index([sentiment])

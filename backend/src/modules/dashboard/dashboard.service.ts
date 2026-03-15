@@ -162,6 +162,10 @@ export class DashboardService {
   }
 
   async feed(userId: string) {
+    return this.readReadModel(userId, 'feed', () => this.computeFeed(userId));
+  }
+
+  private async computeFeed(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -234,6 +238,10 @@ export class DashboardService {
   }
 
   async liveFeed(userId: string) {
+    return this.readReadModel(userId, 'live-feed', () => this.computeLiveFeed(userId));
+  }
+
+  private async computeLiveFeed(userId: string) {
     const seller = await this.resolveSellerWorkspace(userId);
     const sellerId = seller?.id ?? '';
     const sellerName = seller?.displayName || seller?.name || 'Seller workspace';
@@ -403,6 +411,10 @@ export class DashboardService {
   }
 
   async sellerPublicProfile(userId: string) {
+    return this.readReadModel(userId, 'seller-public-profile', () => this.computeSellerPublicProfile(userId));
+  }
+
+  private async computeSellerPublicProfile(userId: string) {
     const seller = await this.resolveSellerWorkspace(userId);
     const sellerName = seller?.displayName || seller?.name || 'Supplier';
     const sellerId = seller?.id ?? '';
@@ -700,6 +712,10 @@ export class DashboardService {
   }
 
   async myDay(userId: string) {
+    return this.readReadModel(userId, 'my-day', () => this.computeMyDay(userId));
+  }
+
+  private async computeMyDay(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     const activeRole = user?.role ?? UserRole.CREATOR;
     const tasksPromise = this.prisma.task.findMany({
@@ -1042,6 +1058,65 @@ export class DashboardService {
     return existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
       ? (existing.payload as Record<string, unknown>)
       : null;
+  }
+
+  private async readReadModel(
+    userId: string,
+    entityId: string,
+    loader: () => Promise<Record<string, unknown>>
+  ) {
+    const ttlMs = Number(this.configService.get('dashboard.readModelTtlMs') ?? 60_000);
+    const cacheKey = `dashboard:read-model:${userId}:${entityId}`;
+    return this.cache.getOrSet(cacheKey, ttlMs, async () => {
+      const snapshot = await this.prisma.appRecord.findFirst({
+        where: {
+          userId,
+          domain: 'dashboard',
+          entityType: 'read_model',
+          entityId
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      if (snapshot && snapshot.updatedAt.getTime() + ttlMs > Date.now()) {
+        return (snapshot.payload as Record<string, unknown> | null) ?? {};
+      }
+
+      const payload = await loader();
+      await this.saveReadModel(userId, entityId, payload);
+      return payload;
+    });
+  }
+
+  private async saveReadModel(userId: string, entityId: string, payload: Record<string, unknown>) {
+    const existing = await this.prismaWrite.appRecord.findFirst({
+      where: {
+        userId,
+        domain: 'dashboard',
+        entityType: 'read_model',
+        entityId
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true }
+    });
+
+    if (existing) {
+      await this.prismaWrite.appRecord.update({
+        where: { id: existing.id },
+        data: { payload: payload as Prisma.InputJsonValue }
+      });
+      return;
+    }
+
+    await this.prismaWrite.appRecord.create({
+      data: {
+        userId,
+        domain: 'dashboard',
+        entityType: 'read_model',
+        entityId,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
   }
 
   private buildLiveFeedTodayItems(campaigns: any[], sessions: any[], proposalsPending: number) {

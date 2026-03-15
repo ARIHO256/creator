@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, TransactionStatus } from '@prisma/client';
+import { CacheService } from '../../platform/cache/cache.service.js';
 import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
+import { ConfigService } from '@nestjs/config';
 
 const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
 
@@ -10,10 +12,87 @@ type ParsedMeta = Record<string, unknown>;
 export class AnalyticsService {
   constructor(
     private readonly prismaWrite: PrismaService,
-    private readonly prisma: ReadPrismaService
+    private readonly prisma: ReadPrismaService,
+    private readonly cache: CacheService,
+    private readonly configService: ConfigService
   ) {}
 
   async getOverview(userId: string, role: string) {
+    return this.readSnapshot(
+      userId,
+      this.snapshotEntityId('overview', role),
+      () => this.computeOverview(userId, role)
+    );
+  }
+
+  async getPage(userId: string, role: string) {
+    return this.readSnapshot(
+      userId,
+      this.snapshotEntityId('page', role),
+      async () => {
+        const current = await this.readStoredPage(userId, role);
+        const normalizedRole = String(role || 'seller').toUpperCase();
+        const livePayload =
+          normalizedRole === 'PROVIDER'
+            ? await this.buildProviderPage(userId, current)
+            : await this.buildSellerPage(userId, current);
+
+        return {
+          ...livePayload,
+          alertRules: Array.isArray(current.alertRules) ? current.alertRules : []
+        };
+      }
+    );
+  }
+
+  async updatePage(userId: string, role: string, body: Record<string, unknown>) {
+    const current = await this.readStoredPage(userId, role);
+    const next = {
+      ...current,
+      ...(Array.isArray(body.alertRules) ? { alertRules: body.alertRules } : {})
+    };
+
+    const record = await this.prismaWrite.workspaceSetting.upsert({
+      where: { userId_key: { userId, key: this.scopedKey(role, 'analytics_page') } },
+      update: { payload: next as Prisma.InputJsonValue },
+      create: { userId, key: this.scopedKey(role, 'analytics_page'), payload: next as Prisma.InputJsonValue }
+    });
+    await this.invalidateSnapshots(userId);
+
+    return this.getPage(userId, role).then((page) => ({
+      ...page,
+      alertRules: Array.isArray((record.payload as Record<string, unknown> | null)?.alertRules)
+        ? (((record.payload as Record<string, unknown>).alertRules as unknown[]) ?? [])
+        : page.alertRules
+    }));
+  }
+
+  async getRankDetail(
+    userId: string,
+    role: string,
+    query?: { range?: string; category?: string }
+  ) {
+    const normalizedRole = String(role || 'seller').toUpperCase();
+    const range = query?.range === '7' || query?.range === '90' ? query.range : '30';
+    const rangeDays = range === '7' ? 7 : range === '90' ? 90 : 30;
+    const category = typeof query?.category === 'string' && query.category.trim() ? query.category.trim() : 'All';
+    const since = this.daysAgo(rangeDays - 1);
+    since.setHours(0, 0, 0, 0);
+
+    return this.readSnapshot(
+      userId,
+      this.snapshotEntityId('rank', role, { category, range }),
+      () => {
+        if (normalizedRole === 'PROVIDER') {
+          return this.buildProviderRankDetail(userId, range, since);
+        }
+
+        return this.buildSellerRankDetail(userId, range, category, since);
+      }
+    );
+  }
+
+  private async computeOverview(userId: string, role: string) {
     const events = await this.prisma.analyticsEvent.findMany({
       where: { userId, createdAt: { gte: this.daysAgo(90) } },
       orderBy: { createdAt: 'desc' },
@@ -42,60 +121,6 @@ export class AnalyticsService {
       conversionRate: totalClicks > 0 ? Number(((purchases / totalClicks) * 100).toFixed(2)) : 0,
       eventsCount
     };
-  }
-
-  async getPage(userId: string, role: string) {
-    const current = await this.readStoredPage(userId, role);
-    const normalizedRole = String(role || 'seller').toUpperCase();
-    const livePayload =
-      normalizedRole === 'PROVIDER'
-        ? await this.buildProviderPage(userId, current)
-        : await this.buildSellerPage(userId, current);
-
-    return {
-      ...livePayload,
-      alertRules: Array.isArray(current.alertRules) ? current.alertRules : []
-    };
-  }
-
-  async updatePage(userId: string, role: string, body: Record<string, unknown>) {
-    const current = await this.readStoredPage(userId, role);
-    const next = {
-      ...current,
-      ...(Array.isArray(body.alertRules) ? { alertRules: body.alertRules } : {})
-    };
-
-    const record = await this.prismaWrite.workspaceSetting.upsert({
-      where: { userId_key: { userId, key: this.scopedKey(role, 'analytics_page') } },
-      update: { payload: next as Prisma.InputJsonValue },
-      create: { userId, key: this.scopedKey(role, 'analytics_page'), payload: next as Prisma.InputJsonValue }
-    });
-
-    return this.getPage(userId, role).then((page) => ({
-      ...page,
-      alertRules: Array.isArray((record.payload as Record<string, unknown> | null)?.alertRules)
-        ? (((record.payload as Record<string, unknown>).alertRules as unknown[]) ?? [])
-        : page.alertRules
-    }));
-  }
-
-  async getRankDetail(
-    userId: string,
-    role: string,
-    query?: { range?: string; category?: string }
-  ) {
-    const normalizedRole = String(role || 'seller').toUpperCase();
-    const range = query?.range === '7' || query?.range === '90' ? query.range : '30';
-    const rangeDays = range === '7' ? 7 : range === '90' ? 90 : 30;
-    const category = typeof query?.category === 'string' && query.category.trim() ? query.category.trim() : 'All';
-    const since = this.daysAgo(rangeDays - 1);
-    since.setHours(0, 0, 0, 0);
-
-    if (normalizedRole === 'PROVIDER') {
-      return this.buildProviderRankDetail(userId, range, since);
-    }
-
-    return this.buildSellerRankDetail(userId, range, category, since);
   }
 
   private async buildSellerPage(userId: string, current: Record<string, unknown>) {
@@ -907,5 +932,87 @@ export class AnalyticsService {
       }
     }
     return Array.from(ids);
+  }
+
+  private async readSnapshot(
+    userId: string,
+    entityId: string,
+    loader: () => Promise<Record<string, unknown>>
+  ) {
+    const ttlMs = Number(this.configService.get('analytics.snapshotTtlMs') ?? 60_000);
+    const cacheKey = `analytics:snapshot:${userId}:${entityId}`;
+    return this.cache.getOrSet(cacheKey, ttlMs, async () => {
+      const snapshot = await this.prisma.appRecord.findFirst({
+        where: {
+          userId,
+          domain: 'analytics',
+          entityType: 'snapshot',
+          entityId
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      if (snapshot && snapshot.updatedAt.getTime() + ttlMs > Date.now()) {
+        return (snapshot.payload as Record<string, unknown> | null) ?? {};
+      }
+
+      const payload = await loader();
+      await this.saveSnapshot(userId, entityId, payload);
+      return payload;
+    });
+  }
+
+  private async saveSnapshot(userId: string, entityId: string, payload: Record<string, unknown>) {
+    const existing = await this.prismaWrite.appRecord.findFirst({
+      where: {
+        userId,
+        domain: 'analytics',
+        entityType: 'snapshot',
+        entityId
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true }
+    });
+
+    if (existing) {
+      await this.prismaWrite.appRecord.update({
+        where: { id: existing.id },
+        data: { payload: payload as Prisma.InputJsonValue }
+      });
+      return;
+    }
+
+    await this.prismaWrite.appRecord.create({
+      data: {
+        userId,
+        domain: 'analytics',
+        entityType: 'snapshot',
+        entityId,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async invalidateSnapshots(userId: string) {
+    await this.cache.invalidatePrefix(`analytics:snapshot:${userId}:`);
+    await this.prismaWrite.appRecord.deleteMany({
+      where: {
+        userId,
+        domain: 'analytics',
+        entityType: 'snapshot'
+      }
+    });
+  }
+
+  private snapshotEntityId(
+    kind: 'overview' | 'page' | 'rank',
+    role: string,
+    extra?: { category?: string; range?: string }
+  ) {
+    const normalizedRole = String(role || 'seller').toLowerCase();
+    if (kind !== 'rank') {
+      return `${normalizedRole}:${kind}`;
+    }
+    return `${normalizedRole}:${kind}:${String(extra?.range ?? '30')}:${String(extra?.category ?? 'all').toLowerCase()}`;
   }
 }

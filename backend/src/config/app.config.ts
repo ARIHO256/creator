@@ -126,6 +126,9 @@ export default () => ({
     reminderHours: Number(process.env.APPROVAL_REMINDER_HOURS ?? "24"),
     escalateAfterHours: Number(process.env.APPROVAL_ESCALATE_HOURS ?? "72"),
   },
+  analytics: {
+    snapshotTtlMs: Number(process.env.ANALYTICS_SNAPSHOT_TTL_MS ?? "60000"),
+  },
   finance: {
     settlementBatchLimit: Number(
       process.env.FINANCE_SETTLEMENT_BATCH_LIMIT ?? "500",
@@ -136,6 +139,7 @@ export default () => ({
   },
   dashboard: {
     snapshotTtlMs: Number(process.env.DASHBOARD_SNAPSHOT_TTL_MS ?? "60000"),
+    readModelTtlMs: Number(process.env.DASHBOARD_READ_MODEL_TTL_MS ?? "60000"),
   },
   storage: {
     rootDir: process.env.STORAGE_ROOT_DIR ?? `${process.cwd()}/storage`,
