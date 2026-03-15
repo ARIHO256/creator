@@ -599,17 +599,19 @@ export class SettingsService {
   }
 
   async preferences(userId: string, role: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
-    await this.migrateLegacyPreferences(userId, workspace.workspace.id, scopeRole);
-    const [stored, derived] = await Promise.all([
-      this.readPreferences(workspace.workspace.id, userId, scopeRole),
-      this.derivePreferences(userId)
-    ]);
-    return this.deepMerge(derived, stored ?? {});
+    const derived = await this.derivePreferences(userId);
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.migrateLegacyPreferences(userId, workspace.workspace.id, scopeRole);
+      const stored = await this.readPreferences(workspace.workspace.id, userId, scopeRole);
+      return this.deepMerge(derived, stored ?? {});
+    } catch {
+      const legacy = await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'preferences'));
+      return this.deepMerge(derived, this.isPlainObject(legacy) ? legacy : {});
+    }
   }
   async updatePreferences(userId: string, role: string, body: UpdatePreferencesDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
     const current = await this.preferences(userId, role);
     const next = {
@@ -618,42 +620,57 @@ export class SettingsService {
       ...(body.currency ? { currency: body.currency } : {}),
       ...(body.timezone ? { timezone: body.timezone } : {})
     };
-    const record = await this.prisma.workspaceUserPreference.upsert({
-      where: {
-        workspaceId_userId_scopeRole: {
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      const record = await this.prisma.workspaceUserPreference.upsert({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId: workspace.workspace.id,
+            userId,
+            scopeRole
+          }
+        },
+        update: {
+          locale: this.readString(next.locale) || null,
+          currency: this.readString(next.currency) || null,
+          timezone: this.readString(next.timezone) || null
+        },
+        create: {
           workspaceId: workspace.workspace.id,
           userId,
-          scopeRole
+          scopeRole,
+          locale: this.readString(next.locale) || null,
+          currency: this.readString(next.currency) || null,
+          timezone: this.readString(next.timezone) || null
         }
-      },
-      update: {
-        locale: this.readString(next.locale) || null,
-        currency: this.readString(next.currency) || null,
-        timezone: this.readString(next.timezone) || null
-      },
-      create: {
-        workspaceId: workspace.workspace.id,
+      });
+      await this.audit.log({
         userId,
-        scopeRole,
-        locale: this.readString(next.locale) || null,
-        currency: this.readString(next.currency) || null,
-        timezone: this.readString(next.timezone) || null
-      }
-    });
-    await this.audit.log({
-      userId,
-      action: 'settings.preferences_updated',
-      entityType: 'workspace_user_preference',
-      entityId: 'preferences',
-      route: '/api/settings/preferences',
-      method: 'PATCH',
-      statusCode: 200
-    });
-    return {
-      locale: record.locale,
-      currency: record.currency,
-      timezone: record.timezone
-    };
+        action: 'settings.preferences_updated',
+        entityType: 'workspace_user_preference',
+        entityId: 'preferences',
+        route: '/api/settings/preferences',
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return {
+        locale: record.locale,
+        currency: record.currency,
+        timezone: record.timezone
+      };
+    } catch {
+      const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(scopeRole, 'preferences'), next);
+      await this.audit.log({
+        userId,
+        action: 'settings.preferences_updated',
+        entityType: 'workspace_setting',
+        entityId: 'preferences',
+        route: '/api/settings/preferences',
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return record.payload as Record<string, unknown>;
+    }
   }
   uiState(userId: string, role: string) {
     return this.getUserSetting(userId, this.scopedKey(role, 'ui_state'), {
@@ -669,7 +686,8 @@ export class SettingsService {
   }
   async updateUiState(userId: string, role: string, body: Record<string, unknown>) {
     const current = await this.uiState(userId, role);
-    const next = this.deepMerge(current, body);
+    const patch = this.isPlainObject(body) ? body : {};
+    const next = this.deepMerge(current, patch);
     const record = await this.upsertUserSetting(userId, this.scopedKey(role, 'ui_state'), next);
     await this.audit.log({
       userId,
@@ -679,7 +697,7 @@ export class SettingsService {
       route: '/api/settings/ui-state',
       method: 'PATCH',
       statusCode: 200,
-      metadata: { keys: Object.keys(body || {}) }
+      metadata: { keys: Object.keys(patch) }
     });
     return record.payload as Record<string, unknown>;
   }
@@ -1086,24 +1104,34 @@ export class SettingsService {
     return this.kyc(userId);
   }
   async savedViews(userId: string, role: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
-    await this.migrateLegacySavedViews(userId, workspace.workspace.id, scopeRole);
-    const group = await this.prisma.workspaceSavedViewGroup.findUnique({
-      where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
-      include: {
-        views: {
-          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.migrateLegacySavedViews(userId, workspace.workspace.id, scopeRole);
+      const group = await this.prisma.workspaceSavedViewGroup.findUnique({
+        where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
+        include: {
+          views: {
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+          }
         }
-      }
-    });
-    return {
-      views: (group?.views ?? []).map((view) => this.serializeStructuredPayload(view.payload, view.externalId)),
-      ...(this.isPlainObject(group?.metadata) ? { metadata: group?.metadata as Record<string, unknown> } : {})
-    };
+      });
+      return {
+        views: (group?.views ?? []).map((view) => this.serializeStructuredPayload(view.payload, view.externalId)),
+        ...(this.isPlainObject(group?.metadata) ? { metadata: group?.metadata as Record<string, unknown> } : {})
+      };
+    } catch {
+      const payload = await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'saved_views'));
+      const legacyViews = this.extractList(payload ?? { views: [] }, 'views').map((view, index) =>
+        this.serializeStructuredPayload(view, `saved-view-${index + 1}`)
+      );
+      return {
+        views: legacyViews,
+        ...(this.isPlainObject(payload?.metadata) ? { metadata: payload?.metadata as Record<string, unknown> } : {})
+      };
+    }
   }
   async updateSavedViews(userId: string, role: string, body: UpdateSavedViewsDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
     const current = await this.savedViews(userId, scopeRole);
     const next = {
@@ -1111,37 +1139,42 @@ export class SettingsService {
       ...(body.views ? { views: body.views } : {}),
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
-    await this.prisma.$transaction(async (tx) => {
-      const group = await tx.workspaceSavedViewGroup.upsert({
-        where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
-        update: {
-          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
-        },
-        create: {
-          workspaceId: workspace.workspace.id,
-          scopeRole,
-          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.prisma.$transaction(async (tx) => {
+        const group = await tx.workspaceSavedViewGroup.upsert({
+          where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
+          update: {
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+          },
+          create: {
+            workspaceId: workspace.workspace.id,
+            scopeRole,
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+          }
+        });
+        await tx.workspaceSavedView.deleteMany({
+          where: { groupDbId: group.dbId }
+        });
+        if (Array.isArray(next.views) && next.views.length > 0) {
+          await tx.workspaceSavedView.createMany({
+            data: next.views.map((view, index) => {
+              const payload = this.ensureObjectPayload(view);
+              return {
+                groupDbId: group.dbId,
+                createdByUserId: userId,
+                externalId: this.readString(payload.id) || randomUUID(),
+                name: this.readString(payload.name) || this.readString(payload.label) || `Saved view ${index + 1}`,
+                position: index,
+                payload: payload as Prisma.InputJsonValue
+              };
+            })
+          });
         }
       });
-      await tx.workspaceSavedView.deleteMany({
-        where: { groupDbId: group.dbId }
-      });
-      if (Array.isArray(next.views) && next.views.length > 0) {
-        await tx.workspaceSavedView.createMany({
-          data: next.views.map((view, index) => {
-            const payload = this.ensureObjectPayload(view);
-            return {
-              groupDbId: group.dbId,
-              createdByUserId: userId,
-              externalId: this.readString(payload.id) || randomUUID(),
-              name: this.readString(payload.name) || this.readString(payload.label) || null,
-              position: index,
-              payload: payload as Prisma.InputJsonValue
-            };
-          })
-        });
-      }
-    });
+    } catch {
+      await this.upsertWorkspaceSetting(userId, this.scopedKey(scopeRole, 'saved_views'), next);
+    }
     await this.audit.log({
       userId,
       action: 'settings.saved_views_updated',
@@ -2336,7 +2369,7 @@ export class SettingsService {
             groupDbId: group.dbId,
             createdByUserId: userId,
             externalId: this.readString(payloadRecord.id) || randomUUID(),
-            name: this.readString(payloadRecord.name) || this.readString(payloadRecord.label) || null,
+            name: this.readString(payloadRecord.name) || this.readString(payloadRecord.label) || `Saved view ${index + 1}`,
             position: index,
             payload: payloadRecord as Prisma.InputJsonValue
           };

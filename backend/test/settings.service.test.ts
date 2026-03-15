@@ -1046,6 +1046,109 @@ test('SettingsService.preferences migrates legacy scoped preferences into relati
   assert.equal((result as any).timezone, 'Africa/Nairobi');
 });
 
+test('SettingsService.preferences falls back to legacy workspace settings when relational preference storage fails', async () => {
+  const prisma = createPrismaStub({
+    workspaceSettings: [
+      {
+        userId: 'user-1',
+        key: 'seller:preferences',
+        payload: {
+          locale: 'en',
+          currency: 'USD',
+          timezone: 'Africa/Kampala'
+        }
+      }
+    ]
+  });
+  prisma.workspaceUserPreference.findUnique = async () => {
+    throw new Error('workspaceUserPreference unavailable');
+  };
+  const service = new SettingsService(prisma as any, { async log() {} } as any);
+
+  const result = await service.preferences('user-1', 'SELLER');
+
+  assert.equal((result as any).locale, 'en');
+  assert.equal((result as any).currency, 'USD');
+  assert.equal((result as any).timezone, 'Africa/Kampala');
+});
+
+test('SettingsService.preferences falls back to legacy workspace settings when workspace seed fails', async () => {
+  const prisma = createPrismaStub({
+    workspaceSettings: [
+      {
+        userId: 'user-1',
+        key: 'seller:preferences',
+        payload: {
+          locale: 'fr',
+          currency: 'EUR',
+          timezone: 'Europe/Paris'
+        }
+      }
+    ]
+  });
+  prisma.workspace.findUnique = async () => {
+    throw new Error('workspace table unavailable');
+  };
+  const service = new SettingsService(prisma as any, { async log() {} } as any);
+
+  const result = await service.preferences('user-1', 'SELLER');
+
+  assert.equal((result as any).locale, 'fr');
+  assert.equal((result as any).currency, 'EUR');
+  assert.equal((result as any).timezone, 'Europe/Paris');
+});
+
+test('SettingsService.savedViews falls back to legacy workspace settings when structured saved views fail', async () => {
+  const prisma = createPrismaStub({
+    workspaceSettings: [
+      {
+        userId: 'user-1',
+        key: 'seller:saved_views',
+        payload: {
+          views: [{ filters: { status: 'open' } }],
+          metadata: { defaultViewId: 'saved-view-1' }
+        }
+      }
+    ]
+  });
+  prisma.workspaceSavedViewGroup.findUnique = async () => {
+    throw new Error('workspaceSavedViewGroup unavailable');
+  };
+  const service = new SettingsService(prisma as any, { async log() {} } as any);
+
+  const result = await service.savedViews('user-1', 'SELLER');
+
+  assert.equal(result.views.length, 1);
+  assert.equal((result.views[0] as any).id, 'saved-view-1');
+  assert.equal((result.metadata as any).defaultViewId, 'saved-view-1');
+});
+
+test('SettingsService.savedViews falls back to legacy workspace settings when workspace seed fails', async () => {
+  const prisma = createPrismaStub({
+    workspaceSettings: [
+      {
+        userId: 'user-1',
+        key: 'seller:saved_views',
+        payload: {
+          views: [{ name: 'Compact', filters: { status: 'open' } }],
+          metadata: { defaultViewId: 'saved-view-1' }
+        }
+      }
+    ]
+  });
+  prisma.workspace.findUnique = async () => {
+    throw new Error('workspace table unavailable');
+  };
+  const service = new SettingsService(prisma as any, { async log() {} } as any);
+
+  const result = await service.savedViews('user-1', 'SELLER');
+
+  assert.equal(result.views.length, 1);
+  assert.equal((result.views[0] as any).id, 'saved-view-1');
+  assert.equal((result.views[0] as any).name, 'Compact');
+  assert.equal((result.metadata as any).defaultViewId, 'saved-view-1');
+});
+
 test('SettingsService.securitySettings migrates legacy security payloads and signOutDevice removes matching records', async () => {
   const prisma = createPrismaStub({
     workspaceSettings: [
