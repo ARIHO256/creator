@@ -97,3 +97,40 @@ test('JobsWorker publishes realtime events with shared stream metadata', async (
   assert.equal(emitted.userId, 'user-1');
   assert.equal(emitted.event.id, '123-1');
 });
+
+test('JobsWorker delegates queued auth registrations to AuthService', async () => {
+  let payloadSeen: any = null;
+
+  const worker = new JobsWorker(
+    {} as any,
+    createConfigService() as any,
+    {} as any,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      get() {
+        return {
+          async completeQueuedRegistration(payload: Record<string, unknown>) {
+            payloadSeen = payload;
+          }
+        };
+      }
+    } as any
+  );
+
+  await (worker as any).process({
+    type: 'AUTH_REGISTER',
+    payload: { email: 'seller@example.com', encryptedPassword: 'ciphertext' }
+  });
+
+  assert.equal(payloadSeen.email, 'seller@example.com');
+  assert.equal(payloadSeen.encryptedPassword, 'ciphertext');
+});

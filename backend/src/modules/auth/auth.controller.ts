@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, Inject, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Inject, Param, Post, Res } from '@nestjs/common';
 import type { FastifyReply } from 'fastify';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
@@ -65,6 +65,13 @@ export class AuthController {
   @Post('register')
   register(@Body() payload: RegisterDto) {
     return this.authService.register(payload);
+  }
+
+  @Public()
+  @RateLimit({ limit: 60, windowMs: 60_000 })
+  @Get('register/:requestId/status')
+  registerStatus(@Param('requestId') requestId: string) {
+    return this.authService.registrationStatus(requestId);
   }
 
   @Public()

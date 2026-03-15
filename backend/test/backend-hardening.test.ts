@@ -21,6 +21,8 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
   assert.equal(config.jobs.workerPollMs, 2000);
   assert.equal(config.realtime.streamServerEnabled, true);
   assert.equal(config.realtime.subscriberEnabled, true);
+  assert.equal(config.auth.registerQueueEnabled, true);
+  assert.equal(config.auth.registrationPollAfterMs, 1000);
 });
 
 test('world-class hardening migration creates upload session table', async () => {

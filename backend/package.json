@@ -13,6 +13,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed:loadtest": "node prisma/seed-loadtest.mjs",
+    "loadtest": "node scripts/load-test.mjs",
+    "loadtest:100": "LOAD_TEST_CONCURRENCY=100 LOAD_TEST_DURATION_SECONDS=30 node scripts/load-test.mjs",
+    "loadtest:150": "LOAD_TEST_CONCURRENCY=150 LOAD_TEST_DURATION_SECONDS=30 node scripts/load-test.mjs",
+    "loadtest:200": "LOAD_TEST_CONCURRENCY=200 LOAD_TEST_DURATION_SECONDS=30 node scripts/load-test.mjs",
     "seller:import-provider-service-taxonomy": "node --env-file=.env --import tsx scripts/import-provider-service-taxonomy.ts",
     "test": "tsx --test test/**/*.test.ts"
   },

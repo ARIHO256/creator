@@ -10,9 +10,10 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcrypt';
 import { Prisma, UserRole } from '@prisma/client';
-import { randomUUID, scryptSync, timingSafeEqual } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'crypto';
 import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RecoverAccountDto } from './dto/recover-account.dto.js';
 import { RefreshTokenDto } from './dto/refresh-token.dto.js';
@@ -27,82 +28,90 @@ type AuthUserRecord = Prisma.UserGetPayload<{
   };
 }>;
 
+type QueuedRegisterPayload = Omit<RegisterDto, 'password'> & {
+  email?: string;
+  phone?: string;
+  encryptedPassword: string;
+};
+
+type RegistrationJobRecord = {
+  id: string;
+  queue: string;
+  type: string;
+  status: string;
+  lastError?: string | null;
+};
+
+type NormalizedRegisterPayload = RegisterDto & {
+  email?: string;
+  phone?: string;
+};
+
 @Injectable()
 export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwtService: JwtService,
-    @Inject(ConfigService) private readonly configService: ConfigService
+    @Inject(ConfigService) private readonly configService: ConfigService,
+    private readonly jobsService: JobsService
   ) {}
 
   async register(payload: RegisterDto) {
-    if (!payload.email && !payload.phone) {
-      throw new BadRequestException('Either email or phone is required');
+    const normalized = this.normalizeRegisterPayload(payload);
+    if (!this.shouldQueueRegistration()) {
+      return this.registerSynchronously(normalized);
     }
 
-    const email = payload.email?.toLowerCase().trim();
-    const phone = payload.phone?.trim();
-    const existing = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
-      }
-    });
+    await this.assertRegistrationAvailable(normalized.email, normalized.phone);
 
-    if (existing) {
-      throw new BadRequestException('User with this email or phone already exists');
+    const dedupeKey = `auth:register:${this.registrationDedupeKey(normalized.email, normalized.phone)}`;
+    const existingJob = await this.prisma.backgroundJob.findUnique({
+      where: { dedupeKey }
+    });
+    if (existingJob) {
+      if (['FAILED', 'DEAD_LETTER', 'CANCELLED'].includes(existingJob.status)) {
+        const retried = await this.prisma.backgroundJob.update({
+          where: { id: existingJob.id },
+          data: {
+            status: 'PENDING',
+            attempts: 0,
+            lockedAt: null,
+            lockedBy: null,
+            lastError: null,
+            runAfter: new Date(),
+            payload: this.buildQueuedRegisterPayload(normalized) as Prisma.InputJsonValue
+          }
+        });
+        return this.serializeRegistrationJob(retried as RegistrationJobRecord);
+      }
+
+      return this.serializeRegistrationJob(existingJob as RegistrationJobRecord);
     }
 
-    const requestedRoles = this.resolveRequestedRoles(payload);
-    const creatorHandle = requestedRoles.includes('CREATOR')
-      ? await this.generateUniqueCreatorHandle(payload.handle || payload.name)
-      : null;
-    const sellerHandle = this.requiresSellerProfile(requestedRoles)
-      ? await this.generateUniqueSellerHandle(payload.sellerHandle || payload.handle || payload.name)
-      : null;
-    const passwordHash = await hash(payload.password, 12);
-
-    const user = await this.prisma.user.create({
-      data: {
-        email,
-        phone,
-        passwordHash,
-        role: (payload.role as UserRole | undefined) ?? requestedRoles[0],
-        roleAssignments: {
-          create: requestedRoles.map((role) => ({ role }))
-        },
-        creatorProfile: requestedRoles.includes('CREATOR')
-          ? {
-              create: {
-                name: payload.name,
-                handle: creatorHandle!,
-                tier: 'BRONZE'
-              }
-            }
-          : undefined,
-        sellerProfile: this.requiresSellerProfile(requestedRoles)
-          ? {
-              create: {
-                handle: sellerHandle!,
-                name: payload.sellerDisplayName ?? payload.name,
-                displayName: payload.sellerDisplayName ?? payload.name,
-                storefrontName: payload.sellerDisplayName ?? payload.name,
-                type: payload.sellerKind === 'PROVIDER' ? 'Provider' : 'Seller',
-                kind:
-                  (payload.sellerKind as 'SELLER' | 'PROVIDER' | 'BRAND' | undefined) ??
-                  (requestedRoles.includes(UserRole.PROVIDER) ? 'PROVIDER' : 'SELLER'),
-                category: requestedRoles.includes(UserRole.PROVIDER) ? 'Services' : 'General Merchandise'
-              }
-            }
-          : undefined
-      },
-      include: {
-        creatorProfile: true,
-        sellerProfile: true,
-        roleAssignments: true
-      }
+    const job = await this.jobsService.enqueue({
+      queue: 'auth',
+      type: 'AUTH_REGISTER',
+      dedupeKey,
+      payload: this.buildQueuedRegisterPayload(normalized)
     });
 
-    return this.issueTokens(user.id, user.email, user.role, this.getAssignedRoles(user));
+    return this.serializeRegistrationJob(job as RegistrationJobRecord);
+  }
+
+  async registrationStatus(requestId: string) {
+    const job = await this.jobsService.get(requestId);
+    if (job.type !== 'AUTH_REGISTER' || job.queue !== 'auth') {
+      throw new NotFoundException('Registration request not found');
+    }
+    return this.serializeRegistrationJob(job as RegistrationJobRecord);
+  }
+
+  async completeQueuedRegistration(payload: QueuedRegisterPayload) {
+    const registerPayload: RegisterDto = {
+      ...payload,
+      password: this.decryptRegistrationPassword(payload.encryptedPassword)
+    };
+    await this.registerSynchronously(registerPayload, { issueTokens: false });
   }
 
   async login(payload: LoginDto) {
@@ -280,6 +289,80 @@ export class AuthService {
     });
 
     return this.issueTokens(updated.id, user.email, updated.role, roles);
+  }
+
+  private async registerSynchronously(
+    payload: RegisterDto,
+    options: { issueTokens?: boolean } = {}
+  ) {
+    const normalized = this.normalizeRegisterPayload(payload);
+    await this.assertRegistrationAvailable(normalized.email, normalized.phone);
+
+    const requestedRoles = this.resolveRequestedRoles(normalized);
+    const creatorHandle = requestedRoles.includes('CREATOR')
+      ? await this.generateUniqueCreatorHandle(normalized.handle || normalized.name)
+      : null;
+    const sellerHandle = this.requiresSellerProfile(requestedRoles)
+      ? await this.generateUniqueSellerHandle(normalized.sellerHandle || normalized.handle || normalized.name)
+      : null;
+    const passwordHash = await hash(normalized.password, 12);
+
+    try {
+      const user = await this.prisma.user.create({
+        data: {
+          email: normalized.email,
+          phone: normalized.phone,
+          passwordHash,
+          role: (normalized.role as UserRole | undefined) ?? requestedRoles[0],
+          roleAssignments: {
+            create: requestedRoles.map((role) => ({ role }))
+          },
+          creatorProfile: requestedRoles.includes('CREATOR')
+            ? {
+                create: {
+                  name: normalized.name,
+                  handle: creatorHandle!,
+                  tier: 'BRONZE'
+                }
+              }
+            : undefined,
+          sellerProfile: this.requiresSellerProfile(requestedRoles)
+            ? {
+                create: {
+                  handle: sellerHandle!,
+                  name: normalized.sellerDisplayName ?? normalized.name,
+                  displayName: normalized.sellerDisplayName ?? normalized.name,
+                  storefrontName: normalized.sellerDisplayName ?? normalized.name,
+                  type: normalized.sellerKind === 'PROVIDER' ? 'Provider' : 'Seller',
+                  kind:
+                    (normalized.sellerKind as 'SELLER' | 'PROVIDER' | 'BRAND' | undefined) ??
+                    (requestedRoles.includes(UserRole.PROVIDER) ? 'PROVIDER' : 'SELLER'),
+                  category: requestedRoles.includes(UserRole.PROVIDER) ? 'Services' : 'General Merchandise'
+                }
+              }
+            : undefined
+        },
+        include: {
+          creatorProfile: true,
+          sellerProfile: true,
+          roleAssignments: true
+        }
+      });
+
+      if (options.issueTokens === false) {
+        return {
+          userId: user.id,
+          role: user.role
+        };
+      }
+
+      return this.issueTokens(user.id, user.email, user.role, this.getAssignedRoles(user));
+    } catch (error: any) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new BadRequestException('User with this email or phone already exists');
+      }
+      throw error;
+    }
   }
 
   private async issueTokens(
@@ -520,6 +603,105 @@ export class AuthService {
       .replace(/^\.+|\.+$/g, '');
 
     return normalized || 'workspace';
+  }
+
+  private normalizeRegisterPayload(payload: RegisterDto): NormalizedRegisterPayload {
+    if (!payload.email && !payload.phone) {
+      throw new BadRequestException('Either email or phone is required');
+    }
+
+    return {
+      ...payload,
+      email: payload.email?.toLowerCase().trim(),
+      phone: payload.phone?.trim(),
+      name: String(payload.name || '').trim()
+    };
+  }
+
+  private buildQueuedRegisterPayload(payload: NormalizedRegisterPayload): QueuedRegisterPayload {
+    const { password, ...rest } = payload;
+    return {
+      ...rest,
+      encryptedPassword: this.encryptRegistrationPassword(password)
+    };
+  }
+
+  private async assertRegistrationAvailable(email?: string, phone?: string) {
+    const existing = await this.findUserByIdentity(email, phone);
+    if (existing) {
+      throw new BadRequestException('User with this email or phone already exists');
+    }
+  }
+
+  private findUserByIdentity(email?: string, phone?: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
+      }
+    });
+  }
+
+  private shouldQueueRegistration() {
+    const queueEnabled = this.configService.get<boolean>('auth.registerQueueEnabled');
+    const workerEnabled = this.configService.get<boolean>('jobs.workerEnabled');
+    return (queueEnabled ?? true) && (workerEnabled ?? true);
+  }
+
+  private registrationDedupeKey(email?: string, phone?: string) {
+    return email || phone || randomUUID();
+  }
+
+  private serializeRegistrationJob(job: RegistrationJobRecord) {
+    const statusMap = {
+      PENDING: 'PENDING',
+      PROCESSING: 'PROCESSING',
+      COMPLETED: 'READY',
+      FAILED: 'FAILED',
+      DEAD_LETTER: 'FAILED',
+      CANCELLED: 'FAILED'
+    } as const;
+    const status = statusMap[job.status as keyof typeof statusMap] ?? 'PENDING';
+    const failed = status === 'FAILED';
+
+    return {
+      registrationQueued: true,
+      requestId: job.id,
+      status,
+      readyToLogin: status === 'READY',
+      failed,
+      pollAfterMs: Number(this.configService.get('auth.registrationPollAfterMs') ?? 1000),
+      ...(failed ? { errorMessage: job.lastError ?? 'Registration failed' } : {})
+    };
+  }
+
+  private encryptRegistrationPassword(password: string) {
+    const secret = String(this.configService.get('auth.registrationQueueSecret') ?? '');
+    const key = scryptSync(secret, 'mldz-auth-register', 32);
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return [iv.toString('base64url'), tag.toString('base64url'), encrypted.toString('base64url')].join('.');
+  }
+
+  private decryptRegistrationPassword(payload: string) {
+    const [ivRaw, tagRaw, encryptedRaw] = String(payload || '').split('.');
+    if (!ivRaw || !tagRaw || !encryptedRaw) {
+      throw new BadRequestException('Queued registration payload is invalid');
+    }
+
+    const secret = String(this.configService.get('auth.registrationQueueSecret') ?? '');
+    const key = scryptSync(secret, 'mldz-auth-register', 32);
+    const decipher = createDecipheriv(
+      'aes-256-gcm',
+      key,
+      Buffer.from(ivRaw, 'base64url')
+    );
+    decipher.setAuthTag(Buffer.from(tagRaw, 'base64url'));
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedRaw, 'base64url')),
+      decipher.final()
+    ]).toString('utf8');
   }
 
   private verifyLegacyPassword(password: string, storedHash: string) {

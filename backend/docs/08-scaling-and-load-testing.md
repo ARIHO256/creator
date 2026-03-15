@@ -31,6 +31,50 @@ Optional environment variables:
 - `SEED_REVIEWS_PER_SELLER` (default `5 * SEED_SCALE`)
 - `SEED_RESET=true` to clear existing data before seeding
 
+## Built-In Load Harness
+The backend now includes a dependency-free load runner:
+```
+cd backend
+npm run loadtest:100
+npm run loadtest:150
+npm run loadtest:200
+```
+
+Useful environment variables:
+- `LOAD_TEST_BASE_URL` (default `http://127.0.0.1:4010`)
+- `LOAD_TEST_SCENARIO=public|seller` (default `public`)
+- `LOAD_TEST_PATHS=/health,/api/ready,...` to override scenario defaults
+- `LOAD_TEST_METHOD` (default `GET`)
+- `LOAD_TEST_TIMEOUT_MS` (default `10000`)
+- `LOAD_TEST_BEARER_TOKEN` for auth-enabled environments
+- `LOAD_TEST_COOKIE` to send auth/session cookies
+
+Default `public` scenario routes:
+- `/health`
+- `/api/ready`
+- `/api/routes`
+- `/api/landing/content`
+- `/api/sellers?limit=20`
+- `/api/marketplace/sellers?limit=20`
+- `/api/taxonomy/trees`
+
+Default `seller` scenario routes:
+- `/api/ready`
+- `/api/app/bootstrap`
+- `/api/dashboard/feed`
+- `/api/dashboard/summary`
+- `/api/dashboard/my-day`
+
+Notes:
+- The `seller` scenario requires either a valid bearer token/cookie or server-side `AUTH_DISABLED=true`.
+- For meaningful seller metrics under `AUTH_DISABLED=true`, point `AUTH_DEV_USER_ID` at a real seeded user.
+- The script prints elapsed time, requests per second, error rate, p50/p95/p99 latency, and HTTP status distribution.
+
+Recommended acceptance targets before calling the app safe for 100+ active users:
+- `100` concurrency: `0%` timeouts, `< 1%` errors, `p95 < 400ms`
+- `150` concurrency: `0%` timeouts, `< 1%` errors, `p95 < 700ms`
+- `200` concurrency: `< 1%` errors, `p95 < 1000ms`, no worker dead-letter spike
+
 ## Worker Deployment
 Background workers use the JobsService and background job table.
 Recommended worker settings:

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { JobsService } from './jobs.service.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { MetricsService } from '../../platform/metrics/metrics.service.js';
@@ -41,7 +42,8 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly regulatoryAutomation?: RegulatoryAutomationService,
     @Optional() private readonly exportsService?: ExportsService,
     @Optional() private readonly catalogService?: CatalogService,
-    @Optional() private readonly searchService?: SearchService
+    @Optional() private readonly searchService?: SearchService,
+    @Optional() private readonly moduleRef?: ModuleRef
   ) {}
 
   onModuleInit() {
@@ -141,6 +143,14 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
       case 'WHOLESALE_QUOTE_CREATED':
       case 'WHOLESALE_QUOTE_UPDATED':
         // Placeholder for actual processing (e.g., notify buyer/seller, analytics)
+        return;
+      case 'AUTH_REGISTER':
+        {
+          const { AuthService } = await import('../auth/auth.service.js');
+          const authService = this.moduleRef?.get(AuthService, { strict: false });
+          if (!authService) return;
+          await authService.completeQueuedRegistration(job.payload as any);
+        }
         return;
       case 'AUDIT_EVENT':
         if (this.auditService) {

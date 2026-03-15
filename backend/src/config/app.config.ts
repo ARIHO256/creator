@@ -169,6 +169,16 @@ export default () => ({
     disabled: ["1", "true", "yes", "on"].includes(
       String(process.env.AUTH_DISABLED ?? "").toLowerCase(),
     ),
+    registerQueueEnabled: !["0", "false", "no", "off"].includes(
+      String(process.env.AUTH_REGISTER_QUEUE_ENABLED ?? "true").toLowerCase(),
+    ),
+    registrationQueueSecret:
+      process.env.AUTH_REGISTER_QUEUE_SECRET ??
+      process.env.JWT_ACCESS_SECRET ??
+      "change-me-registration-queue-secret",
+    registrationPollAfterMs: Number(
+      process.env.AUTH_REGISTER_POLL_AFTER_MS ?? "1000",
+    ),
     devUserId: process.env.AUTH_DEV_USER_ID ?? "user_ronald",
     devUserRole: process.env.AUTH_DEV_USER_ROLE ?? "CREATOR",
     accessSecret: process.env.JWT_ACCESS_SECRET ?? "change-me-access-secret",
