@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: creatorapp
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api-deployment.yaml
+  - worker-deployment.yaml
+  - worker-audit-deployment.yaml
+  - worker-moderation-deployment.yaml
+  - worker-realtime-deployment.yaml
+  - api-service.yaml
+  - hpa-api.yaml
+  - pdb-api.yaml
+  - scaledobject-worker.yaml
+  - scaledobject-worker-audit.yaml
+  - scaledobject-worker-moderation.yaml
+  - scaledobject-worker-realtime.yaml
+  - podmonitor.yaml
+  - gateway.yaml

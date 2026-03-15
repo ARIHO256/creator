@@ -3,7 +3,9 @@ import { Prisma, SellerKind, UserRole } from '@prisma/client';
 import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
 import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
-import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { CacheService } from '../../platform/cache/cache.service.js';
+import { PublicReadCacheService } from '../../platform/cache/public-read-cache.service.js';
+import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { SearchQueryDto } from './dto/search-query.dto.js';
 import { CreateInviteDto } from './dto/create-invite.dto.js';
@@ -25,18 +27,31 @@ function moneyLike(value: number, currency = 'USD') {
 export class DiscoveryService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly searchService: SearchService
+    private readonly prismaRead: ReadPrismaService,
+    private readonly searchService: SearchService,
+    private readonly cache: CacheService,
+    private readonly publicReadCache: PublicReadCacheService
   ) {}
 
   async sellers(query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
-    const sellers = await this.prisma.seller.findMany({
-      skip,
-      take,
-      orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
-    });
+    return this.cache.getOrSet(
+      this.publicReadCache.discoverySellersKey(skip, take),
+      this.publicReadCache.publicReadTtlMs(),
+      async () => {
+        const sellers = await this.prismaRead.seller.findMany({
+          skip,
+          take,
+          orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
+        });
 
-    return sellers.map((seller) => serializePublicSeller(seller));
+        return sellers.map((seller) => serializePublicSeller(seller));
+      }
+    );
+  }
+
+  async warmPublicDiscoveryCache() {
+    await this.sellers({ limit: this.publicReadCache.warmListingsLimit() } as ListQueryDto);
   }
 
   async followSeller(userId: string, sellerId: string, follow: boolean) {

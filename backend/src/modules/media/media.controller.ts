@@ -5,6 +5,7 @@ import { RequestUser } from '../../common/types/request-user.type.js';
 import { CompleteUploadSessionDto } from './dto/complete-upload-session.dto.js';
 import { CreateMediaAssetDto } from './dto/create-media-asset.dto.js';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto.js';
+import { UpdateMediaAssetDto } from './dto/update-media-asset.dto.js';
 import { MediaService } from './media.service.js';
 
 @Controller('media')
@@ -48,7 +49,7 @@ export class MediaController {
   }
 
   @Patch('assets/:id')
-  update(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: Record<string, unknown>) {
+  update(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: UpdateMediaAssetDto) {
     return this.mediaService.update(user.sub, id, payload);
   }
 

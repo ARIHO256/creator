@@ -12,11 +12,11 @@ export class RealtimeStreamController {
 
   @Get('realtime/stream')
   @RateLimit({ limit: 10, windowMs: 60_000 })
-  stream(
+  async stream(
     @CurrentUser() user: RequestUser,
     @Headers('last-event-id') lastEventId: string | undefined,
     @Res({ passthrough: true }) reply: FastifyReply
   ) {
-    this.streamService.open(user.sub, reply, lastEventId);
+    await this.streamService.open(user.sub, reply, lastEventId);
   }
 }

@@ -1,8 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ListQueryDto, normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
-import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { CacheService } from '../../platform/cache/cache.service.js';
+import { PublicReadCacheService } from '../../platform/cache/public-read-cache.service.js';
+import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
 import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
 import { SearchService } from '../search/search.service.js';
@@ -10,12 +13,36 @@ import { UpdateStorefrontDto } from './dto/update-storefront.dto.js';
 
 @Injectable()
 export class StorefrontService {
+  private readonly prismaReadClient: ReadPrismaService;
+  private readonly cacheLayer: CacheService;
+  private readonly publicCache: PublicReadCacheService;
+  private readonly jobQueue: JobsService;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly sellersService: SellersService,
     private readonly taxonomyService: TaxonomyService,
-    private readonly searchService: SearchService
-  ) {}
+    private readonly searchService: SearchService,
+    @Optional() prismaRead?: ReadPrismaService,
+    @Optional() cache?: CacheService,
+    @Optional() publicReadCache?: PublicReadCacheService,
+    @Optional() jobsService?: JobsService
+  ) {
+    this.prismaReadClient = prismaRead ?? (prisma as unknown as ReadPrismaService);
+    this.cacheLayer = cache ?? ({
+      getOrSet: async (_key: string, _ttlMs: number, loader: () => Promise<unknown>) => loader()
+    } as CacheService);
+    this.publicCache =
+      publicReadCache ??
+      new PublicReadCacheService(
+        { get: () => undefined } as any,
+        {
+          invalidate: async () => undefined,
+          invalidatePrefix: async () => undefined
+        } as any
+      );
+    this.jobQueue = jobsService ?? ({ enqueue: async () => null } as unknown as JobsService);
+  }
 
   async getMyStorefront(userId: string) {
     const seller = await this.sellersService.ensureSellerProfile(userId);
@@ -59,6 +86,7 @@ export class StorefrontService {
     const slug = payload.slug
       ? await this.ensureUniqueSlug(payload.slug, existing?.id)
       : existing?.slug ?? (await this.ensureUniqueSlug(seller.handle ?? seller.storefrontName ?? seller.name));
+    const previousSlug = existing?.slug ?? null;
 
     const data: Prisma.StorefrontUncheckedUpdateInput = {
       slug,
@@ -96,44 +124,86 @@ export class StorefrontService {
       });
       if (refreshed) {
         await this.searchService.enqueueStorefrontIndex(refreshed.id);
+        await this.invalidateAndWarmPublicStorefront(previousSlug, refreshed.slug, refreshed.isPublished);
         return this.serializeStorefront(refreshed);
       }
     }
     await this.searchService.enqueueStorefrontIndex(updated.id);
+    await this.invalidateAndWarmPublicStorefront(previousSlug, updated.slug, updated.isPublished);
     return this.serializeStorefront(updated);
   }
 
   async getPublicStorefront(handle: string) {
-    const storefront = await this.resolveStorefront(handle);
-    if (!storefront || !storefront.isPublished) {
+    const cached = await this.cacheLayer.getOrSet(
+      this.publicCache.storefrontKey(handle),
+      this.publicCache.storefrontTtlMs(),
+      async () => {
+        const storefront = await this.resolveStorefront(handle, this.prismaReadClient);
+        if (!storefront || !storefront.isPublished) {
+          return { found: false as const };
+        }
+
+        return {
+          found: true as const,
+          storefront: this.serializeStorefront(storefront)
+        };
+      }
+    );
+
+    if (!cached.found) {
       throw new NotFoundException('Storefront not found');
     }
 
-    return this.serializeStorefront(storefront);
+    return cached.storefront;
   }
 
   async listStorefrontListings(handle: string, query?: ListQueryDto) {
-    const storefront = await this.resolveStorefront(handle);
-    if (!storefront || !storefront.isPublished) {
+    const { skip, take } = normalizeListQuery(query);
+    const cached = await this.cacheLayer.getOrSet(
+      this.publicCache.storefrontListingsKey(handle, skip, take),
+      this.publicCache.publicReadTtlMs(),
+      async () => {
+        const storefront = await this.resolveStorefront(handle, this.prismaReadClient);
+        if (!storefront || !storefront.isPublished) {
+          return { found: false as const };
+        }
+
+        const listings = await this.prismaReadClient.marketplaceListing.findMany({
+          where: {
+            sellerId: storefront.sellerId,
+            status: 'ACTIVE'
+          },
+          skip,
+          take,
+          include: { taxonomyLinks: true, seller: true },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        return {
+          found: true as const,
+          listings: listings.map((listing) => serializeListingPublic(listing as any))
+        };
+      }
+    );
+
+    if (!cached.found) {
       throw new NotFoundException('Storefront not found');
     }
 
-    const { skip, take } = normalizeListQuery(query);
-    const listings = await this.prisma.marketplaceListing.findMany({
-      where: {
-        sellerId: storefront.sellerId,
-        status: 'ACTIVE'
-      },
-      skip,
-      take,
-      include: { taxonomyLinks: true, seller: true },
-      orderBy: { createdAt: 'desc' }
-    });
-    return listings.map((listing) => serializeListingPublic(listing as any));
+    return cached.listings;
   }
 
-  private async resolveStorefront(handle: string) {
-    return this.prisma.storefront.findFirst({
+  async warmPublicStorefrontCache(handle: string) {
+    await Promise.all([
+      this.getPublicStorefront(handle).catch(() => null),
+      this.listStorefrontListings(handle, { limit: this.publicCache.warmListingsLimit() } as ListQueryDto).catch(
+        () => null
+      )
+    ]);
+  }
+
+  private async resolveStorefront(handle: string, client: PrismaService | ReadPrismaService = this.prismaReadClient) {
+    return client.storefront.findFirst({
       where: {
         OR: [{ slug: handle }, { seller: { handle } }]
       },
@@ -155,6 +225,29 @@ export class StorefrontService {
     }
 
     return `${base}-${Date.now()}`;
+  }
+
+  private async invalidateAndWarmPublicStorefront(
+    previousSlug: string | null,
+    nextSlug: string,
+    shouldWarm: boolean
+  ) {
+    const handles = new Set([previousSlug, nextSlug].filter(Boolean) as string[]);
+    await Promise.all(Array.from(handles).map((handle) => this.publicCache.invalidateStorefront(handle)));
+
+    if (!shouldWarm) {
+      return;
+    }
+
+    await this.jobQueue.enqueue({
+      queue: 'cache',
+      type: 'CACHE_WARM_PUBLIC_READ',
+      payload: {
+        target: 'storefront',
+        handle: nextSlug
+      },
+      dedupeKey: `cache-warm:storefront:${nextSlug}`
+    });
   }
 
   private normalizeSlug(value: string) {

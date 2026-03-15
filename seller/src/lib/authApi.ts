@@ -9,6 +9,18 @@ type LoginResponse = {
   roles: string[];
 };
 
+type RegistrationResponse =
+  | LoginResponse
+  | {
+      registrationQueued: true;
+      requestId: string;
+      status: "PENDING" | "PROCESSING" | "READY" | "FAILED";
+      readyToLogin: boolean;
+      failed: boolean;
+      pollAfterMs: number;
+      errorMessage?: string;
+    };
+
 type MeResponse = {
   id: string;
   email?: string | null;
@@ -60,6 +72,39 @@ async function fetchProfile(accessToken: string) {
   });
 }
 
+function isQueuedRegistration(payload: RegistrationResponse): payload is Extract<RegistrationResponse, { registrationQueued: true }> {
+  return typeof payload === "object" && payload !== null && "registrationQueued" in payload;
+}
+
+async function signInWithPassword(identifier: string, password: string) {
+  const tokens = await request<LoginResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ ...parseIdentifier(identifier), password }),
+  });
+  const profile = await fetchProfile(tokens.accessToken);
+  return mapSession(tokens, profile);
+}
+
+async function waitForQueuedRegistration(requestId: string, identifier: string, password: string) {
+  const deadline = Date.now() + 60_000;
+
+  while (Date.now() < deadline) {
+    const status = await request<Extract<RegistrationResponse, { registrationQueued: true }>>(
+      `/api/auth/register/${requestId}/status`
+    );
+    if (status.failed) {
+      throw new Error(status.errorMessage || "Registration failed");
+    }
+    if (status.readyToLogin) {
+      return signInWithPassword(identifier, password);
+    }
+    const waitMs = Math.max(250, Math.min(Number(status.pollAfterMs || 1000), 3000));
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  throw new Error("Account creation is still processing. Please try signing in in a moment.");
+}
+
 function mapSession(tokens: LoginResponse, profile: MeResponse): Session {
   const role = normalizeRole(profile.role || tokens.role);
   const roles = Array.isArray(profile.roles) && profile.roles.length
@@ -107,13 +152,7 @@ export const authClient = {
     password: string;
     role: UserRole;
   }) {
-    const payload = parseIdentifier(identifier);
-    const tokens = await request<LoginResponse>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ ...payload, password }),
-    });
-    const profile = await fetchProfile(tokens.accessToken);
-    return mapSession(tokens, profile);
+    return signInWithPassword(identifier, password);
   },
 
   async signUp({
@@ -133,7 +172,8 @@ export const authClient = {
       throw new Error("Password is required for registration");
     }
     const backendRole = role === "provider" ? "PROVIDER" : "SELLER";
-    const tokens = await request<LoginResponse>("/api/auth/register", {
+    const identifier = email?.trim().toLowerCase() || phone?.trim() || "";
+    const response = await request<RegistrationResponse>("/api/auth/register", {
       method: "POST",
       body: JSON.stringify({
         name,
@@ -146,8 +186,11 @@ export const authClient = {
         sellerDisplayName: name,
       }),
     });
-    const profile = await fetchProfile(tokens.accessToken);
-    return mapSession(tokens, profile);
+    if (isQueuedRegistration(response)) {
+      return waitForQueuedRegistration(response.requestId, identifier, password);
+    }
+    const profile = await fetchProfile(response.accessToken);
+    return mapSession(response, profile);
   },
 
   async signOut(refreshToken?: string, accessToken?: string) {

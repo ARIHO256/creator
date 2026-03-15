@@ -8,6 +8,7 @@ import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CompleteUploadSessionDto } from './dto/complete-upload-session.dto.js';
 import { CreateMediaAssetDto } from './dto/create-media-asset.dto.js';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto.js';
+import { UpdateMediaAssetDto } from './dto/update-media-asset.dto.js';
 
 @Injectable()
 export class MediaService {
@@ -283,7 +284,7 @@ export class MediaService {
     });
   }
 
-  async update(userId: string, id: string, payload: Record<string, unknown>) {
+  async update(userId: string, id: string, payload: UpdateMediaAssetDto) {
     const asset = await this.prisma.mediaAsset.findFirst({
       where: { id, userId }
     });

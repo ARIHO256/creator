@@ -10,22 +10,45 @@ import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout
 import { MetricsInterceptor } from './common/interceptors/metrics.interceptor.js';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor.js';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor.js';
+import { CacheControlInterceptor } from './common/interceptors/cache-control.interceptor.js';
 import { buildSecurityHeaders } from './platform/security-headers.js';
+import { bootstrapTelemetry, shutdownTelemetry } from './platform/telemetry/telemetry.js';
 
 async function bootstrap() {
   const port = Number(process.env.PORT ?? '4010');
   const host = process.env.HOST ?? '0.0.0.0';
   const bodyLimit = Number(process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`);
+  const keepAliveTimeout = Number(process.env.KEEP_ALIVE_TIMEOUT_MS ?? '72000');
+  const connectionTimeout = Number(process.env.CONNECTION_TIMEOUT_MS ?? '5000');
+  const maxRequestsPerSocket = Number(process.env.MAX_REQUESTS_PER_SOCKET ?? '1000');
   const loadTestEnabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.LOAD_TEST_MODE ?? '').toLowerCase());
   const fastifyLogger =
     !loadTestEnabled &&
     !['0', 'false', 'no', 'off'].includes(String(process.env.FASTIFY_LOGGER ?? 'true').toLowerCase());
+  const trustProxy = !['0', 'false', 'no', 'off'].includes(String(process.env.TRUST_PROXY ?? 'true').toLowerCase());
+
+  await bootstrapTelemetry({
+    enabled: !['0', 'false', 'no', 'off'].includes(String(process.env.OTEL_ENABLED ?? 'false').toLowerCase()),
+    serviceName: process.env.OTEL_SERVICE_NAME ?? 'mldz-backend',
+    serviceVersion: process.env.OTEL_SERVICE_VERSION ?? '2.0.0',
+    exporterUrl: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? '',
+    deploymentEnvironment: process.env.NODE_ENV ?? 'development',
+    region: process.env.APP_REGION ?? 'local'
+  });
 
   console.info(`[bootstrap] creating Nest app on ${host}:${port}`);
 
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter({ logger: fastifyLogger, bodyLimit }),
+    new FastifyAdapter({
+      logger: fastifyLogger,
+      bodyLimit,
+      trustProxy,
+      keepAliveTimeout,
+      connectionTimeout,
+      maxRequestsPerSocket,
+      requestTimeout: Number(process.env.REQUEST_TIMEOUT_MS ?? '15000')
+    }),
     { logger: ['error', 'warn'] }
   );
   app.useLogger(['error', 'warn']);
@@ -111,6 +134,7 @@ async function bootstrap() {
   );
   app.useGlobalInterceptors(
     new ApiResponseInterceptor(),
+    app.get(CacheControlInterceptor),
     app.get(RequestTimeoutInterceptor),
     app.get(MetricsInterceptor),
     app.get(AuditInterceptor),
@@ -127,5 +151,6 @@ async function bootstrap() {
 bootstrap().catch((error) => {
   console.error('[bootstrap] fatal startup error');
   console.error(error);
+  void shutdownTelemetry();
   process.exit(1);
 });

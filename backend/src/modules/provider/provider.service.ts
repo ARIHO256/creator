@@ -356,8 +356,28 @@ export class ProviderService {
     });
     return { reviews };
   }
-  async disputes(_userId: string) {
-    return { disputes: [] };
+  async disputes(userId: string) {
+    const disputes = await this.prisma.providerDispute.findMany({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return {
+      disputes: disputes.map((dispute) => ({
+        id: dispute.id,
+        status: dispute.status,
+        title: dispute.title,
+        priority: dispute.priority,
+        subjectType: dispute.subjectType,
+        subjectId: dispute.subjectId,
+        openedAt: dispute.openedAt.toISOString(),
+        resolvedAt: dispute.resolvedAt?.toISOString() ?? null,
+        createdAt: dispute.createdAt.toISOString(),
+        updatedAt: dispute.updatedAt.toISOString(),
+        ...(dispute.payload && typeof dispute.payload === 'object' && !Array.isArray(dispute.payload)
+          ? (dispute.payload as Record<string, unknown>)
+          : {})
+      }))
+    };
   }
 
   private ensurePayload(payload: unknown) {

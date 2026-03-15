@@ -1,0 +1,46 @@
+name: Backend Platform
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "infra/**"
+      - ".github/workflows/backend-platform.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "infra/**"
+      - ".github/workflows/backend-platform.yml"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run build
+      - run: npm test
+      - run: node --check loadtest/k6-global-read.js
+      - run: node --check loadtest/k6-cached-public.js
+      - run: node --check loadtest/k6-mixed-traffic.js
+      - run: node --check loadtest/k6-regional-distribution.js
+      - run: python3 -m py_compile loadtest/locust-global.py loadtest/locust-mixed.py
+      - run: docker build -t creatorapp-backend:test .
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: imranismail/setup-kustomize@v2
+      - run: kustomize build infra/k8s/base > /tmp/creatorapp-manifests.yaml

@@ -57,8 +57,36 @@ export class AuditService {
   }
 
   async persist(event: AuditEventInput) {
+    await this.persistMany([event]);
+  }
+
+  async persistMany(events: AuditEventInput[]) {
+    if (!events.length) {
+      return;
+    }
+
     await this.prisma.auditEvent.create({
       data: {
+        userId: events[0].userId ?? null,
+        role: events[0].role ?? null,
+        action: events[0].action,
+        entityType: events[0].entityType ?? null,
+        entityId: events[0].entityId ?? null,
+        route: events[0].route,
+        method: events[0].method,
+        statusCode: events[0].statusCode,
+        requestId: events[0].requestId ?? null,
+        ip: events[0].ip ?? null,
+        userAgent: events[0].userAgent ?? null,
+        metadata: (events[0].metadata ?? null) as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined
+      }
+    });
+    if (events.length === 1) {
+      return;
+    }
+
+    await this.prisma.auditEvent.createMany({
+      data: events.slice(1).map((event) => ({
         userId: event.userId ?? null,
         role: event.role ?? null,
         action: event.action,
@@ -71,7 +99,7 @@ export class AuditService {
         ip: event.ip ?? null,
         userAgent: event.userAgent ?? null,
         metadata: (event.metadata ?? null) as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined
-      }
+      }))
     });
   }
 

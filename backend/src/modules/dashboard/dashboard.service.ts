@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DisputeStatus, OrderStatus, Prisma, ReturnStatus, SellerKind, TransactionStatus, UserRole } from '@prisma/client';
 import { CacheService } from '../../platform/cache/cache.service.js';
-import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { PublicReadCacheService } from '../../platform/cache/public-read-cache.service.js';
+import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { JobsWorker } from '../jobs/jobs.worker.js';
 
@@ -11,11 +12,13 @@ const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_m
 @Injectable()
 export class DashboardService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prismaWrite: PrismaService,
+    private readonly prisma: ReadPrismaService,
     private readonly configService: ConfigService,
     private readonly jobsService: JobsService,
     private readonly jobsWorker: JobsWorker,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly publicReadCache: PublicReadCacheService
   ) {}
 
   health() {
@@ -32,11 +35,15 @@ export class DashboardService {
 
   async ready() {
     const startedAt = process.hrtime.bigint();
-    const [_, jobsMetrics] = await Promise.all([
+    const readStartedAt = process.hrtime.bigint();
+    const readConnection = this.prisma.readConnectionStatus();
+    const [_, __, jobsMetrics] = await Promise.all([
+      this.prismaWrite.$queryRaw`SELECT 1`,
       this.prisma.$queryRaw`SELECT 1`,
       this.jobsService.metrics()
     ]);
     const databaseLatencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const readDatabaseLatencyMs = Number(process.hrtime.bigint() - readStartedAt) / 1_000_000;
     const warnings = this.securityWarnings();
 
     return {
@@ -46,6 +53,15 @@ export class DashboardService {
         database: {
           status: 'up',
           latencyMs: Number(databaseLatencyMs.toFixed(1))
+        },
+        databaseRead: {
+          status: readConnection.usingWriteFallback ? 'degraded' : 'up',
+          latencyMs: Number(readDatabaseLatencyMs.toFixed(1)),
+          replicaConfigured:
+            readConnection.configured,
+          usingWriteFallback: readConnection.usingWriteFallback,
+          fallbackEnabled: readConnection.fallbackEnabled,
+          lastError: readConnection.lastError
         },
         upload: {
           provider: this.configService.get<string>('upload.defaultProvider') ?? 'LOCAL',
@@ -64,7 +80,11 @@ export class DashboardService {
           bodyLimitBytes: this.configService.get<number>('app.bodyLimitBytes') ?? 10 * 1024 * 1024,
           securityHeadersEnabled: this.configService.get<boolean>('security.enableHeaders') ?? true,
           workerEnabled: this.configService.get<boolean>('jobs.workerEnabled') ?? true,
-          workerPollMs: this.configService.get<number>('jobs.workerPollMs') ?? 2000
+          workerPollMs: this.configService.get<number>('jobs.workerPollMs') ?? 2000,
+          workerBusyPollMs: this.configService.get<number>('jobs.workerBusyPollMs') ?? 50,
+          workerQueues: this.configService.get<string[]>('jobs.workerQueues') ?? [],
+          realtimeStreamServerEnabled: this.configService.get<boolean>('realtime.streamServerEnabled') ?? true,
+          realtimeSubscriberEnabled: this.configService.get<boolean>('realtime.subscriberEnabled') ?? true
         }
       },
       worker: this.jobsWorker.getStatus(),
@@ -96,23 +116,45 @@ export class DashboardService {
   }
 
   async landingContent() {
-    const existing = await this.prisma.systemContent.findUnique({
-      where: { key: 'landing' }
-    });
-    if (existing) {
-      return existing.payload;
-    }
+    return this.cache.getOrSet(
+      this.publicReadCache.landingContentKey(),
+      this.publicReadCache.publicFeedTtlMs(),
+      async () => {
+        const existing = await this.prisma.systemContent.findUnique({
+          where: { key: 'landing' }
+        });
+        if (existing) {
+          return existing.payload;
+        }
 
-    const created = await this.prisma.systemContent.create({
-      data: {
-        key: 'landing',
-        payload: {
-          title: 'Unified seller and creator backend',
-          subtitle: 'One API surface with role-aware workspaces'
+        try {
+          const created = await this.prismaWrite.systemContent.create({
+            data: {
+              key: 'landing',
+              payload: {
+                title: 'Unified seller and creator backend',
+                subtitle: 'One API surface with role-aware workspaces'
+              }
+            }
+          });
+          return created.payload;
+        } catch (error: any) {
+          if (error?.code === 'P2002') {
+            const current = await this.prisma.systemContent.findUnique({
+              where: { key: 'landing' }
+            });
+            if (current) {
+              return current.payload;
+            }
+          }
+          throw error;
         }
       }
-    });
-    return created.payload;
+    );
+  }
+
+  async warmLandingContentCache() {
+    await this.landingContent();
   }
 
   async appBootstrap(userId: string) {
@@ -138,17 +180,33 @@ export class DashboardService {
       roles: user?.roleAssignments.map((assignment) => assignment.role) ?? [UserRole.CREATOR]
     };
 
-    const created = await this.prisma.userSetting.create({
-      data: {
-        userId,
-        key: 'bootstrap',
-        payload
+    try {
+      const created = await this.prismaWrite.userSetting.create({
+        data: {
+          userId,
+          key: 'bootstrap',
+          payload
+        }
+      });
+      return created.payload;
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        const current = await this.prisma.userSetting.findUnique({
+          where: { userId_key: { userId, key: 'bootstrap' } }
+        });
+        if (current) {
+          return current.payload;
+        }
       }
-    });
-    return created.payload;
+      throw error;
+    }
   }
 
   async feed(userId: string) {
+    return this.readReadModel(userId, 'feed', () => this.computeFeed(userId));
+  }
+
+  private async computeFeed(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -221,6 +279,10 @@ export class DashboardService {
   }
 
   async liveFeed(userId: string) {
+    return this.readReadModel(userId, 'live-feed', () => this.computeLiveFeed(userId));
+  }
+
+  private async computeLiveFeed(userId: string) {
     const seller = await this.resolveSellerWorkspace(userId);
     const sellerId = seller?.id ?? '';
     const sellerName = seller?.displayName || seller?.name || 'Seller workspace';
@@ -390,6 +452,10 @@ export class DashboardService {
   }
 
   async sellerPublicProfile(userId: string) {
+    return this.readReadModel(userId, 'seller-public-profile', () => this.computeSellerPublicProfile(userId));
+  }
+
+  private async computeSellerPublicProfile(userId: string) {
     const seller = await this.resolveSellerWorkspace(userId);
     const sellerName = seller?.displayName || seller?.name || 'Supplier';
     const sellerId = seller?.id ?? '';
@@ -687,6 +753,10 @@ export class DashboardService {
   }
 
   async myDay(userId: string) {
+    return this.readReadModel(userId, 'my-day', () => this.computeMyDay(userId));
+  }
+
+  private async computeMyDay(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     const activeRole = user?.role ?? UserRole.CREATOR;
     const tasksPromise = this.prisma.task.findMany({
@@ -806,7 +876,7 @@ export class DashboardService {
     const ttlMs = Number(this.configService.get<number>('dashboard.snapshotTtlMs') ?? 60_000);
     const now = new Date();
     const expiresAt = ttlMs > 0 ? new Date(now.getTime() + ttlMs) : null;
-    await this.prisma.dashboardSnapshot.upsert({
+    await this.prismaWrite.dashboardSnapshot.upsert({
       where: { userId_role: { userId, role } },
       create: {
         userId,
@@ -885,7 +955,35 @@ export class DashboardService {
   }
 
   private async loadCompatibilityOrderIds() {
-    return [];
+    const records = await this.prisma.appRecord.findMany({
+      where: {
+        domain: 'sellerfront',
+        entityType: 'mockdb',
+        entityId: { in: SELLERFRONT_COMPAT_RECORD_IDS }
+      },
+      select: { payload: true }
+    });
+    const ids = new Set<string>();
+    for (const record of records) {
+      const payload = record.payload;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        continue;
+      }
+      const orders = (payload as Record<string, unknown>).orders;
+      if (!Array.isArray(orders)) {
+        continue;
+      }
+      for (const order of orders) {
+        if (!order || typeof order !== 'object' || Array.isArray(order)) {
+          continue;
+        }
+        const id = (order as Record<string, unknown>).id;
+        if (typeof id === 'string' && id.trim()) {
+          ids.add(id.trim());
+        }
+      }
+    }
+    return Array.from(ids);
   }
 
   private async buildProviderMetrics(userId: string) {
@@ -970,7 +1068,7 @@ export class DashboardService {
     if (existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)) {
       return existing.payload as Record<string, unknown>;
     }
-    const record = await this.prisma.workspaceSetting.upsert({
+    const record = await this.prismaWrite.workspaceSetting.upsert({
       where: {
         userId_key: {
           userId,
@@ -1001,6 +1099,65 @@ export class DashboardService {
     return existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
       ? (existing.payload as Record<string, unknown>)
       : null;
+  }
+
+  private async readReadModel(
+    userId: string,
+    entityId: string,
+    loader: () => Promise<Record<string, unknown>>
+  ) {
+    const ttlMs = Number(this.configService.get('dashboard.readModelTtlMs') ?? 60_000);
+    const cacheKey = `dashboard:read-model:${userId}:${entityId}`;
+    return this.cache.getOrSet(cacheKey, ttlMs, async () => {
+      const snapshot = await this.prisma.appRecord.findFirst({
+        where: {
+          userId,
+          domain: 'dashboard',
+          entityType: 'read_model',
+          entityId
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      if (snapshot && snapshot.updatedAt.getTime() + ttlMs > Date.now()) {
+        return (snapshot.payload as Record<string, unknown> | null) ?? {};
+      }
+
+      const payload = await loader();
+      await this.saveReadModel(userId, entityId, payload);
+      return payload;
+    });
+  }
+
+  private async saveReadModel(userId: string, entityId: string, payload: Record<string, unknown>) {
+    const existing = await this.prismaWrite.appRecord.findFirst({
+      where: {
+        userId,
+        domain: 'dashboard',
+        entityType: 'read_model',
+        entityId
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true }
+    });
+
+    if (existing) {
+      await this.prismaWrite.appRecord.update({
+        where: { id: existing.id },
+        data: { payload: payload as Prisma.InputJsonValue }
+      });
+      return;
+    }
+
+    await this.prismaWrite.appRecord.create({
+      data: {
+        userId,
+        domain: 'dashboard',
+        entityType: 'read_model',
+        entityId,
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
   }
 
   private buildLiveFeedTodayItems(campaigns: any[], sessions: any[], proposalsPending: number) {

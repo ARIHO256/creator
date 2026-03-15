@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { JobsService } from './jobs.service.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
 import { MetricsService } from '../../platform/metrics/metrics.service.js';
@@ -18,6 +19,8 @@ type WorkerStatus = {
   running: boolean;
   lastRunAt?: string;
   lastJobId?: string;
+  lastBatchSize?: number;
+  queues?: string[];
   errors: number;
 };
 
@@ -41,7 +44,8 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly regulatoryAutomation?: RegulatoryAutomationService,
     @Optional() private readonly exportsService?: ExportsService,
     @Optional() private readonly catalogService?: CatalogService,
-    @Optional() private readonly searchService?: SearchService
+    @Optional() private readonly searchService?: SearchService,
+    @Optional() private readonly moduleRef?: ModuleRef
   ) {}
 
   onModuleInit() {
@@ -77,9 +81,17 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private schedule() {
+    this.scheduleAfter();
+  }
+
+  private scheduleAfter(delayMs?: number) {
     if (!this.running) return;
-    const pollMs = this.configService.get<number>('jobs.workerPollMs') ?? 2000;
+    const pollMs = delayMs ?? (this.configService.get<number>('jobs.workerPollMs') ?? 2000);
     this.timer = setTimeout(() => this.tick().catch(() => undefined), pollMs);
+  }
+
+  private workerQueues() {
+    return (this.configService.get<string[]>('jobs.workerQueues') ?? []).filter(Boolean);
   }
 
   private async tick() {
@@ -87,31 +99,85 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
 
     const workerId = this.configService.get<string>('jobs.workerId') ?? 'api';
     const batch = this.configService.get<number>('jobs.workerBatch') ?? 5;
+    const concurrency = Math.max(
+      1,
+      Math.min(this.configService.get<number>('jobs.workerConcurrency') ?? batch, batch)
+    );
     const lockTtlMs = this.configService.get<number>('jobs.lockTtlMs') ?? 10 * 60 * 1000;
+    const queues = this.workerQueues();
+    const jobs = await this.jobsService.fetchAndLockBatch(workerId, lockTtlMs, batch, queues);
+    this.status.lastBatchSize = jobs.length;
+    this.status.queues = queues;
 
-    for (let i = 0; i < batch; i++) {
-      const job = await this.jobsService.fetchAndLockNext(workerId, lockTtlMs);
-      if (!job) {
-        break;
-      }
+    const remainingJobs = await this.processAuditBatch(jobs, workerId);
 
-      this.status.lastRunAt = new Date().toISOString();
-      this.status.lastJobId = job.id;
+    for (let i = 0; i < remainingJobs.length; i += concurrency) {
+      const slice = remainingJobs.slice(i, i + concurrency);
+      await Promise.allSettled(slice.map((job) => this.processLockedJob(job, workerId)));
+    }
 
-      try {
-        await this.process(job);
-        await this.jobsService.markCompleted(job.id, { processedBy: workerId });
+    const idlePollMs = this.configService.get<number>('jobs.workerPollMs') ?? 2000;
+    const busyPollMs = this.configService.get<number>('jobs.workerBusyPollMs') ?? 50;
+    const nextDelay = jobs.length >= batch ? busyPollMs : idlePollMs;
+    this.scheduleAfter(nextDelay);
+  }
+
+  private async processAuditBatch(
+    jobs: NonNullable<Awaited<ReturnType<JobsService['fetchAndLockNext']>>>[],
+    workerId: string
+  ) {
+    if (!this.auditService || jobs.length === 0) {
+      return jobs;
+    }
+
+    const auditJobs = jobs.filter((job) => job.type === 'AUDIT_EVENT');
+    if (auditJobs.length === 0) {
+      return jobs;
+    }
+
+    const nonAuditJobs = jobs.filter((job) => job.type !== 'AUDIT_EVENT');
+    this.status.lastRunAt = new Date().toISOString();
+    this.status.lastJobId = auditJobs.at(-1)?.id;
+
+    try {
+      await this.auditService.persistMany(auditJobs.map((job) => job.payload as any));
+      await Promise.all(
+        auditJobs.map((job) => this.jobsService.markCompleted(job.id, { processedBy: workerId, batched: true }))
+      );
+      for (const job of auditJobs) {
         this.metrics?.recordJobProcessed(job.type, 'success');
-      } catch (error: any) {
-        this.status.errors += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Job ${job.id} failed: ${message}`);
-        await this.jobsService.markFailed(job.id, message);
+      }
+    } catch (error: any) {
+      this.status.errors += auditJobs.length;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Audit batch failed (${auditJobs.length} jobs): ${message}`);
+      await Promise.all(auditJobs.map((job) => this.jobsService.markFailed(job.id, message)));
+      for (const job of auditJobs) {
         this.metrics?.recordJobProcessed(job.type, 'failed');
       }
     }
 
-    this.schedule();
+    return nonAuditJobs;
+  }
+
+  private async processLockedJob(
+    job: NonNullable<Awaited<ReturnType<JobsService['fetchAndLockNext']>>>,
+    workerId: string
+  ) {
+    this.status.lastRunAt = new Date().toISOString();
+    this.status.lastJobId = job.id;
+
+    try {
+      await this.process(job);
+      await this.jobsService.markCompleted(job.id, { processedBy: workerId });
+      this.metrics?.recordJobProcessed(job.type, 'success');
+    } catch (error: any) {
+      this.status.errors += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Job ${job.id} failed: ${message}`);
+      await this.jobsService.markFailed(job.id, message);
+      this.metrics?.recordJobProcessed(job.type, 'failed');
+    }
   }
 
   private async process(job: Awaited<ReturnType<JobsService['fetchAndLockNext']>>) {
@@ -126,6 +192,60 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
       case 'WHOLESALE_QUOTE_UPDATED':
         // Placeholder for actual processing (e.g., notify buyer/seller, analytics)
         return;
+      case 'AUTH_REGISTER':
+        {
+          const { AuthService } = await import('../auth/auth.service.js');
+          const authService = this.moduleRef?.get(AuthService, { strict: false });
+          if (!authService) return;
+          await authService.completeQueuedRegistration(job.payload as any);
+        }
+        return;
+      case 'CACHE_WARM_PUBLIC_READ':
+        {
+          const payload = job.payload as { target?: string; handle?: string };
+          switch (payload?.target) {
+            case 'landing':
+              {
+                const { DashboardService } = await import('../dashboard/dashboard.service.js');
+                const dashboardService = this.moduleRef?.get(DashboardService, { strict: false });
+                await dashboardService?.warmLandingContentCache();
+              }
+              return;
+            case 'marketplace':
+              {
+                const { MarketplaceService } = await import('../marketplace/marketplace.service.js');
+                const marketplaceService = this.moduleRef?.get(MarketplaceService, { strict: false });
+                await marketplaceService?.warmPublicMarketplaceCache();
+              }
+              return;
+            case 'storefront':
+              if (!payload.handle) {
+                return;
+              }
+              {
+                const { StorefrontService } = await import('../storefront/storefront.service.js');
+                const storefrontService = this.moduleRef?.get(StorefrontService, { strict: false });
+                await storefrontService?.warmPublicStorefrontCache(payload.handle);
+              }
+              return;
+            case 'taxonomy':
+              {
+                const { TaxonomyService } = await import('../taxonomy/taxonomy.service.js');
+                const taxonomyService = this.moduleRef?.get(TaxonomyService, { strict: false });
+                await taxonomyService?.warmPublicTaxonomyCache();
+              }
+              return;
+            case 'discovery-sellers':
+              {
+                const { DiscoveryService } = await import('../discovery/discovery.service.js');
+                const discoveryService = this.moduleRef?.get(DiscoveryService, { strict: false });
+                await discoveryService?.warmPublicDiscoveryCache();
+              }
+              return;
+            default:
+              return;
+          }
+        }
       case 'AUDIT_EVENT':
         if (this.auditService) {
           await this.auditService.persist(job.payload as any);
@@ -135,26 +255,21 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
         {
           const payload = job.payload as { channel?: string; event?: Record<string, unknown> };
           if (payload?.channel && payload?.event) {
+            const preparedEvent = this.realtimeStream?.prepareEvent(payload.event);
             if (this.realtimePublisher) {
-              await this.realtimePublisher.publish(payload.channel, payload.event);
+              await this.realtimePublisher.publish(payload.channel, payload.event, preparedEvent
+                ? { eventType: preparedEvent.eventType, streamId: preparedEvent.id }
+                : undefined);
             }
             if (this.realtimeStream && payload.channel.startsWith('user:')) {
               const userId = payload.channel.slice('user:'.length);
-              this.realtimeStream.emitToUser(userId, payload.event);
+              await this.realtimeStream.emitPreparedToUser(
+                userId,
+                preparedEvent ?? this.realtimeStream.prepareEvent(payload.event)
+              );
               if (this.realtimeDelivery && typeof payload.event.id === 'string') {
-                const receipt = await this.prisma.deliveryReceipt.findUnique({
-                  where: { userId_eventId: { userId, eventId: payload.event.id } }
-                });
-                if (receipt) {
-                  const maxAttempts = Number(this.configService.get('realtime.deliveryMaxAttempts') ?? 5);
-                  const attempts = receipt.attempts + 1;
-                  const hasClient = this.realtimeStream.hasClient(userId);
-                  const status = hasClient ? 'DELIVERED' : attempts >= maxAttempts ? 'FAILED' : receipt.status;
-                  await this.prisma.deliveryReceipt.update({
-                    where: { id: receipt.id },
-                    data: { attempts, lastAttemptAt: new Date(), status }
-                  });
-                }
+                const hasClient = await this.realtimeStream.hasClient(userId);
+                await this.realtimeDelivery.recordAttempt(userId, payload.event.id, hasClient);
               }
             }
           }
@@ -460,11 +575,19 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
 
   private async publishUserEvent(userId: string, event: Record<string, unknown>) {
     const channel = `user:${userId}`;
+    const preparedEvent = this.realtimeStream?.prepareEvent(event);
     if (this.realtimePublisher) {
-      await this.realtimePublisher.publish(channel, event);
+      await this.realtimePublisher.publish(
+        channel,
+        event,
+        preparedEvent ? { eventType: preparedEvent.eventType, streamId: preparedEvent.id } : undefined
+      );
     }
     if (this.realtimeStream) {
-      this.realtimeStream.emitToUser(userId, event);
+      await this.realtimeStream.emitPreparedToUser(
+        userId,
+        preparedEvent ?? this.realtimeStream.prepareEvent(event)
+      );
     }
   }
 }

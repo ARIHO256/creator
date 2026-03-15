@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { CachePolicy } from '../../common/decorators/cache-policy.decorator.js';
 import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
@@ -17,6 +18,7 @@ export class MarketplaceController {
   }
 
   @Public()
+  @CachePolicy({ maxAge: 60, sMaxAge: 300, staleWhileRevalidate: 120, staleIfError: 600 })
   @Get('sellers')
   sellers(@Query() query: ListQueryDto) {
     return this.marketplaceService.listSellers(query);

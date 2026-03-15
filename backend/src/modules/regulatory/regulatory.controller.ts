@@ -3,6 +3,7 @@ import type { FastifyReply } from 'fastify';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { AutoReviewRunDto } from './dto/auto-review-run.dto.js';
 import { CreateComplianceItemDto } from './dto/create-compliance-item.dto.js';
@@ -12,6 +13,7 @@ import { EvidenceRequestDto } from './dto/evidence-request.dto.js';
 import { UpdateComplianceItemDto } from './dto/update-compliance-item.dto.js';
 import { UpdateRegulatoryDeskDto } from './dto/update-regulatory-desk.dto.js';
 import { UpdateRegulatoryDeskItemDto } from './dto/update-regulatory-desk-item.dto.js';
+import { UpdateRegulatoryOverviewDto } from './dto/update-regulatory-overview.dto.js';
 import { RegulatoryService } from './regulatory.service.js';
 import { RegulatoryAutomationService } from './regulatory-automation.service.js';
 
@@ -38,8 +40,8 @@ export class RegulatoryController {
   @Get('regulatory/overview') overview(@CurrentUser() user: RequestUser) { return this.service.overview(user.sub); }
   @Patch('regulatory/overview')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  updateOverview(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
-    return this.service.updateOverview(user.sub, body);
+  updateOverview(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateRegulatoryOverviewDto)) body: UpdateRegulatoryOverviewDto) {
+    return this.service.updateOverview(user.sub, body.payload);
   }
   @Post('regulatory/desks')
   @RateLimit({ limit: 10, windowMs: 60_000 })

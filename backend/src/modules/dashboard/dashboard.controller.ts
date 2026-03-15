@@ -1,4 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
+import { CachePolicy } from '../../common/decorators/cache-policy.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
@@ -27,6 +28,7 @@ export class DashboardController {
   }
 
   @Public()
+  @CachePolicy({ maxAge: 30, sMaxAge: 60, staleWhileRevalidate: 30, staleIfError: 300 })
   @Get('landing/content')
   landingContent() {
     return this.dashboardService.landingContent();

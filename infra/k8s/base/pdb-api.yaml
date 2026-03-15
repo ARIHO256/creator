@@ -1,0 +1,10 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: creatorapp-backend-api
+spec:
+  minAvailable: 70%
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: creatorapp-backend
+      app.kubernetes.io/component: api

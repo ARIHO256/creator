@@ -8,6 +8,7 @@ import { CreateSupportTicketDto } from './dto/create-support-ticket.dto.js';
 import { EscalateSupportTicketDto } from './dto/escalate-support-ticket.dto.js';
 import { SendMessageDto } from './dto/send-message.dto.js';
 import { SupportTicketQueryDto } from './dto/support-ticket-query.dto.js';
+import { UpdateMessageTemplatesDto } from './dto/update-message-templates.dto.js';
 import { UpdateSupportTicketDto } from './dto/update-support-ticket.dto.js';
 import { CommunicationsService } from './communications.service.js';
 
@@ -24,7 +25,7 @@ export class CommunicationsController {
   @Patch('messages/:threadId/read') markRead(@CurrentUser() user: RequestUser, @Param('threadId') threadId: string) { return this.service.markThreadRead(user.sub, user.role, threadId); }
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Patch('messages/templates')
-  updateTemplates(@CurrentUser() user: RequestUser, @Body() body: { templates?: unknown[] }) {
+  updateTemplates(@CurrentUser() user: RequestUser, @Body() body: UpdateMessageTemplatesDto) {
     return this.service.updateTemplates(user.sub, user.role, body.templates ?? []);
   }
   @RateLimit({ limit: 30, windowMs: 60_000 })

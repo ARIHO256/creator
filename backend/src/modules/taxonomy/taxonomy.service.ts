@@ -1,6 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { CacheService } from '../../platform/cache/cache.service.js';
+import { PublicReadCacheService } from '../../platform/cache/public-read-cache.service.js';
+import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
+import { JobsService } from '../jobs/jobs.service.js';
 import { SellersService } from '../sellers/sellers.service.js';
 import { CreateTaxonomyCoverageDto } from './dto/create-taxonomy-coverage.dto.js';
 import { CreateTaxonomyNodeDto } from './dto/create-taxonomy-node.dto.js';
@@ -63,51 +66,100 @@ type FlatSeedTaxonomyNode = {
 @Injectable()
 export class TaxonomyService {
   private defaultTreesPromise: Promise<void> | null = null;
+  private readonly prismaReadClient: ReadPrismaService;
+  private readonly cacheLayer: CacheService;
+  private readonly publicCache: PublicReadCacheService;
+  private readonly jobQueue: JobsService;
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sellersService: SellersService
-  ) {}
+    private readonly sellersService: SellersService,
+    @Optional() prismaRead?: ReadPrismaService,
+    @Optional() cache?: CacheService,
+    @Optional() publicReadCache?: PublicReadCacheService,
+    @Optional() jobsService?: JobsService
+  ) {
+    this.prismaReadClient = prismaRead ?? (prisma as unknown as ReadPrismaService);
+    this.cacheLayer = cache ?? ({
+      getOrSet: async (_key: string, _ttlMs: number, loader: () => Promise<unknown>) => loader()
+    } as CacheService);
+    this.publicCache =
+      publicReadCache ??
+      new PublicReadCacheService(
+        { get: () => undefined } as any,
+        {
+          invalidate: async () => undefined,
+          invalidatePrefix: async () => undefined
+        } as any
+      );
+    this.jobQueue = jobsService ?? ({ enqueue: async () => null } as unknown as JobsService);
+  }
 
   async listTrees() {
     await this.ensureDefaultTaxonomyTrees();
-    return this.prisma.taxonomyTree.findMany({ orderBy: { name: 'asc' } });
+    return this.cacheLayer.getOrSet(
+      this.publicCache.taxonomyTreesKey(),
+      this.publicCache.taxonomyTtlMs(),
+      () => this.prismaReadClient.taxonomyTree.findMany({ orderBy: { name: 'asc' } })
+    );
   }
 
   async getTreeNodes(identifier: string, options?: { maxDepth?: number; includeInactive?: boolean }) {
-    const tree = await this.resolveTree(identifier);
-    const nodes = await this.prisma.taxonomyNode.findMany({
-      where: {
-        treeId: tree.id,
-        isActive: options?.includeInactive ? undefined : true,
-        depth: typeof options?.maxDepth === 'number' ? { lte: options.maxDepth } : undefined
-      },
-      orderBy: [{ depth: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
-    });
+    await this.ensureDefaultTaxonomyTrees();
+    return this.cacheLayer.getOrSet(
+      this.publicCache.taxonomyTreeNodesKey(identifier, options?.maxDepth, options?.includeInactive),
+      this.publicCache.taxonomyTtlMs(),
+      async () => {
+        const tree = await this.resolveTree(identifier, this.prismaReadClient);
+        const nodes = await this.prismaReadClient.taxonomyNode.findMany({
+          where: {
+            treeId: tree.id,
+            isActive: options?.includeInactive ? undefined : true,
+            depth: typeof options?.maxDepth === 'number' ? { lte: options.maxDepth } : undefined
+          },
+          orderBy: [{ depth: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
+        });
 
-    return {
-      tree,
-      nodes: this.buildTree(nodes)
-    };
+        return {
+          tree,
+          nodes: this.buildTree(nodes)
+        };
+      }
+    );
   }
 
   async listNodeChildren(id: string) {
-    const node = await this.prisma.taxonomyNode.findUnique({ where: { id } });
-    if (!node) {
+    const cached = await this.cacheLayer.getOrSet(
+      this.publicCache.taxonomyNodeChildrenKey(id),
+      this.publicCache.taxonomyTtlMs(),
+      async () => {
+        const node = await this.prismaReadClient.taxonomyNode.findUnique({ where: { id } });
+        if (!node) {
+          return { found: false as const };
+        }
+
+        const children = await this.prismaReadClient.taxonomyNode.findMany({
+          where: { parentId: id, isActive: true },
+          orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
+        });
+
+        return {
+          found: true as const,
+          children: children.map((child) => this.serializeNode(child))
+        };
+      }
+    );
+
+    if (!cached.found) {
       throw new NotFoundException('Taxonomy node not found');
     }
 
-    const children = await this.prisma.taxonomyNode.findMany({
-      where: { parentId: id, isActive: true },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
-    });
-
-    return children.map((child) => this.serializeNode(child));
+    return cached.children;
   }
 
   async createTree(payload: CreateTaxonomyTreeDto) {
     const slug = await this.ensureUniqueTreeSlug(payload.slug);
-    return this.prisma.taxonomyTree.create({
+    const tree = await this.prisma.taxonomyTree.create({
       data: {
         slug,
         name: payload.name,
@@ -115,6 +167,8 @@ export class TaxonomyService {
         status: payload.status ?? 'ACTIVE'
       }
     });
+    await this.invalidateAndWarmTaxonomy();
+    return tree;
   }
 
   async updateTree(id: string, payload: UpdateTaxonomyTreeDto) {
@@ -124,13 +178,15 @@ export class TaxonomyService {
     }
 
     const slug = payload.slug ? await this.ensureUniqueTreeSlug(payload.slug, id) : undefined;
-    return this.prisma.taxonomyTree.update({
+    const updated = await this.prisma.taxonomyTree.update({
       where: { id },
       data: {
         ...payload,
         slug
       }
     });
+    await this.invalidateAndWarmTaxonomy();
+    return updated;
   }
 
   async createNode(payload: CreateTaxonomyNodeDto) {
@@ -155,7 +211,7 @@ export class TaxonomyService {
     const depth = parent ? parent.depth + 1 : 0;
     const path = parent ? `${parent.path}/${slug}` : `/${slug}`;
 
-    return this.prisma.taxonomyNode.create({
+    const node = await this.prisma.taxonomyNode.create({
       data: {
         treeId: tree.id,
         parentId: parent?.id ?? null,
@@ -169,6 +225,8 @@ export class TaxonomyService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateAndWarmTaxonomy();
+    return node;
   }
 
   async updateNode(id: string, payload: UpdateTaxonomyNodeDto) {
@@ -177,7 +235,7 @@ export class TaxonomyService {
       throw new NotFoundException('Taxonomy node not found');
     }
 
-    return this.prisma.taxonomyNode.update({
+    const updated = await this.prisma.taxonomyNode.update({
       where: { id },
       data: {
         name: payload.name ?? undefined,
@@ -188,6 +246,16 @@ export class TaxonomyService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+    await this.invalidateAndWarmTaxonomy();
+    return updated;
+  }
+
+  async warmPublicTaxonomyCache() {
+    const trees = await this.listTrees();
+    const primary = trees[0];
+    if (primary?.id) {
+      await this.getTreeNodes(primary.id).catch(() => null);
+    }
   }
 
   async listCoverage(userId: string) {
@@ -530,9 +598,12 @@ export class TaxonomyService {
     return tree;
   }
 
-  private async resolveTree(identifier: string) {
+  private async resolveTree(
+    identifier: string,
+    client: PrismaService | ReadPrismaService = this.prismaReadClient
+  ) {
     await this.ensureDefaultTaxonomyTrees();
-    const tree = await this.prisma.taxonomyTree.findFirst({
+    const tree = await client.taxonomyTree.findFirst({
       where: { OR: [{ id: identifier }, { slug: identifier }] }
     });
 
@@ -931,5 +1002,17 @@ export class TaxonomyService {
       default:
         return 'CATEGORY';
     }
+  }
+
+  private async invalidateAndWarmTaxonomy() {
+    await this.publicCache.invalidateTaxonomy();
+    await this.jobQueue.enqueue({
+      queue: 'cache',
+      type: 'CACHE_WARM_PUBLIC_READ',
+      payload: {
+        target: 'taxonomy'
+      },
+      dedupeKey: 'cache-warm:taxonomy'
+    });
   }
 }

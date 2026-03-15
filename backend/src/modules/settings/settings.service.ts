@@ -266,17 +266,29 @@ export class SettingsService {
         : {})
     };
 
-    const record = await this.upsertWorkspaceSetting(userId, 'roles_security', nextSecurity);
+    const record = await this.prisma.workspace.update({
+      where: { id: workspace.workspace.id },
+      data: {
+        require2FA: nextSecurity.require2FA,
+        allowExternalInvites: nextSecurity.allowExternalInvites,
+        supplierGuestExpiryHours: nextSecurity.supplierGuestExpiryHours,
+        inviteDomainAllowlist: nextSecurity.inviteDomainAllowlist as Prisma.InputJsonValue,
+        requireApprovalForPayouts: nextSecurity.requireApprovalForPayouts,
+        payoutApprovalThresholdUsd: nextSecurity.payoutApprovalThresholdUsd,
+        restrictSensitiveExports: nextSecurity.restrictSensitiveExports,
+        sessionTimeoutMins: nextSecurity.sessionTimeoutMins
+      }
+    });
     await this.audit.log({
       userId,
       action: 'workspace.security_updated',
-      entityType: 'workspace_setting',
-      entityId: 'roles_security',
+      entityType: 'workspace',
+      entityId: workspace.workspace.id,
       route: '/api/roles/security',
       method: 'PATCH',
       statusCode: 200
     });
-    return record.payload as Record<string, unknown>;
+    return this.serializeWorkspaceSecurity(record);
   }
   async createRole(userId: string, body: CreateRoleDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
@@ -295,33 +307,32 @@ export class SettingsService {
       throw new BadRequestException('Role name already exists');
     }
 
-    const role = {
-      id: roleId,
-      name: nextName,
-      badge: body.badge ?? 'Custom',
-      description: body.description ?? 'Custom workspace role.',
-      perms: this.normalizePerms(body.perms),
-      createdAt: new Date().toISOString()
-    };
-
-    const nextRoles = [role, ...workspace.roles];
-    await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
+    const role = await this.prisma.workspaceRole.create({
+      data: {
+        workspaceId: workspace.workspace.id,
+        key: roleId,
+        name: nextName,
+        badge: body.badge ?? 'Custom',
+        description: body.description ?? 'Custom workspace role.',
+        permissions: this.normalizePerms(body.perms) as Prisma.InputJsonValue
+      }
+    });
     await this.audit.log({
       userId,
       action: 'workspace.role_created',
       entityType: 'workspace_role',
-      entityId: role.id,
+      entityId: role.key,
       route: '/api/roles',
       method: 'POST',
       statusCode: 201,
       metadata: { name: role.name }
     });
-    return role;
+    return this.serializeWorkspaceRole(role);
   }
   async updateRole(userId: string, id: string, body: UpdateRoleDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     this.ensureWorkspaceRoleManager(workspace);
-    const existing = workspace.roles.find((entry) => entry.id === id);
+    const existing = workspace.roleRecords.find((entry) => entry.key === id);
     if (!existing) {
       throw new NotFoundException('Role not found');
     }
@@ -337,17 +348,22 @@ export class SettingsService {
       }
     }
 
-    const updated = {
-      ...existing,
-      ...(body.name ? { name: body.name.trim() } : {}),
-      ...(body.badge ? { badge: body.badge.trim() } : {}),
-      ...(body.description ? { description: body.description.trim() } : {}),
-      ...(body.perms ? { perms: { ...existing.perms, ...this.normalizePerms(body.perms) } } : {}),
-      updatedAt: new Date().toISOString()
-    };
-
-    const nextRoles = workspace.roles.map((entry) => (entry.id === id ? updated : entry));
-    await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
+    const updated = await this.prisma.workspaceRole.update({
+      where: { dbId: existing.dbId },
+      data: {
+        ...(body.name ? { name: body.name.trim() } : {}),
+        ...(body.badge ? { badge: body.badge.trim() } : {}),
+        ...(body.description ? { description: body.description.trim() } : {}),
+        ...(body.perms
+          ? {
+              permissions: {
+                ...this.readPermissionPayload(existing.permissions),
+                ...this.normalizePerms(body.perms)
+              } as Prisma.InputJsonValue
+            }
+          : {})
+      }
+    });
     await this.audit.log({
       userId,
       action: 'workspace.role_updated',
@@ -357,24 +373,23 @@ export class SettingsService {
       method: 'PATCH',
       statusCode: 200
     });
-    return updated;
+    return this.serializeWorkspaceRole(updated);
   }
   async deleteRole(userId: string, id: string) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     this.ensureWorkspaceRoleManager(workspace);
-    const role = workspace.roles.find((entry) => entry.id === id);
+    const role = workspace.roleRecords.find((entry) => entry.key === id);
     if (!role) {
       throw new NotFoundException('Role not found');
     }
-    if (String(role.badge || '').toLowerCase() === 'system') {
+    if (role.isSystem || String(role.badge || '').toLowerCase() === 'system') {
       throw new BadRequestException('System roles cannot be deleted');
     }
-    if (workspace.members.some((member) => member.roleId === role.id)) {
+    if (workspace.memberRecords.some((member) => member.roleDbId === role.dbId)) {
       throw new BadRequestException('Role is still assigned to a workspace member');
     }
 
-    const nextRoles = workspace.roles.filter((entry) => entry.id !== id);
-    await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
+    await this.prisma.workspaceRole.delete({ where: { dbId: role.dbId } });
     await this.audit.log({
       userId,
       action: 'workspace.role_deleted',
@@ -390,7 +405,8 @@ export class SettingsService {
   async createInvite(userId: string, body: CreateInviteDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     this.ensureWorkspaceRoleManager(workspace);
-    if (!workspace.roles.some((role) => role.id === body.roleId)) {
+    const role = workspace.roleRecords.find((entry) => entry.key === body.roleId);
+    if (!role) {
       throw new NotFoundException('Role not found');
     }
 
@@ -408,56 +424,74 @@ export class SettingsService {
       throw new ForbiddenException('External invites are blocked by workspace policy');
     }
 
-    const invite = {
-      id: body.id ?? randomUUID(),
-      name: body.name,
-      email: normalizedEmail,
-      roleId: body.roleId,
-      status: 'invited',
-      seat: body.seat ?? 'Team',
-      createdAt: new Date().toISOString()
-    };
+    const invite = await this.prisma.$transaction(async (tx) => {
+      const member = await tx.workspaceMember.create({
+        data: {
+          externalId: body.id ?? randomUUID(),
+          workspaceId: workspace.workspace.id,
+          userId: normalizedEmail === (workspace.ownerEmail ?? '') ? workspace.workspace.ownerUserId : null,
+          roleDbId: role.dbId,
+          name: body.name,
+          email: normalizedEmail,
+          status: 'invited',
+          seat: body.seat ?? 'Team',
+          invitedAt: new Date()
+        },
+        include: { role: true }
+      });
 
-    const nextInvites = [invite, ...workspace.invites.filter((entry) => entry.id !== invite.id)];
-    const nextMembers = [invite, ...workspace.members];
-    await Promise.all([
-      this.upsertWorkspaceSetting(userId, 'role_invites', { invites: nextInvites }),
-      this.upsertWorkspaceSetting(userId, 'members', { members: nextMembers })
-    ]);
+      const inviteRow = await tx.workspaceInvite.create({
+        data: {
+          workspaceId: workspace.workspace.id,
+          roleDbId: role.dbId,
+          memberDbId: member.dbId,
+          invitedByUserId: userId,
+          name: body.name,
+          email: normalizedEmail,
+          status: 'invited',
+          seat: body.seat ?? 'Team'
+        },
+        include: { role: true, member: { include: { role: true } } }
+      });
+
+      return { inviteRow, member };
+    });
     await this.audit.log({
       userId,
       action: 'workspace.member_invited',
       entityType: 'workspace_member',
-      entityId: invite.id,
+      entityId: invite.member.externalId,
       route: '/api/roles/invites',
       method: 'POST',
       statusCode: 201,
-      metadata: { email: invite.email }
+      metadata: { email: invite.member.email }
     });
-    return invite;
+    return this.serializeWorkspaceMember(invite.member);
   }
   async updateMember(userId: string, id: string, body: UpdateMemberDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     this.ensureWorkspaceRoleManager(workspace);
 
-    const existing = workspace.members.find((entry) => entry.id === id);
+    const existing = workspace.memberRecords.find((entry) => entry.externalId === id);
     if (!existing) {
       throw new NotFoundException('Member not found');
     }
-    if (body.roleId && !workspace.roles.some((role) => role.id === body.roleId)) {
+    const nextRole = body.roleId
+      ? workspace.roleRecords.find((role) => role.key === body.roleId) ?? null
+      : null;
+    if (body.roleId && !nextRole) {
       throw new NotFoundException('Role not found');
     }
 
-    const updated = {
-      ...existing,
-      ...(body.roleId ? { roleId: body.roleId } : {}),
-      ...(body.status ? { status: body.status.trim().toLowerCase() } : {}),
-      ...(body.seat ? { seat: body.seat.trim() || existing.seat } : {}),
-      updatedAt: new Date().toISOString()
-    };
-
-    const nextMembers = workspace.members.map((entry) => (entry.id === id ? updated : entry));
-    await this.upsertWorkspaceSetting(userId, 'members', { members: nextMembers });
+    const updated = await this.prisma.workspaceMember.update({
+      where: { dbId: existing.dbId },
+      data: {
+        ...(nextRole ? { roleDbId: nextRole.dbId } : {}),
+        ...(body.status ? { status: body.status.trim().toLowerCase() } : {}),
+        ...(body.seat ? { seat: body.seat.trim() || existing.seat } : {})
+      },
+      include: { role: true }
+    });
     await this.audit.log({
       userId,
       action: 'workspace.member_updated',
@@ -468,23 +502,22 @@ export class SettingsService {
       statusCode: 200,
       metadata: { email: updated.email }
     });
-    return updated;
+    return this.serializeWorkspaceMember(updated);
   }
 
   async deleteMember(userId: string, id: string) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     this.ensureWorkspaceRoleManager(workspace);
 
-    const existing = workspace.members.find((entry) => entry.id === id);
+    const existing = workspace.memberRecords.find((entry) => entry.externalId === id);
     if (!existing) {
       throw new NotFoundException('Member not found');
     }
 
-    const nextMembers = workspace.members.filter((entry) => entry.id !== id);
-    const nextInvites = workspace.invites.filter((entry) => entry.id !== id);
-    await Promise.all([
-      this.upsertWorkspaceSetting(userId, 'members', { members: nextMembers }),
-      this.upsertWorkspaceSetting(userId, 'role_invites', { invites: nextInvites })
+    await this.prisma.$transaction([
+      this.prisma.workspaceInvite.deleteMany({ where: { workspaceId: workspace.workspace.id, OR: [{ memberDbId: existing.dbId }, { email: existing.email }] } }),
+      this.prisma.workspaceCrewAssignment.deleteMany({ where: { memberDbId: existing.dbId } }),
+      this.prisma.workspaceMember.delete({ where: { dbId: existing.dbId } })
     ]);
     await this.audit.log({
       userId,
@@ -500,25 +533,62 @@ export class SettingsService {
   }
 
   async crew(userId: string) {
-    const payload = await this.getUserSetting(userId, 'crew_sessions', { sessions: [] });
-    return this.extractList(payload, 'sessions');
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    await this.migrateLegacyCrewSessions(userId, workspace.workspace.id);
+    const sessions = await this.prisma.workspaceCrewSession.findMany({
+      where: { workspaceId: workspace.workspace.id },
+      include: {
+        assignments: {
+          include: {
+            member: {
+              include: { role: true }
+            }
+          }
+        }
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+    return sessions.map((session) => this.serializeCrewSession(session));
   }
   async crewSession(userId: string, id: string, body: UpdateCrewSessionDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     this.ensureWorkspaceRoleManager(workspace);
-    const sessionsPayload = await this.getUserSetting(userId, 'crew_sessions', { sessions: [] });
-    const sessions = this.extractList(sessionsPayload, 'sessions');
-    const existing = sessions.find((entry: any) => entry?.id === id);
-    const updated = {
-      id,
-      ...(existing ?? {}),
-      ...(body.assignments ? { assignments: body.assignments } : {}),
-      updatedAt: new Date().toISOString()
-    };
-    const nextSessions = existing
-      ? sessions.map((entry: any) => (entry?.id === id ? updated : entry))
-      : [updated, ...sessions];
-    await this.upsertUserSetting(userId, 'crew_sessions', { sessions: nextSessions });
+    const session = await this.prisma.workspaceCrewSession.upsert({
+      where: { workspaceId_sessionKey: { workspaceId: workspace.workspace.id, sessionKey: id } },
+      update: {
+        payload: { updatedAt: new Date().toISOString() } as Prisma.InputJsonValue
+      },
+      create: {
+        workspaceId: workspace.workspace.id,
+        sessionKey: id,
+        payload: { updatedAt: new Date().toISOString() } as Prisma.InputJsonValue
+      }
+    });
+    if (body.assignments) {
+      await this.prisma.workspaceCrewAssignment.deleteMany({ where: { crewSessionDbId: session.dbId } });
+      if (body.assignments.length > 0) {
+        await this.prisma.workspaceCrewAssignment.createMany({
+          data: body.assignments.map((assignment) => ({
+            crewSessionDbId: session.dbId,
+            memberDbId: this.resolveCrewAssignmentMemberDbId(assignment, workspace.memberRecords),
+            assignmentRole: this.resolveCrewAssignmentRole(assignment),
+            payload: this.ensurePayload(assignment) as Prisma.InputJsonValue
+          }))
+        });
+      }
+    }
+    const updated = await this.prisma.workspaceCrewSession.findUniqueOrThrow({
+      where: { dbId: session.dbId },
+      include: {
+        assignments: {
+          include: {
+            member: {
+              include: { role: true }
+            }
+          }
+        }
+      }
+    });
     await this.audit.log({
       userId,
       action: 'workspace.crew_updated',
@@ -528,7 +598,7 @@ export class SettingsService {
       method: 'PATCH',
       statusCode: 200
     });
-    return updated;
+    return this.serializeCrewSession(updated);
   }
   auditLogs(userId: string) {
     return this.ensureWorkspaceSeed(userId).then((workspace) => {
@@ -746,47 +816,176 @@ export class SettingsService {
     });
     return record.payload as Record<string, unknown>;
   }
-  savedViews(userId: string, role: string) { return this.getWorkspaceSetting(userId, this.scopedKey(role, 'saved_views'), { views: [] }); }
+  async savedViews(userId: string, role: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    const scopeRole = this.workspaceScopeRole(role);
+    await this.migrateLegacySavedViews(userId, workspace.workspace.id, scopeRole);
+    const group = await this.prisma.workspaceSavedViewGroup.findUnique({
+      where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
+      include: {
+        views: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
+    });
+    return {
+      views: (group?.views ?? []).map((view) => this.serializeStructuredPayload(view.payload, view.externalId)),
+      ...(this.isPlainObject(group?.metadata) ? { metadata: group?.metadata as Record<string, unknown> } : {})
+    };
+  }
   async updateSavedViews(userId: string, role: string, body: UpdateSavedViewsDto) {
-    const current = await this.savedViews(userId, role);
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    const scopeRole = this.workspaceScopeRole(role);
+    const current = await this.savedViews(userId, scopeRole);
     const next = {
       ...current,
       ...(body.views ? { views: body.views } : {}),
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(role, 'saved_views'), next);
+    await this.prisma.$transaction(async (tx) => {
+      const group = await tx.workspaceSavedViewGroup.upsert({
+        where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
+        update: {
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        },
+        create: {
+          workspaceId: workspace.workspace.id,
+          scopeRole,
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        }
+      });
+      await tx.workspaceSavedView.deleteMany({
+        where: { groupDbId: group.dbId }
+      });
+      if (Array.isArray(next.views) && next.views.length > 0) {
+        await tx.workspaceSavedView.createMany({
+          data: next.views.map((view, index) => {
+            const payload = this.ensureObjectPayload(view);
+            return {
+              groupDbId: group.dbId,
+              createdByUserId: userId,
+              externalId: this.readString(payload.id) || randomUUID(),
+              name: this.readString(payload.name) || this.readString(payload.label) || null,
+              position: index,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+    });
     await this.audit.log({
       userId,
       action: 'settings.saved_views_updated',
-      entityType: 'workspace_setting',
+      entityType: 'workspace_saved_view',
       entityId: 'saved_views',
       route: '/api/settings/saved-views',
       method: 'PATCH',
       statusCode: 200
     });
-    return record.payload as Record<string, unknown>;
+    return this.savedViews(userId, scopeRole);
   }
-  help(userId: string) { return this.getWorkspaceSetting(userId, 'help', { links: [] }); }
-  statusCenter(userId: string) { return this.getWorkspaceSetting(userId, 'status_center', { services: [] }); }
-  notificationPreferences(userId: string, role: string) { return this.getWorkspaceSetting(userId, this.scopedKey(role, 'notification_preferences'), { watches: [] }); }
+  async help(userId: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    await this.migrateLegacyHelpLinks(userId, workspace.workspace.id);
+    const rows = await this.prisma.workspaceHelpLink.findMany({
+      where: { workspaceId: workspace.workspace.id },
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+    });
+    return {
+      links: rows.map((row) => this.serializeStructuredPayload(row.payload, row.externalId))
+    };
+  }
+  async statusCenter(userId: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    await this.migrateLegacyStatusServices(userId, workspace.workspace.id);
+    const rows = await this.prisma.workspaceStatusService.findMany({
+      where: { workspaceId: workspace.workspace.id },
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+    });
+    return {
+      services: rows.map((row) => this.serializeStructuredPayload(row.payload, row.externalId))
+    };
+  }
+  async notificationPreferences(userId: string, role: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    const scopeRole = this.workspaceScopeRole(role);
+    await this.migrateLegacyNotificationPreferences(userId, workspace.workspace.id, scopeRole);
+    const preference = await this.prisma.workspaceNotificationPreference.findUnique({
+      where: {
+        workspaceId_userId_scopeRole: {
+          workspaceId: workspace.workspace.id,
+          userId,
+          scopeRole
+        }
+      },
+      include: {
+        watches: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
+    });
+    return {
+      watches: (preference?.watches ?? []).map((watch) => this.serializeStructuredPayload(watch.payload, watch.externalId)),
+      ...(this.isPlainObject(preference?.metadata) ? { metadata: preference?.metadata as Record<string, unknown> } : {})
+    };
+  }
   async updateNotificationPreferences(userId: string, role: string, body: UpdateNotificationPreferencesDto) {
-    const current = await this.notificationPreferences(userId, role);
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    const scopeRole = this.workspaceScopeRole(role);
+    const current = await this.notificationPreferences(userId, scopeRole);
     const next = {
       ...current,
       ...(body.watches ? { watches: body.watches } : {}),
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(role, 'notification_preferences'), next);
+    await this.prisma.$transaction(async (tx) => {
+      const preference = await tx.workspaceNotificationPreference.upsert({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId: workspace.workspace.id,
+            userId,
+            scopeRole
+          }
+        },
+        update: {
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        },
+        create: {
+          workspaceId: workspace.workspace.id,
+          userId,
+          scopeRole,
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        }
+      });
+      await tx.workspaceNotificationWatch.deleteMany({
+        where: { preferenceDbId: preference.dbId }
+      });
+      if (Array.isArray(next.watches) && next.watches.length > 0) {
+        await tx.workspaceNotificationWatch.createMany({
+          data: next.watches.map((watch, index) => {
+            const payload = this.ensureObjectPayload(watch);
+            return {
+              preferenceDbId: preference.dbId,
+              externalId: this.readString(payload.id) || randomUUID(),
+              channel: this.readString(payload.channel) || null,
+              enabled: payload.enabled === undefined ? null : Boolean(payload.enabled),
+              position: index,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+    });
     await this.audit.log({
       userId,
       action: 'settings.notifications_updated',
-      entityType: 'workspace_setting',
+      entityType: 'workspace_notification_preference',
       entityId: 'notification_preferences',
       route: '/api/settings/notification-preferences',
       method: 'PATCH',
       statusCode: 200
     });
-    return record.payload as Record<string, unknown>;
+    return this.notificationPreferences(userId, scopeRole);
   }
 
   private async getWorkspaceSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
@@ -798,6 +997,13 @@ export class SettingsService {
 
   private async findWorkspaceSetting(userId: string, key: string) {
     const record = await this.prisma.workspaceSetting.findUnique({
+      where: { userId_key: { userId, key } }
+    });
+    return record ? (record.payload as Record<string, unknown>) : null;
+  }
+
+  private async findUserSetting(userId: string, key: string) {
+    const record = await this.prisma.userSetting.findUnique({
       where: { userId_key: { userId, key } }
     });
     return record ? (record.payload as Record<string, unknown>) : null;
@@ -860,6 +1066,23 @@ export class SettingsService {
       return (payload as Record<string, unknown>)[key] as unknown[];
     }
     return [];
+  }
+
+  private readPermissionPayload(payload: unknown) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(payload as Record<string, unknown>).map(([key, value]) => [key, Boolean(value)])
+    );
+  }
+
+  private parseDate(value: string) {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.valueOf()) ? null : parsed;
   }
 
   private async deriveSettings(userId: string) {
@@ -1310,6 +1533,15 @@ export class SettingsService {
   }
 
   private async getWorkflowRecordPayload(userId: string, recordType: string, recordKey: string) {
+    if (recordType === 'account_approval' && recordKey === 'main') {
+      const accountApproval = await this.prisma.accountApproval.findUnique({
+        where: { userId }
+      });
+      if (accountApproval) {
+        return accountApproval.payload ?? null;
+      }
+    }
+
     const record = await this.prisma.workflowRecord.findUnique({
       where: {
         userId_recordType_recordKey: {
@@ -1529,6 +1761,10 @@ export class SettingsService {
     return `${String(role || 'seller').toLowerCase()}:${key}`;
   }
 
+  private workspaceScopeRole(role: string) {
+    return String(role || 'SELLER').trim().toUpperCase() || 'SELLER';
+  }
+
   private matchesRoleMetadata(metadata: unknown, role: string) {
     if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
       return false;
@@ -1543,74 +1779,544 @@ export class SettingsService {
       select: { email: true }
     });
     const email = String(user?.email ?? '').trim().toLowerCase();
-    const [rolesPayload, membersPayload, invitesPayload, securityPayload] = await Promise.all([
-      this.getWorkspaceSetting(userId, 'roles', { roles: [] }),
-      this.getWorkspaceSetting(userId, 'members', { members: [] }),
-      this.getWorkspaceSetting(userId, 'role_invites', { invites: [] }),
-      this.getWorkspaceSetting(userId, 'roles_security', DEFAULT_WORKSPACE_SECURITY)
-    ]);
+    const workspace = await this.ensureWorkspaceRow(userId);
+    await this.migrateLegacyWorkspaceData(userId, workspace.id, email);
 
-    const roles = this.extractList(rolesPayload, 'roles') as any[];
-    const members = this.extractList(membersPayload, 'members') as any[];
-    const invites = this.extractList(invitesPayload, 'invites') as any[];
-    const workspaceSecurity = this.hydrateWorkspaceSecurity(securityPayload as Record<string, unknown>);
-
-    let nextRoles = roles;
-    if (roles.length === 0) {
-      nextRoles = [
-        {
-          id: 'role_owner',
+    let roleRecords = await this.prisma.workspaceRole.findMany({
+      where: { workspaceId: workspace.id },
+      orderBy: { createdAt: 'asc' }
+    });
+    if (roleRecords.length === 0) {
+      await this.prisma.workspaceRole.create({
+        data: {
+          workspaceId: workspace.id,
+          key: 'role_owner',
           name: 'Owner',
           badge: 'System',
           description: 'Workspace owner with full access.',
-          perms: {
+          permissions: {
             'roles.manage': true,
             'admin.manage_roles': true,
             'admin.manage_team': true,
             'admin.audit': true
-          }
+          } as Prisma.InputJsonValue,
+          isSystem: true
         }
-      ];
-      await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
+      });
+      roleRecords = await this.prisma.workspaceRole.findMany({
+        where: { workspaceId: workspace.id },
+        orderBy: { createdAt: 'asc' }
+      });
     }
 
-    let nextMembers = members;
-    if (members.length === 0 && email) {
-      nextMembers = [
-        {
-          id: 'member_owner',
+    let memberRecords = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId: workspace.id },
+      include: { role: true },
+      orderBy: { createdAt: 'asc' }
+    });
+    if (memberRecords.length === 0 && email) {
+      const ownerRole = roleRecords.find((role) => role.key === 'role_owner') ?? roleRecords[0];
+      await this.prisma.workspaceMember.create({
+        data: {
+          externalId: 'member_owner',
+          workspaceId: workspace.id,
+          userId,
+          roleDbId: ownerRole.dbId,
           name: email.split('@')[0] || 'Owner',
           email,
-          roleId: nextRoles[0].id,
           status: 'active',
           seat: 'Owner',
-          createdAt: new Date().toISOString()
+          joinedAt: new Date()
         }
-      ];
-      await this.upsertWorkspaceSetting(userId, 'members', { members: nextMembers });
+      });
+      memberRecords = await this.prisma.workspaceMember.findMany({
+        where: { workspaceId: workspace.id },
+        include: { role: true },
+        orderBy: { createdAt: 'asc' }
+      });
     }
 
-    const currentMember = nextMembers.find(
+    const inviteRecords = await this.prisma.workspaceInvite.findMany({
+      where: { workspaceId: workspace.id },
+      include: { role: true, member: { include: { role: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const roles = roleRecords.map((role) => this.serializeWorkspaceRole(role));
+    const members = memberRecords.map((member) => this.serializeWorkspaceMember(member));
+    const invites = inviteRecords.map((invite) => this.serializeWorkspaceInvite(invite));
+
+    const currentMemberRecord = memberRecords.find(
       (member) => String(member.email || '').trim().toLowerCase() === email
-    );
-    const currentRole = currentMember
-      ? nextRoles.find((role) => role.id === currentMember.roleId) ?? null
-      : null;
-    const effectivePermissions = this.normalizePerms(currentRole?.perms);
+    ) ?? null;
+    const currentMember = currentMemberRecord ? this.serializeWorkspaceMember(currentMemberRecord) : null;
+    const effectivePermissions = currentMemberRecord
+      ? this.readPermissionPayload(currentMemberRecord.role?.permissions)
+      : {};
 
     const combinedInvites = [
       ...invites,
-      ...nextMembers.filter((member) => String(member.status || '').toLowerCase() === 'invited')
+      ...members.filter((member) => String(member.status || '').toLowerCase() === 'invited')
     ];
 
     return {
-      roles: nextRoles,
-      members: nextMembers,
+      workspace,
+      ownerEmail: email,
+      roleRecords,
+      memberRecords,
+      inviteRecords,
+      roles,
+      members,
       invites: combinedInvites,
-      currentMember: currentMember ?? null,
+      currentMember,
       effectivePermissions,
-      workspaceSecurity
+      workspaceSecurity: this.serializeWorkspaceSecurity(workspace)
     };
+  }
+
+  private async ensureWorkspaceRow(userId: string) {
+    const existing = await this.prisma.workspace.findUnique({
+      where: { ownerUserId: userId }
+    });
+    if (existing) {
+      return existing;
+    }
+    return this.prisma.workspace.create({
+      data: {
+        ownerUserId: userId,
+        inviteDomainAllowlist: DEFAULT_INVITE_DOMAIN_ALLOWLIST as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async migrateLegacyWorkspaceData(userId: string, workspaceId: string, ownerEmail: string) {
+    const [legacyRoles, legacyMembers, legacyInvites, legacySecurity, roleCount, memberCount, inviteCount] = await Promise.all([
+      this.findWorkspaceSetting(userId, 'roles'),
+      this.findWorkspaceSetting(userId, 'members'),
+      this.findWorkspaceSetting(userId, 'role_invites'),
+      this.findWorkspaceSetting(userId, 'roles_security'),
+      this.prisma.workspaceRole.count({ where: { workspaceId } }),
+      this.prisma.workspaceMember.count({ where: { workspaceId } }),
+      this.prisma.workspaceInvite.count({ where: { workspaceId } })
+    ]);
+
+    if (legacySecurity) {
+      const security = this.hydrateWorkspaceSecurity(legacySecurity);
+      await this.prisma.workspace.update({
+        where: { id: workspaceId },
+        data: {
+          require2FA: security.require2FA,
+          allowExternalInvites: security.allowExternalInvites,
+          supplierGuestExpiryHours: security.supplierGuestExpiryHours,
+          inviteDomainAllowlist: security.inviteDomainAllowlist as Prisma.InputJsonValue,
+          requireApprovalForPayouts: security.requireApprovalForPayouts,
+          payoutApprovalThresholdUsd: security.payoutApprovalThresholdUsd,
+          restrictSensitiveExports: security.restrictSensitiveExports,
+          sessionTimeoutMins: security.sessionTimeoutMins
+        }
+      });
+    }
+
+    if (roleCount === 0) {
+      const legacyRoleRows = this.extractList(legacyRoles ?? { roles: [] }, 'roles') as Array<Record<string, unknown>>;
+      for (const legacyRole of legacyRoleRows) {
+        await this.prisma.workspaceRole.create({
+          data: {
+            workspaceId,
+            key: this.readString(legacyRole.id) || randomUUID(),
+            name: this.readString(legacyRole.name) || 'Custom',
+            badge: this.readString(legacyRole.badge) || 'Custom',
+            description: this.readString(legacyRole.description) || 'Custom workspace role.',
+            permissions: this.normalizePerms((legacyRole.perms as Record<string, boolean> | undefined) ?? {}) as Prisma.InputJsonValue,
+            isSystem: this.readString(legacyRole.badge).toLowerCase() === 'system'
+          }
+        });
+      }
+    }
+
+    const roleRecords = await this.prisma.workspaceRole.findMany({
+      where: { workspaceId }
+    });
+    const roleByKey = new Map(roleRecords.map((role) => [role.key, role]));
+
+    if (memberCount === 0) {
+      const legacyMemberRows = this.extractList(legacyMembers ?? { members: [] }, 'members') as Array<Record<string, unknown>>;
+      for (const legacyMember of legacyMemberRows) {
+        const role = roleByKey.get(this.readString(legacyMember.roleId)) ?? roleRecords[0];
+        if (!role) continue;
+        const email = this.readString(legacyMember.email).toLowerCase();
+        if (!email) continue;
+        await this.prisma.workspaceMember.create({
+          data: {
+            externalId: this.readString(legacyMember.id) || randomUUID(),
+            workspaceId,
+            userId: email === ownerEmail ? userId : null,
+            roleDbId: role.dbId,
+            name: this.readString(legacyMember.name) || email.split('@')[0] || 'Member',
+            email,
+            status: this.readString(legacyMember.status) || 'active',
+            seat: this.readString(legacyMember.seat) || null,
+            invitedAt: this.parseDate(this.readString(legacyMember.createdAt)),
+            joinedAt: this.readString(legacyMember.status).toLowerCase() === 'active'
+              ? this.parseDate(this.readString(legacyMember.createdAt))
+              : null
+          }
+        });
+      }
+    }
+
+    const memberRecords = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId }
+    });
+    const memberById = new Map(memberRecords.map((member) => [member.externalId, member]));
+
+    if (inviteCount === 0) {
+      const legacyInviteRows = this.extractList(legacyInvites ?? { invites: [] }, 'invites') as Array<Record<string, unknown>>;
+      for (const legacyInvite of legacyInviteRows) {
+        const role = roleByKey.get(this.readString(legacyInvite.roleId)) ?? roleRecords[0];
+        const email = this.readString(legacyInvite.email).toLowerCase();
+        if (!role || !email) continue;
+        const member = memberById.get(this.readString(legacyInvite.id));
+        await this.prisma.workspaceInvite.create({
+          data: {
+            workspaceId,
+            roleDbId: role.dbId,
+            memberDbId: member?.dbId ?? null,
+            invitedByUserId: userId,
+            name: this.readString(legacyInvite.name) || email.split('@')[0] || 'Invitee',
+            email,
+            status: this.readString(legacyInvite.status) || 'invited',
+            seat: this.readString(legacyInvite.seat) || null,
+            acceptedAt: this.readString(legacyInvite.status).toLowerCase() === 'active'
+              ? this.parseDate(this.readString(legacyInvite.updatedAt))
+              : null
+          }
+        });
+      }
+    }
+  }
+
+  private async migrateLegacyCrewSessions(userId: string, workspaceId: string) {
+    const existingCount = await this.prisma.workspaceCrewSession.count({
+      where: { workspaceId }
+    });
+    if (existingCount > 0) {
+      return;
+    }
+
+    const payload = await this.findUserSetting(userId, 'crew_sessions');
+    const sessions = this.extractList(payload ?? { sessions: [] }, 'sessions') as Array<Record<string, unknown>>;
+    if (sessions.length === 0) {
+      return;
+    }
+
+    const members = await this.prisma.workspaceMember.findMany({
+      where: { workspaceId }
+    });
+    for (const session of sessions) {
+      const id = this.readString(session.id) || randomUUID();
+      await this.prisma.workspaceCrewSession.create({
+        data: {
+          workspaceId,
+          sessionKey: id,
+          payload: { updatedAt: this.readString(session.updatedAt) || new Date().toISOString() } as Prisma.InputJsonValue
+        }
+      });
+      const createdSession = await this.prisma.workspaceCrewSession.findUniqueOrThrow({
+        where: { workspaceId_sessionKey: { workspaceId, sessionKey: id } }
+      });
+      const assignments = Array.isArray(session.assignments) ? session.assignments : [];
+      if (assignments.length > 0) {
+        await this.prisma.workspaceCrewAssignment.createMany({
+          data: assignments.map((assignment) => ({
+            crewSessionDbId: createdSession.dbId,
+            memberDbId: this.resolveCrewAssignmentMemberDbId(assignment as Record<string, unknown>, members),
+            assignmentRole: this.resolveCrewAssignmentRole(assignment as Record<string, unknown>),
+            payload: this.ensurePayload(assignment) as Prisma.InputJsonValue
+          }))
+        });
+      }
+    }
+  }
+
+  private async migrateLegacySavedViews(userId: string, workspaceId: string, scopeRole: string) {
+    const existing = await this.prisma.workspaceSavedViewGroup.findUnique({
+      where: { workspaceId_scopeRole: { workspaceId, scopeRole } }
+    });
+    if (existing) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'saved_views'));
+    const views = this.extractList(payload ?? { views: [] }, 'views') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata) ? payload?.metadata as Record<string, unknown> : {};
+    if (views.length === 0 && Object.keys(metadata).length === 0) {
+      return;
+    }
+    const group = await this.prisma.workspaceSavedViewGroup.create({
+      data: {
+        workspaceId,
+        scopeRole,
+        metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
+      }
+    });
+    if (views.length > 0) {
+      await this.prisma.workspaceSavedView.createMany({
+        data: views.map((view, index) => {
+          const payloadRecord = this.ensureObjectPayload(view);
+          return {
+            groupDbId: group.dbId,
+            createdByUserId: userId,
+            externalId: this.readString(payloadRecord.id) || randomUUID(),
+            name: this.readString(payloadRecord.name) || this.readString(payloadRecord.label) || null,
+            position: index,
+            payload: payloadRecord as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+  }
+
+  private async migrateLegacyHelpLinks(userId: string, workspaceId: string) {
+    const existingCount = await this.prisma.workspaceHelpLink.count({
+      where: { workspaceId }
+    });
+    if (existingCount > 0) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, 'help');
+    const links = this.extractList(payload ?? { links: [] }, 'links') as Array<Record<string, unknown>>;
+    if (links.length === 0) {
+      return;
+    }
+    await this.prisma.workspaceHelpLink.createMany({
+      data: links.map((link, index) => {
+        const payloadRecord = this.ensureObjectPayload(link);
+        return {
+          workspaceId,
+          externalId: this.readString(payloadRecord.id) || randomUUID(),
+          title: this.readString(payloadRecord.title) || this.readString(payloadRecord.label) || null,
+          category: this.readString(payloadRecord.category) || this.readString(payloadRecord.kind) || null,
+          position: index,
+          payload: payloadRecord as Prisma.InputJsonValue
+        };
+      })
+    });
+  }
+
+  private async migrateLegacyStatusServices(userId: string, workspaceId: string) {
+    const existingCount = await this.prisma.workspaceStatusService.count({
+      where: { workspaceId }
+    });
+    if (existingCount > 0) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, 'status_center');
+    const services = this.extractList(payload ?? { services: [] }, 'services') as Array<Record<string, unknown>>;
+    if (services.length === 0) {
+      return;
+    }
+    await this.prisma.workspaceStatusService.createMany({
+      data: services.map((service, index) => {
+        const payloadRecord = this.ensureObjectPayload(service);
+        return {
+          workspaceId,
+          externalId: this.readString(payloadRecord.id) || randomUUID(),
+          name: this.readString(payloadRecord.name) || this.readString(payloadRecord.label) || null,
+          status: this.readString(payloadRecord.status) || null,
+          position: index,
+          payload: payloadRecord as Prisma.InputJsonValue
+        };
+      })
+    });
+  }
+
+  private async migrateLegacyNotificationPreferences(userId: string, workspaceId: string, scopeRole: string) {
+    const existing = await this.prisma.workspaceNotificationPreference.findUnique({
+      where: {
+        workspaceId_userId_scopeRole: {
+          workspaceId,
+          userId,
+          scopeRole
+        }
+      }
+    });
+    if (existing) {
+      return;
+    }
+    const payload =
+      await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'notification_preferences')) ??
+      await this.findWorkspaceSetting(userId, 'notification_preferences');
+    const watches = this.extractList(payload ?? { watches: [] }, 'watches') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata) ? payload?.metadata as Record<string, unknown> : {};
+    if (watches.length === 0 && Object.keys(metadata).length === 0) {
+      return;
+    }
+    const preference = await this.prisma.workspaceNotificationPreference.create({
+      data: {
+        workspaceId,
+        userId,
+        scopeRole,
+        metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
+      }
+    });
+    if (watches.length > 0) {
+      await this.prisma.workspaceNotificationWatch.createMany({
+        data: watches.map((watch, index) => {
+          const payloadRecord = this.ensureObjectPayload(watch);
+          return {
+            preferenceDbId: preference.dbId,
+            externalId: this.readString(payloadRecord.id) || randomUUID(),
+            channel: this.readString(payloadRecord.channel) || null,
+            enabled: payloadRecord.enabled === undefined ? null : Boolean(payloadRecord.enabled),
+            position: index,
+            payload: payloadRecord as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+  }
+
+  private serializeWorkspaceRole(role: {
+    key: string;
+    name: string;
+    badge: string | null;
+    description: string | null;
+    permissions: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: role.key,
+      name: role.name,
+      badge: role.badge ?? 'Custom',
+      description: role.description ?? 'Custom workspace role.',
+      perms: this.readPermissionPayload(role.permissions),
+      createdAt: role.createdAt.toISOString(),
+      updatedAt: role.updatedAt.toISOString()
+    };
+  }
+
+  private serializeWorkspaceMember(member: {
+    externalId: string;
+    name: string;
+    email: string;
+    status: string;
+    seat: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    role?: { key: string } | null;
+  }) {
+    return {
+      id: member.externalId,
+      name: member.name,
+      email: member.email,
+      roleId: member.role?.key ?? 'role_owner',
+      status: member.status,
+      seat: member.seat ?? 'Team',
+      createdAt: member.createdAt.toISOString(),
+      updatedAt: member.updatedAt.toISOString()
+    };
+  }
+
+  private serializeWorkspaceInvite(invite: {
+    dbId: string;
+    name: string;
+    email: string;
+    status: string;
+    seat: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    role?: { key: string } | null;
+    member?: { externalId: string } | null;
+  }) {
+    return {
+      id: invite.member?.externalId ?? invite.dbId,
+      name: invite.name,
+      email: invite.email,
+      roleId: invite.role?.key ?? 'role_owner',
+      status: invite.status,
+      seat: invite.seat ?? 'Team',
+      createdAt: invite.createdAt.toISOString(),
+      updatedAt: invite.updatedAt.toISOString()
+    };
+  }
+
+  private serializeWorkspaceSecurity(workspace: {
+    require2FA: boolean;
+    allowExternalInvites: boolean;
+    supplierGuestExpiryHours: number;
+    inviteDomainAllowlist: unknown;
+    requireApprovalForPayouts: boolean;
+    payoutApprovalThresholdUsd: number;
+    restrictSensitiveExports: boolean;
+    sessionTimeoutMins: number;
+  }) {
+    return {
+      require2FA: workspace.require2FA,
+      allowExternalInvites: workspace.allowExternalInvites,
+      supplierGuestExpiryHours: workspace.supplierGuestExpiryHours,
+      inviteDomainAllowlist: this.readStringArray(workspace.inviteDomainAllowlist).length
+        ? this.readStringArray(workspace.inviteDomainAllowlist)
+        : DEFAULT_INVITE_DOMAIN_ALLOWLIST,
+      requireApprovalForPayouts: workspace.requireApprovalForPayouts,
+      payoutApprovalThresholdUsd: workspace.payoutApprovalThresholdUsd,
+      restrictSensitiveExports: workspace.restrictSensitiveExports,
+      sessionTimeoutMins: workspace.sessionTimeoutMins
+    };
+  }
+
+  private serializeCrewSession(session: {
+    sessionKey: string;
+    payload: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+    assignments: Array<{ payload: unknown }>;
+  }) {
+    const payload = this.isPlainObject(session.payload) ? (session.payload as Record<string, unknown>) : {};
+    return {
+      id: session.sessionKey,
+      ...payload,
+      assignments: session.assignments
+        .map((assignment) => (this.isPlainObject(assignment.payload) ? assignment.payload as Record<string, unknown> : null))
+        .filter(Boolean),
+      createdAt: session.createdAt.toISOString(),
+      updatedAt: session.updatedAt.toISOString()
+    };
+  }
+
+  private serializeStructuredPayload(payload: unknown, fallbackId: string) {
+    const record = this.isPlainObject(payload) ? { ...(payload as Record<string, unknown>) } : {};
+    if (!record.id) {
+      record.id = fallbackId;
+    }
+    return record;
+  }
+
+  private resolveCrewAssignmentMemberDbId(assignment: Record<string, unknown>, members: Array<{ dbId: string; externalId?: string | null; id?: string | null; userId?: string | null }>) {
+    const candidateIds = [
+      this.readString(assignment.memberId),
+      this.readString(assignment.id),
+      this.readString(assignment.userId)
+    ].filter(Boolean);
+    if (candidateIds.length === 0) {
+      return null;
+    }
+    const matched = members.find((member) =>
+      candidateIds.includes(this.readString((member as any).externalId)) ||
+      candidateIds.includes(this.readString((member as any).id)) ||
+      candidateIds.includes(this.readString((member as any).userId))
+    );
+    return matched ? matched.dbId : null;
+  }
+
+  private resolveCrewAssignmentRole(assignment: Record<string, unknown>) {
+    return (
+      this.readString(assignment.role) ||
+      this.readString(assignment.crewRole) ||
+      this.readString(assignment.type) ||
+      this.readString(assignment.slot) ||
+      null
+    );
   }
 
   private hydrateWorkspaceSecurity(payload: Record<string, unknown>) {

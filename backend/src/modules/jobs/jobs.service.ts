@@ -74,9 +74,17 @@ export class JobsService {
 
   async metrics() {
     const now = new Date();
-    const [statusCounts, duePending, activeLocks, deadLetters] = await Promise.all([
+    const [statusCounts, queuePending, duePending, activeLocks, deadLetters] = await Promise.all([
       this.prisma.backgroundJob.groupBy({
         by: ['status'],
+        _count: { _all: true }
+      }),
+      this.prisma.backgroundJob.groupBy({
+        by: ['queue'],
+        where: {
+          status: BackgroundJobStatus.PENDING,
+          runAfter: { lte: now }
+        },
         _count: { _all: true }
       }),
       this.prisma.backgroundJob.count({
@@ -102,68 +110,79 @@ export class JobsService {
       duePending,
       activeLocks,
       deadLetters,
-      byStatus: Object.fromEntries(statusCounts.map((entry) => [entry.status, entry._count._all]))
+      byStatus: Object.fromEntries(statusCounts.map((entry) => [entry.status, entry._count._all])),
+      duePendingByQueue: Object.fromEntries(queuePending.map((entry) => [entry.queue, entry._count._all]))
     };
   }
 
-  async fetchAndLockNext(workerId: string, lockTtlMs: number) {
+  async fetchAndLockBatch(workerId: string, lockTtlMs: number, limit: number, queues?: string[]) {
     const now = new Date();
     const lockExpiry = new Date(now.getTime() - lockTtlMs);
+    const queueFilter =
+      queues && queues.length > 0
+        ? Prisma.sql`AND queue IN (${Prisma.join(queues.map((queue) => Prisma.sql`${queue}`))})`
+        : Prisma.empty;
 
-    const job = await this.prisma.$transaction(async (tx) => {
-      const nextJob = await tx.backgroundJob.findFirst({
-        where: {
-          status: BackgroundJobStatus.PENDING,
-          runAfter: { lte: now }
-        },
-        orderBy: [{ priority: 'asc' }, { runAfter: 'asc' }, { createdAt: 'asc' }]
-      });
+    return this.prisma.$transaction(async (tx) => {
+      const jobs: Array<{ id: string; attempts: number }> = [];
 
-      if (!nextJob) {
-        return null;
+      const pending = await tx.$queryRaw<Array<{ id: string; attempts: number }>>(Prisma.sql`
+        SELECT id, attempts
+        FROM \`BackgroundJob\`
+        WHERE status = ${BackgroundJobStatus.PENDING}
+          AND runAfter <= ${now}
+          ${queueFilter}
+        ORDER BY priority ASC, runAfter ASC, createdAt ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+      `);
+
+      if (pending.length > 0) {
+        jobs.push(...pending);
       }
 
-      const locked = await tx.backgroundJob.update({
-        where: { id: nextJob.id },
-        data: {
-          status: BackgroundJobStatus.PROCESSING,
-          attempts: nextJob.attempts + 1,
-          lockedAt: now,
-          lockedBy: workerId
-        }
-      });
+      if (jobs.length < limit) {
+        const staleProcessing = await tx.$queryRaw<Array<{ id: string; attempts: number }>>(Prisma.sql`
+          SELECT id, attempts
+          FROM \`BackgroundJob\`
+          WHERE status = ${BackgroundJobStatus.PROCESSING}
+            AND lockedAt IS NOT NULL
+            AND lockedAt < ${lockExpiry}
+            ${queueFilter}
+          ORDER BY lockedAt ASC
+          LIMIT ${limit - jobs.length}
+          FOR UPDATE SKIP LOCKED
+        `);
+        jobs.push(...staleProcessing);
+      }
 
-      return locked;
+      if (jobs.length === 0) {
+        return [];
+      }
+
+      const ids = jobs.map((job) => job.id);
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE \`BackgroundJob\`
+        SET
+          status = ${BackgroundJobStatus.PROCESSING},
+          attempts = attempts + 1,
+          lockedAt = ${now},
+          lockedBy = ${workerId},
+          runAfter = ${now}
+        WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}`))})
+      `);
+
+      const locked = await tx.backgroundJob.findMany({
+        where: { id: { in: ids } }
+      });
+      const ordered = new Map(locked.map((job) => [job.id, job]));
+      return ids.map((id) => ordered.get(id)).filter(Boolean);
     });
+  }
 
-    // Simple lock expiry: if a job was stuck as PROCESSING beyond lockTtlMs, requeue it.
-    if (!job) {
-      const stale = await this.prisma.backgroundJob.findFirst({
-        where: {
-          status: BackgroundJobStatus.PROCESSING,
-          lockedAt: { lt: lockExpiry }
-        },
-        orderBy: { lockedAt: 'asc' }
-      });
-
-      if (!stale) {
-        return null;
-      }
-
-      const requeued = await this.prisma.backgroundJob.update({
-        where: { id: stale.id },
-        data: {
-          status: BackgroundJobStatus.PENDING,
-          lockedAt: null,
-          lockedBy: null,
-          runAfter: now
-        }
-      });
-
-      return requeued;
-    }
-
-    return job;
+  async fetchAndLockNext(workerId: string, lockTtlMs: number, queues?: string[]) {
+    const [job] = await this.fetchAndLockBatch(workerId, lockTtlMs, 1, queues);
+    return job ?? null;
   }
 
   async requeue(id: string) {

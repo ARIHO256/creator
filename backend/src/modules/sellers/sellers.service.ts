@@ -402,10 +402,42 @@ export class SellersService {
   }
 
   private async loadCompatibilityOrderIds() {
-    return [];
+    const records = await this.prisma.appRecord.findMany({
+      where: {
+        domain: 'sellerfront',
+        entityType: 'mockdb',
+        entityId: { in: SELLERFRONT_COMPAT_RECORD_IDS }
+      },
+      select: { payload: true }
+    });
+    const ids = new Set<string>();
+    for (const record of records) {
+      const payload = record.payload;
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        continue;
+      }
+      const orders = (payload as Record<string, unknown>).orders;
+      if (!Array.isArray(orders)) {
+        continue;
+      }
+      for (const order of orders) {
+        if (!order || typeof order !== 'object' || Array.isArray(order)) {
+          continue;
+        }
+        const id = (order as Record<string, unknown>).id;
+        if (typeof id === 'string' && id.trim()) {
+          ids.add(id.trim());
+        }
+      }
+    }
+    return Array.from(ids);
   }
 
   private async isCompatibilityOrderId(id: string) {
-    return Boolean(id) && false;
+    if (!id) {
+      return false;
+    }
+    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
+    return compatibilityOrderIds.includes(id);
   }
 }

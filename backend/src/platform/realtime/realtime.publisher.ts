@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Redis } from "ioredis";
+import { REALTIME_INSTANCE_ID, RealtimePublishEnvelope, RealtimePublishMeta } from "./realtime.instance.js";
 
 @Injectable()
 export class RealtimePublisher implements OnModuleDestroy {
@@ -31,11 +32,15 @@ export class RealtimePublisher implements OnModuleDestroy {
     }
   }
 
-  async publish(channel: string, payload: Record<string, unknown>) {
+  async publish(channel: string, payload: Record<string, unknown>, meta?: RealtimePublishMeta) {
     if (!this.enabled || !this.client) {
       return;
     }
-    const message = JSON.stringify(payload);
+    const message = JSON.stringify({
+      event: payload,
+      meta,
+      source: REALTIME_INSTANCE_ID
+    } satisfies RealtimePublishEnvelope);
     await this.client.publish(`${this.prefix}${channel}`, message);
   }
 
