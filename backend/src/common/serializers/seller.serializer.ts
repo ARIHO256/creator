@@ -33,6 +33,26 @@ export function parseJsonArray(value: string | null) {
 }
 
 export function serializePublicSeller(profile: SellerRecord) {
+  return serializePublicSellerWithExtras(profile);
+}
+
+export function serializePublicSellerWithExtras(
+  profile: SellerRecord,
+  extras?: {
+    website?: string | null;
+    policies?: {
+      termsUrl?: string | null;
+      privacyUrl?: string | null;
+    } | null;
+    capabilities?: {
+      quotes: boolean;
+      bookings: boolean;
+      consultations: boolean;
+    } | null;
+    providerServices?: string[];
+    bookingModes?: string[];
+  }
+) {
   return {
     id: profile.id,
     handle: profile.handle,
@@ -46,6 +66,14 @@ export function serializePublicSeller(profile: SellerRecord) {
     region: profile.region,
     description: profile.description,
     languages: parseJsonArray(profile.languages),
+    website: extras?.website ?? null,
+    policies: {
+      termsUrl: extras?.policies?.termsUrl ?? null,
+      privacyUrl: extras?.policies?.privacyUrl ?? null
+    },
+    capabilities: extras?.capabilities ?? null,
+    providerServices: Array.isArray(extras?.providerServices) ? extras?.providerServices : [],
+    bookingModes: Array.isArray(extras?.bookingModes) ? extras?.bookingModes : [],
     rating: profile.rating,
     isVerified: profile.isVerified,
     createdAt: profile.createdAt.toISOString(),

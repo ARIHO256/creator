@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, SellerKind, UserRole } from '@prisma/client';
 import { serializeListingPublic } from '../../common/serializers/listing.serializer.js';
-import { serializePublicSeller } from '../../common/serializers/seller.serializer.js';
+import { serializePublicSeller, serializePublicSellerWithExtras } from '../../common/serializers/seller.serializer.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { PublicReadCacheService } from '../../platform/cache/public-read-cache.service.js';
@@ -45,7 +45,7 @@ export class DiscoveryService {
           orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
         });
 
-        return sellers.map((seller) => serializePublicSeller(seller));
+        return this.enrichPublicSellers(sellers, this.prismaRead);
       }
     );
   }
@@ -85,7 +85,7 @@ export class DiscoveryService {
     });
     const ids = follows.map((entry) => entry.sellerId);
     const sellers = await this.prisma.seller.findMany({ where: { id: { in: ids } } });
-    return sellers.map((seller) => serializePublicSeller(seller));
+    return this.enrichPublicSellers(sellers, this.prisma);
   }
 
   async followCreator(userId: string, creatorUserId: string, follow: boolean) {
@@ -830,14 +830,128 @@ export class DiscoveryService {
         take: 20
       })
     ]);
+    const enrichedSellers = await this.enrichPublicSellers(sellers, this.prisma);
+    const opportunitySellers = opportunities
+      .map((opportunity) => opportunity.seller)
+      .filter(Boolean) as Array<(typeof opportunities)[number]['seller']>;
+    const enrichedOpportunitySellers = await this.enrichPublicSellers(opportunitySellers as any[], this.prisma);
+    const enrichedOpportunitySellerMap = new Map(
+      enrichedOpportunitySellers.map((seller) => [seller.id, seller])
+    );
     return {
-      sellers: sellers.map((seller) => serializePublicSeller(seller)),
+      sellers: enrichedSellers,
       listings: listings.map((listing) => serializeListingPublic(listing)),
       opportunities: opportunities.map((opportunity) => ({
         ...opportunity,
-        seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+        seller: opportunity.seller ? enrichedOpportunitySellerMap.get(opportunity.seller.id) ?? serializePublicSeller(opportunity.seller as any) : null
       }))
     };
+  }
+
+  private async enrichPublicSellers(
+    sellers: Array<{
+      id: string;
+      userId: string | null;
+      handle: string | null;
+      name: string;
+      displayName: string;
+      legalBusinessName: string | null;
+      storefrontName: string | null;
+      type: string;
+      kind: string;
+      category: string | null;
+      categories: string | null;
+      region: string | null;
+      description: string | null;
+      languages: string | null;
+      rating: number;
+      isVerified: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    }>,
+    client: PrismaService | ReadPrismaService
+  ) {
+    if (sellers.length === 0) {
+      return [];
+    }
+
+    const userIds = Array.from(new Set(sellers.map((seller) => seller.userId).filter(Boolean) as string[]));
+    const [providerProfiles, profileSettings] = await Promise.all([
+      userIds.length
+        ? client.providerRecord.findMany({
+            where: {
+              userId: { in: userIds },
+              recordType: 'onboarding_profile',
+              recordKey: 'main'
+            }
+          })
+        : Promise.resolve([]),
+      userIds.length
+        ? client.userSetting.findMany({
+            where: {
+              userId: { in: userIds },
+              key: 'profile'
+            }
+          })
+        : Promise.resolve([])
+    ]);
+
+    const providerProfileByUserId = new Map(
+      providerProfiles.map((record) => [record.userId, this.ensureRecordObject(record.payload)])
+    );
+    const profileSettingsByUserId = new Map(
+      profileSettings.map((record) => [record.userId, this.ensureRecordObject(record.payload)])
+    );
+
+    return sellers.map((seller) => {
+      const providerProfile = seller.userId ? providerProfileByUserId.get(seller.userId) ?? null : null;
+      const profilePayload = seller.userId ? profileSettingsByUserId.get(seller.userId) ?? null : null;
+      const profile = this.ensureRecordObject(profilePayload?.profile);
+      const identity = this.ensureRecordObject(profile?.identity);
+      const policies = this.ensureRecordObject(profile?.policies);
+
+      return serializePublicSellerWithExtras(seller, {
+        website: this.readScalarString(identity?.website),
+        policies: {
+          termsUrl: this.readScalarString(policies?.termsUrl),
+          privacyUrl: this.readScalarString(policies?.privacyUrl)
+        },
+        capabilities:
+          String(seller.kind || '').toUpperCase() === 'PROVIDER'
+            ? this.resolveProviderCapabilities(providerProfile)
+            : null,
+        providerServices: this.readStringList(providerProfile?.providerServices),
+        bookingModes: this.readStringList(providerProfile?.bookingModes)
+      });
+    });
+  }
+
+  private resolveProviderCapabilities(profile: Record<string, unknown> | null) {
+    const rawModes = this.readStringList(profile?.bookingModes);
+    const modes = new Set(rawModes.map((entry) => entry.toLowerCase()));
+    if (modes.size === 0 || modes.has('all') || modes.has('any')) {
+      return {
+        quotes: true,
+        bookings: true,
+        consultations: true
+      };
+    }
+    const hasAny = (...aliases: string[]) => aliases.some((alias) => modes.has(alias));
+    return {
+      quotes: hasAny('quote', 'quotes', 'proposal', 'proposals', 'request_quote', 'request_quotes'),
+      bookings: hasAny('booking', 'bookings', 'instant', 'request', 'requests'),
+      consultations: hasAny('consultation', 'consultations', 'call', 'calls')
+    };
+  }
+
+  private ensureRecordObject(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  }
+
+  private readScalarString(value: unknown) {
+    return typeof value === 'string' ? value : null;
   }
 
   private normalizeInviteStatus(status: string) {
