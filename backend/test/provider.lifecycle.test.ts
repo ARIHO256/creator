@@ -53,3 +53,34 @@ test('ProviderService.transitionBooking enforces transitions', async () => {
     /Booking status cannot transition/
   );
 });
+
+test('ProviderService.createQuote rejects providers without quote capability from onboarding', async () => {
+  const prisma = {
+    providerRecord: {
+      async findUnique() {
+        return {
+          payload: {
+            bookingModes: ['instant']
+          }
+        };
+      }
+    },
+    providerQuote: {
+      async create() {
+        throw new Error('should not create');
+      }
+    },
+    workspaceSetting: {
+      async findUnique() {
+        return null;
+      }
+    }
+  };
+  const audit = { async log() {} };
+  const service = new ProviderService(prisma as any, audit as any);
+
+  await assert.rejects(
+    () => service.createQuote('u1', { title: 'Quote' } as any),
+    /does not currently allow quotes/
+  );
+});

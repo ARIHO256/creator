@@ -16,11 +16,12 @@ export class ProviderService {
   ) {}
 
   async serviceCommand(userId: string) {
-    const [openQuotes, activeBookings, totalQuotes, extras] = await Promise.all([
+    const [openQuotes, activeBookings, totalQuotes, extras, providerProfile] = await Promise.all([
       this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
       this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } }),
       this.prisma.providerQuote.count({ where: { userId } }),
-      this.loadSetting(userId, 'provider_service_command')
+      this.loadSetting(userId, 'provider_service_command'),
+      this.loadProviderProfile(userId)
     ]);
     return {
       queues: [
@@ -35,7 +36,12 @@ export class ProviderService {
         : [],
       queue: Array.isArray((extras as Record<string, unknown> | null)?.queue)
         ? ((extras as Record<string, unknown>).queue as unknown[])
-        : []
+        : [],
+      capabilities: this.resolveCapabilities(providerProfile),
+      profile:
+        providerProfile && typeof providerProfile === 'object' && !Array.isArray(providerProfile)
+          ? providerProfile
+          : undefined
     };
   }
   async quotes(userId: string) {
@@ -53,6 +59,7 @@ export class ProviderService {
     return this.serializeQuote(quote);
   }
   async createQuote(userId: string, body: CreateProviderQuoteDto) {
+    await this.assertProviderSupports(userId, 'quotes');
     const sanitized = this.ensurePayload(body);
     const data = (sanitized as any).data && typeof (sanitized as any).data === 'object' ? (sanitized as any).data : sanitized;
     const id = String((sanitized as any).id ?? randomUUID());
@@ -90,6 +97,7 @@ export class ProviderService {
   }
 
   async createJointQuote(userId: string, body: CreateProviderQuoteDto) {
+    await this.assertProviderSupports(userId, 'quotes');
     const sanitized = this.ensurePayload(body);
     const data = (sanitized as any).data && typeof (sanitized as any).data === 'object' ? (sanitized as any).data : sanitized;
     const id = String((sanitized as any).id ?? randomUUID());
@@ -497,6 +505,55 @@ export class ProviderService {
       }
     });
     return (setting?.payload as Record<string, unknown> | null) ?? null;
+  }
+
+  private async loadProviderProfile(userId: string) {
+    const record = await this.prisma.providerRecord.findUnique({
+      where: {
+        userId_recordType_recordKey: {
+          userId,
+          recordType: 'onboarding_profile',
+          recordKey: 'main'
+        }
+      }
+    });
+    return (record?.payload as Record<string, unknown> | null) ?? null;
+  }
+
+  private async assertProviderSupports(
+    userId: string,
+    capability: 'quotes' | 'bookings' | 'consultations'
+  ) {
+    const profile = await this.loadProviderProfile(userId);
+    const capabilities = this.resolveCapabilities(profile);
+    if (capabilities[capability]) {
+      return;
+    }
+    throw new BadRequestException(`Provider onboarding does not currently allow ${capability}`);
+  }
+
+  private resolveCapabilities(profile: Record<string, unknown> | null) {
+    const rawModes = Array.isArray(profile?.bookingModes) ? profile.bookingModes : [];
+    const modes = new Set(
+      rawModes
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    if (modes.size === 0 || modes.has('all') || modes.has('any')) {
+      return {
+        quotes: true,
+        bookings: true,
+        consultations: true
+      };
+    }
+
+    const hasAny = (...aliases: string[]) => aliases.some((alias) => modes.has(alias));
+    return {
+      quotes: hasAny('quote', 'quotes', 'proposal', 'proposals', 'request_quote', 'request_quotes'),
+      bookings: hasAny('booking', 'bookings', 'instant', 'request', 'requests'),
+      consultations: hasAny('consultation', 'consultations', 'call', 'calls')
+    };
   }
 
   private async upsertSetting(userId: string, key: string, payload: Record<string, unknown>) {

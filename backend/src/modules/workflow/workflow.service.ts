@@ -272,6 +272,8 @@ export class WorkflowService {
     await this.syncSellerProfile(userId, submitted);
     await this.syncTaxonomySelections(userId, submitted);
     await this.syncOperationalSetupFromOnboarding(userId, submitted);
+    await this.syncWorkspaceSettingsFromOnboarding(userId, submitted);
+    await this.syncProviderProfileFromOnboarding(userId, submitted);
     await this.syncUserAccessFromOnboarding(userId, submitted);
     await this.syncAccountApprovalFromOnboarding(userId, submitted);
     await this.jobsService.enqueue({
@@ -490,7 +492,13 @@ export class WorkflowService {
           tagline: onboarding.about || undefined,
           description: onboarding.about || undefined,
           logoUrl: onboarding.logoUrl || undefined,
-          coverUrl: onboarding.coverUrl || undefined
+          coverUrl: onboarding.coverUrl || undefined,
+          theme: onboarding.brandColor
+            ? ({
+                primaryColor: onboarding.brandColor,
+                accentColor: '#F77F00'
+              } as Prisma.InputJsonValue)
+            : undefined
         },
         create: {
           sellerId: seller.id,
@@ -500,6 +508,12 @@ export class WorkflowService {
           description: onboarding.about || undefined,
           logoUrl: onboarding.logoUrl || undefined,
           coverUrl: onboarding.coverUrl || undefined,
+          theme: onboarding.brandColor
+            ? ({
+                primaryColor: onboarding.brandColor,
+                accentColor: '#F77F00'
+              } as Prisma.InputJsonValue)
+            : undefined,
           isPublished: false
         }
       });
@@ -694,6 +708,501 @@ export class WorkflowService {
     }
   }
 
+  private async syncWorkspaceSettingsFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (onboarding.profileType !== 'SELLER' && onboarding.profileType !== 'PROVIDER') {
+      return;
+    }
+
+    const workspace = await this.ensureWorkspaceRow(userId);
+    await Promise.all([
+      this.syncSettingsProfileFromOnboarding(userId, onboarding),
+      this.syncWorkspaceNotificationPreferencesFromOnboarding(workspace.id, userId, onboarding),
+      this.syncWorkspacePayoutSettingsFromOnboarding(workspace.id, onboarding),
+      this.syncWorkspaceTaxSettingsFromOnboarding(workspace.id, onboarding),
+      this.syncWorkspaceKycFromOnboarding(workspace.id, onboarding)
+    ]);
+  }
+
+  private async syncSettingsProfileFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    const existing = await this.prisma.userSetting.findUnique({
+      where: { userId_key: { userId, key: 'profile' } }
+    });
+    const patch = {
+      profile: {
+        identity: {
+          website: onboarding.website || ''
+        },
+        branding: {
+          primary: onboarding.brandColor || '#03CD8C'
+        },
+        policies: {
+          termsUrl: onboarding.policies.termsUrl || '',
+          privacyUrl: onboarding.policies.privacyUrl || '',
+          returnsDays: onboarding.policies.returnsDays,
+          warrantyDays: onboarding.policies.warrantyDays,
+          notes: onboarding.policies.policyNotes || ''
+        }
+      }
+    };
+    const payload = existing ? this.deepMerge(existing.payload, patch) : patch;
+    await this.prisma.userSetting.upsert({
+      where: { userId_key: { userId, key: 'profile' } },
+      update: { payload: payload as Prisma.InputJsonValue },
+      create: {
+        userId,
+        key: 'profile',
+        payload: payload as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async syncWorkspaceNotificationPreferencesFromOnboarding(
+    workspaceId: string,
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    const notificationsEmail = onboarding.payout.notificationsEmail || onboarding.email || '';
+    const notificationsWhatsApp = onboarding.payout.notificationsWhatsApp || onboarding.support.whatsapp || '';
+    if (!notificationsEmail && !notificationsWhatsApp) {
+      return;
+    }
+
+    const scopeRole = onboarding.profileType;
+    const preference = await this.prisma.workspaceNotificationPreference.upsert({
+      where: {
+        workspaceId_userId_scopeRole: {
+          workspaceId,
+          userId,
+          scopeRole
+        }
+      },
+      update: {
+        metadata: {
+          source: 'onboarding',
+          payoutNotifications: {
+            email: notificationsEmail || null,
+            whatsapp: notificationsWhatsApp || null
+          }
+        } as Prisma.InputJsonValue
+      },
+      create: {
+        workspaceId,
+        userId,
+        scopeRole,
+        metadata: {
+          source: 'onboarding',
+          payoutNotifications: {
+            email: notificationsEmail || null,
+            whatsapp: notificationsWhatsApp || null
+          }
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    const watches = [
+      notificationsEmail
+        ? {
+            externalId: 'onboarding-payout-email',
+            channel: 'email',
+            enabled: true,
+            payload: {
+              id: 'onboarding-payout-email',
+              category: 'payouts',
+              channel: 'email',
+              enabled: true,
+              label: 'Payout email notifications',
+              destination: notificationsEmail,
+              source: 'onboarding'
+            }
+          }
+        : null,
+      notificationsWhatsApp
+        ? {
+            externalId: 'onboarding-payout-whatsapp',
+            channel: 'whatsapp',
+            enabled: true,
+            payload: {
+              id: 'onboarding-payout-whatsapp',
+              category: 'payouts',
+              channel: 'whatsapp',
+              enabled: true,
+              label: 'Payout WhatsApp notifications',
+              destination: notificationsWhatsApp,
+              source: 'onboarding'
+            }
+          }
+        : null
+    ].filter(Boolean) as Array<{
+      externalId: string;
+      channel: string;
+      enabled: boolean;
+      payload: Record<string, unknown>;
+    }>;
+
+    for (let index = 0; index < watches.length; index += 1) {
+      const watch = watches[index];
+      await this.prisma.workspaceNotificationWatch.upsert({
+        where: {
+          preferenceDbId_externalId: {
+            preferenceDbId: preference.dbId,
+            externalId: watch.externalId
+          }
+        },
+        update: {
+          channel: watch.channel,
+          enabled: watch.enabled,
+          position: index,
+          payload: watch.payload as Prisma.InputJsonValue
+        },
+        create: {
+          preferenceDbId: preference.dbId,
+          externalId: watch.externalId,
+          channel: watch.channel,
+          enabled: watch.enabled,
+          position: index,
+          payload: watch.payload as Prisma.InputJsonValue
+        }
+      });
+    }
+  }
+
+  private async syncWorkspacePayoutSettingsFromOnboarding(
+    workspaceId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (!onboarding.payout.method) {
+      return;
+    }
+
+    const settings = await this.prisma.workspacePayoutSettings.upsert({
+      where: { workspaceId },
+      update: {
+        metadata: {
+          source: 'onboarding',
+          payoutSchedule: onboarding.payout.rhythm || null,
+          minThreshold: onboarding.payout.thresholdAmount,
+          notifications: {
+            email: onboarding.payout.notificationsEmail || null,
+            whatsapp: onboarding.payout.notificationsWhatsApp || null
+          },
+          confirmDetails: onboarding.payout.confirmDetails
+        } as Prisma.InputJsonValue
+      },
+      create: {
+        workspaceId,
+        metadata: {
+          source: 'onboarding',
+          payoutSchedule: onboarding.payout.rhythm || null,
+          minThreshold: onboarding.payout.thresholdAmount,
+          notifications: {
+            email: onboarding.payout.notificationsEmail || null,
+            whatsapp: onboarding.payout.notificationsWhatsApp || null
+          },
+          confirmDetails: onboarding.payout.confirmDetails
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    const methodPayload = {
+      id: 'onboarding-primary',
+      source: 'onboarding',
+      type: onboarding.payout.method,
+      label:
+        onboarding.payout.accountName ||
+        onboarding.payout.bankName ||
+        onboarding.payout.mobileProvider ||
+        onboarding.payout.otherProvider ||
+        onboarding.payout.otherMethod ||
+        'Primary payout method',
+      currency: onboarding.payout.currency || 'USD',
+      country:
+        onboarding.payout.bankCountry ||
+        onboarding.payout.otherCountry ||
+        onboarding.tax.taxCountry ||
+        onboarding.shipFrom.country ||
+        null,
+      isDefault: true,
+      details: {
+        bankName: onboarding.payout.bankName || null,
+        bankBranch: onboarding.payout.bankBranch || null,
+        accountName: onboarding.payout.accountName || null,
+        accountNoMasked: onboarding.payout.accountNo
+          ? `${'*'.repeat(Math.max(0, onboarding.payout.accountNo.length - 4))}${onboarding.payout.accountNo.slice(-4)}`
+          : null,
+        swiftBic: onboarding.payout.swiftBic || null,
+        iban: onboarding.payout.iban || null,
+        mobileProvider: onboarding.payout.mobileProvider || null,
+        mobileCountryCode: onboarding.payout.mobileCountryCode || null,
+        mobileNoMasked: onboarding.payout.mobileNo
+          ? `${'*'.repeat(Math.max(0, onboarding.payout.mobileNo.length - 4))}${onboarding.payout.mobileNo.slice(-4)}`
+          : null,
+        mobileIdType: onboarding.payout.mobileIdType || null,
+        mobileIdNumberMasked: onboarding.payout.mobileIdNumber
+          ? `${'*'.repeat(Math.max(0, onboarding.payout.mobileIdNumber.length - 4))}${onboarding.payout.mobileIdNumber.slice(-4)}`
+          : null,
+        alipayRegion: onboarding.payout.alipayRegion || null,
+        alipayLogin: onboarding.payout.alipayLogin || null,
+        wechatRegion: onboarding.payout.wechatRegion || null,
+        wechatId: onboarding.payout.wechatId || null,
+        otherNotes: onboarding.payout.otherNotes || null,
+        otherDetails: onboarding.payout.otherDetails || null,
+        otherDescription: onboarding.payout.otherDescription || null
+      }
+    };
+
+    await this.prisma.workspacePayoutMethod.upsert({
+      where: {
+        settingsDbId_externalId: {
+          settingsDbId: settings.dbId,
+          externalId: 'onboarding-primary'
+        }
+      },
+      update: {
+        type: onboarding.payout.method,
+        label: String(methodPayload.label),
+        currency: onboarding.payout.currency || null,
+        isDefault: true,
+        position: 0,
+        payload: methodPayload as Prisma.InputJsonValue
+      },
+      create: {
+        settingsDbId: settings.dbId,
+        externalId: 'onboarding-primary',
+        type: onboarding.payout.method,
+        label: String(methodPayload.label),
+        currency: onboarding.payout.currency || null,
+        isDefault: true,
+        position: 0,
+        payload: methodPayload as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async syncWorkspaceTaxSettingsFromOnboarding(
+    workspaceId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (!onboarding.tax.legalName && !onboarding.tax.taxCountry && !onboarding.tax.taxId && !onboarding.tax.vatNumber) {
+      return;
+    }
+
+    const settings = await this.prisma.workspaceTaxSettings.upsert({
+      where: { workspaceId },
+      update: {
+        metadata: {
+          source: 'onboarding',
+          invoiceCfg: {
+            legalName: onboarding.tax.legalName || null,
+            legalAddress: onboarding.tax.legalAddress || null,
+            taxpayerType: onboarding.tax.taxpayerType || null,
+            contact: onboarding.tax.contact || null,
+            contactEmail: onboarding.tax.contactEmail || null,
+            contactSameAsOwner: onboarding.tax.contactSameAsOwner
+          }
+        } as Prisma.InputJsonValue
+      },
+      create: {
+        workspaceId,
+        metadata: {
+          source: 'onboarding',
+          invoiceCfg: {
+            legalName: onboarding.tax.legalName || null,
+            legalAddress: onboarding.tax.legalAddress || null,
+            taxpayerType: onboarding.tax.taxpayerType || null,
+            contact: onboarding.tax.contact || null,
+            contactEmail: onboarding.tax.contactEmail || null,
+            contactSameAsOwner: onboarding.tax.contactSameAsOwner
+          }
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    await this.prisma.workspaceTaxProfile.upsert({
+      where: {
+        settingsDbId_externalId: {
+          settingsDbId: settings.dbId,
+          externalId: 'onboarding-primary'
+        }
+      },
+      update: {
+        profileName: onboarding.tax.legalName || null,
+        country: onboarding.tax.taxCountry || onboarding.shipFrom.country || null,
+        vatId: onboarding.tax.vatNumber || onboarding.tax.taxId || null,
+        status: onboarding.status === 'submitted' ? 'In Review' : 'Draft',
+        isDefault: true,
+        position: 0,
+        payload: {
+          id: 'onboarding-primary',
+          source: 'onboarding',
+          profileName: onboarding.tax.legalName || null,
+          country: onboarding.tax.taxCountry || onboarding.shipFrom.country || null,
+          vatId: onboarding.tax.vatNumber || onboarding.tax.taxId || null,
+          status: onboarding.status === 'submitted' ? 'In Review' : 'Draft',
+          isDefault: true,
+          taxpayerType: onboarding.tax.taxpayerType || null,
+          legalAddress: onboarding.tax.legalAddress || null,
+          contact: onboarding.tax.contact || null,
+          contactEmail: onboarding.tax.contactEmail || null,
+          contactSameAsOwner: onboarding.tax.contactSameAsOwner
+        } as Prisma.InputJsonValue
+      },
+      create: {
+        settingsDbId: settings.dbId,
+        externalId: 'onboarding-primary',
+        profileName: onboarding.tax.legalName || null,
+        country: onboarding.tax.taxCountry || onboarding.shipFrom.country || null,
+        vatId: onboarding.tax.vatNumber || onboarding.tax.taxId || null,
+        status: onboarding.status === 'submitted' ? 'In Review' : 'Draft',
+        isDefault: true,
+        position: 0,
+        payload: {
+          id: 'onboarding-primary',
+          source: 'onboarding',
+          profileName: onboarding.tax.legalName || null,
+          country: onboarding.tax.taxCountry || onboarding.shipFrom.country || null,
+          vatId: onboarding.tax.vatNumber || onboarding.tax.taxId || null,
+          status: onboarding.status === 'submitted' ? 'In Review' : 'Draft',
+          isDefault: true,
+          taxpayerType: onboarding.tax.taxpayerType || null,
+          legalAddress: onboarding.tax.legalAddress || null,
+          contact: onboarding.tax.contact || null,
+          contactEmail: onboarding.tax.contactEmail || null,
+          contactSameAsOwner: onboarding.tax.contactSameAsOwner
+        } as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async syncWorkspaceKycFromOnboarding(
+    workspaceId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    const profile = await this.prisma.workspaceKycProfile.upsert({
+      where: { workspaceId },
+      update: {
+        status: String(onboarding.verification.kycStatus || 'PENDING').toLowerCase(),
+        metadata: {
+          source: 'onboarding',
+          emailVerified: onboarding.verification.emailVerified,
+          phoneVerified: onboarding.verification.phoneVerified,
+          verificationEmail: onboarding.verification.verificationEmail || onboarding.email || null,
+          verificationPhone: onboarding.verification.verificationPhone || onboarding.phone || null,
+          otpStatus: onboarding.verification.otpStatus,
+          kycReference: onboarding.verification.kycReference || null
+        } as Prisma.InputJsonValue
+      },
+      create: {
+        workspaceId,
+        status: String(onboarding.verification.kycStatus || 'PENDING').toLowerCase(),
+        metadata: {
+          source: 'onboarding',
+          emailVerified: onboarding.verification.emailVerified,
+          phoneVerified: onboarding.verification.phoneVerified,
+          verificationEmail: onboarding.verification.verificationEmail || onboarding.email || null,
+          verificationPhone: onboarding.verification.verificationPhone || onboarding.phone || null,
+          otpStatus: onboarding.verification.otpStatus,
+          kycReference: onboarding.verification.kycReference || null
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    const documents = Array.isArray(onboarding.docs?.list) ? onboarding.docs.list : [];
+    for (let index = 0; index < documents.length; index += 1) {
+      const document = documents[index] as Record<string, unknown>;
+      const externalId = String(document.id ?? `onboarding-doc-${index + 1}`);
+      await this.prisma.workspaceKycDocument.upsert({
+        where: {
+          kycProfileDbId_externalId: {
+            kycProfileDbId: profile.dbId,
+            externalId
+          }
+        },
+        update: {
+          title: typeof document.name === 'string' ? document.name : typeof document.type === 'string' ? document.type : null,
+          status: typeof document.status === 'string' ? document.status : 'submitted',
+          uploadedAt: this.readDateField(document.uploadedAt),
+          expiresAt: this.readDateField(document.expiry),
+          position: index,
+          payload: {
+            ...document,
+            id: externalId,
+            source: 'onboarding'
+          } as Prisma.InputJsonValue
+        },
+        create: {
+          kycProfileDbId: profile.dbId,
+          externalId,
+          title: typeof document.name === 'string' ? document.name : typeof document.type === 'string' ? document.type : null,
+          status: typeof document.status === 'string' ? document.status : 'submitted',
+          uploadedAt: this.readDateField(document.uploadedAt),
+          expiresAt: this.readDateField(document.expiry),
+          position: index,
+          payload: {
+            ...document,
+            id: externalId,
+            source: 'onboarding'
+          } as Prisma.InputJsonValue
+        }
+      });
+    }
+  }
+
+  private async syncProviderProfileFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (onboarding.profileType !== 'PROVIDER') {
+      return;
+    }
+
+    await this.prisma.providerRecord.upsert({
+      where: {
+        userId_recordType_recordKey: {
+          userId,
+          recordType: 'onboarding_profile',
+          recordKey: 'main'
+        }
+      },
+      update: {
+        payload: {
+          source: 'onboarding',
+          profileType: onboarding.profileType,
+          storeName: onboarding.storeName,
+          storeSlug: onboarding.storeSlug,
+          website: onboarding.website || null,
+          brandColor: onboarding.brandColor || null,
+          providerServices: onboarding.providerServices,
+          bookingModes: onboarding.bookingModes,
+          support: onboarding.support,
+          taxonomySelections: onboarding.taxonomySelections
+        } as Prisma.InputJsonValue
+      },
+      create: {
+        userId,
+        recordType: 'onboarding_profile',
+        recordKey: 'main',
+        payload: {
+          source: 'onboarding',
+          profileType: onboarding.profileType,
+          storeName: onboarding.storeName,
+          storeSlug: onboarding.storeSlug,
+          website: onboarding.website || null,
+          brandColor: onboarding.brandColor || null,
+          providerServices: onboarding.providerServices,
+          bookingModes: onboarding.bookingModes,
+          support: onboarding.support,
+          taxonomySelections: onboarding.taxonomySelections
+        } as Prisma.InputJsonValue
+      }
+    });
+  }
+
   private async syncAccountApprovalFromOnboarding(
     userId: string,
     onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
@@ -727,9 +1236,28 @@ export class WorkflowService {
         storeSlug: onboarding.storeSlug,
         email: onboarding.email,
         phone: onboarding.phone,
+        website: onboarding.website,
+        brandColor: onboarding.brandColor,
+        support: onboarding.support,
+        shipFrom: onboarding.shipFrom,
         channels: onboarding.channels,
         languages: onboarding.languages,
         taxonomySelections: onboarding.taxonomySelections,
+        shipping: onboarding.shipping,
+        policies: onboarding.policies,
+        payout: {
+          method: onboarding.payout.method,
+          currency: onboarding.payout.currency,
+          rhythm: onboarding.payout.rhythm,
+          thresholdAmount: onboarding.payout.thresholdAmount,
+          notificationsEmail: onboarding.payout.notificationsEmail,
+          notificationsWhatsApp: onboarding.payout.notificationsWhatsApp,
+          confirmDetails: onboarding.payout.confirmDetails
+        },
+        tax: onboarding.tax,
+        verification: onboarding.verification,
+        providerServices: onboarding.providerServices,
+        bookingModes: onboarding.bookingModes,
         submittedAt: onboarding.submittedAt,
         updatedAt: onboarding.updatedAt
       }
@@ -803,6 +1331,21 @@ export class WorkflowService {
       });
     }
     return Array.from(nodeIds);
+  }
+
+  private async ensureWorkspaceRow(userId: string) {
+    const existing = await this.prisma.workspace.findUnique({
+      where: { ownerUserId: userId }
+    });
+    if (existing) {
+      return existing;
+    }
+    return this.prisma.workspace.create({
+      data: {
+        ownerUserId: userId,
+        inviteDomainAllowlist: ['creator.com', 'studio.com', 'mylivedealz.com', 'studio.test'] as Prisma.InputJsonValue
+      }
+    });
   }
 
   private async getAccountApprovalPayload(userId: string) {
