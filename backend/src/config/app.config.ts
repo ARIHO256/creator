@@ -7,6 +7,10 @@ export default () => ({
       process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`,
     ),
   },
+  database: {
+    writeUrl: process.env.DATABASE_URL ?? "",
+    readUrl: process.env.DATABASE_READ_URL ?? process.env.DATABASE_URL ?? "",
+  },
   rateLimit: {
     defaultLimit: Number(process.env.RATE_LIMIT_DEFAULT_LIMIT ?? "120"),
     defaultWindowMs: Number(
@@ -62,6 +66,16 @@ export default () => ({
     ),
     redisUrl: process.env.REALTIME_REDIS_URL ?? process.env.REDIS_URL ?? "",
     channelPrefix: process.env.REALTIME_CHANNEL_PREFIX ?? "mldz:realtime:",
+    streamServerEnabled: !["0", "false", "no", "off"].includes(
+      String(process.env.REALTIME_STREAM_SERVER_ENABLED ?? "true").toLowerCase(),
+    ),
+    subscriberEnabled: !["0", "false", "no", "off"].includes(
+      String(
+        process.env.REALTIME_SUBSCRIBER_ENABLED ??
+          process.env.REALTIME_STREAM_SERVER_ENABLED ??
+          "true",
+      ).toLowerCase(),
+    ),
     maxAttempts: Number(process.env.REALTIME_MAX_ATTEMPTS ?? "3"),
     streamPingMs: Number(process.env.REALTIME_STREAM_PING_MS ?? "25000"),
     streamMaxClientsPerUser: Number(

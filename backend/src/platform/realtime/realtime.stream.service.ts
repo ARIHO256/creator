@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import type { FastifyReply } from 'fastify';
@@ -85,9 +85,17 @@ export class RealtimeStreamService implements OnModuleDestroy {
   private readonly instanceId = `${process.pid}-${Math.random().toString(16).slice(2)}`;
   private readonly redisPrefix: string;
   private readonly redis: Redis | null;
+  private readonly streamServerEnabled: boolean;
   private seq = 0;
 
   constructor(private readonly configService: ConfigService) {
+    this.streamServerEnabled =
+      !['0', 'false', 'no', 'off'].includes(
+        String(this.configService.get('realtime.enabled') ?? 'true').toLowerCase()
+      ) &&
+      !['0', 'false', 'no', 'off'].includes(
+        String(this.configService.get('realtime.streamServerEnabled') ?? 'true').toLowerCase()
+      );
     this.redisPrefix = String(
       this.configService.get('realtime.streamStatePrefix') ??
         this.configService.get('realtime.channelPrefix') ??
@@ -107,6 +115,9 @@ export class RealtimeStreamService implements OnModuleDestroy {
   }
 
   async open(userId: string, reply: FastifyReply, lastEventId?: string | null) {
+    if (!this.streamServerEnabled) {
+      throw new NotFoundException('Realtime stream is disabled on this node');
+    }
     const connectionId = `${this.instanceId}:${Date.now()}:${Math.random().toString(16).slice(2)}`;
     const admitted = await this.acquireSlot(userId, connectionId);
     if (!admitted) {
@@ -180,11 +191,15 @@ export class RealtimeStreamService implements OnModuleDestroy {
     event: BufferedEvent,
     options: Pick<EmitOptions, 'persistDistributedHistory' | 'persistLocalHistory'> = {}
   ) {
-    if (options.persistLocalHistory !== false) {
+    if (options.persistLocalHistory !== false && this.streamServerEnabled) {
       this.storeLocalEvent(userId, event);
     }
     if (options.persistDistributedHistory !== false) {
       await this.storeDistributedEvent(userId, event);
+    }
+
+    if (!this.streamServerEnabled) {
+      return;
     }
 
     const set = this.clients.get(userId);
@@ -231,6 +246,10 @@ export class RealtimeStreamService implements OnModuleDestroy {
     if (this.redis) {
       await this.redis.quit();
     }
+  }
+
+  acceptsConnections() {
+    return this.streamServerEnabled;
   }
 
   private async acquireSlot(userId: string, connectionId: string) {

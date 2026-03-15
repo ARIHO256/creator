@@ -10,6 +10,7 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
   private client: any | null = null;
   private readonly enabled: boolean;
   private readonly prefix: string;
+  private readonly subscriberEnabled: boolean;
 
   constructor(
     private readonly streamService: RealtimeStreamService,
@@ -17,6 +18,9 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
   ) {
     this.enabled = !['0', 'false', 'no', 'off'].includes(
       String(this.readConfig('realtime.enabled', 'false')).toLowerCase()
+    );
+    this.subscriberEnabled = !['0', 'false', 'no', 'off'].includes(
+      String(this.readConfig('realtime.subscriberEnabled', 'true')).toLowerCase()
     );
     this.prefix = String(this.readConfig('realtime.channelPrefix', 'mldz:realtime:'));
   }
@@ -26,7 +30,7 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
       this.readConfig<string>('realtime.redisUrl', '') ??
       this.readConfig<string>('cache.redisUrl', '') ??
       '';
-    if (!this.enabled || !redisUrl) {
+    if (!this.enabled || !this.subscriberEnabled || !redisUrl) {
       if (!this.configService) {
         this.logger.debug('Realtime subscriber disabled because ConfigService is unavailable.');
       }

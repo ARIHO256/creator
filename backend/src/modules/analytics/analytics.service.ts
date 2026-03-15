@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, TransactionStatus } from '@prisma/client';
-import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
 
 const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
 
@@ -8,7 +8,10 @@ type ParsedMeta = Record<string, unknown>;
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prismaWrite: PrismaService,
+    private readonly prisma: ReadPrismaService
+  ) {}
 
   async getOverview(userId: string, role: string) {
     const events = await this.prisma.analyticsEvent.findMany({
@@ -62,7 +65,7 @@ export class AnalyticsService {
       ...(Array.isArray(body.alertRules) ? { alertRules: body.alertRules } : {})
     };
 
-    const record = await this.prisma.workspaceSetting.upsert({
+    const record = await this.prismaWrite.workspaceSetting.upsert({
       where: { userId_key: { userId, key: this.scopedKey(role, 'analytics_page') } },
       update: { payload: next as Prisma.InputJsonValue },
       create: { userId, key: this.scopedKey(role, 'analytics_page'), payload: next as Prisma.InputJsonValue }

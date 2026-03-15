@@ -5,12 +5,24 @@ import { RealtimeStreamService } from '../src/platform/realtime/realtime.stream.
 function createConfigService() {
   return {
     get(key: string) {
+      if (key === 'realtime.enabled') return true;
+      if (key === 'realtime.streamServerEnabled') return true;
       if (key === 'realtime.streamPingMs') return 25000;
       if (key === 'realtime.streamPresenceTtlMs') return 90000;
       if (key === 'realtime.streamHistorySize') return 50;
       if (key === 'realtime.streamHistoryTtlMs') return 300000;
       if (key === 'realtime.streamMaxClientsPerUser') return 3;
       if (key === 'realtime.streamMaxClientsTotal') return 5000;
+      return undefined;
+    }
+  };
+}
+
+function createDisabledConfigService() {
+  return {
+    get(key: string) {
+      if (key === 'realtime.enabled') return true;
+      if (key === 'realtime.streamServerEnabled') return false;
       return undefined;
     }
   };
@@ -70,4 +82,12 @@ test('RealtimeStreamService tracks local clients for open and close lifecycles',
 
   handlers.close?.();
   assert.equal(await service.hasClient('user-1'), false);
+});
+
+test('RealtimeStreamService rejects stream opens on non-gateway nodes', async () => {
+  const service = new RealtimeStreamService(createDisabledConfigService() as any);
+  const { reply } = createReply();
+
+  await assert.rejects(() => service.open('user-1', reply as any), /Realtime stream is disabled/);
+  assert.equal(service.acceptsConnections(), false);
 });

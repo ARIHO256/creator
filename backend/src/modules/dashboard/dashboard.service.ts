@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DisputeStatus, OrderStatus, Prisma, ReturnStatus, SellerKind, TransactionStatus, UserRole } from '@prisma/client';
 import { CacheService } from '../../platform/cache/cache.service.js';
-import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { JobsWorker } from '../jobs/jobs.worker.js';
 
@@ -11,7 +11,8 @@ const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_m
 @Injectable()
 export class DashboardService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prismaWrite: PrismaService,
+    private readonly prisma: ReadPrismaService,
     private readonly configService: ConfigService,
     private readonly jobsService: JobsService,
     private readonly jobsWorker: JobsWorker,
@@ -32,11 +33,14 @@ export class DashboardService {
 
   async ready() {
     const startedAt = process.hrtime.bigint();
-    const [_, jobsMetrics] = await Promise.all([
+    const readStartedAt = process.hrtime.bigint();
+    const [_, __, jobsMetrics] = await Promise.all([
+      this.prismaWrite.$queryRaw`SELECT 1`,
       this.prisma.$queryRaw`SELECT 1`,
       this.jobsService.metrics()
     ]);
     const databaseLatencyMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const readDatabaseLatencyMs = Number(process.hrtime.bigint() - readStartedAt) / 1_000_000;
     const warnings = this.securityWarnings();
 
     return {
@@ -46,6 +50,13 @@ export class DashboardService {
         database: {
           status: 'up',
           latencyMs: Number(databaseLatencyMs.toFixed(1))
+        },
+        databaseRead: {
+          status: 'up',
+          latencyMs: Number(readDatabaseLatencyMs.toFixed(1)),
+          replicaConfigured:
+            Boolean(this.configService.get<string>('database.readUrl')) &&
+            this.configService.get<string>('database.readUrl') !== this.configService.get<string>('database.writeUrl')
         },
         upload: {
           provider: this.configService.get<string>('upload.defaultProvider') ?? 'LOCAL',
@@ -64,7 +75,9 @@ export class DashboardService {
           bodyLimitBytes: this.configService.get<number>('app.bodyLimitBytes') ?? 10 * 1024 * 1024,
           securityHeadersEnabled: this.configService.get<boolean>('security.enableHeaders') ?? true,
           workerEnabled: this.configService.get<boolean>('jobs.workerEnabled') ?? true,
-          workerPollMs: this.configService.get<number>('jobs.workerPollMs') ?? 2000
+          workerPollMs: this.configService.get<number>('jobs.workerPollMs') ?? 2000,
+          realtimeStreamServerEnabled: this.configService.get<boolean>('realtime.streamServerEnabled') ?? true,
+          realtimeSubscriberEnabled: this.configService.get<boolean>('realtime.subscriberEnabled') ?? true
         }
       },
       worker: this.jobsWorker.getStatus(),
@@ -103,7 +116,7 @@ export class DashboardService {
       return existing.payload;
     }
 
-    const created = await this.prisma.systemContent.create({
+    const created = await this.prismaWrite.systemContent.create({
       data: {
         key: 'landing',
         payload: {
@@ -138,7 +151,7 @@ export class DashboardService {
       roles: user?.roleAssignments.map((assignment) => assignment.role) ?? [UserRole.CREATOR]
     };
 
-    const created = await this.prisma.userSetting.create({
+    const created = await this.prismaWrite.userSetting.create({
       data: {
         userId,
         key: 'bootstrap',
@@ -806,7 +819,7 @@ export class DashboardService {
     const ttlMs = Number(this.configService.get<number>('dashboard.snapshotTtlMs') ?? 60_000);
     const now = new Date();
     const expiresAt = ttlMs > 0 ? new Date(now.getTime() + ttlMs) : null;
-    await this.prisma.dashboardSnapshot.upsert({
+    await this.prismaWrite.dashboardSnapshot.upsert({
       where: { userId_role: { userId, role } },
       create: {
         userId,
@@ -998,7 +1011,7 @@ export class DashboardService {
     if (existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)) {
       return existing.payload as Record<string, unknown>;
     }
-    const record = await this.prisma.workspaceSetting.upsert({
+    const record = await this.prismaWrite.workspaceSetting.upsert({
       where: {
         userId_key: {
           userId,
