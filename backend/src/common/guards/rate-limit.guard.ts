@@ -67,6 +67,10 @@ export class RateLimitGuard implements CanActivate, OnModuleDestroy {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    if (this.configService.get<boolean>('rateLimit.disabled') ?? false) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest<
       FastifyRequest & { user?: { sub?: string } }
     >();

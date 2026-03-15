@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DisputeStatus, OrderStatus, Prisma, ReturnStatus, SellerKind, TransactionStatus, UserRole } from '@prisma/client';
 import { CacheService } from '../../platform/cache/cache.service.js';
+import { PublicReadCacheService } from '../../platform/cache/public-read-cache.service.js';
 import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { JobsWorker } from '../jobs/jobs.worker.js';
@@ -16,7 +17,8 @@ export class DashboardService {
     private readonly configService: ConfigService,
     private readonly jobsService: JobsService,
     private readonly jobsWorker: JobsWorker,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly publicReadCache: PublicReadCacheService
   ) {}
 
   health() {
@@ -109,23 +111,45 @@ export class DashboardService {
   }
 
   async landingContent() {
-    const existing = await this.prisma.systemContent.findUnique({
-      where: { key: 'landing' }
-    });
-    if (existing) {
-      return existing.payload;
-    }
+    return this.cache.getOrSet(
+      this.publicReadCache.landingContentKey(),
+      this.publicReadCache.publicFeedTtlMs(),
+      async () => {
+        const existing = await this.prisma.systemContent.findUnique({
+          where: { key: 'landing' }
+        });
+        if (existing) {
+          return existing.payload;
+        }
 
-    const created = await this.prismaWrite.systemContent.create({
-      data: {
-        key: 'landing',
-        payload: {
-          title: 'Unified seller and creator backend',
-          subtitle: 'One API surface with role-aware workspaces'
+        try {
+          const created = await this.prismaWrite.systemContent.create({
+            data: {
+              key: 'landing',
+              payload: {
+                title: 'Unified seller and creator backend',
+                subtitle: 'One API surface with role-aware workspaces'
+              }
+            }
+          });
+          return created.payload;
+        } catch (error: any) {
+          if (error?.code === 'P2002') {
+            const current = await this.prisma.systemContent.findUnique({
+              where: { key: 'landing' }
+            });
+            if (current) {
+              return current.payload;
+            }
+          }
+          throw error;
         }
       }
-    });
-    return created.payload;
+    );
+  }
+
+  async warmLandingContentCache() {
+    await this.landingContent();
   }
 
   async appBootstrap(userId: string) {
@@ -151,14 +175,26 @@ export class DashboardService {
       roles: user?.roleAssignments.map((assignment) => assignment.role) ?? [UserRole.CREATOR]
     };
 
-    const created = await this.prismaWrite.userSetting.create({
-      data: {
-        userId,
-        key: 'bootstrap',
-        payload
+    try {
+      const created = await this.prismaWrite.userSetting.create({
+        data: {
+          userId,
+          key: 'bootstrap',
+          payload
+        }
+      });
+      return created.payload;
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        const current = await this.prisma.userSetting.findUnique({
+          where: { userId_key: { userId, key: 'bootstrap' } }
+        });
+        if (current) {
+          return current.payload;
+        }
       }
-    });
-    return created.payload;
+      throw error;
+    }
   }
 
   async feed(userId: string) {

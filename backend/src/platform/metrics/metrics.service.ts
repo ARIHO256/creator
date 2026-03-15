@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Counter, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
+import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from 'prom-client';
 
 @Injectable()
 export class MetricsService {
@@ -8,7 +8,12 @@ export class MetricsService {
   private readonly httpDuration: Histogram<string>;
   private readonly cacheHits: Counter<string>;
   private readonly cacheMisses: Counter<string>;
+  private readonly cacheWrites: Counter<string>;
+  private readonly cacheErrors: Counter<string>;
+  private readonly cacheWaits: Counter<string>;
   private readonly dbDuration: Histogram<string>;
+  private readonly dbSlowQueries: Counter<string>;
+  private readonly dependencyCircuitState: Gauge<string>;
   private readonly jobsProcessed: Counter<string>;
   private readonly jobsFailed: Counter<string>;
 
@@ -44,11 +49,46 @@ export class MetricsService {
       registers: [this.registry]
     });
 
+    this.cacheWrites = new Counter({
+      name: 'cache_writes_total',
+      help: 'Cache writes',
+      labelNames: ['cache', 'layer'],
+      registers: [this.registry]
+    });
+
+    this.cacheErrors = new Counter({
+      name: 'cache_errors_total',
+      help: 'Cache operation errors',
+      labelNames: ['cache', 'layer', 'operation'],
+      registers: [this.registry]
+    });
+
+    this.cacheWaits = new Counter({
+      name: 'cache_waits_total',
+      help: 'Cache stampede waits',
+      labelNames: ['cache'],
+      registers: [this.registry]
+    });
+
     this.dbDuration = new Histogram({
       name: 'db_query_duration_ms',
       help: 'Database query duration in milliseconds',
       labelNames: ['model', 'action'],
       buckets: [1, 2, 5, 10, 25, 50, 100, 250, 500],
+      registers: [this.registry]
+    });
+
+    this.dbSlowQueries = new Counter({
+      name: 'db_slow_queries_total',
+      help: 'Database queries exceeding the configured latency budget',
+      labelNames: ['model', 'action', 'budget_ms'],
+      registers: [this.registry]
+    });
+
+    this.dependencyCircuitState = new Gauge({
+      name: 'dependency_circuit_state',
+      help: 'Circuit breaker state for external dependencies',
+      labelNames: ['dependency'],
       registers: [this.registry]
     });
 
@@ -81,8 +121,29 @@ export class MetricsService {
     this.cacheMisses.inc({ cache, layer });
   }
 
+  recordCacheWrite(cache: string, layer: 'memory' | 'redis') {
+    this.cacheWrites.inc({ cache, layer });
+  }
+
+  recordCacheError(cache: string, layer: 'memory' | 'redis', operation: string) {
+    this.cacheErrors.inc({ cache, layer, operation });
+  }
+
+  recordCacheWait(cache: string) {
+    this.cacheWaits.inc({ cache });
+  }
+
   recordDbQuery(model: string, action: string, durationMs: number) {
     this.dbDuration.observe({ model, action }, durationMs);
+  }
+
+  recordDbSlowQuery(model: string, action: string, durationMs: number, budgetMs: number) {
+    this.dbDuration.observe({ model, action }, durationMs);
+    this.dbSlowQueries.inc({ model, action, budget_ms: String(budgetMs) });
+  }
+
+  setDependencyCircuit(dependency: string, open: boolean) {
+    this.dependencyCircuitState.set({ dependency }, open ? 1 : 0);
   }
 
   recordJobProcessed(type: string, status: 'success' | 'failed') {

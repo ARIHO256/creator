@@ -22,8 +22,12 @@ export default () => ({
   database: {
     writeUrl: process.env.DATABASE_URL ?? "",
     readUrl: process.env.DATABASE_READ_URL ?? process.env.DATABASE_URL ?? "",
+    queryBudgetMs: Number(process.env.DATABASE_QUERY_BUDGET_MS ?? "75"),
   },
   rateLimit: {
+    disabled: !["0", "false", "no", "off"].includes(
+      String(process.env.RATE_LIMIT_DISABLED ?? "false").toLowerCase(),
+    ),
     defaultLimit: Number(process.env.RATE_LIMIT_DEFAULT_LIMIT ?? "120"),
     defaultWindowMs: Number(
       process.env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? "60000",
@@ -67,10 +71,23 @@ export default () => ({
   },
   cache: {
     defaultTtlMs: Number(process.env.CACHE_DEFAULT_TTL_MS ?? "15000"),
+    publicReadTtlMs: Number(process.env.CACHE_PUBLIC_READ_TTL_MS ?? "60000"),
+    publicFeedTtlMs: Number(process.env.CACHE_PUBLIC_FEED_TTL_MS ?? "30000"),
+    storefrontTtlMs: Number(process.env.CACHE_STOREFRONT_TTL_MS ?? "120000"),
+    taxonomyTtlMs: Number(process.env.CACHE_TAXONOMY_TTL_MS ?? "300000"),
+    summaryTtlMs: Number(process.env.CACHE_SUMMARY_TTL_MS ?? "30000"),
     maxEntries: Number(process.env.CACHE_MAX_ENTRIES ?? "5000"),
     redisUrl: process.env.REDIS_URL ?? "",
     redisPrefix: process.env.CACHE_REDIS_PREFIX ?? "mldz:cache:",
     lockTtlMs: Number(process.env.CACHE_LOCK_TTL_MS ?? "5000"),
+    redisTimeoutMs: Number(process.env.CACHE_REDIS_TIMEOUT_MS ?? "150"),
+    redisCircuitFailureThreshold: Number(
+      process.env.CACHE_REDIS_CIRCUIT_FAILURE_THRESHOLD ?? "5",
+    ),
+    redisCircuitResetMs: Number(
+      process.env.CACHE_REDIS_CIRCUIT_RESET_MS ?? "10000",
+    ),
+    warmListingsLimit: Number(process.env.CACHE_WARM_LISTINGS_LIMIT ?? "24"),
     httpEnabled: !["0", "false", "no", "off"].includes(
       String(process.env.HTTP_CACHE_CONTROL_ENABLED ?? "true").toLowerCase(),
     ),

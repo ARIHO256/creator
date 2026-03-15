@@ -1,4 +1,4 @@
-import { INestApplication, Injectable, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import { INestApplication, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import { MetricsService } from '../metrics/metrics.service.js';
@@ -12,6 +12,9 @@ function resolveDatasourceUrl(configService: ConfigService | undefined, role: Pr
 }
 
 abstract class BasePrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly logger: Logger;
+  private readonly queryBudgetMs: number;
+
   protected constructor(
     private readonly role: PrismaRole,
     @Optional() private readonly configService?: ConfigService,
@@ -22,11 +25,18 @@ abstract class BasePrismaService extends PrismaClient implements OnModuleInit, O
       datasources: datasourceUrl ? { db: { url: datasourceUrl } } : undefined,
       log: [{ emit: 'event', level: 'query' }]
     });
+    this.logger = new Logger(role === 'read' ? 'ReadPrismaService' : 'PrismaService');
+    this.queryBudgetMs = Number(this.configService?.get('database.queryBudgetMs') ?? 75);
 
     this.$on('query', (event) => {
-      if (!this.metrics) return;
       const model = event.target ?? 'query';
-      this.metrics.recordDbQuery(model, `${this.role}_query`, Number(event.duration ?? 0));
+      const action = `${this.role}_query`;
+      const durationMs = Number(event.duration ?? 0);
+      this.metrics?.recordDbQuery(model, action, durationMs);
+      if (durationMs > this.queryBudgetMs) {
+        this.metrics?.recordDbSlowQuery(model, action, durationMs, this.queryBudgetMs);
+        this.logger.warn(`${action} exceeded ${this.queryBudgetMs}ms budget on ${model}: ${durationMs}ms`);
+      }
     });
   }
 

@@ -9,6 +9,8 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
 
   assert.equal(config.database.writeUrl, process.env.DATABASE_URL ?? '');
   assert.equal(config.database.readUrl, process.env.DATABASE_READ_URL ?? process.env.DATABASE_URL ?? '');
+  assert.equal(config.database.queryBudgetMs, 75);
+  assert.equal(config.rateLimit.disabled, false);
   assert.equal(config.rateLimit.defaultLimit, 120);
   assert.equal(config.rateLimit.defaultWindowMs, 60_000);
   assert.equal(config.rateLimit.authLimit, 12);
@@ -25,6 +27,10 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
   assert.equal(config.realtime.subscriberEnabled, true);
   assert.equal(config.platform.trustProxy, true);
   assert.equal(config.cache.httpEnabled, true);
+  assert.equal(config.cache.publicReadTtlMs, 60_000);
+  assert.equal(config.cache.storefrontTtlMs, 120_000);
+  assert.equal(config.cache.taxonomyTtlMs, 300_000);
+  assert.equal(config.cache.redisTimeoutMs, 150);
   assert.equal(config.auth.registerQueueEnabled, true);
   assert.equal(config.auth.registrationPollAfterMs, 1000);
   assert.equal(config.telemetry.enabled, false);

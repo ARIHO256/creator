@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 const baseUrl = String(process.env.LOAD_TEST_BASE_URL ?? 'http://127.0.0.1:4010');
 const concurrency = readNumber('LOAD_TEST_CONCURRENCY', 100);
 const durationSeconds = readNumber('LOAD_TEST_DURATION_SECONDS', 30);
@@ -7,6 +9,10 @@ const method = String(process.env.LOAD_TEST_METHOD ?? 'GET').trim().toUpperCase(
 const bearerToken = String(process.env.LOAD_TEST_BEARER_TOKEN ?? '').trim();
 const cookie = String(process.env.LOAD_TEST_COOKIE ?? '').trim();
 const customPaths = parsePaths(process.env.LOAD_TEST_PATHS);
+const headersJson = String(process.env.LOAD_TEST_HEADERS_JSON ?? '').trim();
+const bodyTemplate = String(process.env.LOAD_TEST_BODY ?? '').trim();
+const outputMode = String(process.env.LOAD_TEST_OUTPUT ?? 'pretty').trim().toLowerCase();
+const idempotencyKeyPrefix = String(process.env.LOAD_TEST_IDEMPOTENCY_KEY_PREFIX ?? '').trim();
 
 const scenarioTargets = {
   public: [
@@ -29,13 +35,31 @@ const scenarioTargets = {
 
 const targets = customPaths.length ? customPaths : scenarioTargets[scenario] ?? scenarioTargets.public;
 
-const headers = {};
+const baseHeaders = {};
 if (bearerToken) {
-  headers.authorization = `Bearer ${bearerToken}`;
+  baseHeaders.authorization = `Bearer ${bearerToken}`;
 }
 if (cookie) {
-  headers.cookie = cookie;
+  baseHeaders.cookie = cookie;
 }
+if (headersJson) {
+  Object.assign(baseHeaders, parseHeadersJson(headersJson));
+}
+if (bodyTemplate && !baseHeaders['content-type']) {
+  baseHeaders['content-type'] = 'application/json';
+}
+
+const config = {
+  baseUrl,
+  scenario,
+  method,
+  concurrency,
+  durationSeconds,
+  timeoutMs,
+  targets,
+  hasBody: Boolean(bodyTemplate),
+  idempotencyKeyPrefix: idempotencyKeyPrefix || null
+};
 
 const stats = {
   startedAt: Date.now(),
@@ -51,21 +75,9 @@ const stats = {
 
 const deadline = Date.now() + durationSeconds * 1000;
 
-console.log(
-  JSON.stringify(
-    {
-      baseUrl,
-      scenario,
-      method,
-      concurrency,
-      durationSeconds,
-      timeoutMs,
-      targets
-    },
-    null,
-    2
-  )
-);
+if (outputMode !== 'json') {
+  console.log(JSON.stringify(config, null, 2));
+}
 
 await Promise.all(Array.from({ length: concurrency }, (_, index) => worker(index)));
 
@@ -92,33 +104,45 @@ const summary = {
   errors: Object.fromEntries([...stats.errors.entries()].sort((a, b) => a[0].localeCompare(b[0])))
 };
 
-console.log(JSON.stringify(summary, null, 2));
+if (outputMode === 'json') {
+  console.log(JSON.stringify({ config, summary }));
+} else {
+  console.log(JSON.stringify(summary, null, 2));
+}
 
 async function worker(workerIndex) {
   let requestIndex = workerIndex;
   while (Date.now() < deadline) {
     const path = targets[requestIndex % targets.length];
-    requestIndex += 1;
-    await issueRequest(path);
+    await issueRequest(path, workerIndex, requestIndex);
+    requestIndex += concurrency;
   }
 }
 
-async function issueRequest(path) {
+async function issueRequest(path, workerIndex, requestIndex) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = performance.now();
+  const headers = {
+    ...baseHeaders
+  };
+  if (idempotencyKeyPrefix) {
+    headers['x-idempotency-key'] = `${idempotencyKeyPrefix}-${workerIndex}-${requestIndex}-${Date.now()}`;
+  }
+  const body = buildBodyPayload(workerIndex, requestIndex);
 
   try {
     const response = await fetch(new URL(path, baseUrl), {
       method,
       headers,
+      body,
       signal: controller.signal
     });
-    const body = await response.arrayBuffer();
+    const responseBody = await response.arrayBuffer();
     const latencyMs = round(performance.now() - startedAt);
     recordLatency(latencyMs);
     stats.completed += 1;
-    stats.bytes += body.byteLength;
+    stats.bytes += responseBody.byteLength;
     increment(stats.statuses, String(response.status));
     if (response.ok) {
       stats.succeeded += 1;
@@ -151,6 +175,29 @@ function parsePaths(rawValue) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
+}
+
+function parseHeadersJson(rawValue) {
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+function buildBodyPayload(workerIndex, requestIndex) {
+  if (!bodyTemplate) {
+    return undefined;
+  }
+
+  return bodyTemplate
+    .replaceAll('{{worker}}', String(workerIndex))
+    .replaceAll('{{request}}', String(requestIndex))
+    .replaceAll('{{rand}}', Math.random().toString(16).slice(2))
+    .replaceAll('{{timestamp}}', String(Date.now()))
+    .replaceAll('{{uuid}}', randomUUID());
 }
 
 function readNumber(name, fallback) {

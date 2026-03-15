@@ -16,7 +16,8 @@ export const options = {
         { target: 1000, duration: '2m' },
         { target: 5000, duration: '5m' },
         { target: 10000, duration: '5m' }
-      ]
+      ],
+      exec: 'publicCatalog'
     },
     authenticated_dashboard: {
       executor: 'ramping-arrival-rate',
@@ -27,7 +28,8 @@ export const options = {
       stages: [
         { target: authToken ? 500 : 0, duration: '2m' },
         { target: authToken ? 2500 : 0, duration: '5m' }
-      ]
+      ],
+      exec: 'authenticatedDashboard'
     }
   },
   thresholds: {
@@ -52,11 +54,7 @@ const authenticatedPaths = [
   '/api/dashboard/my-day'
 ];
 
-export default function () {
-  const scenario = __ENV.K6_SCENARIO || 'public';
-  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
-  const pathList = scenario === 'authenticated' && authToken ? authenticatedPaths : publicPaths;
-  const path = pathList[Math.floor(Math.random() * pathList.length)];
+function send(path, headers = {}) {
   const response = http.get(`${baseUrl}${path}`, { headers });
 
   check(response, {
@@ -64,4 +62,15 @@ export default function () {
   });
 
   sleep(0.1);
+}
+
+export function publicCatalog() {
+  const path = publicPaths[Math.floor(Math.random() * publicPaths.length)];
+  send(path);
+}
+
+export function authenticatedDashboard() {
+  const path = authenticatedPaths[Math.floor(Math.random() * authenticatedPaths.length)];
+  const headers = authToken ? { Authorization: `Bearer ${authToken}` } : {};
+  send(path, headers);
 }

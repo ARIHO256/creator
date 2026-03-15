@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
@@ -223,54 +224,59 @@ export class CommunicationsService {
   }
 
   async createTicket(userId: string, role: string, body: CreateSupportTicketDto) {
-    const ticket = await this.prisma.supportTicket.create({
-      data: {
-        id: body.id,
+    const ticketId = body.id?.trim() || randomUUID();
+    const metadata = { workspaceRole: String(role || '').toUpperCase() } as Prisma.InputJsonValue;
+    const ticket = await this.prisma.$transaction(async (tx) => {
+      await tx.messageThread.create({
+        data: {
+          id: ticketId,
+          userId,
+          subject: body.subject ?? 'Untitled',
+          status: 'open',
+          priority: body.severity ?? 'medium',
+          metadata
+        }
+      });
+
+      return tx.supportTicket.create({
+        data: {
+          id: ticketId,
+          threadId: ticketId,
+          userId,
+          status: 'OPEN',
+          marketplace: body.marketplace ?? 'General',
+          category: body.category ?? 'Support',
+          subject: body.subject ?? 'Untitled',
+          severity: body.severity ?? 'medium',
+          ref: body.ref,
+          metadata
+        }
+      });
+    });
+
+    await Promise.all([
+      this.audit.log({
         userId,
-        status: 'OPEN',
-        marketplace: body.marketplace ?? 'General',
-        category: body.category ?? 'Support',
-        subject: body.subject ?? 'Untitled',
-        severity: body.severity ?? 'medium',
-        ref: body.ref,
-        metadata: { workspaceRole: String(role || '').toUpperCase() } as Prisma.InputJsonValue
-      }
-    });
-    await this.prisma.messageThread.create({
-      data: {
-        id: ticket.id,
-        userId,
-        status: 'open',
-        subject: ticket.subject ?? 'Support ticket',
-        priority: ticket.severity ?? 'normal',
-        metadata: { workspaceRole: String(role || '').toUpperCase() } as Prisma.InputJsonValue
-      }
-    }).catch(() => undefined);
-    await this.prisma.supportTicket.update({
-      where: { id: ticket.id },
-      data: { threadId: ticket.id }
-    });
-    await this.audit.log({
-      userId,
-      action: 'support.ticket_created',
-      entityType: 'support_ticket',
-      entityId: ticket.id,
-      route: '/api/help-support/tickets',
-      method: 'POST',
-      statusCode: 201,
-      metadata: { category: ticket.category, severity: ticket.severity }
-    });
-    await this.realtime.publishUserEvent(userId, {
-      type: 'support.ticket.created',
-      ticketId: ticket.id,
-      status: ticket.status,
-      createdAt: ticket.createdAt.toISOString()
-    });
-    await this.jobsService.enqueue({
-      queue: 'moderation',
-      type: 'MODERATION_SCAN',
-      payload: { targetType: 'support_ticket', targetId: ticket.id }
-    });
+        action: 'support.ticket_created',
+        entityType: 'support_ticket',
+        entityId: ticket.id,
+        route: '/api/help-support/tickets',
+        method: 'POST',
+        statusCode: 201,
+        metadata: { category: ticket.category, severity: ticket.severity }
+      }),
+      this.realtime.publishUserEvent(userId, {
+        type: 'support.ticket.created',
+        ticketId: ticket.id,
+        status: ticket.status,
+        createdAt: ticket.createdAt.toISOString()
+      }),
+      this.jobsService.enqueue({
+        queue: 'moderation',
+        type: 'MODERATION_SCAN',
+        payload: { targetType: 'support_ticket', targetId: ticket.id }
+      })
+    ]);
     return this.serializeSupportTicket(ticket);
   }
 

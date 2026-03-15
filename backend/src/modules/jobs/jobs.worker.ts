@@ -152,6 +152,52 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
           await authService.completeQueuedRegistration(job.payload as any);
         }
         return;
+      case 'CACHE_WARM_PUBLIC_READ':
+        {
+          const payload = job.payload as { target?: string; handle?: string };
+          switch (payload?.target) {
+            case 'landing':
+              {
+                const { DashboardService } = await import('../dashboard/dashboard.service.js');
+                const dashboardService = this.moduleRef?.get(DashboardService, { strict: false });
+                await dashboardService?.warmLandingContentCache();
+              }
+              return;
+            case 'marketplace':
+              {
+                const { MarketplaceService } = await import('../marketplace/marketplace.service.js');
+                const marketplaceService = this.moduleRef?.get(MarketplaceService, { strict: false });
+                await marketplaceService?.warmPublicMarketplaceCache();
+              }
+              return;
+            case 'storefront':
+              if (!payload.handle) {
+                return;
+              }
+              {
+                const { StorefrontService } = await import('../storefront/storefront.service.js');
+                const storefrontService = this.moduleRef?.get(StorefrontService, { strict: false });
+                await storefrontService?.warmPublicStorefrontCache(payload.handle);
+              }
+              return;
+            case 'taxonomy':
+              {
+                const { TaxonomyService } = await import('../taxonomy/taxonomy.service.js');
+                const taxonomyService = this.moduleRef?.get(TaxonomyService, { strict: false });
+                await taxonomyService?.warmPublicTaxonomyCache();
+              }
+              return;
+            case 'discovery-sellers':
+              {
+                const { DiscoveryService } = await import('../discovery/discovery.service.js');
+                const discoveryService = this.moduleRef?.get(DiscoveryService, { strict: false });
+                await discoveryService?.warmPublicDiscoveryCache();
+              }
+              return;
+            default:
+              return;
+          }
+        }
       case 'AUDIT_EVENT':
         if (this.auditService) {
           await this.auditService.persist(job.payload as any);

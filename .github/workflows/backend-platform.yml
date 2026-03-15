@@ -31,6 +31,11 @@ jobs:
       - run: npm run prisma:generate
       - run: npm run build
       - run: npm test
+      - run: node --check loadtest/k6-global-read.js
+      - run: node --check loadtest/k6-cached-public.js
+      - run: node --check loadtest/k6-mixed-traffic.js
+      - run: node --check loadtest/k6-regional-distribution.js
+      - run: python3 -m py_compile loadtest/locust-global.py loadtest/locust-mixed.py
       - run: docker build -t creatorapp-backend:test .
 
   manifests:
