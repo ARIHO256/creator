@@ -14,6 +14,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed:loadtest": "node prisma/seed-loadtest.mjs",
     "loadtest": "node scripts/load-test.mjs",
+    "loadtest:k6:global": "k6 run loadtest/k6-global-read.js",
     "loadtest:100": "LOAD_TEST_CONCURRENCY=100 LOAD_TEST_DURATION_SECONDS=30 node scripts/load-test.mjs",
     "loadtest:150": "LOAD_TEST_CONCURRENCY=150 LOAD_TEST_DURATION_SECONDS=30 node scripts/load-test.mjs",
     "loadtest:200": "LOAD_TEST_CONCURRENCY=200 LOAD_TEST_DURATION_SECONDS=30 node scripts/load-test.mjs",

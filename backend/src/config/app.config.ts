@@ -3,8 +3,20 @@ export default () => ({
     port: Number(process.env.PORT ?? "4010"),
     host: process.env.HOST ?? "0.0.0.0",
     requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? "15000"),
+    keepAliveTimeoutMs: Number(process.env.KEEP_ALIVE_TIMEOUT_MS ?? "72000"),
+    connectionTimeoutMs: Number(process.env.CONNECTION_TIMEOUT_MS ?? "5000"),
+    maxRequestsPerSocket: Number(process.env.MAX_REQUESTS_PER_SOCKET ?? "1000"),
     bodyLimitBytes: Number(
       process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`,
+    ),
+  },
+  platform: {
+    instanceId:
+      process.env.INSTANCE_ID ?? `${process.pid}-${Math.random().toString(16).slice(2)}`,
+    region: process.env.APP_REGION ?? "local",
+    environment: process.env.NODE_ENV ?? "development",
+    trustProxy: !["0", "false", "no", "off"].includes(
+      String(process.env.TRUST_PROXY ?? "true").toLowerCase(),
     ),
   },
   database: {
@@ -59,6 +71,9 @@ export default () => ({
     redisUrl: process.env.REDIS_URL ?? "",
     redisPrefix: process.env.CACHE_REDIS_PREFIX ?? "mldz:cache:",
     lockTtlMs: Number(process.env.CACHE_LOCK_TTL_MS ?? "5000"),
+    httpEnabled: !["0", "false", "no", "off"].includes(
+      String(process.env.HTTP_CACHE_CONTROL_ENABLED ?? "true").toLowerCase(),
+    ),
   },
   realtime: {
     enabled: !["0", "false", "no", "off"].includes(
@@ -193,6 +208,14 @@ export default () => ({
     requestLogs: !["0", "false", "no", "off"].includes(
       String(process.env.REQUEST_LOGS_ENABLED ?? "true").toLowerCase(),
     ),
+  },
+  telemetry: {
+    enabled: !["0", "false", "no", "off"].includes(
+      String(process.env.OTEL_ENABLED ?? "false").toLowerCase(),
+    ),
+    serviceName: process.env.OTEL_SERVICE_NAME ?? "mldz-backend",
+    serviceVersion: process.env.OTEL_SERVICE_VERSION ?? "2.0.0",
+    exporterUrl: process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "",
   },
   loadTest: {
     enabled: ["1", "true", "yes", "on"].includes(

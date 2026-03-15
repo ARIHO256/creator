@@ -10,6 +10,7 @@ import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout
 import { MetricsInterceptor } from './common/interceptors/metrics.interceptor.js';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor.js';
 import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor.js';
+import { CacheControlInterceptor } from './common/interceptors/cache-control.interceptor.js';
 import { PrismaModule } from './platform/prisma/prisma.module.js';
 import { CacheModule } from './platform/cache/cache.module.js';
 import { MetricsModule } from './platform/metrics/metrics.module.js';
@@ -97,6 +98,7 @@ import { SearchModule } from './modules/search/search.module.js';
     ReviewsModule
   ],
   providers: [
+    CacheControlInterceptor,
     RequestTimeoutInterceptor,
     MetricsInterceptor,
     AuditInterceptor,

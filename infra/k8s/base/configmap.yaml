@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: creatorapp-backend-config
+data:
+  NODE_ENV: production
+  PORT: "4010"
+  HOST: "0.0.0.0"
+  TRUST_PROXY: "true"
+  REQUEST_TIMEOUT_MS: "15000"
+  KEEP_ALIVE_TIMEOUT_MS: "72000"
+  MAX_REQUESTS_PER_SOCKET: "1000"
+  REDIS_URL: "redis://redis-cluster:6379"
+  DATABASE_READ_URL: "mysql://reader@aurora-reader.cluster/creatorapp"
+  JOBS_WORKER_ENABLED: "false"
+  REALTIME_STREAM_SERVER_ENABLED: "true"
+  REALTIME_SUBSCRIBER_ENABLED: "true"
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: "creatorapp-backend"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability:4318/v1/traces"
+  HTTP_CACHE_CONTROL_ENABLED: "true"
+  APP_REGION: "global-primary"

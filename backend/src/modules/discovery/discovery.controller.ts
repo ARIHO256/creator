@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { CachePolicy } from '../../common/decorators/cache-policy.decorator.js';
 import { ListQueryDto } from '../../common/dto/list-query.dto.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
@@ -17,6 +18,7 @@ export class DiscoveryController {
   constructor(private readonly discoveryService: DiscoveryService) {}
 
   @Public()
+  @CachePolicy({ maxAge: 30, sMaxAge: 120, staleWhileRevalidate: 60, staleIfError: 300 })
   @Get('sellers')
   sellers(@Query() query: ListQueryDto) {
     return this.discoveryService.sellers(query);

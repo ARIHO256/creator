@@ -15,14 +15,19 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
   assert.equal(config.upload.defaultProvider, 'LOCAL');
   assert.equal(config.upload.sessionTtlMinutes, 20);
   assert.equal(config.app.requestTimeoutMs, 15_000);
+  assert.equal(config.app.keepAliveTimeoutMs, 72_000);
+  assert.equal(config.app.maxRequestsPerSocket, 1000);
   assert.equal(config.jobs.defaultMaxAttempts, 5);
   assert.equal(config.security.enableHeaders, true);
   assert.equal(config.jobs.workerEnabled, true);
   assert.equal(config.jobs.workerPollMs, 2000);
   assert.equal(config.realtime.streamServerEnabled, true);
   assert.equal(config.realtime.subscriberEnabled, true);
+  assert.equal(config.platform.trustProxy, true);
+  assert.equal(config.cache.httpEnabled, true);
   assert.equal(config.auth.registerQueueEnabled, true);
   assert.equal(config.auth.registrationPollAfterMs, 1000);
+  assert.equal(config.telemetry.enabled, false);
 });
 
 test('world-class hardening migration creates upload session table', async () => {

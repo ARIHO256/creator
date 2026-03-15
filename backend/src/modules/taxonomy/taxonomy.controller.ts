@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { CachePolicy } from '../../common/decorators/cache-policy.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Public } from '../../common/decorators/public.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
@@ -17,12 +18,14 @@ export class TaxonomyController {
   constructor(private readonly taxonomyService: TaxonomyService) {}
 
   @Public()
+  @CachePolicy({ maxAge: 300, sMaxAge: 900, staleWhileRevalidate: 300, staleIfError: 1800 })
   @Get('trees')
   listTrees() {
     return this.taxonomyService.listTrees();
   }
 
   @Public()
+  @CachePolicy({ maxAge: 300, sMaxAge: 900, staleWhileRevalidate: 300, staleIfError: 1800 })
   @Get('trees/:id/nodes')
   listTreeNodes(
     @Param('id') id: string,
@@ -38,6 +41,7 @@ export class TaxonomyController {
   }
 
   @Public()
+  @CachePolicy({ maxAge: 300, sMaxAge: 900, staleWhileRevalidate: 300, staleIfError: 1800 })
   @Get('nodes/:id/children')
   listChildren(@Param('id') id: string) {
     return this.taxonomyService.listNodeChildren(id);
