@@ -10,6 +10,7 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
   assert.equal(config.database.writeUrl, process.env.DATABASE_URL ?? '');
   assert.equal(config.database.readUrl, process.env.DATABASE_READ_URL ?? process.env.DATABASE_URL ?? '');
   assert.equal(config.database.queryBudgetMs, 75);
+  assert.equal(config.database.readFallbackEnabled, true);
   assert.equal(config.rateLimit.disabled, false);
   assert.equal(config.rateLimit.defaultLimit, 120);
   assert.equal(config.rateLimit.defaultWindowMs, 60_000);
@@ -23,6 +24,8 @@ test('appConfig exposes rate-limit and upload hardening defaults', () => {
   assert.equal(config.security.enableHeaders, true);
   assert.equal(config.jobs.workerEnabled, true);
   assert.equal(config.jobs.workerPollMs, 2000);
+  assert.equal(config.jobs.workerBusyPollMs, 50);
+  assert.deepEqual(config.jobs.workerQueues, []);
   assert.equal(config.realtime.streamServerEnabled, true);
   assert.equal(config.realtime.subscriberEnabled, true);
   assert.equal(config.platform.trustProxy, true);

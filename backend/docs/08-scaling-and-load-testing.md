@@ -82,7 +82,34 @@ Recommended worker settings:
 - `JOBS_WORKER_ENABLED=false` in API-only processes
 - `JOBS_WORKER_ID` to identify each worker instance
 - `JOBS_WORKER_BATCH` and `JOBS_WORKER_POLL_MS` tuned per queue depth
+- `JOBS_WORKER_BUSY_POLL_MS` for immediate drain when a queue stays hot
+- `JOBS_WORKER_QUEUES` to pin a worker process to specific queue families
 - `JOBS_RETRY_DELAY_MS` to control retry backoff
+
+Recommended split for production-like deployments:
+- general worker:
+  - `JOBS_WORKER_QUEUES=auth,approvals,cache,catalog,exports,finance,listings,media,regulatory,search,wholesale,workflow`
+- audit worker:
+  - `JOBS_WORKER_ID=audit`
+  - `JOBS_WORKER_QUEUES=audit`
+  - `JOBS_WORKER_BATCH=200`
+  - `JOBS_WORKER_CONCURRENCY=1`
+- moderation worker:
+  - `JOBS_WORKER_ID=moderation`
+  - `JOBS_WORKER_QUEUES=moderation`
+  - `JOBS_WORKER_BATCH=100`
+  - `JOBS_WORKER_CONCURRENCY=25`
+- realtime worker:
+  - `JOBS_WORKER_ID=realtime`
+  - `JOBS_WORKER_QUEUES=realtime`
+  - `JOBS_WORKER_BATCH=150`
+  - `JOBS_WORKER_CONCURRENCY=50`
+
+Why this split:
+- `audit` is DB-write heavy but batch-friendly
+- `moderation` is scan-heavy and should not wait behind realtime fan-out
+- `realtime` is fan-out and delivery-bookkeeping heavy and needs independent concurrency tuning
+- lower-priority background domains can scale independently without starving user-visible fan-out
 
 Queue candidates currently include:
 - `audit` events
@@ -96,6 +123,17 @@ Queue candidates currently include:
 - `moderation` content + attachment scanning
 - `catalog` bulk import jobs
 - `search` index updates and reindex sweeps
+
+Per-queue backlog metrics exported at `/api/metrics`:
+- `background_jobs_due_pending{queue="..."}`
+- `background_jobs_active_locks`
+- `background_jobs_dead_letters`
+
+These metrics are intended for queue-family autoscaling. The Kubernetes base now includes:
+- general worker deployment + KEDA scaler
+- audit worker deployment + KEDA scaler
+- moderation worker deployment + KEDA scaler
+- realtime worker deployment + KEDA scaler
 
 ## Realtime Delivery Hooks
 Realtime event publishing is queued and can optionally publish to Redis:

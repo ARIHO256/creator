@@ -14,6 +14,9 @@ export class MetricsService {
   private readonly dbDuration: Histogram<string>;
   private readonly dbSlowQueries: Counter<string>;
   private readonly dependencyCircuitState: Gauge<string>;
+  private readonly backgroundJobsDuePending: Gauge<string>;
+  private readonly backgroundJobsActiveLocks: Gauge<string>;
+  private readonly backgroundJobsDeadLetters: Gauge<string>;
   private readonly jobsProcessed: Counter<string>;
   private readonly jobsFailed: Counter<string>;
 
@@ -92,6 +95,25 @@ export class MetricsService {
       registers: [this.registry]
     });
 
+    this.backgroundJobsDuePending = new Gauge({
+      name: 'background_jobs_due_pending',
+      help: 'Pending background jobs ready to run, broken down by queue',
+      labelNames: ['queue'],
+      registers: [this.registry]
+    });
+
+    this.backgroundJobsActiveLocks = new Gauge({
+      name: 'background_jobs_active_locks',
+      help: 'Background jobs currently locked for processing',
+      registers: [this.registry]
+    });
+
+    this.backgroundJobsDeadLetters = new Gauge({
+      name: 'background_jobs_dead_letters',
+      help: 'Background jobs currently in dead-letter state',
+      registers: [this.registry]
+    });
+
     this.jobsProcessed = new Counter({
       name: 'jobs_processed_total',
       help: 'Jobs processed',
@@ -144,6 +166,21 @@ export class MetricsService {
 
   setDependencyCircuit(dependency: string, open: boolean) {
     this.dependencyCircuitState.set({ dependency }, open ? 1 : 0);
+  }
+
+  updateBackgroundJobs(snapshot: {
+    duePending: number;
+    activeLocks: number;
+    deadLetters: number;
+    duePendingByQueue?: Record<string, number>;
+  }) {
+    this.backgroundJobsDuePending.reset();
+    this.backgroundJobsDuePending.set({ queue: 'all' }, snapshot.duePending);
+    for (const [queue, total] of Object.entries(snapshot.duePendingByQueue ?? {})) {
+      this.backgroundJobsDuePending.set({ queue }, total);
+    }
+    this.backgroundJobsActiveLocks.set(snapshot.activeLocks);
+    this.backgroundJobsDeadLetters.set(snapshot.deadLetters);
   }
 
   recordJobProcessed(type: string, status: 'success' | 'failed') {

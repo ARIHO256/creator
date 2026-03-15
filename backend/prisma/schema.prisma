@@ -376,6 +376,10 @@ model User {
   regulatoryRecords    RegulatoryRecord[]
   communicationRecords CommunicationRecord[]
   workflowRecords      WorkflowRecord[]
+  accountApproval      AccountApproval?
+  workflowScreenStates WorkflowScreenState[]
+  contentApprovals     ContentApproval[]
+  providerDisputes     ProviderDispute[]
   userSettings         UserSetting[]
   workspaceSettings    WorkspaceSetting[]
   subscriptions        UserSubscription[]
@@ -1834,6 +1838,76 @@ model WorkflowRecord {
 
   @@unique([userId, recordType, recordKey])
   @@index([recordType, updatedAt])
+}
+
+model AccountApproval {
+  id          String    @id @default(cuid())
+  userId      String    @unique
+  status      String    @default("pending")
+  payload     Json
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  rejectedAt  DateTime?
+  decidedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, updatedAt])
+  @@index([userId, updatedAt])
+}
+
+model WorkflowScreenState {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, updatedAt])
+}
+
+model ContentApproval {
+  id           String    @id
+  userId       String
+  status       String    @default("draft")
+  title        String?
+  payload      Json
+  submittedAt  DateTime?
+  lastNudgedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, updatedAt])
+  @@index([submittedAt])
+}
+
+model ProviderDispute {
+  id          String    @id @default(cuid())
+  userId      String
+  status      String    @default("open")
+  title       String?
+  priority    String?
+  subjectType String?
+  subjectId   String?
+  payload     Json?
+  openedAt    DateTime  @default(now())
+  resolvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, updatedAt])
+  @@index([subjectType, subjectId])
+  @@index([openedAt])
 }
 
 model MessageThread {

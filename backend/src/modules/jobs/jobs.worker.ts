@@ -19,6 +19,8 @@ type WorkerStatus = {
   running: boolean;
   lastRunAt?: string;
   lastJobId?: string;
+  lastBatchSize?: number;
+  queues?: string[];
   errors: number;
 };
 
@@ -79,9 +81,17 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private schedule() {
+    this.scheduleAfter();
+  }
+
+  private scheduleAfter(delayMs?: number) {
     if (!this.running) return;
-    const pollMs = this.configService.get<number>('jobs.workerPollMs') ?? 2000;
+    const pollMs = delayMs ?? (this.configService.get<number>('jobs.workerPollMs') ?? 2000);
     this.timer = setTimeout(() => this.tick().catch(() => undefined), pollMs);
+  }
+
+  private workerQueues() {
+    return (this.configService.get<string[]>('jobs.workerQueues') ?? []).filter(Boolean);
   }
 
   private async tick() {
@@ -94,22 +104,60 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
       Math.min(this.configService.get<number>('jobs.workerConcurrency') ?? batch, batch)
     );
     const lockTtlMs = this.configService.get<number>('jobs.lockTtlMs') ?? 10 * 60 * 1000;
-    const jobs: NonNullable<Awaited<ReturnType<JobsService['fetchAndLockNext']>>>[] = [];
+    const queues = this.workerQueues();
+    const jobs = await this.jobsService.fetchAndLockBatch(workerId, lockTtlMs, batch, queues);
+    this.status.lastBatchSize = jobs.length;
+    this.status.queues = queues;
 
-    for (let i = 0; i < batch; i++) {
-      const job = await this.jobsService.fetchAndLockNext(workerId, lockTtlMs);
-      if (!job) {
-        break;
-      }
-      jobs.push(job);
-    }
+    const remainingJobs = await this.processAuditBatch(jobs, workerId);
 
-    for (let i = 0; i < jobs.length; i += concurrency) {
-      const slice = jobs.slice(i, i + concurrency);
+    for (let i = 0; i < remainingJobs.length; i += concurrency) {
+      const slice = remainingJobs.slice(i, i + concurrency);
       await Promise.allSettled(slice.map((job) => this.processLockedJob(job, workerId)));
     }
 
-    this.schedule();
+    const idlePollMs = this.configService.get<number>('jobs.workerPollMs') ?? 2000;
+    const busyPollMs = this.configService.get<number>('jobs.workerBusyPollMs') ?? 50;
+    const nextDelay = jobs.length >= batch ? busyPollMs : idlePollMs;
+    this.scheduleAfter(nextDelay);
+  }
+
+  private async processAuditBatch(
+    jobs: NonNullable<Awaited<ReturnType<JobsService['fetchAndLockNext']>>>[],
+    workerId: string
+  ) {
+    if (!this.auditService || jobs.length === 0) {
+      return jobs;
+    }
+
+    const auditJobs = jobs.filter((job) => job.type === 'AUDIT_EVENT');
+    if (auditJobs.length === 0) {
+      return jobs;
+    }
+
+    const nonAuditJobs = jobs.filter((job) => job.type !== 'AUDIT_EVENT');
+    this.status.lastRunAt = new Date().toISOString();
+    this.status.lastJobId = auditJobs.at(-1)?.id;
+
+    try {
+      await this.auditService.persistMany(auditJobs.map((job) => job.payload as any));
+      await Promise.all(
+        auditJobs.map((job) => this.jobsService.markCompleted(job.id, { processedBy: workerId, batched: true }))
+      );
+      for (const job of auditJobs) {
+        this.metrics?.recordJobProcessed(job.type, 'success');
+      }
+    } catch (error: any) {
+      this.status.errors += auditJobs.length;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Audit batch failed (${auditJobs.length} jobs): ${message}`);
+      await Promise.all(auditJobs.map((job) => this.jobsService.markFailed(job.id, message)));
+      for (const job of auditJobs) {
+        this.metrics?.recordJobProcessed(job.type, 'failed');
+      }
+    }
+
+    return nonAuditJobs;
   }
 
   private async processLockedJob(
@@ -220,19 +268,8 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
                 preparedEvent ?? this.realtimeStream.prepareEvent(payload.event)
               );
               if (this.realtimeDelivery && typeof payload.event.id === 'string') {
-                const receipt = await this.prisma.deliveryReceipt.findUnique({
-                  where: { userId_eventId: { userId, eventId: payload.event.id } }
-                });
-                if (receipt) {
-                  const maxAttempts = Number(this.configService.get('realtime.deliveryMaxAttempts') ?? 5);
-                  const attempts = receipt.attempts + 1;
-                  const hasClient = await this.realtimeStream.hasClient(userId);
-                  const status = hasClient ? 'DELIVERED' : attempts >= maxAttempts ? 'FAILED' : receipt.status;
-                  await this.prisma.deliveryReceipt.update({
-                    where: { id: receipt.id },
-                    data: { attempts, lastAttemptAt: new Date(), status }
-                  });
-                }
+                const hasClient = await this.realtimeStream.hasClient(userId);
+                await this.realtimeDelivery.recordAttempt(userId, payload.event.id, hasClient);
               }
             }
           }

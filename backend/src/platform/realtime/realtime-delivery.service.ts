@@ -81,6 +81,41 @@ export class RealtimeDeliveryService {
     });
   }
 
+  async recordAttempt(userId: string, eventId: string, delivered: boolean) {
+    const now = new Date();
+    if (delivered) {
+      await this.prisma.deliveryReceipt.updateMany({
+        where: { userId, eventId },
+        data: {
+          attempts: { increment: 1 },
+          lastAttemptAt: now,
+          status: DeliveryStatus.DELIVERED
+        }
+      });
+      return;
+    }
+
+    const maxAttempts = Number(this.configService.get('realtime.deliveryMaxAttempts') ?? 5);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.deliveryReceipt.updateMany({
+        where: { userId, eventId },
+        data: {
+          attempts: { increment: 1 },
+          lastAttemptAt: now
+        }
+      });
+      await tx.deliveryReceipt.updateMany({
+        where: {
+          userId,
+          eventId,
+          attempts: { gte: maxAttempts },
+          status: { in: [DeliveryStatus.PENDING, DeliveryStatus.DELIVERED] }
+        },
+        data: { status: DeliveryStatus.FAILED }
+      });
+    });
+  }
+
   async sweepPending(limit?: number) {
     if (!this.enabled()) return { processed: 0 };
     const now = new Date();

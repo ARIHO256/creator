@@ -23,6 +23,9 @@ export default () => ({
     writeUrl: process.env.DATABASE_URL ?? "",
     readUrl: process.env.DATABASE_READ_URL ?? process.env.DATABASE_URL ?? "",
     queryBudgetMs: Number(process.env.DATABASE_QUERY_BUDGET_MS ?? "75"),
+    readFallbackEnabled: !["0", "false", "no", "off"].includes(
+      String(process.env.DATABASE_READ_FALLBACK_ENABLED ?? "true").toLowerCase(),
+    ),
   },
   rateLimit: {
     disabled: !["0", "false", "no", "off"].includes(
@@ -55,8 +58,13 @@ export default () => ({
       String(process.env.JOBS_WORKER_ENABLED ?? "true").toLowerCase(),
     ),
     workerPollMs: Number(process.env.JOBS_WORKER_POLL_MS ?? "2000"),
+    workerBusyPollMs: Number(process.env.JOBS_WORKER_BUSY_POLL_MS ?? "50"),
     workerBatch: Number(process.env.JOBS_WORKER_BATCH ?? "5"),
     workerConcurrency: Number(process.env.JOBS_WORKER_CONCURRENCY ?? "5"),
+    workerQueues: String(process.env.JOBS_WORKER_QUEUES ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
     lockTtlMs: Number(
       process.env.JOBS_WORKER_LOCK_TTL_MS ?? `${10 * 60 * 1000}`,
     ),

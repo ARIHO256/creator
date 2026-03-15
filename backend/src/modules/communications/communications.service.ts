@@ -274,7 +274,8 @@ export class CommunicationsService {
       this.jobsService.enqueue({
         queue: 'moderation',
         type: 'MODERATION_SCAN',
-        payload: { targetType: 'support_ticket', targetId: ticket.id }
+        payload: { targetType: 'support_ticket', targetId: ticket.id },
+        dedupeKey: `moderation:support_ticket:${ticket.id}`
       })
     ]);
     return this.serializeSupportTicket(ticket);

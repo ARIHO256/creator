@@ -291,24 +291,22 @@ export class WorkflowService {
   }
 
   accountApproval(userId: string) {
-    return this.getRecordPayload(userId, 'account_approval', 'main').then(
+    return this.getAccountApprovalPayload(userId).then(
       (payload) =>
         payload ?? { status: 'pending', progressPercent: 0, requiredActions: [], documents: [] }
     );
   }
   async screenState(userId: string, key: string) {
-    const payload = await this.getRecordPayload(userId, 'screen_state', key);
+    const payload = await this.getScreenStatePayload(userId, key);
     if (payload) return payload;
     if (key === 'provider-new-quote') {
-      const record = await this.upsertRecord(userId, 'screen_state', key, this.defaultProviderNewQuoteState());
-      return record.payload as Record<string, unknown>;
+      return this.upsertScreenStatePayload(userId, key, this.defaultProviderNewQuoteState());
     }
     return {};
   }
   async patchScreenState(userId: string, key: string, body: PatchScreenStateDto) {
     if (key === 'provider-new-quote' && body.__resetToDefault === true) {
-      const record = await this.upsertRecord(userId, 'screen_state', key, this.defaultProviderNewQuoteState());
-      return record.payload as Record<string, unknown>;
+      return this.upsertScreenStatePayload(userId, key, this.defaultProviderNewQuoteState());
     }
     const current = (await this.screenState(userId, key)) as Record<string, unknown>;
     const nextPayload = { ...this.extractPayload(body) };
@@ -316,37 +314,33 @@ export class WorkflowService {
       ...this.deepMerge(current, this.ensureObjectPayload(nextPayload)),
       updatedAt: new Date().toISOString()
     };
-    const record = await this.upsertRecord(userId, 'screen_state', key, next);
-    return record.payload as Record<string, unknown>;
+    return this.upsertScreenStatePayload(userId, key, next);
   }
   async patchAccountApproval(userId: string, body: UpdateAccountApprovalDto) {
     const current = await this.accountApproval(userId);
-    const record = await this.upsertRecord(userId, 'account_approval', 'main', {
+    return this.upsertAccountApprovalPayload(userId, {
       ...this.deepMerge(current, this.ensureObjectPayload(body)),
       updatedAt: new Date().toISOString()
     });
-    return record.payload as Record<string, unknown>;
   }
   refreshAccountApproval(userId: string) { return this.accountApproval(userId); }
   async resubmitAccountApproval(userId: string, body: UpdateAccountApprovalDto) {
     const current = await this.accountApproval(userId);
-    const record = await this.upsertRecord(userId, 'account_approval', 'main', {
+    return this.upsertAccountApprovalPayload(userId, {
       ...this.deepMerge(current, this.ensureObjectPayload(body)),
       status: 'resubmitted',
       reviewedAt: new Date().toISOString()
     });
-    return record.payload as Record<string, unknown>;
   }
   async devApprove(userId: string) {
-    const record = await this.upsertRecord(userId, 'account_approval', 'main', {
+    return this.upsertAccountApprovalPayload(userId, {
       status: 'approved',
       approvedAt: new Date().toISOString()
     });
-    return record.payload as Record<string, unknown>;
   }
 
   async recordAccountApprovalDecision(deciderUserId: string, body: UpdateAccountApprovalDecisionDto) {
-    const current = await this.getRecordPayload(body.userId, 'account_approval', 'main');
+    const current = await this.getAccountApprovalPayload(body.userId);
     const history = Array.isArray((current as any)?.history) ? (current as any).history : [];
     const decidedAt = new Date().toISOString();
     const next = {
@@ -366,68 +360,64 @@ export class WorkflowService {
       approvedAt: body.status === 'approved' ? decidedAt : (current as any)?.approvedAt ?? null,
       rejectedAt: body.status === 'rejected' ? decidedAt : (current as any)?.rejectedAt ?? null
     };
-    const record = await this.upsertRecord(body.userId, 'account_approval', 'main', next);
-    return record.payload as Record<string, unknown>;
+    return this.upsertAccountApprovalPayload(body.userId, next);
   }
 
   async contentApprovals(userId: string) {
-    const records = await this.prisma.workflowRecord.findMany({
-      where: { userId, recordType: 'content_approval' },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return records.map((record) => ({ id: record.recordKey, ...(record.payload as any) }));
+    const records = await this.listContentApprovalPayloads(userId);
+    return records.map(({ id, payload }) => ({ id, ...(payload as any) }));
   }
   async contentApproval(userId: string, id: string) {
-    const record = await this.getRecord(userId, 'content_approval', id);
-    if (!record) {
+    const payload = await this.getContentApprovalPayload(userId, id);
+    if (!payload) {
       throw new NotFoundException('Content approval not found');
     }
-    return { id: record.recordKey, ...(record.payload as any) };
+    return { id, ...(payload as any) };
   }
   async createContentApproval(userId: string, body: CreateContentApprovalDto) {
     const payload = this.ensurePayload(this.extractPayload(body));
     const id = String((payload as any).id ?? randomUUID());
-    await this.createRecord(userId, 'content_approval', id, payload);
-    return { id, ...payload };
+    await this.upsertContentApprovalPayload(userId, id, payload);
+    return { id, ...(payload as any) };
   }
   async patchContentApproval(userId: string, id: string, body: UpdateContentApprovalDto) {
-    const record = await this.getRecord(userId, 'content_approval', id);
-    if (!record) {
+    const current = await this.getContentApprovalPayload(userId, id);
+    if (!current) {
       throw new NotFoundException('Content approval not found');
     }
-    const next = this.deepMerge((record.payload as Record<string, unknown> | null) ?? {}, this.ensureObjectPayload(this.extractPayload(body)));
-    await this.updateRecord(userId, 'content_approval', id, next);
+    const next = this.deepMerge(current, this.ensureObjectPayload(this.extractPayload(body)));
+    await this.upsertContentApprovalPayload(userId, id, next);
     return { id, ...next };
   }
 
   async nudge(userId: string, id: string) {
-    const rec = await this.getRecord(userId, 'content_approval', id);
-    if (!rec) {
+    const current = await this.getContentApprovalPayload(userId, id);
+    if (!current) {
       throw new NotFoundException('Content approval not found');
     }
-    const next = { ...(rec.payload as any), lastNudgedAt: new Date().toISOString() };
-    await this.updateRecord(userId, 'content_approval', id, next);
+    const next = { ...(current as any), lastNudgedAt: new Date().toISOString() };
+    await this.upsertContentApprovalPayload(userId, id, next);
     return { id, ...next };
   }
   async withdraw(userId: string, id: string) {
-    const rec = await this.getRecord(userId, 'content_approval', id);
-    if (!rec) {
+    const current = await this.getContentApprovalPayload(userId, id);
+    if (!current) {
       throw new NotFoundException('Content approval not found');
     }
-    const next = { ...(rec.payload as any), status: 'withdrawn' };
-    await this.updateRecord(userId, 'content_approval', id, next);
+    const next = { ...(current as any), status: 'withdrawn' };
+    await this.upsertContentApprovalPayload(userId, id, next);
     return { id, ...next };
   }
   async resubmit(userId: string, id: string, body: ResubmitContentApprovalDto) {
-    const rec = await this.getRecord(userId, 'content_approval', id);
-    if (!rec) {
+    const current = await this.getContentApprovalPayload(userId, id);
+    if (!current) {
       throw new NotFoundException('Content approval not found');
     }
     const next = {
-      ...this.deepMerge((rec.payload as Record<string, unknown> | null) ?? {}, this.ensureObjectPayload(this.extractPayload(body))),
+      ...this.deepMerge(current, this.ensureObjectPayload(this.extractPayload(body))),
       status: 'resubmitted'
     };
-    await this.updateRecord(userId, 'content_approval', id, next);
+    await this.upsertContentApprovalPayload(userId, id, next);
     return { id, ...next };
   }
 
@@ -709,7 +699,7 @@ export class WorkflowService {
     onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
   ) {
     const autoApproved = this.shouldAutoApproveSubmittedOnboarding(onboarding.profileType);
-    const current = await this.getRecordPayload(userId, 'account_approval', 'main');
+    const current = await this.getAccountApprovalPayload(userId);
     const documents = Array.isArray(onboarding.docs?.list)
       ? onboarding.docs.list.map((doc: Record<string, unknown>, index: number) => ({
           id: String(doc.id ?? `onboarding-doc-${index + 1}`),
@@ -745,7 +735,7 @@ export class WorkflowService {
       }
     };
 
-    await this.upsertRecord(userId, 'account_approval', 'main', {
+    await this.upsertAccountApprovalPayload(userId, {
       ...(current ?? {}),
       status: autoApproved
         ? 'approved'
@@ -813,6 +803,161 @@ export class WorkflowService {
       });
     }
     return Array.from(nodeIds);
+  }
+
+  private async getAccountApprovalPayload(userId: string) {
+    const record = await this.prisma.accountApproval.findUnique({
+      where: { userId }
+    });
+    if (record) {
+      return record.payload as Record<string, unknown>;
+    }
+
+    const legacy = await this.prisma.workflowRecord.findUnique({
+      where: { userId_recordType_recordKey: { userId, recordType: 'account_approval', recordKey: 'main' } }
+    });
+    if (!legacy) {
+      return null;
+    }
+
+    const payload = legacy.payload as Record<string, unknown>;
+    await this.upsertAccountApprovalPayload(userId, payload);
+    return payload;
+  }
+
+  private async upsertAccountApprovalPayload(userId: string, payload: unknown) {
+    const sanitized = this.ensurePayload(payload);
+    const record = await this.prisma.accountApproval.upsert({
+      where: { userId },
+      update: {
+        status: this.readStringField(sanitized.status) || 'pending',
+        payload: sanitized as Prisma.InputJsonValue,
+        submittedAt: this.readDateField(sanitized.submittedAt),
+        approvedAt: this.readDateField(sanitized.approvedAt),
+        rejectedAt: this.readDateField(sanitized.rejectedAt),
+        decidedAt: this.readDateField(sanitized.decidedAt)
+      },
+      create: {
+        userId,
+        status: this.readStringField(sanitized.status) || 'pending',
+        payload: sanitized as Prisma.InputJsonValue,
+        submittedAt: this.readDateField(sanitized.submittedAt),
+        approvedAt: this.readDateField(sanitized.approvedAt),
+        rejectedAt: this.readDateField(sanitized.rejectedAt),
+        decidedAt: this.readDateField(sanitized.decidedAt)
+      }
+    });
+    return record.payload as Record<string, unknown>;
+  }
+
+  private async getScreenStatePayload(userId: string, key: string) {
+    const record = await this.prisma.workflowScreenState.findUnique({
+      where: { userId_key: { userId, key } }
+    });
+    if (record) {
+      return record.payload as Record<string, unknown>;
+    }
+
+    const legacy = await this.prisma.workflowRecord.findUnique({
+      where: { userId_recordType_recordKey: { userId, recordType: 'screen_state', recordKey: key } }
+    });
+    if (!legacy) {
+      return null;
+    }
+
+    const payload = legacy.payload as Record<string, unknown>;
+    await this.upsertScreenStatePayload(userId, key, payload);
+    return payload;
+  }
+
+  private async upsertScreenStatePayload(userId: string, key: string, payload: unknown) {
+    const sanitized = this.ensurePayload(payload);
+    const record = await this.prisma.workflowScreenState.upsert({
+      where: { userId_key: { userId, key } },
+      update: { payload: sanitized as Prisma.InputJsonValue },
+      create: {
+        userId,
+        key,
+        payload: sanitized as Prisma.InputJsonValue
+      }
+    });
+    return record.payload as Record<string, unknown>;
+  }
+
+  private async listContentApprovalPayloads(userId: string) {
+    const [current, legacy] = await Promise.all([
+      this.prisma.contentApproval.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.prisma.workflowRecord.findMany({
+        where: { userId, recordType: 'content_approval' },
+        orderBy: { updatedAt: 'desc' }
+      })
+    ]);
+
+    const merged = new Map<string, { id: string; payload: Record<string, unknown> }>();
+    for (const record of current) {
+      merged.set(record.id, { id: record.id, payload: record.payload as Record<string, unknown> });
+    }
+    for (const record of legacy) {
+      if (!merged.has(record.recordKey)) {
+        merged.set(record.recordKey, { id: record.recordKey, payload: record.payload as Record<string, unknown> });
+      }
+    }
+
+    return Array.from(merged.values());
+  }
+
+  private async getContentApprovalPayload(userId: string, id: string) {
+    const record = await this.prisma.contentApproval.findUnique({
+      where: { id }
+    });
+    if (record && record.userId === userId) {
+      return record.payload as Record<string, unknown>;
+    }
+
+    const legacy = await this.prisma.workflowRecord.findUnique({
+      where: { userId_recordType_recordKey: { userId, recordType: 'content_approval', recordKey: id } }
+    });
+    if (!legacy) {
+      return null;
+    }
+
+    const payload = legacy.payload as Record<string, unknown>;
+    await this.upsertContentApprovalPayload(userId, id, payload);
+    return payload;
+  }
+
+  private async upsertContentApprovalPayload(userId: string, id: string, payload: unknown) {
+    const sanitized = this.ensurePayload(payload);
+    const existing = await this.prisma.contentApproval.findUnique({
+      where: { id }
+    });
+    if (existing && existing.userId !== userId) {
+      throw new NotFoundException('Content approval not found');
+    }
+    const record = await this.prisma.contentApproval.upsert({
+      where: { id },
+      update: {
+        userId,
+        status: this.readStringField(sanitized.status) || 'draft',
+        title: this.readNullableStringField(sanitized.title),
+        payload: sanitized as Prisma.InputJsonValue,
+        submittedAt: this.readDateField(sanitized.submittedAt),
+        lastNudgedAt: this.readDateField(sanitized.lastNudgedAt)
+      },
+      create: {
+        id,
+        userId,
+        status: this.readStringField(sanitized.status) || 'draft',
+        title: this.readNullableStringField(sanitized.title),
+        payload: sanitized as Prisma.InputJsonValue,
+        submittedAt: this.readDateField(sanitized.submittedAt),
+        lastNudgedAt: this.readDateField(sanitized.lastNudgedAt)
+      }
+    });
+    return record.payload as Record<string, unknown>;
   }
 
   private async getRecordPayload(userId: string, recordType: string, recordKey: string) {
@@ -894,6 +1039,26 @@ export class WorkflowService {
       return input.payload as Record<string, unknown>;
     }
     return input;
+  }
+
+  private readStringField(value: unknown) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private readNullableStringField(value: unknown) {
+    const normalized = this.readStringField(value);
+    return normalized || null;
+  }
+
+  private readDateField(value: unknown) {
+    if (value instanceof Date && !Number.isNaN(value.valueOf())) {
+      return value;
+    }
+    if (typeof value !== 'string' || !value.trim()) {
+      return null;
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.valueOf()) ? null : parsed;
   }
 
   private deepMerge(base: unknown, patch: unknown): Record<string, unknown> {

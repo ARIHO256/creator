@@ -1,22 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: creatorapp-backend-worker
+  name: creatorapp-backend-worker-moderation
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: creatorapp-backend
-      app.kubernetes.io/component: worker-general
+      app.kubernetes.io/component: worker-moderation
   template:
     metadata:
       labels:
         app.kubernetes.io/name: creatorapp-backend
-        app.kubernetes.io/component: worker-general
+        app.kubernetes.io/component: worker-moderation
     spec:
       terminationGracePeriodSeconds: 30
       containers:
-        - name: worker
+        - name: worker-moderation
           image: ghcr.io/example/creatorapp-backend:latest
           imagePullPolicy: IfNotPresent
           envFrom:
@@ -25,14 +25,18 @@ spec:
           env:
             - name: JOBS_WORKER_ENABLED
               value: "true"
+            - name: JOBS_WORKER_ID
+              value: "moderation"
             - name: JOBS_WORKER_QUEUES
-              value: "auth,approvals,cache,catalog,exports,finance,listings,media,regulatory,search,wholesale,workflow"
+              value: "moderation"
             - name: JOBS_WORKER_BATCH
-              value: "50"
+              value: "100"
             - name: JOBS_WORKER_CONCURRENCY
-              value: "20"
+              value: "25"
+            - name: JOBS_WORKER_POLL_MS
+              value: "1000"
             - name: JOBS_WORKER_BUSY_POLL_MS
-              value: "50"
+              value: "0"
             - name: REALTIME_STREAM_SERVER_ENABLED
               value: "false"
             - name: DATABASE_URL

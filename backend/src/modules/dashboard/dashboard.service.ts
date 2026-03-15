@@ -36,6 +36,7 @@ export class DashboardService {
   async ready() {
     const startedAt = process.hrtime.bigint();
     const readStartedAt = process.hrtime.bigint();
+    const readConnection = this.prisma.readConnectionStatus();
     const [_, __, jobsMetrics] = await Promise.all([
       this.prismaWrite.$queryRaw`SELECT 1`,
       this.prisma.$queryRaw`SELECT 1`,
@@ -54,11 +55,13 @@ export class DashboardService {
           latencyMs: Number(databaseLatencyMs.toFixed(1))
         },
         databaseRead: {
-          status: 'up',
+          status: readConnection.usingWriteFallback ? 'degraded' : 'up',
           latencyMs: Number(readDatabaseLatencyMs.toFixed(1)),
           replicaConfigured:
-            Boolean(this.configService.get<string>('database.readUrl')) &&
-            this.configService.get<string>('database.readUrl') !== this.configService.get<string>('database.writeUrl')
+            readConnection.configured,
+          usingWriteFallback: readConnection.usingWriteFallback,
+          fallbackEnabled: readConnection.fallbackEnabled,
+          lastError: readConnection.lastError
         },
         upload: {
           provider: this.configService.get<string>('upload.defaultProvider') ?? 'LOCAL',
@@ -78,6 +81,8 @@ export class DashboardService {
           securityHeadersEnabled: this.configService.get<boolean>('security.enableHeaders') ?? true,
           workerEnabled: this.configService.get<boolean>('jobs.workerEnabled') ?? true,
           workerPollMs: this.configService.get<number>('jobs.workerPollMs') ?? 2000,
+          workerBusyPollMs: this.configService.get<number>('jobs.workerBusyPollMs') ?? 50,
+          workerQueues: this.configService.get<string[]>('jobs.workerQueues') ?? [],
           realtimeStreamServerEnabled: this.configService.get<boolean>('realtime.streamServerEnabled') ?? true,
           realtimeSubscriberEnabled: this.configService.get<boolean>('realtime.subscriberEnabled') ?? true
         }

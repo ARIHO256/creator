@@ -21,6 +21,12 @@ function createPrismaStub(overrides: {
         return overrides.seller ?? null;
       }
     },
+    accountApproval: {
+      async findUnique({ where }: any) {
+        const payload = workflowRecords.get(`${where.userId}:account_approval:main`);
+        return payload ? { userId: where.userId, payload } : null;
+      }
+    },
     workflowRecord: {
       async findUnique({ where }: any) {
         const key = `${where.userId_recordType_recordKey.userId}:${where.userId_recordType_recordKey.recordType}:${where.userId_recordType_recordKey.recordKey}`;

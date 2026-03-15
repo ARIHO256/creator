@@ -1,0 +1,18 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: creatorapp-backend-worker-realtime
+spec:
+  scaleTargetRef:
+    name: creatorapp-backend-worker-realtime
+  pollingInterval: 15
+  cooldownPeriod: 60
+  minReplicaCount: 3
+  maxReplicaCount: 400
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring:9090
+        metricName: background_jobs_due_pending_realtime
+        threshold: "100"
+        query: sum(background_jobs_due_pending{queue="realtime"})

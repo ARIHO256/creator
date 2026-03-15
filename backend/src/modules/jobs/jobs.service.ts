@@ -74,9 +74,17 @@ export class JobsService {
 
   async metrics() {
     const now = new Date();
-    const [statusCounts, duePending, activeLocks, deadLetters] = await Promise.all([
+    const [statusCounts, queuePending, duePending, activeLocks, deadLetters] = await Promise.all([
       this.prisma.backgroundJob.groupBy({
         by: ['status'],
+        _count: { _all: true }
+      }),
+      this.prisma.backgroundJob.groupBy({
+        by: ['queue'],
+        where: {
+          status: BackgroundJobStatus.PENDING,
+          runAfter: { lte: now }
+        },
         _count: { _all: true }
       }),
       this.prisma.backgroundJob.count({
@@ -102,65 +110,79 @@ export class JobsService {
       duePending,
       activeLocks,
       deadLetters,
-      byStatus: Object.fromEntries(statusCounts.map((entry) => [entry.status, entry._count._all]))
+      byStatus: Object.fromEntries(statusCounts.map((entry) => [entry.status, entry._count._all])),
+      duePendingByQueue: Object.fromEntries(queuePending.map((entry) => [entry.queue, entry._count._all]))
     };
   }
 
-  async fetchAndLockNext(workerId: string, lockTtlMs: number) {
+  async fetchAndLockBatch(workerId: string, lockTtlMs: number, limit: number, queues?: string[]) {
     const now = new Date();
     const lockExpiry = new Date(now.getTime() - lockTtlMs);
+    const queueFilter =
+      queues && queues.length > 0
+        ? Prisma.sql`AND queue IN (${Prisma.join(queues.map((queue) => Prisma.sql`${queue}`))})`
+        : Prisma.empty;
 
     return this.prisma.$transaction(async (tx) => {
-      const nextPending = await tx.$queryRaw<Array<{ id: string; attempts: number }>>(Prisma.sql`
+      const jobs: Array<{ id: string; attempts: number }> = [];
+
+      const pending = await tx.$queryRaw<Array<{ id: string; attempts: number }>>(Prisma.sql`
         SELECT id, attempts
         FROM \`BackgroundJob\`
         WHERE status = ${BackgroundJobStatus.PENDING}
           AND runAfter <= ${now}
+          ${queueFilter}
         ORDER BY priority ASC, runAfter ASC, createdAt ASC
-        LIMIT 1
+        LIMIT ${limit}
         FOR UPDATE SKIP LOCKED
       `);
 
-      const pendingCandidate = nextPending[0];
-      if (pendingCandidate) {
-        return tx.backgroundJob.update({
-          where: { id: pendingCandidate.id },
-          data: {
-            status: BackgroundJobStatus.PROCESSING,
-            attempts: pendingCandidate.attempts + 1,
-            lockedAt: now,
-            lockedBy: workerId
-          }
-        });
+      if (pending.length > 0) {
+        jobs.push(...pending);
       }
 
-      const staleProcessing = await tx.$queryRaw<Array<{ id: string; attempts: number }>>(Prisma.sql`
-        SELECT id, attempts
-        FROM \`BackgroundJob\`
-        WHERE status = ${BackgroundJobStatus.PROCESSING}
-          AND lockedAt IS NOT NULL
-          AND lockedAt < ${lockExpiry}
-        ORDER BY lockedAt ASC
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED
+      if (jobs.length < limit) {
+        const staleProcessing = await tx.$queryRaw<Array<{ id: string; attempts: number }>>(Prisma.sql`
+          SELECT id, attempts
+          FROM \`BackgroundJob\`
+          WHERE status = ${BackgroundJobStatus.PROCESSING}
+            AND lockedAt IS NOT NULL
+            AND lockedAt < ${lockExpiry}
+            ${queueFilter}
+          ORDER BY lockedAt ASC
+          LIMIT ${limit - jobs.length}
+          FOR UPDATE SKIP LOCKED
+        `);
+        jobs.push(...staleProcessing);
+      }
+
+      if (jobs.length === 0) {
+        return [];
+      }
+
+      const ids = jobs.map((job) => job.id);
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE \`BackgroundJob\`
+        SET
+          status = ${BackgroundJobStatus.PROCESSING},
+          attempts = attempts + 1,
+          lockedAt = ${now},
+          lockedBy = ${workerId},
+          runAfter = ${now}
+        WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}`))})
       `);
 
-      const staleCandidate = staleProcessing[0];
-      if (!staleCandidate) {
-        return null;
-      }
-
-      return tx.backgroundJob.update({
-        where: { id: staleCandidate.id },
-        data: {
-          status: BackgroundJobStatus.PROCESSING,
-          attempts: staleCandidate.attempts + 1,
-          lockedAt: now,
-          lockedBy: workerId,
-          runAfter: now
-        }
+      const locked = await tx.backgroundJob.findMany({
+        where: { id: { in: ids } }
       });
+      const ordered = new Map(locked.map((job) => [job.id, job]));
+      return ids.map((id) => ordered.get(id)).filter(Boolean);
     });
+  }
+
+  async fetchAndLockNext(workerId: string, lockTtlMs: number, queues?: string[]) {
+    const [job] = await this.fetchAndLockBatch(workerId, lockTtlMs, 1, queues);
+    return job ?? null;
   }
 
   async requeue(id: string) {

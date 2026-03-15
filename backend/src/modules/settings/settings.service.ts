@@ -1310,6 +1310,15 @@ export class SettingsService {
   }
 
   private async getWorkflowRecordPayload(userId: string, recordType: string, recordKey: string) {
+    if (recordType === 'account_approval' && recordKey === 'main') {
+      const accountApproval = await this.prisma.accountApproval.findUnique({
+        where: { userId }
+      });
+      if (accountApproval) {
+        return accountApproval.payload ?? null;
+      }
+    }
+
     const record = await this.prisma.workflowRecord.findUnique({
       where: {
         userId_recordType_recordKey: {

@@ -472,15 +472,12 @@ export class AuthService {
           onboardingCompleted: true
         }
       }),
-      this.prisma.workflowRecord.upsert({
-        where: {
-          userId_recordType_recordKey: {
-            userId: user.id,
-            recordType: 'account_approval',
-            recordKey: 'main'
-          }
-        },
+      this.prisma.accountApproval.upsert({
+        where: { userId: user.id },
         update: {
+          status: 'approved',
+          submittedAt: new Date(approvedAt),
+          approvedAt: new Date(approvedAt),
           payload: {
             status: 'approved',
             progressPercent: 100,
@@ -498,8 +495,9 @@ export class AuthService {
         },
         create: {
           userId: user.id,
-          recordType: 'account_approval',
-          recordKey: 'main',
+          status: 'approved',
+          submittedAt: new Date(approvedAt),
+          approvedAt: new Date(approvedAt),
           payload: {
             status: 'approved',
             progressPercent: 100,
