@@ -11,8 +11,12 @@ import { TaxonomyService } from '../taxonomy/taxonomy.service.js';
 import { PROVIDER_SERVICE_TAXONOMY_TREE_SLUG } from '../taxonomy/provider-service-taxonomy.js';
 import { SELLER_CATALOG_TAXONOMY_TREE_SLUG } from '../taxonomy/seller-catalog-taxonomy.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
+import { CreateContentApprovalDto } from './dto/create-content-approval.dto.js';
+import { PatchScreenStateDto } from './dto/patch-screen-state.dto.js';
+import { ResubmitContentApprovalDto } from './dto/resubmit-content-approval.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
 import { UpdateAccountApprovalDecisionDto } from './dto/update-account-approval-decision.dto.js';
+import { UpdateContentApprovalDto } from './dto/update-content-approval.dto.js';
 import { ONBOARDING_PROFILE_TYPES, UpdateOnboardingDto } from './dto/update-onboarding.dto.js';
 import {
   createDefaultOnboardingState,
@@ -301,31 +305,33 @@ export class WorkflowService {
     }
     return {};
   }
-  async patchScreenState(userId: string, key: string, body: Record<string, unknown>) {
+  async patchScreenState(userId: string, key: string, body: PatchScreenStateDto) {
     if (key === 'provider-new-quote' && body.__resetToDefault === true) {
       const record = await this.upsertRecord(userId, 'screen_state', key, this.defaultProviderNewQuoteState());
       return record.payload as Record<string, unknown>;
     }
     const current = (await this.screenState(userId, key)) as Record<string, unknown>;
+    const nextPayload = { ...this.extractPayload(body) };
     const next = {
-      ...current,
-      ...this.ensureObjectPayload(body),
+      ...this.deepMerge(current, this.ensureObjectPayload(nextPayload)),
       updatedAt: new Date().toISOString()
     };
     const record = await this.upsertRecord(userId, 'screen_state', key, next);
     return record.payload as Record<string, unknown>;
   }
   async patchAccountApproval(userId: string, body: UpdateAccountApprovalDto) {
+    const current = await this.accountApproval(userId);
     const record = await this.upsertRecord(userId, 'account_approval', 'main', {
-      ...body,
+      ...this.deepMerge(current, this.ensureObjectPayload(body)),
       updatedAt: new Date().toISOString()
     });
     return record.payload as Record<string, unknown>;
   }
   refreshAccountApproval(userId: string) { return this.accountApproval(userId); }
   async resubmitAccountApproval(userId: string, body: UpdateAccountApprovalDto) {
+    const current = await this.accountApproval(userId);
     const record = await this.upsertRecord(userId, 'account_approval', 'main', {
-      ...body,
+      ...this.deepMerge(current, this.ensureObjectPayload(body)),
       status: 'resubmitted',
       reviewedAt: new Date().toISOString()
     });
@@ -378,16 +384,20 @@ export class WorkflowService {
     }
     return { id: record.recordKey, ...(record.payload as any) };
   }
-  async createContentApproval(userId: string, body: Record<string, unknown>) {
-    const payload = this.ensurePayload(body);
+  async createContentApproval(userId: string, body: CreateContentApprovalDto) {
+    const payload = this.ensurePayload(this.extractPayload(body));
     const id = String((payload as any).id ?? randomUUID());
     await this.createRecord(userId, 'content_approval', id, payload);
     return { id, ...payload };
   }
-  async patchContentApproval(userId: string, id: string, body: Record<string, unknown>) {
-    const payload = this.ensurePayload(body);
-    await this.updateRecord(userId, 'content_approval', id, payload);
-    return { id, ...payload };
+  async patchContentApproval(userId: string, id: string, body: UpdateContentApprovalDto) {
+    const record = await this.getRecord(userId, 'content_approval', id);
+    if (!record) {
+      throw new NotFoundException('Content approval not found');
+    }
+    const next = this.deepMerge((record.payload as Record<string, unknown> | null) ?? {}, this.ensureObjectPayload(this.extractPayload(body)));
+    await this.updateRecord(userId, 'content_approval', id, next);
+    return { id, ...next };
   }
 
   async nudge(userId: string, id: string) {
@@ -408,12 +418,15 @@ export class WorkflowService {
     await this.updateRecord(userId, 'content_approval', id, next);
     return { id, ...next };
   }
-  async resubmit(userId: string, id: string, body: Record<string, unknown>) {
+  async resubmit(userId: string, id: string, body: ResubmitContentApprovalDto) {
     const rec = await this.getRecord(userId, 'content_approval', id);
     if (!rec) {
       throw new NotFoundException('Content approval not found');
     }
-    const next = { ...(rec.payload as any), ...this.ensureObjectPayload(body), status: 'resubmitted' };
+    const next = {
+      ...this.deepMerge((rec.payload as Record<string, unknown> | null) ?? {}, this.ensureObjectPayload(this.extractPayload(body))),
+      status: 'resubmitted'
+    };
     await this.updateRecord(userId, 'content_approval', id, next);
     return { id, ...next };
   }
@@ -867,6 +880,47 @@ export class WorkflowService {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
+  }
+
+  private extractPayload(input: Record<string, unknown> | { payload: Record<string, unknown> }) {
+    if (
+      input &&
+      typeof input === 'object' &&
+      !Array.isArray(input) &&
+      input.payload &&
+      typeof input.payload === 'object' &&
+      !Array.isArray(input.payload)
+    ) {
+      return input.payload as Record<string, unknown>;
+    }
+    return input;
+  }
+
+  private deepMerge(base: unknown, patch: unknown): Record<string, unknown> {
+    if (!base || typeof base !== 'object' || Array.isArray(base)) {
+      return this.ensureObjectPayload(patch);
+    }
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+      return base as Record<string, unknown>;
+    }
+
+    const output: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+    for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+      const current = output[key];
+      if (
+        current &&
+        typeof current === 'object' &&
+        !Array.isArray(current) &&
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        output[key] = this.deepMerge(current, value);
+        continue;
+      }
+      output[key] = value;
+    }
+    return output;
   }
 
   private defaultProviderNewQuoteState() {

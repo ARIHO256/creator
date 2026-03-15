@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Patch, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
+import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { AnalyticsService } from './analytics.service.js';
+import { UpdateAnalyticsPageDto } from './dto/update-analytics-page.dto.js';
 
 @Controller('analytics')
 export class AnalyticsController {
@@ -29,7 +31,7 @@ export class AnalyticsController {
 
   @Patch('page')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  updatePage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
-    return this.analyticsService.updatePage(user.sub, user.role, body);
+  updatePage(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateAnalyticsPageDto)) body: UpdateAnalyticsPageDto) {
+    return this.analyticsService.updatePage(user.sub, user.role, body.payload);
   }
 }

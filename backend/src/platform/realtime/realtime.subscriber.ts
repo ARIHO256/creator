@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
+import { REALTIME_INSTANCE_ID, RealtimePublishEnvelope } from './realtime.instance.js';
 import { RealtimeStreamService } from './realtime.stream.service.js';
 
 @Injectable()
@@ -46,8 +47,16 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
       }
       const userId = rawChannel.slice('user:'.length);
       try {
-        const event = JSON.parse(message);
-        this.streamService.emitToUser(userId, event);
+        const envelope = JSON.parse(message) as RealtimePublishEnvelope | Record<string, unknown>;
+        const published = this.normalizeEnvelope(envelope);
+        if (!published || published.source === REALTIME_INSTANCE_ID) {
+          return;
+        }
+        void this.streamService.emitToUser(userId, published.event, {
+          eventType: published.meta?.eventType,
+          persistDistributedHistory: false,
+          streamId: published.meta?.streamId
+        });
       } catch (error: any) {
         this.logger.debug(`Realtime subscriber parse failed: ${error?.message ?? error}`);
       }
@@ -63,5 +72,15 @@ export class RealtimeSubscriber implements OnModuleInit, OnModuleDestroy {
 
   private readConfig<T = string>(key: string, fallback: T): T {
     return (this.configService?.get<T>(key) ?? fallback) as T;
+  }
+
+  private normalizeEnvelope(envelope: RealtimePublishEnvelope | Record<string, unknown>) {
+    if ('event' in envelope && envelope.event && typeof envelope.event === 'object') {
+      return envelope as RealtimePublishEnvelope;
+    }
+    return {
+      event: envelope as Record<string, unknown>,
+      source: ''
+    } satisfies RealtimePublishEnvelope;
   }
 }

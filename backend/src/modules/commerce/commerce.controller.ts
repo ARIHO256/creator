@@ -3,7 +3,9 @@ import type { FastifyReply } from 'fastify';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
+import { AddCartItemDto } from './dto/add-cart-item.dto.js';
 import { CreateDisputeDto } from './dto/create-dispute.dto.js';
 import { CreateDocumentDto } from './dto/create-document.dto.js';
 import { CreateExportJobDto } from './dto/create-export-job.dto.js';
@@ -25,6 +27,7 @@ import { UpdateReturnDto } from './dto/update-return.dto.js';
 import { UpdateShippingProfileDto } from './dto/update-shipping-profile.dto.js';
 import { UpdateShippingRateDto } from './dto/update-shipping-rate.dto.js';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
+import { UpdateFinanceInvoiceDto } from './dto/update-finance-invoice.dto.js';
 import { CommerceService } from './commerce.service.js';
 
 @Controller('seller')
@@ -45,10 +48,7 @@ export class CommerceController {
   @Get('cart') cart(@CurrentUser() user: RequestUser) { return this.service.cart(user.sub); }
   @RateLimit({ limit: 30, windowMs: 60_000 })
   @Post('cart/items')
-  addCartItem(
-    @CurrentUser() user: RequestUser,
-    @Body() body: { listingId?: string; qty?: number }
-  ) {
+  addCartItem(@CurrentUser() user: RequestUser, @Body() body: AddCartItemDto) {
     return this.service.addCartItem(user.sub, body);
   }
   @Get('orders') orders(@CurrentUser() user: RequestUser, @Query() query: SellerOrdersQueryDto) { return this.service.orders(user.sub, query); }
@@ -155,8 +155,8 @@ export class CommerceController {
   @Get('finance/statements') statements(@CurrentUser() user: RequestUser) { return this.service.financeStatements(user.sub); }
   @Get('finance/tax-reports') taxReports(@CurrentUser() user: RequestUser) { return this.service.financeTaxReports(user.sub); }
   @Patch('finance/invoices/:id')
-  updateInvoice(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() payload: Record<string, unknown>) {
-    return this.service.updateFinanceInvoice(user.sub, id, payload);
+  updateInvoice(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body(new FlexiblePayloadValidationPipe(UpdateFinanceInvoiceDto)) payload: UpdateFinanceInvoiceDto) {
+    return this.service.updateFinanceInvoice(user.sub, id, payload.payload);
   }
   @Delete('finance/holds/:id') removeHold(@CurrentUser() user: RequestUser, @Param('id') id: string) {
     return this.service.removeFinanceHold(user.sub, id);

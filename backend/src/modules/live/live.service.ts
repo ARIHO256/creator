@@ -3,6 +3,14 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { PayloadSanitizerOptions, normalizeIdentifier, sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
+import { CreateLiveMomentDto } from './dto/create-live-moment.dto.js';
+import { PublishLiveBuilderDto } from './dto/publish-live-builder.dto.js';
+import { PublishLiveReplayDto } from './dto/publish-live-replay.dto.js';
+import { SaveLiveBuilderDto } from './dto/save-live-builder.dto.js';
+import { UpdateLiveReplayDto } from './dto/update-live-replay.dto.js';
+import { UpdateLiveStudioDto } from './dto/update-live-studio.dto.js';
+import { UpdateLiveToolDto } from './dto/update-live-tool.dto.js';
+import { UpsertLiveSessionDto } from './dto/upsert-live-session.dto.js';
 
 @Injectable()
 export class LiveService {
@@ -14,8 +22,8 @@ export class LiveService {
     const builder = await this.ensureBuilderRecord(userId, sessionKey);
     return this.serializeBuilder(builder);
   }
-  saveBuilder(userId: string, payload: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(payload);
+  saveBuilder(userId: string, payload: SaveLiveBuilderDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(payload));
     const sessionKey = normalizeIdentifier(sanitized.sessionId ?? sanitized.id, randomUUID());
     const status = this.normalizeStatus((sanitized as any).status ?? 'draft', this.builderStatuses(), 'builder');
     return this.findBuilderRecord(userId, sessionKey)
@@ -40,13 +48,13 @@ export class LiveService {
       )
       .then((builder) => this.serializeBuilder(builder));
   }
-  async publishBuilder(userId: string, id: string, payload: Record<string, unknown>) {
+  async publishBuilder(userId: string, id: string, payload: PublishLiveBuilderDto) {
     const sessionKey = normalizeIdentifier(id, randomUUID());
     const existing = await this.findBuilderRecord(userId, sessionKey);
     if (!existing) {
       throw new NotFoundException('Builder not found');
     }
-    const sanitized = this.ensureObjectPayload(payload);
+    const sanitized = this.ensureObjectPayload(this.extractPayload(payload));
     const merged = { ...(existing.data as any), ...sanitized };
     const status = this.normalizeStatus((merged as any).status ?? existing.status ?? 'published', this.builderStatuses(), 'builder');
     const updated = await this.prisma.liveBuilder.update({
@@ -160,8 +168,8 @@ export class LiveService {
     }
     return this.serializeSession(session);
   }
-  createSession(userId: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body);
+  createSession(userId: string, body: UpsertLiveSessionDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body));
     const statusInput = (sanitized as any).status ?? (sanitized as any).scheduledAt ? 'scheduled' : 'draft';
     const status = this.normalizeStatus(statusInput, this.sessionStatuses(), 'session');
     const id = this.resolveSessionId(userId, String(sanitized.id ?? randomUUID()));
@@ -178,8 +186,8 @@ export class LiveService {
       })
       .then((session) => this.serializeSession(session));
   }
-  updateSession(userId: string, id: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body);
+  updateSession(userId: string, id: string, body: UpsertLiveSessionDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body));
     const sessionId = this.resolveSessionId(userId, id);
     return this.prisma.liveSession
       .findFirst({ where: { id: sessionId, userId } })
@@ -218,10 +226,10 @@ export class LiveService {
     return this.serializeStudio(studio);
   }
 
-  async updateStudio(userId: string, id: string, body: Record<string, unknown>) {
+  async updateStudio(userId: string, id: string, body: UpdateLiveStudioDto) {
     const sessionId = this.resolveSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
-    const sanitized = this.ensureObjectPayload(body, { maxDepth: 6, maxArrayLength: 250, maxKeys: 250 });
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body), { maxDepth: 6, maxArrayLength: 250, maxKeys: 250 });
     const merged = { ...(studio.data as any), ...sanitized };
     const updated = await this.prisma.liveStudio.update({
       where: { id: studio.id },
@@ -288,10 +296,10 @@ export class LiveService {
     return { studio: this.serializeStudio(updated), replay: this.serializeReplay(replay) };
   }
 
-  async addMoment(userId: string, id: string, payload: Record<string, unknown>) {
+  async addMoment(userId: string, id: string, payload: CreateLiveMomentDto) {
     const sessionId = this.resolveSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
-    const sanitized = this.ensureObjectPayload(payload, { maxDepth: 4, maxArrayLength: 50, maxKeys: 50 });
+    const sanitized = this.ensureObjectPayload(this.extractPayload(payload), { maxDepth: 4, maxArrayLength: 50, maxKeys: 50 });
     const moment = await this.prisma.liveMoment.create({
       data: {
         studioId: studio.id,
@@ -350,8 +358,8 @@ export class LiveService {
       })
       .then((replay) => this.serializeReplay(replay));
   }
-  updateReplay(userId: string, id: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body);
+  updateReplay(userId: string, id: string, body: UpdateLiveReplayDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body));
     return this.prisma.liveReplay
       .findFirst({ where: { id, userId } })
       .then((replay) => {
@@ -374,7 +382,7 @@ export class LiveService {
       .then((replay) => this.serializeReplay(replay));
   }
 
-  async publishReplay(userId: string, id: string, body: Record<string, unknown>) {
+  async publishReplay(userId: string, id: string, body: PublishLiveReplayDto) {
     const replay = await this.prisma.liveReplay.findFirst({
       where: { id, userId }
     });
@@ -382,7 +390,7 @@ export class LiveService {
       throw new NotFoundException('Replay not found');
     }
     this.assertTransition(replay.status, 'published', this.replayTransitions(), 'replay');
-    const sanitized = this.ensureObjectPayload(body);
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body));
     const merged = { ...(replay.data as any), ...sanitized };
     const status = this.normalizeStatus((merged as any).status ?? 'published', this.replayStatuses(), 'replay');
     const updated = await this.prisma.liveReplay.update({
@@ -405,6 +413,7 @@ export class LiveService {
   }
 
   async toolGet(userId: string, key: string) {
+    const defaultData = this.defaultToolPayload(key);
     const existing = await this.prisma.liveToolConfig.findUnique({
       where: { userId_key: { userId, key } }
     });
@@ -413,24 +422,30 @@ export class LiveService {
         ? (existing.data as Record<string, unknown>)
         : {};
 
-    if (existing) {
+    if (existing && Object.keys(currentData).length > 0) {
       return currentData;
     }
 
-    const record = await this.prisma.liveToolConfig.upsert({
-      where: { userId_key: { userId, key } },
-      update: { data: {} as Prisma.InputJsonValue },
-      create: {
+    if (existing) {
+      const updated = await this.prisma.liveToolConfig.update({
+        where: { id: existing.id },
+        data: { data: defaultData as Prisma.InputJsonValue }
+      });
+      return (updated.data as Record<string, unknown>) ?? defaultData;
+    }
+
+    const record = await this.prisma.liveToolConfig.create({
+      data: {
         userId,
         key,
-        data: {} as Prisma.InputJsonValue
+        data: defaultData as Prisma.InputJsonValue
       }
     });
-    return (record.data as Record<string, unknown>) ?? {};
+    return (record.data as Record<string, unknown>) ?? defaultData;
   }
 
-  toolPatch(userId: string, key: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body, { maxDepth: 5, maxArrayLength: 100, maxKeys: 100 });
+  toolPatch(userId: string, key: string, body: UpdateLiveToolDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body), { maxDepth: 5, maxArrayLength: 100, maxKeys: 100 });
     return this.prisma.liveToolConfig
       .upsert({
         where: { userId_key: { userId, key } },
@@ -1023,6 +1038,20 @@ export class LiveService {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
+  }
+
+  private extractPayload(input: Record<string, unknown> | { payload: Record<string, unknown> }) {
+    if (
+      input &&
+      typeof input === 'object' &&
+      !Array.isArray(input) &&
+      input.payload &&
+      typeof input.payload === 'object' &&
+      !Array.isArray(input.payload)
+    ) {
+      return input.payload as Record<string, unknown>;
+    }
+    return input;
   }
 
   private normalizeStatus(value: unknown, allowed: readonly string[], label: string) {

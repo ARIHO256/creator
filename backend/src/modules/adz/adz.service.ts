@@ -3,6 +3,11 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { PayloadSanitizerOptions, normalizeIdentifier, sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
+import { PublishAdzBuilderDto } from './dto/publish-adz-builder.dto.js';
+import { SaveAdzBuilderDto } from './dto/save-adz-builder.dto.js';
+import { UpsertAdzCampaignDto } from './dto/upsert-adz-campaign.dto.js';
+import { UpsertAdzLinkDto } from './dto/upsert-adz-link.dto.js';
+import { ValidateAdzScheduleDto } from './dto/validate-adz-schedule.dto.js';
 
 @Injectable()
 export class AdzService {
@@ -35,8 +40,8 @@ export class AdzService {
     }
     return this.serializeBuilder(builder);
   }
-  saveBuilder(userId: string, payload: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(payload);
+  saveBuilder(userId: string, payload: SaveAdzBuilderDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(payload));
     const id = normalizeIdentifier(sanitized.adId ?? sanitized.id, randomUUID());
     return this.prisma.adzBuilder
       .upsert({
@@ -55,14 +60,14 @@ export class AdzService {
       .then((builder) => this.serializeBuilder(builder));
   }
 
-  async publishBuilder(userId: string, id: string, payload: Record<string, unknown>) {
+  async publishBuilder(userId: string, id: string, payload: PublishAdzBuilderDto) {
     const existing = await this.prisma.adzBuilder.findFirst({
       where: { id, userId }
     });
     if (!existing) {
       throw new NotFoundException('Builder not found');
     }
-    const sanitized = this.ensureObjectPayload(payload);
+    const sanitized = this.ensureObjectPayload(this.extractPayload(payload));
     const merged = {
       ...(existing.data as any),
       ...sanitized,
@@ -123,8 +128,8 @@ export class AdzService {
     });
     return campaigns.map((campaign) => this.serializeCampaign(campaign));
   }
-  createCampaign(userId: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body);
+  createCampaign(userId: string, body: UpsertAdzCampaignDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body));
     const id = normalizeIdentifier(sanitized.id, randomUUID());
     return this.prisma.adzCampaign
       .create({
@@ -141,8 +146,8 @@ export class AdzService {
       })
       .then((campaign) => this.serializeCampaign(campaign));
   }
-  updateCampaign(userId: string, id: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body);
+  updateCampaign(userId: string, id: string, body: UpsertAdzCampaignDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body));
     return this.prisma.adzCampaign
       .findFirst({ where: { id, userId } })
       .then((campaign) => {
@@ -179,11 +184,10 @@ export class AdzService {
     };
   }
 
-  async validateSchedule(userId: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body, { maxDepth: 4, maxArrayLength: 25, maxKeys: 25 });
-    const campaignId = typeof sanitized.campaignId === 'string' ? sanitized.campaignId : '';
-    const start = this.parseDate(sanitized.startAt);
-    const end = this.parseDate(sanitized.endAt);
+  async validateSchedule(userId: string, body: ValidateAdzScheduleDto) {
+    const campaignId = body.campaignId;
+    const start = this.parseDate(body.startAt);
+    const end = this.parseDate(body.endAt);
     if (!campaignId || !start || !end) {
       throw new BadRequestException('campaignId, startAt, and endAt are required');
     }
@@ -234,8 +238,8 @@ export class AdzService {
     }
     return this.serializeLink(link);
   }
-  createLink(userId: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body, { maxDepth: 6, maxArrayLength: 100, maxKeys: 150 });
+  createLink(userId: string, body: UpsertAdzLinkDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body), { maxDepth: 6, maxArrayLength: 100, maxKeys: 150 });
     const id = normalizeIdentifier(sanitized.id, randomUUID());
     return this.prisma.adzLink
       .create({
@@ -249,8 +253,8 @@ export class AdzService {
       })
       .then((link) => this.serializeLink(link));
   }
-  updateLink(userId: string, id: string, body: Record<string, unknown>) {
-    const sanitized = this.ensureObjectPayload(body, { maxDepth: 6, maxArrayLength: 100, maxKeys: 150 });
+  updateLink(userId: string, id: string, body: UpsertAdzLinkDto) {
+    const sanitized = this.ensureObjectPayload(this.extractPayload(body), { maxDepth: 6, maxArrayLength: 100, maxKeys: 150 });
     return this.prisma.adzLink
       .findFirst({ where: { id, userId } })
       .then((link) => {
@@ -275,6 +279,20 @@ export class AdzService {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
+  }
+
+  private extractPayload(input: Record<string, unknown> | { payload: Record<string, unknown> }) {
+    if (
+      input &&
+      typeof input === 'object' &&
+      !Array.isArray(input) &&
+      input.payload &&
+      typeof input.payload === 'object' &&
+      !Array.isArray(input.payload)
+    ) {
+      return input.payload as Record<string, unknown>;
+    }
+    return input;
   }
 
   private parseDate(value?: unknown) {

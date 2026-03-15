@@ -87,31 +87,47 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
 
     const workerId = this.configService.get<string>('jobs.workerId') ?? 'api';
     const batch = this.configService.get<number>('jobs.workerBatch') ?? 5;
+    const concurrency = Math.max(
+      1,
+      Math.min(this.configService.get<number>('jobs.workerConcurrency') ?? batch, batch)
+    );
     const lockTtlMs = this.configService.get<number>('jobs.lockTtlMs') ?? 10 * 60 * 1000;
+    const jobs: NonNullable<Awaited<ReturnType<JobsService['fetchAndLockNext']>>>[] = [];
 
     for (let i = 0; i < batch; i++) {
       const job = await this.jobsService.fetchAndLockNext(workerId, lockTtlMs);
       if (!job) {
         break;
       }
+      jobs.push(job);
+    }
 
-      this.status.lastRunAt = new Date().toISOString();
-      this.status.lastJobId = job.id;
-
-      try {
-        await this.process(job);
-        await this.jobsService.markCompleted(job.id, { processedBy: workerId });
-        this.metrics?.recordJobProcessed(job.type, 'success');
-      } catch (error: any) {
-        this.status.errors += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Job ${job.id} failed: ${message}`);
-        await this.jobsService.markFailed(job.id, message);
-        this.metrics?.recordJobProcessed(job.type, 'failed');
-      }
+    for (let i = 0; i < jobs.length; i += concurrency) {
+      const slice = jobs.slice(i, i + concurrency);
+      await Promise.allSettled(slice.map((job) => this.processLockedJob(job, workerId)));
     }
 
     this.schedule();
+  }
+
+  private async processLockedJob(
+    job: NonNullable<Awaited<ReturnType<JobsService['fetchAndLockNext']>>>,
+    workerId: string
+  ) {
+    this.status.lastRunAt = new Date().toISOString();
+    this.status.lastJobId = job.id;
+
+    try {
+      await this.process(job);
+      await this.jobsService.markCompleted(job.id, { processedBy: workerId });
+      this.metrics?.recordJobProcessed(job.type, 'success');
+    } catch (error: any) {
+      this.status.errors += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Job ${job.id} failed: ${message}`);
+      await this.jobsService.markFailed(job.id, message);
+      this.metrics?.recordJobProcessed(job.type, 'failed');
+    }
   }
 
   private async process(job: Awaited<ReturnType<JobsService['fetchAndLockNext']>>) {
@@ -135,12 +151,18 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
         {
           const payload = job.payload as { channel?: string; event?: Record<string, unknown> };
           if (payload?.channel && payload?.event) {
+            const preparedEvent = this.realtimeStream?.prepareEvent(payload.event);
             if (this.realtimePublisher) {
-              await this.realtimePublisher.publish(payload.channel, payload.event);
+              await this.realtimePublisher.publish(payload.channel, payload.event, preparedEvent
+                ? { eventType: preparedEvent.eventType, streamId: preparedEvent.id }
+                : undefined);
             }
             if (this.realtimeStream && payload.channel.startsWith('user:')) {
               const userId = payload.channel.slice('user:'.length);
-              this.realtimeStream.emitToUser(userId, payload.event);
+              await this.realtimeStream.emitPreparedToUser(
+                userId,
+                preparedEvent ?? this.realtimeStream.prepareEvent(payload.event)
+              );
               if (this.realtimeDelivery && typeof payload.event.id === 'string') {
                 const receipt = await this.prisma.deliveryReceipt.findUnique({
                   where: { userId_eventId: { userId, eventId: payload.event.id } }
@@ -148,7 +170,7 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
                 if (receipt) {
                   const maxAttempts = Number(this.configService.get('realtime.deliveryMaxAttempts') ?? 5);
                   const attempts = receipt.attempts + 1;
-                  const hasClient = this.realtimeStream.hasClient(userId);
+                  const hasClient = await this.realtimeStream.hasClient(userId);
                   const status = hasClient ? 'DELIVERED' : attempts >= maxAttempts ? 'FAILED' : receipt.status;
                   await this.prisma.deliveryReceipt.update({
                     where: { id: receipt.id },
@@ -460,11 +482,19 @@ export class JobsWorker implements OnModuleInit, OnModuleDestroy {
 
   private async publishUserEvent(userId: string, event: Record<string, unknown>) {
     const channel = `user:${userId}`;
+    const preparedEvent = this.realtimeStream?.prepareEvent(event);
     if (this.realtimePublisher) {
-      await this.realtimePublisher.publish(channel, event);
+      await this.realtimePublisher.publish(
+        channel,
+        event,
+        preparedEvent ? { eventType: preparedEvent.eventType, streamId: preparedEvent.id } : undefined
+      );
     }
     if (this.realtimeStream) {
-      this.realtimeStream.emitToUser(userId, event);
+      await this.realtimeStream.emitPreparedToUser(
+        userId,
+        preparedEvent ?? this.realtimeStream.prepareEvent(event)
+      );
     }
   }
 }

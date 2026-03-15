@@ -2,10 +2,12 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
 import { ProviderTransitionDto } from './dto/provider-transition.dto.js';
 import { ProviderFulfillmentTransitionDto } from './dto/provider-fulfillment-transition.dto.js';
+import { UpdateProviderPortfolioDto } from './dto/update-provider-portfolio.dto.js';
 import { ProviderService } from './provider.service.js';
 
 @Controller('provider')
@@ -50,8 +52,9 @@ export class ProviderController {
     return this.service.transitionFulfillment(user.sub, id, body);
   }
   @Get('portfolio') portfolio(@CurrentUser() user: RequestUser) { return this.service.portfolio(user.sub); }
-  @Patch('portfolio') updatePortfolio(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
-    return this.service.updatePortfolio(user.sub, body);
+  @Patch('portfolio')
+  updatePortfolio(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateProviderPortfolioDto)) body: UpdateProviderPortfolioDto) {
+    return this.service.updatePortfolio(user.sub, body.payload);
   }
   @Get('quote-templates') quoteTemplates(@CurrentUser() user: RequestUser) { return this.service.quoteTemplates(user.sub); }
   @Get('reviews') reviews(@CurrentUser() user: RequestUser) { return this.service.reviews(user.sub); }

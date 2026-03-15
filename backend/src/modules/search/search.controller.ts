@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Controller, Get, Post, Query } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { SearchService } from './search.service.js';
 import { SearchListingsQueryDto } from './dto/search-listings-query.dto.js';
@@ -21,7 +21,7 @@ export class SearchController {
 
   @Post('reindex')
   @Roles('ADMIN')
-  reindex(@Body() _body: Record<string, unknown>) {
+  reindex() {
     return this.search.reindexAll();
   }
 }

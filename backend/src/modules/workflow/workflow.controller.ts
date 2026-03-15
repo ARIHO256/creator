@@ -2,10 +2,15 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
+import { CreateContentApprovalDto } from './dto/create-content-approval.dto.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
+import { PatchScreenStateDto } from './dto/patch-screen-state.dto.js';
+import { ResubmitContentApprovalDto } from './dto/resubmit-content-approval.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
 import { UpdateAccountApprovalDecisionDto } from './dto/update-account-approval-decision.dto.js';
+import { UpdateContentApprovalDto } from './dto/update-content-approval.dto.js';
 import { UpdateOnboardingDto } from './dto/update-onboarding.dto.js';
 import { WorkflowService } from './workflow.service.js';
 
@@ -59,7 +64,7 @@ export class WorkflowController {
   patchScreenState(
     @CurrentUser() user: RequestUser,
     @Param('key') key: string,
-    @Body() body: Record<string, unknown>
+    @Body(new FlexiblePayloadValidationPipe(PatchScreenStateDto)) body: PatchScreenStateDto
   ) {
     return this.service.patchScreenState(user.sub, key, body);
   }
@@ -68,10 +73,14 @@ export class WorkflowController {
   @Get('content-approvals/:id') contentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.contentApproval(user.sub, id); }
   @Post('content-approvals')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  createContentApproval(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) { return this.service.createContentApproval(user.sub, body); }
+  createContentApproval(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(CreateContentApprovalDto)) body: CreateContentApprovalDto) {
+    return this.service.createContentApproval(user.sub, body);
+  }
   @Patch('content-approvals/:id')
   @RateLimit({ limit: 20, windowMs: 60_000 })
-  patchContentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.patchContentApproval(user.sub, id, body); }
+  patchContentApproval(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body(new FlexiblePayloadValidationPipe(UpdateContentApprovalDto)) body: UpdateContentApprovalDto) {
+    return this.service.patchContentApproval(user.sub, id, body);
+  }
   @Post('content-approvals/:id/nudge')
   @RateLimit({ limit: 10, windowMs: 60_000 })
   nudge(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.nudge(user.sub, id); }
@@ -80,5 +89,7 @@ export class WorkflowController {
   withdraw(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.withdraw(user.sub, id); }
   @Post('content-approvals/:id/resubmit')
   @RateLimit({ limit: 10, windowMs: 60_000 })
-  resubmit(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: Record<string, unknown>) { return this.service.resubmit(user.sub, id, body); }
+  resubmit(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body(new FlexiblePayloadValidationPipe(ResubmitContentApprovalDto)) body: ResubmitContentApprovalDto) {
+    return this.service.resubmit(user.sub, id, body);
+  }
 }

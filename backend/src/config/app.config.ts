@@ -12,6 +12,8 @@ export default () => ({
     defaultWindowMs: Number(
       process.env.RATE_LIMIT_DEFAULT_WINDOW_MS ?? "60000",
     ),
+    redisUrl: process.env.RATE_LIMIT_REDIS_URL ?? process.env.REDIS_URL ?? "",
+    redisPrefix: process.env.RATE_LIMIT_REDIS_PREFIX ?? "mldz:ratelimit:",
     authLimit: Number(process.env.RATE_LIMIT_AUTH_LIMIT ?? "12"),
     authWindowMs: Number(process.env.RATE_LIMIT_AUTH_WINDOW_MS ?? "60000"),
     uploadLimit: Number(process.env.RATE_LIMIT_UPLOAD_LIMIT ?? "20"),
@@ -34,6 +36,7 @@ export default () => ({
     ),
     workerPollMs: Number(process.env.JOBS_WORKER_POLL_MS ?? "2000"),
     workerBatch: Number(process.env.JOBS_WORKER_BATCH ?? "5"),
+    workerConcurrency: Number(process.env.JOBS_WORKER_CONCURRENCY ?? "5"),
     lockTtlMs: Number(
       process.env.JOBS_WORKER_LOCK_TTL_MS ?? `${10 * 60 * 1000}`,
     ),
@@ -67,10 +70,15 @@ export default () => ({
     streamMaxClientsTotal: Number(
       process.env.REALTIME_STREAM_MAX_TOTAL ?? "5000",
     ),
+    streamPresenceTtlMs: Number(
+      process.env.REALTIME_STREAM_PRESENCE_TTL_MS ?? "90000",
+    ),
     streamHistorySize: Number(process.env.REALTIME_STREAM_HISTORY_SIZE ?? "50"),
     streamHistoryTtlMs: Number(
       process.env.REALTIME_STREAM_HISTORY_TTL_MS ?? "300000",
     ),
+    streamStatePrefix:
+      process.env.REALTIME_STREAM_STATE_PREFIX ?? "mldz:realtime:state:",
     deliveryEnabled: !["0", "false", "no", "off"].includes(
       String(process.env.REALTIME_DELIVERY_ENABLED ?? "true").toLowerCase(),
     ),

@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Patch, Query } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { OpsSummaryQueryDto } from './dto/ops-summary-query.dto.js';
+import { UpdateOpsPageDto } from './dto/update-ops-page.dto.js';
 import { OpsService } from './ops.service.js';
 
 @Controller('ops')
@@ -21,8 +23,8 @@ export class OpsController {
   }
 
   @Patch('overview-page')
-  updateOverviewPage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
-    return this.service.updateOverviewPage(user.sub, body);
+  updateOverviewPage(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateOpsPageDto)) body: UpdateOpsPageDto) {
+    return this.service.updateOverviewPage(user.sub, body.payload);
   }
 
   @Get('inventory')
@@ -36,8 +38,8 @@ export class OpsController {
   }
 
   @Patch('inventory-page')
-  updateInventoryPage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
-    return this.service.updateInventoryPage(user.sub, body);
+  updateInventoryPage(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateOpsPageDto)) body: UpdateOpsPageDto) {
+    return this.service.updateInventoryPage(user.sub, body.payload);
   }
 
   @Get('shipping')
@@ -71,7 +73,7 @@ export class OpsController {
   }
 
   @Patch('compliance-page')
-  updateCompliancePage(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
-    return this.service.updateCompliancePage(user.sub, body);
+  updateCompliancePage(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateOpsPageDto)) body: UpdateOpsPageDto) {
+    return this.service.updateCompliancePage(user.sub, body.payload);
   }
 }
