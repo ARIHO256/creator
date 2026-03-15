@@ -97,4 +97,8 @@ test('DiscoveryService.sellers enriches provider cards with onboarding-backed ca
   assert.equal(sellers[0].capabilities.bookings, false);
   assert.deepEqual(sellers[0].providerServices, ['consulting']);
   assert.deepEqual(sellers[0].bookingModes, ['quotes', 'consultations']);
+  assert.equal(sellers[0].requestActions.booking.enabled, false);
+  assert.equal(sellers[0].requestActions.consultation.enabled, true);
+  assert.equal(sellers[0].requestActions.consultation.path, '/api/provider/consultations');
+  assert.equal(sellers[0].requestActions.consultation.providerHandle, '@provider-studio');
 });

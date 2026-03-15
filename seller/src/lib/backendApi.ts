@@ -535,7 +535,17 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getProviderConsultations: () => request<Record<string, unknown>>("/api/provider/consultations"),
+  createProviderConsultationRequest: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/provider/consultations", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getProviderBookings: () => request<Record<string, unknown>>("/api/provider/bookings"),
+  createProviderBookingRequest: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/provider/bookings", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getProviderPortfolio: () => request<Record<string, unknown>>("/api/provider/portfolio"),
   patchProviderPortfolio: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/provider/portfolio", {

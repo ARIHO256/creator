@@ -53,6 +53,8 @@ export function serializePublicSellerWithExtras(
     bookingModes?: string[];
   }
 ) {
+  const hasProviderRequestActions =
+    String(profile.kind || '').toUpperCase() === 'PROVIDER' && Boolean(profile.handle) && Boolean(extras?.capabilities);
   return {
     id: profile.id,
     handle: profile.handle,
@@ -74,6 +76,22 @@ export function serializePublicSellerWithExtras(
     capabilities: extras?.capabilities ?? null,
     providerServices: Array.isArray(extras?.providerServices) ? extras?.providerServices : [],
     bookingModes: Array.isArray(extras?.bookingModes) ? extras?.bookingModes : [],
+    requestActions: hasProviderRequestActions
+      ? {
+          booking: {
+            enabled: Boolean(extras?.capabilities?.bookings),
+            method: 'POST',
+            path: '/api/provider/bookings',
+            providerHandle: `@${profile.handle}`
+          },
+          consultation: {
+            enabled: Boolean(extras?.capabilities?.consultations),
+            method: 'POST',
+            path: '/api/provider/consultations',
+            providerHandle: `@${profile.handle}`
+          }
+        }
+      : null,
     rating: profile.rating,
     isVerified: profile.isVerified,
     createdAt: profile.createdAt.toISOString(),

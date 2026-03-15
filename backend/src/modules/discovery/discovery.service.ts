@@ -442,9 +442,13 @@ export class DiscoveryService {
       include: { seller: true },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }]
     });
+    const opportunitySellers = opportunities
+      .map((opportunity) => opportunity.seller)
+      .filter(Boolean) as Array<(typeof opportunities)[number]['seller']>;
+    const enrichedSellerMap = await this.buildEnrichedSellerMap(opportunitySellers as any[], this.prisma);
     return opportunities.map((opportunity) => ({
       ...opportunity,
-      seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+      seller: opportunity.seller ? enrichedSellerMap.get(opportunity.seller.id) ?? serializePublicSeller(opportunity.seller as any) : null
     }));
   }
 
@@ -458,9 +462,13 @@ export class DiscoveryService {
       throw new NotFoundException('Opportunity not found');
     }
 
+    const enrichedSellerMap = await this.buildEnrichedSellerMap(
+      opportunity.seller ? [opportunity.seller as any] : [],
+      this.prisma
+    );
     return {
       ...opportunity,
-      seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+      seller: opportunity.seller ? enrichedSellerMap.get(opportunity.seller.id) ?? serializePublicSeller(opportunity.seller as any) : null
     };
   }
 
@@ -527,12 +535,16 @@ export class DiscoveryService {
         take
       })
     ]);
+    const opportunitySellers = opportunities
+      .map((opportunity) => opportunity.seller)
+      .filter(Boolean) as Array<(typeof opportunities)[number]['seller']>;
+    const enrichedSellerMap = await this.buildEnrichedSellerMap(opportunitySellers as any[], this.prisma);
 
     return {
       listings: listings.map((listing) => serializeListingPublic(listing as any)),
       opportunities: opportunities.map((opportunity) => ({
         ...opportunity,
-        seller: opportunity.seller ? serializePublicSeller(opportunity.seller as any) : null
+        seller: opportunity.seller ? enrichedSellerMap.get(opportunity.seller.id) ?? serializePublicSeller(opportunity.seller as any) : null
       }))
     };
   }
@@ -834,10 +846,7 @@ export class DiscoveryService {
     const opportunitySellers = opportunities
       .map((opportunity) => opportunity.seller)
       .filter(Boolean) as Array<(typeof opportunities)[number]['seller']>;
-    const enrichedOpportunitySellers = await this.enrichPublicSellers(opportunitySellers as any[], this.prisma);
-    const enrichedOpportunitySellerMap = new Map(
-      enrichedOpportunitySellers.map((seller) => [seller.id, seller])
-    );
+    const enrichedOpportunitySellerMap = await this.buildEnrichedSellerMap(opportunitySellers as any[], this.prisma);
     return {
       sellers: enrichedSellers,
       listings: listings.map((listing) => serializeListingPublic(listing)),
@@ -924,6 +933,33 @@ export class DiscoveryService {
         bookingModes: this.readStringList(providerProfile?.bookingModes)
       });
     });
+  }
+
+  private async buildEnrichedSellerMap(
+    sellers: Array<{
+      id: string;
+      userId: string | null;
+      handle: string | null;
+      name: string;
+      displayName: string;
+      legalBusinessName: string | null;
+      storefrontName: string | null;
+      type: string;
+      kind: string;
+      category: string | null;
+      categories: string | null;
+      region: string | null;
+      description: string | null;
+      languages: string | null;
+      rating: number;
+      isVerified: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    }>,
+    client: PrismaService | ReadPrismaService
+  ) {
+    const enriched = await this.enrichPublicSellers(sellers, client);
+    return new Map(enriched.map((seller) => [seller.id, seller]));
   }
 
   private resolveProviderCapabilities(profile: Record<string, unknown> | null) {
