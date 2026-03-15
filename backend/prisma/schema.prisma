@@ -380,6 +380,11 @@ model User {
   workflowScreenStates WorkflowScreenState[]
   contentApprovals     ContentApproval[]
   providerDisputes     ProviderDispute[]
+  ownedWorkspace       Workspace?            @relation("WorkspaceOwner")
+  workspaceMemberships WorkspaceMember[]
+  sentWorkspaceInvites WorkspaceInvite[]     @relation("WorkspaceInviteSender")
+  workspaceNotificationPreferences WorkspaceNotificationPreference[]
+  createdWorkspaceSavedViews WorkspaceSavedView[] @relation("WorkspaceSavedViewCreator")
   userSettings         UserSetting[]
   workspaceSettings    WorkspaceSetting[]
   subscriptions        UserSubscription[]
@@ -1908,6 +1913,243 @@ model ProviderDispute {
   @@index([userId, status, updatedAt])
   @@index([subjectType, subjectId])
   @@index([openedAt])
+}
+
+model Workspace {
+  id                         String   @id @default(cuid())
+  ownerUserId                String   @unique
+  require2FA                 Boolean  @default(true)
+  allowExternalInvites       Boolean  @default(false)
+  supplierGuestExpiryHours   Int      @default(24)
+  inviteDomainAllowlist      Json?
+  requireApprovalForPayouts  Boolean  @default(true)
+  payoutApprovalThresholdUsd Int      @default(500)
+  restrictSensitiveExports   Boolean  @default(true)
+  sessionTimeoutMins         Int      @default(60)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  owner       User               @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  roles       WorkspaceRole[]
+  members     WorkspaceMember[]
+  invites     WorkspaceInvite[]
+  crewSessions WorkspaceCrewSession[]
+  savedViewGroups WorkspaceSavedViewGroup[]
+  helpLinks      WorkspaceHelpLink[]
+  statusServices WorkspaceStatusService[]
+  notificationPreferences WorkspaceNotificationPreference[]
+
+  @@index([updatedAt])
+}
+
+model WorkspaceRole {
+  dbId        String   @id @default(cuid())
+  workspaceId String
+  key         String
+  name        String
+  badge       String?
+  description String?
+  permissions Json?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   WorkspaceMember[]
+  invites   WorkspaceInvite[]
+
+  @@unique([workspaceId, key])
+  @@unique([workspaceId, name])
+  @@index([workspaceId, updatedAt])
+}
+
+model WorkspaceMember {
+  dbId       String   @id @default(cuid())
+  workspaceId String
+  externalId String
+  userId     String?
+  roleDbId   String
+  name       String
+  email      String
+  status     String   @default("active")
+  seat       String?
+  invitedAt  DateTime?
+  joinedAt   DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workspace Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  role      WorkspaceRole         @relation(fields: [roleDbId], references: [dbId], onDelete: Restrict)
+  invites   WorkspaceInvite[]
+  crewAssignments WorkspaceCrewAssignment[]
+
+  @@unique([workspaceId, externalId])
+  @@unique([workspaceId, email])
+  @@index([workspaceId, status, updatedAt])
+  @@index([userId])
+  @@index([roleDbId])
+}
+
+model WorkspaceInvite {
+  dbId            String    @id @default(cuid())
+  workspaceId     String
+  roleDbId        String
+  memberDbId      String?
+  invitedByUserId String?
+  name            String
+  email           String
+  status          String    @default("invited")
+  seat            String?
+  acceptedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace  Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role       WorkspaceRole   @relation(fields: [roleDbId], references: [dbId], onDelete: Restrict)
+  member     WorkspaceMember? @relation(fields: [memberDbId], references: [dbId], onDelete: SetNull)
+  invitedBy  User?           @relation("WorkspaceInviteSender", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, email, roleDbId])
+  @@index([workspaceId, status, updatedAt])
+  @@index([memberDbId])
+  @@index([invitedByUserId])
+}
+
+model WorkspaceCrewSession {
+  dbId        String   @id @default(cuid())
+  workspaceId String
+  sessionKey  String
+  payload    Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workspace   Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignments WorkspaceCrewAssignment[]
+
+  @@unique([workspaceId, sessionKey])
+  @@index([workspaceId, updatedAt])
+}
+
+model WorkspaceCrewAssignment {
+  id            String   @id @default(cuid())
+  crewSessionDbId String
+  memberDbId    String?
+  assignmentRole String?
+  payload       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  crewSession WorkspaceCrewSession @relation(fields: [crewSessionDbId], references: [dbId], onDelete: Cascade)
+  member      WorkspaceMember?     @relation(fields: [memberDbId], references: [dbId], onDelete: SetNull)
+
+  @@index([crewSessionDbId, updatedAt])
+  @@index([memberDbId])
+}
+
+model WorkspaceSavedViewGroup {
+  dbId        String   @id @default(cuid())
+  workspaceId String
+  scopeRole   String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  views     WorkspaceSavedView[]
+
+  @@unique([workspaceId, scopeRole])
+  @@index([workspaceId, updatedAt])
+}
+
+model WorkspaceSavedView {
+  id              String   @id @default(cuid())
+  groupDbId       String
+  createdByUserId String?
+  externalId      String
+  name            String?
+  position        Int      @default(0)
+  payload         Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  group     WorkspaceSavedViewGroup @relation(fields: [groupDbId], references: [dbId], onDelete: Cascade)
+  createdBy User?                   @relation("WorkspaceSavedViewCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([groupDbId, externalId])
+  @@index([groupDbId, position])
+  @@index([createdByUserId])
+}
+
+model WorkspaceHelpLink {
+  id          String   @id @default(cuid())
+  workspaceId String
+  externalId  String
+  title       String?
+  category    String?
+  position    Int      @default(0)
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId, position])
+}
+
+model WorkspaceStatusService {
+  id          String   @id @default(cuid())
+  workspaceId String
+  externalId  String
+  name        String?
+  status      String?
+  position    Int      @default(0)
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, externalId])
+  @@index([workspaceId, position])
+  @@index([workspaceId, status, updatedAt])
+}
+
+model WorkspaceNotificationPreference {
+  dbId        String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  scopeRole   String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace                   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  watches   WorkspaceNotificationWatch[]
+
+  @@unique([workspaceId, userId, scopeRole])
+  @@index([workspaceId, updatedAt])
+  @@index([userId, updatedAt])
+}
+
+model WorkspaceNotificationWatch {
+  id             String   @id @default(cuid())
+  preferenceDbId String
+  externalId     String
+  channel        String?
+  enabled        Boolean?
+  position       Int      @default(0)
+  payload        Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  preference WorkspaceNotificationPreference @relation(fields: [preferenceDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([preferenceDbId, externalId])
+  @@index([preferenceDbId, position])
+  @@index([preferenceDbId, channel])
 }
 
 model MessageThread {
