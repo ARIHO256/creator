@@ -198,10 +198,35 @@ export class CommunicationsService {
   }
 
   async notifications(userId: string) {
-    const preferences = await this.prisma.workspaceSetting.findUnique({
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { ownerUserId: userId }
+    });
+    if (workspace) {
+      const preferences = await this.prisma.workspaceNotificationPreference.findMany({
+        where: { workspaceId: workspace.id, userId },
+        include: {
+          watches: {
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+          }
+        },
+        orderBy: { createdAt: 'asc' }
+      });
+      if (preferences.length > 0) {
+        return {
+          watches: preferences.flatMap((preference) =>
+            preference.watches.map((watch) =>
+              watch.payload && typeof watch.payload === 'object' && !Array.isArray(watch.payload)
+                ? { id: watch.externalId, ...(watch.payload as Record<string, unknown>) }
+                : { id: watch.externalId }
+            )
+          )
+        };
+      }
+    }
+    const legacy = await this.prisma.workspaceSetting.findUnique({
       where: { userId_key: { userId, key: 'notification_preferences' } }
     });
-    return (preferences?.payload as Record<string, unknown>) ?? { watches: [] };
+    return (legacy?.payload as Record<string, unknown>) ?? { watches: [] };
   }
 
   async helpSupport(userId: string, role: string) {

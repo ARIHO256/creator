@@ -380,6 +380,8 @@ model User {
   workflowScreenStates WorkflowScreenState[]
   contentApprovals     ContentApproval[]
   providerDisputes     ProviderDispute[]
+  workspacePreferences WorkspaceUserPreference[]
+  securityProfile      UserSecurityProfile?
   ownedWorkspace       Workspace?            @relation("WorkspaceOwner")
   workspaceMemberships WorkspaceMember[]
   sentWorkspaceInvites WorkspaceInvite[]     @relation("WorkspaceInviteSender")
@@ -1938,6 +1940,11 @@ model Workspace {
   helpLinks      WorkspaceHelpLink[]
   statusServices WorkspaceStatusService[]
   notificationPreferences WorkspaceNotificationPreference[]
+  payoutSettings WorkspacePayoutSettings?
+  integrationSettings WorkspaceIntegrationSettings?
+  taxSettings WorkspaceTaxSettings?
+  kycProfile WorkspaceKycProfile?
+  userPreferences WorkspaceUserPreference[]
 
   @@index([updatedAt])
 }
@@ -2150,6 +2157,284 @@ model WorkspaceNotificationWatch {
   @@unique([preferenceDbId, externalId])
   @@index([preferenceDbId, position])
   @@index([preferenceDbId, channel])
+}
+
+model WorkspacePayoutSettings {
+  dbId        String   @id @default(cuid())
+  workspaceId String   @unique
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  methods   WorkspacePayoutMethod[]
+}
+
+model WorkspacePayoutMethod {
+  id         String   @id @default(cuid())
+  settingsDbId String
+  externalId String
+  type       String
+  label      String?
+  currency   String?
+  isDefault  Boolean  @default(false)
+  position   Int      @default(0)
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  settings WorkspacePayoutSettings @relation(fields: [settingsDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([settingsDbId, externalId])
+  @@index([settingsDbId, position])
+  @@index([settingsDbId, isDefault])
+}
+
+model WorkspaceIntegrationSettings {
+  dbId        String   @id @default(cuid())
+  workspaceId String   @unique
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace    Workspace                     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  integrations WorkspaceIntegrationConnection[]
+  webhooks     WorkspaceIntegrationWebhook[]
+}
+
+model WorkspaceIntegrationConnection {
+  id         String   @id @default(cuid())
+  settingsDbId String
+  externalId String
+  kind       String?
+  provider   String?
+  status     String?
+  position   Int      @default(0)
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  settings WorkspaceIntegrationSettings @relation(fields: [settingsDbId], references: [dbId], onDelete: Cascade)
+  webhooks WorkspaceIntegrationWebhook[]
+
+  @@unique([settingsDbId, externalId])
+  @@index([settingsDbId, position])
+}
+
+model WorkspaceIntegrationWebhook {
+  id              String   @id @default(cuid())
+  settingsDbId    String
+  integrationDbId String?
+  externalId      String
+  status          String?
+  position        Int      @default(0)
+  payload         Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  settings    WorkspaceIntegrationSettings   @relation(fields: [settingsDbId], references: [dbId], onDelete: Cascade)
+  integration WorkspaceIntegrationConnection? @relation(fields: [integrationDbId], references: [id], onDelete: SetNull)
+
+  @@unique([settingsDbId, externalId])
+  @@index([settingsDbId, position])
+  @@index([integrationDbId])
+}
+
+model WorkspaceTaxSettings {
+  dbId        String   @id @default(cuid())
+  workspaceId String   @unique
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  profiles  WorkspaceTaxProfile[]
+  reports   WorkspaceTaxReport[]
+}
+
+model WorkspaceTaxProfile {
+  id          String   @id @default(cuid())
+  settingsDbId String
+  externalId  String
+  profileName String?
+  country     String?
+  vatId       String?
+  status      String?
+  isDefault   Boolean  @default(false)
+  position    Int      @default(0)
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  settings WorkspaceTaxSettings @relation(fields: [settingsDbId], references: [dbId], onDelete: Cascade)
+  reports  WorkspaceTaxReport[]
+
+  @@unique([settingsDbId, externalId])
+  @@index([settingsDbId, position])
+  @@index([settingsDbId, isDefault])
+}
+
+model WorkspaceTaxReport {
+  id          String   @id @default(cuid())
+  settingsDbId String
+  profileDbId String?
+  externalId  String
+  status      String?
+  periodStart DateTime?
+  periodEnd   DateTime?
+  position    Int      @default(0)
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  settings WorkspaceTaxSettings @relation(fields: [settingsDbId], references: [dbId], onDelete: Cascade)
+  profile  WorkspaceTaxProfile? @relation(fields: [profileDbId], references: [id], onDelete: SetNull)
+
+  @@unique([settingsDbId, externalId])
+  @@index([settingsDbId, position])
+  @@index([profileDbId])
+}
+
+model WorkspaceKycProfile {
+  dbId        String   @id @default(cuid())
+  workspaceId String   @unique
+  status      String   @default("pending")
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  documents WorkspaceKycDocument[]
+}
+
+model WorkspaceKycDocument {
+  id            String   @id @default(cuid())
+  kycProfileDbId String
+  externalId    String
+  title         String?
+  status        String?
+  uploadedAt    DateTime?
+  expiresAt     DateTime?
+  position      Int      @default(0)
+  payload       Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  kycProfile WorkspaceKycProfile @relation(fields: [kycProfileDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([kycProfileDbId, externalId])
+  @@index([kycProfileDbId, position])
+  @@index([expiresAt])
+}
+
+model WorkspaceUserPreference {
+  dbId        String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  scopeRole   String
+  locale      String?
+  currency    String?
+  timezone    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, scopeRole])
+  @@index([workspaceId, updatedAt])
+  @@index([userId, updatedAt])
+}
+
+model UserSecurityProfile {
+  dbId            String   @id @default(cuid())
+  userId          String   @unique
+  twoFactor       Boolean  @default(false)
+  twoFactorMethod String?  @default("authenticator")
+  twoFactorConfig Json?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user           User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions       UserSecuritySession[]
+  passkeys       UserSecurityPasskey[]
+  trustedDevices UserSecurityTrustedDevice[]
+  alerts         UserSecurityAlert[]
+  devices        UserRememberedDevice[]
+}
+
+model UserSecuritySession {
+  id           String   @id @default(cuid())
+  profileDbId  String
+  externalId   String
+  device       String?
+  ip           String?
+  lastActiveAt DateTime?
+  payload      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile UserSecurityProfile @relation(fields: [profileDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([profileDbId, externalId])
+  @@index([profileDbId, lastActiveAt])
+}
+
+model UserSecurityPasskey {
+  id          String   @id @default(cuid())
+  profileDbId String
+  externalId  String
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile UserSecurityProfile @relation(fields: [profileDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([profileDbId, externalId])
+  @@index([profileDbId, updatedAt])
+}
+
+model UserSecurityTrustedDevice {
+  id          String   @id @default(cuid())
+  profileDbId String
+  externalId  String
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile UserSecurityProfile @relation(fields: [profileDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([profileDbId, externalId])
+  @@index([profileDbId, updatedAt])
+}
+
+model UserSecurityAlert {
+  id          String   @id @default(cuid())
+  profileDbId String
+  externalId  String
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile UserSecurityProfile @relation(fields: [profileDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([profileDbId, externalId])
+  @@index([profileDbId, updatedAt])
+}
+
+model UserRememberedDevice {
+  id          String   @id @default(cuid())
+  profileDbId String
+  externalId  String
+  payload     Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  profile UserSecurityProfile @relation(fields: [profileDbId], references: [dbId], onDelete: Cascade)
+
+  @@unique([profileDbId, externalId])
+  @@index([profileDbId, updatedAt])
 }
 
 model MessageThread {
