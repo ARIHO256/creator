@@ -68,6 +68,9 @@ const DISCOUNT_TYPE_OPTIONS = [
 
 const GIVEAWAY_SUPPORTED_CAMPAIGN_TYPES = ['Live Sessionz', 'Live + Shoppables.'];
 const SELLER_CAMPAIGN_BUILDER_ID = 'seller_campaign_builder_default';
+const BUILDER_AUTOSAVE_DEBOUNCE_MS = 2500;
+const BUILDER_AUTOSAVE_MIN_INTERVAL_MS = 2500;
+const BUILDER_AUTOSAVE_RETRY_MS = 10000;
 
 function campaignTypeSupportsGiveaways(type) {
   return GIVEAWAY_SUPPORTED_CAMPAIGN_TYPES.includes(String(type || ''));
@@ -1204,6 +1207,13 @@ export default function SupplierMyCampaignsPage() {
   const [builderStep, setBuilderStep] = useState(emptySupplierCampaignBuilderStep);
   const [builder, setBuilder] = useState<any>(emptySupplierCampaignBuilderValue);
   const builderHashRef = useRef('');
+  const builderSaveTimerRef = useRef<number | null>(null);
+  const builderSaveInFlightRef = useRef(false);
+  const builderSavePromiseRef = useRef<Promise<void> | null>(null);
+  const builderPendingHashRef = useRef('');
+  const builderPendingPayloadRef = useRef<Record<string, unknown> | null>(null);
+  const builderLastSaveAtRef = useRef(0);
+  const builderRetryAfterRef = useRef(0);
   const workspaceLoadStartedRef = useRef(false);
   const restoreBuilderStartedRef = useRef(false);
 
@@ -1280,6 +1290,104 @@ export default function SupplierMyCampaignsPage() {
       featuredGiveawayQuantity,
       giveawayAddMode,
     ]
+  );
+
+  const scheduleBuilderSave = useCallback((delayMs: number, action: () => void) => {
+    if (builderSaveTimerRef.current) {
+      window.clearTimeout(builderSaveTimerRef.current);
+    }
+    builderSaveTimerRef.current = window.setTimeout(() => {
+      builderSaveTimerRef.current = null;
+      action();
+    }, Math.max(0, delayMs));
+  }, []);
+
+  const flushBuilderDraft = useCallback(
+    (force = false): Promise<void> => {
+      if (!workspaceLoaded) {
+        return Promise.resolve();
+      }
+
+      if (builderSaveInFlightRef.current) {
+        return (builderSavePromiseRef.current ?? Promise.resolve()).then(() => flushBuilderDraft(force));
+      }
+
+      const pendingHash = builderPendingHashRef.current;
+      const pendingPayload = builderPendingPayloadRef.current;
+      if (!pendingHash || !pendingPayload || pendingHash === builderHashRef.current) {
+        return Promise.resolve();
+      }
+
+      const now = Date.now();
+      const earliestAllowedAt = force
+        ? builderRetryAfterRef.current
+        : Math.max(
+            builderLastSaveAtRef.current + BUILDER_AUTOSAVE_MIN_INTERVAL_MS,
+            builderRetryAfterRef.current
+          );
+      if (now < earliestAllowedAt) {
+        scheduleBuilderSave(earliestAllowedAt - now, () => {
+          void flushBuilderDraft(force);
+        });
+        return Promise.resolve();
+      }
+
+      builderSaveInFlightRef.current = true;
+      const savePromise = backendApi
+        .saveLiveBuilder(pendingPayload)
+        .then(() => {
+          builderHashRef.current = pendingHash;
+          builderLastSaveAtRef.current = Date.now();
+          builderRetryAfterRef.current = 0;
+          if (builderPendingHashRef.current === pendingHash) {
+            builderPendingHashRef.current = '';
+            builderPendingPayloadRef.current = null;
+          }
+        })
+        .catch((error: unknown) => {
+          const status =
+            error && typeof error === 'object' && 'status' in error
+              ? Number((error as { status?: unknown }).status)
+              : 0;
+          if (status === 429) {
+            builderRetryAfterRef.current = Date.now() + BUILDER_AUTOSAVE_RETRY_MS;
+            scheduleBuilderSave(BUILDER_AUTOSAVE_RETRY_MS, () => {
+              void flushBuilderDraft();
+            });
+          }
+        })
+        .finally(() => {
+          builderSaveInFlightRef.current = false;
+          builderSavePromiseRef.current = null;
+          if (
+            builderPendingHashRef.current &&
+            builderPendingHashRef.current !== builderHashRef.current &&
+            !builderSaveTimerRef.current
+          ) {
+            scheduleBuilderSave(BUILDER_AUTOSAVE_DEBOUNCE_MS, () => {
+              void flushBuilderDraft();
+            });
+          }
+        });
+
+      builderSavePromiseRef.current = savePromise;
+      return savePromise;
+    },
+    [scheduleBuilderSave, workspaceLoaded]
+  );
+
+  const queueBuilderDraftSave = useCallback(
+    (payload: Record<string, unknown>, hash: string, force = false) => {
+      builderPendingHashRef.current = hash;
+      builderPendingPayloadRef.current = payload;
+      if (hash === builderHashRef.current) {
+        return;
+      }
+      scheduleBuilderSave(force ? 0 : BUILDER_AUTOSAVE_DEBOUNCE_MS, () => {
+        void flushBuilderDraft(force);
+      });
+    },
+    [flushBuilderDraft, scheduleBuilderSave]
   );
 
   useEffect(() => {
@@ -1370,20 +1478,17 @@ export default function SupplierMyCampaignsPage() {
     if (!workspaceLoaded) return;
     const nextHash = JSON.stringify(builderDraftPayload);
     if (nextHash === builderHashRef.current) return;
+    queueBuilderDraftSave(builderDraftPayload, nextHash);
+  }, [builderDraftPayload, queueBuilderDraftSave, workspaceLoaded]);
 
-    const timer = window.setTimeout(() => {
-      void backendApi
-        .saveLiveBuilder(builderDraftPayload)
-        .then(() => {
-          builderHashRef.current = nextHash;
-        })
-        .catch(() => undefined);
-    }, 350);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [builderDraftPayload, push, workspaceLoaded]);
+  useEffect(
+    () => () => {
+      if (builderSaveTimerRef.current) {
+        window.clearTimeout(builderSaveTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (!Array.isArray(builder.items) || builder.items.length === 0) {
@@ -1396,9 +1501,13 @@ export default function SupplierMyCampaignsPage() {
   }, [builder.items, featuredGiveawayItemId]);
 
   const persistBuilderForAssetPicker = useCallback(async () => {
-    await backendApi.saveLiveBuilder(builderDraftPayload);
-    builderHashRef.current = JSON.stringify(builderDraftPayload);
-  }, [builderDraftPayload]);
+    const nextHash = JSON.stringify(builderDraftPayload);
+    if (nextHash === builderHashRef.current) {
+      return;
+    }
+    queueBuilderDraftSave(builderDraftPayload, nextHash, true);
+    await flushBuilderDraft(true);
+  }, [builderDraftPayload, flushBuilderDraft, queueBuilderDraftSave]);
 
   const buildReturnToUrl = useCallback(() => {
     if (typeof window === 'undefined') return '';

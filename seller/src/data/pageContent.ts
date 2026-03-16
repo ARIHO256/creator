@@ -30,6 +30,15 @@ export type PageContentMap = {
 export type PageKey = keyof PageContentMap;
 export type PageContentByKey<K extends PageKey> = PageContentMap[K]["seller"];
 
+function formatSellerOrderStatus(value: unknown) {
+  const status = String(value ?? "")
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .trim();
+  if (!status) return "Draft";
+  return status.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 const DEFAULT_LISTING_WIZARD_COPY: ListingWizardContent["copy"] = {
   heroTitle: "New listing",
   heroSubtitle:
@@ -412,7 +421,7 @@ async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {
     };
   }
 
-  const payload = (await sellerBackendApi.getSellerOrders()) as Record<string, unknown>;
+  const payload = (await sellerBackendApi.getSellerOrders({ limit: 100 })) as Record<string, unknown>;
   const orders = Array.isArray(payload.orders)
     ? payload.orders.map((entry) => {
         const record = entry as Record<string, unknown>;
@@ -424,7 +433,7 @@ async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {
           items: Array.isArray(record.items) ? record.items.length : Number(record.items ?? 0),
           total: Number(record.totalAmount ?? record.total ?? 0),
           currency: String(record.currency ?? "USD"),
-          status: String(record.status ?? ""),
+          status: formatSellerOrderStatus(record.status),
           warehouse: String(((record.fulfillment as Record<string, unknown> | undefined)?.warehouseName ?? record.warehouse ?? "")),
           createdAt: String(record.createdAt ?? record.updatedAt ?? ""),
           updatedAt: String(record.updatedAt ?? ""),
@@ -479,6 +488,7 @@ export function getPageContentByRole<K extends PageKey>(key: K, _role: UserRole)
 export function useRolePageContent<K extends PageKey>(key: K, roleOverride?: UserRole) {
   const session = useSession();
   const role = roleOverride ?? getCurrentRole(session);
+  const sessionIdentity = session?.userId || session?.email || session?.phone || "";
   const [content, setContent] = useState<PageContentByKey<K>>(INITIAL_PAGE_CONTENT[key]);
 
   useEffect(() => {
@@ -495,7 +505,7 @@ export function useRolePageContent<K extends PageKey>(key: K, roleOverride?: Use
     return () => {
       active = false;
     };
-  }, [key, role]);
+  }, [key, role, sessionIdentity]);
 
   const updateContent = (updater: (prev: PageContentByKey<K>) => PageContentByKey<K>) => {
     setContent((prev) => updater(prev));

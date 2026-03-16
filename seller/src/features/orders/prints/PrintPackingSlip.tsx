@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { sellerBackendApi } from "../../../lib/backendApi";
-import { formatOrderDisplayId } from "../../../lib/orderIds";
+import { formatOrderDisplayId, formatOrderItemDisplaySku } from "../../../lib/orderIds";
 import { useLocalization } from "../../../localization/LocalizationProvider";
 
 const EMPTY_ORDER = {
@@ -49,11 +49,14 @@ function normalizePackingSlipPayload(payload: Record<string, unknown>) {
     items: Array.isArray(payload.items)
       ? payload.items.map((entry) => {
           const item = asRecord(entry);
-          return {
-            sku: String(item.sku || item.id || ""),
-            title: String(item.name || item.title || ""),
-            qty: Number(item.qty || 0),
-          };
+        return {
+          sku: formatOrderItemDisplaySku(
+            typeof item.sku === "string" ? item.sku : null,
+            typeof item.id === "string" ? item.id : null
+          ),
+          title: String(item.name || item.title || ""),
+          qty: Number(item.qty || 0),
+        };
         })
       : [],
     notes: String(order.notes || metadata.packingNotes || ""),

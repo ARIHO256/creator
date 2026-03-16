@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useParams } from "react-router-dom";
 import { markSellerOrderOpened } from "../../lib/attentionState";
 import { sellerBackendApi } from "../../lib/backendApi";
-import { formatOrderDisplayId } from "../../lib/orderIds";
+import { formatOrderDisplayId, formatOrderItemDisplaySku } from "../../lib/orderIds";
 import {
   AlertTriangle,
   BarChart3,
@@ -284,7 +284,10 @@ function mapOrderDetail(entry: BackendRecord): Order {
 function mapDetailItems(entry: BackendRecord) {
   return asArray(entry.items)
     .map((item) => ({
-      sku: String(item.sku || item.id || ""),
+      sku: formatOrderItemDisplaySku(
+        typeof item.sku === "string" ? item.sku : null,
+        typeof item.id === "string" ? item.id : null
+      ),
       name: String(item.name || item.title || ""),
       qty: Number(item.qty || 0),
       unit: Number(item.unitPrice || item.unit || item.price || 0),
@@ -1156,9 +1159,11 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
   const [detailError, setDetailError] = useState("");
   const order = useMemo(() => {
     const matched = orders.find((o) => o.id === orderId);
+    if (detailRecord) return mapOrderDetail(detailRecord);
+    if (detailError) return null;
     if (matched) return matched;
-    return detailRecord ? mapOrderDetail(detailRecord) : null;
-  }, [detailRecord, orderId, orders]);
+    return null;
+  }, [detailError, detailRecord, orderId, orders]);
 
   const [tab, setTab] = useState("Overview");
   const [translate, setTranslate] = useState(true);
@@ -1367,6 +1372,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
         className="hidden"
         multiple
         onChange={(e) => {
+          const input = e.currentTarget;
           const files = Array.from(e.target.files || []);
           if (!files.length) return;
           const next = files.map((f) => ({
@@ -1381,7 +1387,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
             message: `${files.length} file(s) uploaded (local).`,
             tone: "success",
           });
-          e.currentTarget.value = "";
+          input.value = "";
         }}
       />
 
@@ -2159,10 +2165,11 @@ function Disputes({ disputesList, pushToast }) {
                     className="hidden"
                     multiple
                     onChange={(e) => {
+                      const input = e.currentTarget;
                       const files = Array.from(e.target.files || []);
                       if (!files.length) return;
                       pushToast({ title: "Evidence uploaded", message: `${files.length} file(s) added (local).`, tone: "success" });
-                      e.currentTarget.value = "";
+                      input.value = "";
                     }}
                   />
 

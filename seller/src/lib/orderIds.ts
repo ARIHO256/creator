@@ -1,5 +1,5 @@
-const UUID_SUFFIX_RE =
-  /_?[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_FRAGMENT_RE =
+  /_?[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi;
 
 function hashString(value: string) {
   let hash = 0;
@@ -20,7 +20,7 @@ function extractSequence(rawId: string) {
     return Number(existingEvId[1]);
   }
 
-  const withoutUuid = normalized.replace(UUID_SUFFIX_RE, "");
+  const withoutUuid = normalized.replace(UUID_FRAGMENT_RE, "");
   const suffixMatch = withoutUuid.match(/(\d+)(?!.*\d)/);
   if (suffixMatch) {
     return Number(suffixMatch[1]);
@@ -32,4 +32,25 @@ function extractSequence(rawId: string) {
 export function formatOrderDisplayId(rawId: string) {
   const sequence = extractSequence(rawId);
   return `EV${String(sequence).padStart(8, "0")}`;
+}
+
+export function formatOrderItemDisplaySku(rawSku?: string | null, fallbackId?: string | null) {
+  const sku = String(rawSku || "").trim();
+  const fallback = String(fallbackId || "").trim();
+  const source = sku || fallback;
+
+  if (!source) {
+    return "";
+  }
+
+  const looksInternal =
+    /^(order_item|listing|item|order)_/i.test(source) ||
+    (source.length > 24 && /[_-]/.test(source));
+
+  if (sku && !looksInternal) {
+    return sku;
+  }
+
+  const sequence = extractSequence(source);
+  return `SKU${String(sequence).padStart(8, "0")}`;
 }

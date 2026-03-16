@@ -27,7 +27,7 @@ import {
 import { useRolePageContent } from '../../data/pageContent';
 import { markSellerOrderOpened } from '../../lib/attentionState';
 import { sellerBackendApi } from '../../lib/backendApi';
-import { formatOrderDisplayId } from '../../lib/orderIds';
+import { formatOrderDisplayId, formatOrderItemDisplaySku } from '../../lib/orderIds';
 
 /**
  * Orders + Ops Preview Host (PREVIEWABLE)
@@ -144,21 +144,6 @@ function displayOrderId(value) {
   return formatOrderDisplayId(String(value || ''));
 }
 
-function orderTimestamp(value) {
-  const time = new Date(String(value || '')).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
-
-function sortOrdersNewestFirst(rows) {
-  return [...rows].sort((left, right) => {
-    const rightTime = orderTimestamp(right.createdAt || right.updatedAt);
-    const leftTime = orderTimestamp(left.createdAt || left.updatedAt);
-    const timeDelta = rightTime - leftTime;
-    if (timeDelta !== 0) return timeDelta;
-    return String(right.id || '').localeCompare(String(left.id || ''));
-  });
-}
-
 function riskMeta(slaDueAt) {
   const mins = minutesUntil(slaDueAt);
   if (mins <= 0) return { risk: 'risk', label: 'Overdue', mins };
@@ -239,7 +224,10 @@ function mapOrderDetail(entry) {
 function mapDetailItems(entry) {
   return asArray(entry.items)
     .map((item) => ({
-      sku: String(item.sku || item.id || ''),
+      sku: formatOrderItemDisplaySku(
+        typeof item.sku === 'string' ? item.sku : null,
+        typeof item.id === 'string' ? item.id : null
+      ),
       name: String(item.name || item.title || ''),
       qty: Number(item.qty || 0),
       unit: Number(item.unitPrice || item.unit || item.price || 0),
@@ -678,7 +666,9 @@ function OrdersTable({ rows, selected, setSelected, toggleAll, allVisibleSelecte
                   <Package className="h-5 w-5 text-slate-800" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-black text-slate-900">{o.id}</span>
+                  <span className="block truncate text-sm font-black text-slate-900">
+                    {displayOrderId(o.id)}
+                  </span>
                   <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">
                     {o.channel} · {o.warehouse}
                   </span>
@@ -762,8 +752,8 @@ function OrdersStack({ rows, selected, setSelected, toggleAll, allVisibleSelecte
     <div className="space-y-3">
       <div className="flex items-center justify-between rounded-[10px] border border-slate-200/70 bg-white px-4 py-3 shadow-[0_12px_40px_rgba(2,16,23,0.06)]">
         <div>
-          <div className="text-sm font-black text-slate-900">Newest Orders First</div>
-          <div className="mt-1 text-[11px] font-semibold text-slate-500">Latest orders are stacked on top.</div>
+          <div className="text-sm font-black text-slate-900">Orders Stack</div>
+          <div className="mt-1 text-[11px] font-semibold text-slate-500">Stacked cards with the standard order arrangement.</div>
         </div>
         <button
           type="button"
@@ -796,7 +786,9 @@ function OrdersStack({ rows, selected, setSelected, toggleAll, allVisibleSelecte
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={index === 0 ? 'green' : 'slate'}>{index === 0 ? 'Latest in' : `Stack ${index + 1}`}</Badge>
+                    <Badge tone={index === 0 ? 'green' : 'slate'}>
+                      {index === 0 ? 'Stack view' : `Card ${index + 1}`}
+                    </Badge>
                     <Badge tone="slate">{displayOrderId(o.id)}</Badge>
                     <Badge tone="slate">{o.channel}</Badge>
                     <Badge tone="slate">{o.warehouse}</Badge>
@@ -909,7 +901,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    return sortOrdersNewestFirst(orders.filter((o) => {
+    return orders.filter((o) => {
       if (status !== 'All' && o.status !== status) return false;
       if (warehouse !== 'All' && o.warehouse !== warehouse) return false;
       if (risk === 'At Risk' && o.risk !== 'risk') return false;
@@ -917,7 +909,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
       if (!query) return true;
       const hay = `${o.id} ${o.customer} ${o.channel} ${o.status} ${o.warehouse}`.toLowerCase();
       return hay.includes(query);
-    }));
+    });
   }, [orders, q, status, warehouse, risk]);
 
   const groupedByWarehouse = useMemo(() => {
@@ -1246,7 +1238,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
                   <div className="text-sm font-black text-slate-900">{g.warehouseName}</div>
                   <Badge tone="slate">{g.items.length}</Badge>
                 </div>
-                <OrdersStack
+                <OrdersTable
                   rows={g.items}
                   selected={selected}
                   setSelected={setSelected}
@@ -1261,7 +1253,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
             ) : null}
           </div>
         ) : (
-          <OrdersStack
+          <OrdersTable
             rows={filtered}
             selected={selected}
             setSelected={setSelected}
@@ -1459,9 +1451,11 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
   const [detailError, setDetailError] = useState('');
   const order = useMemo(() => {
     const matched = orders.find((o) => o.id === orderId) || null;
+    if (detailRecord) return mapOrderDetail(detailRecord);
+    if (detailError) return null;
     if (matched) return matched;
-    return detailRecord ? mapOrderDetail(detailRecord) : null;
-  }, [detailRecord, orders, orderId]);
+    return null;
+  }, [detailError, detailRecord, orders, orderId]);
 
   const [tab, setTab] = useState('Overview');
   const [translate, setTranslate] = useState(true);
@@ -1470,6 +1464,14 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
   const [proofs, setProofs] = useState([]);
   const fileRef = useRef(null);
   const handleProofUpload = () => {
+    if (!detailRecord || typeof detailRecord.id !== 'string' || !detailRecord.id.trim()) {
+      pushToast({
+        title: 'Order unavailable',
+        message: detailError || 'Reload the order detail before uploading proofs.',
+        tone: 'warning',
+      });
+      return;
+    }
     setTab('Proofs');
     fileRef.current?.click?.();
   };
@@ -1594,8 +1596,12 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
   const audit = useMemo(() => (detailRecord ? mapDetailAudit(detailRecord) : []), [detailRecord]);
 
   const syncProofs = async (nextProofs) => {
-    if (!orderId) return;
-    const payload = await sellerBackendApi.patchSellerOrder(orderId, {
+    const persistedOrderId =
+      detailRecord && typeof detailRecord.id === 'string' ? detailRecord.id.trim() : '';
+    if (!persistedOrderId) {
+      throw new Error(detailError || 'Order detail is not available for proof upload.');
+    }
+    const payload = await sellerBackendApi.patchSellerOrder(persistedOrderId, {
       metadata: {
         ...metadata,
         proofs: nextProofs.map((proof) => ({
@@ -1710,6 +1716,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
         className="hidden"
         multiple
         onChange={async (e) => {
+          const input = e.currentTarget;
           const files = Array.from(e.target.files || []);
           if (!files.length) return;
           try {
@@ -1736,7 +1743,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
               tone: 'danger',
             });
           }
-          e.currentTarget.value = '';
+          input.value = '';
         }}
       />
 
@@ -2844,6 +2851,7 @@ function Disputes({ disputesList, setDisputesList, pushToast }) {
                     className="hidden"
                     multiple
                     onChange={async (e) => {
+                      const input = e.currentTarget;
                       const files = Array.from(e.target.files || []);
                       if (!files.length) return;
                       try {
@@ -2879,7 +2887,7 @@ function Disputes({ disputesList, setDisputesList, pushToast }) {
                           tone: 'danger',
                         });
                       }
-                      e.currentTarget.value = '';
+                      input.value = '';
                     }}
                   />
 

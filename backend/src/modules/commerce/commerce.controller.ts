@@ -18,6 +18,7 @@ import { SellerDisputesQueryDto } from './dto/seller-disputes-query.dto.js';
 import { SellerListingsQueryDto } from './dto/seller-listings-query.dto.js';
 import { SellerOrdersQueryDto } from './dto/seller-orders-query.dto.js';
 import { SellerReturnsQueryDto } from './dto/seller-returns-query.dto.js';
+import { UpdateOrderDto } from './dto/update-order.dto.js';
 import { CreateShippingProfileDto } from './dto/create-shipping-profile.dto.js';
 import { CreateShippingRateDto } from './dto/create-shipping-rate.dto.js';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto.js';
@@ -53,6 +54,15 @@ export class CommerceController {
   }
   @Get('orders') orders(@CurrentUser() user: RequestUser, @Query() query: SellerOrdersQueryDto) { return this.service.orders(user.sub, query); }
   @Get('orders/:id') order(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.orderDetail(user.sub, id); }
+  @Patch('orders/:id')
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  updateOrder(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() payload: UpdateOrderDto
+  ) {
+    return this.service.updateOrder(user.sub, id, payload);
+  }
   @Get('orders/:id/print/invoice') printInvoice(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printInvoice(user.sub, id); }
   @Get('orders/:id/print/packing-slip') printPackingSlip(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printPackingSlip(user.sub, id); }
   @Get('orders/:id/print/sticker') printSticker(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.printSticker(user.sub, id); }
