@@ -1291,57 +1291,115 @@ export class SettingsService {
   }
 
   private async getWorkspaceSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
-    const record = await this.prisma.workspaceSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    try {
+      const record = await this.prisma.workspaceSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return defaultValue;
+      }
+      throw error;
+    }
   }
 
   private async findWorkspaceSetting(userId: string, key: string) {
-    const record = await this.prisma.workspaceSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : null;
+    try {
+      const record = await this.prisma.workspaceSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async findUserSetting(userId: string, key: string) {
-    const record = await this.prisma.userSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : null;
+    try {
+      const record = await this.prisma.userSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async upsertWorkspaceSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    return this.prisma.workspaceSetting.upsert({
-      where: { userId_key: { userId, key } },
-      update: { payload: sanitized as Prisma.InputJsonValue },
-      create: {
-        userId,
-        key,
-        payload: sanitized as Prisma.InputJsonValue
+    try {
+      return await this.prisma.workspaceSetting.upsert({
+        where: { userId_key: { userId, key } },
+        update: { payload: sanitized as Prisma.InputJsonValue },
+        create: {
+          userId,
+          key,
+          payload: sanitized as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        const now = new Date();
+        return {
+          id: `workspace-setting-fallback:${userId}:${key}`,
+          userId,
+          key,
+          payload: sanitized,
+          createdAt: now,
+          updatedAt: now
+        };
       }
-    });
+      throw error;
+    }
   }
 
   private async getUserSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
-    const record = await this.prisma.userSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    try {
+      const record = await this.prisma.userSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return defaultValue;
+      }
+      throw error;
+    }
   }
 
   private async upsertUserSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    return this.prisma.userSetting.upsert({
-      where: { userId_key: { userId, key } },
-      update: { payload: sanitized as Prisma.InputJsonValue },
-      create: {
-        userId,
-        key,
-        payload: sanitized as Prisma.InputJsonValue
+    try {
+      return await this.prisma.userSetting.upsert({
+        where: { userId_key: { userId, key } },
+        update: { payload: sanitized as Prisma.InputJsonValue },
+        create: {
+          userId,
+          key,
+          payload: sanitized as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        const now = new Date();
+        return {
+          id: `user-setting-fallback:${userId}:${key}`,
+          userId,
+          key,
+          payload: sanitized,
+          createdAt: now,
+          updatedAt: now
+        };
       }
-    });
+      throw error;
+    }
   }
 
   private ensurePayload(payload: unknown) {
@@ -1836,24 +1894,37 @@ export class SettingsService {
 
   private async getWorkflowRecordPayload(userId: string, recordType: string, recordKey: string) {
     if (recordType === 'account_approval' && recordKey === 'main') {
-      const accountApproval = await this.prisma.accountApproval.findUnique({
-        where: { userId }
-      });
-      if (accountApproval) {
-        return accountApproval.payload ?? null;
+      try {
+        const accountApproval = await this.prisma.accountApproval.findUnique({
+          where: { userId }
+        });
+        if (accountApproval) {
+          return accountApproval.payload ?? null;
+        }
+      } catch (error) {
+        if (!this.isMissingSchemaObjectError(error)) {
+          throw error;
+        }
       }
     }
 
-    const record = await this.prisma.workflowRecord.findUnique({
-      where: {
-        userId_recordType_recordKey: {
-          userId,
-          recordType,
-          recordKey
+    try {
+      const record = await this.prisma.workflowRecord.findUnique({
+        where: {
+          userId_recordType_recordKey: {
+            userId,
+            recordType,
+            recordKey
+          }
         }
+      });
+      return record?.payload ?? null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
       }
-    });
-    return record?.payload ?? null;
+      throw error;
+    }
   }
 
   private readString(value: unknown) {
@@ -1921,6 +1992,13 @@ export class SettingsService {
       this.readString(onboarding.payout?.alipayLogin) ||
       this.readString(onboarding.payout?.wechatId) ||
       this.readString(onboarding.payout?.otherDetails)
+    );
+  }
+
+  private isMissingSchemaObjectError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
     );
   }
 
@@ -2753,15 +2831,23 @@ export class SettingsService {
   }
 
   private async readPreferences(workspaceId: string, userId: string, scopeRole: string) {
-    const record = await this.prisma.workspaceUserPreference.findUnique({
-      where: {
-        workspaceId_userId_scopeRole: {
-          workspaceId,
-          userId,
-          scopeRole
+    let record;
+    try {
+      record = await this.prisma.workspaceUserPreference.findUnique({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId,
+            userId,
+            scopeRole
+          }
         }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
       }
-    });
+      throw error;
+    }
     if (!record) {
       return null;
     }
@@ -2773,15 +2859,23 @@ export class SettingsService {
   }
 
   private async migrateLegacyPreferences(userId: string, workspaceId: string, scopeRole: string) {
-    const existing = await this.prisma.workspaceUserPreference.findUnique({
-      where: {
-        workspaceId_userId_scopeRole: {
-          workspaceId,
-          userId,
-          scopeRole
+    let existing;
+    try {
+      existing = await this.prisma.workspaceUserPreference.findUnique({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId,
+            userId,
+            scopeRole
+          }
         }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
       }
-    });
+      throw error;
+    }
     if (existing) {
       return;
     }
@@ -2795,16 +2889,23 @@ export class SettingsService {
     if (!locale && !currency && !timezone) {
       return;
     }
-    await this.prisma.workspaceUserPreference.create({
-      data: {
-        workspaceId,
-        userId,
-        scopeRole,
-        locale: locale || null,
-        currency: currency || null,
-        timezone: timezone || null
+    try {
+      await this.prisma.workspaceUserPreference.create({
+        data: {
+          workspaceId,
+          userId,
+          scopeRole,
+          locale: locale || null,
+          currency: currency || null,
+          timezone: timezone || null
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
       }
-    });
+      throw error;
+    }
   }
 
   private async ensureUserSecurityProfile(userId: string) {

@@ -1,5 +1,7 @@
-import { clearSession, hasSessionToken, readSession } from "../auth/session";
+import { clearSession, hasSessionToken, readSession, writeSession } from "../auth/session";
 import { resolveApiUrl } from "./apiRuntime";
+import type { Session } from "../types/session";
+import type { UserRole } from "../types/roles";
 
 type BackendRequestError = Error & {
   status?: number;
@@ -7,6 +9,7 @@ type BackendRequestError = Error & {
 };
 
 let authRedirectScheduled = false;
+let refreshPromise: Promise<string | null> | null = null;
 
 const PUBLIC_API_PREFIXES = [
   "/api/auth/login",
@@ -20,6 +23,18 @@ function isPublicApiPath(path: string) {
   return PUBLIC_API_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
+function normalizeRole(value: unknown): UserRole {
+  return String(value || "").toUpperCase() === "PROVIDER" ? "provider" : "seller";
+}
+
+function normalizeRoles(values: unknown, fallbackRole: UserRole): UserRole[] {
+  if (!Array.isArray(values) || values.length === 0) return [fallbackRole];
+  const mapped = values
+    .map((entry) => normalizeRole(entry))
+    .filter((entry, index, arr) => arr.indexOf(entry) === index);
+  return mapped.length ? mapped : [fallbackRole];
+}
+
 function handleUnauthorizedResponse() {
   clearSession();
   if (typeof window === "undefined") return;
@@ -29,7 +44,71 @@ function handleUnauthorizedResponse() {
   window.location.replace(`/auth?next=${encodeURIComponent(next)}`);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function parsePayload(response: Response) {
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    const session = readSession();
+    const refreshToken =
+      session && typeof session.refreshToken === "string" ? session.refreshToken.trim() : "";
+    if (!refreshToken) {
+      return null;
+    }
+
+    const url = await resolveApiUrl("/api/auth/refresh");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      return null;
+    }
+
+    const data =
+      payload && typeof payload === "object" && "data" in payload && "success" in payload
+        ? (payload as { data: Record<string, unknown> }).data
+        : (payload as Record<string, unknown> | null);
+    const nextAccessToken =
+      typeof data?.accessToken === "string" && data.accessToken.trim()
+        ? data.accessToken
+        : "";
+    if (!nextAccessToken) {
+      return null;
+    }
+
+    const current = readSession();
+    const nextRole = normalizeRole(data?.role ?? current?.role);
+    const nextSession: Session = {
+      ...(current || {}),
+      accessToken: nextAccessToken,
+      token: nextAccessToken,
+      refreshToken:
+        typeof data?.refreshToken === "string" && data.refreshToken.trim()
+          ? data.refreshToken
+          : current?.refreshToken,
+      role: nextRole,
+      roles: normalizeRoles(data?.roles ?? current?.roles, nextRole),
+    };
+    writeSession(nextSession);
+    authRedirectScheduled = false;
+    return nextAccessToken;
+  })().finally(() => {
+    refreshPromise = null;
+  });
+
+  return refreshPromise;
+}
+
+async function request<T>(path: string, init?: RequestInit, allowRetry = true): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   const session = readSession();
   const token = session?.accessToken || session?.token || "";
@@ -50,10 +129,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   const url = await resolveApiUrl(path);
   const response = await fetch(url, { ...init, headers });
-  const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  const payload = await parsePayload(response);
 
   if (!response.ok) {
+    if (response.status === 401 && allowRetry && !isPublicApiPath(path)) {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        const retryHeaders = new Headers(init?.headers ?? {});
+        retryHeaders.set("Authorization", `Bearer ${refreshedToken}`);
+        if (init?.body && !(init.body instanceof FormData) && !retryHeaders.has("Content-Type")) {
+          retryHeaders.set("Content-Type", "application/json");
+        }
+        return request<T>(path, { ...init, headers: retryHeaders }, false);
+      }
+    }
     if (response.status === 401) {
       handleUnauthorizedResponse();
     }
@@ -66,9 +155,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (payload && typeof payload === "object" && "data" in payload && "success" in payload) {
+    authRedirectScheduled = false;
     return (payload as { data: T }).data;
   }
 
+  authRedirectScheduled = false;
   return payload as T;
 }
 
@@ -505,6 +596,11 @@ export const sellerBackendApi = {
   patchReview: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/reviews/${encodeURIComponent(id)}`, {
       method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  respondReview: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/reviews/respond", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   replyReview: (id: string, body: Record<string, unknown>) =>

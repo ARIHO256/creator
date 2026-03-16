@@ -62,8 +62,10 @@ type RiskKey = "risk" | "watch" | "ok";
 type RiskMeta = { risk: RiskKey; riskLabel: string; mins: number };
 type OrderStatus = "New" | "Confirmed" | "Picking" | "Packed" | "Out for Delivery" | "Delivered" | "Failed" | "Cancelled";
 type FollowUpKey = "none" | "callback" | "refund" | "replacement";
+type IssueType = "Delay" | "Damaged package" | "Wrong items" | "Customer unreachable" | "Rider incident";
 type OrderProof = { photo: string | null; signature: boolean; otp: string };
 type OrderFeedback = { rating: number | null; note: string; followUp: FollowUpKey };
+type OrderIssue = { type: IssueType; note: string; reportedAt: string };
 type Order = {
   id: string;
   customer: string;
@@ -83,6 +85,7 @@ type Order = {
   payment: string;
   proof: OrderProof;
   feedback: OrderFeedback;
+  issue: OrderIssue | null;
   risk: RiskKey;
   riskLabel: string;
   mins: number;
@@ -235,6 +238,7 @@ function mapBackendExpressOrder(value: Record<string, unknown>): Order {
   const metadata = asObject(value.metadata);
   const proof = asObject(metadata.proof);
   const feedback = asObject(metadata.feedback);
+  const issue = asObject(metadata.issue);
   const promisedBy =
     typeof metadata.promisedBy === "string"
       ? metadata.promisedBy
@@ -278,6 +282,16 @@ function mapBackendExpressOrder(value: Record<string, unknown>): Order {
           ? (feedback.followUp as FollowUpKey)
           : "none",
     },
+    issue:
+      typeof issue.type === "string" &&
+      typeof issue.note === "string" &&
+      typeof issue.reportedAt === "string"
+        ? {
+            type: issue.type as IssueType,
+            note: issue.note,
+            reportedAt: issue.reportedAt,
+          }
+        : null,
     ...riskMeta(promisedBy),
   };
 }
@@ -305,6 +319,7 @@ function buildExpressOrderMetadata(order: Order) {
     rider: order.rider,
     proof: order.proof,
     feedback: order.feedback,
+    issue: order.issue,
   };
 }
 
@@ -315,9 +330,42 @@ function hashOrderForSync(order: Order) {
     rider: order.rider,
     proof: order.proof,
     feedback: order.feedback,
+    issue: order.issue,
     promisedBy: order.promisedBy,
     payment: order.payment,
   });
+}
+
+function getExpressOrderTransitionPath(from: OrderStatus, to: OrderStatus) {
+  if (from === to) return [];
+
+  const transitions: Record<OrderStatus, OrderStatus[]> = {
+    New: ["Confirmed", "Cancelled"],
+    Confirmed: ["Picking", "Cancelled"],
+    Picking: ["Packed", "Cancelled"],
+    Packed: ["Out for Delivery"],
+    "Out for Delivery": ["Delivered", "Failed"],
+    Delivered: [],
+    Failed: [],
+    Cancelled: [],
+  };
+
+  const queue: Array<{ status: OrderStatus; path: OrderStatus[] }> = [{ status: from, path: [] }];
+  const visited = new Set<OrderStatus>([from]);
+
+  while (queue.length) {
+    const current = queue.shift();
+    if (!current) break;
+    for (const next of transitions[current.status] ?? []) {
+      if (visited.has(next)) continue;
+      const path = [...current.path, next];
+      if (next === to) return path;
+      visited.add(next);
+      queue.push({ status: next, path });
+    }
+  }
+
+  return null;
 }
 
 function Badge({ children, tone = "slate" }: BadgeProps) {
@@ -559,6 +607,60 @@ function EmptyState({ title, message, action }: EmptyStateProps) {
           ) : null}
         </div>
       </div>
+
+      <Modal open={issueOpen} title="Report delivery issue" onClose={() => setIssueOpen(false)}>
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-rose-200 bg-rose-50/70 p-4">
+            <div className="flex items-start gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-3xl bg-white dark:bg-slate-900 text-rose-700">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-sm font-black text-rose-900">Capture the issue clearly</div>
+                <div className="mt-1 text-xs font-semibold text-rose-900/70">This will mark the order as failed and save the issue in order metadata for follow-up.</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] font-extrabold text-slate-600">Issue type</div>
+            <div className="mt-2 relative">
+              <select
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value as IssueType)}
+                className="h-11 w-full appearance-none rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 pr-10 text-sm font-extrabold text-slate-800 outline-none"
+              >
+                {["Delay", "Damaged package", "Wrong items", "Customer unreachable", "Rider incident"].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] font-extrabold text-slate-600">What happened</div>
+            <textarea
+              value={issueNote}
+              onChange={(e) => setIssueNote(e.target.value)}
+              rows={5}
+              placeholder="Describe the delivery issue, next steps taken, and what support should do next."
+              className="mt-2 w-full rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-800 outline-none"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={submitIssue}
+            className="w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
+            style={{ background: "#DC2626" }}
+          >
+            Report issue
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1519,13 +1621,28 @@ function ExpressMartOrderDetail({
   const [tab, setTab] = useState<DetailTab>("Overview");
   const [note, setNote] = useState("");
   const [otp, setOtp] = useState(order?.proof?.otp || "");
+  const [issueOpen, setIssueOpen] = useState(false);
+  const [issueType, setIssueType] = useState<IssueType>("Delay");
+  const [issueNote, setIssueNote] = useState("");
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setTab("Overview");
     setNote(order?.feedback?.note || "");
     setOtp(order?.proof?.otp || "");
+    setIssueOpen(false);
+    setIssueType(order?.issue?.type || "Delay");
+    setIssueNote(order?.issue?.note || "");
   }, [order?.id]);
+
+  const items = useMemo(() => {
+    const total = order?.total ?? 0;
+    return [
+      { sku: "EX-GROC-001", name: "Groceries bundle", qty: 1, unit: Math.round(total * 0.55) },
+      { sku: "EX-GEN-021", name: "Household supplies", qty: 2, unit: Math.round(total * 0.2) },
+      { sku: "EX-FOOD-104", name: "Snacks", qty: 1, unit: Math.round(total * 0.05) },
+    ];
+  }, [order?.id, order?.total]);
 
   if (!order) {
     return (
@@ -1555,19 +1672,28 @@ function ExpressMartOrderDetail({
     { k: "Delivered", done: ["Delivered"].includes(order.status) },
   ];
 
-  const items = useMemo(() => {
-    return [
-      { sku: "EX-GROC-001", name: "Groceries bundle", qty: 1, unit: Math.round(order.total * 0.55) },
-      { sku: "EX-GEN-021", name: "Household supplies", qty: 2, unit: Math.round(order.total * 0.2) },
-      { sku: "EX-FOOD-104", name: "Snacks", qty: 1, unit: Math.round(order.total * 0.05) },
-    ];
-  }, [order.id]);
-
   const totalLines = items.reduce((s, i) => s + i.qty * i.unit, 0);
   const deliveryFee = Math.max(2000, Math.round(order.total * 0.08));
   const taxes = Math.max(0, Math.round(order.total * 0.02));
 
   const canProof = order.status === "Out for Delivery" || order.status === "Delivered";
+  const submitIssue = () => {
+    const finalNote = issueNote.trim();
+    if (!finalNote) {
+      pushToast({ title: "Issue details required", message: "Add a short description before reporting the issue.", tone: "warning" });
+      return;
+    }
+    setOrder({
+      status: "Failed",
+      issue: {
+        type: issueType,
+        note: finalNote,
+        reportedAt: new Date().toISOString(),
+      },
+    });
+    setIssueOpen(false);
+    pushToast({ title: "Issue reported", message: `${issueType} captured for this order.`, tone: "warning" });
+  };
 
   return (
     <div className="w-full">
@@ -1696,6 +1822,18 @@ function ExpressMartOrderDetail({
                         </div>
                       </div>
 
+                      {order.issue ? (
+                        <div className="rounded-3xl border border-rose-200 bg-rose-50/70 p-4">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 text-rose-700" />
+                            <div className="text-sm font-black text-rose-900">Reported issue</div>
+                            <span className="ml-auto"><Badge tone="danger">{order.issue.type}</Badge></span>
+                          </div>
+                          <div className="mt-2 text-xs font-semibold text-rose-900/70">{fmtTime(order.issue.reportedAt)}</div>
+                          <div className="mt-3 text-sm font-semibold text-rose-900">{order.issue.note}</div>
+                        </div>
+                      ) : null}
+
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -1720,10 +1858,7 @@ function ExpressMartOrderDetail({
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            pushToast({ title: "Issue reported", message: "Create incident.", tone: "warning" });
-                            setOrder({ status: "Failed" });
-                          }}
+                          onClick={() => setIssueOpen(true)}
                           className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-extrabold text-rose-700"
                         >
                           <AlertTriangle className="h-4 w-4" />
@@ -2167,6 +2302,7 @@ export default function ExpressMartPagesPreviewable() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [riders, setRiders] = useState<Rider[]>([]);
   const syncedOrderHashesRef = useRef<Record<string, string>>({});
+  const syncedOrderStatusesRef = useRef<Record<string, OrderStatus>>({});
   const syncingRef = useRef(false);
 
   const loadExpressData = async () => {
@@ -2182,6 +2318,9 @@ export default function ExpressMartPagesPreviewable() {
       : [];
     syncedOrderHashesRef.current = Object.fromEntries(
       nextOrders.map((order) => [order.id, hashOrderForSync(order)])
+    );
+    syncedOrderStatusesRef.current = Object.fromEntries(
+      nextOrders.map((order) => [order.id, order.status])
     );
     setOrders(nextOrders);
     setRiders(nextRiders);
@@ -2200,16 +2339,42 @@ export default function ExpressMartPagesPreviewable() {
 
     syncingRef.current = true;
     void Promise.all(
-      changed.map((order) =>
-        sellerBackendApi.patchExpressOrder(order.id, {
-          status: mapUiOrderStatus(order.status),
-          metadata: buildExpressOrderMetadata(order),
-        })
-      )
+      changed.map(async (order) => {
+        const syncedStatus = syncedOrderStatusesRef.current[order.id] ?? order.status;
+        const transitionPath = getExpressOrderTransitionPath(syncedStatus, order.status);
+
+        if (syncedStatus === order.status) {
+          await sellerBackendApi.patchExpressOrder(order.id, {
+            metadata: buildExpressOrderMetadata(order),
+          });
+          return;
+        }
+
+        if (!transitionPath || transitionPath.length === 0) {
+          return;
+        }
+
+        for (let index = 0; index < transitionPath.length; index += 1) {
+          const nextStatus = transitionPath[index];
+          await sellerBackendApi.patchExpressOrder(order.id, {
+            status: mapUiOrderStatus(nextStatus),
+            metadata: index === transitionPath.length - 1 ? buildExpressOrderMetadata(order) : undefined,
+          });
+          syncedOrderStatusesRef.current[order.id] = nextStatus;
+        }
+      })
     )
       .then(() => {
         changed.forEach((order) => {
           syncedOrderHashesRef.current[order.id] = hashOrderForSync(order);
+          syncedOrderStatusesRef.current[order.id] = order.status;
+        });
+      })
+      .catch((error) => {
+        pushToast({
+          title: "Order sync failed",
+          message: error instanceof Error ? error.message : "Unable to sync ExpressMart order changes.",
+          tone: "danger",
         });
       })
       .finally(() => {

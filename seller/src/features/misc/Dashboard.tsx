@@ -55,6 +55,7 @@ import { useRolePageContent } from '../../data/pageContent';
 import type { DashboardQuickAction, DashboardContent } from '../../data/pageTypes';
 import type { UserRole } from '../../types/roles';
 import { sellerBackendApi } from '../../lib/backendApi';
+import { useThemeMode } from '../../theme/themeMode';
 
 const TOKENS = {
   green: '#03CD8C',
@@ -916,6 +917,8 @@ export default function SupplierHubDashboardPage({
   onNavigate,
 }: DashboardProps) {
   const { role, content } = useRolePageContent('dashboard', roleOverride);
+  const { resolvedMode } = useThemeMode();
+  const isDarkTheme = resolvedMode === 'dark';
   const mapRoleRoute = (to: string) => {
     if (role !== 'provider') return to;
     if (!to.startsWith('/')) return to;
@@ -2872,20 +2875,27 @@ export default function SupplierHubDashboardPage({
       )
     ),
 
-    /* Background: light base + diagonal dark wedge (pixel-closer to screenshot) */
-    React.createElement('div', { className: 'absolute inset-0 bg-[#F6F7FB] evz-print-hide-bg' }),
+    /* Background responds to active theme instead of forcing a light canvas in dark mode. */
+    React.createElement('div', {
+      className: 'absolute inset-0 evz-print-hide-bg',
+      style: { background: isDarkTheme ? '#08111c' : '#F6F7FB' },
+    }),
     React.createElement('div', {
       className: 'absolute inset-0 evz-print-hide-bg',
       style: {
         background:
-          'radial-gradient(1200px 500px at 18% 10%, rgba(3,205,140,0.16), transparent 55%), radial-gradient(900px 520px at 92% 40%, rgba(247,127,0,0.10), transparent 60%)',
+          isDarkTheme
+            ? 'radial-gradient(1200px 500px at 18% 10%, rgba(3,205,140,0.14), transparent 55%), radial-gradient(900px 520px at 92% 40%, rgba(45,212,191,0.08), transparent 60%), linear-gradient(180deg, rgba(11,18,32,0.98), rgba(8,17,28,0.96))'
+            : 'radial-gradient(1200px 500px at 18% 10%, rgba(3,205,140,0.16), transparent 55%), radial-gradient(900px 520px at 92% 40%, rgba(247,127,0,0.10), transparent 60%)',
       },
     }),
     React.createElement('div', {
       className: 'absolute inset-0 evz-print-hide-bg',
       style: {
         clipPath: 'polygon(54% 0, 100% 0, 100% 100%, 38% 100%)',
-        background: 'linear-gradient(180deg, rgba(11,15,20,0.98), rgba(11,15,20,0.92))',
+        background: isDarkTheme
+          ? 'linear-gradient(180deg, rgba(7,12,20,0.98), rgba(9,15,26,0.94))'
+          : 'linear-gradient(180deg, rgba(11,15,20,0.98), rgba(11,15,20,0.92))',
       },
     }),
 
