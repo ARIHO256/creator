@@ -118,6 +118,190 @@ function clampNumber(n, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function readString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function mapOnboardingLanguage(code) {
+  const normalized = readString(code).toLowerCase();
+  if (normalized === "en") return "English";
+  if (normalized === "sw") return "Swahili";
+  if (normalized === "fr") return "French";
+  if (normalized === "ar") return "Arabic";
+  if (normalized === "zh-cn" || normalized === "zh") return "Chinese";
+  if (normalized === "pt") return "Portuguese";
+  return "";
+}
+
+function inferRegionFromCountry(country) {
+  const normalized = readString(country).toLowerCase();
+  if (["uganda", "kenya", "tanzania", "rwanda", "burundi", "south sudan"].includes(normalized)) {
+    return "East Africa";
+  }
+  if (["south africa", "zambia", "zimbabwe", "botswana", "namibia", "mozambique"].includes(normalized)) {
+    return "Southern Africa";
+  }
+  if (["nigeria", "ghana", "senegal", "ivory coast", "cote d'ivoire", "cameroon"].includes(normalized)) {
+    return "West Africa";
+  }
+  if (["egypt", "morocco", "tunisia", "algeria", "libya"].includes(normalized)) {
+    return "North Africa";
+  }
+  if (["china", "india", "uae", "japan"].includes(normalized)) {
+    return "Asia";
+  }
+  if (["united kingdom", "france", "germany", "italy", "spain"].includes(normalized)) {
+    return "Europe";
+  }
+  if (["united states", "canada", "mexico"].includes(normalized)) {
+    return "North America";
+  }
+  return "";
+}
+
+function mapOnboardingPayoutMethod(method) {
+  const normalized = readString(method).toLowerCase();
+  if (normalized === "bank_account") return "Bank";
+  if (normalized === "mobile_money") return "Mobile Money";
+  if (normalized === "alipay") return "AliPay";
+  if (normalized === "wechat_pay") return "WeChat Pay";
+  if (normalized === "other_local") return "PayPal / Wallet";
+  return "";
+}
+
+function mapOnboardingPayoutSchedule(value) {
+  const normalized = readString(value).toLowerCase();
+  if (normalized === "daily") return "Daily";
+  if (normalized === "weekly") return "Weekly";
+  if (normalized === "monthly") return "Monthly";
+  if (normalized === "on_threshold") return "Threshold";
+  return "";
+}
+
+function mapOnboardingKybStatus(value) {
+  const normalized = readString(value).toUpperCase();
+  if (normalized === "APPROVED") return "verified";
+  if (normalized === "SUBMITTED" || normalized === "IN_REVIEW") return "in_review";
+  if (normalized === "REJECTED") return "rejected";
+  return "unverified";
+}
+
+function buildAddress(parts) {
+  return parts.map(readString).filter(Boolean).join(", ");
+}
+
+function mapOnboardingToSupplierSettings(baseForm, onboardingPayload) {
+  const onboarding = asRecord(onboardingPayload);
+  if (!Object.keys(onboarding).length) {
+    return baseForm;
+  }
+
+  const support = asRecord(onboarding.support);
+  const shipFrom = asRecord(onboarding.shipFrom);
+  const payout = asRecord(onboarding.payout);
+  const tax = asRecord(onboarding.tax);
+  const docs = asRecord(onboarding.docs);
+  const docList = asArray(docs.list);
+  const languages = asArray(onboarding.languages)
+    .map(mapOnboardingLanguage)
+    .filter(Boolean);
+  const country = readString(shipFrom.country);
+  const region = inferRegionFromCountry(country);
+  const accountType = readString(tax.taxpayerType).toLowerCase() === "business" ? "Business" : "Individual";
+  const businessAddress = buildAddress([
+    shipFrom.address1,
+    shipFrom.address2,
+    shipFrom.city,
+    shipFrom.province,
+    shipFrom.country,
+    shipFrom.postalCode,
+  ]);
+
+  return deepMerge(baseForm, {
+    profile: {
+      businessName: readString(onboarding.storeName),
+      handle: readString(onboarding.storeSlug),
+      tagline: readString(onboarding.about),
+      country,
+      currency: readString(payout.currency),
+      bio: readString(onboarding.about),
+      brandLanguages: languages,
+      targetRegions: region ? [region] : baseForm.profile.targetRegions,
+      accountType,
+      business: {
+        legalName: readString(tax.legalName) || readString(onboarding.storeName),
+        registrationNumber: readString(tax.taxId),
+        website: readString(onboarding.website),
+        address: businessAddress,
+      },
+    },
+    kyb: {
+      status: mapOnboardingKybStatus(onboarding.status),
+      entityType: accountType,
+      representativeName: readString(onboarding.owner) || readString(tax.contact),
+      documentType: docList.length ? readString(asRecord(docList[0]).type) || baseForm.kyb.documentType : baseForm.kyb.documentType,
+      idFileName: readString(asRecord(docList.find((entry) => readString(asRecord(entry).type).toLowerCase().includes("id"))).name),
+      idUploaded: docList.some((entry) => readString(asRecord(entry).type).toLowerCase().includes("id")),
+      registrationFileName: readString(
+        asRecord(
+          docList.find((entry) => {
+            const type = readString(asRecord(entry).type).toLowerCase();
+            return type.includes("registration") || type.includes("license");
+          })
+        ).name
+      ),
+      registrationUploaded: docList.some((entry) => {
+        const type = readString(asRecord(entry).type).toLowerCase();
+        return type.includes("registration") || type.includes("license");
+      }),
+      taxFileName: readString(
+        asRecord(docList.find((entry) => readString(asRecord(entry).type).toLowerCase().includes("tax"))).name
+      ),
+      taxUploaded: docList.some((entry) => readString(asRecord(entry).type).toLowerCase().includes("tax")),
+      addressUploaded: Boolean(businessAddress),
+    },
+    payout: {
+      method: mapOnboardingPayoutMethod(payout.method),
+      currency: readString(payout.currency),
+      schedule: mapOnboardingPayoutSchedule(payout.rhythm),
+      minThreshold: Number(payout.thresholdAmount) || 0,
+      bank: {
+        bankName: readString(payout.bankName),
+        accountName: readString(payout.accountName),
+        accountNumber: readString(payout.accountNo),
+        swift: readString(payout.swiftBic),
+      },
+      mobile: {
+        provider: readString(payout.mobileProvider),
+        number: [readString(payout.mobileCountryCode), readString(payout.mobileNo)].filter(Boolean).join(" "),
+      },
+      wallet: {
+        provider: readString(payout.otherProvider) || readString(payout.otherMethod),
+        email: readString(payout.notificationsEmail) || readString(onboarding.email),
+      },
+      alipay: { accountId: readString(payout.alipayLogin) },
+      wechat: { accountId: readString(payout.wechatId) },
+      tax: {
+        residency: readString(tax.taxCountry),
+        taxId: readString(tax.taxId),
+      },
+    },
+    settings: {
+      notifications: {
+        payouts: Boolean(readString(payout.notificationsEmail) || readString(payout.notificationsWhatsApp)),
+      },
+    },
+  });
+}
+
 /* ------------------------- Toasts ------------------------- */
 
 function useToasts() {
@@ -750,17 +934,32 @@ export default function SupplierSettingsSafetyPage() {
 
     const hydrate = async () => {
       try {
-        const payload = await sellerBackendApi.getSettings();
+        const [settingsResult, onboardingResult] = await Promise.allSettled([
+          sellerBackendApi.getSettings(),
+          sellerBackendApi.getOnboarding(),
+        ]);
         if (cancelled) return;
-        const nextForm =
-          payload &&
-          typeof payload === "object" &&
-          payload.profile &&
-          typeof payload.profile === "object" &&
-          (payload.profile as { supplierSettings?: unknown }).supplierSettings &&
-          typeof (payload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
-            ? deepMerge(createEmptySupplierSettingsForm(), (payload.profile as { supplierSettings: unknown }).supplierSettings)
-            : createEmptySupplierSettingsForm();
+        const baseForm = createEmptySupplierSettingsForm();
+        const onboardingPayload =
+          onboardingResult.status === "fulfilled" && onboardingResult.value && typeof onboardingResult.value === "object"
+            ? (onboardingResult.value as Record<string, unknown>)
+            : null;
+        const hydratedFromOnboarding = mapOnboardingToSupplierSettings(baseForm, onboardingPayload);
+        const settingsPayload =
+          settingsResult.status === "fulfilled" && settingsResult.value && typeof settingsResult.value === "object"
+            ? (settingsResult.value as Record<string, unknown>)
+            : null;
+        const savedSupplierSettings =
+          settingsPayload &&
+          settingsPayload.profile &&
+          typeof settingsPayload.profile === "object" &&
+          (settingsPayload.profile as { supplierSettings?: unknown }).supplierSettings &&
+          typeof (settingsPayload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
+            ? ((settingsPayload.profile as { supplierSettings: unknown }).supplierSettings as Record<string, unknown>)
+            : null;
+        const nextForm = savedSupplierSettings
+          ? deepMerge(hydratedFromOnboarding, savedSupplierSettings)
+          : hydratedFromOnboarding;
         setForm(nextForm);
       } catch {
         if (!cancelled) {
