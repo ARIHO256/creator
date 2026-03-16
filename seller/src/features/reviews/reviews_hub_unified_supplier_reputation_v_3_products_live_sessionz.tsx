@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { markSellerReviewOpened } from "../../lib/attentionState";
 import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
@@ -861,6 +862,7 @@ function EmptyState({ title, message, onClear }: { title: string; message: strin
 
 export default function ReviewsHubUnifiedSupplierReputationV3() {
   const templates = REVIEW_REPLY_TEMPLATES;
+  const defaultTemplateId = templates[0]?.id || "";
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -1049,15 +1051,23 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
 
   const [reply, setReply] = useState<string>("");
   const [useAutoTranslate, setUseAutoTranslate] = useState<boolean>(false);
-  const [templateId, setTemplateId] = useState<string>(templates[0]?.id || "");
+  const [templateId, setTemplateId] = useState<string>(defaultTemplateId);
   const replyRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (!detailOpen) return;
     setReply("");
     setUseAutoTranslate(false);
-    setTemplateId(templates[0]?.id || "");
+    setTemplateId(defaultTemplateId);
     window.setTimeout(() => replyRef.current?.focus?.(), 80);
+  }, [active?.id, defaultTemplateId, detailOpen]);
+
+  useEffect(() => {
+    if (!detailOpen || !active?.id) {
+      return;
+    }
+
+    void markSellerReviewOpened(active.id);
   }, [detailOpen, active?.id]);
 
   const applyTemplate = () => {

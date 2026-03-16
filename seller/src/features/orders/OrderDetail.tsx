@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useParams } from "react-router-dom";
+import { markSellerOrderOpened } from "../../lib/attentionState";
 import { sellerBackendApi } from "../../lib/backendApi";
+import { formatOrderDisplayId } from "../../lib/orderIds";
 import {
   AlertTriangle,
   BarChart3,
@@ -117,11 +119,12 @@ function fmtMoney(amount, currency) {
 }
 
 function exportInvoiceFile(order) {
+  const displayOrderId = formatOrderDisplayId(order.id);
   if (typeof window === "undefined" || typeof document === "undefined") return false;
   try {
     const lines = [
       "EVzone Invoice",
-      `Order: ${order.id}`,
+      `Order: ${displayOrderId}`,
       `Customer: ${order.customer}`,
       `Channel: ${order.channel}`,
       `Items: ${order.items}`,
@@ -135,7 +138,7 @@ function exportInvoiceFile(order) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `invoice-${order.id}.txt`;
+    link.download = `invoice-${displayOrderId}.txt`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -177,6 +180,10 @@ function hashCode(str) {
 
 function hueFromSeed(seed) {
   return Math.abs(hashCode(seed)) % 360;
+}
+
+function displayOrderId(value: string) {
+  return formatOrderDisplayId(String(value || ""));
 }
 
 function riskMeta(slaDueAt: string): RiskMeta {
@@ -1167,6 +1174,14 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
 
   useEffect(() => {
     if (!orderId) {
+      return;
+    }
+
+    void markSellerOrderOpened(orderId);
+  }, [orderId]);
+
+  useEffect(() => {
+    if (!orderId) {
       setDetailRecord(null);
       setDetailLoading(false);
       setDetailError("");
@@ -1264,7 +1279,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     return (
       <div>
         <SectionHeader
-          title={orderId ? `Order ${orderId}` : "Order"}
+          title={orderId ? `Order ${displayOrderId(orderId)}` : "Order"}
           subtitle="Loading order detail."
           right={
             <button
@@ -1288,7 +1303,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     return (
       <div>
         <SectionHeader
-          title={orderId ? `Order ${orderId}` : "Order"}
+          title={orderId ? `Order ${displayOrderId(orderId)}` : "Order"}
           subtitle="Per-order detail."
           right={
             <button
@@ -1314,7 +1329,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
   return (
     <div>
       <SectionHeader
-        title={`Order ${order.id}`}
+        title={`Order ${displayOrderId(order.id)}`}
         subtitle="Per-order detail: timeline, items, taxes, shipping, messages. Premium: proof uploads, dispute prevention prompts, audit snippet."
         right={
           <>
@@ -1710,7 +1725,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
     return returnsList.filter((r) => {
       if (status !== "All" && r.status !== status) return false;
       if (!query) return true;
-      return `${r.id} ${r.orderId} ${r.reason}`.toLowerCase().includes(query);
+      return `${r.id} ${r.orderId} ${displayOrderId(r.orderId)} ${r.reason}`.toLowerCase().includes(query);
     });
   }, [returnsList, q, status]);
 
@@ -1777,7 +1792,7 @@ function ReturnsRmas({ returnsList, pushToast }) {
                     <div className="mt-0.5 text-[11px] font-semibold text-slate-500">{shortTime(r.createdAt)}</div>
                   </div>
                   <div className="col-span-2 flex items-center">
-                    <Badge tone="slate">{r.orderId}</Badge>
+                    <Badge tone="slate">{displayOrderId(r.orderId)}</Badge>
                   </div>
                   <div className="col-span-3 flex items-center">
                     <div>
@@ -1986,7 +2001,7 @@ function Disputes({ disputesList, pushToast }) {
     return disputesList.filter((d) => {
       if (status !== "All" && d.status !== status) return false;
       if (!query) return true;
-      return `${d.id} ${d.orderId} ${d.type}`.toLowerCase().includes(query);
+      return `${d.id} ${d.orderId} ${displayOrderId(d.orderId)} ${d.type}`.toLowerCase().includes(query);
     });
   }, [disputesList, q, status]);
 
@@ -2100,7 +2115,7 @@ function Disputes({ disputesList, pushToast }) {
                       <Badge tone={riskTone(d.risk)}>{d.risk}</Badge>
                       <span className="ml-auto text-[10px] font-extrabold text-slate-400">{shortTime(d.updatedAt)}</span>
                     </div>
-                    <div className="mt-1 text-xs font-semibold text-slate-600">Order {d.orderId} · {d.type}</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-600">Order {displayOrderId(d.orderId)} · {d.type}</div>
                     <div className="mt-2 flex items-center gap-2">
                       <Badge tone="slate">{d.status}</Badge>
                       <Badge tone="slate">Evidence needed</Badge>
@@ -2127,7 +2142,7 @@ function Disputes({ disputesList, pushToast }) {
 
               <div className="mt-4 rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
                 <div className="text-sm font-black text-slate-900">{active.type}</div>
-                <div className="mt-1 text-xs font-semibold text-slate-500">Order {active.orderId} · Status: {active.status}</div>
+                <div className="mt-1 text-xs font-semibold text-slate-500">Order {displayOrderId(active.orderId)} · Status: {active.status}</div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"

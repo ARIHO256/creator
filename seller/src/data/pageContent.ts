@@ -426,6 +426,7 @@ async function loadOrdersContent(role: UserRole): Promise<OrdersContent> {
           currency: String(record.currency ?? "USD"),
           status: String(record.status ?? ""),
           warehouse: String(((record.fulfillment as Record<string, unknown> | undefined)?.warehouseName ?? record.warehouse ?? "")),
+          createdAt: String(record.createdAt ?? record.updatedAt ?? ""),
           updatedAt: String(record.updatedAt ?? ""),
           slaDueAt: String(((record.fulfillment as Record<string, unknown> | undefined)?.slaDueAt ?? record.slaDueAt ?? "")),
         };

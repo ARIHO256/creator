@@ -25,7 +25,9 @@ import {
   X,
 } from 'lucide-react';
 import { useRolePageContent } from '../../data/pageContent';
+import { markSellerOrderOpened } from '../../lib/attentionState';
 import { sellerBackendApi } from '../../lib/backendApi';
+import { formatOrderDisplayId } from '../../lib/orderIds';
 
 /**
  * Orders + Ops Preview Host (PREVIEWABLE)
@@ -68,11 +70,12 @@ function fmtMoney(amount, currency) {
 }
 
 function exportInvoiceFile(order) {
+  const displayOrderId = formatOrderDisplayId(order.id);
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
   try {
     const lines = [
       'EVzone Invoice',
-      `Order: ${order.id}`,
+      `Order: ${displayOrderId}`,
       `Customer: ${order.customer}`,
       `Channel: ${order.channel}`,
       `Items: ${order.items}`,
@@ -88,7 +91,7 @@ function exportInvoiceFile(order) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `invoice-${order.id}.txt`;
+    link.download = `invoice-${displayOrderId}.txt`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -135,6 +138,25 @@ function hashCode(str) {
 
 function hueFromSeed(seed) {
   return Math.abs(hashCode(seed)) % 360;
+}
+
+function displayOrderId(value) {
+  return formatOrderDisplayId(String(value || ''));
+}
+
+function orderTimestamp(value) {
+  const time = new Date(String(value || '')).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortOrdersNewestFirst(rows) {
+  return [...rows].sort((left, right) => {
+    const rightTime = orderTimestamp(right.createdAt || right.updatedAt);
+    const leftTime = orderTimestamp(left.createdAt || left.updatedAt);
+    const timeDelta = rightTime - leftTime;
+    if (timeDelta !== 0) return timeDelta;
+    return String(right.id || '').localeCompare(String(left.id || ''));
+  });
 }
 
 function riskMeta(slaDueAt) {
@@ -207,6 +229,7 @@ function mapOrderDetail(entry) {
     currency: String(entry.currency || 'USD'),
     status: formatOrderStatus(entry.status),
     warehouse: String(metadata.warehouse || entry.warehouse || 'Main Warehouse'),
+    createdAt: String(entry.createdAt || entry.updatedAt || new Date().toISOString()),
     updatedAt: String(entry.updatedAt || entry.createdAt || new Date().toISOString()),
     slaDueAt,
     ...riskMeta(slaDueAt),
@@ -734,6 +757,127 @@ function OrdersTable({ rows, selected, setSelected, toggleAll, allVisibleSelecte
   );
 }
 
+function OrdersStack({ rows, selected, setSelected, toggleAll, allVisibleSelected, onOpen }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between rounded-[10px] border border-slate-200/70 bg-white px-4 py-3 shadow-[0_12px_40px_rgba(2,16,23,0.06)]">
+        <div>
+          <div className="text-sm font-black text-slate-900">Newest Orders First</div>
+          <div className="mt-1 text-[11px] font-semibold text-slate-500">Latest orders are stacked on top.</div>
+        </div>
+        <button
+          type="button"
+          onClick={toggleAll}
+          className={cx(
+            'inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-extrabold',
+            allVisibleSelected
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-slate-200/70 bg-white text-slate-700'
+          )}
+        >
+          {allVisibleSelected ? <Check className="h-4 w-4" /> : <span className="h-4 w-4 rounded border border-current" />}
+          {allVisibleSelected ? 'Clear all' : 'Select all'}
+        </button>
+      </div>
+
+      {rows.map((o, index) => {
+        const checked = !!selected[o.id];
+        const riskTone = o.risk === 'risk' ? 'danger' : o.risk === 'watch' ? 'orange' : 'slate';
+
+        return (
+          <div key={o.id} className="relative pt-4">
+            <div className="absolute inset-x-4 top-0 h-full rounded-[28px] border border-slate-200/60 bg-slate-100/80" />
+            <div className="absolute inset-x-2 top-2 h-full rounded-[28px] border border-slate-200/60 bg-slate-50/90" />
+            <button
+              type="button"
+              onClick={() => onOpen(o.id)}
+              className="relative z-[1] w-full rounded-[28px] border border-slate-200/70 bg-white p-5 text-left shadow-[0_18px_44px_rgba(2,16,23,0.08)] transition hover:-translate-y-0.5 hover:bg-gray-50"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={index === 0 ? 'green' : 'slate'}>{index === 0 ? 'Latest in' : `Stack ${index + 1}`}</Badge>
+                    <Badge tone="slate">{displayOrderId(o.id)}</Badge>
+                    <Badge tone="slate">{o.channel}</Badge>
+                    <Badge tone="slate">{o.warehouse}</Badge>
+                    {o.risk !== 'ok' ? <Badge tone={riskTone}>{o.label}</Badge> : null}
+                  </div>
+
+                  <div className="mt-4 flex items-start gap-3">
+                    <AvatarCircle name={o.customer} size={46} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="truncate text-lg font-black text-slate-900">{o.customer}</div>
+                        <Badge
+                          tone={
+                            o.status === 'Cancelled'
+                              ? 'danger'
+                              : o.status === 'On Hold'
+                                ? 'orange'
+                                : o.status === 'Delivered'
+                                  ? 'green'
+                                  : 'slate'
+                          }
+                        >
+                          {o.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-slate-500">
+                        Updated {shortTime(o.updatedAt)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                      <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Items</div>
+                      <div className="mt-1 text-base font-black text-slate-900">{o.items}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                      <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Total</div>
+                      <div className="mt-1 text-base font-black text-slate-900">{fmtMoney(o.total, o.currency)}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-slate-50 px-3 py-3">
+                      <div className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">SLA</div>
+                      <div className="mt-1 flex items-center gap-2 text-base font-black text-slate-900">
+                        {o.risk === 'risk' ? <AlertTriangle className="h-4 w-4 text-rose-600" /> : <Clock className="h-4 w-4 text-slate-500" />}
+                        {o.label}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 lg:flex-col lg:items-end">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelected((current) => ({ ...current, [o.id]: !checked }));
+                    }}
+                    className={cx(
+                      'inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-extrabold',
+                      checked
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : 'border-slate-200/70 bg-white text-slate-700'
+                    )}
+                  >
+                    {checked ? <Check className="h-4 w-4" /> : <span className="h-4 w-4 rounded border border-current" />}
+                    {checked ? 'Selected' : 'Select'}
+                  </button>
+                  <div className="inline-flex items-center gap-2 text-xs font-extrabold text-slate-500">
+                    Open order
+                    <ChevronRight className="h-4 w-4 text-slate-300" />
+                  </div>
+                </div>
+              </div>
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
   const [view, setView] = useState('list');
   const [grouped, setGrouped] = useState(true);
@@ -765,7 +909,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    return orders.filter((o) => {
+    return sortOrdersNewestFirst(orders.filter((o) => {
       if (status !== 'All' && o.status !== status) return false;
       if (warehouse !== 'All' && o.warehouse !== warehouse) return false;
       if (risk === 'At Risk' && o.risk !== 'risk') return false;
@@ -773,7 +917,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
       if (!query) return true;
       const hay = `${o.id} ${o.customer} ${o.channel} ${o.status} ${o.warehouse}`.toLowerCase();
       return hay.includes(query);
-    });
+    }));
   }, [orders, q, status, warehouse, risk]);
 
   const groupedByWarehouse = useMemo(() => {
@@ -1102,7 +1246,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
                   <div className="text-sm font-black text-slate-900">{g.warehouseName}</div>
                   <Badge tone="slate">{g.items.length}</Badge>
                 </div>
-                <OrdersTable
+                <OrdersStack
                   rows={g.items}
                   selected={selected}
                   setSelected={setSelected}
@@ -1117,7 +1261,7 @@ function OrdersList({ orders, openOrder, pushToast, offlineNotice }) {
             ) : null}
           </div>
         ) : (
-          <OrdersTable
+          <OrdersStack
             rows={filtered}
             selected={selected}
             setSelected={setSelected}
@@ -1329,6 +1473,15 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     setTab('Proofs');
     fileRef.current?.click?.();
   };
+
+  useEffect(() => {
+    if (!orderId) {
+      return;
+    }
+
+    void markSellerOrderOpened(orderId);
+  }, [orderId]);
+
   useEffect(() => {
     if (!orderId) {
       setDetailRecord(null);
@@ -1463,7 +1616,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
     return (
       <div>
         <SectionHeader
-          title={orderId ? `Order ${orderId}` : 'Order'}
+          title={orderId ? `Order ${displayOrderId(orderId)}` : 'Order'}
           subtitle="Loading order detail."
           right={
             <button
@@ -1510,7 +1663,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
   return (
     <div>
       <SectionHeader
-        title={`Order ${order.id}`}
+        title={`Order ${displayOrderId(order.id)}`}
         subtitle="Per-order detail: timeline, items, taxes, shipping, messages. Premium: proof uploads, dispute prevention prompts, audit snippet."
         right={
           <>
@@ -1529,7 +1682,7 @@ function OrderDetail({ orderId, orders, onBack, pushToast }) {
                 try {
                   const payload = await sellerBackendApi.getSellerPrintInvoice(order.id);
                   ok = downloadTextFile(
-                    `invoice-${order.id}.txt`,
+                    `invoice-${displayOrderId(order.id)}.txt`,
                     JSON.stringify(payload, null, 2)
                   );
                 } catch {
@@ -2106,7 +2259,7 @@ function ReturnsRmas({ returnsList, setReturnsList, orders, pushToast }) {
     return returnsList.filter((r) => {
       if (status !== 'All' && r.status !== status) return false;
       if (!query) return true;
-      return `${r.id} ${r.orderId} ${r.reason}`.toLowerCase().includes(query);
+      return `${r.id} ${r.orderId} ${displayOrderId(r.orderId)} ${r.reason}`.toLowerCase().includes(query);
     });
   }, [returnsList, q, status]);
 
@@ -2182,7 +2335,7 @@ function ReturnsRmas({ returnsList, setReturnsList, orders, pushToast }) {
                     </div>
                   </div>
                   <div className="col-span-2 flex items-center">
-                    <Badge tone="slate">{r.orderId}</Badge>
+                    <Badge tone="slate">{displayOrderId(r.orderId)}</Badge>
                   </div>
                   <div className="col-span-3 flex items-center">
                     <div>
@@ -2502,7 +2655,7 @@ function Disputes({ disputesList, setDisputesList, pushToast }) {
     return disputesList.filter((d) => {
       if (status !== 'All' && d.status !== status) return false;
       if (!query) return true;
-      return `${d.id} ${d.orderId} ${d.type}`.toLowerCase().includes(query);
+      return `${d.id} ${d.orderId} ${displayOrderId(d.orderId)} ${d.type}`.toLowerCase().includes(query);
     });
   }, [disputesList, q, status]);
 
@@ -2640,7 +2793,7 @@ function Disputes({ disputesList, setDisputesList, pushToast }) {
                       </span>
                     </div>
                     <div className="mt-1 text-xs font-semibold text-slate-600">
-                      Order {d.orderId} · {d.type}
+                      Order {displayOrderId(d.orderId)} · {d.type}
                     </div>
                     <div className="mt-2 flex items-center gap-2">
                       <Badge tone="slate">{d.status}</Badge>
@@ -2673,7 +2826,7 @@ function Disputes({ disputesList, setDisputesList, pushToast }) {
               <div className="mt-4 rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
                 <div className="text-sm font-black text-slate-900">{active.type}</div>
                 <div className="mt-1 text-xs font-semibold text-slate-500">
-                  Order {active.orderId} · Status: {active.status}
+                  Order {displayOrderId(active.orderId)} · Status: {active.status}
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button

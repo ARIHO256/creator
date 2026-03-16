@@ -13,6 +13,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed:loadtest": "node prisma/seed-loadtest.mjs",
+    "orders:backfill-routing": "node --env-file=.env scripts/backfill-order-routing.mjs",
     "loadtest": "node scripts/load-test.mjs",
     "benchmark": "node scripts/benchmark-scenario.mjs",
     "loadtest:k6:global": "k6 run loadtest/k6-global-read.js",

@@ -280,6 +280,7 @@ export type SellerOrderRow = {
   currency: string;
   status: string;
   warehouse: string;
+  createdAt?: string;
   updatedAt: string;
   slaDueAt: string;
 };

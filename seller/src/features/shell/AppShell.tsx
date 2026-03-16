@@ -5,6 +5,13 @@ import { getCurrentRole } from '../../auth/roles';
 import { clearSession, readSession, updateSession, useSession } from '../../auth/session';
 import type { UserRole } from '../../types/roles';
 import { useLocalization } from '../../localization/LocalizationProvider';
+import {
+  loadSellerAttentionState,
+  normalizeSellerAttentionState,
+  SELLER_ATTENTION_UPDATED_EVENT,
+  type SellerAttentionState,
+  type SellerAttentionUpdatedDetail,
+} from '../../lib/attentionState';
 import { sellerBackendApi } from '../../lib/backendApi';
 import type { NotifCategory, NotifItem } from '../../data/pageTypes';
 import { useThemeMode } from '../../theme/themeMode';
@@ -5352,7 +5359,55 @@ export default function EVzoneSupplierHubAppShellV9({
   const [ordersCount, setOrdersCount] = useState(0);
   const [bookingsCount, setBookingsCount] = useState(0);
   const [reviewsCount, setReviewsCount] = useState(0);
+  const [sellerAttentionState, setSellerAttentionState] = useState<SellerAttentionState>({
+    openedOrders: {},
+    openedReviews: {},
+  });
+  const [sellerBadgeTotals, setSellerBadgeTotals] = useState({ orders: 0, reviews: 0 });
   const [notifCategories, setNotifCategories] = useState<NotificationCategory[]>(['All']);
+
+  useEffect(() => {
+    if (role !== 'seller' || typeof window === 'undefined') {
+      return;
+    }
+
+    const onAttentionUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<SellerAttentionUpdatedDetail>).detail;
+      if (!detail?.id) {
+        return;
+      }
+
+      setSellerAttentionState((current) => {
+        if (detail.entity === 'order' && current.openedOrders[detail.id]) {
+          return current;
+        }
+        if (detail.entity === 'review' && current.openedReviews[detail.id]) {
+          return current;
+        }
+
+        return detail.entity === 'order'
+          ? {
+              ...current,
+              openedOrders: {
+                ...current.openedOrders,
+                [detail.id]: detail.openedAt,
+              },
+            }
+          : {
+              ...current,
+              openedReviews: {
+                ...current.openedReviews,
+                [detail.id]: detail.openedAt,
+              },
+            };
+      });
+    };
+
+    window.addEventListener(SELLER_ATTENTION_UPDATED_EVENT, onAttentionUpdated as EventListener);
+    return () =>
+      window.removeEventListener(SELLER_ATTENTION_UPDATED_EVENT, onAttentionUpdated as EventListener);
+  }, [role]);
+
   useEffect(() => {
     let cancelled = false;
     void sellerBackendApi
@@ -5389,32 +5444,52 @@ export default function EVzoneSupplierHubAppShellV9({
         const reviews = reviewsResult.status === 'fulfilled' && Array.isArray((reviewsResult.value as { reviews?: unknown[] }).reviews)
           ? ((reviewsResult.value as { reviews?: unknown[] }).reviews ?? [])
           : [];
+        setSellerAttentionState({ openedOrders: {}, openedReviews: {} });
+        setSellerBadgeTotals({ orders: 0, reviews: 0 });
         setOrdersCount(0);
         setBookingsCount(bookings.length);
         setReviewsCount(reviews.length);
       }).catch(() => undefined);
     } else {
       void Promise.allSettled([
-        sellerBackendApi.getSellerOrders(),
-        sellerBackendApi.getReviewsSummary(),
-      ]).then(([ordersResult, reviewsResult]) => {
+        sellerBackendApi.getSellerDashboardSummary(),
+        loadSellerAttentionState(),
+      ]).then(([summaryResult, attentionResult]) => {
         if (cancelled) return;
-        const orders = ordersResult.status === 'fulfilled' && Array.isArray((ordersResult.value as { orders?: unknown[] }).orders)
-          ? ((ordersResult.value as { orders?: unknown[] }).orders ?? [])
-          : [];
-        setOrdersCount(orders.length);
+        const summary = summaryResult.status === 'fulfilled'
+          ? (summaryResult.value as {
+              counts?: {
+                orders?: number;
+                reviews?: { total?: number };
+              };
+            })
+          : {};
+        const attentionState = attentionResult.status === 'fulfilled'
+          ? normalizeSellerAttentionState(attentionResult.value)
+          : { openedOrders: {}, openedReviews: {} };
+        const totalOrders = Number(summary.counts?.orders ?? 0);
+        const totalReviews = Number(summary.counts?.reviews?.total ?? 0);
+
+        setSellerAttentionState(attentionState);
+        setSellerBadgeTotals({ orders: totalOrders, reviews: totalReviews });
+        setOrdersCount(Math.max(totalOrders - Object.keys(attentionState.openedOrders).length, 0));
         setBookingsCount(0);
-        setReviewsCount(
-          reviewsResult.status === 'fulfilled'
-            ? Number((reviewsResult.value as { total?: number }).total ?? 0)
-            : 0
-        );
+        setReviewsCount(Math.max(totalReviews - Object.keys(attentionState.openedReviews).length, 0));
       }).catch(() => undefined);
     }
     return () => {
       cancelled = true;
     };
   }, [role]);
+
+  useEffect(() => {
+    if (role !== 'seller') {
+      return;
+    }
+
+    setOrdersCount(Math.max(sellerBadgeTotals.orders - Object.keys(sellerAttentionState.openedOrders).length, 0));
+    setReviewsCount(Math.max(sellerBadgeTotals.reviews - Object.keys(sellerAttentionState.openedReviews).length, 0));
+  }, [role, sellerAttentionState, sellerBadgeTotals]);
 
   const unreadNotifs = useMemo(() => notifItems.filter((n) => n.unread).length, [notifItems]);
   const notifBadgeCount = useMemo(
