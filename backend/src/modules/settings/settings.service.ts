@@ -1211,25 +1211,32 @@ export class SettingsService {
   async notificationPreferences(userId: string, role: string) {
     const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
-    await this.migrateLegacyNotificationPreferences(userId, workspace.workspace.id, scopeRole);
-    const preference = await this.prisma.workspaceNotificationPreference.findUnique({
-      where: {
-        workspaceId_userId_scopeRole: {
-          workspaceId: workspace.workspace.id,
-          userId,
-          scopeRole
+    try {
+      await this.migrateLegacyNotificationPreferences(userId, workspace.workspace.id, scopeRole);
+      const preference = await this.prisma.workspaceNotificationPreference.findUnique({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId: workspace.workspace.id,
+            userId,
+            scopeRole
+          }
+        },
+        include: {
+          watches: {
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+          }
         }
-      },
-      include: {
-        watches: {
-          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
-        }
+      });
+      return {
+        watches: (preference?.watches ?? []).map((watch) => this.serializeStructuredPayload(watch.payload, watch.externalId)),
+        ...(this.isPlainObject(preference?.metadata) ? { metadata: preference?.metadata as Record<string, unknown> } : {})
+      };
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return this.readLegacyNotificationPreferences(userId, scopeRole);
       }
-    });
-    return {
-      watches: (preference?.watches ?? []).map((watch) => this.serializeStructuredPayload(watch.payload, watch.externalId)),
-      ...(this.isPlainObject(preference?.metadata) ? { metadata: preference?.metadata as Record<string, unknown> } : {})
-    };
+      throw error;
+    }
   }
   async updateNotificationPreferences(userId: string, role: string, body: UpdateNotificationPreferencesDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
@@ -1240,44 +1247,52 @@ export class SettingsService {
       ...(body.watches ? { watches: body.watches } : {}),
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
-    await this.prisma.$transaction(async (tx) => {
-      const preference = await tx.workspaceNotificationPreference.upsert({
-        where: {
-          workspaceId_userId_scopeRole: {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const preference = await tx.workspaceNotificationPreference.upsert({
+          where: {
+            workspaceId_userId_scopeRole: {
+              workspaceId: workspace.workspace.id,
+              userId,
+              scopeRole
+            }
+          },
+          update: {
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+          },
+          create: {
             workspaceId: workspace.workspace.id,
             userId,
-            scopeRole
+            scopeRole,
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
           }
-        },
-        update: {
-          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
-        },
-        create: {
-          workspaceId: workspace.workspace.id,
-          userId,
-          scopeRole,
-          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        });
+        await tx.workspaceNotificationWatch.deleteMany({
+          where: { preferenceDbId: preference.dbId }
+        });
+        if (Array.isArray(next.watches) && next.watches.length > 0) {
+          await tx.workspaceNotificationWatch.createMany({
+            data: next.watches.map((watch, index) => {
+              const payload = this.ensureObjectPayload(watch);
+              return {
+                preferenceDbId: preference.dbId,
+                externalId: this.readString(payload.id) || randomUUID(),
+                channel: this.readString(payload.channel) || null,
+                enabled: payload.enabled === undefined ? null : Boolean(payload.enabled),
+                position: index,
+                payload: payload as Prisma.InputJsonValue
+              };
+            })
+          });
         }
       });
-      await tx.workspaceNotificationWatch.deleteMany({
-        where: { preferenceDbId: preference.dbId }
-      });
-      if (Array.isArray(next.watches) && next.watches.length > 0) {
-        await tx.workspaceNotificationWatch.createMany({
-          data: next.watches.map((watch, index) => {
-            const payload = this.ensureObjectPayload(watch);
-            return {
-              preferenceDbId: preference.dbId,
-              externalId: this.readString(payload.id) || randomUUID(),
-              channel: this.readString(payload.channel) || null,
-              enabled: payload.enabled === undefined ? null : Boolean(payload.enabled),
-              position: index,
-              payload: payload as Prisma.InputJsonValue
-            };
-          })
-        });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        await this.writeLegacyNotificationPreferences(userId, scopeRole, next);
+      } else {
+        throw error;
       }
-    });
+    }
     await this.audit.log({
       userId,
       action: 'settings.notifications_updated',
@@ -2511,15 +2526,23 @@ export class SettingsService {
   }
 
   private async migrateLegacyNotificationPreferences(userId: string, workspaceId: string, scopeRole: string) {
-    const existing = await this.prisma.workspaceNotificationPreference.findUnique({
-      where: {
-        workspaceId_userId_scopeRole: {
-          workspaceId,
-          userId,
-          scopeRole
+    let existing;
+    try {
+      existing = await this.prisma.workspaceNotificationPreference.findUnique({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId,
+            userId,
+            scopeRole
+          }
         }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
       }
-    });
+      throw error;
+    }
     if (existing) {
       return;
     }
@@ -2531,29 +2554,55 @@ export class SettingsService {
     if (watches.length === 0 && Object.keys(metadata).length === 0) {
       return;
     }
-    const preference = await this.prisma.workspaceNotificationPreference.create({
-      data: {
-        workspaceId,
-        userId,
-        scopeRole,
-        metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
-      }
-    });
-    if (watches.length > 0) {
-      await this.prisma.workspaceNotificationWatch.createMany({
-        data: watches.map((watch, index) => {
-          const payloadRecord = this.ensureObjectPayload(watch);
-          return {
-            preferenceDbId: preference.dbId,
-            externalId: this.readString(payloadRecord.id) || randomUUID(),
-            channel: this.readString(payloadRecord.channel) || null,
-            enabled: payloadRecord.enabled === undefined ? null : Boolean(payloadRecord.enabled),
-            position: index,
-            payload: payloadRecord as Prisma.InputJsonValue
-          };
-        })
+    try {
+      const preference = await this.prisma.workspaceNotificationPreference.create({
+        data: {
+          workspaceId,
+          userId,
+          scopeRole,
+          metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
+        }
       });
+      if (watches.length > 0) {
+        await this.prisma.workspaceNotificationWatch.createMany({
+          data: watches.map((watch, index) => {
+            const payloadRecord = this.ensureObjectPayload(watch);
+            return {
+              preferenceDbId: preference.dbId,
+              externalId: this.readString(payloadRecord.id) || randomUUID(),
+              channel: this.readString(payloadRecord.channel) || null,
+              enabled: payloadRecord.enabled === undefined ? null : Boolean(payloadRecord.enabled),
+              position: index,
+              payload: payloadRecord as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
+      }
+      throw error;
     }
+  }
+
+  private async readLegacyNotificationPreferences(userId: string, scopeRole: string) {
+    const payload =
+      await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'notification_preferences')) ??
+      await this.findWorkspaceSetting(userId, 'notification_preferences') ??
+      {};
+    const watches = this.extractList(payload, 'watches') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata)
+      ? (payload.metadata as Record<string, unknown>)
+      : (this.isPlainObject(payload) ? (payload as Record<string, unknown>) : {});
+    return {
+      watches,
+      metadata
+    };
+  }
+
+  private async writeLegacyNotificationPreferences(userId: string, scopeRole: string, payload: Record<string, unknown>) {
+    await this.upsertWorkspaceSetting(userId, this.scopedKey(scopeRole, 'notification_preferences'), payload);
   }
 
   private async readPayoutMethods(workspaceId: string) {

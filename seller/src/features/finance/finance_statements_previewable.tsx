@@ -215,9 +215,6 @@ async function shareStatement(statement) {
 
 function printStatement(statement) {
   const lines = Array.isArray(statement.lines) ? statement.lines : [];
-  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=980,height=720");
-  if (!printWindow) return false;
-
   const rows = lines
     .map(
       (line) => `
@@ -232,7 +229,24 @@ function printStatement(statement) {
     )
     .join("");
 
-  printWindow.document.write(`<!doctype html>
+  const frame = document.createElement("iframe");
+  frame.setAttribute("aria-hidden", "true");
+  frame.style.position = "fixed";
+  frame.style.right = "0";
+  frame.style.bottom = "0";
+  frame.style.width = "0";
+  frame.style.height = "0";
+  frame.style.border = "0";
+  document.body.appendChild(frame);
+
+  const printDocument = frame.contentWindow?.document;
+  if (!printDocument || !frame.contentWindow) {
+    frame.remove();
+    return false;
+  }
+
+  printDocument.open();
+  printDocument.write(`<!doctype html>
     <html>
       <head>
         <title>${statement.id}</title>
@@ -273,9 +287,13 @@ function printStatement(statement) {
         </table>
       </body>
     </html>`);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+  printDocument.close();
+
+  window.setTimeout(() => {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    window.setTimeout(() => frame.remove(), 1000);
+  }, 50);
   return true;
 }
 
