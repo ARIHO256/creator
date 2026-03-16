@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, TransactionStatus } from '@prisma/client';
+import { Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CacheService } from '../../platform/cache/cache.service.js';
@@ -31,6 +31,30 @@ import { JobsService } from '../jobs/jobs.service.js';
 import { ExportsService } from '../exports/exports.service.js';
 
 const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
+
+type FinanceStatementRecord = {
+  id: string;
+  period: string;
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  openingBalance: number;
+  closingBalance: number;
+  inflow: number;
+  outflow: number;
+  generatedAt: string;
+  status: 'Ready';
+  count: number;
+  lines: Array<{
+    id: string;
+    at: string;
+    type: string;
+    source: string;
+    ref: string;
+    amount: number;
+    note: string;
+  }>;
+};
 
 const DEFAULT_SELLER_LISTING_WIZARD_CONFIG = {
   markets: [
@@ -1208,25 +1232,119 @@ export class CommerceService {
   }
 
   async financeStatements(userId: string) {
+    return { statements: await this.buildFinanceStatements(userId) };
+  }
+
+  async generateFinanceStatement(userId: string) {
+    const statements = await this.buildFinanceStatements(userId);
+    const latest = statements[0];
+    if (!latest) {
+      throw new BadRequestException('No transactions available to generate a statement');
+    }
+
+    const generatedAt = new Date().toISOString();
+    const payload = (await this.loadWorkspaceSetting(userId, 'finance_statements_ui')) ?? {};
+    const generatedAtById =
+      payload.generatedAtById && typeof payload.generatedAtById === 'object'
+        ? { ...(payload.generatedAtById as Record<string, unknown>) }
+        : {};
+    generatedAtById[latest.id] = generatedAt;
+    await this.upsertWorkspaceSetting(userId, 'finance_statements_ui', {
+      ...payload,
+      generatedAtById
+    });
+
+    return {
+      statement: {
+        ...latest,
+        generatedAt
+      }
+    };
+  }
+
+  private formatTransactionTypeLabel(type: TransactionType) {
+    return String(type)
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private defaultTransactionNote(type: TransactionType, status: TransactionStatus) {
+    if (type === TransactionType.ORDER_PAYMENT) return `Order payment ${status.toLowerCase()}.`;
+    if (type === TransactionType.PAYOUT) return `Seller payout ${status.toLowerCase()}.`;
+    if (type === TransactionType.REFUND) return `Refund ${status.toLowerCase()}.`;
+    if (type === TransactionType.COMMISSION) return `Commission ${status.toLowerCase()}.`;
+    return `Adjustment ${status.toLowerCase()}.`;
+  }
+
+  private async buildFinanceStatements(userId: string) {
     const seller = await this.ensureSeller(userId);
     const transactions = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id },
-      orderBy: { createdAt: 'desc' },
-      take: 500
+      orderBy: { createdAt: 'asc' },
+      take: 1000
     });
+    const payload = (await this.loadWorkspaceSetting(userId, 'finance_statements_ui')) ?? {};
+    const generatedAtById =
+      payload.generatedAtById && typeof payload.generatedAtById === 'object'
+        ? (payload.generatedAtById as Record<string, unknown>)
+        : {};
 
-    const statements = new Map<string, { period: string; currency: string; total: number; count: number }>();
+    const statements = new Map<string, FinanceStatementRecord>();
+    const balances = new Map<string, number>();
+
     for (const transaction of transactions) {
-      const period = transaction.createdAt.toISOString().slice(0, 7);
+      const periodStartDate = new Date(Date.UTC(transaction.createdAt.getUTCFullYear(), transaction.createdAt.getUTCMonth(), 1));
+      const periodEndDate = new Date(Date.UTC(transaction.createdAt.getUTCFullYear(), transaction.createdAt.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+      const period = periodStartDate.toISOString().slice(0, 7);
       const key = `${period}:${transaction.currency}`;
-      const entry =
-        statements.get(key) ?? { period, currency: transaction.currency, total: 0, count: 0 };
-      entry.total += transaction.amount;
+      const openingBalance = balances.get(transaction.currency) ?? 0;
+      const statementId = `STM-${period}-${transaction.currency}`;
+      const entry: FinanceStatementRecord = statements.get(key) ?? {
+        id: statementId,
+        period,
+        currency: transaction.currency,
+        periodStart: periodStartDate.toISOString(),
+        periodEnd: periodEndDate.toISOString(),
+        openingBalance,
+        closingBalance: openingBalance,
+        inflow: 0,
+        outflow: 0,
+        generatedAt:
+          typeof generatedAtById[statementId] === 'string'
+            ? String(generatedAtById[statementId])
+            : transaction.createdAt.toISOString(),
+        status: 'Ready' as const,
+        count: 0,
+        lines: []
+      };
+
+      const amount = Number(transaction.amount ?? 0);
+      if (amount >= 0) {
+        entry.inflow += amount;
+      } else {
+        entry.outflow += Math.abs(amount);
+      }
       entry.count += 1;
+      entry.lines.push({
+        id: transaction.id,
+        at: transaction.createdAt.toISOString(),
+        type: amount >= 0 ? 'Credit' : 'Debit',
+        source: this.formatTransactionTypeLabel(transaction.type),
+        ref: transaction.orderId ?? transaction.id,
+        amount,
+        note: transaction.note?.trim() || this.defaultTransactionNote(transaction.type, transaction.status)
+      });
+      entry.closingBalance += amount;
       statements.set(key, entry);
+      balances.set(transaction.currency, entry.closingBalance);
     }
 
-    return { statements: Array.from(statements.values()).sort((a, b) => (a.period < b.period ? 1 : -1)) };
+    return Array.from(statements.values()).sort((a, b) => {
+      if (a.period === b.period) return a.currency.localeCompare(b.currency);
+      return a.period < b.period ? 1 : -1;
+    });
   }
 
   async financeTaxReports(userId: string) {

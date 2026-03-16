@@ -545,6 +545,10 @@ export const sellerBackendApi = {
   getFinanceHolds: () => request<Record<string, unknown>>("/api/seller/finance/holds"),
   getFinanceInvoices: () => request<Record<string, unknown>>("/api/seller/finance/invoices"),
   getFinanceStatements: () => request<Record<string, unknown>>("/api/seller/finance/statements"),
+  generateFinanceStatement: () =>
+    request<Record<string, unknown>>("/api/seller/finance/statements/generate", {
+      method: "POST",
+    }),
   getFinanceTaxReports: () => request<Record<string, unknown>>("/api/seller/finance/tax-reports"),
   patchFinanceInvoice: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/seller/finance/invoices/${encodeURIComponent(id)}`, {

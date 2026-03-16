@@ -153,6 +153,7 @@ export class CommerceController {
   @Get('finance/holds') holds(@CurrentUser() user: RequestUser) { return this.service.financeHolds(user.sub); }
   @Get('finance/invoices') invoices(@CurrentUser() user: RequestUser) { return this.service.financeInvoices(user.sub); }
   @Get('finance/statements') statements(@CurrentUser() user: RequestUser) { return this.service.financeStatements(user.sub); }
+  @Post('finance/statements/generate') generateStatement(@CurrentUser() user: RequestUser) { return this.service.generateFinanceStatement(user.sub); }
   @Get('finance/tax-reports') taxReports(@CurrentUser() user: RequestUser) { return this.service.financeTaxReports(user.sub); }
   @Patch('finance/invoices/:id')
   updateInvoice(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body(new FlexiblePayloadValidationPipe(UpdateFinanceInvoiceDto)) payload: UpdateFinanceInvoiceDto) {

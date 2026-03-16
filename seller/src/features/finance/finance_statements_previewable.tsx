@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { jsPDF } from "jspdf";
 import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
@@ -83,6 +84,199 @@ function safeCopy(text) {
   } catch {
     // ignore
   }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function csvValue(value) {
+  const text = String(value ?? "");
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function buildStatementCsv(statement) {
+  const rows = [
+    ["Statement ID", statement.id],
+    ["Currency", statement.currency],
+    ["Period Start", statement.periodStart],
+    ["Period End", statement.periodEnd],
+    ["Generated At", statement.generatedAt],
+    ["Opening Balance", statement.openingBalance],
+    ["Closing Balance", statement.closingBalance],
+    ["Inflow", statement.inflow],
+    ["Outflow", statement.outflow],
+    ["Transaction Count", statement.count ?? statement.lines?.length ?? 0],
+    [],
+    ["Line ID", "Time", "Type", "Source", "Reference", "Amount", "Note"],
+    ...(Array.isArray(statement.lines) ? statement.lines : []).map((line) => [
+      line.id,
+      line.at,
+      line.type,
+      line.source,
+      line.ref,
+      line.amount,
+      line.note,
+    ]),
+  ];
+
+  return rows
+    .map((row) => row.map((value) => csvValue(value)).join(","))
+    .join("\n");
+}
+
+function downloadStatementPdf(statement) {
+  const doc = new jsPDF();
+  const marginX = 16;
+  let y = 18;
+  const write = (text, step = 7) => {
+    doc.text(String(text), marginX, y);
+    y += step;
+  };
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  write(`Statement ${statement.id}`, 10);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  write(`Period: ${fmtDate(statement.periodStart)} to ${fmtDate(statement.periodEnd)}`);
+  write(`Currency: ${statement.currency}`);
+  write(`Generated: ${fmtTime(statement.generatedAt)}`, 10);
+
+  doc.setFont("helvetica", "bold");
+  write("Summary", 8);
+  doc.setFont("helvetica", "normal");
+  write(`Opening balance: ${fmtMoney(statement.openingBalance, statement.currency)}`);
+  write(`Closing balance: ${fmtMoney(statement.closingBalance, statement.currency)}`);
+  write(`Inflow: ${fmtMoney(statement.inflow, statement.currency)}`);
+  write(`Outflow: ${fmtMoney(statement.outflow, statement.currency)}`);
+  write(`Transactions: ${statement.count ?? statement.lines?.length ?? 0}`, 10);
+
+  doc.setFont("helvetica", "bold");
+  write("Transactions", 8);
+  doc.setFont("helvetica", "normal");
+  (Array.isArray(statement.lines) ? statement.lines : []).slice(0, 25).forEach((line) => {
+    const wrapped = doc.splitTextToSize(
+      `${fmtTime(line.at)} | ${line.type} | ${line.source} | ${line.ref} | ${fmtMoney(line.amount, statement.currency)} | ${line.note}`,
+      175
+    );
+    if (y > 270) {
+      doc.addPage();
+      y = 18;
+    }
+    doc.text(wrapped, marginX, y);
+    y += wrapped.length * 5 + 2;
+  });
+
+  if ((statement.lines?.length ?? 0) > 25) {
+    if (y > 270) {
+      doc.addPage();
+      y = 18;
+    }
+    doc.setFont("helvetica", "italic");
+    doc.text(`Plus ${(statement.lines?.length ?? 0) - 25} more transaction(s) in the full statement.`, marginX, y);
+  }
+
+  doc.save(`${statement.id}.pdf`);
+}
+
+function buildStatementShareText(statement) {
+  return [
+    `Statement ${statement.id}`,
+    `Period: ${fmtDate(statement.periodStart)} to ${fmtDate(statement.periodEnd)}`,
+    `Currency: ${statement.currency}`,
+    `Opening balance: ${fmtMoney(statement.openingBalance, statement.currency)}`,
+    `Closing balance: ${fmtMoney(statement.closingBalance, statement.currency)}`,
+    `Inflow: ${fmtMoney(statement.inflow, statement.currency)}`,
+    `Outflow: ${fmtMoney(statement.outflow, statement.currency)}`,
+    `Transactions: ${statement.count ?? statement.lines?.length ?? 0}`,
+  ].join("\n");
+}
+
+async function shareStatement(statement) {
+  const text = buildStatementShareText(statement);
+  if (navigator.share) {
+    await navigator.share({
+      title: `Statement ${statement.id}`,
+      text,
+    });
+    return "shared";
+  }
+
+  safeCopy(text);
+  return "copied";
+}
+
+function printStatement(statement) {
+  const lines = Array.isArray(statement.lines) ? statement.lines : [];
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=980,height=720");
+  if (!printWindow) return false;
+
+  const rows = lines
+    .map(
+      (line) => `
+        <tr>
+          <td>${fmtTime(line.at)}</td>
+          <td>${line.type}</td>
+          <td>${line.source}</td>
+          <td>${line.ref}</td>
+          <td style="text-align:right">${fmtMoney(line.amount, statement.currency)}</td>
+          <td>${line.note}</td>
+        </tr>`
+    )
+    .join("");
+
+  printWindow.document.write(`<!doctype html>
+    <html>
+      <head>
+        <title>${statement.id}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
+          h1 { margin: 0 0 8px; font-size: 22px; }
+          .meta { margin-bottom: 18px; color: #475569; font-size: 13px; }
+          .summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0 24px; }
+          .card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px; }
+          .label { font-size: 11px; text-transform: uppercase; color: #64748b; margin-bottom: 6px; }
+          .value { font-size: 16px; font-weight: 700; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px; font-size: 12px; vertical-align: top; }
+          th { background: #f8fafc; text-align: left; }
+        </style>
+      </head>
+      <body>
+        <h1>Statement ${statement.id}</h1>
+        <div class="meta">${fmtDate(statement.periodStart)} to ${fmtDate(statement.periodEnd)} · ${statement.currency}</div>
+        <div class="summary">
+          <div class="card"><div class="label">Opening balance</div><div class="value">${fmtMoney(statement.openingBalance, statement.currency)}</div></div>
+          <div class="card"><div class="label">Closing balance</div><div class="value">${fmtMoney(statement.closingBalance, statement.currency)}</div></div>
+          <div class="card"><div class="label">Inflow</div><div class="value">${fmtMoney(statement.inflow, statement.currency)}</div></div>
+          <div class="card"><div class="label">Outflow</div><div class="value">${fmtMoney(statement.outflow, statement.currency)}</div></div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Source</th>
+              <th>Reference</th>
+              <th>Amount</th>
+              <th>Note</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </body>
+    </html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+  return true;
 }
 
 function Badge({ children, tone = "slate" }) {
@@ -327,6 +521,64 @@ function statementDemoRows() {
   ];
 }
 
+function periodRange(period) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(period || ""));
+  if (!match) {
+    const now = new Date();
+    return {
+      periodStart: now.toISOString(),
+      periodEnd: now.toISOString(),
+      generatedAt: now.toISOString(),
+    };
+  }
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const periodStart = new Date(Date.UTC(year, monthIndex, 1, 0, 0, 0, 0));
+  const periodEnd = new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59, 999));
+  return {
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString(),
+    generatedAt: periodEnd.toISOString(),
+  };
+}
+
+function normalizeStatementRow(row, index) {
+  const period = String(row?.period || "");
+  const currency = String(row?.currency || "USD");
+  const total = Number(row?.total || 0);
+  const count = Number(row?.count || 0);
+  const { periodStart, periodEnd, generatedAt } = periodRange(period);
+  const id = String(row?.id || `STM-${period || "unknown"}-${currency}-${index + 1}`);
+  const lines = Array.isArray(row?.lines)
+    ? row.lines.map((line, lineIndex) => ({
+        id: String(line?.id || `${id}-line-${lineIndex + 1}`),
+        at: line?.at || generatedAt,
+        type: line?.type || (Number(line?.amount || 0) >= 0 ? "Credit" : "Debit"),
+        source: line?.source || "Statement activity",
+        ref: line?.ref || id,
+        amount: Number(line?.amount || 0),
+        note: line?.note || "Imported from finance statements summary.",
+      }))
+    : [];
+
+  return {
+    id,
+    period,
+    currency,
+    periodStart: row?.periodStart || periodStart,
+    periodEnd: row?.periodEnd || periodEnd,
+    openingBalance: Number(row?.openingBalance || 0),
+    closingBalance: Number(row?.closingBalance ?? total),
+    inflow: Number(row?.inflow ?? Math.max(total, 0)),
+    outflow: Number(row?.outflow ?? Math.abs(Math.min(total, 0))),
+    generatedAt: row?.generatedAt || generatedAt,
+    status: row?.status || "Ready",
+    count,
+    lines,
+  };
+}
+
 function lineTone(amount) {
   const n = Number(amount || 0);
   if (n > 0) return "green";
@@ -471,6 +723,8 @@ function StatementDetail({ statement, onClose, pushToast }) {
   if (!statement) return null;
 
   const lines = statement.lines || [];
+  const transactionCount = statement.count ?? lines.length;
+  const transactionsCategorized = lines.every((line) => line.type && line.source && line.ref);
 
   return (
     <Drawer
@@ -519,7 +773,10 @@ function StatementDetail({ statement, onClose, pushToast }) {
 
                 <button
                   type="button"
-                  onClick={() => pushToast({ title: "PDF", message: "Statement PDF exported (demo).", tone: "default" })}
+                  onClick={() => {
+                    downloadStatementPdf(statement);
+                    pushToast({ title: "PDF ready", message: "Statement PDF downloaded.", tone: "success" });
+                  }}
                   className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
                 >
                   <Download className="h-4 w-4" />
@@ -528,12 +785,51 @@ function StatementDetail({ statement, onClose, pushToast }) {
 
                 <button
                   type="button"
-                  onClick={() => pushToast({ title: "CSV", message: "Transactions exported (demo).", tone: "default" })}
+                  onClick={() => {
+                    const csv = buildStatementCsv(statement);
+                    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `${statement.id}.csv`);
+                    pushToast({ title: "CSV ready", message: "Statement CSV downloaded.", tone: "success" });
+                  }}
                   className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                   style={{ background: TOKENS.green }}
                 >
                   <Download className="h-4 w-4" />
                   Export CSV
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void shareStatement(statement).then((result) => {
+                      pushToast({
+                        title: result === "shared" ? "Shared" : "Copied",
+                        message: result === "shared" ? "Statement details shared." : "Statement details copied for sharing.",
+                        tone: "success",
+                      });
+                    }).catch(() => {
+                      pushToast({ title: "Share unavailable", message: "The statement could not be shared.", tone: "warning" });
+                    });
+                  }}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+                >
+                  <Globe className="h-4 w-4" />
+                  Share
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const opened = printStatement(statement);
+                    pushToast({
+                      title: opened ? "Print opened" : "Print blocked",
+                      message: opened ? "Statement sent to the print dialog." : "Allow popups to print this statement.",
+                      tone: opened ? "success" : "warning",
+                    });
+                  }}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+                >
+                  <FileText className="h-4 w-4" />
+                  Print
                 </button>
 
                 <button
@@ -582,15 +878,23 @@ function StatementDetail({ statement, onClose, pushToast }) {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-sm font-black text-slate-900">Quick checks</div>
-                      <div className="mt-1 text-xs font-semibold text-slate-500">Signals for finance ops</div>
+                      <div className="mt-1 text-xs font-semibold text-slate-500">Signals derived from the statement payload</div>
                     </div>
-                    <Badge tone="slate">Demo</Badge>
+                    <Badge tone="slate">{transactionCount} txns</Badge>
                   </div>
 
                   <div className="mt-4 grid gap-2">
-                    <QuickCheck label="All transactions categorized" ok />
+                    <QuickCheck
+                      label="All transactions categorized"
+                      ok={transactionsCategorized}
+                      note={transactionsCategorized ? "Every line has a type, source, and reference." : "One or more lines are missing classification fields."}
+                    />
                     <QuickCheck label="No negative closing balance" ok={Number(statement.closingBalance || 0) >= 0} />
-                    <QuickCheck label="Reconcile status" ok note="Pending" />
+                    <QuickCheck
+                      label="Reconcile status"
+                      ok={statement.status === "Ready"}
+                      note={`Built from ${transactionCount} transaction(s).`}
+                    />
                   </div>
 
                   <div className="mt-4 rounded-3xl border border-orange-200 bg-orange-50/70 p-4">
@@ -710,16 +1014,32 @@ export default function FinanceStatementsPage() {
   const dismissToast = (id: string) => setToasts((s) => s.filter((x) => x.id !== id));
 
   const [rows, setRows] = useState<any[]>([]);
+  const [loadingRows, setLoadingRows] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  const loadStatements = async () => {
+    setLoadingRows(true);
+    try {
+      const payload = await sellerBackendApi.getFinanceStatements();
+      const statements = Array.isArray((payload as Record<string, any>)?.statements)
+        ? ((payload as Record<string, any>).statements as any[]).map(normalizeStatementRow)
+        : [];
+      setRows(statements);
+      return statements;
+    } catch {
+      setRows(statementDemoRows());
+      return statementDemoRows();
+    } finally {
+      setLoadingRows(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
-    void sellerBackendApi
-      .getFinanceStatements()
-      .then((payload) => {
-        if (!mounted) return;
-        setRows(Array.isArray((payload as Record<string, any>)?.statements) ? ((payload as Record<string, any>).statements as any[]) : []);
-      })
-      .catch(() => undefined);
+    void loadStatements().then((statements) => {
+      if (!mounted) return;
+      setRows(statements);
+    });
     return () => {
       mounted = false;
     };
@@ -798,20 +1118,54 @@ export default function FinanceStatementsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Refreshed", message: "Latest statements loaded (demo).", tone: "success" })}
+                onClick={() => {
+                  void loadStatements().then((statements) => {
+                    pushToast({
+                      title: "Refreshed",
+                      message: `${statements.length} statement(s) loaded from finance records.`,
+                      tone: "success",
+                    });
+                  });
+                }}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-2 text-xs font-extrabold text-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800"
               >
                 <RefreshCw className="h-4 w-4" />
-                Refresh
+                {loadingRows ? "Refreshing..." : "Refresh"}
               </button>
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Generate", message: "Statement generation is scheduled (demo).", tone: "default" })}
+                onClick={() => {
+                  if (generating) return;
+                  setGenerating(true);
+                  void sellerBackendApi
+                    .generateFinanceStatement()
+                    .then((payload) => {
+                      const generated = normalizeStatementRow((payload as Record<string, any>)?.statement ?? {}, 0);
+                      setRows((current) => {
+                        const next = [generated, ...current.filter((row) => row.id !== generated.id)];
+                        return next.sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+                      });
+                      setActiveId(generated.id);
+                      pushToast({
+                        title: "Statement generated",
+                        message: `${generated.id} is ready to download, share, or print.`,
+                        tone: "success",
+                      });
+                    })
+                    .catch((error) => {
+                      pushToast({
+                        title: "Generation failed",
+                        message: error instanceof Error ? error.message : "The statement could not be generated.",
+                        tone: "danger",
+                      });
+                    })
+                    .finally(() => setGenerating(false));
+                }}
                 className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-xs font-extrabold text-white"
                 style={{ background: TOKENS.green }}
               >
                 <Plus className="h-4 w-4" />
-                Generate statement
+                {generating ? "Generating..." : "Generate statement"}
               </button>
             </div>
           </div>
