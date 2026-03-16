@@ -6,6 +6,7 @@ import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateInviteDto } from './dto/create-invite.dto.js';
 import { CreateRoleDto } from './dto/create-role.dto.js';
 import { SendPayoutCodeDto } from './dto/send-payout-code.dto.js';
+import { SendTestNotificationDto } from './dto/send-test-notification.dto.js';
 import { UpdateCrewSessionDto } from './dto/update-crew-session.dto.js';
 import { UpdateIntegrationsDto } from './dto/update-integrations.dto.js';
 import { UpdateKycDto } from './dto/update-kyc.dto.js';
@@ -70,6 +71,11 @@ export class SettingsController {
   @Patch('settings/notification-preferences')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   updateNotificationPreferences(@CurrentUser() user: RequestUser, @Body() body: UpdateNotificationPreferencesDto) { return this.service.updateNotificationPreferences(user.sub, user.role, body); }
+  @Post('settings/notification-preferences/test')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  sendTestNotification(@CurrentUser() user: RequestUser, @Body() body: SendTestNotificationDto) {
+    return this.service.sendTestNotification(user.sub, user.role, body);
+  }
   @Post('settings/payout/send-code')
   @RateLimit({ limit: 6, windowMs: 60_000 })
   sendPayoutCode(@CurrentUser() user: RequestUser, @Body() body: SendPayoutCodeDto) { return this.service.sendPayoutCode(user.sub, body); }

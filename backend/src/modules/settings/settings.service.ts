@@ -7,6 +7,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { CreateInviteDto } from './dto/create-invite.dto.js';
 import { CreateRoleDto } from './dto/create-role.dto.js';
 import { SendPayoutCodeDto } from './dto/send-payout-code.dto.js';
+import { SendTestNotificationDto } from './dto/send-test-notification.dto.js';
 import { UpdateCrewSessionDto } from './dto/update-crew-session.dto.js';
 import { UpdateIntegrationsDto } from './dto/update-integrations.dto.js';
 import { UpdateKycDto } from './dto/update-kyc.dto.js';
@@ -220,6 +221,49 @@ export class SettingsService {
       where: { id: { in: ids } },
       data: { readAt: new Date() }
     });
+  }
+  async sendTestNotification(userId: string, role: string, body: SendTestNotificationDto) {
+    const scopeRole = this.workspaceScopeRole(role);
+    const channels = Array.isArray(body.channels)
+      ? body.channels
+          .map((entry) => this.readString(entry).toLowerCase())
+          .filter(Boolean)
+      : [];
+    const created = await this.prisma.notification.create({
+      data: {
+        userId,
+        title: this.readString(body.title) || 'Test notification',
+        body:
+          this.readString(body.message) ||
+          `Notification channels checked: ${channels.length ? channels.join(', ') : 'in-app only'}.`,
+        kind: 'settings_test',
+        metadata: this.ensurePayload({
+          type: 'system',
+          workspaceRole: scopeRole,
+          channels,
+          isTest: true,
+          source: 'notification_preferences',
+          ...(this.isPlainObject(body.metadata) ? body.metadata : {})
+        }) as Prisma.InputJsonValue
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'settings.notification_test_sent',
+      entityType: 'notification',
+      entityId: created.id,
+      route: '/api/settings/notification-preferences/test',
+      method: 'POST',
+      statusCode: 200,
+      metadata: { channels, workspaceRole: scopeRole }
+    });
+    return {
+      id: created.id,
+      title: created.title,
+      message: created.body,
+      channels,
+      createdAt: created.createdAt
+    };
   }
 
   async roles(userId: string) {
@@ -1209,9 +1253,9 @@ export class SettingsService {
     };
   }
   async notificationPreferences(userId: string, role: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
     try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
       await this.migrateLegacyNotificationPreferences(userId, workspace.workspace.id, scopeRole);
       const preference = await this.prisma.workspaceNotificationPreference.findUnique({
         where: {
@@ -1239,7 +1283,6 @@ export class SettingsService {
     }
   }
   async updateNotificationPreferences(userId: string, role: string, body: UpdateNotificationPreferencesDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
     const current = await this.notificationPreferences(userId, scopeRole);
     const next = {
@@ -1248,6 +1291,7 @@ export class SettingsService {
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
     try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
       await this.prisma.$transaction(async (tx) => {
         const preference = await tx.workspaceNotificationPreference.upsert({
           where: {
@@ -1809,6 +1853,8 @@ export class SettingsService {
           this.readString(onboarding?.about),
         primary: this.readString(onboarding?.brandColor) || '#03CD8C',
         accent: '#F77F00',
+        logoUrl: this.readString(onboarding?.logoUrl) || this.readString(storefront?.logoUrl),
+        coverUrl: this.readString(onboarding?.coverUrl) || this.readString(storefront?.coverUrl),
         logoName: this.extractAssetName(this.readString(onboarding?.logoUrl) || this.readString(storefront?.logoUrl)),
         coverName: this.extractAssetName(this.readString(onboarding?.coverUrl) || this.readString(storefront?.coverUrl))
       },

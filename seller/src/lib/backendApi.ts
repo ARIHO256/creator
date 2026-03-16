@@ -58,15 +58,13 @@ async function refreshAccessToken(): Promise<string | null> {
     const session = readSession();
     const refreshToken =
       session && typeof session.refreshToken === "string" ? session.refreshToken.trim() : "";
-    if (!refreshToken) {
-      return null;
-    }
 
     const url = await resolveApiUrl("/api/auth/refresh");
     const response = await fetch(url, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
     });
     const payload = await parsePayload(response);
     if (!response.ok) {
@@ -128,7 +126,7 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
   }
 
   const url = await resolveApiUrl(path);
-  const response = await fetch(url, { ...init, headers });
+  const response = await fetch(url, { ...init, headers, credentials: "include" });
   const payload = await parsePayload(response);
 
   if (!response.ok) {
@@ -375,6 +373,11 @@ export const sellerBackendApi = {
   patchNotificationPreferences: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/settings/notification-preferences", {
       method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  sendTestNotificationPreferences: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/settings/notification-preferences/test", {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   getAnalyticsPage: () => request<Record<string, unknown>>("/api/analytics/page"),

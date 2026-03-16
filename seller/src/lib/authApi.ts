@@ -44,7 +44,7 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     headers.set("Content-Type", "application/json");
   }
   const url = await resolveApiUrl(path);
-  const response = await fetch(url, { ...init, headers });
+  const response = await fetch(url, { ...init, headers, credentials: "include" });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
   if (!response.ok) {
