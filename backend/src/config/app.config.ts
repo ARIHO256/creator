@@ -7,7 +7,7 @@ export default () => ({
     connectionTimeoutMs: Number(process.env.CONNECTION_TIMEOUT_MS ?? "5000"),
     maxRequestsPerSocket: Number(process.env.MAX_REQUESTS_PER_SOCKET ?? "1000"),
     bodyLimitBytes: Number(
-      process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`,
+      process.env.BODY_LIMIT_BYTES ?? `${20 * 1024 * 1024}`,
     ),
   },
   platform: {

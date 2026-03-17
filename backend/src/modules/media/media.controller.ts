@@ -1,10 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Res } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
+import { Public } from '../../common/decorators/public.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CompleteUploadSessionDto } from './dto/complete-upload-session.dto.js';
 import { CreateMediaAssetDto } from './dto/create-media-asset.dto.js';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto.js';
+import { UploadMediaFileDto } from './dto/upload-media-file.dto.js';
 import { UpdateMediaAssetDto } from './dto/update-media-asset.dto.js';
 import { MediaService } from './media.service.js';
 
@@ -43,9 +46,32 @@ export class MediaController {
     return this.mediaService.completeUploadSession(user.sub, id, payload);
   }
 
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Post('files')
+  uploadFile(@CurrentUser() user: RequestUser, @Body() payload: UploadMediaFileDto) {
+    return this.mediaService.uploadFile(user.sub, payload);
+  }
+
   @Post('assets')
   create(@CurrentUser() user: RequestUser, @Body() payload: CreateMediaAssetDto) {
     return this.mediaService.create(user.sub, payload);
+  }
+
+  @Get('assets/:id/content')
+  async content(@CurrentUser() user: RequestUser, @Param('id') id: string, @Res() reply: FastifyReply) {
+    const { asset, stream } = await this.mediaService.openAssetContent(user.sub, id);
+    reply.header('Content-Type', asset.mimeType ?? 'application/octet-stream');
+    reply.header('Content-Disposition', `inline; filename="${asset.name}"`);
+    return reply.send(stream);
+  }
+
+  @Public()
+  @Get('public/:id')
+  async publicContent(@Param('id') id: string, @Res() reply: FastifyReply) {
+    const { asset, stream } = await this.mediaService.openPublicAssetContent(id);
+    reply.header('Content-Type', asset.mimeType ?? 'application/octet-stream');
+    reply.header('Content-Disposition', `inline; filename="${asset.name}"`);
+    return reply.send(stream);
   }
 
   @Patch('assets/:id')

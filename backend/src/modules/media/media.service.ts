@@ -1,13 +1,15 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
+import { StorageService } from '../../platform/storage/storage.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CompleteUploadSessionDto } from './dto/complete-upload-session.dto.js';
 import { CreateMediaAssetDto } from './dto/create-media-asset.dto.js';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto.js';
+import { UploadMediaFileDto } from './dto/upload-media-file.dto.js';
 import { UpdateMediaAssetDto } from './dto/update-media-asset.dto.js';
 
 @Injectable()
@@ -15,7 +17,8 @@ export class MediaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
-    private readonly jobsService: JobsService
+    private readonly jobsService: JobsService,
+    private readonly storage: StorageService
   ) {}
 
   async list(userId: string) {
@@ -152,6 +155,69 @@ export class MediaService {
         )
       }
     };
+  }
+
+  async uploadFile(userId: string, payload: UploadMediaFileDto) {
+    const decoded = this.decodeDataUrl(payload.dataUrl);
+    const checksum = createHash('sha256').update(decoded.buffer).digest('hex');
+    const storageProvider = this.configService.get<string>('upload.defaultProvider') ?? 'LOCAL';
+    const file = normalizeFileIntake(
+      {
+        name: payload.name,
+        kind: payload.kind,
+        mimeType: payload.mimeType ?? decoded.mimeType ?? undefined,
+        sizeBytes: payload.sizeBytes ?? decoded.buffer.byteLength,
+        extension: payload.extension,
+        checksum,
+        storageProvider,
+        storageKey: this.buildStorageKey(userId, payload.name, payload.extension ?? this.inferExtension(payload.name, payload.mimeType ?? decoded.mimeType)),
+        visibility: payload.visibility ?? (payload.isPublic ? 'PUBLIC' : 'PRIVATE'),
+        metadata: payload.metadata
+      },
+      { requireLocator: false, defaultKind: 'other' }
+    );
+
+    if (!file.storageKey) {
+      throw new BadRequestException('Upload storage key could not be generated');
+    }
+
+    const stored = await this.writeFileBuffer(
+      file.storageKey,
+      decoded.buffer,
+      file.mimeType ?? 'application/octet-stream'
+    );
+
+    const asset = await this.prisma.mediaAsset.create({
+      data: {
+        userId,
+        name: file.name,
+        kind: file.kind,
+        mimeType: stored.mimeType,
+        sizeBytes: stored.sizeBytes,
+        extension: file.extension,
+        checksum: file.checksum,
+        storageProvider: file.storageProvider,
+        storageKey: stored.storageKey,
+        isPublic: payload.isPublic ?? file.visibility === 'PUBLIC',
+        metadata: {
+          visibility: file.visibility,
+          purpose: payload.purpose ?? 'general',
+          ...(payload.metadata ?? {})
+        } as Prisma.InputJsonValue
+      }
+    });
+
+    const urls = this.buildAssetUrls(asset.id, asset.isPublic);
+    return this.prisma.mediaAsset.update({
+      where: { id: asset.id },
+      data: {
+        url: urls.url
+      }
+    }).then((updated) => ({
+      ...updated,
+      url: urls.url,
+      publicUrl: urls.publicUrl
+    }));
   }
 
   async completeUploadSession(userId: string, id: string, payload: CompleteUploadSessionDto) {
@@ -316,6 +382,32 @@ export class MediaService {
     return { deleted: true };
   }
 
+  async openAssetContent(userId: string, id: string) {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id, userId }
+    });
+    if (!asset) {
+      throw new NotFoundException('Media asset not found');
+    }
+    if (!asset.storageKey) {
+      throw new NotFoundException('Media asset file not found');
+    }
+    return { asset, stream: this.storage.createReadStream(asset.storageKey) };
+  }
+
+  async openPublicAssetContent(id: string) {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id, isPublic: true }
+    });
+    if (!asset) {
+      throw new NotFoundException('Media asset not found');
+    }
+    if (!asset.storageKey) {
+      throw new NotFoundException('Media asset file not found');
+    }
+    return { asset, stream: this.storage.createReadStream(asset.storageKey) };
+  }
+
   private buildStorageKey(userId: string, name: string, extension?: string) {
     const now = new Date();
     const safeName =
@@ -335,6 +427,49 @@ export class MediaService {
       String(now.getUTCMonth() + 1).padStart(2, '0'),
       `${safeName}-${suffix}${ext}`
     ].join('/');
+  }
+
+  private buildAssetUrls(id: string, isPublic: boolean) {
+    return {
+      url: isPublic ? `/api/media/public/${id}` : `/api/media/assets/${id}/content`,
+      publicUrl: isPublic ? `/api/media/public/${id}` : null
+    };
+  }
+
+  private async writeFileBuffer(storageKey: string, buffer: Buffer, mimeType: string) {
+    const segments = storageKey.split('/').filter(Boolean);
+    const fileName = segments.pop();
+    if (!fileName) {
+      throw new BadRequestException('Invalid storage key');
+    }
+    const namespace = segments.join('/');
+    return this.storage.writeBuffer(namespace, fileName, buffer, mimeType);
+  }
+
+  private decodeDataUrl(value: string) {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,([a-z0-9+/=\r\n]+)$/i);
+    if (!match) {
+      throw new BadRequestException('Upload file must be a base64 data URL');
+    }
+    return {
+      mimeType: match[1] ? match[1].toLowerCase() : null,
+      buffer: Buffer.from(match[2], 'base64')
+    };
+  }
+
+  private inferExtension(name: string, mimeType?: string | null) {
+    const fromName = String(name || '').match(/\.([a-z0-9]{1,12})$/i)?.[1];
+    if (fromName) {
+      return fromName.toLowerCase();
+    }
+
+    const type = String(mimeType || '').toLowerCase();
+    if (type === 'image/jpeg') return 'jpg';
+    if (type === 'image/png') return 'png';
+    if (type === 'image/webp') return 'webp';
+    if (type === 'application/pdf') return 'pdf';
+    return undefined;
   }
 
   private signUploadSession(id: string, userId: string, storageKey: string, expiresAt: string) {
