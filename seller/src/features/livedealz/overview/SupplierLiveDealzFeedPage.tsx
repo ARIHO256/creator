@@ -321,7 +321,7 @@ function HeroSummaryCard({ onChangePage, hero }) {
 
 function HeroKpi({ label, value, sub }) {
   return (
-    <div className="w-full aspect-square bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 rounded-xl transition-colors px-3 py-3 flex flex-col justify-between">
+    <div className="w-full min-h-[5.25rem] border border-slate-300 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 rounded-xl transition-colors px-3 py-2 flex flex-col justify-between">
       <div className="text-xs text-slate-500 dark:text-slate-300 mb-1">{label}</div>
       <div className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-1">{value}</div>
       <div className="text-xs text-emerald-600 dark:text-emerald-400">{sub}</div>

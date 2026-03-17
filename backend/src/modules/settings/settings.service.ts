@@ -267,8 +267,15 @@ export class SettingsService {
   }
 
   async roles(userId: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    return workspace;
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      return workspace;
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      return this.buildLegacyWorkspaceResponse(userId);
+    }
   }
 
   async security(userId: string, body: UpdateRolesSecurityDto) {
@@ -2317,6 +2324,58 @@ export class SettingsService {
       currentMember,
       effectivePermissions,
       workspaceSecurity: this.serializeWorkspaceSecurity(workspace)
+    };
+  }
+
+  private async buildLegacyWorkspaceResponse(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true }
+    });
+    const email = String(user?.email ?? '').trim().toLowerCase();
+    const now = new Date().toISOString();
+    const ownerRole = {
+      id: 'role_owner',
+      name: 'Owner',
+      badge: 'System',
+      description: 'Workspace owner with full access.',
+      perms: {
+        'roles.manage': true,
+        'admin.manage_roles': true,
+        'admin.manage_team': true,
+        'admin.audit': true
+      },
+      createdAt: now,
+      updatedAt: now
+    };
+    const currentMember = email
+      ? {
+          id: 'member_owner',
+          name: email.split('@')[0] || 'Owner',
+          email,
+          roleId: 'role_owner',
+          status: 'active',
+          seat: 'Owner',
+          createdAt: now,
+          updatedAt: now
+        }
+      : null;
+
+    return {
+      workspace: {
+        id: 'legacy-workspace',
+        ownerUserId: userId
+      },
+      ownerEmail: email,
+      roleRecords: [],
+      memberRecords: [],
+      inviteRecords: [],
+      roles: [ownerRole],
+      members: currentMember ? [currentMember] : [],
+      invites: [],
+      currentMember,
+      effectivePermissions: ownerRole.perms,
+      workspaceSecurity: DEFAULT_WORKSPACE_SECURITY
     };
   }
 

@@ -274,7 +274,7 @@ export class WorkflowService {
 
   async onboarding(userId: string) {
     const profileType = await this.resolveOnboardingProfileType(userId);
-    const payload = await this.getRecordPayload(userId, 'onboarding', 'main');
+    const payload = await this.getOnboardingPayload(userId, profileType);
     return payload
       ? normalizeStoredOnboardingState(payload, profileType)
       : createDefaultOnboardingState(profileType);
@@ -352,14 +352,15 @@ export class WorkflowService {
     const current = await this.onboarding(userId);
     const merged = mergeOnboardingState(current, body);
     await this.validateOnboardingTaxonomy(merged);
-    await this.upsertRecord(userId, 'onboarding', 'main', merged);
+    await this.upsertOnboardingPayload(userId, merged.profileType, merged);
+    await this.syncCreatorProfileFromOnboarding(userId, merged);
     return merged;
   }
 
   async resetOnboarding(userId: string) {
     const profileType = await this.resolveOnboardingProfileType(userId);
     const reset = createDefaultOnboardingState(profileType);
-    await this.upsertRecord(userId, 'onboarding', 'main', reset);
+    await this.upsertOnboardingPayload(userId, profileType, reset);
     return reset;
   }
 
@@ -369,7 +370,8 @@ export class WorkflowService {
     await this.validateOnboardingTaxonomy(merged);
     const submitted = prepareSubmittedOnboarding(merged);
     await this.assertSellerSlugAvailable(userId, submitted.storeSlug);
-    await this.upsertRecord(userId, 'onboarding', 'main', submitted);
+    await this.upsertOnboardingPayload(userId, submitted.profileType, submitted);
+    await this.syncCreatorProfileFromOnboarding(userId, submitted);
     await this.syncSellerProfile(userId, submitted);
     await this.syncTaxonomySelections(userId, submitted);
     await this.syncOperationalSetupFromOnboarding(userId, submitted);
@@ -535,6 +537,143 @@ export class WorkflowService {
       : 'CREATOR';
   }
 
+  private onboardingRecordKey(profileType: string) {
+    return profileType === 'CREATOR' ? 'creator' : 'main';
+  }
+
+  private async getOnboardingPayload(userId: string, profileType: string) {
+    const specific = await this.getRecordPayload(userId, 'onboarding', this.onboardingRecordKey(profileType));
+    if (specific) {
+      return specific;
+    }
+
+    if (profileType !== 'CREATOR') {
+      return this.getRecordPayload(userId, 'onboarding', 'main');
+    }
+
+    const legacy = await this.getRecordPayload(userId, 'onboarding', 'main');
+    if (!legacy) {
+      return null;
+    }
+
+    const normalized = normalizeStoredOnboardingState(legacy, 'CREATOR');
+    return normalized.profileType === 'CREATOR' ? legacy : null;
+  }
+
+  private async upsertOnboardingPayload(userId: string, profileType: string, payload: unknown) {
+    return this.upsertRecord(userId, 'onboarding', this.onboardingRecordKey(profileType), payload);
+  }
+
+  private normalizeCreatorHandle(value: string) {
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^@+/, '')
+      .replace(/[^a-z0-9]+/g, '.')
+      .replace(/^\.+|\.+$/g, '');
+    return normalized || 'creator';
+  }
+
+  private async resolveCreatorProfileHandle(userId: string, desiredHandle: string, existingHandle: string | null) {
+    if (!desiredHandle) {
+      return existingHandle || `creator.${String(userId).slice(-6)}`;
+    }
+
+    const conflict = await this.prisma.creatorProfile.findUnique({
+      where: { handle: desiredHandle },
+      select: { userId: true }
+    });
+
+    if (!conflict || conflict.userId === userId) {
+      return desiredHandle;
+    }
+
+    return existingHandle || `${desiredHandle}.${String(userId).slice(-6)}`;
+  }
+
+  private readCreatorProfileField(
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>,
+    field: 'handle' | 'tagline'
+  ) {
+    const metadata =
+      onboarding.metadata && typeof onboarding.metadata === 'object' && !Array.isArray(onboarding.metadata)
+        ? (onboarding.metadata as Record<string, unknown>)
+        : {};
+    const creatorForm =
+      metadata.creatorForm && typeof metadata.creatorForm === 'object' && !Array.isArray(metadata.creatorForm)
+        ? (metadata.creatorForm as Record<string, unknown>)
+        : {};
+    const profile =
+      creatorForm.profile && typeof creatorForm.profile === 'object' && !Array.isArray(creatorForm.profile)
+        ? (creatorForm.profile as Record<string, unknown>)
+        : {};
+    return this.readStringField(profile[field]);
+  }
+
+  private readCreatorPreferenceLines(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    const metadata =
+      onboarding.metadata && typeof onboarding.metadata === 'object' && !Array.isArray(onboarding.metadata)
+        ? (onboarding.metadata as Record<string, unknown>)
+        : {};
+    const preferences =
+      metadata.preferences && typeof metadata.preferences === 'object' && !Array.isArray(metadata.preferences)
+        ? (metadata.preferences as Record<string, unknown>)
+        : {};
+    const lines = preferences.lines;
+    return Array.isArray(lines) ? lines.map((entry) => this.readStringField(entry)).filter(Boolean) : [];
+  }
+
+  private readCreatorAudienceRegions(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    const metadata =
+      onboarding.metadata && typeof onboarding.metadata === 'object' && !Array.isArray(onboarding.metadata)
+        ? (onboarding.metadata as Record<string, unknown>)
+        : {};
+    const creatorForm =
+      metadata.creatorForm && typeof metadata.creatorForm === 'object' && !Array.isArray(metadata.creatorForm)
+        ? (metadata.creatorForm as Record<string, unknown>)
+        : {};
+    const profile =
+      creatorForm.profile && typeof creatorForm.profile === 'object' && !Array.isArray(creatorForm.profile)
+        ? (creatorForm.profile as Record<string, unknown>)
+        : {};
+    const regions = profile.audienceRegions;
+    return Array.isArray(regions) ? regions.map((entry) => this.readStringField(entry)).filter(Boolean) : [];
+  }
+
+  private readCreatorFollowers(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    const metadata =
+      onboarding.metadata && typeof onboarding.metadata === 'object' && !Array.isArray(onboarding.metadata)
+        ? (onboarding.metadata as Record<string, unknown>)
+        : {};
+    const creatorForm =
+      metadata.creatorForm && typeof metadata.creatorForm === 'object' && !Array.isArray(metadata.creatorForm)
+        ? (metadata.creatorForm as Record<string, unknown>)
+        : {};
+    const socials =
+      creatorForm.socials && typeof creatorForm.socials === 'object' && !Array.isArray(creatorForm.socials)
+        ? (creatorForm.socials as Record<string, unknown>)
+        : {};
+
+    let total = 0;
+    const primaryOtherFollowers = Number(String(socials.primaryOtherFollowers ?? '').replace(/[^0-9]/g, ''));
+    if (!Number.isNaN(primaryOtherFollowers)) {
+      total += primaryOtherFollowers;
+    }
+
+    const extra = Array.isArray(socials.extra) ? socials.extra : [];
+    for (const entry of extra) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        continue;
+      }
+      const followers = Number(String((entry as Record<string, unknown>).followers ?? '').replace(/[^0-9]/g, ''));
+      if (!Number.isNaN(followers)) {
+        total += followers;
+      }
+    }
+
+    return total;
+  }
+
   private async assertSellerSlugAvailable(userId: string, slug: string) {
     if (!slug) {
       return;
@@ -619,6 +758,65 @@ export class WorkflowService {
         }
       });
     }
+  }
+
+  private async syncCreatorProfileFromOnboarding(
+    userId: string,
+    onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>
+  ) {
+    if (onboarding.profileType !== 'CREATOR') {
+      return;
+    }
+
+    const existing = await this.prisma.creatorProfile.findUnique({
+      where: { userId }
+    });
+
+    const desiredHandle = this.normalizeCreatorHandle(
+      this.readCreatorProfileField(onboarding, 'handle') || onboarding.storeSlug || existing?.handle || userId
+    );
+    const nextHandle = await this.resolveCreatorProfileHandle(userId, desiredHandle, existing?.handle ?? null);
+    const nextName = onboarding.owner || onboarding.storeName || existing?.name || 'Creator';
+    const nextTagline = this.readCreatorProfileField(onboarding, 'tagline') || existing?.tagline || null;
+    const categories = onboarding.providerServices.length ? onboarding.providerServices : this.readCreatorPreferenceLines(onboarding);
+    const regions = this.readCreatorAudienceRegions(onboarding);
+    const followers = this.readCreatorFollowers(onboarding);
+    const languages = onboarding.languages.filter(Boolean);
+    const isKycVerified = String(onboarding.verification.kycStatus || '').toUpperCase() === 'VERIFIED';
+
+    if (!existing) {
+      await this.prisma.creatorProfile.create({
+        data: {
+          userId,
+          name: nextName,
+          handle: nextHandle,
+          tier: 'BRONZE',
+          tagline: nextTagline,
+          bio: onboarding.about || null,
+          categories: JSON.stringify(categories),
+          regions: JSON.stringify(regions),
+          languages: JSON.stringify(languages),
+          followers,
+          isKycVerified
+        }
+      });
+      return;
+    }
+
+    await this.prisma.creatorProfile.update({
+      where: { userId },
+      data: {
+        name: nextName,
+        handle: nextHandle,
+        tagline: nextTagline,
+        bio: onboarding.about || null,
+        categories: JSON.stringify(categories),
+        regions: JSON.stringify(regions),
+        languages: JSON.stringify(languages),
+        followers,
+        isKycVerified
+      }
+    });
   }
 
   private async validateOnboardingTaxonomy(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
@@ -805,7 +1003,7 @@ export class WorkflowService {
         data: shippingData
       });
       if (!shippingProfileId) {
-        await this.upsertRecord(userId, 'onboarding', 'main', {
+        await this.upsertOnboardingPayload(userId, onboarding.profileType, {
           ...onboarding,
           shipping: {
             ...onboarding.shipping,
@@ -824,7 +1022,7 @@ export class WorkflowService {
     });
 
     if (!shippingProfileId) {
-      await this.upsertRecord(userId, 'onboarding', 'main', {
+      await this.upsertOnboardingPayload(userId, onboarding.profileType, {
         ...onboarding,
         shipping: {
           ...onboarding.shipping,

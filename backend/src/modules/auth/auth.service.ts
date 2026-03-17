@@ -58,13 +58,14 @@ export class AuthService {
 
   async register(payload: RegisterDto) {
     const normalized = this.normalizeRegisterPayload(payload);
+    const requestedRoles = this.resolveRequestedRoles(normalized);
     if (!this.shouldQueueRegistration()) {
       return this.registerSynchronously(normalized);
     }
 
-    await this.assertRegistrationAvailable(normalized.email, normalized.phone);
+    await this.assertRegistrationPermitted(normalized, requestedRoles);
 
-    const dedupeKey = `auth:register:${this.registrationDedupeKey(normalized.email, normalized.phone)}`;
+    const dedupeKey = `auth:register:${this.registrationDedupeKey(normalized.email, normalized.phone, requestedRoles)}`;
     const existingJob = await this.prisma.backgroundJob.findUnique({
       where: { dedupeKey }
     });
@@ -296,9 +297,12 @@ export class AuthService {
     options: { issueTokens?: boolean } = {}
   ) {
     const normalized = this.normalizeRegisterPayload(payload);
-    await this.assertRegistrationAvailable(normalized.email, normalized.phone);
-
     const requestedRoles = this.resolveRequestedRoles(normalized);
+    const existingUser = await this.findUserByIdentityWithRelations(normalized.email, normalized.phone);
+    if (existingUser) {
+      return this.extendExistingUserRegistration(existingUser, normalized, requestedRoles, options);
+    }
+
     const creatorHandle = requestedRoles.includes('CREATOR')
       ? await this.generateUniqueCreatorHandle(normalized.handle || normalized.name)
       : null;
@@ -363,6 +367,90 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  private async extendExistingUserRegistration(
+    existingUser: AuthUserRecord,
+    payload: NormalizedRegisterPayload,
+    requestedRoles: UserRole[],
+    options: { issueTokens?: boolean } = {}
+  ) {
+    const assignedRoles = new Set(this.getAssignedRoles(existingUser));
+    const rolesToAdd = requestedRoles.filter((role) => !assignedRoles.has(role));
+
+    if (rolesToAdd.length === 0) {
+      throw new BadRequestException(this.buildDuplicateRoleMessage(requestedRoles));
+    }
+
+    const shouldUpgradeLegacyHash = await this.assertExistingUserPasswordMatches(existingUser, payload.password);
+    const creatorHandle =
+      rolesToAdd.includes(UserRole.CREATOR) && !existingUser.creatorProfile
+        ? await this.generateUniqueCreatorHandle(payload.handle || payload.name)
+        : null;
+    const sellerHandle =
+      this.requiresSellerProfile(rolesToAdd) && !existingUser.sellerProfile
+        ? await this.generateUniqueSellerHandle(payload.sellerHandle || payload.handle || payload.name)
+        : null;
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: existingUser.id },
+      data: {
+        email: existingUser.email || payload.email || undefined,
+        phone: existingUser.phone || payload.phone || undefined,
+        passwordHash: shouldUpgradeLegacyHash ? await hash(payload.password, 12) : undefined,
+        role: ((payload.role as UserRole | undefined) ?? requestedRoles[0] ?? existingUser.role) as UserRole,
+        roleAssignments: rolesToAdd.length
+          ? {
+              create: rolesToAdd.map((role) => ({ role }))
+            }
+          : undefined,
+        creatorProfile:
+          rolesToAdd.includes(UserRole.CREATOR) && !existingUser.creatorProfile
+            ? {
+                create: {
+                  name: payload.name,
+                  handle: creatorHandle!,
+                  tier: 'BRONZE'
+                }
+              }
+            : undefined,
+        sellerProfile:
+          this.requiresSellerProfile(rolesToAdd) && !existingUser.sellerProfile
+            ? {
+                create: {
+                  handle: sellerHandle!,
+                  name: payload.sellerDisplayName ?? payload.name,
+                  displayName: payload.sellerDisplayName ?? payload.name,
+                  storefrontName: payload.sellerDisplayName ?? payload.name,
+                  type: payload.sellerKind === 'PROVIDER' ? 'Provider' : 'Seller',
+                  kind:
+                    (payload.sellerKind as 'SELLER' | 'PROVIDER' | 'BRAND' | undefined) ??
+                    (rolesToAdd.includes(UserRole.PROVIDER) ? 'PROVIDER' : 'SELLER'),
+                  category: rolesToAdd.includes(UserRole.PROVIDER) ? 'Services' : 'General Merchandise'
+                }
+              }
+            : undefined
+      },
+      include: {
+        creatorProfile: true,
+        sellerProfile: true,
+        roleAssignments: true
+      }
+    });
+
+    if (options.issueTokens === false) {
+      return {
+        userId: updatedUser.id,
+        role: updatedUser.role
+      };
+    }
+
+    return this.issueTokens(
+      updatedUser.id,
+      updatedUser.email,
+      updatedUser.role,
+      this.getAssignedRoles(updatedUser)
+    );
   }
 
   private async issueTokens(
@@ -570,6 +658,21 @@ export class AuthService {
     return roles.length > 0 ? roles : [UserRole.CREATOR];
   }
 
+  private async assertRegistrationPermitted(payload: NormalizedRegisterPayload, requestedRoles: UserRole[]) {
+    const existingUser = await this.findUserByIdentityWithRelations(payload.email, payload.phone);
+    if (!existingUser) {
+      return null;
+    }
+
+    const rolesToAdd = this.resolveRolesToAdd(existingUser, requestedRoles);
+    if (rolesToAdd.length === 0) {
+      throw new BadRequestException(this.buildDuplicateRoleMessage(requestedRoles));
+    }
+
+    await this.assertExistingUserPasswordMatches(existingUser, payload.password);
+    return existingUser;
+  }
+
   private resolveRequestedRoles(payload: RegisterDto): UserRole[] {
     const requested = new Set<UserRole>();
 
@@ -653,19 +756,29 @@ export class AuthService {
     };
   }
 
-  private async assertRegistrationAvailable(email?: string, phone?: string) {
-    const existing = await this.findUserByIdentity(email, phone);
-    if (existing) {
-      throw new BadRequestException('User with this email or phone already exists');
-    }
+  private resolveRolesToAdd(user: AuthUserRecord, requestedRoles: UserRole[]) {
+    const assignedRoles = new Set(this.getAssignedRoles(user));
+    return requestedRoles.filter((role) => !assignedRoles.has(role));
   }
 
-  private findUserByIdentity(email?: string, phone?: string) {
-    return this.prisma.user.findFirst({
+  private async findUserByIdentityWithRelations(email?: string, phone?: string) {
+    const matches = await this.prisma.user.findMany({
       where: {
         OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
+      },
+      include: {
+        creatorProfile: true,
+        sellerProfile: true,
+        roleAssignments: true
       }
     });
+
+    const uniqueMatches = Array.from(new Map(matches.map((user) => [user.id, user])).values());
+    if (uniqueMatches.length > 1) {
+      throw new BadRequestException('Email and phone belong to different existing accounts');
+    }
+
+    return uniqueMatches[0] ?? null;
   }
 
   private shouldQueueRegistration() {
@@ -674,8 +787,10 @@ export class AuthService {
     return (queueEnabled ?? true) && (workerEnabled ?? true);
   }
 
-  private registrationDedupeKey(email?: string, phone?: string) {
-    return email || phone || randomUUID();
+  private registrationDedupeKey(email?: string, phone?: string, roles?: UserRole[]) {
+    const identity = email || phone || randomUUID();
+    const roleKey = (roles ?? []).slice().sort().join(',');
+    return `${identity}:${roleKey || 'default'}`;
   }
 
   private serializeRegistrationJob(job: RegistrationJobRecord) {
@@ -746,5 +861,37 @@ export class AuthService {
     } catch {
       return false;
     }
+  }
+
+  private async assertExistingUserPasswordMatches(user: AuthUserRecord, password: string) {
+    let passwordOk = false;
+    let shouldUpgradeLegacyHash = false;
+
+    try {
+      passwordOk = await compare(password, user.passwordHash);
+    } catch {
+      passwordOk = false;
+    }
+
+    if (!passwordOk) {
+      passwordOk = this.verifyLegacyPassword(password, user.passwordHash);
+      shouldUpgradeLegacyHash = passwordOk;
+    }
+
+    if (!passwordOk) {
+      throw new BadRequestException(
+        'This email or phone already belongs to an existing account. Use the same password to add another role.'
+      );
+    }
+
+    return shouldUpgradeLegacyHash;
+  }
+
+  private buildDuplicateRoleMessage(requestedRoles: UserRole[]) {
+    const labels = requestedRoles.map((role) => role.toLowerCase());
+    if (labels.length === 1) {
+      return `This email or phone is already registered for ${labels[0]}.`;
+    }
+    return `This email or phone already has these roles: ${labels.join(', ')}.`;
   }
 }
