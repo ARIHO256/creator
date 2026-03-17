@@ -655,11 +655,14 @@ export class WorkflowService {
           return metadata.source === 'onboarding';
         });
     const shouldPersistShippingProfile = Boolean(
-      onboarding.shipping.handlingTimeDays !== null ||
+      seller.shippingProfiles.length === 0 ||
+        onboarding.shipping.profileId ||
+        onboarding.shipping.handlingTimeDays !== null ||
         onboarding.shipping.expressReady ||
         onboarding.policies.returnsDays !== null ||
         onboarding.policies.warrantyDays !== null ||
-        onboarding.shipFrom.country
+        onboarding.shipFrom.country ||
+        onboarding.storeName
     );
 
     if (!shouldPersistShippingProfile) {
@@ -667,16 +670,14 @@ export class WorkflowService {
     }
 
     const shippingData = {
-      name: onboarding.shipping.expressReady ? 'Express shipping' : 'Standard shipping',
+      name: 'Default shipping profile',
       description:
         onboarding.policies.policyNotes ||
-        (onboarding.shipping.expressReady
-          ? 'Shipping profile created from seller onboarding with express fulfillment enabled.'
-          : 'Shipping profile created from seller onboarding.'),
+        'Default shipping profile created from seller onboarding.',
       status: 'ACTIVE' as const,
       carrier: null,
       serviceLevel: onboarding.shipping.expressReady ? 'Express' : 'Standard',
-      handlingTimeDays: onboarding.shipping.handlingTimeDays,
+      handlingTimeDays: onboarding.shipping.handlingTimeDays ?? 2,
       regions: Array.from(
         new Set([onboarding.shipFrom.country, onboarding.tax.taxCountry].filter(Boolean))
       ) as Prisma.InputJsonValue,
@@ -684,25 +685,49 @@ export class WorkflowService {
       metadata: {
         source: 'onboarding',
         profileType: onboarding.profileType,
+        onboardingRecordKey: 'main',
+        shipFromCountry: onboarding.shipFrom.country || null,
         expressReady: onboarding.shipping.expressReady,
         returnsDays: onboarding.policies.returnsDays,
         warrantyDays: onboarding.policies.warrantyDays
       } as Prisma.InputJsonValue
     };
 
+    await this.prisma.shippingProfile.updateMany({
+      where: { sellerId: seller.id },
+      data: { isDefault: false }
+    });
+
     if (matchingProfile) {
-      await this.prisma.shippingProfile.update({
+      const updated = await this.prisma.shippingProfile.update({
         where: { id: matchingProfile.id },
         data: shippingData
       });
+      if (!shippingProfileId) {
+        await this.upsertRecord(userId, 'onboarding', 'main', {
+          ...onboarding,
+          shipping: {
+            ...onboarding.shipping,
+            profileId: updated.id
+          }
+        });
+      }
       return;
     }
 
-    if (seller.shippingProfiles.length === 0) {
-      await this.prisma.shippingProfile.create({
-        data: {
-          sellerId: seller.id,
-          ...shippingData
+    const created = await this.prisma.shippingProfile.create({
+      data: {
+        sellerId: seller.id,
+        ...shippingData
+      }
+    });
+
+    if (!shippingProfileId) {
+      await this.upsertRecord(userId, 'onboarding', 'main', {
+        ...onboarding,
+        shipping: {
+          ...onboarding.shipping,
+          profileId: created.id
         }
       });
     }
@@ -1349,11 +1374,17 @@ export class WorkflowService {
   }
 
   private async getAccountApprovalPayload(userId: string) {
-    const record = await this.prisma.accountApproval.findUnique({
-      where: { userId }
-    });
-    if (record) {
-      return record.payload as Record<string, unknown>;
+    try {
+      const record = await this.prisma.accountApproval.findUnique({
+        where: { userId }
+      });
+      if (record) {
+        return this.readStoredObjectPayload(record.payload);
+      }
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
     }
 
     const legacy = await this.prisma.workflowRecord.findUnique({
@@ -1370,35 +1401,49 @@ export class WorkflowService {
 
   private async upsertAccountApprovalPayload(userId: string, payload: unknown) {
     const sanitized = this.ensurePayload(payload);
-    const record = await this.prisma.accountApproval.upsert({
-      where: { userId },
-      update: {
-        status: this.readStringField(sanitized.status) || 'pending',
-        payload: sanitized as Prisma.InputJsonValue,
-        submittedAt: this.readDateField(sanitized.submittedAt),
-        approvedAt: this.readDateField(sanitized.approvedAt),
-        rejectedAt: this.readDateField(sanitized.rejectedAt),
-        decidedAt: this.readDateField(sanitized.decidedAt)
-      },
-      create: {
-        userId,
-        status: this.readStringField(sanitized.status) || 'pending',
-        payload: sanitized as Prisma.InputJsonValue,
-        submittedAt: this.readDateField(sanitized.submittedAt),
-        approvedAt: this.readDateField(sanitized.approvedAt),
-        rejectedAt: this.readDateField(sanitized.rejectedAt),
-        decidedAt: this.readDateField(sanitized.decidedAt)
+    try {
+      const record = await this.prisma.accountApproval.upsert({
+        where: { userId },
+        update: {
+          status: this.readStringField(sanitized.status) || 'pending',
+          payload: sanitized as Prisma.InputJsonValue,
+          submittedAt: this.readDateField(sanitized.submittedAt),
+          approvedAt: this.readDateField(sanitized.approvedAt),
+          rejectedAt: this.readDateField(sanitized.rejectedAt),
+          decidedAt: this.readDateField(sanitized.decidedAt)
+        },
+        create: {
+          userId,
+          status: this.readStringField(sanitized.status) || 'pending',
+          payload: sanitized as Prisma.InputJsonValue,
+          submittedAt: this.readDateField(sanitized.submittedAt),
+          approvedAt: this.readDateField(sanitized.approvedAt),
+          rejectedAt: this.readDateField(sanitized.rejectedAt),
+          decidedAt: this.readDateField(sanitized.decidedAt)
+        }
+      });
+      return this.readStoredObjectPayload(record.payload);
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
       }
-    });
-    return record.payload as Record<string, unknown>;
+      await this.upsertRecord(userId, 'account_approval', 'main', sanitized);
+      return sanitized;
+    }
   }
 
   private async getScreenStatePayload(userId: string, key: string) {
-    const record = await this.prisma.workflowScreenState.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    if (record) {
-      return record.payload as Record<string, unknown>;
+    try {
+      const record = await this.prisma.workflowScreenState.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      if (record) {
+        return this.readStoredObjectPayload(record.payload);
+      }
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
     }
 
     const legacy = await this.prisma.workflowRecord.findUnique({
@@ -1415,16 +1460,24 @@ export class WorkflowService {
 
   private async upsertScreenStatePayload(userId: string, key: string, payload: unknown) {
     const sanitized = this.ensurePayload(payload);
-    const record = await this.prisma.workflowScreenState.upsert({
-      where: { userId_key: { userId, key } },
-      update: { payload: sanitized as Prisma.InputJsonValue },
-      create: {
-        userId,
-        key,
-        payload: sanitized as Prisma.InputJsonValue
+    try {
+      const record = await this.prisma.workflowScreenState.upsert({
+        where: { userId_key: { userId, key } },
+        update: { payload: sanitized as Prisma.InputJsonValue },
+        create: {
+          userId,
+          key,
+          payload: sanitized as Prisma.InputJsonValue
+        }
+      });
+      return this.readStoredObjectPayload(record.payload);
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
       }
-    });
-    return record.payload as Record<string, unknown>;
+      await this.upsertRecord(userId, 'screen_state', key, sanitized);
+      return sanitized;
+    }
   }
 
   private async listContentApprovalPayloads(userId: string) {
@@ -1582,6 +1635,20 @@ export class WorkflowService {
       return input.payload as Record<string, unknown>;
     }
     return input;
+  }
+
+  private isMissingSchemaObjectError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
+  }
+
+  private readStoredObjectPayload(payload: unknown) {
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      return payload as Record<string, unknown>;
+    }
+    return {};
   }
 
   private readStringField(value: unknown) {

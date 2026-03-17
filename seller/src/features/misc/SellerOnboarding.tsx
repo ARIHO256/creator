@@ -1337,7 +1337,7 @@ function toOnboardingPayload(form: SellerForm, taxonomyTree = []) {
       otherDescription: form.payout.otherDescription,
     },
     tax: {
-      taxpayerType: form.tax.taxpayerType,
+      taxpayerType: String(form.tax.taxpayerType || "").trim() || "business",
       legalName: form.tax.legalName,
       taxCountry: form.tax.taxCountry,
       taxId: form.tax.taxId,
@@ -1397,7 +1397,14 @@ function normalizeSellerFormPayload(
     },
     docs: { list: Array.isArray(parsed?.docs?.list) ? parsed.docs.list : base.docs.list },
     payout: hydratePayoutData(base.payout, parsed.payout || {}),
-    tax: { ...base.tax, ...(parsed.tax || {}) },
+    tax: {
+      ...base.tax,
+      ...(parsed.tax || {}),
+      taxpayerType:
+        typeof parsed.tax?.taxpayerType === "string" && parsed.tax.taxpayerType.trim()
+          ? parsed.tax.taxpayerType
+          : base.tax.taxpayerType,
+    },
     acceptance: { ...base.acceptance, ...(parsed.acceptance || {}) },
   } satisfies SellerForm;
 
@@ -1919,6 +1926,16 @@ export default function SellerOnboardingProV4_JS() {
   }, [hydrated, sellerTaxonomy]);
 
   useEffect(() => {
+    if (!hydrated || !profiles.length) return;
+    if (String(form.shipping?.profileId || "").trim()) return;
+    const defaultProfile = profiles.find((profile) => profile.isDefault) || profiles[0];
+    if (!defaultProfile?.id) return;
+    setF((prev) => ({
+      shipping: { ...prev.shipping, profileId: defaultProfile.id },
+    }));
+  }, [form.shipping?.profileId, hydrated, profiles]);
+
+  useEffect(() => {
     if (!hydrated || !saveReadyRef.current) return;
     const timeoutId = window.setTimeout(() => {
       void sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
@@ -2170,16 +2187,18 @@ export default function SellerOnboardingProV4_JS() {
   const taxOk = useMemo(() => {
     const tax = form.tax || {};
     return (
+      !!String(tax.taxpayerType || "").trim() &&
       !!String(tax.legalName || "").trim() &&
       !!String(tax.taxCountry || "").trim() &&
       !!String(tax.taxId || "").trim() &&
-      (!!String(tax.contactEmail || "").trim() ? isEmail(tax.contactEmail) : false)
+      (String(tax.contactEmail || "").trim() ? isEmail(tax.contactEmail) : false)
     );
   }, [form.tax]);
 
   const taxErrors = useMemo<Record<string, string>>(() => {
     const tax = form.tax || ({} as TaxForm);
     const e: Record<string, string> = {};
+    if (!String(tax.taxpayerType || "").trim()) e.taxpayerType = t("Required");
     if (!String(tax.legalName || "").trim()) e.legalName = t("Required");
     if (!String(tax.taxCountry || "").trim()) e.taxCountry = t("Required");
     if (!String(tax.taxId || "").trim()) e.taxId = t("Required");
@@ -2304,6 +2323,9 @@ export default function SellerOnboardingProV4_JS() {
     if (!form.storeSlug && form.storeName) updates.storeSlug = kebab(form.storeName);
     if (!form.payout.notificationsEmail && isEmail(form.email)) {
       updates.payout = { ...form.payout, notificationsEmail: form.email };
+    }
+    if (!String(form.tax?.taxpayerType || "").trim()) {
+      updates.tax = { ...form.tax, taxpayerType: "business" };
     }
     if (Object.keys(updates).length) setF(updates);
     return { ...form, ...updates };
@@ -2445,6 +2467,7 @@ export default function SellerOnboardingProV4_JS() {
     // Tax fields
     if (!requiredOk.tax) {
       const tax = form.tax || {};
+      if (!String(tax.taxpayerType || "").trim()) missingFields.push(t("Seller Type"));
       if (!String(tax.legalName || "").trim()) missingFields.push(t("Legal name"));
       if (!String(tax.taxCountry || "").trim()) missingFields.push(t("Tax Country"));
       if (!String(tax.taxId || "").trim()) missingFields.push(t("Tax ID"));
@@ -2502,24 +2525,30 @@ export default function SellerOnboardingProV4_JS() {
     const submittedAt = new Date().toISOString();
 
     try {
-      await Promise.all([
-        sellerBackendApi.submitOnboarding({
-          ...toOnboardingPayload(nextState, sellerTaxonomy),
-          docs: toOnboardingDocsPayload(submittedDocs),
-          status: "submitted",
-        }),
-        sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
-          ui,
-          review: {
-            ...review,
-            submittedAt,
-            inReviewAt: null,
-            approvedAt: submittedAt,
-          },
-        }),
-      ]);
+      await sellerBackendApi.submitOnboarding({
+        ...toOnboardingPayload(nextState, sellerTaxonomy),
+        docs: toOnboardingDocsPayload(submittedDocs),
+        status: "submitted",
+      });
+      await sellerBackendApi.patchWorkflowScreenState("seller-onboarding", {
+        ui,
+        review: {
+          ...review,
+          submittedAt,
+          inReviewAt: null,
+          approvedAt: submittedAt,
+        },
+      }).catch(() => undefined);
     } catch (submitError) {
       console.error("[SellerOnboarding] Submit failed:", submitError);
+      setToast({
+        tone: "error",
+        title: t("Submit failed"),
+        message:
+          submitError instanceof Error && submitError.message
+            ? submitError.message
+            : t("We could not submit your onboarding right now."),
+      });
       return;
     }
 

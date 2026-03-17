@@ -15,6 +15,7 @@
     "prisma:seed:loadtest": "node prisma/seed-loadtest.mjs",
     "orders:backfill-routing": "node --env-file=.env scripts/backfill-order-routing.mjs",
     "campaigns:backfill-workspace": "node --env-file=.env scripts/backfill-campaign-workspace-metadata.mjs",
+    "shipping:backfill-onboarding-profiles": "node --env-file=.env scripts/backfill-onboarding-shipping-profiles.mjs",
     "loadtest": "node scripts/load-test.mjs",
     "benchmark": "node scripts/benchmark-scenario.mjs",
     "loadtest:k6:global": "k6 run loadtest/k6-global-read.js",
