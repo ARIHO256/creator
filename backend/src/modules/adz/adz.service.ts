@@ -32,37 +32,53 @@ export class AdzService {
   }
 
   async builder(id: string, userId: string) {
-    const builder = await this.prisma.adzBuilder.findFirst({
-      where: { id, userId }
+    const publicId = normalizeIdentifier(id, randomUUID());
+    const storageId = this.resolveScopedIdentifier(userId, publicId, 'adz-builder');
+    const builder = await this.prisma.adzBuilder.upsert({
+      where: { id: storageId },
+      update: {},
+      create: {
+        id: storageId,
+        userId,
+        status: 'draft',
+        data: {
+          id: publicId,
+          status: 'draft'
+        } as Prisma.InputJsonValue
+      }
     });
-    if (!builder) {
-      throw new NotFoundException('Builder not found');
-    }
     return this.serializeBuilder(builder);
   }
   saveBuilder(userId: string, payload: SaveAdzBuilderDto) {
     const sanitized = this.ensureObjectPayload(this.extractPayload(payload));
-    const id = normalizeIdentifier(sanitized.adId ?? sanitized.id, randomUUID());
+    const publicId = normalizeIdentifier(sanitized.adId ?? sanitized.id, randomUUID());
+    const storageId = this.resolveScopedIdentifier(userId, publicId, 'adz-builder');
+    const storedPayload = {
+      ...sanitized,
+      id: publicId
+    };
     return this.prisma.adzBuilder
       .upsert({
-        where: { id },
+        where: { id: storageId },
         update: {
-          status: String((sanitized as any).status ?? 'draft'),
-          data: sanitized as Prisma.InputJsonValue
+          status: String((storedPayload as any).status ?? 'draft'),
+          data: storedPayload as Prisma.InputJsonValue
         },
         create: {
-          id,
+          id: storageId,
           userId,
-          status: String((sanitized as any).status ?? 'draft'),
-          data: sanitized as Prisma.InputJsonValue
+          status: String((storedPayload as any).status ?? 'draft'),
+          data: storedPayload as Prisma.InputJsonValue
         }
       })
       .then((builder) => this.serializeBuilder(builder));
   }
 
   async publishBuilder(userId: string, id: string, payload: PublishAdzBuilderDto) {
+    const publicId = normalizeIdentifier(id, randomUUID());
+    const storageId = this.resolveScopedIdentifier(userId, publicId, 'adz-builder');
     const existing = await this.prisma.adzBuilder.findFirst({
-      where: { id, userId }
+      where: { id: storageId, userId }
     });
     if (!existing) {
       throw new NotFoundException('Builder not found');
@@ -71,11 +87,12 @@ export class AdzService {
     const merged = {
       ...(existing.data as any),
       ...sanitized,
+      id: publicId,
       published: true,
       publishedAt: new Date().toISOString()
     };
     await this.prisma.adzBuilder.update({
-      where: { id: existing.id },
+      where: { id: storageId },
       data: {
         data: merged as Prisma.InputJsonValue,
         published: true,
@@ -302,6 +319,10 @@ export class AdzService {
     return date;
   }
 
+  private resolveScopedIdentifier(userId: string, publicId: string, prefix: string) {
+    return normalizeIdentifier(`${prefix}_${userId}_${publicId}`, randomUUID());
+  }
+
   private serializeBuilder(builder: {
     id: string;
     status: string;
@@ -311,12 +332,16 @@ export class AdzService {
     createdAt: Date;
     updatedAt: Date;
   }) {
+    const data =
+      builder.data && typeof builder.data === 'object' && !Array.isArray(builder.data)
+        ? (builder.data as Record<string, unknown>)
+        : {};
     return {
-      id: builder.id,
+      id: typeof data.id === 'string' && data.id.trim() ? data.id : builder.id,
       status: builder.status,
       published: builder.published,
       publishedAt: builder.publishedAt?.toISOString() ?? null,
-      data: builder.data ?? {},
+      data: data,
       createdAt: builder.createdAt.toISOString(),
       updatedAt: builder.updatedAt.toISOString()
     };

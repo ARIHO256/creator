@@ -813,12 +813,12 @@ export const sellerBackendApi = {
   createAdzCampaign: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/adz/campaigns", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   patchAdzCampaign: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   getAdzMarketplace: () => request<Array<Record<string, unknown>>>("/api/adz/marketplace"),
   getAdzBuilderConfig: () => request<Record<string, unknown>>("/api/adz/builder-config"),
@@ -827,7 +827,7 @@ export const sellerBackendApi = {
   saveAdzBuilder: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/adz/builder/save", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   validateAdzSchedule: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/adz/validate-schedule", {
@@ -837,7 +837,7 @@ export const sellerBackendApi = {
   publishAdzBuilder: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/adz/builder/${encodeURIComponent(id)}/publish`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   getAdzPerformance: (id: string) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}/performance`),
