@@ -28,6 +28,20 @@ import {
 } from './onboarding-state.js';
 
 const DEFAULT_ONBOARDING_LOOKUPS = {
+  languages: [
+    { code: 'en', label: 'English' },
+    { code: 'sw', label: 'Swahili' },
+    { code: 'fr', label: 'French' },
+    { code: 'ar', label: 'Arabic' },
+    { code: 'pt', label: 'Portuguese' },
+    { code: 'es', label: 'Spanish' },
+    { code: 'de', label: 'German' },
+    { code: 'zh-CN', label: 'Chinese (Simplified)' }
+  ],
+  taxpayerTypes: [
+    { value: 'business', label: 'Business / company' },
+    { value: 'individual', label: 'Individual' }
+  ],
   payoutMethods: [
     {
       value: 'bank_account',
@@ -59,6 +73,7 @@ const DEFAULT_ONBOARDING_LOOKUPS = {
   payoutRhythms: [
     { value: 'daily', label: 'Daily', helper: 'Payouts generated every business day.' },
     { value: 'weekly', label: 'Weekly', helper: 'Payouts grouped once per week.' },
+    { value: 'biweekly', label: 'Biweekly', helper: 'Payouts grouped every two weeks.' },
     { value: 'monthly', label: 'Monthly', helper: 'Payouts grouped at month end.' },
     {
       value: 'on_threshold',
@@ -94,6 +109,92 @@ const DEFAULT_ONBOARDING_LOOKUPS = {
       { value: 'other', label: 'Other region' }
     ]
   },
+  providerRegions: [
+    { value: 'UG', label: 'Uganda' },
+    { value: 'KE', label: 'Kenya' },
+    { value: 'TZ', label: 'Tanzania' },
+    { value: 'RW', label: 'Rwanda' },
+    { value: 'NG', label: 'Nigeria' },
+    { value: 'GH', label: 'Ghana' },
+    { value: 'ZA', label: 'Southern Africa' },
+    { value: 'AE', label: 'UAE' },
+    { value: 'GB', label: 'United Kingdom' },
+    { value: 'US', label: 'United States' }
+  ],
+  supplierModels: ['Seller', 'Provider', 'Seller + Provider'],
+  supplierTargetRegions: [
+    'East Africa',
+    'Southern Africa',
+    'West Africa',
+    'North Africa',
+    'Asia',
+    'Europe',
+    'North America'
+  ],
+  productCategories: [
+    'Electronics',
+    'Fashion & Beauty',
+    'Food & Groceries',
+    'Home & Living',
+    'General Supplies',
+    'EV & Mobility',
+    'Medical & Health',
+    'Education',
+    'Travel & Tourism',
+    'Properties & Supplies'
+  ],
+  serviceCategories: [
+    'Consultations',
+    'Installation Services',
+    'Maintenance',
+    'Digital Marketing',
+    'Construction & Engineering',
+    'Creative & Design',
+    'Education & Training',
+    'Freelance & On-Demand'
+  ],
+  contentFormats: [
+    'Live Sessionz',
+    'Shoppable Adz',
+    'Replays & Clips',
+    'UGC (Brand Content)',
+    'Short-form (Reels/Shorts)',
+    'Long-form (YouTube)'
+  ],
+  creatorUsageDecisions: [
+    'I will use a Creator',
+    'I will NOT use a Creator',
+    'I am NOT SURE yet'
+  ],
+  collabModes: ['Open for Collabs', 'Invite-only'],
+  approvalModes: ['Manual Content Approval', 'Auto Approval'],
+  payoutMethodCards: [
+    {
+      key: 'Bank',
+      title: 'Bank',
+      desc: 'Best for stable settlements and high volume.'
+    },
+    {
+      key: 'Mobile Money',
+      title: 'Mobile Money',
+      desc: 'Fast and popular across Africa.'
+    },
+    {
+      key: 'PayPal / Wallet',
+      title: 'PayPal / Wallet',
+      desc: 'Use existing wallets in supported regions.'
+    },
+    {
+      key: 'AliPay',
+      title: 'AliPay',
+      desc: 'China payment method for cross-border payments.'
+    },
+    {
+      key: 'WeChat Pay',
+      title: 'WeChat Pay',
+      desc: 'China payment method for cross-border payments.'
+    }
+  ],
   policyPresets: [
     {
       id: 'standard',

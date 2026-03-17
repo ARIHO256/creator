@@ -241,6 +241,8 @@ type PolicyPresetOption = {
   };
 };
 type OnboardingLookups = {
+  languages: Array<{ code: string; label: string }>;
+  taxpayerTypes: LabeledValueOption[];
   payoutMethods: LabeledValueOption[];
   payoutCurrencies: string[];
   payoutRhythms: LabeledValueOption[];
@@ -643,6 +645,7 @@ const DEFAULT_PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "RW
 const DEFAULT_PAYOUT_RHYTHMS: LabeledValueOption[] = [
   { value: "daily", label: "Daily", helper: "Payouts generated every business day." },
   { value: "weekly", label: "Weekly", helper: "Payouts grouped once per week." },
+  { value: "biweekly", label: "Biweekly", helper: "Payouts grouped every two weeks." },
   { value: "monthly", label: "Monthly", helper: "Payouts grouped at month end." },
   {
     value: "on_threshold",
@@ -708,6 +711,11 @@ const DEFAULT_POLICY_PRESETS: PolicyPresetOption[] = [
 ];
 
 const DEFAULT_ONBOARDING_LOOKUPS: OnboardingLookups = {
+  languages: LANGUAGE_OPTIONS,
+  taxpayerTypes: [
+    { value: "business", label: "Business / company" },
+    { value: "individual", label: "Individual" },
+  ],
   payoutMethods: DEFAULT_PAYOUT_METHODS,
   payoutCurrencies: DEFAULT_PAYOUT_CURRENCIES,
   payoutRhythms: DEFAULT_PAYOUT_RHYTHMS,
@@ -1482,6 +1490,24 @@ function normalizeLabeledValueOptions(
   return rows.length ? rows : fallback;
 }
 
+function normalizeCodeLabelOptions(
+  value: unknown,
+  fallback: Array<{ code: string; label: string }>
+): Array<{ code: string; label: string }> {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const item = entry as Record<string, unknown>;
+      const code = String(item.code || item.value || "").trim();
+      const label = String(item.label || code || "").trim();
+      if (!code || !label) return null;
+      return { code, label };
+    })
+    .filter((entry): entry is { code: string; label: string } => Boolean(entry));
+  return rows.length ? rows : fallback;
+}
+
 function normalizeStringOptions(value: unknown, fallback: string[]): string[] {
   if (!Array.isArray(value)) return fallback;
   const rows = value
@@ -1526,6 +1552,8 @@ function normalizeOnboardingLookups(payload: Record<string, unknown> | null | un
       : {};
 
   return {
+    languages: normalizeCodeLabelOptions(source.languages, DEFAULT_ONBOARDING_LOOKUPS.languages),
+    taxpayerTypes: normalizeLabeledValueOptions(source.taxpayerTypes, DEFAULT_ONBOARDING_LOOKUPS.taxpayerTypes),
     payoutMethods: normalizeLabeledValueOptions(source.payoutMethods, DEFAULT_ONBOARDING_LOOKUPS.payoutMethods),
     payoutCurrencies: normalizeStringOptions(source.payoutCurrencies, DEFAULT_ONBOARDING_LOOKUPS.payoutCurrencies),
     payoutRhythms: normalizeLabeledValueOptions(source.payoutRhythms, DEFAULT_ONBOARDING_LOOKUPS.payoutRhythms),
@@ -3544,7 +3572,7 @@ export default function SellerOnboardingProV4_JS() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {LANGUAGE_OPTIONS.map((l) => (
+                      {lookups.languages.map((l) => (
                         <ChipButton
                           key={l.code}
                           active={(form.languages || []).includes(l.code)}
@@ -4812,8 +4840,11 @@ function PayoutTaxStep({
             onChange={(e) => updateTax({ taxpayerType: e.target.value })}
             disabled={isLocked}
           >
-            <MenuItem value="business">{t("Business / company")}</MenuItem>
-            <MenuItem value="individual">{t("Individual")}</MenuItem>
+            {lookups.taxpayerTypes.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {t(option.label)}
+              </MenuItem>
+            ))}
           </TextField>
 
           <TextField
