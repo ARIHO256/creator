@@ -485,6 +485,295 @@ function PromoteCard({ title, desc, icon: Icon, primary, onClick }) {
   );
 }
 
+function InlineListingRail({ listing, versions, onEdit, onScan, pushToast, labels }) {
+  const navigate = useNavigate();
+  const [range, setRange] = useState('7d');
+
+  if (!listing) {
+    return <EmptyState title="Select a listing" message="Click a row to see all listing details here." />;
+  }
+
+  const inventoryRows = (listing.inventory || []).map((w) => ({
+    ...w,
+    available: Math.max(0, Number(w.onHand || 0) - Number(w.reserved || 0)),
+  }));
+  const lowStock = listing.kind === 'Product' && inventoryRows.some((r) => r.available <= 5);
+  const latestVersion = (versions || [])[0] || null;
+
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
+        <div className="flex items-start gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 text-slate-700">
+            <Layers className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="truncate text-sm font-black text-slate-900">{listing.title}</div>
+              <Badge
+                tone={
+                  listing.status === 'Live'
+                    ? 'green'
+                    : listing.status === 'Paused'
+                      ? 'orange'
+                      : 'slate'
+                }
+              >
+                {listing.status}
+              </Badge>
+              <Badge tone={complianceTone(listing.compliance?.state)}>
+                {String(listing.compliance?.state || '-').toUpperCase()}
+              </Badge>
+              <span className="ml-auto">
+                <ScorePill score={listing.quality} />
+              </span>
+            </div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">
+              {listing.id} · {listing.marketplace} · {listing.kind} · {listing.category || 'No category'}
+            </div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">
+              Updated {fmtTime(listing.updatedAt)} · {listing.translations} languages · {listing.images || 0} assets
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
+            style={{ background: TOKENS.green }}
+          >
+            <Pencil className="h-4 w-4" />
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={onScan}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+          >
+            <Scan className="h-4 w-4" />
+            Scan
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              safeCopy(listing.id);
+              pushToast({ title: 'Copied', message: 'Listing ID copied.', tone: 'success' });
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+          >
+            <Copy className="h-4 w-4" />
+            Copy ID
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              safeCopy(JSON.stringify(listing, null, 2));
+              pushToast({ title: 'Copied', message: 'Listing JSON copied.', tone: 'success' });
+            }}
+            className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
+          >
+            <FileText className="h-4 w-4" />
+            Copy JSON
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <KpiCard label={labels.kpiViewsLabel} value={String(listing.kpis?.views ?? 0)} icon={BarChart3} />
+        <KpiCard label={labels.kpiAddLabel} value={String(listing.kpis?.addToCart ?? 0)} icon={Package} />
+        <KpiCard label={labels.kpiOrdersLabel} value={String(listing.kpis?.orders ?? 0)} icon={Wallet} />
+      </div>
+
+      <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-slate-700" />
+          <div className="text-sm font-black text-slate-900">Performance</div>
+          <span className="ml-auto flex gap-2">
+            {['7d', '30d', '90d'].map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setRange(option)}
+                className={cx(
+                  'rounded-2xl border px-3 py-1.5 text-[11px] font-extrabold transition',
+                  range === option
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-slate-200/70 bg-white dark:bg-slate-900 text-slate-700'
+                )}
+              >
+                {option}
+              </button>
+            ))}
+          </span>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 p-4">
+            <div className="text-[11px] font-extrabold text-slate-600">Views trend</div>
+            <div className="mt-3">
+              <Sparkline points={listing.trend?.views || [1, 2, 3, 4]} />
+            </div>
+          </div>
+          <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 p-4">
+            <div className="text-[11px] font-extrabold text-slate-600">{labels.ordersTrendLabel}</div>
+            <div className="mt-3">
+              <Sparkline points={listing.trend?.orders || [1, 1, 2, 1]} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
+        <div className="flex items-center gap-2">
+          <Tag className="h-4 w-4 text-slate-700" />
+          <div className="text-sm font-black text-slate-900">Pricing</div>
+          <span className="ml-auto">
+            <Badge tone="slate">{listing.currency}</Badge>
+          </span>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 p-4">
+            <div className="text-[11px] font-extrabold text-slate-600">{labels.retailLabel}</div>
+            <div className="mt-1 text-lg font-black text-slate-900">{fmtMoney(listing.retailPrice, listing.currency)}</div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">
+              {labels.compareLabel} {fmtMoney(listing.compareAt, listing.currency)}
+            </div>
+          </div>
+          <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 p-4">
+            <div className="text-[11px] font-extrabold text-slate-600">{labels.wholesaleLabel}</div>
+            <div className="mt-1 text-lg font-black text-slate-900">{labels.moqLabel} {listing.moq}</div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">
+              Best tier {fmtMoney((listing.wholesaleTiers || [])[Math.max(0, (listing.wholesaleTiers || []).length - 1)]?.price, listing.currency)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
+        <div className="flex items-center gap-2">
+          <Package className="h-4 w-4 text-slate-700" />
+          <div className="text-sm font-black text-slate-900">Inventory</div>
+          <span className="ml-auto">
+            <Badge tone={lowStock ? 'danger' : 'green'}>
+              {listing.kind === 'Product' ? (lowStock ? 'Low stock' : 'Stock OK') : 'Service'}
+            </Badge>
+          </span>
+        </div>
+        {listing.kind !== 'Product' ? (
+          <div className="mt-3 text-xs font-semibold text-slate-500">
+            Service listings do not track warehouse inventory.
+          </div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            {inventoryRows.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 p-3 text-xs font-semibold text-slate-500">
+                No warehouse rows yet.
+              </div>
+            ) : (
+              inventoryRows.map((row) => (
+                <div key={row.id} className="grid grid-cols-12 gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 p-3 text-xs font-semibold text-slate-700">
+                  <div className="col-span-5 font-extrabold text-slate-900">{row.location}</div>
+                  <div className="col-span-2">{row.onHand} on hand</div>
+                  <div className="col-span-2">{row.reserved} reserved</div>
+                  <div className="col-span-3">
+                    <Badge tone={row.available <= 5 ? 'danger' : 'green'}>{row.available} available</Badge>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-slate-700" />
+          <div className="text-sm font-black text-slate-900">Compliance</div>
+          <span className="ml-auto">
+            <Badge tone={complianceTone(listing.compliance?.state)}>
+              {String(listing.compliance?.state || '-').toUpperCase()}
+            </Badge>
+          </span>
+        </div>
+        <div className="mt-2 text-xs font-semibold text-slate-500">
+          Last scan {listing.compliance?.lastScanAt ? fmtTime(listing.compliance.lastScanAt) : 'not available'}
+        </div>
+        <div className="mt-3 space-y-2">
+          {(listing.compliance?.issues || []).length === 0 ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-3 text-xs font-extrabold text-emerald-800">
+              No compliance issues.
+            </div>
+          ) : (
+            (listing.compliance?.issues || []).map((issue) => (
+              <div key={issue} className="flex items-start gap-2 rounded-2xl border border-orange-200 bg-orange-50/60 p-3">
+                <AlertTriangle className="mt-0.5 h-4 w-4 text-orange-700" />
+                <div className="text-xs font-extrabold text-orange-900">{issue}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
+        <div className="flex items-center gap-2">
+          <ClipboardList className="h-4 w-4 text-slate-700" />
+          <div className="text-sm font-black text-slate-900">Recent version</div>
+          <span className="ml-auto">
+            <Badge tone="slate">{(versions || []).length}</Badge>
+          </span>
+        </div>
+        {!latestVersion ? (
+          <div className="mt-3 text-xs font-semibold text-slate-500">No version history yet.</div>
+        ) : (
+          <div className="mt-3 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 p-3">
+            <div className="flex items-center gap-2">
+              <Badge tone="slate">Latest</Badge>
+              <div className="text-xs font-extrabold text-slate-900">{latestVersion.note || 'Saved version'}</div>
+            </div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">
+              {latestVersion.actor || 'System'} · {fmtTime(latestVersion.at)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-3xl border border-orange-200 bg-orange-50/70 p-4">
+        <div className="flex items-start gap-3">
+          <div className="grid h-11 w-11 place-items-center rounded-3xl bg-white dark:bg-slate-900 text-orange-700">
+            <Flame className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-black text-orange-900">Promote</div>
+            <div className="mt-1 text-xs font-semibold text-orange-900/70">
+              Quick jump into MyLiveDealz for Live and Adz.
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => navigate('/mldz/adz/dashboard')}
+                className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
+                style={{ background: TOKENS.orange }}
+              >
+                <Flame className="h-4 w-4" />
+                Create Ad
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/mldz/live/schedule')}
+                className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-orange-700"
+              >
+                <Calendar className="h-4 w-4" />
+                Schedule Live
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState('Overview');
@@ -3222,17 +3511,10 @@ export default function ListingsHubMergedPageV2() {
     pushToast({ title: 'Duplicated', message: 'Copies created as Draft.', tone: 'success' });
   };
 
-  const [detailOpen, setDetailOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
-  const openDetail = (id) => {
-    setActiveId(id);
-    setEditOpen(false);
-    setDetailOpen(true);
-  };
   const openEdit = (id) => {
     setActiveId(id);
-    setDetailOpen(false);
     setEditOpen(true);
   };
 
@@ -3508,16 +3790,16 @@ export default function ListingsHubMergedPageV2() {
           {/* Table */}
           <GlassCard className="overflow-hidden lg:col-span-8">
             <div className="border-b border-slate-200/70 bg-white dark:bg-slate-900/70 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Store className="h-4 w-4 text-slate-700" />
-                  <div className="text-sm font-black text-slate-900">{labels.listingsLabel}</div>
-                  <Badge tone="slate">Seller core</Badge>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Store className="h-4 w-4 text-slate-700" />
+                    <div className="text-sm font-black text-slate-900">{labels.listingsLabel}</div>
+                    <Badge tone="slate">Seller core</Badge>
+                  </div>
+                  <div className="text-xs font-semibold text-slate-500">
+                  Click a row to load full details on the right
+                  </div>
                 </div>
-                <div className="text-xs font-semibold text-slate-500">
-                  Per-item actions: View or Edit
-                </div>
-              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -3615,17 +3897,6 @@ export default function ListingsHubMergedPageV2() {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              openDetail(r.id);
-                            }}
-                            className="grid h-9 w-9 place-items-center rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 text-gray-900 dark:text-slate-100 hover:bg-gray-50 dark:bg-slate-950"
-                            aria-label="View"
-                          >
-                            <ChevronRight className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
                               openEdit(r.id);
                             }}
                             className="grid h-9 w-9 place-items-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-50"
@@ -3662,7 +3933,7 @@ export default function ListingsHubMergedPageV2() {
                 <div>
                   <div className="text-sm font-black text-slate-900">{labels.selectedListingLabel}</div>
                   <div className="mt-1 text-xs font-semibold text-slate-500">
-                    Quick actions + intelligence
+                    Full details, actions and health signals
                   </div>
                 </div>
                 <Badge tone="slate">Premium</Badge>
@@ -3670,148 +3941,17 @@ export default function ListingsHubMergedPageV2() {
 
               {!active ? (
                 <div className="mt-4">
-                  <EmptyState title="Select a listing" message="Click a row to enable actions." />
+                  <EmptyState title="Select a listing" message="Click a row to load all listing details here." />
                 </div>
               ) : (
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 text-slate-700">
-                        <Layers className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-black text-slate-900">
-                          {active.title}
-                        </div>
-                        <div className="mt-1 text-xs font-semibold text-slate-500">
-                          {active.id} · {active.marketplace} · {active.kind}
-                        </div>
-                      </div>
-                      <ScorePill score={active.quality} />
-                    </div>
-
-                    <div className="mt-4 grid gap-2">
-                      <MiniMetric
-                        label="Content completeness"
-                        value={clamp((active.quality || 0) + 4, 0, 100)}
-                        tone={
-                          active.quality >= 85
-                            ? 'green'
-                            : active.quality >= 65
-                              ? 'orange'
-                              : 'danger'
-                        }
-                      />
-                      <MiniMetric
-                        label="Media quality"
-                        value={clamp((active.images || 0) * 12, 0, 100)}
-                        tone={
-                          (active.images || 0) >= 6
-                            ? 'green'
-                            : (active.images || 0) >= 3
-                              ? 'orange'
-                              : 'danger'
-                        }
-                      />
-                      <MiniMetric
-                        label="Translation coverage"
-                        value={clamp((active.translations || 0) * 18, 0, 100)}
-                        tone={
-                          (active.translations || 0) >= 4
-                            ? 'green'
-                            : (active.translations || 0) >= 2
-                              ? 'orange'
-                              : 'danger'
-                        }
-                      />
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openDetail(active.id)}
-                        className="inline-flex items-center gap-2 rounded-2xl border border-slate-200/70 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-slate-800"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                        View details
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openEdit(active.id)}
-                        className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
-                        style={{ background: TOKENS.green }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => runComplianceScan([active.id])}
-                        disabled={scanState.running}
-                        className={cx(
-                          'inline-flex items-center gap-2 rounded-2xl border bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold transition',
-                          scanState.running
-                            ? 'cursor-not-allowed border-slate-200 text-slate-400'
-                            : 'border-slate-200/70 text-slate-800 hover:bg-gray-50 dark:bg-slate-950'
-                        )}
-                      >
-                        <Scan className="h-4 w-4" />
-                        Scan
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-orange-200 bg-orange-50/70 p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="grid h-11 w-11 place-items-center rounded-3xl bg-white dark:bg-slate-900 text-orange-700">
-                        <Flame className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-black text-orange-900">Promote</div>
-                        <div className="mt-1 text-xs font-semibold text-orange-900/70">
-                          Quick jump into MyLiveDealz for Live and Adz.
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => (navigate('/mldz/adz/dashboard'))}
-                            className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
-                            style={{ background: TOKENS.orange }}
-                          >
-                            <Flame className="h-4 w-4" />
-                            Create Ad
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => (navigate('/mldz/live/schedule'))}
-                            className="inline-flex items-center gap-2 rounded-2xl border border-orange-200 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-extrabold text-orange-700"
-                          >
-                            <Calendar className="h-4 w-4" />
-                            Schedule Live
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
-                    <div className="flex items-center gap-2">
-                      <Info className="h-4 w-4 text-slate-700" />
-                      <div className="text-sm font-extrabold text-slate-900">
-                        World-class edit drawer
-                      </div>
-                      <span className="ml-auto">
-                        <Badge tone="green">v2</Badge>
-                      </span>
-                    </div>
-                    <ul className="mt-2 list-disc space-y-1 pl-5 text-xs font-semibold text-slate-600">
-                      <li>AI title suggestions</li>
-                      <li>Variant matrix (products)</li>
-                      <li>Multi-language preview + translations</li>
-                      <li>Approval workflow + policy checks</li>
-                    </ul>
-                  </div>
-                </div>
+                <InlineListingRail
+                  listing={active}
+                  versions={versionsById[active.id] || []}
+                  onEdit={() => openEdit(active.id)}
+                  onScan={() => runComplianceScan([active.id])}
+                  pushToast={pushToast}
+                  labels={labels}
+                />
               )}
             </GlassCard>
           </div>
@@ -3819,18 +3959,6 @@ export default function ListingsHubMergedPageV2() {
       </div>
 
       {/* Drawers */}
-      <ListingDetailDrawer
-        open={detailOpen}
-        listing={active}
-        onClose={() => setDetailOpen(false)}
-        onEdit={() => {
-          setDetailOpen(false);
-          setEditOpen(true);
-        }}
-        pushToast={pushToast}
-        labels={labels}
-      />
-
       <ListingEditDrawer
         open={editOpen}
         listing={active}

@@ -717,7 +717,7 @@ export class SettingsService {
     }
   }
   uiState(userId: string, role: string) {
-    return this.getUserSetting(userId, this.scopedKey(role, 'ui_state'), {
+    const defaults = {
       theme: null,
       locale: null,
       currency: null,
@@ -726,24 +726,29 @@ export class SettingsService {
       shell: {},
       onboarding: {},
       channels: {}
-    });
+    };
+    return this.getUserSetting(userId, this.scopedKey(role, 'ui_state'), defaults).catch(() => defaults);
   }
   async updateUiState(userId: string, role: string, body: Record<string, unknown>) {
     const current = await this.uiState(userId, role);
     const patch = this.isPlainObject(body) ? body : {};
     const next = this.deepMerge(current, patch);
-    const record = await this.upsertUserSetting(userId, this.scopedKey(role, 'ui_state'), next);
-    await this.audit.log({
-      userId,
-      action: 'settings.ui_state_updated',
-      entityType: 'user_setting',
-      entityId: 'ui_state',
-      route: '/api/settings/ui-state',
-      method: 'PATCH',
-      statusCode: 200,
-      metadata: { keys: Object.keys(patch) }
-    });
-    return record.payload as Record<string, unknown>;
+    try {
+      const record = await this.upsertUserSetting(userId, this.scopedKey(role, 'ui_state'), next);
+      await this.audit.log({
+        userId,
+        action: 'settings.ui_state_updated',
+        entityType: 'user_setting',
+        entityId: 'ui_state',
+        route: '/api/settings/ui-state',
+        method: 'PATCH',
+        statusCode: 200,
+        metadata: { keys: Object.keys(patch) }
+      });
+      return record.payload as Record<string, unknown>;
+    } catch {
+      return next;
+    }
   }
   async payoutMethods(userId: string) {
     const workspace = await this.ensureWorkspaceSeed(userId);
