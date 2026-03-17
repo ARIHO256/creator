@@ -11,6 +11,12 @@ type BackendRequestError = Error & {
 let authRedirectScheduled = false;
 let refreshPromise: Promise<string | null> | null = null;
 let roleSwitchPromise: Promise<string | null> | null = null;
+const UI_STATE_PATCH_DEBOUNCE_MS = 400;
+let pendingUiStatePatch: Record<string, unknown> | null = null;
+let uiStatePatchTimer: ReturnType<typeof setTimeout> | null = null;
+let uiStatePatchInFlight = false;
+let uiStatePatchResolvers: Array<(value: Record<string, unknown>) => void> = [];
+let uiStatePatchRejecters: Array<(reason?: unknown) => void> = [];
 
 const PUBLIC_API_PREFIXES = [
   "/api/auth/login",
@@ -22,6 +28,25 @@ const PUBLIC_API_PREFIXES = [
 
 function isPublicApiPath(path: string) {
   return PUBLIC_API_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeUiStatePatch(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const next = { ...base };
+  Object.entries(patch).forEach(([key, value]) => {
+    if (isPlainObject(next[key]) && isPlainObject(value)) {
+      next[key] = mergeUiStatePatch(next[key] as Record<string, unknown>, value);
+      return;
+    }
+    next[key] = value;
+  });
+  return next;
 }
 
 function normalizeRole(value: unknown): UserRole {
@@ -332,6 +357,60 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
   return payload as T;
 }
 
+function scheduleUiStatePatchFlush() {
+  if (uiStatePatchTimer) {
+    clearTimeout(uiStatePatchTimer);
+  }
+  uiStatePatchTimer = setTimeout(() => {
+    uiStatePatchTimer = null;
+    void flushUiStatePatch();
+  }, UI_STATE_PATCH_DEBOUNCE_MS);
+}
+
+async function flushUiStatePatch(): Promise<Record<string, unknown>> {
+  if (uiStatePatchInFlight) {
+    return {};
+  }
+
+  const body = pendingUiStatePatch;
+  if (!body) {
+    return {};
+  }
+
+  pendingUiStatePatch = null;
+  uiStatePatchInFlight = true;
+  const resolvers = uiStatePatchResolvers;
+  const rejecters = uiStatePatchRejecters;
+  uiStatePatchResolvers = [];
+  uiStatePatchRejecters = [];
+
+  try {
+    const payload = await request<Record<string, unknown>>("/api/settings/ui-state", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    resolvers.forEach((resolve) => resolve(payload));
+    return payload;
+  } catch (error) {
+    rejecters.forEach((reject) => reject(error));
+    throw error;
+  } finally {
+    uiStatePatchInFlight = false;
+    if (pendingUiStatePatch) {
+      scheduleUiStatePatchFlush();
+    }
+  }
+}
+
+function queueUiStatePatch(body: Record<string, unknown>) {
+  pendingUiStatePatch = mergeUiStatePatch(pendingUiStatePatch || {}, body);
+  scheduleUiStatePatchFlush();
+  return new Promise<Record<string, unknown>>((resolve, reject) => {
+    uiStatePatchResolvers.push(resolve);
+    uiStatePatchRejecters.push(reject);
+  });
+}
+
 export const sellerBackendApi = {
   ensureWorkspaceRole: async (preferredRole?: UserRole) => {
     const session = readSession();
@@ -475,11 +554,7 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getUiState: () => request<Record<string, unknown>>("/api/settings/ui-state"),
-  patchUiState: (body: Record<string, unknown>) =>
-    request<Record<string, unknown>>("/api/settings/ui-state", {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
+  patchUiState: (body: Record<string, unknown>) => queueUiStatePatch(body),
   getSettings: () => request<Record<string, unknown>>("/api/settings"),
   patchSettings: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/settings", {

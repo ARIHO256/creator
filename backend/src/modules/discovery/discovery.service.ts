@@ -149,7 +149,7 @@ export class DiscoveryService {
     });
 
     const creatorUserIds = creatorProfiles.map((profile) => profile.userId);
-    const [follows, campaigns, contracts, invites, reviews] = await Promise.all([
+    const [follows, campaigns, contracts, invites, reviews, onboardingPayloads] = await Promise.all([
       seller
         ? this.prisma.creatorFollow.findMany({
             where: {
@@ -224,7 +224,8 @@ export class DiscoveryService {
           status: 'PUBLISHED'
         },
         orderBy: { createdAt: 'desc' }
-      })
+      }),
+      this.loadCreatorOnboardingPayloadMap(creatorUserIds)
     ]);
 
     const followedCreatorIds = new Set(follows.map((entry) => entry.creatorUserId));
@@ -237,7 +238,8 @@ export class DiscoveryService {
         campaigns: campaigns.filter((entry) => entry.creatorId === profile.userId),
         contracts: contracts.filter((entry) => entry.creatorId === profile.userId),
         invites: invites.filter((entry) => entry.recipientUserId === profile.userId),
-        reviews: reviews.filter((entry) => entry.subjectUserId === profile.userId || entry.subjectId === profile.id)
+        reviews: reviews.filter((entry) => entry.subjectUserId === profile.userId || entry.subjectId === profile.id),
+        onboardingPayload: onboardingPayloads.get(profile.userId) ?? null
       })
     );
   }
@@ -249,7 +251,7 @@ export class DiscoveryService {
       throw new NotFoundException('Creator profile not found');
     }
 
-    const [follow, campaigns, contracts, invites, reviews, creatorWorkspace] = await Promise.all([
+    const [follow, campaigns, contracts, invites, reviews, creatorWorkspace, onboardingPayload] = await Promise.all([
       seller
         ? this.prisma.creatorFollow.findUnique({
             where: {
@@ -311,7 +313,8 @@ export class DiscoveryService {
         orderBy: { createdAt: 'desc' },
         take: 12
       }),
-      this.ensureCreatorWorkspaceProfile(profile.userId, profile)
+      this.ensureCreatorWorkspaceProfile(profile.userId, profile),
+      this.loadCreatorOnboardingPayload(profile.userId)
     ]);
 
     const deliverablePacks = await this.ensureDeliverablePacks(userId);
@@ -324,7 +327,8 @@ export class DiscoveryService {
       invites,
       reviews,
       creatorWorkspace,
-      deliverablePacks
+      deliverablePacks,
+      onboardingPayload
     });
   }
 
@@ -1065,6 +1069,7 @@ export class DiscoveryService {
     contracts: Array<Prisma.ContractGetPayload<{ include: { seller: true; creator: { include: { creatorProfile: true } }; campaign: true } }>>;
     invites: Array<Prisma.CollaborationInviteGetPayload<{}>>;
     reviews: Array<Prisma.ReviewGetPayload<{}>>;
+    onboardingPayload?: Record<string, unknown> | null;
   }) {
     const categories = this.readStringList(params.profile.categories);
     const languages = this.readStringList(params.profile.languages);
@@ -1083,7 +1088,7 @@ export class DiscoveryService {
       id: params.profile.userId,
       profileId: params.profile.id,
       registeredAt: params.profile.user.createdAt.toISOString(),
-      avatarUrl: this.buildCreatorAvatarUrl(params.profile),
+      avatarUrl: this.buildCreatorAvatarUrl(params.profile, params.onboardingPayload),
       name: params.profile.name,
       handle: `@${params.profile.handle}`,
       tagline: params.profile.tagline || this.buildCreatorTagline(categories),
@@ -1186,6 +1191,7 @@ export class DiscoveryService {
     reviews: Array<Prisma.ReviewGetPayload<{}>>;
     creatorWorkspace: Record<string, unknown>;
     deliverablePacks: Array<Record<string, unknown>>;
+    onboardingPayload?: Record<string, unknown> | null;
   }) {
     const categories = this.readStringList(params.profile.categories);
     const languages = this.readStringList(params.profile.languages);
@@ -1204,7 +1210,7 @@ export class DiscoveryService {
       creator: {
         id: params.profile.userId,
         profileId: params.profile.id,
-        avatarUrl: this.buildCreatorAvatarUrl(params.profile),
+        avatarUrl: this.buildCreatorAvatarUrl(params.profile, params.onboardingPayload),
         name: params.profile.name,
         handle: `@${params.profile.handle}`,
         tier: `${this.formatTier(params.profile.tier)} Tier`,
@@ -1725,6 +1731,57 @@ export class DiscoveryService {
     return typeof source === 'string' && source.trim() ? source.trim() : '';
   }
 
+  private readObject(value: unknown, key?: string) {
+    const source = key && value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[key]
+      : value;
+    return source && typeof source === 'object' && !Array.isArray(source)
+      ? (source as Record<string, unknown>)
+      : null;
+  }
+
+  private async loadCreatorOnboardingPayloadMap(userIds: string[]) {
+    if (!userIds.length) {
+      return new Map<string, Record<string, unknown>>();
+    }
+
+    const records = await this.prismaRead.workflowRecord.findMany({
+      where: {
+        userId: { in: userIds },
+        recordType: 'onboarding',
+        recordKey: { in: ['creator', 'main'] }
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const payloads = new Map<string, Record<string, unknown>>();
+    const prioritizedRecords = [...records].sort((left, right) => {
+      const priority = (value: string) => (value === 'creator' ? 2 : value === 'main' ? 1 : 0);
+      return priority(right.recordKey) - priority(left.recordKey);
+    });
+
+    for (const record of prioritizedRecords) {
+      if (payloads.has(record.userId)) {
+        continue;
+      }
+      const payload =
+        record.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+          ? (record.payload as Record<string, unknown>)
+          : null;
+      if (!payload) {
+        continue;
+      }
+      payloads.set(record.userId, payload);
+    }
+
+    return payloads;
+  }
+
+  private async loadCreatorOnboardingPayload(userId: string) {
+    const payloads = await this.loadCreatorOnboardingPayloadMap([userId]);
+    return payloads.get(userId) ?? null;
+  }
+
   private async loadSetting(userId: string, key: string) {
     const setting = await this.prisma.workspaceSetting.findUnique({
       where: {
@@ -1917,7 +1974,20 @@ export class DiscoveryService {
     return initials || String(defaultValue || '').replace(/^@/, '').slice(0, 2).toUpperCase() || 'CR';
   }
 
-  private buildCreatorAvatarUrl(profile: Prisma.CreatorProfileGetPayload<{ include: { user: true } }>) {
+  private buildCreatorAvatarUrl(
+    profile: Prisma.CreatorProfileGetPayload<{ include: { user: true } }>,
+    onboardingPayload?: Record<string, unknown> | null
+  ) {
+    const metadata = this.readObject(onboardingPayload, 'metadata');
+    const creatorForm = this.readObject(metadata, 'creatorForm');
+    const creatorProfile = this.readObject(creatorForm, 'profile');
+    const uploadedAvatarUrl =
+      this.readString(metadata, 'creatorAvatarUrl') ||
+      this.readString(creatorProfile, 'profilePhotoUrl');
+    if (uploadedAvatarUrl) {
+      return uploadedAvatarUrl;
+    }
+
     const seed = `${profile.userId}:${profile.handle}:${profile.name}`;
     const palettes: Array<[string, string]> = [
       ['#7C3AED', '#EC4899'],
