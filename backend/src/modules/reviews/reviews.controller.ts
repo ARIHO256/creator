@@ -4,6 +4,7 @@ import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateReviewReplyDto } from './dto/create-review-reply.dto.js';
 import { CreateReviewDto } from './dto/create-review.dto.js';
+import { RespondReviewDto } from './dto/respond-review.dto.js';
 import { UpdateReviewDto } from './dto/update-review.dto.js';
 import { ReviewsService } from './reviews.service.js';
 
@@ -22,8 +23,12 @@ export class ReviewsController {
   }
 
   @Get('reviews')
-  list(@CurrentUser() user: RequestUser, @Query('scope') scope?: 'received' | 'authored') {
-    return this.service.list(user.sub, user.role, scope);
+  list(
+    @CurrentUser() user: RequestUser,
+    @Query('scope') scope?: 'received' | 'authored',
+    @Query('limit') limit?: string
+  ) {
+    return this.service.list(user.sub, user.role, scope, limit);
   }
 
   @Get('reviews/insights')
@@ -71,5 +76,11 @@ export class ReviewsController {
     @Body() payload: CreateReviewReplyDto
   ) {
     return this.service.reply(user.sub, id, payload.body, payload.visibility);
+  }
+
+  @Post('reviews/respond')
+  @RateLimit({ limit: 40, windowMs: 60_000 })
+  respond(@CurrentUser() user: RequestUser, @Body() payload: RespondReviewDto) {
+    return this.service.respond(user.sub, payload.reviewId, payload.body, payload.visibility, payload.status);
   }
 }

@@ -6,6 +6,10 @@ function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+function readString(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
 function hashSeed(value: string) {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) {
@@ -185,6 +189,22 @@ export function mapAdzBuilderScope(campaigns: Array<Record<string, unknown>>) {
       campaignId: String(campaign.id),
       type: String(offer.type || "PRODUCT"),
       name: String(offer.name || "Offer"),
+      listingId: String(
+        offer.listingId ||
+          offer.marketplaceListingId ||
+          offer.catalogListingId ||
+          offer.productId ||
+          ""
+      ),
+      listingTitle: String(
+        offer.listingTitle ||
+          offer.catalogTitle ||
+          offer.productTitle ||
+          offer.title ||
+          offer.name ||
+          ""
+      ),
+      sku: readString(offer.sku || offer.catalogSku || offer.productSku || ""),
       price: Number(offer.price ?? 0),
       basePrice: Number(offer.basePrice ?? 0) || undefined,
       currency: String(offer.currency || campaign.currency || "USD"),

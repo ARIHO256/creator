@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { sellerBackendApi } from "../../../lib/backendApi";
+import { formatOrderDisplayId } from "../../../lib/orderIds";
 import { useLocalization } from "../../../localization/LocalizationProvider";
 
 const EMPTY_ORDER = {
@@ -93,6 +94,7 @@ export default function SellerPackingStickerEVzoneV2() {
         : `/pack/${order.id || id || ""}`,
     [id, order.id]
   );
+  const displayOrderId = formatOrderDisplayId(order.id || id || "");
   const isPromo = order.channel === "MyLiveDealz" || order.promo === true;
   const logoSrc = isPromo
     ? "/assets/brand/mylivedealz-mark-color.svg"
@@ -117,7 +119,7 @@ export default function SellerPackingStickerEVzoneV2() {
       <div className="no-print sticky top-0 z-10 border-b bg-white dark:bg-slate-900/90 px-4 py-2">
         <div className="w-full flex items-center justify-between gap-3">
           <div className="font-extrabold" style={{ color: brand.green }}>
-            {t("Packing Sticker")} {order.id ? `— ${order.id}` : ""}
+            {t("Packing Sticker")} {order.id ? `— ${displayOrderId}` : ""}
           </div>
           <div className="inline-flex items-center gap-2 text-sm">
             <label>{t("Select size")}</label>
@@ -144,7 +146,7 @@ export default function SellerPackingStickerEVzoneV2() {
               <img src={logoSrc} alt={isPromo ? "MyLiveDealz" : "EVzone Marketplace"} className="h-8 w-auto" onError={(e) => { e.currentTarget.style.display = "none"; }} />
               <div className="text-xs text-gray-600">{order.channel || "—"}</div>
             </div>
-            <div className="text-xs text-gray-600">{t("Order")} <b>{order.id || "—"}</b></div>
+            <div className="text-xs text-gray-600">{t("Order")} <b>{order.id ? displayOrderId : "—"}</b></div>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-3">
             <div className="rounded border p-2">

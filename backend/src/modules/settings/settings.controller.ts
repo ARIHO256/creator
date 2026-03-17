@@ -2,11 +2,11 @@ import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/commo
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
-import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateInviteDto } from './dto/create-invite.dto.js';
 import { CreateRoleDto } from './dto/create-role.dto.js';
 import { SendPayoutCodeDto } from './dto/send-payout-code.dto.js';
+import { SendTestNotificationDto } from './dto/send-test-notification.dto.js';
 import { UpdateCrewSessionDto } from './dto/update-crew-session.dto.js';
 import { UpdateIntegrationsDto } from './dto/update-integrations.dto.js';
 import { UpdateKycDto } from './dto/update-kyc.dto.js';
@@ -20,7 +20,6 @@ import { UpdateSavedViewsDto } from './dto/update-saved-views.dto.js';
 import { UpdateSecuritySettingsDto } from './dto/update-security-settings.dto.js';
 import { UpdateSettingsDto } from './dto/update-settings.dto.js';
 import { UpdateTaxDto } from './dto/update-tax.dto.js';
-import { UpdateUiStateDto } from './dto/update-ui-state.dto.js';
 import { VerifyPayoutDto } from './dto/verify-payout.dto.js';
 import { SettingsService } from './settings.service.js';
 
@@ -39,8 +38,8 @@ export class SettingsController {
   @Get('settings/ui-state') uiState(@CurrentUser() user: RequestUser) { return this.service.uiState(user.sub, user.role); }
   @Patch('settings/ui-state')
   @RateLimit({ limit: 30, windowMs: 60_000 })
-  updateUiState(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateUiStateDto)) body: UpdateUiStateDto) {
-    return this.service.updateUiState(user.sub, user.role, body.payload);
+  updateUiState(@CurrentUser() user: RequestUser, @Body() body: Record<string, unknown>) {
+    return this.service.updateUiState(user.sub, user.role, body);
   }
   @Get('settings/payout-methods') payoutMethods(@CurrentUser() user: RequestUser) { return this.service.payoutMethods(user.sub); }
   @Patch('settings/payout-methods')
@@ -72,6 +71,11 @@ export class SettingsController {
   @Patch('settings/notification-preferences')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   updateNotificationPreferences(@CurrentUser() user: RequestUser, @Body() body: UpdateNotificationPreferencesDto) { return this.service.updateNotificationPreferences(user.sub, user.role, body); }
+  @Post('settings/notification-preferences/test')
+  @RateLimit({ limit: 10, windowMs: 60_000 })
+  sendTestNotification(@CurrentUser() user: RequestUser, @Body() body: SendTestNotificationDto) {
+    return this.service.sendTestNotification(user.sub, user.role, body);
+  }
   @Post('settings/payout/send-code')
   @RateLimit({ limit: 6, windowMs: 60_000 })
   sendPayoutCode(@CurrentUser() user: RequestUser, @Body() body: SendPayoutCodeDto) { return this.service.sendPayoutCode(user.sub, body); }

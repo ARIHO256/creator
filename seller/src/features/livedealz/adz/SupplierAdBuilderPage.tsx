@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { sellerBackendApi as backendApi } from "../../../lib/backendApi";
+import type { ListingAdzPrefill } from "../../listings/adzPrefill";
 import {
   buildAdzBuilderPayload,
   buildDefaultAdzBuilder,
@@ -274,6 +275,56 @@ const ITEM_POSTER_REQUIRED = { width: 500, height: 500 } as const;
 
 const SELLER_ADZ_BUILDER_ID = "seller_adz_builder_default";
 
+function normalizeMatchValue(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function offerMatchesListingPrefill(offer: Offer, listing: ListingAdzPrefill) {
+  const listingId = normalizeMatchValue(listing.listingId);
+  const listingSku = normalizeMatchValue(listing.sku);
+  const listingTitle = normalizeMatchValue(listing.title);
+
+  const offerId = normalizeMatchValue(offer.id);
+  const offerListingId = normalizeMatchValue(offer.listingId);
+  const offerSku = normalizeMatchValue(offer.sku);
+  const offerName = normalizeMatchValue(offer.name);
+  const offerListingTitle = normalizeMatchValue(offer.listingTitle);
+
+  if (
+    listingId &&
+    (offerId === listingId ||
+      offerListingId === listingId ||
+      offerId.includes(listingId) ||
+      offerListingId.includes(listingId))
+  ) {
+    return true;
+  }
+
+  if (listingSku && offerSku === listingSku) {
+    return true;
+  }
+
+  if (listingTitle) {
+    if (offerName === listingTitle || offerListingTitle === listingTitle) {
+      return true;
+    }
+
+    if (
+      listingTitle.length >= 6 &&
+      ((offerName && (offerName.includes(listingTitle) || listingTitle.includes(offerName))) ||
+        (offerListingTitle &&
+          (offerListingTitle.includes(listingTitle) || listingTitle.includes(offerListingTitle))))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 type ViewerMode = "fullscreen" | "modal";
 type MediaKind = "image" | "video";
 type AssetOwner = "Supplier" | "Catalog";
@@ -304,6 +355,9 @@ type Offer = {
   campaignId: string;
   type: OfferType;
   name: string;
+  listingId?: string;
+  listingTitle?: string;
+  sku?: string;
   price: number;
   basePrice?: number;
   currency: "UGX" | "USD";
@@ -1518,6 +1572,10 @@ export default function AdBuilder({
   initialAdId?: string;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const prefillListing =
+    ((location.state as { prefillListing?: ListingAdzPrefill } | null)?.prefillListing as ListingAdzPrefill | undefined) ||
+    null;
   const go = (destination: string) => {
     if (!destination) return;
     if (/^https?:\/\//i.test(destination)) {
@@ -1578,6 +1636,7 @@ export default function AdBuilder({
   const [utmPresets, setUtmPresets] = useState<UTMTemplate[]>([]);
   const [scheduleValidation, setScheduleValidation] = useState<{ ok: boolean; error?: string }>({ ok: false });
   const persistHashRef = useRef("");
+  const appliedPrefillKeyRef = useRef<string | null>(null);
 
   const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
 
@@ -1813,6 +1872,38 @@ export default function AdBuilder({
       window.clearTimeout(timer);
     };
   }, [adzBuilderPayload, runtimeLoading]);
+
+  useEffect(() => {
+    if (runtimeLoading || !prefillListing || scope.offers.length === 0) return;
+
+    const prefillKey = JSON.stringify(prefillListing);
+    if (appliedPrefillKeyRef.current === prefillKey) return;
+    appliedPrefillKeyRef.current = prefillKey;
+
+    const matchedOffer = scope.offers.find((offer) => offerMatchesListingPrefill(offer, prefillListing));
+    if (!matchedOffer) {
+      setToast(`No matching Adz offer found for ${prefillListing.title || "that listing"}.`);
+      navigate(`${location.pathname}${location.search}`, { replace: true, state: {} });
+      return;
+    }
+
+    setBuilder((prev) => ({
+      ...prev,
+      supplierId: matchedOffer.supplierId,
+      campaignId: matchedOffer.campaignId,
+      selectedOfferIds: [matchedOffer.id],
+      primaryOfferId: matchedOffer.id,
+      landingBehavior: "Product detail",
+      ctaText: prev.ctaText || `Shop ${prefillListing.title || matchedOffer.name} now.`,
+      primaryCtaLabel: prev.primaryCtaLabel || "Buy now",
+      secondaryCtaLabel: prev.secondaryCtaLabel || "Add to cart",
+      itemPosterByOfferId: {},
+      itemVideoByOfferId: {},
+    }));
+    setStep("offer");
+    setToast(`Ad builder linked to ${prefillListing.title || matchedOffer.name}.`);
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: {} });
+  }, [location.pathname, location.search, navigate, prefillListing, runtimeLoading, scope.offers]);
 
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);

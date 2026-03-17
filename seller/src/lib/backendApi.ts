@@ -1,5 +1,7 @@
-import { clearSession, hasSessionToken, readSession } from "../auth/session";
+import { clearSession, hasSessionToken, readSession, writeSession } from "../auth/session";
 import { resolveApiUrl } from "./apiRuntime";
+import type { Session } from "../types/session";
+import type { UserRole } from "../types/roles";
 
 type BackendRequestError = Error & {
   status?: number;
@@ -7,6 +9,7 @@ type BackendRequestError = Error & {
 };
 
 let authRedirectScheduled = false;
+let refreshPromise: Promise<string | null> | null = null;
 
 const PUBLIC_API_PREFIXES = [
   "/api/auth/login",
@@ -20,6 +23,18 @@ function isPublicApiPath(path: string) {
   return PUBLIC_API_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
+function normalizeRole(value: unknown): UserRole {
+  return String(value || "").toUpperCase() === "PROVIDER" ? "provider" : "seller";
+}
+
+function normalizeRoles(values: unknown, fallbackRole: UserRole): UserRole[] {
+  if (!Array.isArray(values) || values.length === 0) return [fallbackRole];
+  const mapped = values
+    .map((entry) => normalizeRole(entry))
+    .filter((entry, index, arr) => arr.indexOf(entry) === index);
+  return mapped.length ? mapped : [fallbackRole];
+}
+
 function handleUnauthorizedResponse() {
   clearSession();
   if (typeof window === "undefined") return;
@@ -29,16 +44,122 @@ function handleUnauthorizedResponse() {
   window.location.replace(`/auth?next=${encodeURIComponent(next)}`);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  const normalized = String(token || "").trim();
+  if (!normalized) return null;
+
+  const segments = normalized.split(".");
+  if (segments.length < 2) return null;
+
+  try {
+    const base64 = segments[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const decodeBase64 =
+      typeof globalThis !== "undefined" && typeof globalThis.atob === "function"
+        ? globalThis.atob.bind(globalThis)
+        : null;
+    if (!decodeBase64) return null;
+    const decoded = decodeBase64(padded);
+    const payload = JSON.parse(decoded);
+    return payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAccessTokenExpired(token: string) {
+  const payload = decodeJwtPayload(token);
+  const exp = Number(payload?.exp);
+  if (!Number.isFinite(exp) || exp <= 0) return false;
+  const now = Math.floor(Date.now() / 1000);
+  return exp <= now + 30;
+}
+
+async function parsePayload(response: Response) {
+  const text = await response.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) {
+    return refreshPromise;
+  }
+
+  refreshPromise = (async () => {
+    const session = readSession();
+    const refreshToken =
+      session && typeof session.refreshToken === "string" ? session.refreshToken.trim() : "";
+
+    const url = await resolveApiUrl("/api/auth/refresh");
+    const response = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(refreshToken ? { refreshToken } : {}),
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      return null;
+    }
+
+    const data =
+      payload && typeof payload === "object" && "data" in payload && "success" in payload
+        ? (payload as { data: Record<string, unknown> }).data
+        : (payload as Record<string, unknown> | null);
+    const nextAccessToken =
+      typeof data?.accessToken === "string" && data.accessToken.trim()
+        ? data.accessToken
+        : "";
+    if (!nextAccessToken) {
+      return null;
+    }
+
+    const current = readSession();
+    const nextRole = normalizeRole(data?.role ?? current?.role);
+    const nextSession: Session = {
+      ...(current || {}),
+      accessToken: nextAccessToken,
+      token: nextAccessToken,
+      refreshToken:
+        typeof data?.refreshToken === "string" && data.refreshToken.trim()
+          ? data.refreshToken
+          : current?.refreshToken,
+      role: nextRole,
+      roles: normalizeRoles(data?.roles ?? current?.roles, nextRole),
+    };
+    writeSession(nextSession);
+    authRedirectScheduled = false;
+    return nextAccessToken;
+  })().finally(() => {
+    refreshPromise = null;
+  });
+
+  return refreshPromise;
+}
+
+async function request<T>(path: string, init?: RequestInit, allowRetry = true): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   const session = readSession();
-  const token = session?.accessToken || session?.token || "";
+  let token = session?.accessToken || session?.token || "";
 
   if (!hasSessionToken(session) && !isPublicApiPath(path)) {
     handleUnauthorizedResponse();
     const error = new Error("Missing authentication session") as BackendRequestError;
     error.status = 401;
     throw error;
+  }
+
+  if (token && !isPublicApiPath(path) && isAccessTokenExpired(token)) {
+    const refreshedToken = await refreshAccessToken();
+    if (!refreshedToken) {
+      handleUnauthorizedResponse();
+      const error = new Error("Authentication session expired") as BackendRequestError;
+      error.status = 401;
+      throw error;
+    }
+    token = refreshedToken;
   }
 
   if (token && !headers.has("Authorization")) {
@@ -49,11 +170,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const url = await resolveApiUrl(path);
-  const response = await fetch(url, { ...init, headers });
-  const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  const response = await fetch(url, { ...init, headers, credentials: "include" });
+  const payload = await parsePayload(response);
 
   if (!response.ok) {
+    if (response.status === 401 && allowRetry && !isPublicApiPath(path)) {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        const retryHeaders = new Headers(init?.headers ?? {});
+        retryHeaders.set("Authorization", `Bearer ${refreshedToken}`);
+        if (init?.body && !(init.body instanceof FormData) && !retryHeaders.has("Content-Type")) {
+          retryHeaders.set("Content-Type", "application/json");
+        }
+        return request<T>(path, { ...init, headers: retryHeaders }, false);
+      }
+    }
     if (response.status === 401) {
       handleUnauthorizedResponse();
     }
@@ -66,9 +197,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (payload && typeof payload === "object" && "data" in payload && "success" in payload) {
+    authRedirectScheduled = false;
     return (payload as { data: T }).data;
   }
 
+  authRedirectScheduled = false;
   return payload as T;
 }
 
@@ -102,10 +235,16 @@ export const sellerBackendApi = {
   getLiveFeedWorkspace: () => request<Record<string, unknown>>("/api/dashboard/live-feed"),
   getSellerPublicProfile: () => request<Record<string, unknown>>("/api/dashboard/seller-public-profile"),
   getDashboardSummary: () => request<Record<string, unknown>>("/api/dashboard/summary"),
-  getSellerOrders: () =>
-    request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
-      "/api/seller/orders"
-    ),
+  getSellerOrders: (query?: { limit?: number; offset?: number; channel?: string }) => {
+    const params = new URLSearchParams();
+    if (typeof query?.limit === "number") params.set("limit", String(query.limit));
+    if (typeof query?.offset === "number") params.set("offset", String(query.offset));
+    if (query?.channel) params.set("channel", query.channel);
+    const search = params.toString();
+    return request<{ orders?: Array<Record<string, unknown>>; returns?: Array<Record<string, unknown>>; disputes?: Array<Record<string, unknown>> }>(
+      `/api/seller/orders${search ? `?${search}` : ""}`
+    );
+  },
   getSellerListingWizard: () => request<Record<string, unknown>>("/api/seller/listing-wizard"),
   getSellerOrderDetail: (id: string) =>
     request<Record<string, unknown>>(`/api/seller/orders/${encodeURIComponent(id)}`),
@@ -286,6 +425,11 @@ export const sellerBackendApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  sendTestNotificationPreferences: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/settings/notification-preferences/test", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getAnalyticsPage: () => request<Record<string, unknown>>("/api/analytics/page"),
   getAnalyticsRankDetail: (query?: { range?: string; category?: string }) => {
     const params = new URLSearchParams();
@@ -348,7 +492,9 @@ export const sellerBackendApi = {
   patchWorkflowScreenState: (key: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/workflow/screen-state/${encodeURIComponent(key)}`, {
       method: "PATCH",
-      body: JSON.stringify(body),
+      body: JSON.stringify(
+        body.__resetToDefault === true && Object.keys(body).length === 1 ? body : { payload: body }
+      ),
     }),
   getContentApprovals: () => request<Array<Record<string, unknown>>>("/api/content-approvals"),
   createContentApproval: (body: Record<string, unknown>) =>
@@ -454,6 +600,10 @@ export const sellerBackendApi = {
   getFinanceHolds: () => request<Record<string, unknown>>("/api/seller/finance/holds"),
   getFinanceInvoices: () => request<Record<string, unknown>>("/api/seller/finance/invoices"),
   getFinanceStatements: () => request<Record<string, unknown>>("/api/seller/finance/statements"),
+  generateFinanceStatement: () =>
+    request<Record<string, unknown>>("/api/seller/finance/statements/generate", {
+      method: "POST",
+    }),
   getFinanceTaxReports: () => request<Record<string, unknown>>("/api/seller/finance/tax-reports"),
   patchFinanceInvoice: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/seller/finance/invoices/${encodeURIComponent(id)}`, {
@@ -507,6 +657,11 @@ export const sellerBackendApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  respondReview: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/reviews/respond", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   replyReview: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/reviews/${encodeURIComponent(id)}/replies`, {
       method: "POST",
@@ -535,7 +690,17 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getProviderConsultations: () => request<Record<string, unknown>>("/api/provider/consultations"),
+  createProviderConsultationRequest: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/provider/consultations", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getProviderBookings: () => request<Record<string, unknown>>("/api/provider/bookings"),
+  createProviderBookingRequest: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/provider/bookings", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getProviderPortfolio: () => request<Record<string, unknown>>("/api/provider/portfolio"),
   patchProviderPortfolio: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/provider/portfolio", {
@@ -586,19 +751,19 @@ export const sellerBackendApi = {
   patchDealzMarketplace: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/campaigns/dealz-marketplace", {
       method: "PATCH",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   getCampaignWorkspace: () => request<Record<string, unknown>>("/api/campaigns/workspace"),
   getCampaigns: () => request<Array<Record<string, unknown>>>("/api/campaigns"),
   createCampaign: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/campaigns", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   patchCampaign: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/campaigns/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   getWholesaleRfqs: () => request<Record<string, unknown>>("/api/wholesale/rfqs"),
   getWholesaleQuotes: () => request<Record<string, unknown>>("/api/wholesale/quotes"),
@@ -635,7 +800,7 @@ export const sellerBackendApi = {
   saveLiveBuilder: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/live/builder/save", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   publishLiveBuilder: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/live/builder/${encodeURIComponent(id)}/publish`, {
@@ -648,12 +813,12 @@ export const sellerBackendApi = {
   createAdzCampaign: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/adz/campaigns", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   patchAdzCampaign: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   getAdzMarketplace: () => request<Array<Record<string, unknown>>>("/api/adz/marketplace"),
   getAdzBuilderConfig: () => request<Record<string, unknown>>("/api/adz/builder-config"),
@@ -662,7 +827,7 @@ export const sellerBackendApi = {
   saveAdzBuilder: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/adz/builder/save", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   validateAdzSchedule: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/adz/validate-schedule", {
@@ -672,7 +837,7 @@ export const sellerBackendApi = {
   publishAdzBuilder: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/adz/builder/${encodeURIComponent(id)}/publish`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ payload: body }),
     }),
   getAdzPerformance: (id: string) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}/performance`),

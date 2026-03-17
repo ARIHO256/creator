@@ -39,8 +39,12 @@ export class ReviewsService {
     return { total, publicCount, average };
   }
 
-  async list(userId: string, role: string, scope?: 'received' | 'authored') {
+  async list(userId: string, role: string, scope?: 'received' | 'authored', limit?: string) {
     const reviewSubject = this.reviewSubjectForRole(role);
+    const parsedLimit = Number(limit);
+    const take = Number.isFinite(parsedLimit)
+      ? Math.max(1, Math.min(1000, Math.floor(parsedLimit)))
+      : 250;
     const where =
       scope === 'authored'
         ? { reviewerUserId: userId, subjectType: reviewSubject }
@@ -56,7 +60,8 @@ export class ReviewsService {
     const reviews = await this.prisma.review.findMany({
       where,
       include: { replies: { orderBy: { createdAt: 'desc' } } },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take
     });
 
     return reviews;
@@ -102,23 +107,36 @@ export class ReviewsService {
 
   async update(userId: string, id: string, payload: UpdateReviewDto) {
     const review = await this.prisma.review.findFirst({
-      where: { id, reviewerUserId: userId }
+      where: {
+        id,
+        OR: [{ reviewerUserId: userId }, { subjectUserId: userId }]
+      }
     });
     if (!review) {
       throw new NotFoundException('Review not found');
     }
 
+    const isReviewer = review.reviewerUserId === userId;
     if (payload.ratingOverall !== undefined) {
+      if (!isReviewer) {
+        throw new BadRequestException('Only the review author can update ratings');
+      }
       this.assertRating(payload.ratingOverall);
     }
 
     const resolvedAt = payload.resolvedAt ? this.parseDate(payload.resolvedAt, 'resolvedAt') : undefined;
     const flaggedAt = payload.flaggedAt ? this.parseDate(payload.flaggedAt, 'flaggedAt') : undefined;
     const shouldFlag = payload.status === 'FLAGGED';
+    const replyBody = payload.replyBody?.trim();
+    const updateData: Prisma.ReviewUpdateInput = {
+      requiresResponse: payload.requiresResponse ?? undefined,
+      status: payload.status ?? undefined,
+      resolvedAt: resolvedAt ?? undefined,
+      flaggedAt: shouldFlag ? flaggedAt ?? new Date() : flaggedAt ?? undefined
+    };
 
-    return this.prisma.review.update({
-      where: { id: review.id },
-      data: {
+    if (isReviewer) {
+      Object.assign(updateData, {
         ratingOverall: payload.ratingOverall ?? undefined,
         ratingBreakdown: payload.ratingBreakdown as Prisma.InputJsonValue | undefined,
         quickTags: payload.quickTags as Prisma.InputJsonValue | undefined,
@@ -133,16 +151,30 @@ export class ReviewsService {
         marketplace: payload.marketplace ?? undefined,
         mldzSurface: payload.mldzSurface ?? undefined,
         sentiment: payload.sentiment ?? undefined,
-        requiresResponse: payload.requiresResponse ?? undefined,
         wouldJoinAgain: payload.wouldJoinAgain ?? undefined,
         transactionIntent: payload.transactionIntent ?? undefined,
         isPublic: payload.isPublic ?? undefined,
         isAnonymous: payload.isAnonymous ?? undefined,
-        status: payload.status ?? undefined,
-        resolvedAt: resolvedAt ?? undefined,
-        flaggedAt: shouldFlag ? flaggedAt ?? new Date() : flaggedAt ?? undefined,
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      if (replyBody) {
+        await tx.reviewReply.create({
+          data: {
+            reviewId: review.id,
+            authorUserId: userId,
+            body: replyBody,
+            visibility: payload.replyVisibility ?? 'PUBLIC'
+          }
+        });
       }
+
+      return tx.review.update({
+        where: { id: review.id },
+        data: updateData
+      });
     });
   }
 
@@ -159,6 +191,48 @@ export class ReviewsService {
         body,
         visibility: visibility ?? 'PUBLIC'
       }
+    });
+  }
+
+  async respond(
+    userId: string,
+    reviewId: string,
+    body: string,
+    visibility?: 'PUBLIC' | 'PRIVATE',
+    status?: 'PUBLISHED' | 'FLAGGED'
+  ) {
+    const review = await this.prisma.review.findFirst({
+      where: {
+        id: reviewId,
+        OR: [{ reviewerUserId: userId }, { subjectUserId: userId }]
+      }
+    });
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+
+    const replyBody = body.trim();
+    if (!replyBody) {
+      throw new BadRequestException('Reply body is required');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.reviewReply.create({
+        data: {
+          reviewId: review.id,
+          authorUserId: userId,
+          body: replyBody,
+          visibility: visibility ?? 'PUBLIC'
+        }
+      });
+
+      return tx.review.update({
+        where: { id: review.id },
+        data: {
+          requiresResponse: false,
+          status: status ?? (review.status as 'PUBLISHED' | 'FLAGGED')
+        }
+      });
     });
   }
 

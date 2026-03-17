@@ -4,6 +4,8 @@ import { RateLimit } from '../../common/decorators/rate-limit.decorator.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
+import { CreateProviderBookingRequestDto } from './dto/create-provider-booking-request.dto.js';
+import { CreateProviderConsultationRequestDto } from './dto/create-provider-consultation-request.dto.js';
 import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
 import { ProviderTransitionDto } from './dto/provider-transition.dto.js';
 import { ProviderFulfillmentTransitionDto } from './dto/provider-fulfillment-transition.dto.js';
@@ -35,7 +37,19 @@ export class ProviderController {
     return this.service.updateJointQuote(user.sub, id, body);
   }
   @Get('consultations') consultations(@CurrentUser() user: RequestUser) { return this.service.consultations(user.sub); }
+  @Roles('SELLER', 'PROVIDER', 'CREATOR', 'ADMIN')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Post('consultations')
+  requestConsultation(@CurrentUser() user: RequestUser, @Body() body: CreateProviderConsultationRequestDto) {
+    return this.service.requestConsultation(user, body);
+  }
   @Get('bookings') bookings(@CurrentUser() user: RequestUser) { return this.service.bookings(user.sub); }
+  @Roles('SELLER', 'PROVIDER', 'CREATOR', 'ADMIN')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Post('bookings')
+  requestBooking(@CurrentUser() user: RequestUser, @Body() body: CreateProviderBookingRequestDto) {
+    return this.service.requestBooking(user, body);
+  }
   @Get('bookings/:id') booking(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.booking(user.sub, id); }
   @RateLimit({ limit: 20, windowMs: 60_000 })
   @Post('bookings/:id/transition')

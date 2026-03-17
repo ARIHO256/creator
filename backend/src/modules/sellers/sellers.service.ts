@@ -54,7 +54,6 @@ export class SellersService {
       where: { sellerId: profile.id },
       skip,
       take,
-      include: { deal: true },
       orderBy: { createdAt: 'desc' }
     });
   }

@@ -118,6 +118,193 @@ function clampNumber(n, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function readString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function mapOnboardingLanguage(code) {
+  const normalized = readString(code).toLowerCase();
+  if (normalized === "en") return "English";
+  if (normalized === "sw") return "Swahili";
+  if (normalized === "fr") return "French";
+  if (normalized === "ar") return "Arabic";
+  if (normalized === "zh-cn" || normalized === "zh") return "Chinese (Simplified)";
+  if (normalized === "pt") return "Portuguese";
+  if (normalized === "es") return "Spanish";
+  if (normalized === "de") return "German";
+  return "";
+}
+
+function inferRegionFromCountry(country) {
+  const normalized = readString(country).toLowerCase();
+  if (["uganda", "kenya", "tanzania", "rwanda", "burundi", "south sudan"].includes(normalized)) {
+    return "East Africa";
+  }
+  if (["south africa", "zambia", "zimbabwe", "botswana", "namibia", "mozambique"].includes(normalized)) {
+    return "Southern Africa";
+  }
+  if (["nigeria", "ghana", "senegal", "ivory coast", "cote d'ivoire", "cameroon"].includes(normalized)) {
+    return "West Africa";
+  }
+  if (["egypt", "morocco", "tunisia", "algeria", "libya"].includes(normalized)) {
+    return "North Africa";
+  }
+  if (["china", "india", "uae", "japan"].includes(normalized)) {
+    return "Asia";
+  }
+  if (["united kingdom", "france", "germany", "italy", "spain"].includes(normalized)) {
+    return "Europe";
+  }
+  if (["united states", "canada", "mexico"].includes(normalized)) {
+    return "North America";
+  }
+  return "";
+}
+
+function mapOnboardingPayoutMethod(method) {
+  const normalized = readString(method).toLowerCase();
+  if (normalized === "bank_account") return "Bank";
+  if (normalized === "mobile_money") return "Mobile Money";
+  if (normalized === "alipay") return "AliPay";
+  if (normalized === "wechat_pay") return "WeChat Pay";
+  if (normalized === "other_local") return "PayPal / Wallet";
+  return "";
+}
+
+function mapOnboardingPayoutSchedule(value) {
+  const normalized = readString(value).toLowerCase();
+  if (normalized === "daily") return "Daily";
+  if (normalized === "weekly") return "Weekly";
+  if (normalized === "biweekly") return "Biweekly";
+  if (normalized === "monthly") return "Monthly";
+  if (normalized === "on_threshold") return "When balance reaches a threshold";
+  return "";
+}
+
+function mapOnboardingKybStatus(value) {
+  const normalized = readString(value).toUpperCase();
+  if (normalized === "APPROVED") return "verified";
+  if (normalized === "SUBMITTED" || normalized === "IN_REVIEW") return "in_review";
+  if (normalized === "REJECTED") return "rejected";
+  return "unverified";
+}
+
+function buildAddress(parts) {
+  return parts.map(readString).filter(Boolean).join(", ");
+}
+
+function mapOnboardingToSupplierSettings(baseForm, onboardingPayload) {
+  const onboarding = asRecord(onboardingPayload);
+  if (!Object.keys(onboarding).length) {
+    return baseForm;
+  }
+
+  const support = asRecord(onboarding.support);
+  const shipFrom = asRecord(onboarding.shipFrom);
+  const payout = asRecord(onboarding.payout);
+  const tax = asRecord(onboarding.tax);
+  const docs = asRecord(onboarding.docs);
+  const docList = asArray(docs.list);
+  const languages = asArray(onboarding.languages)
+    .map(mapOnboardingLanguage)
+    .filter(Boolean);
+  const country = readString(shipFrom.country);
+  const region = inferRegionFromCountry(country);
+  const accountType = readString(tax.taxpayerType).toLowerCase() === "business" ? "Business" : "Individual";
+  const businessAddress = buildAddress([
+    shipFrom.address1,
+    shipFrom.address2,
+    shipFrom.city,
+    shipFrom.province,
+    shipFrom.country,
+    shipFrom.postalCode,
+  ]);
+
+  return deepMerge(baseForm, {
+    profile: {
+      businessName: readString(onboarding.storeName),
+      handle: readString(onboarding.storeSlug),
+      tagline: readString(onboarding.about),
+      country,
+      currency: readString(payout.currency),
+      bio: readString(onboarding.about),
+      brandLanguages: languages,
+      targetRegions: region ? [region] : baseForm.profile.targetRegions,
+      accountType,
+      business: {
+        legalName: readString(tax.legalName) || readString(onboarding.storeName),
+        registrationNumber: readString(tax.taxId),
+        website: readString(onboarding.website),
+        address: businessAddress,
+      },
+    },
+    kyb: {
+      status: mapOnboardingKybStatus(onboarding.status),
+      entityType: accountType,
+      representativeName: readString(onboarding.owner) || readString(tax.contact),
+      documentType: docList.length ? readString(asRecord(docList[0]).type) || baseForm.kyb.documentType : baseForm.kyb.documentType,
+      idFileName: readString(asRecord(docList.find((entry) => readString(asRecord(entry).type).toLowerCase().includes("id"))).name),
+      idUploaded: docList.some((entry) => readString(asRecord(entry).type).toLowerCase().includes("id")),
+      registrationFileName: readString(
+        asRecord(
+          docList.find((entry) => {
+            const type = readString(asRecord(entry).type).toLowerCase();
+            return type.includes("registration") || type.includes("license");
+          })
+        ).name
+      ),
+      registrationUploaded: docList.some((entry) => {
+        const type = readString(asRecord(entry).type).toLowerCase();
+        return type.includes("registration") || type.includes("license");
+      }),
+      taxFileName: readString(
+        asRecord(docList.find((entry) => readString(asRecord(entry).type).toLowerCase().includes("tax"))).name
+      ),
+      taxUploaded: docList.some((entry) => readString(asRecord(entry).type).toLowerCase().includes("tax")),
+      addressUploaded: Boolean(businessAddress),
+    },
+    payout: {
+      method: mapOnboardingPayoutMethod(payout.method),
+      currency: readString(payout.currency),
+      schedule: mapOnboardingPayoutSchedule(payout.rhythm),
+      minThreshold: Number(payout.thresholdAmount) || 0,
+      bank: {
+        bankName: readString(payout.bankName),
+        accountName: readString(payout.accountName),
+        accountNumber: readString(payout.accountNo),
+        swift: readString(payout.swiftBic),
+      },
+      mobile: {
+        provider: readString(payout.mobileProvider),
+        number: [readString(payout.mobileCountryCode), readString(payout.mobileNo)].filter(Boolean).join(" "),
+      },
+      wallet: {
+        provider: readString(payout.otherProvider) || readString(payout.otherMethod),
+        email: readString(payout.notificationsEmail) || readString(onboarding.email),
+      },
+      alipay: { accountId: readString(payout.alipayLogin) },
+      wechat: { accountId: readString(payout.wechatId) },
+      tax: {
+        residency: readString(tax.taxCountry),
+        taxId: readString(tax.taxId),
+      },
+    },
+    settings: {
+      notifications: {
+        payouts: Boolean(readString(payout.notificationsEmail) || readString(payout.notificationsWhatsApp)),
+      },
+    },
+  });
+}
+
 /* ------------------------- Toasts ------------------------- */
 
 function useToasts() {
@@ -411,7 +598,16 @@ function UploadMini({ title, helper, value, onPick, accept = "*/*" }) {
 
 /* ------------------------- Options (Supplier) ------------------------- */
 
-const LANGUAGE_OPTIONS = ["English", "Swahili", "French", "Arabic", "Chinese", "Portuguese"];
+const LANGUAGE_OPTIONS = [
+  "English",
+  "Swahili",
+  "French",
+  "Arabic",
+  "Portuguese",
+  "Spanish",
+  "German",
+  "Chinese (Simplified)"
+];
 const REGION_OPTIONS = ["East Africa", "Southern Africa", "West Africa", "North Africa", "Asia", "Europe", "North America"];
 
 const OTHER_SOCIAL_OPTIONS = ["Facebook", "X (Twitter)", "Snapchat", "Kwai", "LinkedIn", "Twitch", "Pinterest", "Other"];
@@ -455,6 +651,95 @@ const PAYOUT_METHODS = [
   { key: "AliPay", title: "AliPay", desc: "China payment method for cross-border payments." },
   { key: "WeChat Pay", title: "WeChat Pay", desc: "China payment method for cross-border payments." }
 ];
+
+const PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "RWF", "ZAR"];
+const PAYOUT_RHYTHMS = ["Daily", "Weekly", "Biweekly", "Monthly", "When balance reaches a threshold"];
+
+const DEFAULT_SUPPLIER_SETTINGS_LOOKUPS = {
+  languages: LANGUAGE_OPTIONS,
+  supplierModels: SUPPLIER_MODELS,
+  supplierTargetRegions: REGION_OPTIONS,
+  productCategories: PRODUCT_CATEGORIES,
+  serviceCategories: SERVICE_CATEGORIES,
+  contentFormats: CONTENT_FORMATS,
+  creatorUsageDecisions: CREATOR_USAGE_DECISIONS,
+  collabModes: COLLAB_MODES,
+  approvalModes: APPROVAL_MODES,
+  payoutMethodCards: PAYOUT_METHODS,
+  payoutCurrencies: PAYOUT_CURRENCIES,
+  payoutRhythms: PAYOUT_RHYTHMS
+};
+
+function normalizeStringOptions(value, fallback) {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value.map((entry) => String(entry || "").trim()).filter(Boolean);
+  return rows.length ? rows : fallback;
+}
+
+function normalizeCodeLabelList(value, fallback) {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return "";
+      const item = entry;
+      return String(item.label || item.value || item.code || "").trim();
+    })
+    .filter(Boolean);
+  return rows.length ? rows : fallback;
+}
+
+function normalizePayoutMethodCards(value, fallback) {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const item = entry;
+      const key = String(item.key || "").trim();
+      const title = String(item.title || key || "").trim();
+      const desc = String(item.desc || "").trim();
+      if (!key || !title) return null;
+      return { key, title, desc };
+    })
+    .filter(Boolean);
+  return rows.length ? rows : fallback;
+}
+
+function normalizeSupplierSettingsLookups(payload) {
+  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+
+  return {
+    languages: normalizeCodeLabelList(source.languages, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.languages),
+    supplierModels: normalizeStringOptions(source.supplierModels, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.supplierModels),
+    supplierTargetRegions: normalizeStringOptions(
+      source.supplierTargetRegions,
+      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.supplierTargetRegions
+    ),
+    productCategories: normalizeStringOptions(
+      source.productCategories,
+      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.productCategories
+    ),
+    serviceCategories: normalizeStringOptions(
+      source.serviceCategories,
+      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.serviceCategories
+    ),
+    contentFormats: normalizeStringOptions(source.contentFormats, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.contentFormats),
+    creatorUsageDecisions: normalizeStringOptions(
+      source.creatorUsageDecisions,
+      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.creatorUsageDecisions
+    ),
+    collabModes: normalizeStringOptions(source.collabModes, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.collabModes),
+    approvalModes: normalizeStringOptions(source.approvalModes, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.approvalModes),
+    payoutMethodCards: normalizePayoutMethodCards(
+      source.payoutMethodCards,
+      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.payoutMethodCards
+    ),
+    payoutCurrencies: normalizeStringOptions(
+      source.payoutCurrencies,
+      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.payoutCurrencies
+    ),
+    payoutRhythms: normalizeCodeLabelList(source.payoutRhythms, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.payoutRhythms)
+  };
+}
 
 /* ------------------------- Policies (Supplier summaries) ------------------------- */
 
@@ -713,6 +998,7 @@ export default function SupplierSettingsSafetyPage() {
   const { toasts, push } = useToasts();
 
   const [form, setForm] = useState(createEmptySupplierSettingsForm());
+  const [lookups, setLookups] = useState(DEFAULT_SUPPLIER_SETTINGS_LOOKUPS);
   const [saved, setSaved] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
@@ -750,20 +1036,42 @@ export default function SupplierSettingsSafetyPage() {
 
     const hydrate = async () => {
       try {
-        const payload = await sellerBackendApi.getSettings();
+        const [settingsResult, onboardingResult, lookupResult] = await Promise.allSettled([
+          sellerBackendApi.getSettings(),
+          sellerBackendApi.getOnboarding(),
+          sellerBackendApi.getOnboardingLookups(),
+        ]);
         if (cancelled) return;
-        const nextForm =
-          payload &&
-          typeof payload === "object" &&
-          payload.profile &&
-          typeof payload.profile === "object" &&
-          (payload.profile as { supplierSettings?: unknown }).supplierSettings &&
-          typeof (payload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
-            ? deepMerge(createEmptySupplierSettingsForm(), (payload.profile as { supplierSettings: unknown }).supplierSettings)
-            : createEmptySupplierSettingsForm();
+        const baseForm = createEmptySupplierSettingsForm();
+        const lookupPayload =
+          lookupResult.status === "fulfilled" && lookupResult.value && typeof lookupResult.value === "object"
+            ? lookupResult.value
+            : null;
+        setLookups(normalizeSupplierSettingsLookups(lookupPayload));
+        const onboardingPayload =
+          onboardingResult.status === "fulfilled" && onboardingResult.value && typeof onboardingResult.value === "object"
+            ? (onboardingResult.value as Record<string, unknown>)
+            : null;
+        const hydratedFromOnboarding = mapOnboardingToSupplierSettings(baseForm, onboardingPayload);
+        const settingsPayload =
+          settingsResult.status === "fulfilled" && settingsResult.value && typeof settingsResult.value === "object"
+            ? (settingsResult.value as Record<string, unknown>)
+            : null;
+        const savedSupplierSettings =
+          settingsPayload &&
+          settingsPayload.profile &&
+          typeof settingsPayload.profile === "object" &&
+          (settingsPayload.profile as { supplierSettings?: unknown }).supplierSettings &&
+          typeof (settingsPayload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
+            ? ((settingsPayload.profile as { supplierSettings: unknown }).supplierSettings as Record<string, unknown>)
+            : null;
+        const nextForm = savedSupplierSettings
+          ? deepMerge(hydratedFromOnboarding, savedSupplierSettings)
+          : hydratedFromOnboarding;
         setForm(nextForm);
       } catch {
         if (!cancelled) {
+          setLookups(DEFAULT_SUPPLIER_SETTINGS_LOOKUPS);
           setForm(createEmptySupplierSettingsForm());
         }
       } finally {
@@ -1352,7 +1660,7 @@ export default function SupplierSettingsSafetyPage() {
               </Field>
               <Field label="Supplier model">
                 <Select value={form.profile.supplierModel} onChange={(e) => update("profile.supplierModel", e.target.value)}>
-                  {SUPPLIER_MODELS.map((x) => (
+                  {lookups.supplierModels.map((x) => (
                     <option key={x} value={x}>
                       {x}
                     </option>
@@ -1367,7 +1675,7 @@ export default function SupplierSettingsSafetyPage() {
               </Field>
               <Field label="Currency">
                 <Select value={form.profile.currency} onChange={(e) => update("profile.currency", e.target.value)}>
-                  {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
+                  {lookups.payoutCurrencies.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -1397,7 +1705,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.profile.brandLanguages || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {LANGUAGE_OPTIONS.map((l) => (
+                  {lookups.languages.map((l) => (
                     <Chip key={l} label={l} active={(form.profile.brandLanguages || []).includes(l)} onClick={() => toggleInArray("profile.brandLanguages", l)} />
                   ))}
                 </div>
@@ -1412,7 +1720,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.profile.targetRegions || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {REGION_OPTIONS.map((r) => (
+                  {lookups.supplierTargetRegions.map((r) => (
                     <Chip key={r} label={r} active={(form.profile.targetRegions || []).includes(r)} onClick={() => toggleInArray("profile.targetRegions", r)} />
                   ))}
                 </div>
@@ -1727,7 +2035,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.preferences.productCategories || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {PRODUCT_CATEGORIES.map((x) => (
+                  {lookups.productCategories.map((x) => (
                     <Chip key={x} label={x} active={(form.preferences.productCategories || []).includes(x)} onClick={() => toggleInArray("preferences.productCategories", x)} />
                   ))}
                 </div>
@@ -1742,7 +2050,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.preferences.serviceCategories || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {SERVICE_CATEGORIES.map((x) => (
+                  {lookups.serviceCategories.map((x) => (
                     <Chip key={x} label={x} active={(form.preferences.serviceCategories || []).includes(x)} onClick={() => toggleInArray("preferences.serviceCategories", x)} />
                   ))}
                 </div>
@@ -1758,7 +2066,7 @@ export default function SupplierSettingsSafetyPage() {
                 <Badge tone="neutral">{(form.preferences.contentFormats || []).length}</Badge>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {CONTENT_FORMATS.map((x) => (
+                {lookups.contentFormats.map((x) => (
                   <Chip key={x} label={x} active={(form.preferences.contentFormats || []).includes(x)} onClick={() => toggleInArray("preferences.contentFormats", x)} />
                 ))}
               </div>
@@ -1790,7 +2098,7 @@ export default function SupplierSettingsSafetyPage() {
                 <div className="mt-2 grid grid-cols-1 gap-2">
                   <Field label="Creator Usage Decision (default)" hint="Required during campaign creation.">
                     <Select value={form.preferences.creatorUsageDefault} onChange={(e) => update("preferences.creatorUsageDefault", e.target.value)}>
-                      {CREATOR_USAGE_DECISIONS.map((x) => (
+                      {lookups.creatorUsageDecisions.map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>
@@ -1799,7 +2107,7 @@ export default function SupplierSettingsSafetyPage() {
                   </Field>
                   <Field label="Collaboration Mode (default)">
                     <Select value={form.preferences.collabModeDefault} onChange={(e) => update("preferences.collabModeDefault", e.target.value)}>
-                      {COLLAB_MODES.map((x) => (
+                      {lookups.collabModes.map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>
@@ -1808,7 +2116,7 @@ export default function SupplierSettingsSafetyPage() {
                   </Field>
                   <Field label="Content Approval (default)" hint="Manual: supplier approves before Admin. Auto: goes direct to Admin.">
                     <Select value={form.preferences.approvalModeDefault} onChange={(e) => update("preferences.approvalModeDefault", e.target.value)}>
-                      {APPROVAL_MODES.map((x) => (
+                      {lookups.approvalModes.map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>
@@ -1925,7 +2233,7 @@ export default function SupplierSettingsSafetyPage() {
                   <div className="font-semibold">Premium behavior</div>
                   <ul className="mt-1 list-disc pl-4 space-y-1">
                     <li>Producers see warnings if a member is booked in another live session.</li>
-                    <li>Owners can see team availability if they have permission ("View team availability").</li>
+                    <li>Owners can see team availability if they have permission (&quot;View team availability&quot;).</li>
                     <li>Guest creators can share availability without full workspace access (policy-limited).</li>
                   </ul>
                 </div>
@@ -2135,7 +2443,7 @@ export default function SupplierSettingsSafetyPage() {
                 <div className="text-sm">Payout method</div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">Choose where settlements should go.</div>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {PAYOUT_METHODS.map((m) => {
+                  {lookups.payoutMethodCards.map((m) => {
                     const active = form.payout.method === m.key;
                     return (
                       <button
@@ -2164,7 +2472,7 @@ export default function SupplierSettingsSafetyPage() {
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Currency">
                     <Select value={form.payout.currency} onChange={(e) => update("payout.currency", e.target.value)}>
-                      {["UGX", "KES", "TZS", "USD", "EUR", "CNY"].map((c) => (
+                      {lookups.payoutCurrencies.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -2173,7 +2481,7 @@ export default function SupplierSettingsSafetyPage() {
                   </Field>
                   <Field label="Schedule">
                     <Select value={form.payout.schedule} onChange={(e) => update("payout.schedule", e.target.value)}>
-                      {["Daily", "Weekly", "Biweekly", "Monthly"].map((x) => (
+                      {lookups.payoutRhythms.map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>

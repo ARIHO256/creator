@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { sellerBackendApi } from "../../../lib/backendApi";
+import { formatOrderDisplayId, formatOrderItemDisplaySku } from "../../../lib/orderIds";
 import { useLocalization } from "../../../localization/LocalizationProvider";
 
 const EMPTY_ORDER = {
@@ -37,7 +38,10 @@ function normalizeInvoicePayload(payload: Record<string, unknown>) {
     ? payload.items.map((entry) => {
         const item = asRecord(entry);
         return {
-          sku: String(item.sku || item.id || ""),
+          sku: formatOrderItemDisplaySku(
+            typeof item.sku === "string" ? item.sku : null,
+            typeof item.id === "string" ? item.id : null
+          ),
           title: String(item.name || item.title || ""),
           qty: Number(item.qty || 0),
           price: Number(item.unitPrice || item.price || 0),
@@ -121,6 +125,7 @@ export default function SellerPrintInvoiceEVzoneV2() {
         : `/pack/${order.id || id || ""}`,
     [id, order.id]
   );
+  const displayOrderId = formatOrderDisplayId(order.id || id || "");
   const isPromo = order.channel === "MyLiveDealz" || order.promo === true;
   const logoSrc = isPromo
     ? "/assets/brand/mylivedealz-mark-color.svg"
@@ -133,7 +138,7 @@ export default function SellerPrintInvoiceEVzoneV2() {
       <div className="no-print sticky top-0 z-10 border-b bg-white dark:bg-slate-900/90 px-4 py-2">
         <div className="w-full flex items-center justify-between">
           <div className="font-extrabold" style={{ color: "var(--ev-green)" }}>
-            {t("Invoice")} {order.id ? `— ${order.id}` : ""}
+            {t("Invoice")} {order.id ? `— ${displayOrderId}` : ""}
           </div>
           <div className="inline-flex gap-2">
             <a href={order.id ? `/orders/${order.id}` : "/orders"} className="rounded-lg border px-3 py-1 text-sm">
@@ -160,7 +165,7 @@ export default function SellerPrintInvoiceEVzoneV2() {
           </div>
           <div className="text-right">
             <div className="text-2xl font-extrabold">{t("INVOICE")}</div>
-            <div className="text-sm text-gray-600">{t("Order")}: <b>{order.id || "—"}</b></div>
+            <div className="text-sm text-gray-600">{t("Order")}: <b>{order.id ? displayOrderId : "—"}</b></div>
             <div className="text-sm text-gray-600">{t("Date")}: {order.createdAt || "—"}</div>
             <img alt={t("QR")} className="ml-auto mt-2 h-24 w-24 rounded-md border" src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(packUrl)}`} onError={(e) => { const target = e.currentTarget; if (!target.dataset.ff) { target.dataset.ff = "1"; target.src = "https://quickchart.io/qr?text=" + encodeURIComponent(packUrl); } else { target.src = "data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27180%27 height=%27180%27%3E%3Crect width=%27100%25%27 height=%27100%25%27 fill=%27%23eee%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 dominant-baseline=%27middle%27 text-anchor=%27middle%27 fill=%27%23666%27 font-family=%27Arial%27 font-size=%2712%27%3ENo QR%3C/text%3E%3C/svg%3E"; } }} />
             <div className="mt-1 text-[10px] text-gray-500 break-all">{packUrl}</div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { markSellerReviewOpened } from "../../lib/attentionState";
 import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
@@ -106,7 +107,14 @@ type Review = {
   status: ReviewStatus;
   sentiment: "Positive" | "Neutral" | "Negative";
   requiresResponse: boolean;
-  response?: { at: string; by: string; text: string };
+  thread: Array<{
+    id: string;
+    at: string;
+    by: string;
+    actor: "buyer" | "support";
+    text: string;
+    kind: "review" | "reply";
+  }>;
 };
 
 type Cluster = { label: string; count: number; tone: Tone };
@@ -374,7 +382,7 @@ function sentimentTone(s: Review["sentiment"]): Tone {
 function trustScore(reviews: Review[]) {
   if (!reviews.length) return 0;
   const avg = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
-  const repliedPct = (reviews.filter((r) => !!r.response).length / reviews.length) * 100;
+  const repliedPct = (reviews.filter((r) => reviewThreadHasSupportReply(r)).length / reviews.length) * 100;
   const negativePct = (reviews.filter((r) => r.sentiment === "Negative").length / reviews.length) * 100;
   return clamp(Math.round(avg * 16 + repliedPct * 0.35 - negativePct * 0.45), 0, 100);
 }
@@ -409,6 +417,41 @@ function normalizeSentiment(value: unknown): Review["sentiment"] {
   return "Positive";
 }
 
+function hasMeaningfulText(value: unknown) {
+  return String(value ?? "").trim().length > 0;
+}
+
+function referenceKindLabel(kind: Review["reference"]["kind"]) {
+  if (kind === "LiveSession") return "Live session";
+  return kind;
+}
+
+function fallbackBuyerName(reference: Review["reference"], marketplace: string) {
+  if (reference.kind === "Order") return marketplace ? `${marketplace} buyer` : "Buyer";
+  if (reference.kind === "Booking") return "Service client";
+  if (reference.kind === "RFQ") return "Wholesale buyer";
+  if (reference.kind === "Campaign") return "Campaign buyer";
+  return "Live shopper";
+}
+
+function fallbackReviewTitle(reference: Review["reference"], rating: number) {
+  const stars = rating > 0 ? `${Math.round(rating * 10) / 10} star rating` : "Rating";
+  return `${referenceKindLabel(reference.kind)} review · ${stars}`;
+}
+
+function fallbackReviewBody(reference: Review["reference"]) {
+  return `No written comment was included with this ${referenceKindLabel(reference.kind).toLowerCase()} review.`;
+}
+
+function getReviewThread(review: Pick<Review, "thread" | "body" | "buyerName" | "createdAt" | "id"> | null | undefined) {
+  if (!review) return [];
+  return Array.isArray(review.thread) ? review.thread : [];
+}
+
+function reviewThreadHasSupportReply(review: Review) {
+  return getReviewThread(review).some((entry) => entry.actor === "support" && entry.kind === "reply");
+}
+
 function normalizeReviewStatus(row: Record<string, unknown>): ReviewStatus {
   if (row.resolvedAt) return "Resolved";
   if (String(row.status ?? "").toUpperCase() === "FLAGGED" || row.flaggedAt) return "Flagged";
@@ -430,37 +473,62 @@ function buildReviewReference(row: Record<string, unknown>): Review["reference"]
 
 function mapBackendReview(row: Record<string, unknown>): Review {
   const replies = Array.isArray(row.replies) ? (row.replies as Array<Record<string, unknown>>) : [];
-  const latestReply = replies[0];
+  const reference = buildReviewReference(row);
+  const channel = normalizeChannel(row.channel);
+  const marketplace = String(row.marketplace ?? channel);
+  const rating = Number(row.ratingOverall ?? 0);
+  const buyerName = hasMeaningfulText(row.buyerName) ? String(row.buyerName) : fallbackBuyerName(reference, marketplace);
+  const title = hasMeaningfulText(row.title) ? String(row.title) : fallbackReviewTitle(reference, rating);
+  const body = hasMeaningfulText(row.reviewText) ? String(row.reviewText) : fallbackReviewBody(reference);
   const tags = [
     ...(Array.isArray(row.quickTags) ? row.quickTags.map((item) => String(item)) : []),
     ...(Array.isArray(row.issueTags) ? row.issueTags.map((item) => String(item)) : []),
   ];
+  const thread = [
+    {
+      id: `${String(row.id ?? "")}_review`,
+      at: String(row.createdAt ?? new Date().toISOString()),
+      by: buyerName,
+      actor: "buyer" as const,
+      text: body,
+      kind: "review" as const,
+    },
+    ...replies
+      .slice()
+      .sort((a, b) => new Date(String(a.createdAt ?? 0)).getTime() - new Date(String(b.createdAt ?? 0)).getTime())
+      .map((reply, index) => {
+        const authorUserId = String(reply.authorUserId ?? "");
+        const isSupport = authorUserId === String(row.subjectUserId ?? "");
+        return {
+          id: String(reply.id ?? `reply_${index}`),
+          at: String(reply.createdAt ?? new Date().toISOString()),
+          by: isSupport ? "Support team" : buyerName,
+          actor: isSupport ? ("support" as const) : ("buyer" as const),
+          text: String(reply.body ?? ""),
+          kind: "reply" as const,
+        };
+      }),
+  ];
   return {
     id: String(row.id ?? ""),
-    buyerName: String(row.buyerName ?? "Customer"),
+    buyerName,
     buyerType: normalizeBuyerType(row.buyerType),
     roleTarget: normalizeRoleTarget(row.roleTarget),
     itemType: normalizeItemType(row.itemType),
-    channel: normalizeChannel(row.channel),
+    channel,
     mldzSurface: normalizeMldzSurface(row.mldzSurface),
-    marketplace: String(row.marketplace ?? "Seller"),
-    rating: Number(row.ratingOverall ?? 0),
-    title: String(row.title ?? ""),
-    body: String(row.reviewText ?? ""),
+    marketplace,
+    rating,
+    title,
+    body,
     createdAt: String(row.createdAt ?? new Date().toISOString()),
     verified: Boolean(row.orderId || row.sessionId || row.campaignId),
-    reference: buildReviewReference(row),
+    reference,
     tags: tags.length ? tags : ["Support"],
     status: normalizeReviewStatus(row),
     sentiment: normalizeSentiment(row.sentiment),
     requiresResponse: Boolean(row.requiresResponse),
-    response: latestReply
-      ? {
-          at: String(latestReply.createdAt ?? new Date().toISOString()),
-          by: "Supplier Team",
-          text: String(latestReply.body ?? ""),
-        }
-      : undefined,
+    thread,
   };
 }
 
@@ -794,6 +862,7 @@ function EmptyState({ title, message, onClear }: { title: string; message: strin
 
 export default function ReviewsHubUnifiedSupplierReputationV3() {
   const templates = REVIEW_REPLY_TEMPLATES;
+  const defaultTemplateId = templates[0]?.id || "";
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -866,9 +935,9 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
   const kpis = useMemo(() => {
     const total = reviews.length;
     const avg = total ? reviews.reduce((s, r) => s + r.rating, 0) / total : 0;
-    const responseRate = total ? Math.round((reviews.filter((r) => !!r.response).length / total) * 100) : 0;
+    const responseRate = total ? Math.round((reviews.filter((r) => reviewThreadHasSupportReply(r)).length / total) * 100) : 0;
     const flagged = reviews.filter((r) => r.status === "Flagged").length;
-    const needsReply = reviews.filter((r) => r.requiresResponse && !r.response).length;
+    const needsReply = reviews.filter((r) => r.requiresResponse && !reviewThreadHasSupportReply(r)).length;
     const trust = trustScore(reviews);
     return { total, avg, responseRate, flagged, needsReply, trust };
   }, [reviews]);
@@ -974,18 +1043,31 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const active = useMemo(() => reviews.find((r) => r.id === detailId) || null, [reviews, detailId]);
+  const detailTitle = active ? active.title : "Review";
+  const detailSubtitle = active
+    ? `${active.buyerName} · ${referenceKindLabel(active.reference.kind)}${active.marketplace ? ` · ${active.marketplace}` : ""}`
+    : "";
+  const activeThread = useMemo(() => getReviewThread(active), [active]);
 
   const [reply, setReply] = useState<string>("");
   const [useAutoTranslate, setUseAutoTranslate] = useState<boolean>(false);
-  const [templateId, setTemplateId] = useState<string>(templates[0]?.id || "");
+  const [templateId, setTemplateId] = useState<string>(defaultTemplateId);
   const replyRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (!detailOpen) return;
-    setReply(active?.response?.text || "");
+    setReply("");
     setUseAutoTranslate(false);
-    setTemplateId(templates[0]?.id || "");
+    setTemplateId(defaultTemplateId);
     window.setTimeout(() => replyRef.current?.focus?.(), 80);
+  }, [active?.id, defaultTemplateId, detailOpen]);
+
+  useEffect(() => {
+    if (!detailOpen || !active?.id) {
+      return;
+    }
+
+    void markSellerReviewOpened(active.id);
   }, [detailOpen, active?.id]);
 
   const applyTemplate = () => {
@@ -1032,10 +1114,11 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
     const final = useAutoTranslate ? `${text}\n\n(Translated automatically)` : text;
 
     try {
-      await sellerBackendApi.replyReview(active.id, { body: final, visibility: "PUBLIC" });
-      await sellerBackendApi.patchReview(active.id, {
+      await sellerBackendApi.respondReview({
+        reviewId: active.id,
+        body: final,
+        visibility: "PUBLIC",
         status: active.status === "Flagged" ? "FLAGGED" : "PUBLISHED",
-        requiresResponse: false,
       });
     } catch {
       return;
@@ -1044,13 +1127,28 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
     setReviews((prev) =>
       prev.map((r) =>
         r.id === active.id
-          ? { ...r, status: r.status === "Flagged" ? "Flagged" : "Replied", requiresResponse: false, response: { at: new Date().toISOString(), by: "Supplier Team", text: final } }
+          ? {
+              ...r,
+              status: r.status === "Flagged" ? "Flagged" : "Replied",
+              requiresResponse: false,
+              thread: [
+                ...getReviewThread(r),
+                {
+                  id: makeId("reply"),
+                  at: new Date().toISOString(),
+                  by: "Support team",
+                  actor: "support",
+                  text: final,
+                  kind: "reply",
+                },
+              ],
+            }
           : r
       )
     );
 
     pushToast({ title: "Response sent", message: "Reply posted to buyer.", tone: "success" });
-    setDetailOpen(false);
+    setReply("");
   };
 
   const ratingAvgTrend = useMemo(() => {
@@ -1125,7 +1223,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
           <KpiSimple icon={Star} label="Average rating" value={kpis.avg.toFixed(1)} tone="orange" sub={`${kpis.total} total`} />
           <KpiSimple icon={MessageCircle} label="Needs reply" value={String(kpis.needsReply)} tone={kpis.needsReply ? "orange" : "green"} sub="Buyer expects a response" />
           <KpiSimple icon={AlertTriangle} label="Flagged" value={String(kpis.flagged)} tone={kpis.flagged ? "danger" : "green"} sub="Risk and disputes" />
-          <KpiSimple icon={CheckCheck} label="Response rate" value={pctLabel(Math.round((reviews.filter((r) => !!r.response).length / Math.max(1, reviews.length)) * 100))} tone={kpis.responseRate >= 85 ? "green" : "orange"} sub="Replies posted" />
+          <KpiSimple icon={CheckCheck} label="Response rate" value={pctLabel(Math.round((reviews.filter((r) => reviewThreadHasSupportReply(r)).length / Math.max(1, reviews.length)) * 100))} tone={kpis.responseRate >= 85 ? "green" : "orange"} sub="Replies posted" />
           <KpiSimple icon={ShieldCheck} label="Trust score" value={`${kpis.trust}/100`} tone={kpis.trust >= 85 ? "green" : kpis.trust >= 70 ? "orange" : "danger"} sub="Composite reputation" />
         </div>
 
@@ -1429,15 +1527,23 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
                   {filtered.map((r) => {
                     const checked = !!selected[r.id];
                     return (
-                      <button
+                      <div
                         key={r.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => {
                           setDetailId(r.id);
                           setDetailOpen(true);
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setDetailId(r.id);
+                            setDetailOpen(true);
+                          }
+                        }}
                         className={cx(
-                          "grid w-full grid-cols-12 gap-2 px-4 py-3 text-left text-xs font-semibold text-slate-700 transition hover:bg-gray-50 dark:hover:bg-slate-800",
+                          "grid w-full grid-cols-12 gap-2 px-4 py-3 text-left text-xs font-semibold text-slate-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-400/70 dark:hover:bg-slate-800",
                           r.status === "Flagged" && "bg-rose-50/30"
                         )}
                       >
@@ -1489,7 +1595,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
                             <Badge tone={channelTone(r.channel)}>{r.channel}</Badge>
                             {r.channel === "MyLiveDealz" && r.mldzSurface ? <Badge tone="orange">{r.mldzSurface}</Badge> : null}
                             <Badge tone="slate">{r.marketplace}</Badge>
-                            {r.requiresResponse && !r.response ? <Badge tone="orange">Needs reply</Badge> : <Badge tone="green">OK</Badge>}
+                            {r.requiresResponse && !reviewThreadHasSupportReply(r) ? <Badge tone="orange">Needs reply</Badge> : <Badge tone="green">OK</Badge>}
                           </div>
                           <div className="mt-2 truncate text-sm font-black text-slate-900">{r.title}</div>
                           <div className="mt-1 text-xs font-semibold text-slate-600" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
@@ -1526,7 +1632,7 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
                             <ChevronRight className="h-4 w-4" />
                           </IconButton>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
 
@@ -1560,8 +1666,8 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
       {/* Detail drawer */}
       <Drawer
         open={detailOpen}
-        title={active ? `Review · ${active.id}` : "Review"}
-        subtitle={active ? `${active.buyerName} · ${active.channel}${active.mldzSurface ? ` · ${active.mldzSurface}` : ""}` : ""}
+        title={detailTitle}
+        subtitle={detailSubtitle}
         onClose={() => setDetailOpen(false)}
       >
         {!active ? (
@@ -1587,7 +1693,8 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
                     <StarRating value={active.rating} />
                     <Badge tone={sentimentTone(active.sentiment)}>{active.sentiment}</Badge>
                     <Badge tone="slate">{active.itemType}</Badge>
-                    <Badge tone="slate">Ref {active.reference.kind} {active.reference.id}</Badge>
+                    <Badge tone="slate">Ref {referenceKindLabel(active.reference.kind)} {active.reference.id}</Badge>
+                    <Badge tone="slate">Review ID {active.id}</Badge>
                   </div>
 
                   <div className="mt-3 rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900 p-4">
@@ -1600,17 +1707,38 @@ export default function ReviewsHubUnifiedSupplierReputationV3() {
                     </div>
                   </div>
 
-                  {active.response ? (
-                    <div className="mt-3 rounded-3xl border border-emerald-200 bg-emerald-50/60 p-4">
-                      <div className="flex items-center gap-2">
-                        <CheckCheck className="h-4 w-4 text-emerald-700" />
-                        <div className="text-sm font-black text-emerald-900">Response</div>
-                        <span className="ml-auto"><Badge tone="green">{fmtTime(active.response.at)}</Badge></span>
-                      </div>
-                      <div className="mt-2 text-xs font-semibold text-emerald-900/70">By {active.response.by}</div>
-                      <div className="mt-3 whitespace-pre-wrap rounded-3xl border border-emerald-200 bg-white dark:bg-slate-900 p-4 text-sm font-semibold text-slate-800">{active.response.text}</div>
+                  <div className="mt-3 rounded-3xl border border-slate-200/70 bg-slate-50/70 p-4">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4 text-slate-700" />
+                      <div className="text-sm font-black text-slate-900">Thread</div>
+                      <Badge tone={reviewThreadHasSupportReply(active) ? "green" : "orange"}>
+                        {reviewThreadHasSupportReply(active) ? `${Math.max(0, activeThread.length - 1)} replies` : "Awaiting support reply"}
+                      </Badge>
                     </div>
-                  ) : null}
+                    <div className="mt-3 space-y-3">
+                      {activeThread.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className={cx(
+                            "rounded-3xl border p-4",
+                            entry.actor === "support"
+                              ? "border-emerald-200 bg-emerald-50/60 ml-6"
+                              : "border-slate-200/70 bg-white dark:bg-slate-900/70 mr-6"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Badge tone={entry.actor === "support" ? "green" : "slate"}>
+                              {entry.actor === "support" ? "Support team" : "Buyer"}
+                            </Badge>
+                            <Badge tone="slate">{entry.kind === "review" ? "Opened thread" : "Reply"}</Badge>
+                            <span className="ml-auto"><Badge tone="slate">{fmtTime(entry.at)}</Badge></span>
+                          </div>
+                          <div className="mt-2 text-xs font-semibold text-slate-500">{entry.by}</div>
+                          <div className="mt-3 whitespace-pre-wrap text-sm font-semibold text-slate-800">{entry.text}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

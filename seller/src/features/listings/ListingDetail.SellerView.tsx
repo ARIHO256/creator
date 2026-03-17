@@ -46,6 +46,7 @@ import {
   mapBackendListing,
   mapListingVersions,
 } from "./runtime";
+import { buildListingAdzPrefill } from "./adzPrefill";
 
 /**
  * Listings Hub (Merged) v2
@@ -165,6 +166,14 @@ function openSharePreview(draft: ListingDraft, navigate: any) {
   if (typeof window !== "undefined") {
     navigate(`/p/${encodeURIComponent(entry.sku)}`);
   }
+}
+
+function openAdBuilderForListing(listing: Record<string, unknown>, navigate: any) {
+  navigate("/mldz/adz/builder", {
+    state: {
+      prefillListing: buildListingAdzPrefill(listing),
+    },
+  });
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -729,7 +738,7 @@ function ListingDetailDrawer({
                         <div className="text-sm font-black text-orange-900">MyLiveDealz shortcuts</div>
                         <div className="mt-1 text-xs font-semibold text-orange-900/70">Boost this listing with Adz and Live.</div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <button type="button" onClick={() => (navigate('/mldz/adz/dashboard'))} className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white" style={{ background: TOKENS.orange }}>
+                          <button type="button" onClick={() => openAdBuilderForListing(listing, navigate)} className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white" style={{ background: TOKENS.orange }}>
                             <Flame className="h-4 w-4" />
                             Create Shoppable Ad
                           </button>
@@ -894,7 +903,7 @@ function ListingDetailDrawer({
                     <div className="mt-2 text-xs font-semibold text-slate-500">One click entry points to the promo shell.</div>
                   </div>
 
-                  <PromoteCard title="Create Shoppable Ad" desc="Promote this listing inside MyLiveDealz Adz" icon={Flame} primary onClick={() => (navigate('/mldz/adz/dashboard'))} />
+                  <PromoteCard title="Create Shoppable Ad" desc="Promote this listing inside MyLiveDealz Adz" icon={Flame} primary onClick={() => openAdBuilderForListing(listing, navigate)} />
                   <PromoteCard title="Schedule Live Session" desc="Go live and sell with creator collabs" icon={Calendar} onClick={() => (navigate('/mldz/live/schedule'))} />
                   <PromoteCard title="Add to Dealz Marketplace" desc="Feature it as a deal with stock counters" icon={Store} onClick={() => (navigate('/mldz/dealz-marketplace'))} />
                   <PromoteCard title="Open Asset Library" desc="Upload posters, clips, and product media" icon={Upload} onClick={() => (navigate('/mldz/deliverables/asset-library'))} />
@@ -3137,7 +3146,7 @@ export default function ListingsHubMergedPageV2() {
                         <div className="text-sm font-black text-orange-900">Promote</div>
                         <div className="mt-1 text-xs font-semibold text-orange-900/70">Quick jump into MyLiveDealz for Live and Adz.</div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <button type="button" onClick={() => (navigate('/mldz/adz/dashboard'))} className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white" style={{ background: TOKENS.orange }}>
+                          <button type="button" onClick={() => openAdBuilderForListing(listing, navigate)} className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white" style={{ background: TOKENS.orange }}>
                             <Flame className="h-4 w-4" />
                             Create Ad
                           </button>

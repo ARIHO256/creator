@@ -22,6 +22,42 @@ function buildId(prefix) {
   return `${prefix}_${randomUUID()}`;
 }
 
+function hashString(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function buildSyntheticSellerRoute(seller, sellerUser) {
+  const seed = hashString(seller.id);
+  const hubs = ['Kampala Fulfillment Hub, Uganda', 'Nairobi Distribution Park, Kenya', 'Wuxi Export Center, China'];
+  const warehouseName = ['Main Warehouse', 'East Hub', 'Export Depot'][seed % 3];
+  return {
+    warehouseName,
+    sellerName: seller.displayName || seller.name,
+    sellerAddress: `${warehouseName}, ${hubs[seed % hubs.length]}`,
+    sellerPhone: `+2567${String(seed % 100000000).padStart(8, '0')}`,
+    sellerEmail: sellerUser?.email || ''
+  };
+}
+
+function buildSyntheticBuyerRoute(orderId, buyer) {
+  const seed = hashString(`${orderId}:${buyer?.email || 'buyer'}`);
+  const streets = ['Market Street', 'Riverside Drive', 'Palm Avenue', 'Transport Close'];
+  const cities = ['Kampala, Uganda', 'Nairobi, Kenya', 'Kigali, Rwanda', 'Dar es Salaam, Tanzania'];
+  const localPart = String(buyer?.email || '').split('@')[0] || `buyer ${String((seed % 900) + 100)}`;
+  return {
+    customer: localPart.replace(/[._-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+    shippingName: localPart.replace(/[._-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+    shippingAddress: `${(seed % 800) + 100} ${streets[seed % streets.length]}, ${cities[seed % cities.length]}`,
+    buyerPhone: `+2567${String(seed % 100000000).padStart(8, '0')}`,
+    buyerEmail: buyer?.email || ''
+  };
+}
+
 async function main() {
   if (reset) {
     await prisma.userRoleAssignment.deleteMany();
@@ -198,6 +234,7 @@ async function main() {
   const orderItems = [];
   const transactions = [];
   const reviews = [];
+  const sellerUsersById = new Map(sellerUsers.map((user) => [user.id, user]));
 
   for (const seller of sellers) {
     const sellerListings = listingsBySeller.get(seller.id) ?? [];
@@ -207,6 +244,8 @@ async function main() {
       const qty = 1 + (i % 3);
       const total = Number(listing?.price ?? 50) * qty;
       const orderId = buildId(`order_${seller.id}_${i}`);
+      const sellerRoute = buildSyntheticSellerRoute(seller, sellerUsersById.get(seller.userId));
+      const buyerRoute = buildSyntheticBuyerRoute(orderId, buyer);
 
       orders.push({
         id: orderId,
@@ -217,6 +256,12 @@ async function main() {
         total,
         itemCount: qty,
         status: 'CONFIRMED',
+        warehouse: sellerRoute.warehouseName,
+        metadata: {
+          ...sellerRoute,
+          ...buyerRoute,
+          packingNotes: 'Verify SKU, quantity, and seal before dispatch.'
+        },
         createdAt: now,
         updatedAt: now
       });

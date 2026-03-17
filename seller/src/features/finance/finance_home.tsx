@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
@@ -437,6 +438,7 @@ function exportCsv(rows: Array<Record<string, unknown>>) {
 }
 
 export default function FinanceHomeOverview() {
+  const navigate = useNavigate();
   const { resolvedMode } = useThemeMode();
   const [data, setData] = useState<Record<string, any>>(emptyFinanceData);
 
@@ -956,7 +958,7 @@ export default function FinanceHomeOverview() {
 
               <button
                 type="button"
-                onClick={() => pushToast({ title: "Preferences", message: "Wire notification rule shortcuts.", tone: "default" })}
+                onClick={() => navigate("/settings/notification-preferences")}
                 className="mt-4 w-full rounded-3xl px-4 py-3 text-sm font-extrabold text-white"
                 style={{ background: TOKENS.orange }}
               >

@@ -15,4 +15,13 @@ export class UpdateReviewDto extends PartialType(CreateReviewDto) {
   @IsOptional()
   @IsDateString()
   flaggedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  replyBody?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['PUBLIC', 'PRIVATE'])
+  replyVisibility?: 'PUBLIC' | 'PRIVATE';
 }

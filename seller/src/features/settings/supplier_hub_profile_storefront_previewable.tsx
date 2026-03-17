@@ -409,6 +409,8 @@ function createEmptyProfileState() {
       description: '',
       primary: TOKENS.green,
       accent: TOKENS.orange,
+      logoUrl: '',
+      coverUrl: '',
       logoName: '',
       coverName: '',
     },
@@ -2231,16 +2233,18 @@ export default function SupplierHubProfileStorefrontPage() {
                           <UploadCard
                             title="Logo"
                             value={branding.logoName}
-                            onUpload={(name) => {
-                              setBranding((s) => ({ ...s, logoName: name }));
+                            previewUrl={branding.logoUrl}
+                            onUpload={({ name, previewUrl }) => {
+                              setBranding((s) => ({ ...s, logoName: name, logoUrl: previewUrl || s.logoUrl }));
                               pushToast({ title: 'Logo updated', tone: 'success' });
                             }}
                           />
                           <UploadCard
                             title="Cover image"
                             value={branding.coverName}
-                            onUpload={(name) => {
-                              setBranding((s) => ({ ...s, coverName: name }));
+                            previewUrl={branding.coverUrl}
+                            onUpload={({ name, previewUrl }) => {
+                              setBranding((s) => ({ ...s, coverName: name, coverUrl: previewUrl || s.coverUrl }));
                               pushToast({ title: 'Cover updated', tone: 'success' });
                             }}
                           />
@@ -3098,7 +3102,16 @@ function ColorField({ label, value, onChange }) {
   );
 }
 
-function UploadCard({ title, value, onUpload }) {
+async function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function UploadCard({ title, value, previewUrl, onUpload }) {
   const ref = useRef<HTMLInputElement | null>(null);
   return (
     <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
@@ -3111,6 +3124,23 @@ function UploadCard({ title, value, onUpload }) {
       </div>
       <div className="mt-2 text-xs font-semibold text-slate-500">
         {value ? `File: ${value}` : 'Upload a high quality image for better conversion.'}
+      </div>
+      <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200/70 bg-slate-50">
+        {previewUrl ? (
+          <img
+            src={previewUrl}
+            alt={title}
+            className={cx(
+              'w-full',
+              title.toLowerCase().includes('logo') ? 'h-28 object-contain bg-white p-4' : 'h-36 object-cover'
+            )}
+          />
+        ) : (
+          <div className="flex h-32 items-center justify-center gap-2 bg-slate-100 text-sm font-semibold text-slate-500">
+            <ImageIcon className="h-5 w-5" />
+            Preview will appear here
+          </div>
+        )}
       </div>
       <div className="mt-3 flex items-center gap-2">
         <button
@@ -3127,11 +3157,13 @@ function UploadCard({ title, value, onUpload }) {
           type="file"
           className="hidden"
           accept="image/*"
-          onChange={(e) => {
+          onChange={async (e) => {
+            const input = e.currentTarget;
             const f = e.target.files?.[0];
             if (!f) return;
-            onUpload(f.name);
-            e.currentTarget.value = '';
+            const previewUrl = await fileToDataUrl(f).catch(() => '');
+            onUpload({ name: f.name, previewUrl });
+            input.value = '';
           }}
         />
         <button

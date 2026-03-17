@@ -850,22 +850,24 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   useEffect(() => {
     if (!hydrated) return;
     const timeoutId = window.setTimeout(() => {
-      void sellerBackendApi.patchWorkflowScreenState("supplier-awaiting-admin-approval", {
-        submission: {
-          ...submission,
-          submittedAt,
-        },
-        review: {
-          status,
-          etaMin,
-          adminReason,
-          adminDocs,
-          items,
-          note,
-          prefEmail,
-          prefInApp,
-        },
-      });
+      void sellerBackendApi
+        .patchWorkflowScreenState("supplier-awaiting-admin-approval", {
+          submission: {
+            ...submission,
+            submittedAt,
+          },
+          review: {
+            status,
+            etaMin,
+            adminReason,
+            adminDocs,
+            items,
+            note,
+            prefEmail,
+            prefInApp,
+          },
+        })
+        .catch(() => undefined);
     }, 250);
 
     return () => window.clearTimeout(timeoutId);

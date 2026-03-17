@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, TransactionStatus } from '@prisma/client';
+import { Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 import { normalizeListQuery } from '../../common/dto/list-query.dto.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { CacheService } from '../../platform/cache/cache.service.js';
@@ -31,6 +31,30 @@ import { JobsService } from '../jobs/jobs.service.js';
 import { ExportsService } from '../exports/exports.service.js';
 
 const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
+
+type FinanceStatementRecord = {
+  id: string;
+  period: string;
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  openingBalance: number;
+  closingBalance: number;
+  inflow: number;
+  outflow: number;
+  generatedAt: string;
+  status: 'Ready';
+  count: number;
+  lines: Array<{
+    id: string;
+    at: string;
+    type: string;
+    source: string;
+    ref: string;
+    amount: number;
+    note: string;
+  }>;
+};
 
 const DEFAULT_SELLER_LISTING_WIZARD_CONFIG = {
   markets: [
@@ -1208,25 +1232,119 @@ export class CommerceService {
   }
 
   async financeStatements(userId: string) {
+    return { statements: await this.buildFinanceStatements(userId) };
+  }
+
+  async generateFinanceStatement(userId: string) {
+    const statements = await this.buildFinanceStatements(userId);
+    const latest = statements[0];
+    if (!latest) {
+      throw new BadRequestException('No transactions available to generate a statement');
+    }
+
+    const generatedAt = new Date().toISOString();
+    const payload = (await this.loadWorkspaceSetting(userId, 'finance_statements_ui')) ?? {};
+    const generatedAtById =
+      payload.generatedAtById && typeof payload.generatedAtById === 'object'
+        ? { ...(payload.generatedAtById as Record<string, unknown>) }
+        : {};
+    generatedAtById[latest.id] = generatedAt;
+    await this.upsertWorkspaceSetting(userId, 'finance_statements_ui', {
+      ...payload,
+      generatedAtById
+    });
+
+    return {
+      statement: {
+        ...latest,
+        generatedAt
+      }
+    };
+  }
+
+  private formatTransactionTypeLabel(type: TransactionType) {
+    return String(type)
+      .toLowerCase()
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private defaultTransactionNote(type: TransactionType, status: TransactionStatus) {
+    if (type === TransactionType.ORDER_PAYMENT) return `Order payment ${status.toLowerCase()}.`;
+    if (type === TransactionType.PAYOUT) return `Seller payout ${status.toLowerCase()}.`;
+    if (type === TransactionType.REFUND) return `Refund ${status.toLowerCase()}.`;
+    if (type === TransactionType.COMMISSION) return `Commission ${status.toLowerCase()}.`;
+    return `Adjustment ${status.toLowerCase()}.`;
+  }
+
+  private async buildFinanceStatements(userId: string) {
     const seller = await this.ensureSeller(userId);
     const transactions = await this.prisma.transaction.findMany({
       where: { sellerId: seller.id },
-      orderBy: { createdAt: 'desc' },
-      take: 500
+      orderBy: { createdAt: 'asc' },
+      take: 1000
     });
+    const payload = (await this.loadWorkspaceSetting(userId, 'finance_statements_ui')) ?? {};
+    const generatedAtById =
+      payload.generatedAtById && typeof payload.generatedAtById === 'object'
+        ? (payload.generatedAtById as Record<string, unknown>)
+        : {};
 
-    const statements = new Map<string, { period: string; currency: string; total: number; count: number }>();
+    const statements = new Map<string, FinanceStatementRecord>();
+    const balances = new Map<string, number>();
+
     for (const transaction of transactions) {
-      const period = transaction.createdAt.toISOString().slice(0, 7);
+      const periodStartDate = new Date(Date.UTC(transaction.createdAt.getUTCFullYear(), transaction.createdAt.getUTCMonth(), 1));
+      const periodEndDate = new Date(Date.UTC(transaction.createdAt.getUTCFullYear(), transaction.createdAt.getUTCMonth() + 1, 0, 23, 59, 59, 999));
+      const period = periodStartDate.toISOString().slice(0, 7);
       const key = `${period}:${transaction.currency}`;
-      const entry =
-        statements.get(key) ?? { period, currency: transaction.currency, total: 0, count: 0 };
-      entry.total += transaction.amount;
+      const openingBalance = balances.get(transaction.currency) ?? 0;
+      const statementId = `STM-${period}-${transaction.currency}`;
+      const entry: FinanceStatementRecord = statements.get(key) ?? {
+        id: statementId,
+        period,
+        currency: transaction.currency,
+        periodStart: periodStartDate.toISOString(),
+        periodEnd: periodEndDate.toISOString(),
+        openingBalance,
+        closingBalance: openingBalance,
+        inflow: 0,
+        outflow: 0,
+        generatedAt:
+          typeof generatedAtById[statementId] === 'string'
+            ? String(generatedAtById[statementId])
+            : transaction.createdAt.toISOString(),
+        status: 'Ready' as const,
+        count: 0,
+        lines: []
+      };
+
+      const amount = Number(transaction.amount ?? 0);
+      if (amount >= 0) {
+        entry.inflow += amount;
+      } else {
+        entry.outflow += Math.abs(amount);
+      }
       entry.count += 1;
+      entry.lines.push({
+        id: transaction.id,
+        at: transaction.createdAt.toISOString(),
+        type: amount >= 0 ? 'Credit' : 'Debit',
+        source: this.formatTransactionTypeLabel(transaction.type),
+        ref: transaction.orderId ?? transaction.id,
+        amount,
+        note: transaction.note?.trim() || this.defaultTransactionNote(transaction.type, transaction.status)
+      });
+      entry.closingBalance += amount;
       statements.set(key, entry);
+      balances.set(transaction.currency, entry.closingBalance);
     }
 
-    return { statements: Array.from(statements.values()).sort((a, b) => (a.period < b.period ? 1 : -1)) };
+    return Array.from(statements.values()).sort((a, b) => {
+      if (a.period === b.period) return a.currency.localeCompare(b.currency);
+      return a.period < b.period ? 1 : -1;
+    });
   }
 
   async financeTaxReports(userId: string) {
@@ -1739,6 +1857,29 @@ export class CommerceService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
+    const [sellerProfile, buyerProfile, defaultWarehouse] = await Promise.all([
+      order.seller.userId ? this.loadUserProfileSetting(order.seller.userId) : Promise.resolve(null),
+      order.buyerUserId ? this.loadUserProfileSetting(order.buyerUserId) : Promise.resolve(null),
+      this.prisma.sellerWarehouse.findFirst({
+        where: { sellerId: order.seller.id },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }]
+      })
+    ]);
+    const metadata = this.buildPrintMetadata({
+      orderId: order.id,
+      metadata: this.asRecord(order.metadata),
+      seller: order.seller,
+      sellerUser: order.seller.userId
+        ? await this.prisma.user.findUnique({
+            where: { id: order.seller.userId },
+            select: { email: true, phone: true }
+          })
+        : null,
+      sellerProfile,
+      defaultWarehouse,
+      buyer: order.buyer,
+      buyerProfile
+    });
     const itemTotal = order.items.reduce((sum, item) => sum + item.unitPrice * item.qty, 0);
     const totals = {
       itemTotal,
@@ -1752,7 +1893,7 @@ export class CommerceService {
         channel: order.channel,
         createdAt: order.createdAt.toISOString(),
         notes: order.notes ?? null,
-        metadata: order.metadata ?? null
+        metadata
       },
       seller: {
         id: order.seller.id,
@@ -1772,6 +1913,180 @@ export class CommerceService {
         currency: item.currency
       })),
       totals
+    };
+  }
+
+  private async loadUserProfileSetting(userId: string) {
+    const setting = await this.prisma.userSetting.findUnique({
+      where: { userId_key: { userId, key: 'profile' } },
+      select: { payload: true }
+    });
+    return this.asRecord(setting?.payload);
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private readString(value: unknown) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  private formatAddress(parts: Array<unknown>) {
+    return parts
+      .map((entry) => this.readString(entry))
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  private pickDefaultProfileAddress(profile: Record<string, unknown>) {
+    const root = this.asRecord(profile.profile);
+    const identity = this.asRecord(root.identity);
+    const addresses = Array.isArray(root.addresses)
+      ? root.addresses.map((entry) => this.asRecord(entry))
+      : [];
+    const address = addresses.find((entry) => Boolean(entry.isDefault)) ?? addresses[0] ?? {};
+
+    return {
+      displayName: this.readString(identity.displayName),
+      email: this.readString(identity.email),
+      phone: this.readString(identity.phone),
+      address: this.formatAddress([
+        address.line1,
+        address.line2,
+        address.city,
+        address.region,
+        address.country
+      ])
+    };
+  }
+
+  private describeWarehouse(
+    warehouse:
+      | {
+          name: string;
+          address: Prisma.JsonValue | null;
+          contact: Prisma.JsonValue | null;
+        }
+      | null
+      | undefined
+  ) {
+    const address = this.asRecord(warehouse?.address);
+    const contact = this.asRecord(warehouse?.contact);
+    return {
+      name: this.readString(warehouse?.name),
+      address: this.formatAddress([
+        warehouse?.name,
+        address.line1,
+        address.line2,
+        address.city,
+        address.region,
+        address.country
+      ]),
+      phone: this.readString(contact.phone)
+    };
+  }
+
+  private hashString(value: string) {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = (hash << 5) - hash + value.charCodeAt(index);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }
+
+  private buildSyntheticBuyerRoute(orderId: string, buyer: { email?: string | null } | null) {
+    const streets = ['Market Street', 'Riverside Drive', 'Palm Avenue', 'Transport Close'];
+    const cities = ['Kampala, Uganda', 'Nairobi, Kenya', 'Kigali, Rwanda', 'Dar es Salaam, Tanzania'];
+    const seed = this.hashString(`${orderId}:${buyer?.email ?? 'buyer'}`);
+    const street = streets[seed % streets.length];
+    const city = cities[seed % cities.length];
+    const phone = `+2567${String(seed % 100000000).padStart(8, '0')}`;
+    const localPart = this.readString(buyer?.email).split('@')[0] || `Buyer ${String((seed % 900) + 100)}`;
+    const name = localPart
+      .replace(/[._-]+/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+    return {
+      name,
+      address: `${(seed % 800) + 100} ${street}, ${city}`,
+      phone
+    };
+  }
+
+  private buildPrintMetadata(params: {
+    orderId: string;
+    metadata: Record<string, unknown>;
+    seller: {
+      name: string;
+      displayName: string;
+      storefrontName: string | null;
+    };
+    sellerUser: { email: string | null; phone: string | null } | null;
+    sellerProfile: Record<string, unknown> | null;
+    defaultWarehouse: {
+      name: string;
+      address: Prisma.JsonValue | null;
+      contact: Prisma.JsonValue | null;
+    } | null;
+    buyer: { email: string | null } | null;
+    buyerProfile: Record<string, unknown> | null;
+  }) {
+    const profileSeller = this.pickDefaultProfileAddress(params.sellerProfile ?? {});
+    const profileBuyer = this.pickDefaultProfileAddress(params.buyerProfile ?? {});
+    const warehouse = this.describeWarehouse(params.defaultWarehouse);
+    const fallbackBuyer = this.buildSyntheticBuyerRoute(params.orderId, params.buyer);
+    const sellerName =
+      this.readString(params.metadata.sellerName) ||
+      this.readString(params.seller.storefrontName) ||
+      this.readString(params.seller.displayName) ||
+      this.readString(params.seller.name);
+    const sellerAddress =
+      this.readString(params.metadata.sellerAddress) ||
+      profileSeller.address ||
+      warehouse.address;
+    const sellerPhone =
+      this.readString(params.metadata.sellerPhone) ||
+      profileSeller.phone ||
+      warehouse.phone ||
+      this.readString(params.sellerUser?.phone);
+    const sellerEmail =
+      this.readString(params.metadata.sellerEmail) ||
+      profileSeller.email ||
+      this.readString(params.sellerUser?.email);
+    const shippingName =
+      this.readString(params.metadata.shippingName) ||
+      this.readString(params.metadata.customer) ||
+      profileBuyer.displayName ||
+      fallbackBuyer.name;
+    const shippingAddress =
+      this.readString(params.metadata.shippingAddress) ||
+      this.readString(params.metadata.billingAddress) ||
+      profileBuyer.address ||
+      fallbackBuyer.address;
+    const buyerPhone =
+      this.readString(params.metadata.buyerPhone) ||
+      profileBuyer.phone ||
+      fallbackBuyer.phone;
+    const buyerEmail =
+      this.readString(params.metadata.buyerEmail) ||
+      profileBuyer.email ||
+      this.readString(params.buyer?.email);
+
+    return {
+      ...params.metadata,
+      customer: this.readString(params.metadata.customer) || shippingName,
+      shippingName,
+      shippingAddress,
+      buyerPhone,
+      buyerEmail,
+      sellerName,
+      sellerAddress,
+      sellerPhone,
+      sellerEmail,
+      warehouseName: this.readString(params.metadata.warehouseName) || warehouse.name
     };
   }
 

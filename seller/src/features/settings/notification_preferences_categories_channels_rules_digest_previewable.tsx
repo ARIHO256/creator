@@ -116,6 +116,17 @@ function fmtTimeLocal(iso?: string | null) {
   return d.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+async function triggerBrowserTestNotification(title: string, body: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return false;
+  if (Notification.permission === "default") {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return false;
+  }
+  if (Notification.permission !== "granted") return false;
+  new Notification(title, { body });
+  return true;
+}
+
 function Badge({ children, tone = "slate" }: { children: React.ReactNode; tone?: "slate" | "green" | "orange" | "danger" }) {
   return (
     <span
@@ -689,8 +700,42 @@ export default function NotificationPreferencesPage() {
     pushToast({ title: "Verified", message: `${channelKey} verified.`, tone: "success" });
   };
 
-  const testNotification = () => {
-    pushToast({ title: "Test sent", message: "A test notification was queued (demo).", tone: "success" });
+  const testNotification = async () => {
+    const activeChannels = (["inApp", "email", "sms", "whatsapp"] as ChannelKey[]).filter(
+      (channel) => globalChannels[channel] && channelProfiles[channel]?.enabled !== false
+    );
+    if (activeChannels.length === 0) {
+      pushToast({ title: "No active channels", message: "Enable at least one notification channel first.", tone: "warning" });
+      return;
+    }
+
+    try {
+      const payload = await sellerBackendApi.sendTestNotificationPreferences({
+        channels: activeChannels,
+        title: "Test notification",
+        message: `Test delivery prepared for ${activeChannels.join(", ")}.`,
+        metadata: {
+          categoriesEnabled: categories.filter((category) => category.enabled).length,
+        },
+      });
+      if (activeChannels.includes("inApp")) {
+        void triggerBrowserTestNotification(
+          String(payload.title || "Test notification"),
+          String(payload.message || "A notification test was sent.")
+        );
+      }
+      pushToast({
+        title: "Test sent",
+        message: `Queued for ${activeChannels.join(", ")}.`,
+        tone: "success",
+      });
+    } catch (error) {
+      pushToast({
+        title: "Test failed",
+        message: error instanceof Error ? error.message : "The test notification could not be sent.",
+        tone: "danger",
+      });
+    }
   };
 
   return (

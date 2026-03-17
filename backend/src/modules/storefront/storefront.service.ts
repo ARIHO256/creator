@@ -51,7 +51,7 @@ export class StorefrontService {
       include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
     });
     if (existing) {
-      return this.serializeStorefront(existing);
+      return this.serializeStorefrontWithProfile(existing, seller.userId ?? userId);
     }
 
     const slug = await this.ensureUniqueSlug(seller.handle ?? seller.storefrontName ?? seller.displayName ?? seller.name);
@@ -68,7 +68,7 @@ export class StorefrontService {
       },
       include: { taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } } }
     });
-    return this.serializeStorefront(created);
+    return this.serializeStorefrontWithProfile(created, seller.userId ?? userId);
   }
 
   async updateMyStorefront(userId: string, payload: UpdateStorefrontDto) {
@@ -125,12 +125,12 @@ export class StorefrontService {
       if (refreshed) {
         await this.searchService.enqueueStorefrontIndex(refreshed.id);
         await this.invalidateAndWarmPublicStorefront(previousSlug, refreshed.slug, refreshed.isPublished);
-        return this.serializeStorefront(refreshed);
+        return this.serializeStorefrontWithProfile(refreshed, seller.userId ?? userId);
       }
     }
     await this.searchService.enqueueStorefrontIndex(updated.id);
     await this.invalidateAndWarmPublicStorefront(previousSlug, updated.slug, updated.isPublished);
-    return this.serializeStorefront(updated);
+    return this.serializeStorefrontWithProfile(updated, seller.userId ?? userId);
   }
 
   async getPublicStorefront(handle: string) {
@@ -145,7 +145,7 @@ export class StorefrontService {
 
         return {
           found: true as const,
-          storefront: this.serializeStorefront(storefront)
+          storefront: await this.serializeStorefrontWithProfile(storefront, storefront.seller?.userId ?? null)
         };
       }
     );
@@ -212,6 +212,60 @@ export class StorefrontService {
         taxonomyLinks: { include: { taxonomyNode: true }, orderBy: { sortOrder: 'asc' } }
       }
     });
+  }
+
+  private async loadProfileSettings(userId: string | null | undefined) {
+    if (!userId) {
+      return null;
+    }
+    const userSettingClient = (this.prismaReadClient as unknown as { userSetting?: { findUnique: (args: unknown) => Promise<{ payload?: unknown } | null> } }).userSetting;
+    if (!userSettingClient?.findUnique) {
+      return null;
+    }
+    const record = await userSettingClient.findUnique({
+      where: { userId_key: { userId, key: 'profile' } }
+    });
+    return record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+      ? (record.payload as Record<string, unknown>)
+      : null;
+  }
+
+  private async serializeStorefrontWithProfile(
+    storefront: {
+      id: string;
+      sellerId: string;
+      slug: string;
+      name: string;
+      tagline: string | null;
+      description: string | null;
+      heroTitle: string | null;
+      heroSubtitle: string | null;
+      heroMediaUrl: string | null;
+      logoUrl: string | null;
+      coverUrl: string | null;
+      theme: unknown;
+      isPublished: boolean;
+      taxonomyLinks: Array<{
+        id: string;
+        taxonomyNodeId: string;
+        isPrimary: boolean;
+        sortOrder: number;
+        pathSnapshot: unknown;
+        taxonomyNode: {
+          id: string;
+          name: string;
+          slug: string;
+          kind: string;
+          path: string;
+        };
+      }>;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    userId?: string | null
+  ) {
+    const profilePayload = await this.loadProfileSettings(userId);
+    return this.serializeStorefront(storefront, profilePayload);
   }
 
   private async ensureUniqueSlug(value: string, currentId?: string) {
@@ -290,7 +344,19 @@ export class StorefrontService {
     }>;
     createdAt: Date;
     updatedAt: Date;
-  }) {
+  }, profilePayload?: Record<string, unknown> | null) {
+    const profile =
+      profilePayload?.profile && typeof profilePayload.profile === 'object' && !Array.isArray(profilePayload.profile)
+        ? (profilePayload.profile as Record<string, unknown>)
+        : {};
+    const identity =
+      profile.identity && typeof profile.identity === 'object' && !Array.isArray(profile.identity)
+        ? (profile.identity as Record<string, unknown>)
+        : {};
+    const policies =
+      profile.policies && typeof profile.policies === 'object' && !Array.isArray(profile.policies)
+        ? (profile.policies as Record<string, unknown>)
+        : {};
     return {
       id: storefront.id,
       sellerId: storefront.sellerId,
@@ -303,6 +369,11 @@ export class StorefrontService {
       heroMediaUrl: storefront.heroMediaUrl,
       logoUrl: storefront.logoUrl,
       coverUrl: storefront.coverUrl,
+      website: typeof identity.website === 'string' ? identity.website : null,
+      policies: {
+        termsUrl: typeof policies.termsUrl === 'string' ? policies.termsUrl : null,
+        privacyUrl: typeof policies.privacyUrl === 'string' ? policies.privacyUrl : null
+      },
       theme: storefront.theme ?? {},
       isPublished: storefront.isPublished,
       taxonomy: storefront.taxonomyLinks.map((link) => ({

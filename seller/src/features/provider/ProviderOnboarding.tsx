@@ -645,6 +645,12 @@ const PROVIDER_DOC_TYPES = [
   'Other',
 ];
 
+type ProviderLookupOption = {
+  value: string;
+  label: string;
+  helper?: string;
+};
+
 const PAYOUT_METHODS = [
   {
     value: 'bank_account',
@@ -678,11 +684,20 @@ const PAYOUT_METHODS = [
   },
 ];
 
-const PAYOUT_CURRENCIES = ['USD', 'EUR', 'CNY', 'UGX', 'KES', 'TZS', 'ZAR'];
+const PAYOUT_METHOD_ICONS: Record<string, string> = {
+  bank_account: '🏦',
+  mobile_money: '📱',
+  alipay: '🌐',
+  wechat_pay: '🌐',
+  other_local: '📱',
+};
+
+const PAYOUT_CURRENCIES = ['USD', 'EUR', 'CNY', 'UGX', 'KES', 'TZS', 'RWF', 'ZAR'];
 
 const PAYOUT_RHYTHMS = [
   { value: 'daily', label: 'Daily', helper: 'Payouts generated every business day.' },
   { value: 'weekly', label: 'Weekly', helper: 'Payouts grouped once per week.' },
+  { value: 'biweekly', label: 'Biweekly', helper: 'Payouts grouped every two weeks.' },
   { value: 'monthly', label: 'Monthly', helper: 'Payouts grouped at month end.' },
   {
     value: 'on_threshold',
@@ -705,6 +720,132 @@ const LEGACY_PAYOUT_METHOD_MAP = {
   other: 'other_local',
   wechat: 'wechat_pay',
 };
+
+type ProviderOnboardingLookups = {
+  languages: Array<{ code: string; label: string }>;
+  taxpayerTypes: ProviderLookupOption[];
+  payoutMethods: ProviderLookupOption[];
+  payoutCurrencies: string[];
+  payoutRhythms: ProviderLookupOption[];
+  providerRegions: Array<{ value: string; label: string }>;
+};
+
+const DEFAULT_PROVIDER_ONBOARDING_LOOKUPS: ProviderOnboardingLookups = {
+  languages: LANGUAGE_OPTIONS,
+  taxpayerTypes: [
+    { value: 'business', label: 'Business / company' },
+    { value: 'individual', label: 'Individual' },
+  ],
+  payoutMethods: PAYOUT_METHODS.map((method) => ({
+    value: method.value,
+    label: method.label,
+    helper: method.helper,
+  })),
+  payoutCurrencies: PAYOUT_CURRENCIES,
+  payoutRhythms: PAYOUT_RHYTHMS,
+  providerRegions: REGION_OPTIONS.map((entry) => ({
+    value: entry.code,
+    label: entry.label,
+  })),
+};
+
+function normalizeProviderLookupOptions(
+  value: unknown,
+  fallback: ProviderLookupOption[]
+): ProviderLookupOption[] {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const item = entry as Record<string, unknown>;
+      const optionValue = String(item.value || '').trim();
+      const label = String(item.label || optionValue || '').trim();
+      if (!optionValue || !label) return null;
+      return {
+        value: optionValue,
+        label,
+        helper: typeof item.helper === 'string' ? item.helper : undefined,
+      };
+    })
+    .filter((entry): entry is ProviderLookupOption => Boolean(entry));
+  return rows.length ? rows : fallback;
+}
+
+function normalizeProviderCodeLabelOptions(
+  value: unknown,
+  fallback: Array<{ code: string; label: string }>
+): Array<{ code: string; label: string }> {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const item = entry as Record<string, unknown>;
+      const code = String(item.code || item.value || '').trim();
+      const label = String(item.label || code || '').trim();
+      if (!code || !label) return null;
+      return { code, label };
+    })
+    .filter((entry): entry is { code: string; label: string } => Boolean(entry));
+  return rows.length ? rows : fallback;
+}
+
+function normalizeProviderStringOptions(value: unknown, fallback: string[]) {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value.map((entry) => String(entry || '').trim()).filter(Boolean);
+  return rows.length ? rows : fallback;
+}
+
+function normalizeProviderRegionOptions(
+  value: unknown,
+  fallback: Array<{ value: string; label: string }>
+): Array<{ value: string; label: string }> {
+  if (!Array.isArray(value)) return fallback;
+  const rows = value
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const item = entry as Record<string, unknown>;
+      const optionValue = String(item.value || item.code || '').trim();
+      const label = String(item.label || optionValue || '').trim();
+      if (!optionValue || !label) return null;
+      return { value: optionValue, label };
+    })
+    .filter((entry): entry is { value: string; label: string } => Boolean(entry));
+  return rows.length ? rows : fallback;
+}
+
+function normalizeProviderOnboardingLookups(payload: unknown): ProviderOnboardingLookups {
+  const source =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+
+  return {
+    languages: normalizeProviderCodeLabelOptions(
+      source.languages,
+      DEFAULT_PROVIDER_ONBOARDING_LOOKUPS.languages
+    ),
+    taxpayerTypes: normalizeProviderLookupOptions(
+      source.taxpayerTypes,
+      DEFAULT_PROVIDER_ONBOARDING_LOOKUPS.taxpayerTypes
+    ),
+    payoutMethods: normalizeProviderLookupOptions(
+      source.payoutMethods,
+      DEFAULT_PROVIDER_ONBOARDING_LOOKUPS.payoutMethods
+    ),
+    payoutCurrencies: normalizeProviderStringOptions(
+      source.payoutCurrencies,
+      DEFAULT_PROVIDER_ONBOARDING_LOOKUPS.payoutCurrencies
+    ),
+    payoutRhythms: normalizeProviderLookupOptions(
+      source.payoutRhythms,
+      DEFAULT_PROVIDER_ONBOARDING_LOOKUPS.payoutRhythms
+    ),
+    providerRegions: normalizeProviderRegionOptions(
+      source.providerRegions,
+      DEFAULT_PROVIDER_ONBOARDING_LOOKUPS.providerRegions
+    ),
+  };
+}
 
 function clamp(n: number, a: number, b: number) {
   return Math.min(b, Math.max(a, n));
@@ -2218,7 +2359,7 @@ function PayoutTaxStep({
           </Typography>
 
           <Stack spacing={1.2}>
-            {PAYOUT_METHODS.map((method) => {
+            {lookups.payoutMethods.map((method) => {
               const selected = payout.method === method.value;
               return (
                 <Paper
@@ -2247,7 +2388,7 @@ function PayoutTaxStep({
                       aria-hidden
                       style={{ width: 22, display: 'inline-flex', justifyContent: 'center' }}
                     >
-                      {method.icon}
+                      {PAYOUT_METHOD_ICONS[method.value] || '💳'}
                     </span>
                     <Box className="flex flex-col flex-1 min-w-0">
                       <Typography
@@ -2293,7 +2434,7 @@ function PayoutTaxStep({
             <MenuItem value="">
               <em>{t('Choose currency')}</em>
             </MenuItem>
-            {PAYOUT_CURRENCIES.map((cur) => (
+            {lookups.payoutCurrencies.map((cur) => (
               <MenuItem key={cur} value={cur}>
                 {cur}
               </MenuItem>
@@ -2449,7 +2590,7 @@ function PayoutTaxStep({
           spacing={2}
           alignItems={{ xs: 'stretch', md: 'flex-start' }}
         >
-          {PAYOUT_RHYTHMS.map((rhythm) => {
+          {lookups.payoutRhythms.map((rhythm) => {
             const selected = payout.rhythm === rhythm.value;
             return (
               <Paper
@@ -2542,8 +2683,11 @@ function PayoutTaxStep({
             onChange={(e) => updateTax({ taxpayerType: e.target.value })}
             disabled={isLocked}
           >
-            <MenuItem value="business">{t('Business / company')}</MenuItem>
-            <MenuItem value="individual">{t('Individual')}</MenuItem>
+            {lookups.taxpayerTypes.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {t(option.label)}
+              </MenuItem>
+            ))}
           </TextField>
 
           <TextField
@@ -2841,6 +2985,9 @@ export default function ProviderOnboardingProV4_JS() {
   const [review, setReview] = useState(() => {
     return { submittedAt: null, inReviewAt: null, approvedAt: null, slaHours: 48 };
   });
+  const [lookups, setLookups] = useState<ProviderOnboardingLookups>(
+    DEFAULT_PROVIDER_ONBOARDING_LOOKUPS
+  );
 
   useEffect(() => {
     if (profile.status === 'SUBMITTED' && location.pathname === '/provider/onboarding') {
@@ -2854,16 +3001,21 @@ export default function ProviderOnboardingProV4_JS() {
 
     const hydrate = async () => {
       try {
-        const [payloadResult, accountApprovalResult] = await Promise.allSettled([
+        const [payloadResult, accountApprovalResult, lookupsResult] = await Promise.allSettled([
           sellerBackendApi.getWorkflowScreenState('provider-onboarding'),
           sellerBackendApi.getAccountApproval(),
+          sellerBackendApi.getOnboardingLookups(),
         ]);
         if (cancelled) return;
         const payload = payloadResult.status === 'fulfilled' ? payloadResult.value : null;
         const accountApproval =
           accountApprovalResult.status === 'fulfilled' ? accountApprovalResult.value : null;
+        const lookupPayload =
+          lookupsResult.status === 'fulfilled' ? lookupsResult.value : null;
         const sourcePayload =
           payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+
+        setLookups(normalizeProviderOnboardingLookups(lookupPayload));
 
         const nextProfile =
           sourcePayload.form && typeof sourcePayload.form === 'object'
@@ -3345,10 +3497,10 @@ export default function ProviderOnboardingProV4_JS() {
   const taxOk = useMemo(() => {
     const tax: TaxForm = profile.tax || createEmptyProfile().tax;
     return (
-      !!String(tax.legalName || '').trim() &&
-      !!String(tax.taxCountry || '').trim() &&
-      !!String(tax.taxId || '').trim() &&
-      (!!String(tax.contactEmail || '').trim() ? isEmail(tax.contactEmail) : false)
+      Boolean(String(tax.legalName || '').trim()) &&
+      Boolean(String(tax.taxCountry || '').trim()) &&
+      Boolean(String(tax.taxId || '').trim()) &&
+      (String(tax.contactEmail || '').trim() ? isEmail(tax.contactEmail) : false)
     );
   }, [profile.tax]);
 
@@ -4659,7 +4811,7 @@ export default function ProviderOnboardingProV4_JS() {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {LANGUAGE_OPTIONS.map((l) => (
+                      {lookups.languages.map((l) => (
                         <ChipButton
                           key={l.code}
                           active={(profile.languages || []).includes(l.code)}
@@ -4681,7 +4833,7 @@ export default function ProviderOnboardingProV4_JS() {
                         className="input w-full"
                         disabled={isLocked}
                       >
-                        {PAYOUT_CURRENCIES.map((cur) => (
+                        {lookups.payoutCurrencies.map((cur) => (
                           <option key={cur} value={cur}>
                             {cur}
                           </option>
@@ -4963,15 +5115,15 @@ export default function ProviderOnboardingProV4_JS() {
                       </div>
 
                       <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                        {REGION_OPTIONS.map((r) => (
-                          <label key={r.code} className="inline-flex items-center gap-2">
+                        {lookups.providerRegions.map((r) => (
+                          <label key={r.value} className="inline-flex items-center gap-2">
                             <input
                               type="checkbox"
-                              checked={(profile.regions || []).includes(r.code)}
-                              onChange={() => toggleRegion(r.code)}
+                              checked={(profile.regions || []).includes(r.value)}
+                              onChange={() => toggleRegion(r.value)}
                               disabled={isLocked}
                             />
-                            {r.code}
+                            {r.value}
                             <span className="text-[11px] text-[var(--ev-subtle)]">
                               {t(r.label)}
                             </span>

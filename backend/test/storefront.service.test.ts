@@ -74,3 +74,59 @@ test('StorefrontService update validates and syncs taxonomy', async () => {
   assert.deepEqual(calls.sync?.nodeIds, ['node-1']);
   assert.equal(response.id, 'store-1');
 });
+
+test('StorefrontService public storefront exposes website and legal policy links from profile settings', async () => {
+  const now = new Date();
+  const storefront = {
+    id: 'store-1',
+    sellerId: 'seller-1',
+    slug: 'store-1',
+    name: 'Store',
+    tagline: null,
+    description: null,
+    heroTitle: null,
+    heroSubtitle: null,
+    heroMediaUrl: null,
+    logoUrl: null,
+    coverUrl: null,
+    theme: { primaryColor: '#112233' },
+    isPublished: true,
+    taxonomyLinks: [],
+    seller: { userId: 'user-1', handle: 'store-1' },
+    createdAt: now,
+    updatedAt: now
+  };
+
+  const prisma = {
+    storefront: {
+      async findFirst() {
+        return storefront;
+      }
+    },
+    userSetting: {
+      async findUnique() {
+        return {
+          payload: {
+            profile: {
+              identity: { website: 'https://store.example.com' },
+              policies: {
+                termsUrl: 'https://store.example.com/terms',
+                privacyUrl: 'https://store.example.com/privacy'
+              }
+            }
+          }
+        };
+      }
+    }
+  };
+
+  const sellersService = { async ensureSellerProfile() { return null; } };
+  const taxonomyService = {};
+  const searchService = {};
+  const service = new StorefrontService(prisma as any, sellersService as any, taxonomyService as any, searchService as any);
+  const response = await service.getPublicStorefront('store-1');
+
+  assert.equal(response.website, 'https://store.example.com');
+  assert.equal(response.policies.termsUrl, 'https://store.example.com/terms');
+  assert.equal(response.policies.privacyUrl, 'https://store.example.com/privacy');
+});

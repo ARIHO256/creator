@@ -4,6 +4,9 @@ import { Prisma, ProviderFulfillmentStatus } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { AuditService } from '../../platform/audit/audit.service.js';
+import { RequestUser } from '../../common/types/request-user.type.js';
+import { CreateProviderBookingRequestDto } from './dto/create-provider-booking-request.dto.js';
+import { CreateProviderConsultationRequestDto } from './dto/create-provider-consultation-request.dto.js';
 import { CreateProviderQuoteDto } from './dto/create-provider-quote.dto.js';
 import { ProviderTransitionDto } from './dto/provider-transition.dto.js';
 import { ProviderFulfillmentTransitionDto } from './dto/provider-fulfillment-transition.dto.js';
@@ -16,11 +19,12 @@ export class ProviderService {
   ) {}
 
   async serviceCommand(userId: string) {
-    const [openQuotes, activeBookings, totalQuotes, extras] = await Promise.all([
+    const [openQuotes, activeBookings, totalQuotes, extras, providerProfile] = await Promise.all([
       this.prisma.providerQuote.count({ where: { userId, status: { in: ['draft', 'sent', 'negotiating'] } } }),
       this.prisma.providerBooking.count({ where: { userId, status: { in: ['requested', 'confirmed'] } } }),
       this.prisma.providerQuote.count({ where: { userId } }),
-      this.loadSetting(userId, 'provider_service_command')
+      this.loadSetting(userId, 'provider_service_command'),
+      this.loadProviderProfile(userId)
     ]);
     return {
       queues: [
@@ -35,7 +39,12 @@ export class ProviderService {
         : [],
       queue: Array.isArray((extras as Record<string, unknown> | null)?.queue)
         ? ((extras as Record<string, unknown>).queue as unknown[])
-        : []
+        : [],
+      capabilities: this.resolveCapabilities(providerProfile),
+      profile:
+        providerProfile && typeof providerProfile === 'object' && !Array.isArray(providerProfile)
+          ? providerProfile
+          : undefined
     };
   }
   async quotes(userId: string) {
@@ -53,6 +62,7 @@ export class ProviderService {
     return this.serializeQuote(quote);
   }
   async createQuote(userId: string, body: CreateProviderQuoteDto) {
+    await this.assertProviderSupports(userId, 'quotes');
     const sanitized = this.ensurePayload(body);
     const data = (sanitized as any).data && typeof (sanitized as any).data === 'object' ? (sanitized as any).data : sanitized;
     const id = String((sanitized as any).id ?? randomUUID());
@@ -90,6 +100,7 @@ export class ProviderService {
   }
 
   async createJointQuote(userId: string, body: CreateProviderQuoteDto) {
+    await this.assertProviderSupports(userId, 'quotes');
     const sanitized = this.ensurePayload(body);
     const data = (sanitized as any).data && typeof (sanitized as any).data === 'object' ? (sanitized as any).data : sanitized;
     const id = String((sanitized as any).id ?? randomUUID());
@@ -145,6 +156,46 @@ export class ProviderService {
     });
     return { consultations: consultations.map((entry) => this.serializeConsultation(entry)) };
   }
+  async requestConsultation(requester: RequestUser, body: CreateProviderConsultationRequestDto) {
+    const provider = await this.resolveProviderTarget(body);
+    await this.assertProviderSupports(provider.userId, 'consultations');
+    const consultation = await this.prisma.providerConsultation.create({
+      data: {
+        userId: provider.userId,
+        status: 'open',
+        scheduledAt: this.parseDateOrNull(body.scheduledAt),
+        data: {
+          source: 'provider_request',
+          title: this.trimOrNull(body.title),
+          note: this.trimOrNull(body.note),
+          requester: {
+            userId: requester.sub,
+            email: requester.email,
+            role: requester.role
+          },
+          provider: {
+            sellerId: provider.id,
+            handle: provider.handle ?? null
+          },
+          ...(body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {})
+        } as Prisma.InputJsonValue
+      }
+    });
+    await this.audit.log({
+      userId: requester.sub,
+      action: 'provider.consultation_requested',
+      entityType: 'provider_consultation',
+      entityId: consultation.id,
+      route: '/api/provider/consultations',
+      method: 'POST',
+      statusCode: 201,
+      metadata: {
+        providerUserId: provider.userId,
+        providerHandle: provider.handle ?? null
+      }
+    });
+    return this.serializeConsultation(consultation);
+  }
   async bookings(userId: string) {
     const [bookings, templates] = await Promise.all([
       this.prisma.providerBooking.findMany({
@@ -160,6 +211,50 @@ export class ProviderService {
         ? ((templates as Record<string, unknown>).templates as unknown[])
         : []
     };
+  }
+  async requestBooking(requester: RequestUser, body: CreateProviderBookingRequestDto) {
+    const provider = await this.resolveProviderTarget(body);
+    await this.assertProviderSupports(provider.userId, 'bookings');
+    const booking = await this.prisma.providerBooking.create({
+      data: {
+        userId: provider.userId,
+        status: 'requested',
+        scheduledAt: this.parseDateOrNull(body.scheduledAt),
+        durationMinutes: body.durationMinutes ?? null,
+        amount: body.amount ?? null,
+        currency: this.trimOrNull(body.currency) ?? 'USD',
+        data: {
+          source: 'provider_request',
+          title: this.trimOrNull(body.title),
+          note: this.trimOrNull(body.note),
+          requester: {
+            userId: requester.sub,
+            email: requester.email,
+            role: requester.role
+          },
+          provider: {
+            sellerId: provider.id,
+            handle: provider.handle ?? null
+          },
+          ...(body.data && typeof body.data === 'object' && !Array.isArray(body.data) ? body.data : {})
+        } as Prisma.InputJsonValue
+      },
+      include: { fulfillment: true }
+    });
+    await this.audit.log({
+      userId: requester.sub,
+      action: 'provider.booking_requested',
+      entityType: 'provider_booking',
+      entityId: booking.id,
+      route: '/api/provider/bookings',
+      method: 'POST',
+      statusCode: 201,
+      metadata: {
+        providerUserId: provider.userId,
+        providerHandle: provider.handle ?? null
+      }
+    });
+    return this.serializeBooking(booking);
   }
   async booking(userId: string, id: string) {
     const booking = await this.prisma.providerBooking.findFirst({
@@ -497,6 +592,115 @@ export class ProviderService {
       }
     });
     return (setting?.payload as Record<string, unknown> | null) ?? null;
+  }
+
+  private async loadProviderProfile(userId: string) {
+    const record = await this.prisma.providerRecord.findUnique({
+      where: {
+        userId_recordType_recordKey: {
+          userId,
+          recordType: 'onboarding_profile',
+          recordKey: 'main'
+        }
+      }
+    });
+    return (record?.payload as Record<string, unknown> | null) ?? null;
+  }
+
+  private async resolveProviderTarget(body: {
+    providerUserId?: string;
+    providerHandle?: string;
+  }) {
+    const providerUserId = this.trimOrNull(body.providerUserId);
+    const providerHandle = this.normalizeHandle(body.providerHandle);
+
+    if (!providerUserId && !providerHandle) {
+      throw new BadRequestException('Provider userId or handle is required');
+    }
+
+    const provider = await this.prisma.seller.findFirst({
+      where: {
+        kind: 'PROVIDER',
+        OR: [
+          ...(providerUserId ? [{ userId: providerUserId }] : []),
+          ...(providerHandle ? [{ handle: providerHandle }] : [])
+        ]
+      },
+      select: {
+        id: true,
+        userId: true,
+        handle: true
+      }
+    });
+
+    if (!provider?.userId) {
+      throw new NotFoundException('Provider not found');
+    }
+
+    return provider;
+  }
+
+  private async assertProviderSupports(
+    userId: string,
+    capability: 'quotes' | 'bookings' | 'consultations'
+  ) {
+    const profile = await this.loadProviderProfile(userId);
+    const capabilities = this.resolveCapabilities(profile);
+    if (capabilities[capability]) {
+      return;
+    }
+    throw new BadRequestException(`Provider onboarding does not currently allow ${capability}`);
+  }
+
+  private parseDateOrNull(value: string | null | undefined) {
+    if (!value) {
+      return null;
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException('Invalid scheduledAt value');
+    }
+    return parsed;
+  }
+
+  private trimOrNull(value: unknown) {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  private normalizeHandle(value: unknown) {
+    const trimmed = this.trimOrNull(value);
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.replace(/^@/, '').toLowerCase();
+  }
+
+  private resolveCapabilities(profile: Record<string, unknown> | null) {
+    const rawModes = Array.isArray(profile?.bookingModes) ? profile.bookingModes : [];
+    const modes = new Set(
+      rawModes
+        .map((entry) => String(entry || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+
+    if (modes.size === 0 || modes.has('all') || modes.has('any')) {
+      return {
+        quotes: true,
+        bookings: true,
+        consultations: true
+      };
+    }
+
+    const hasAny = (...aliases: string[]) => aliases.some((alias) => modes.has(alias));
+    return {
+      quotes: hasAny('quote', 'quotes', 'proposal', 'proposals', 'request_quote', 'request_quotes'),
+      bookings: hasAny('booking', 'bookings', 'instant', 'request', 'requests'),
+      consultations: hasAny('consultation', 'consultations', 'call', 'calls')
+    };
   }
 
   private async upsertSetting(userId: string, key: string, payload: Record<string, unknown>) {

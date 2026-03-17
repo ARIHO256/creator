@@ -463,60 +463,89 @@ export class AuthService {
     }
 
     const approvedAt = String(onboarding?.submittedAt || new Date().toISOString());
+    const approvalPayload = {
+      status: 'approved',
+      progressPercent: 100,
+      requiredActions: [],
+      documents: [],
+      submittedAt: approvedAt,
+      approvedAt,
+      reviewNotes: '',
+      metadata: {
+        source: 'onboarding',
+        uiStatus: 'Approved',
+        profileType
+      }
+    } as Prisma.InputJsonValue;
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          approvalStatus: 'APPROVED',
-          onboardingCompleted: true
-        }
-      }),
-      this.prisma.accountApproval.upsert({
-        where: { userId: user.id },
-        update: {
-          status: 'approved',
-          submittedAt: new Date(approvedAt),
-          approvedAt: new Date(approvedAt),
-          payload: {
+    try {
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            approvalStatus: 'APPROVED',
+            onboardingCompleted: true
+          }
+        }),
+        this.prisma.accountApproval.upsert({
+          where: { userId: user.id },
+          update: {
             status: 'approved',
-            progressPercent: 100,
-            requiredActions: [],
-            documents: [],
-            submittedAt: approvedAt,
-            approvedAt,
-            reviewNotes: '',
-            metadata: {
-              source: 'onboarding',
-              uiStatus: 'Approved',
-              profileType
-            }
-          } as Prisma.InputJsonValue
-        },
-        create: {
-          userId: user.id,
-          status: 'approved',
-          submittedAt: new Date(approvedAt),
-          approvedAt: new Date(approvedAt),
-          payload: {
+            submittedAt: new Date(approvedAt),
+            approvedAt: new Date(approvedAt),
+            payload: approvalPayload
+          },
+          create: {
+            userId: user.id,
             status: 'approved',
-            progressPercent: 100,
-            requiredActions: [],
-            documents: [],
-            submittedAt: approvedAt,
-            approvedAt,
-            reviewNotes: '',
-            metadata: {
-              source: 'onboarding',
-              uiStatus: 'Approved',
-              profileType
+            submittedAt: new Date(approvedAt),
+            approvedAt: new Date(approvedAt),
+            payload: approvalPayload
+          }
+        })
+      ]);
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            approvalStatus: 'APPROVED',
+            onboardingCompleted: true
+          }
+        }),
+        this.prisma.workflowRecord.upsert({
+          where: {
+            userId_recordType_recordKey: {
+              userId: user.id,
+              recordType: 'account_approval',
+              recordKey: 'main'
             }
-          } as Prisma.InputJsonValue
-        }
-      })
-    ]);
+          },
+          update: {
+            payload: approvalPayload
+          },
+          create: {
+            userId: user.id,
+            recordType: 'account_approval',
+            recordKey: 'main',
+            payload: approvalPayload
+          }
+        })
+      ]);
+    }
 
     return this.findUserOrThrow(user.id);
+  }
+
+  private isMissingSchemaObjectError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
   }
 
   private serializeUser(user: AuthUserRecord) {

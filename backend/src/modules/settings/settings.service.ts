@@ -7,6 +7,7 @@ import { AuditService } from '../../platform/audit/audit.service.js';
 import { CreateInviteDto } from './dto/create-invite.dto.js';
 import { CreateRoleDto } from './dto/create-role.dto.js';
 import { SendPayoutCodeDto } from './dto/send-payout-code.dto.js';
+import { SendTestNotificationDto } from './dto/send-test-notification.dto.js';
 import { UpdateCrewSessionDto } from './dto/update-crew-session.dto.js';
 import { UpdateIntegrationsDto } from './dto/update-integrations.dto.js';
 import { UpdateKycDto } from './dto/update-kyc.dto.js';
@@ -128,35 +129,20 @@ export class SettingsService {
     return record.payload as Record<string, unknown>;
   }
   async signOutDevice(userId: string, id: string) {
-    const [devicesPayload, securityPayload] = await Promise.all([
-      this.getUserSetting(userId, 'devices', { devices: [] }),
-      this.securitySettings(userId)
-    ]);
-    const devices = this.extractList(devicesPayload, 'devices');
-    const nextDevices = devices.filter((device: any) => device?.id !== id);
-    const nextSecurity = {
-      ...DEFAULT_SECURITY_SETTINGS,
-      ...securityPayload,
-      sessions: this.extractList(securityPayload, 'sessions').filter((session: any) => session?.id !== id),
-      trustedDevices: this.extractList(securityPayload, 'trustedDevices').filter((device: any) => device?.id !== id)
-    };
-    await Promise.all([
-      this.upsertUserSetting(userId, 'devices', { devices: nextDevices }),
-      this.upsertWorkspaceSetting(userId, 'security', nextSecurity)
+    const profile = await this.ensureUserSecurityProfile(userId);
+    await this.prisma.$transaction([
+      this.prisma.userRememberedDevice.deleteMany({ where: { profileDbId: profile.dbId, externalId: id } }),
+      this.prisma.userSecuritySession.deleteMany({ where: { profileDbId: profile.dbId, externalId: id } }),
+      this.prisma.userSecurityTrustedDevice.deleteMany({ where: { profileDbId: profile.dbId, externalId: id } })
     ]);
     return { deleted: true };
   }
   async signOutAll(userId: string) {
-    const securityPayload = await this.securitySettings(userId);
-    const nextSecurity = {
-      ...DEFAULT_SECURITY_SETTINGS,
-      ...securityPayload,
-      sessions: [],
-      trustedDevices: []
-    };
-    await Promise.all([
-      this.upsertUserSetting(userId, 'devices', { devices: [] }),
-      this.upsertWorkspaceSetting(userId, 'security', nextSecurity)
+    const profile = await this.ensureUserSecurityProfile(userId);
+    await this.prisma.$transaction([
+      this.prisma.userRememberedDevice.deleteMany({ where: { profileDbId: profile.dbId } }),
+      this.prisma.userSecuritySession.deleteMany({ where: { profileDbId: profile.dbId } }),
+      this.prisma.userSecurityTrustedDevice.deleteMany({ where: { profileDbId: profile.dbId } })
     ]);
     return { signedOutAll: true };
   }
@@ -235,6 +221,49 @@ export class SettingsService {
       where: { id: { in: ids } },
       data: { readAt: new Date() }
     });
+  }
+  async sendTestNotification(userId: string, role: string, body: SendTestNotificationDto) {
+    const scopeRole = this.workspaceScopeRole(role);
+    const channels = Array.isArray(body.channels)
+      ? body.channels
+          .map((entry) => this.readString(entry).toLowerCase())
+          .filter(Boolean)
+      : [];
+    const created = await this.prisma.notification.create({
+      data: {
+        userId,
+        title: this.readString(body.title) || 'Test notification',
+        body:
+          this.readString(body.message) ||
+          `Notification channels checked: ${channels.length ? channels.join(', ') : 'in-app only'}.`,
+        kind: 'settings_test',
+        metadata: this.ensurePayload({
+          type: 'system',
+          workspaceRole: scopeRole,
+          channels,
+          isTest: true,
+          source: 'notification_preferences',
+          ...(this.isPlainObject(body.metadata) ? body.metadata : {})
+        }) as Prisma.InputJsonValue
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'settings.notification_test_sent',
+      entityType: 'notification',
+      entityId: created.id,
+      route: '/api/settings/notification-preferences/test',
+      method: 'POST',
+      statusCode: 200,
+      metadata: { channels, workspaceRole: scopeRole }
+    });
+    return {
+      id: created.id,
+      title: created.title,
+      message: created.body,
+      channels,
+      createdAt: created.createdAt
+    };
   }
 
   async roles(userId: string) {
@@ -614,13 +643,20 @@ export class SettingsService {
   }
 
   async preferences(userId: string, role: string) {
-    const [stored, derived] = await Promise.all([
-      this.findWorkspaceSetting(userId, this.scopedKey(role, 'preferences')),
-      this.derivePreferences(userId)
-    ]);
-    return this.deepMerge(derived, stored ?? {});
+    const scopeRole = this.workspaceScopeRole(role);
+    const derived = await this.derivePreferences(userId);
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.migrateLegacyPreferences(userId, workspace.workspace.id, scopeRole);
+      const stored = await this.readPreferences(workspace.workspace.id, userId, scopeRole);
+      return this.deepMerge(derived, stored ?? {});
+    } catch {
+      const legacy = await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'preferences'));
+      return this.deepMerge(derived, this.isPlainObject(legacy) ? legacy : {});
+    }
   }
   async updatePreferences(userId: string, role: string, body: UpdatePreferencesDto) {
+    const scopeRole = this.workspaceScopeRole(role);
     const current = await this.preferences(userId, role);
     const next = {
       ...current,
@@ -628,20 +664,60 @@ export class SettingsService {
       ...(body.currency ? { currency: body.currency } : {}),
       ...(body.timezone ? { timezone: body.timezone } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(role, 'preferences'), next);
-    await this.audit.log({
-      userId,
-      action: 'settings.preferences_updated',
-      entityType: 'workspace_setting',
-      entityId: 'preferences',
-      route: '/api/settings/preferences',
-      method: 'PATCH',
-      statusCode: 200
-    });
-    return record.payload as Record<string, unknown>;
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      const record = await this.prisma.workspaceUserPreference.upsert({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId: workspace.workspace.id,
+            userId,
+            scopeRole
+          }
+        },
+        update: {
+          locale: this.readString(next.locale) || null,
+          currency: this.readString(next.currency) || null,
+          timezone: this.readString(next.timezone) || null
+        },
+        create: {
+          workspaceId: workspace.workspace.id,
+          userId,
+          scopeRole,
+          locale: this.readString(next.locale) || null,
+          currency: this.readString(next.currency) || null,
+          timezone: this.readString(next.timezone) || null
+        }
+      });
+      await this.audit.log({
+        userId,
+        action: 'settings.preferences_updated',
+        entityType: 'workspace_user_preference',
+        entityId: 'preferences',
+        route: '/api/settings/preferences',
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return {
+        locale: record.locale,
+        currency: record.currency,
+        timezone: record.timezone
+      };
+    } catch {
+      const record = await this.upsertWorkspaceSetting(userId, this.scopedKey(scopeRole, 'preferences'), next);
+      await this.audit.log({
+        userId,
+        action: 'settings.preferences_updated',
+        entityType: 'workspace_setting',
+        entityId: 'preferences',
+        route: '/api/settings/preferences',
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return record.payload as Record<string, unknown>;
+    }
   }
   uiState(userId: string, role: string) {
-    return this.getUserSetting(userId, this.scopedKey(role, 'ui_state'), {
+    const defaults = {
       theme: null,
       locale: null,
       currency: null,
@@ -650,32 +726,41 @@ export class SettingsService {
       shell: {},
       onboarding: {},
       channels: {}
-    });
+    };
+    return this.getUserSetting(userId, this.scopedKey(role, 'ui_state'), defaults).catch(() => defaults);
   }
   async updateUiState(userId: string, role: string, body: Record<string, unknown>) {
     const current = await this.uiState(userId, role);
-    const next = this.deepMerge(current, body);
-    const record = await this.upsertUserSetting(userId, this.scopedKey(role, 'ui_state'), next);
-    await this.audit.log({
-      userId,
-      action: 'settings.ui_state_updated',
-      entityType: 'user_setting',
-      entityId: 'ui_state',
-      route: '/api/settings/ui-state',
-      method: 'PATCH',
-      statusCode: 200,
-      metadata: { keys: Object.keys(body || {}) }
-    });
-    return record.payload as Record<string, unknown>;
+    const patch = this.isPlainObject(body) ? body : {};
+    const next = this.deepMerge(current, patch);
+    try {
+      const record = await this.upsertUserSetting(userId, this.scopedKey(role, 'ui_state'), next);
+      await this.audit.log({
+        userId,
+        action: 'settings.ui_state_updated',
+        entityType: 'user_setting',
+        entityId: 'ui_state',
+        route: '/api/settings/ui-state',
+        method: 'PATCH',
+        statusCode: 200,
+        metadata: { keys: Object.keys(patch) }
+      });
+      return record.payload as Record<string, unknown>;
+    } catch {
+      return next;
+    }
   }
   async payoutMethods(userId: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    await this.migrateLegacyPayoutMethods(userId, workspace.workspace.id);
     const [stored, derived] = await Promise.all([
-      this.findWorkspaceSetting(userId, 'payout_methods'),
+      this.readPayoutMethods(workspace.workspace.id),
       this.derivePayoutMethods(userId)
     ]);
     return this.deepMerge(derived, stored ?? {});
   }
   async updatePayoutMethods(userId: string, body: UpdatePayoutMethodsDto) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
     const methods = Array.isArray(body.methods) ? body.methods : [];
     const normalized = methods.map((method, index) => ({
       ...method,
@@ -686,34 +771,63 @@ export class SettingsService {
     if (!hasDefault && normalized.length > 0) {
       normalized[0].isDefault = true;
     }
-    const record = await this.upsertWorkspaceSetting(userId, 'payout_methods', {
-      methods: normalized,
-      ...(body.metadata ? { metadata: body.metadata } : {})
+    await this.prisma.$transaction(async (tx) => {
+      const settings = await tx.workspacePayoutSettings.upsert({
+        where: { workspaceId: workspace.workspace.id },
+        update: {
+          metadata: this.ensurePayload(body.metadata ?? {}) as Prisma.InputJsonValue
+        },
+        create: {
+          workspaceId: workspace.workspace.id,
+          metadata: this.ensurePayload(body.metadata ?? {}) as Prisma.InputJsonValue
+        }
+      });
+      await tx.workspacePayoutMethod.deleteMany({
+        where: { settingsDbId: settings.dbId }
+      });
+      if (normalized.length > 0) {
+        await tx.workspacePayoutMethod.createMany({
+          data: normalized.map((method, index) => {
+            const payload = this.ensureObjectPayload(method);
+            return {
+              settingsDbId: settings.dbId,
+              externalId: this.readString(payload.id) || randomUUID(),
+              type: this.readString(payload.type) || 'provider',
+              label: this.readString(payload.label) || null,
+              currency: this.readString(payload.currency) || null,
+              isDefault: Boolean(payload.isDefault),
+              position: index,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
     });
     await this.audit.log({
       userId,
       action: 'settings.payout_methods_updated',
-      entityType: 'workspace_setting',
+      entityType: 'workspace_payout_method',
       entityId: 'payout_methods',
       route: '/api/settings/payout-methods',
       method: 'PATCH',
       statusCode: 200
     });
-    return record.payload as Record<string, unknown>;
+    return this.payoutMethods(userId);
   }
   async securitySettings(userId: string) {
-    const current = await this.getWorkspaceSetting(userId, 'security', DEFAULT_SECURITY_SETTINGS);
+    await this.migrateLegacySecurity(userId);
+    const current = await this.readSecuritySettings(userId);
     return {
       ...DEFAULT_SECURITY_SETTINGS,
-      ...current,
+      ...(current ?? {}),
       twoFactorConfig: {
         ...DEFAULT_SECURITY_SETTINGS.twoFactorConfig,
-        ...((current.twoFactorConfig as Record<string, unknown> | undefined) ?? {})
+        ...(((current ?? {}).twoFactorConfig as Record<string, unknown> | undefined) ?? {})
       },
-      passkeys: this.extractList(current, 'passkeys'),
-      sessions: this.extractList(current, 'sessions'),
-      trustedDevices: this.extractList(current, 'trustedDevices'),
-      alerts: this.extractList(current, 'alerts')
+      passkeys: this.extractList(current ?? {}, 'passkeys'),
+      sessions: this.extractList(current ?? {}, 'sessions'),
+      trustedDevices: this.extractList(current ?? {}, 'trustedDevices'),
+      alerts: this.extractList(current ?? {}, 'alerts')
     };
   }
   async updateSecuritySettings(userId: string, body: UpdateSecuritySettingsDto) {
@@ -729,20 +843,91 @@ export class SettingsService {
       ...(body.alerts ? { alerts: body.alerts } : {}),
       ...(body.metadata ? { metadata: this.deepMerge(((current as Record<string, unknown>).metadata as Record<string, unknown> | undefined) ?? {}, body.metadata) } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, 'security', next);
+    const profile = await this.ensureUserSecurityProfile(userId);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userSecurityProfile.update({
+        where: { userId },
+        data: {
+          twoFactor: Boolean(next.twoFactor),
+          twoFactorMethod: this.readString(next.twoFactorMethod) || null,
+          twoFactorConfig: this.ensurePayload(next.twoFactorConfig ?? {}) as Prisma.InputJsonValue,
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        }
+      });
+      await tx.userSecuritySession.deleteMany({ where: { profileDbId: profile.dbId } });
+      await tx.userSecurityPasskey.deleteMany({ where: { profileDbId: profile.dbId } });
+      await tx.userSecurityTrustedDevice.deleteMany({ where: { profileDbId: profile.dbId } });
+      await tx.userSecurityAlert.deleteMany({ where: { profileDbId: profile.dbId } });
+      if (Array.isArray(next.sessions) && next.sessions.length > 0) {
+        await tx.userSecuritySession.createMany({
+          data: next.sessions.map((session, index) => {
+            const payload = this.ensureObjectPayload(session);
+            return {
+              profileDbId: profile.dbId,
+              externalId: this.readString(payload.id) || `session-${index + 1}`,
+              device: this.readString(payload.device) || null,
+              ip: this.readString(payload.ip) || null,
+              lastActiveAt: this.parseDate(this.readString(payload.lastActiveAt)),
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+      if (Array.isArray(next.passkeys) && next.passkeys.length > 0) {
+        await tx.userSecurityPasskey.createMany({
+          data: next.passkeys.map((passkey, index) => {
+            const payload = this.ensureObjectPayload(passkey);
+            return {
+              profileDbId: profile.dbId,
+              externalId: this.readString(payload.id) || `passkey-${index + 1}`,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+      if (Array.isArray(next.trustedDevices) && next.trustedDevices.length > 0) {
+        await tx.userSecurityTrustedDevice.createMany({
+          data: next.trustedDevices.map((device, index) => {
+            const payload = this.ensureObjectPayload(device);
+            return {
+              profileDbId: profile.dbId,
+              externalId: this.readString(payload.id) || `trusted-${index + 1}`,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+      if (Array.isArray(next.alerts) && next.alerts.length > 0) {
+        await tx.userSecurityAlert.createMany({
+          data: next.alerts.map((alert, index) => {
+            const payload = this.ensureObjectPayload(alert);
+            return {
+              profileDbId: profile.dbId,
+              externalId: this.readString(payload.id) || `alert-${index + 1}`,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+    });
     await this.audit.log({
       userId,
       action: 'settings.security_updated',
-      entityType: 'workspace_setting',
+      entityType: 'user_security_profile',
       entityId: 'security',
       route: '/api/settings/security',
       method: 'PATCH',
       statusCode: 200
     });
-    return record.payload as Record<string, unknown>;
+    return this.securitySettings(userId);
   }
-  integrations(userId: string) { return this.getWorkspaceSetting(userId, 'integrations', { integrations: [], webhooks: [] }); }
+  async integrations(userId: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    await this.migrateLegacyIntegrations(userId, workspace.workspace.id);
+    return (await this.readIntegrations(workspace.workspace.id)) ?? { integrations: [], webhooks: [] };
+  }
   async updateIntegrations(userId: string, body: UpdateIntegrationsDto) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
     const current = await this.integrations(userId);
     const next = {
       ...current,
@@ -750,122 +935,55 @@ export class SettingsService {
       ...(body.webhooks ? { webhooks: body.webhooks } : {}),
       ...(body.metadata ? { metadata: body.metadata } : {})
     };
-    const record = await this.upsertWorkspaceSetting(userId, 'integrations', next);
-    await this.audit.log({
-      userId,
-      action: 'settings.integrations_updated',
-      entityType: 'workspace_setting',
-      entityId: 'integrations',
-      route: '/api/settings/integrations',
-      method: 'PATCH',
-      statusCode: 200
-    });
-    return record.payload as Record<string, unknown>;
-  }
-  async tax(userId: string) {
-    const [stored, derived] = await Promise.all([
-      this.findWorkspaceSetting(userId, 'tax'),
-      this.deriveTaxSettings(userId)
-    ]);
-    return this.deepMerge(derived, stored ?? {});
-  }
-  async updateTax(userId: string, body: UpdateTaxDto) {
-    const current = await this.tax(userId);
-    const next = {
-      ...current,
-      ...(body.profiles ? { profiles: body.profiles } : {}),
-      ...(body.reports ? { reports: body.reports } : {}),
-      ...(body.metadata ? { metadata: body.metadata } : {})
-    };
-    const record = await this.upsertWorkspaceSetting(userId, 'tax', next);
-    await this.audit.log({
-      userId,
-      action: 'settings.tax_updated',
-      entityType: 'workspace_setting',
-      entityId: 'tax',
-      route: '/api/settings/tax',
-      method: 'PATCH',
-      statusCode: 200
-    });
-    return record.payload as Record<string, unknown>;
-  }
-  async kyc(userId: string) {
-    const [stored, derived] = await Promise.all([
-      this.findWorkspaceSetting(userId, 'kyc'),
-      this.deriveKycSettings(userId)
-    ]);
-    return this.deepMerge(derived, stored ?? {});
-  }
-  async updateKyc(userId: string, body: UpdateKycDto) {
-    const current = await this.kyc(userId);
-    const next = {
-      ...current,
-      ...(body.status ? { status: body.status } : {}),
-      ...(body.documents ? { documents: body.documents } : {}),
-      ...(body.metadata ? { metadata: body.metadata } : {})
-    };
-    const record = await this.upsertWorkspaceSetting(userId, 'kyc', next);
-    await this.audit.log({
-      userId,
-      action: 'settings.kyc_updated',
-      entityType: 'workspace_setting',
-      entityId: 'kyc',
-      route: '/api/settings/kyc',
-      method: 'PATCH',
-      statusCode: 200
-    });
-    return record.payload as Record<string, unknown>;
-  }
-  async savedViews(userId: string, role: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    const scopeRole = this.workspaceScopeRole(role);
-    await this.migrateLegacySavedViews(userId, workspace.workspace.id, scopeRole);
-    const group = await this.prisma.workspaceSavedViewGroup.findUnique({
-      where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
-      include: {
-        views: {
-          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
-        }
-      }
-    });
-    return {
-      views: (group?.views ?? []).map((view) => this.serializeStructuredPayload(view.payload, view.externalId)),
-      ...(this.isPlainObject(group?.metadata) ? { metadata: group?.metadata as Record<string, unknown> } : {})
-    };
-  }
-  async updateSavedViews(userId: string, role: string, body: UpdateSavedViewsDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    const scopeRole = this.workspaceScopeRole(role);
-    const current = await this.savedViews(userId, scopeRole);
-    const next = {
-      ...current,
-      ...(body.views ? { views: body.views } : {}),
-      ...(body.metadata ? { metadata: body.metadata } : {})
-    };
     await this.prisma.$transaction(async (tx) => {
-      const group = await tx.workspaceSavedViewGroup.upsert({
-        where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
+      const settings = await tx.workspaceIntegrationSettings.upsert({
+        where: { workspaceId: workspace.workspace.id },
         update: {
           metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
         },
         create: {
           workspaceId: workspace.workspace.id,
-          scopeRole,
           metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
         }
       });
-      await tx.workspaceSavedView.deleteMany({
-        where: { groupDbId: group.dbId }
+      await tx.workspaceIntegrationWebhook.deleteMany({
+        where: { settingsDbId: settings.dbId }
       });
-      if (Array.isArray(next.views) && next.views.length > 0) {
-        await tx.workspaceSavedView.createMany({
-          data: next.views.map((view, index) => {
-            const payload = this.ensureObjectPayload(view);
+      await tx.workspaceIntegrationConnection.deleteMany({
+        where: { settingsDbId: settings.dbId }
+      });
+      const integrations = Array.isArray(next.integrations) ? next.integrations : [];
+      const integrationRows: Array<{ id: string; dbId: string }> = [];
+      for (let index = 0; index < integrations.length; index += 1) {
+        const payload = this.ensureObjectPayload(integrations[index]);
+        const created = await tx.workspaceIntegrationConnection.create({
+          data: {
+            settingsDbId: settings.dbId,
+            externalId: this.readString(payload.id) || randomUUID(),
+            kind: this.readString(payload.kind) || this.readString(payload.type) || null,
+            provider: this.readString(payload.provider) || null,
+            status: this.readString(payload.status) || null,
+            position: index,
+            payload: payload as Prisma.InputJsonValue
+          }
+        });
+        integrationRows.push({ id: created.externalId, dbId: created.id });
+      }
+      const integrationByExternalId = new Map(integrationRows.map((row) => [row.id, row.dbId]));
+      const webhooks = Array.isArray(next.webhooks) ? next.webhooks : [];
+      if (webhooks.length > 0) {
+        await tx.workspaceIntegrationWebhook.createMany({
+          data: webhooks.map((webhook, index) => {
+            const payload = this.ensureObjectPayload(webhook);
+            const integrationRef =
+              this.readString(payload.integrationId) ||
+              this.readString(payload.connectionId) ||
+              this.readString(payload.providerId);
             return {
-              groupDbId: group.dbId,
-              createdByUserId: userId,
+              settingsDbId: settings.dbId,
+              integrationDbId: integrationRef ? integrationByExternalId.get(integrationRef) ?? null : null,
               externalId: this.readString(payload.id) || randomUUID(),
-              name: this.readString(payload.name) || this.readString(payload.label) || null,
+              status: this.readString(payload.status) || null,
               position: index,
               payload: payload as Prisma.InputJsonValue
             };
@@ -873,6 +991,239 @@ export class SettingsService {
         });
       }
     });
+    await this.audit.log({
+      userId,
+      action: 'settings.integrations_updated',
+      entityType: 'workspace_integration',
+      entityId: 'integrations',
+      route: '/api/settings/integrations',
+      method: 'PATCH',
+      statusCode: 200
+    });
+    return this.integrations(userId);
+  }
+  async tax(userId: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    await this.migrateLegacyTaxSettings(userId, workspace.workspace.id);
+    const [stored, derived] = await Promise.all([
+      this.readTaxSettings(workspace.workspace.id),
+      this.deriveTaxSettings(userId)
+    ]);
+    return this.deepMerge(derived, stored ?? {});
+  }
+  async updateTax(userId: string, body: UpdateTaxDto) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    const current = await this.tax(userId);
+    const next = {
+      ...current,
+      ...(body.profiles ? { profiles: body.profiles } : {}),
+      ...(body.reports ? { reports: body.reports } : {}),
+      ...(body.metadata ? { metadata: body.metadata } : {})
+    };
+    await this.prisma.$transaction(async (tx) => {
+      const settings = await tx.workspaceTaxSettings.upsert({
+        where: { workspaceId: workspace.workspace.id },
+        update: {
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        },
+        create: {
+          workspaceId: workspace.workspace.id,
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        }
+      });
+      await tx.workspaceTaxReport.deleteMany({
+        where: { settingsDbId: settings.dbId }
+      });
+      await tx.workspaceTaxProfile.deleteMany({
+        where: { settingsDbId: settings.dbId }
+      });
+      const profiles = Array.isArray(next.profiles) ? next.profiles : [];
+      const profileRows: Array<{ id: string; dbId: string }> = [];
+      for (let index = 0; index < profiles.length; index += 1) {
+        const payload = this.ensureObjectPayload(profiles[index]);
+        const created = await tx.workspaceTaxProfile.create({
+          data: {
+            settingsDbId: settings.dbId,
+            externalId: this.readString(payload.id) || randomUUID(),
+            profileName: this.readString(payload.profileName) || this.readString(payload.name) || null,
+            country: this.readString(payload.country) || null,
+            vatId: this.readString(payload.vatId) || null,
+            status: this.readString(payload.status) || null,
+            isDefault: Boolean(payload.isDefault),
+            position: index,
+            payload: payload as Prisma.InputJsonValue
+          }
+        });
+        profileRows.push({ id: created.externalId, dbId: created.id });
+      }
+      const profileByExternalId = new Map(profileRows.map((row) => [row.id, row.dbId]));
+      const reports = Array.isArray(next.reports) ? next.reports : [];
+      if (reports.length > 0) {
+        await tx.workspaceTaxReport.createMany({
+          data: reports.map((report, index) => {
+            const payload = this.ensureObjectPayload(report);
+            const profileRef = this.readString(payload.profileId);
+            return {
+              settingsDbId: settings.dbId,
+              profileDbId: profileRef ? profileByExternalId.get(profileRef) ?? null : null,
+              externalId: this.readString(payload.id) || randomUUID(),
+              status: this.readString(payload.status) || null,
+              periodStart: this.parseDate(this.readString(payload.periodStart)),
+              periodEnd: this.parseDate(this.readString(payload.periodEnd)),
+              position: index,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'settings.tax_updated',
+      entityType: 'workspace_tax_profile',
+      entityId: 'tax',
+      route: '/api/settings/tax',
+      method: 'PATCH',
+      statusCode: 200
+    });
+    return this.tax(userId);
+  }
+  async kyc(userId: string) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    await this.migrateLegacyKyc(userId, workspace.workspace.id);
+    const [stored, derived] = await Promise.all([
+      this.readKyc(workspace.workspace.id),
+      this.deriveKycSettings(userId)
+    ]);
+    return this.deepMerge(derived, stored ?? {});
+  }
+  async updateKyc(userId: string, body: UpdateKycDto) {
+    const workspace = await this.ensureWorkspaceSeed(userId);
+    const current = await this.kyc(userId);
+    const next = {
+      ...current,
+      ...(body.status ? { status: body.status } : {}),
+      ...(body.documents ? { documents: body.documents } : {}),
+      ...(body.metadata ? { metadata: body.metadata } : {})
+    };
+    await this.prisma.$transaction(async (tx) => {
+      const profile = await tx.workspaceKycProfile.upsert({
+        where: { workspaceId: workspace.workspace.id },
+        update: {
+          status: this.readString((next as Record<string, unknown>).status) || 'pending',
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        },
+        create: {
+          workspaceId: workspace.workspace.id,
+          status: this.readString((next as Record<string, unknown>).status) || 'pending',
+          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        }
+      });
+      await tx.workspaceKycDocument.deleteMany({
+        where: { kycProfileDbId: profile.dbId }
+      });
+      const documents = Array.isArray(next.documents) ? next.documents : [];
+      if (documents.length > 0) {
+        await tx.workspaceKycDocument.createMany({
+          data: documents.map((document, index) => {
+            const payload = this.ensureObjectPayload(document);
+            return {
+              kycProfileDbId: profile.dbId,
+              externalId: this.readString(payload.id) || randomUUID(),
+              title: this.readString(payload.title) || null,
+              status: this.readString(payload.status) || null,
+              uploadedAt: this.parseDate(this.readString(payload.uploadedAt)),
+              expiresAt: this.parseDate(this.readString(payload.expiresAt)),
+              position: index,
+              payload: payload as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'settings.kyc_updated',
+      entityType: 'workspace_kyc_document',
+      entityId: 'kyc',
+      route: '/api/settings/kyc',
+      method: 'PATCH',
+      statusCode: 200
+    });
+    return this.kyc(userId);
+  }
+  async savedViews(userId: string, role: string) {
+    const scopeRole = this.workspaceScopeRole(role);
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.migrateLegacySavedViews(userId, workspace.workspace.id, scopeRole);
+      const group = await this.prisma.workspaceSavedViewGroup.findUnique({
+        where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
+        include: {
+          views: {
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+          }
+        }
+      });
+      return {
+        views: (group?.views ?? []).map((view) => this.serializeStructuredPayload(view.payload, view.externalId)),
+        ...(this.isPlainObject(group?.metadata) ? { metadata: group?.metadata as Record<string, unknown> } : {})
+      };
+    } catch {
+      const payload = await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'saved_views'));
+      const legacyViews = this.extractList(payload ?? { views: [] }, 'views').map((view, index) =>
+        this.serializeStructuredPayload(view, `saved-view-${index + 1}`)
+      );
+      return {
+        views: legacyViews,
+        ...(this.isPlainObject(payload?.metadata) ? { metadata: payload?.metadata as Record<string, unknown> } : {})
+      };
+    }
+  }
+  async updateSavedViews(userId: string, role: string, body: UpdateSavedViewsDto) {
+    const scopeRole = this.workspaceScopeRole(role);
+    const current = await this.savedViews(userId, scopeRole);
+    const next = {
+      ...current,
+      ...(body.views ? { views: body.views } : {}),
+      ...(body.metadata ? { metadata: body.metadata } : {})
+    };
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.prisma.$transaction(async (tx) => {
+        const group = await tx.workspaceSavedViewGroup.upsert({
+          where: { workspaceId_scopeRole: { workspaceId: workspace.workspace.id, scopeRole } },
+          update: {
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+          },
+          create: {
+            workspaceId: workspace.workspace.id,
+            scopeRole,
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+          }
+        });
+        await tx.workspaceSavedView.deleteMany({
+          where: { groupDbId: group.dbId }
+        });
+        if (Array.isArray(next.views) && next.views.length > 0) {
+          await tx.workspaceSavedView.createMany({
+            data: next.views.map((view, index) => {
+              const payload = this.ensureObjectPayload(view);
+              return {
+                groupDbId: group.dbId,
+                createdByUserId: userId,
+                externalId: this.readString(payload.id) || randomUUID(),
+                name: this.readString(payload.name) || this.readString(payload.label) || `Saved view ${index + 1}`,
+                position: index,
+                payload: payload as Prisma.InputJsonValue
+              };
+            })
+          });
+        }
+      });
+    } catch {
+      await this.upsertWorkspaceSetting(userId, this.scopedKey(scopeRole, 'saved_views'), next);
+    }
     await this.audit.log({
       userId,
       action: 'settings.saved_views_updated',
@@ -907,39 +1258,11 @@ export class SettingsService {
     };
   }
   async notificationPreferences(userId: string, role: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const scopeRole = this.workspaceScopeRole(role);
-    await this.migrateLegacyNotificationPreferences(userId, workspace.workspace.id, scopeRole);
-    const preference = await this.prisma.workspaceNotificationPreference.findUnique({
-      where: {
-        workspaceId_userId_scopeRole: {
-          workspaceId: workspace.workspace.id,
-          userId,
-          scopeRole
-        }
-      },
-      include: {
-        watches: {
-          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
-        }
-      }
-    });
-    return {
-      watches: (preference?.watches ?? []).map((watch) => this.serializeStructuredPayload(watch.payload, watch.externalId)),
-      ...(this.isPlainObject(preference?.metadata) ? { metadata: preference?.metadata as Record<string, unknown> } : {})
-    };
-  }
-  async updateNotificationPreferences(userId: string, role: string, body: UpdateNotificationPreferencesDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    const scopeRole = this.workspaceScopeRole(role);
-    const current = await this.notificationPreferences(userId, scopeRole);
-    const next = {
-      ...current,
-      ...(body.watches ? { watches: body.watches } : {}),
-      ...(body.metadata ? { metadata: body.metadata } : {})
-    };
-    await this.prisma.$transaction(async (tx) => {
-      const preference = await tx.workspaceNotificationPreference.upsert({
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.migrateLegacyNotificationPreferences(userId, workspace.workspace.id, scopeRole);
+      const preference = await this.prisma.workspaceNotificationPreference.findUnique({
         where: {
           workspaceId_userId_scopeRole: {
             workspaceId: workspace.workspace.id,
@@ -947,35 +1270,78 @@ export class SettingsService {
             scopeRole
           }
         },
-        update: {
-          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
-        },
-        create: {
-          workspaceId: workspace.workspace.id,
-          userId,
-          scopeRole,
-          metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+        include: {
+          watches: {
+            orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+          }
         }
       });
-      await tx.workspaceNotificationWatch.deleteMany({
-        where: { preferenceDbId: preference.dbId }
-      });
-      if (Array.isArray(next.watches) && next.watches.length > 0) {
-        await tx.workspaceNotificationWatch.createMany({
-          data: next.watches.map((watch, index) => {
-            const payload = this.ensureObjectPayload(watch);
-            return {
-              preferenceDbId: preference.dbId,
-              externalId: this.readString(payload.id) || randomUUID(),
-              channel: this.readString(payload.channel) || null,
-              enabled: payload.enabled === undefined ? null : Boolean(payload.enabled),
-              position: index,
-              payload: payload as Prisma.InputJsonValue
-            };
-          })
-        });
+      return {
+        watches: (preference?.watches ?? []).map((watch) => this.serializeStructuredPayload(watch.payload, watch.externalId)),
+        ...(this.isPlainObject(preference?.metadata) ? { metadata: preference?.metadata as Record<string, unknown> } : {})
+      };
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return this.readLegacyNotificationPreferences(userId, scopeRole);
       }
-    });
+      throw error;
+    }
+  }
+  async updateNotificationPreferences(userId: string, role: string, body: UpdateNotificationPreferencesDto) {
+    const scopeRole = this.workspaceScopeRole(role);
+    const current = await this.notificationPreferences(userId, scopeRole);
+    const next = {
+      ...current,
+      ...(body.watches ? { watches: body.watches } : {}),
+      ...(body.metadata ? { metadata: body.metadata } : {})
+    };
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.prisma.$transaction(async (tx) => {
+        const preference = await tx.workspaceNotificationPreference.upsert({
+          where: {
+            workspaceId_userId_scopeRole: {
+              workspaceId: workspace.workspace.id,
+              userId,
+              scopeRole
+            }
+          },
+          update: {
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+          },
+          create: {
+            workspaceId: workspace.workspace.id,
+            userId,
+            scopeRole,
+            metadata: this.ensurePayload((next as Record<string, unknown>).metadata ?? {}) as Prisma.InputJsonValue
+          }
+        });
+        await tx.workspaceNotificationWatch.deleteMany({
+          where: { preferenceDbId: preference.dbId }
+        });
+        if (Array.isArray(next.watches) && next.watches.length > 0) {
+          await tx.workspaceNotificationWatch.createMany({
+            data: next.watches.map((watch, index) => {
+              const payload = this.ensureObjectPayload(watch);
+              return {
+                preferenceDbId: preference.dbId,
+                externalId: this.readString(payload.id) || randomUUID(),
+                channel: this.readString(payload.channel) || null,
+                enabled: payload.enabled === undefined ? null : Boolean(payload.enabled),
+                position: index,
+                payload: payload as Prisma.InputJsonValue
+              };
+            })
+          });
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        await this.writeLegacyNotificationPreferences(userId, scopeRole, next);
+      } else {
+        throw error;
+      }
+    }
     await this.audit.log({
       userId,
       action: 'settings.notifications_updated',
@@ -989,57 +1355,115 @@ export class SettingsService {
   }
 
   private async getWorkspaceSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
-    const record = await this.prisma.workspaceSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    try {
+      const record = await this.prisma.workspaceSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return defaultValue;
+      }
+      throw error;
+    }
   }
 
   private async findWorkspaceSetting(userId: string, key: string) {
-    const record = await this.prisma.workspaceSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : null;
+    try {
+      const record = await this.prisma.workspaceSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async findUserSetting(userId: string, key: string) {
-    const record = await this.prisma.userSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : null;
+    try {
+      const record = await this.prisma.userSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async upsertWorkspaceSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    return this.prisma.workspaceSetting.upsert({
-      where: { userId_key: { userId, key } },
-      update: { payload: sanitized as Prisma.InputJsonValue },
-      create: {
-        userId,
-        key,
-        payload: sanitized as Prisma.InputJsonValue
+    try {
+      return await this.prisma.workspaceSetting.upsert({
+        where: { userId_key: { userId, key } },
+        update: { payload: sanitized as Prisma.InputJsonValue },
+        create: {
+          userId,
+          key,
+          payload: sanitized as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        const now = new Date();
+        return {
+          id: `workspace-setting-fallback:${userId}:${key}`,
+          userId,
+          key,
+          payload: sanitized,
+          createdAt: now,
+          updatedAt: now
+        };
       }
-    });
+      throw error;
+    }
   }
 
   private async getUserSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
-    const record = await this.prisma.userSetting.findUnique({
-      where: { userId_key: { userId, key } }
-    });
-    return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    try {
+      const record = await this.prisma.userSetting.findUnique({
+        where: { userId_key: { userId, key } }
+      });
+      return record ? (record.payload as Record<string, unknown>) : defaultValue;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return defaultValue;
+      }
+      throw error;
+    }
   }
 
   private async upsertUserSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    return this.prisma.userSetting.upsert({
-      where: { userId_key: { userId, key } },
-      update: { payload: sanitized as Prisma.InputJsonValue },
-      create: {
-        userId,
-        key,
-        payload: sanitized as Prisma.InputJsonValue
+    try {
+      return await this.prisma.userSetting.upsert({
+        where: { userId_key: { userId, key } },
+        update: { payload: sanitized as Prisma.InputJsonValue },
+        create: {
+          userId,
+          key,
+          payload: sanitized as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        const now = new Date();
+        return {
+          id: `user-setting-fallback:${userId}:${key}`,
+          userId,
+          key,
+          payload: sanitized,
+          createdAt: now,
+          updatedAt: now
+        };
       }
-    });
+      throw error;
+    }
   }
 
   private ensurePayload(payload: unknown) {
@@ -1434,6 +1858,8 @@ export class SettingsService {
           this.readString(onboarding?.about),
         primary: this.readString(onboarding?.brandColor) || '#03CD8C',
         accent: '#F77F00',
+        logoUrl: this.readString(onboarding?.logoUrl) || this.readString(storefront?.logoUrl),
+        coverUrl: this.readString(onboarding?.coverUrl) || this.readString(storefront?.coverUrl),
         logoName: this.extractAssetName(this.readString(onboarding?.logoUrl) || this.readString(storefront?.logoUrl)),
         coverName: this.extractAssetName(this.readString(onboarding?.coverUrl) || this.readString(storefront?.coverUrl))
       },
@@ -1534,24 +1960,37 @@ export class SettingsService {
 
   private async getWorkflowRecordPayload(userId: string, recordType: string, recordKey: string) {
     if (recordType === 'account_approval' && recordKey === 'main') {
-      const accountApproval = await this.prisma.accountApproval.findUnique({
-        where: { userId }
-      });
-      if (accountApproval) {
-        return accountApproval.payload ?? null;
+      try {
+        const accountApproval = await this.prisma.accountApproval.findUnique({
+          where: { userId }
+        });
+        if (accountApproval) {
+          return accountApproval.payload ?? null;
+        }
+      } catch (error) {
+        if (!this.isMissingSchemaObjectError(error)) {
+          throw error;
+        }
       }
     }
 
-    const record = await this.prisma.workflowRecord.findUnique({
-      where: {
-        userId_recordType_recordKey: {
-          userId,
-          recordType,
-          recordKey
+    try {
+      const record = await this.prisma.workflowRecord.findUnique({
+        where: {
+          userId_recordType_recordKey: {
+            userId,
+            recordType,
+            recordKey
+          }
         }
+      });
+      return record?.payload ?? null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
       }
-    });
-    return record?.payload ?? null;
+      throw error;
+    }
   }
 
   private readString(value: unknown) {
@@ -1619,6 +2058,13 @@ export class SettingsService {
       this.readString(onboarding.payout?.alipayLogin) ||
       this.readString(onboarding.payout?.wechatId) ||
       this.readString(onboarding.payout?.otherDetails)
+    );
+  }
+
+  private isMissingSchemaObjectError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
     );
   }
 
@@ -2067,7 +2513,7 @@ export class SettingsService {
             groupDbId: group.dbId,
             createdByUserId: userId,
             externalId: this.readString(payloadRecord.id) || randomUUID(),
-            name: this.readString(payloadRecord.name) || this.readString(payloadRecord.label) || null,
+            name: this.readString(payloadRecord.name) || this.readString(payloadRecord.label) || `Saved view ${index + 1}`,
             position: index,
             payload: payloadRecord as Prisma.InputJsonValue
           };
@@ -2131,15 +2577,23 @@ export class SettingsService {
   }
 
   private async migrateLegacyNotificationPreferences(userId: string, workspaceId: string, scopeRole: string) {
-    const existing = await this.prisma.workspaceNotificationPreference.findUnique({
-      where: {
-        workspaceId_userId_scopeRole: {
-          workspaceId,
-          userId,
-          scopeRole
+    let existing;
+    try {
+      existing = await this.prisma.workspaceNotificationPreference.findUnique({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId,
+            userId,
+            scopeRole
+          }
         }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
       }
-    });
+      throw error;
+    }
     if (existing) {
       return;
     }
@@ -2151,25 +2605,540 @@ export class SettingsService {
     if (watches.length === 0 && Object.keys(metadata).length === 0) {
       return;
     }
-    const preference = await this.prisma.workspaceNotificationPreference.create({
+    try {
+      const preference = await this.prisma.workspaceNotificationPreference.create({
+        data: {
+          workspaceId,
+          userId,
+          scopeRole,
+          metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
+        }
+      });
+      if (watches.length > 0) {
+        await this.prisma.workspaceNotificationWatch.createMany({
+          data: watches.map((watch, index) => {
+            const payloadRecord = this.ensureObjectPayload(watch);
+            return {
+              preferenceDbId: preference.dbId,
+              externalId: this.readString(payloadRecord.id) || randomUUID(),
+              channel: this.readString(payloadRecord.channel) || null,
+              enabled: payloadRecord.enabled === undefined ? null : Boolean(payloadRecord.enabled),
+              position: index,
+              payload: payloadRecord as Prisma.InputJsonValue
+            };
+          })
+        });
+      }
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async readLegacyNotificationPreferences(userId: string, scopeRole: string) {
+    const payload =
+      await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'notification_preferences')) ??
+      await this.findWorkspaceSetting(userId, 'notification_preferences') ??
+      {};
+    const watches = this.extractList(payload, 'watches') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata)
+      ? (payload.metadata as Record<string, unknown>)
+      : (this.isPlainObject(payload) ? (payload as Record<string, unknown>) : {});
+    return {
+      watches,
+      metadata
+    };
+  }
+
+  private async writeLegacyNotificationPreferences(userId: string, scopeRole: string, payload: Record<string, unknown>) {
+    await this.upsertWorkspaceSetting(userId, this.scopedKey(scopeRole, 'notification_preferences'), payload);
+  }
+
+  private async readPayoutMethods(workspaceId: string) {
+    const settings = await this.prisma.workspacePayoutSettings.findUnique({
+      where: { workspaceId },
+      include: {
+        methods: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
+    });
+    if (!settings) {
+      return null;
+    }
+    return {
+      methods: (settings?.methods ?? []).map((method) => this.serializeStructuredPayload(method.payload, method.externalId)),
+      ...(this.isPlainObject(settings?.metadata) ? { metadata: settings?.metadata as Record<string, unknown> } : {})
+    };
+  }
+
+  private async readIntegrations(workspaceId: string) {
+    const settings = await this.prisma.workspaceIntegrationSettings.findUnique({
+      where: { workspaceId },
+      include: {
+        integrations: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        },
+        webhooks: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
+    });
+    if (!settings) {
+      return null;
+    }
+    return {
+      integrations: (settings?.integrations ?? []).map((item) => this.serializeStructuredPayload(item.payload, item.externalId)),
+      webhooks: (settings?.webhooks ?? []).map((item) => this.serializeStructuredPayload(item.payload, item.externalId)),
+      ...(this.isPlainObject(settings?.metadata) ? { metadata: settings?.metadata as Record<string, unknown> } : {})
+    };
+  }
+
+  private async readTaxSettings(workspaceId: string) {
+    const settings = await this.prisma.workspaceTaxSettings.findUnique({
+      where: { workspaceId },
+      include: {
+        profiles: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        },
+        reports: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
+    });
+    if (!settings) {
+      return null;
+    }
+    return {
+      profiles: (settings?.profiles ?? []).map((item) => this.serializeStructuredPayload(item.payload, item.externalId)),
+      reports: (settings?.reports ?? []).map((item) => this.serializeStructuredPayload(item.payload, item.externalId)),
+      ...(this.isPlainObject(settings?.metadata) ? { metadata: settings?.metadata as Record<string, unknown> } : {})
+    };
+  }
+
+  private async readKyc(workspaceId: string) {
+    const profile = await this.prisma.workspaceKycProfile.findUnique({
+      where: { workspaceId },
+      include: {
+        documents: {
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }]
+        }
+      }
+    });
+    if (!profile) {
+      return null;
+    }
+    return {
+      status: profile?.status ?? 'pending',
+      documents: (profile?.documents ?? []).map((item) => this.serializeStructuredPayload(item.payload, item.externalId)),
+      ...(this.isPlainObject(profile?.metadata) ? { metadata: profile?.metadata as Record<string, unknown> } : {})
+    };
+  }
+
+  private async migrateLegacyPayoutMethods(userId: string, workspaceId: string) {
+    const existing = await this.prisma.workspacePayoutSettings.findUnique({
+      where: { workspaceId }
+    });
+    if (existing) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, 'payout_methods');
+    const methods = this.extractList(payload ?? { methods: [] }, 'methods') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata) ? payload?.metadata as Record<string, unknown> : {};
+    if (methods.length === 0 && Object.keys(metadata).length === 0) {
+      return;
+    }
+    const settings = await this.prisma.workspacePayoutSettings.create({
       data: {
         workspaceId,
-        userId,
-        scopeRole,
         metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
       }
     });
-    if (watches.length > 0) {
-      await this.prisma.workspaceNotificationWatch.createMany({
-        data: watches.map((watch, index) => {
-          const payloadRecord = this.ensureObjectPayload(watch);
+    if (methods.length > 0) {
+      await this.prisma.workspacePayoutMethod.createMany({
+        data: methods.map((method, index) => {
+          const payloadRecord = this.ensureObjectPayload(method);
           return {
-            preferenceDbId: preference.dbId,
+            settingsDbId: settings.dbId,
             externalId: this.readString(payloadRecord.id) || randomUUID(),
-            channel: this.readString(payloadRecord.channel) || null,
-            enabled: payloadRecord.enabled === undefined ? null : Boolean(payloadRecord.enabled),
+            type: this.readString(payloadRecord.type) || 'provider',
+            label: this.readString(payloadRecord.label) || null,
+            currency: this.readString(payloadRecord.currency) || null,
+            isDefault: Boolean(payloadRecord.isDefault),
             position: index,
             payload: payloadRecord as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+  }
+
+  private async migrateLegacyIntegrations(userId: string, workspaceId: string) {
+    const existing = await this.prisma.workspaceIntegrationSettings.findUnique({
+      where: { workspaceId }
+    });
+    if (existing) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, 'integrations');
+    const integrations = this.extractList(payload ?? { integrations: [] }, 'integrations') as Array<Record<string, unknown>>;
+    const webhooks = this.extractList(payload ?? { webhooks: [] }, 'webhooks') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata) ? payload?.metadata as Record<string, unknown> : {};
+    if (integrations.length === 0 && webhooks.length === 0 && Object.keys(metadata).length === 0) {
+      return;
+    }
+    const settings = await this.prisma.workspaceIntegrationSettings.create({
+      data: {
+        workspaceId,
+        metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
+      }
+    });
+    const createdConnections = new Map<string, string>();
+    for (let index = 0; index < integrations.length; index += 1) {
+      const payloadRecord = this.ensureObjectPayload(integrations[index]);
+      const created = await this.prisma.workspaceIntegrationConnection.create({
+        data: {
+          settingsDbId: settings.dbId,
+          externalId: this.readString(payloadRecord.id) || randomUUID(),
+          kind: this.readString(payloadRecord.kind) || this.readString(payloadRecord.type) || null,
+          provider: this.readString(payloadRecord.provider) || null,
+          status: this.readString(payloadRecord.status) || null,
+          position: index,
+          payload: payloadRecord as Prisma.InputJsonValue
+        }
+      });
+      createdConnections.set(created.externalId, created.id);
+    }
+    if (webhooks.length > 0) {
+      await this.prisma.workspaceIntegrationWebhook.createMany({
+        data: webhooks.map((webhook, index) => {
+          const payloadRecord = this.ensureObjectPayload(webhook);
+          const integrationRef =
+            this.readString(payloadRecord.integrationId) ||
+            this.readString(payloadRecord.connectionId) ||
+            this.readString(payloadRecord.providerId);
+          return {
+            settingsDbId: settings.dbId,
+            integrationDbId: integrationRef ? createdConnections.get(integrationRef) ?? null : null,
+            externalId: this.readString(payloadRecord.id) || randomUUID(),
+            status: this.readString(payloadRecord.status) || null,
+            position: index,
+            payload: payloadRecord as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+  }
+
+  private async migrateLegacyTaxSettings(userId: string, workspaceId: string) {
+    const existing = await this.prisma.workspaceTaxSettings.findUnique({
+      where: { workspaceId }
+    });
+    if (existing) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, 'tax');
+    const profiles = this.extractList(payload ?? { profiles: [] }, 'profiles') as Array<Record<string, unknown>>;
+    const reports = this.extractList(payload ?? { reports: [] }, 'reports') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata) ? payload?.metadata as Record<string, unknown> : {};
+    if (profiles.length === 0 && reports.length === 0 && Object.keys(metadata).length === 0) {
+      return;
+    }
+    const settings = await this.prisma.workspaceTaxSettings.create({
+      data: {
+        workspaceId,
+        metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
+      }
+    });
+    const createdProfiles = new Map<string, string>();
+    for (let index = 0; index < profiles.length; index += 1) {
+      const payloadRecord = this.ensureObjectPayload(profiles[index]);
+      const created = await this.prisma.workspaceTaxProfile.create({
+        data: {
+          settingsDbId: settings.dbId,
+          externalId: this.readString(payloadRecord.id) || randomUUID(),
+          profileName: this.readString(payloadRecord.profileName) || this.readString(payloadRecord.name) || null,
+          country: this.readString(payloadRecord.country) || null,
+          vatId: this.readString(payloadRecord.vatId) || null,
+          status: this.readString(payloadRecord.status) || null,
+          isDefault: Boolean(payloadRecord.isDefault),
+          position: index,
+          payload: payloadRecord as Prisma.InputJsonValue
+        }
+      });
+      createdProfiles.set(created.externalId, created.id);
+    }
+    if (reports.length > 0) {
+      await this.prisma.workspaceTaxReport.createMany({
+        data: reports.map((report, index) => {
+          const payloadRecord = this.ensureObjectPayload(report);
+          const profileRef = this.readString(payloadRecord.profileId);
+          return {
+            settingsDbId: settings.dbId,
+            profileDbId: profileRef ? createdProfiles.get(profileRef) ?? null : null,
+            externalId: this.readString(payloadRecord.id) || randomUUID(),
+            status: this.readString(payloadRecord.status) || null,
+            periodStart: this.parseDate(this.readString(payloadRecord.periodStart)),
+            periodEnd: this.parseDate(this.readString(payloadRecord.periodEnd)),
+            position: index,
+            payload: payloadRecord as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+  }
+
+  private async migrateLegacyKyc(userId: string, workspaceId: string) {
+    const existing = await this.prisma.workspaceKycProfile.findUnique({
+      where: { workspaceId }
+    });
+    if (existing) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, 'kyc');
+    const documents = this.extractList(payload ?? { documents: [] }, 'documents') as Array<Record<string, unknown>>;
+    const metadata = this.isPlainObject(payload?.metadata) ? payload?.metadata as Record<string, unknown> : {};
+    const status = this.readString(payload?.status);
+    if (documents.length === 0 && Object.keys(metadata).length === 0 && !status) {
+      return;
+    }
+    const profile = await this.prisma.workspaceKycProfile.create({
+      data: {
+        workspaceId,
+        status: status || 'pending',
+        metadata: this.ensurePayload(metadata) as Prisma.InputJsonValue
+      }
+    });
+    if (documents.length > 0) {
+      await this.prisma.workspaceKycDocument.createMany({
+        data: documents.map((document, index) => {
+          const payloadRecord = this.ensureObjectPayload(document);
+          return {
+            kycProfileDbId: profile.dbId,
+            externalId: this.readString(payloadRecord.id) || randomUUID(),
+            title: this.readString(payloadRecord.title) || null,
+            status: this.readString(payloadRecord.status) || null,
+            uploadedAt: this.parseDate(this.readString(payloadRecord.uploadedAt)),
+            expiresAt: this.parseDate(this.readString(payloadRecord.expiresAt)),
+            position: index,
+            payload: payloadRecord as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+  }
+
+  private async readPreferences(workspaceId: string, userId: string, scopeRole: string) {
+    let record;
+    try {
+      record = await this.prisma.workspaceUserPreference.findUnique({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId,
+            userId,
+            scopeRole
+          }
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
+    if (!record) {
+      return null;
+    }
+    return {
+      locale: record.locale,
+      currency: record.currency,
+      timezone: record.timezone
+    };
+  }
+
+  private async migrateLegacyPreferences(userId: string, workspaceId: string, scopeRole: string) {
+    let existing;
+    try {
+      existing = await this.prisma.workspaceUserPreference.findUnique({
+        where: {
+          workspaceId_userId_scopeRole: {
+            workspaceId,
+            userId,
+            scopeRole
+          }
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
+      }
+      throw error;
+    }
+    if (existing) {
+      return;
+    }
+    const payload = await this.findWorkspaceSetting(userId, this.scopedKey(scopeRole, 'preferences'));
+    if (!payload) {
+      return;
+    }
+    const locale = this.readString(payload.locale);
+    const currency = this.readString(payload.currency);
+    const timezone = this.readString(payload.timezone);
+    if (!locale && !currency && !timezone) {
+      return;
+    }
+    try {
+      await this.prisma.workspaceUserPreference.create({
+        data: {
+          workspaceId,
+          userId,
+          scopeRole,
+          locale: locale || null,
+          currency: currency || null,
+          timezone: timezone || null
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private async ensureUserSecurityProfile(userId: string) {
+    const existing = await this.prisma.userSecurityProfile.findUnique({
+      where: { userId }
+    });
+    if (existing) {
+      return existing;
+    }
+    return this.prisma.userSecurityProfile.create({
+      data: {
+        userId,
+        twoFactorMethod: DEFAULT_SECURITY_SETTINGS.twoFactorMethod,
+        twoFactorConfig: DEFAULT_SECURITY_SETTINGS.twoFactorConfig as Prisma.InputJsonValue,
+        metadata: {} as Prisma.InputJsonValue
+      }
+    });
+  }
+
+  private async readSecuritySettings(userId: string) {
+    const profile = await this.prisma.userSecurityProfile.findUnique({
+      where: { userId },
+      include: {
+        sessions: { orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }] },
+        passkeys: { orderBy: { updatedAt: 'desc' } },
+        trustedDevices: { orderBy: { updatedAt: 'desc' } },
+        alerts: { orderBy: { updatedAt: 'desc' } }
+      }
+    });
+    if (!profile) {
+      return null;
+    }
+    return {
+      twoFactor: profile.twoFactor,
+      twoFactorMethod: profile.twoFactorMethod ?? DEFAULT_SECURITY_SETTINGS.twoFactorMethod,
+      twoFactorConfig: this.isPlainObject(profile.twoFactorConfig) ? profile.twoFactorConfig as Record<string, unknown> : {},
+      metadata: this.isPlainObject(profile.metadata) ? profile.metadata as Record<string, unknown> : {},
+      sessions: profile.sessions.map((session) => this.serializeStructuredPayload(session.payload, session.externalId)),
+      passkeys: profile.passkeys.map((passkey) => this.serializeStructuredPayload(passkey.payload, passkey.externalId)),
+      trustedDevices: profile.trustedDevices.map((device) => this.serializeStructuredPayload(device.payload, device.externalId)),
+      alerts: profile.alerts.map((alert) => this.serializeStructuredPayload(alert.payload, alert.externalId))
+    };
+  }
+
+  private async migrateLegacySecurity(userId: string) {
+    const existing = await this.prisma.userSecurityProfile.findUnique({
+      where: { userId }
+    });
+    if (existing) {
+      return;
+    }
+    const [securityPayload, devicesPayload] = await Promise.all([
+      this.findWorkspaceSetting(userId, 'security'),
+      this.findUserSetting(userId, 'devices')
+    ]);
+    const hasSecurity = Boolean(securityPayload);
+    const hasDevices = this.extractList(devicesPayload ?? { devices: [] }, 'devices').length > 0;
+    if (!hasSecurity && !hasDevices) {
+      return;
+    }
+    const profile = await this.prisma.userSecurityProfile.create({
+      data: {
+        userId,
+        twoFactor: Boolean(securityPayload?.twoFactor ?? DEFAULT_SECURITY_SETTINGS.twoFactor),
+        twoFactorMethod: this.readString(securityPayload?.twoFactorMethod) || DEFAULT_SECURITY_SETTINGS.twoFactorMethod,
+        twoFactorConfig: this.ensurePayload((securityPayload?.twoFactorConfig as Record<string, unknown> | undefined) ?? {}) as Prisma.InputJsonValue,
+        metadata: this.ensurePayload((securityPayload?.metadata as Record<string, unknown> | undefined) ?? {}) as Prisma.InputJsonValue
+      }
+    });
+    const sessions = this.extractList(securityPayload ?? {}, 'sessions') as Array<Record<string, unknown>>;
+    const passkeys = this.extractList(securityPayload ?? {}, 'passkeys') as Array<Record<string, unknown>>;
+    const trustedDevices = this.extractList(securityPayload ?? {}, 'trustedDevices') as Array<Record<string, unknown>>;
+    const alerts = this.extractList(securityPayload ?? {}, 'alerts') as Array<Record<string, unknown>>;
+    const devices = this.extractList(devicesPayload ?? {}, 'devices') as Array<Record<string, unknown>>;
+    if (sessions.length > 0) {
+      await this.prisma.userSecuritySession.createMany({
+        data: sessions.map((session, index) => {
+          const payload = this.ensureObjectPayload(session);
+          return {
+            profileDbId: profile.dbId,
+            externalId: this.readString(payload.id) || `session-${index + 1}`,
+            device: this.readString(payload.device) || null,
+            ip: this.readString(payload.ip) || null,
+            lastActiveAt: this.parseDate(this.readString(payload.lastActiveAt)),
+            payload: payload as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+    if (passkeys.length > 0) {
+      await this.prisma.userSecurityPasskey.createMany({
+        data: passkeys.map((passkey, index) => {
+          const payload = this.ensureObjectPayload(passkey);
+          return {
+            profileDbId: profile.dbId,
+            externalId: this.readString(payload.id) || `passkey-${index + 1}`,
+            payload: payload as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+    if (trustedDevices.length > 0) {
+      await this.prisma.userSecurityTrustedDevice.createMany({
+        data: trustedDevices.map((device, index) => {
+          const payload = this.ensureObjectPayload(device);
+          return {
+            profileDbId: profile.dbId,
+            externalId: this.readString(payload.id) || `trusted-${index + 1}`,
+            payload: payload as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+    if (alerts.length > 0) {
+      await this.prisma.userSecurityAlert.createMany({
+        data: alerts.map((alert, index) => {
+          const payload = this.ensureObjectPayload(alert);
+          return {
+            profileDbId: profile.dbId,
+            externalId: this.readString(payload.id) || `alert-${index + 1}`,
+            payload: payload as Prisma.InputJsonValue
+          };
+        })
+      });
+    }
+    if (devices.length > 0) {
+      await this.prisma.userRememberedDevice.createMany({
+        data: devices.map((device, index) => {
+          const payload = this.ensureObjectPayload(device);
+          return {
+            profileDbId: profile.dbId,
+            externalId: this.readString(payload.id) || `device-${index + 1}`,
+            payload: payload as Prisma.InputJsonValue
           };
         })
       });
