@@ -70,6 +70,10 @@ export class AuthService {
       where: { dedupeKey }
     });
     if (existingJob) {
+      if (existingJob.status === 'COMPLETED') {
+        return this.registerSynchronously(normalized);
+      }
+
       if (['FAILED', 'DEAD_LETTER', 'CANCELLED'].includes(existingJob.status)) {
         const retried = await this.prisma.backgroundJob.update({
           where: { id: existingJob.id },
@@ -379,7 +383,34 @@ export class AuthService {
     const rolesToAdd = requestedRoles.filter((role) => !assignedRoles.has(role));
 
     if (rolesToAdd.length === 0) {
-      throw new BadRequestException(this.buildDuplicateRoleMessage(requestedRoles));
+      await this.assertExistingUserPasswordMatches(existingUser, payload.password);
+      const targetRole = ((payload.role as UserRole | undefined) ?? requestedRoles[0] ?? existingUser.role) as UserRole;
+      const userForTokens =
+        existingUser.role === targetRole
+          ? existingUser
+          : await this.prisma.user.update({
+              where: { id: existingUser.id },
+              data: { role: targetRole },
+              include: {
+                creatorProfile: true,
+                sellerProfile: true,
+                roleAssignments: true
+              }
+            });
+
+      if (options.issueTokens === false) {
+        return {
+          userId: userForTokens.id,
+          role: userForTokens.role
+        };
+      }
+
+      return this.issueTokens(
+        userForTokens.id,
+        userForTokens.email,
+        userForTokens.role,
+        this.getAssignedRoles(userForTokens)
+      );
     }
 
     const shouldUpgradeLegacyHash = await this.assertExistingUserPasswordMatches(existingUser, payload.password);
@@ -666,7 +697,8 @@ export class AuthService {
 
     const rolesToAdd = this.resolveRolesToAdd(existingUser, requestedRoles);
     if (rolesToAdd.length === 0) {
-      throw new BadRequestException(this.buildDuplicateRoleMessage(requestedRoles));
+      await this.assertExistingUserPasswordMatches(existingUser, payload.password);
+      return existingUser;
     }
 
     await this.assertExistingUserPasswordMatches(existingUser, payload.password);

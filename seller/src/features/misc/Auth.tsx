@@ -101,10 +101,13 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   // Upper card now only shows Sign In and Register
   const resolvedDefaultTab = useMemo<AuthTab>(() => {
     const params = new URLSearchParams(location.search);
-    const intentParam = params.get("intent") || params.get("tab");
+    const intentParam = params.get("intent") || params.get("tab") || params.get("mode");
     const stateDefault = (location.state as { defaultTab?: string } | null)?.defaultTab;
-    const candidate = stateDefault || intentParam || defaultTab;
-    return candidate === "signup" ? "signup" : "signin";
+    const candidate = String(stateDefault || intentParam || defaultTab || "").trim().toLowerCase();
+    if (["signup", "register", "create", "create-account"].includes(candidate)) {
+      return "signup";
+    }
+    return "signin";
   }, [location.search, location.state, defaultTab]);
   const initialTab: AuthTab = AUTH_TABS.includes(resolvedDefaultTab) ? resolvedDefaultTab : "signin";
   const [tab, setTab] = useState<AuthTab>(initialTab);

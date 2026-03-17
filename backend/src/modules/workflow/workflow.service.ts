@@ -409,14 +409,14 @@ export class WorkflowService {
     }
     return {};
   }
-  async patchScreenState(userId: string, key: string, body: PatchScreenStateDto) {
+  async patchScreenState(userId: string, key: string, body: PatchScreenStateDto | Record<string, unknown>) {
     if (key === 'provider-new-quote' && body.__resetToDefault === true) {
       return this.upsertScreenStatePayload(userId, key, this.defaultProviderNewQuoteState());
     }
     const current = (await this.screenState(userId, key)) as Record<string, unknown>;
     const nextPayload = { ...this.extractPayload(body) };
     const next = {
-      ...this.deepMerge(current, this.ensureObjectPayload(nextPayload)),
+      ...this.deepMerge(current, this.ensureObjectPayload(nextPayload, { maxDepth: 12, maxArrayLength: 500, maxKeys: 500 })),
       updatedAt: new Date().toISOString()
     };
     return this.upsertScreenStatePayload(userId, key, next);
@@ -593,7 +593,7 @@ export class WorkflowService {
 
   private readCreatorProfileField(
     onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>,
-    field: 'handle' | 'tagline'
+    field: 'name' | 'handle' | 'tagline' | 'bio'
   ) {
     const metadata =
       onboarding.metadata && typeof onboarding.metadata === 'object' && !Array.isArray(onboarding.metadata)
@@ -619,8 +619,39 @@ export class WorkflowService {
       metadata.preferences && typeof metadata.preferences === 'object' && !Array.isArray(metadata.preferences)
         ? (metadata.preferences as Record<string, unknown>)
         : {};
-    const lines = preferences.lines;
+    const creatorForm =
+      metadata.creatorForm && typeof metadata.creatorForm === 'object' && !Array.isArray(metadata.creatorForm)
+        ? (metadata.creatorForm as Record<string, unknown>)
+        : {};
+    const creatorPreferences =
+      creatorForm.preferences && typeof creatorForm.preferences === 'object' && !Array.isArray(creatorForm.preferences)
+        ? (creatorForm.preferences as Record<string, unknown>)
+        : {};
+    const lines = Array.isArray(creatorPreferences.lines) ? creatorPreferences.lines : preferences.lines;
     return Array.isArray(lines) ? lines.map((entry) => this.readStringField(entry)).filter(Boolean) : [];
+  }
+
+  private readCreatorContentLanguages(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
+    const metadata =
+      onboarding.metadata && typeof onboarding.metadata === 'object' && !Array.isArray(onboarding.metadata)
+        ? (onboarding.metadata as Record<string, unknown>)
+        : {};
+    const creatorForm =
+      metadata.creatorForm && typeof metadata.creatorForm === 'object' && !Array.isArray(metadata.creatorForm)
+        ? (metadata.creatorForm as Record<string, unknown>)
+        : {};
+    const profile =
+      creatorForm.profile && typeof creatorForm.profile === 'object' && !Array.isArray(creatorForm.profile)
+        ? (creatorForm.profile as Record<string, unknown>)
+        : {};
+    const contentLanguages = profile.contentLanguages;
+    if (Array.isArray(contentLanguages)) {
+      const values = contentLanguages.map((entry) => this.readStringField(entry)).filter(Boolean);
+      if (values.length > 0) {
+        return values;
+      }
+    }
+    return onboarding.languages.filter(Boolean);
   }
 
   private readCreatorAudienceRegions(onboarding: Awaited<ReturnType<WorkflowService['onboarding']>>) {
@@ -776,12 +807,14 @@ export class WorkflowService {
       this.readCreatorProfileField(onboarding, 'handle') || onboarding.storeSlug || existing?.handle || userId
     );
     const nextHandle = await this.resolveCreatorProfileHandle(userId, desiredHandle, existing?.handle ?? null);
-    const nextName = onboarding.owner || onboarding.storeName || existing?.name || 'Creator';
+    const nextName =
+      this.readCreatorProfileField(onboarding, 'name') || onboarding.owner || onboarding.storeName || existing?.name || 'Creator';
     const nextTagline = this.readCreatorProfileField(onboarding, 'tagline') || existing?.tagline || null;
+    const nextBio = this.readCreatorProfileField(onboarding, 'bio') || onboarding.about || existing?.bio || null;
     const categories = onboarding.providerServices.length ? onboarding.providerServices : this.readCreatorPreferenceLines(onboarding);
     const regions = this.readCreatorAudienceRegions(onboarding);
     const followers = this.readCreatorFollowers(onboarding);
-    const languages = onboarding.languages.filter(Boolean);
+    const languages = this.readCreatorContentLanguages(onboarding);
     const isKycVerified = String(onboarding.verification.kycStatus || '').toUpperCase() === 'VERIFIED';
 
     if (!existing) {
@@ -792,7 +825,7 @@ export class WorkflowService {
           handle: nextHandle,
           tier: 'BRONZE',
           tagline: nextTagline,
-          bio: onboarding.about || null,
+          bio: nextBio,
           categories: JSON.stringify(categories),
           regions: JSON.stringify(regions),
           languages: JSON.stringify(languages),
@@ -809,7 +842,7 @@ export class WorkflowService {
         name: nextName,
         handle: nextHandle,
         tagline: nextTagline,
-        bio: onboarding.about || null,
+        bio: nextBio,
         categories: JSON.stringify(categories),
         regions: JSON.stringify(regions),
         languages: JSON.stringify(languages),
@@ -1758,7 +1791,7 @@ export class WorkflowService {
   }
 
   private async upsertScreenStatePayload(userId: string, key: string, payload: unknown) {
-    const sanitized = this.ensurePayload(payload);
+    const sanitized = this.ensurePayload(payload, { maxDepth: 12, maxArrayLength: 500, maxKeys: 500 });
     try {
       const record = await this.prisma.workflowScreenState.upsert({
         where: { userId_key: { userId, key } },
@@ -1906,16 +1939,26 @@ export class WorkflowService {
     });
   }
 
-  private ensurePayload(payload: unknown) {
-    const sanitized = sanitizePayload(payload, { maxDepth: 6, maxArrayLength: 300, maxKeys: 300 });
+  private ensurePayload(
+    payload: unknown,
+    limits: { maxDepth?: number; maxArrayLength?: number; maxKeys?: number } = {}
+  ) {
+    const sanitized = sanitizePayload(payload, {
+      maxDepth: limits.maxDepth ?? 6,
+      maxArrayLength: limits.maxArrayLength ?? 300,
+      maxKeys: limits.maxKeys ?? 300
+    });
     if (sanitized === undefined || !sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
       throw new BadRequestException('Invalid payload');
     }
     return sanitized as Record<string, unknown>;
   }
 
-  private ensureObjectPayload(payload: unknown) {
-    const sanitized = this.ensurePayload(payload);
+  private ensureObjectPayload(
+    payload: unknown,
+    limits: { maxDepth?: number; maxArrayLength?: number; maxKeys?: number } = {}
+  ) {
+    const sanitized = this.ensurePayload(payload, limits);
     if (!sanitized || typeof sanitized !== 'object' || Array.isArray(sanitized)) {
       throw new BadRequestException('Invalid payload');
     }

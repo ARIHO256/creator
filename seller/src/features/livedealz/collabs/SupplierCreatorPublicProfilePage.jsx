@@ -89,6 +89,7 @@ function normalizeCreatorPayload(payload) {
     creator: {
       id: String(creatorRecord?.id || ""),
       profileId: String(creatorRecord?.profileId || ""),
+      avatarUrl: String(creatorRecord?.avatarUrl || ""),
       name: String(creatorRecord?.name || "Creator"),
       handle: String(creatorRecord?.handle || "@creator"),
       tier: String(creatorRecord?.tier || "Bronze Tier"),
@@ -695,7 +696,11 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-extrabold text-slate-600 dark:text-slate-200">
-              {String(creator?.initials || "CR")}
+              {creator?.avatarUrl ? (
+                <img src={creator.avatarUrl} alt={creator.name} className="h-full w-full rounded-full object-cover" />
+              ) : (
+                String(creator?.initials || "CR")
+              )}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50 truncate">{creator?.name}</div>
@@ -973,7 +978,7 @@ export default function SupplierCreatorProfilePage() {
         const params = new URLSearchParams(location.search);
         let creatorId = params.get("id") || params.get("handle") || "";
         if (!creatorId) {
-          const creators = await sellerBackendApi.getCreators();
+          const creators = await sellerBackendApi.getAllCreators();
           creatorId = String((Array.isArray(creators) ? creators[0] : null)?.id || "");
         }
 
@@ -1111,7 +1116,11 @@ export default function SupplierCreatorProfilePage() {
               <div className="flex items-end gap-3 w-full md:w-auto">
                 <div className="relative">
                   <div className="h-20 w-20 md:h-24 md:w-24 rounded-full border-4 border-white bg-slate-200 dark:bg-slate-600 transition-colors flex items-center justify-center text-lg md:text-xl font-semibold text-slate-600 dark:text-slate-300">
-                    {creator.initials}
+                    {creator.avatarUrl ? (
+                      <img src={creator.avatarUrl} alt={creator.name} className="h-full w-full rounded-full object-cover" />
+                    ) : (
+                      creator.initials
+                    )}
                   </div>
                   <span
                     className="absolute bottom-0 right-0 h-5 w-5 rounded-full border-2 border-white flex items-center justify-center text-xs text-white"

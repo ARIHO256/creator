@@ -10,6 +10,7 @@ type BackendRequestError = Error & {
 
 let authRedirectScheduled = false;
 let refreshPromise: Promise<string | null> | null = null;
+let roleSwitchPromise: Promise<string | null> | null = null;
 
 const PUBLIC_API_PREFIXES = [
   "/api/auth/login",
@@ -33,6 +34,28 @@ function normalizeRoles(values: unknown, fallbackRole: UserRole): UserRole[] {
     .map((entry) => normalizeRole(entry))
     .filter((entry, index, arr) => arr.indexOf(entry) === index);
   return mapped.length ? mapped : [fallbackRole];
+}
+
+function normalizeBackendRole(value: unknown) {
+  const raw = String(value || "").toUpperCase().trim();
+  return raw === "SELLER" || raw === "PROVIDER" ? raw : null;
+}
+
+function preferredBackendRole(role: UserRole | undefined | null) {
+  return role === "provider" ? "PROVIDER" : "SELLER";
+}
+
+function canRecoverRoleForPath(path: string, session: Session | null) {
+  if (!session || !Array.isArray(session.roles) || session.roles.length === 0) {
+    return false;
+  }
+  if (path.startsWith("/api/provider")) {
+    return session.roles.includes("provider");
+  }
+  if (path.startsWith("/api/seller") || path.startsWith("/api/sellers")) {
+    return session.roles.includes("seller");
+  }
+  return false;
 }
 
 function handleUnauthorizedResponse() {
@@ -139,6 +162,98 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+async function fetchAuthMe(token: string) {
+  const url = await resolveApiUrl("/api/auth/me");
+  const response = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const payload = await parsePayload(response);
+  if (!response.ok) {
+    return null;
+  }
+  return payload && typeof payload === "object" && "data" in payload && "success" in payload
+    ? ((payload as { data: Record<string, unknown> }).data ?? null)
+    : ((payload as Record<string, unknown> | null) ?? null);
+}
+
+async function switchWorkspaceRole(targetRole: UserRole): Promise<string | null> {
+  if (roleSwitchPromise) {
+    return roleSwitchPromise;
+  }
+
+  roleSwitchPromise = (async () => {
+    const current = readSession();
+    const token = current?.accessToken || current?.token || "";
+    if (!token) {
+      return null;
+    }
+
+    const authMe = await fetchAuthMe(token);
+    const availableRoles = normalizeRoles(authMe?.roles ?? current?.roles, targetRole);
+    if (!availableRoles.includes(targetRole)) {
+      return null;
+    }
+
+    if (normalizeBackendRole(authMe?.role) === preferredBackendRole(targetRole)) {
+      writeSession({
+        ...(current || {}),
+        role: targetRole,
+        roles: availableRoles,
+      });
+      return token;
+    }
+
+    const url = await resolveApiUrl("/api/auth/switch-role");
+    const response = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ role: preferredBackendRole(targetRole) }),
+    });
+    const payload = await parsePayload(response);
+    if (!response.ok) {
+      return null;
+    }
+
+    const data =
+      payload && typeof payload === "object" && "data" in payload && "success" in payload
+        ? (payload as { data: Record<string, unknown> }).data
+        : (payload as Record<string, unknown> | null);
+    const nextAccessToken =
+      typeof data?.accessToken === "string" && data.accessToken.trim()
+        ? data.accessToken
+        : "";
+    if (!nextAccessToken) {
+      return null;
+    }
+
+    writeSession({
+      ...(current || {}),
+      accessToken: nextAccessToken,
+      token: nextAccessToken,
+      refreshToken:
+        typeof data?.refreshToken === "string" && data.refreshToken.trim()
+          ? data.refreshToken
+          : current?.refreshToken,
+      role: targetRole,
+      roles: normalizeRoles(data?.roles ?? availableRoles, targetRole),
+    });
+    authRedirectScheduled = false;
+    return nextAccessToken;
+  })().finally(() => {
+    roleSwitchPromise = null;
+  });
+
+  return roleSwitchPromise;
+}
+
 async function request<T>(path: string, init?: RequestInit, allowRetry = true): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   const session = readSession();
@@ -185,6 +300,18 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
         return request<T>(path, { ...init, headers: retryHeaders }, false);
       }
     }
+    if (response.status === 403 && allowRetry && canRecoverRoleForPath(path, session)) {
+      const targetRole: UserRole = path.startsWith("/api/provider") ? "provider" : "seller";
+      const switchedToken = await switchWorkspaceRole(targetRole);
+      if (switchedToken) {
+        const retryHeaders = new Headers(init?.headers ?? {});
+        retryHeaders.set("Authorization", `Bearer ${switchedToken}`);
+        if (init?.body && !(init.body instanceof FormData) && !retryHeaders.has("Content-Type")) {
+          retryHeaders.set("Content-Type", "application/json");
+        }
+        return request<T>(path, { ...init, headers: retryHeaders }, false);
+      }
+    }
     if (response.status === 401) {
       handleUnauthorizedResponse();
     }
@@ -206,6 +333,13 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
 }
 
 export const sellerBackendApi = {
+  ensureWorkspaceRole: async (preferredRole?: UserRole) => {
+    const session = readSession();
+    if (!hasSessionToken(session)) {
+      return null;
+    }
+    return switchWorkspaceRole(preferredRole ?? session?.role ?? "seller");
+  },
   getAuthMe: () => request<Record<string, unknown>>("/api/auth/me"),
   switchAuthRole: (body: { role: string }) =>
     request<Record<string, unknown>>("/api/auth/switch-role", {
@@ -841,7 +975,30 @@ export const sellerBackendApi = {
     }),
   getAdzPerformance: (id: string) =>
     request<Record<string, unknown>>(`/api/adz/campaigns/${encodeURIComponent(id)}/performance`),
-  getCreators: () => request<Array<Record<string, unknown>>>("/api/creators"),
+  getCreators: (query?: { limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (typeof query?.limit === "number") params.set("limit", String(query.limit));
+    if (typeof query?.offset === "number") params.set("offset", String(query.offset));
+    const search = params.toString();
+    return request<Array<Record<string, unknown>>>(`/api/creators${search ? `?${search}` : ""}`);
+  },
+  getAllCreators: async () => {
+    const pageSize = 100;
+    const allCreators: Array<Record<string, unknown>> = [];
+    let offset = 0;
+
+    while (true) {
+      const batch = await request<Array<Record<string, unknown>>>(`/api/creators?limit=${pageSize}&offset=${offset}`);
+      const rows = Array.isArray(batch) ? batch : [];
+      allCreators.push(...rows);
+      if (rows.length < pageSize) {
+        break;
+      }
+      offset += pageSize;
+    }
+
+    return allCreators;
+  },
   getSellers: () => request<Array<Record<string, unknown>>>("/api/sellers"),
   followSeller: (id: string, body: { follow?: boolean }) =>
     request<Record<string, unknown>>(`/api/sellers/${encodeURIComponent(id)}/follow`, {

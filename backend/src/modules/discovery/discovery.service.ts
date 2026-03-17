@@ -145,7 +145,7 @@ export class DiscoveryService {
       include: {
         user: true
       },
-      orderBy: [{ followers: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
+      orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }]
     });
 
     const creatorUserIds = creatorProfiles.map((profile) => profile.userId);
@@ -1082,6 +1082,8 @@ export class DiscoveryService {
     return {
       id: params.profile.userId,
       profileId: params.profile.id,
+      registeredAt: params.profile.user.createdAt.toISOString(),
+      avatarUrl: this.buildCreatorAvatarUrl(params.profile),
       name: params.profile.name,
       handle: `@${params.profile.handle}`,
       tagline: params.profile.tagline || this.buildCreatorTagline(categories),
@@ -1202,6 +1204,7 @@ export class DiscoveryService {
       creator: {
         id: params.profile.userId,
         profileId: params.profile.id,
+        avatarUrl: this.buildCreatorAvatarUrl(params.profile),
         name: params.profile.name,
         handle: `@${params.profile.handle}`,
         tier: `${this.formatTier(params.profile.tier)} Tier`,
@@ -1912,5 +1915,43 @@ export class DiscoveryService {
       .map((entry) => entry[0]?.toUpperCase() || '')
       .join('');
     return initials || String(defaultValue || '').replace(/^@/, '').slice(0, 2).toUpperCase() || 'CR';
+  }
+
+  private buildCreatorAvatarUrl(profile: Prisma.CreatorProfileGetPayload<{ include: { user: true } }>) {
+    const seed = `${profile.userId}:${profile.handle}:${profile.name}`;
+    const palettes: Array<[string, string]> = [
+      ['#7C3AED', '#EC4899'],
+      ['#0F766E', '#06B6D4'],
+      ['#1D4ED8', '#60A5FA'],
+      ['#B45309', '#F59E0B'],
+      ['#BE123C', '#FB7185'],
+      ['#047857', '#34D399']
+    ];
+    const palette = palettes[this.hashString(seed) % palettes.length] ?? palettes[0];
+    const initials = this.buildInitials(profile.name, profile.handle);
+    const safeName = String(profile.name || 'Creator').replace(/[&<>"']/g, '');
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="${safeName}">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="${palette[0]}"/>
+            <stop offset="100%" stop-color="${palette[1]}"/>
+          </linearGradient>
+        </defs>
+        <rect width="128" height="128" rx="32" fill="url(#g)"/>
+        <circle cx="64" cy="48" r="24" fill="rgba(255,255,255,0.18)"/>
+        <path d="M24 118c6-23 24-36 40-36s34 13 40 36" fill="rgba(255,255,255,0.18)"/>
+        <text x="64" y="74" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="30" font-weight="700">${initials}</text>
+      </svg>
+    `.trim();
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  }
+
+  private hashString(value: string) {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+    }
+    return hash;
   }
 }

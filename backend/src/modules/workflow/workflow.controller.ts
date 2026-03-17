@@ -6,7 +6,6 @@ import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-paylo
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CreateContentApprovalDto } from './dto/create-content-approval.dto.js';
 import { CreateUploadDto } from './dto/create-upload.dto.js';
-import { PatchScreenStateDto } from './dto/patch-screen-state.dto.js';
 import { ResubmitContentApprovalDto } from './dto/resubmit-content-approval.dto.js';
 import { UpdateAccountApprovalDto } from './dto/update-account-approval.dto.js';
 import { UpdateAccountApprovalDecisionDto } from './dto/update-account-approval-decision.dto.js';
@@ -64,7 +63,7 @@ export class WorkflowController {
   patchScreenState(
     @CurrentUser() user: RequestUser,
     @Param('key') key: string,
-    @Body(new FlexiblePayloadValidationPipe(PatchScreenStateDto)) body: PatchScreenStateDto
+    @Body() body: Record<string, unknown>
   ) {
     return this.service.patchScreenState(user.sub, key, body);
   }

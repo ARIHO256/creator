@@ -2216,6 +2216,10 @@ export default function RoutesConfig({ session: sessionProp }: RoutesConfigProps
             <Route path="/" element={<PublicLanding />} />
             <Route path="/auth" element={<Auth defaultTab="signin" />} />
             <Route path="/auth/*" element={<Auth defaultTab="signin" />} />
+            <Route path="/login" element={<Navigate to="/auth?intent=signin" replace />} />
+            <Route path="/signin" element={<Navigate to="/auth?intent=signin" replace />} />
+            <Route path="/register" element={<Navigate to="/auth?intent=signup" replace />} />
+            <Route path="/signup" element={<Navigate to="/auth?intent=signup" replace />} />
             <Route path="/p/:sku" element={<ProductShare />} />
             <Route path="/seller/onboarding/review" element={<SellerOnboardingReview />} />
             <Route path="/provider/onboarding/review" element={<ProviderOnboardingReview />} />

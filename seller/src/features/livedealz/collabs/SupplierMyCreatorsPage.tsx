@@ -44,6 +44,16 @@ function buildInitials(name, handle) {
 }
 
 function normalizeWorkspaceCreator(creator) {
+  const activeCampaigns = Array.isArray(creator?.activeCampaigns) ? creator.activeCampaigns : [];
+  const queues =
+    creator?.queues && typeof creator.queues === "object"
+      ? {
+          pendingSupplier: Number(creator.queues.pendingSupplier || 0),
+          pendingAdmin: Number(creator.queues.pendingAdmin || 0),
+          changesRequested: Number(creator.queues.changesRequested || 0),
+        }
+      : { pendingSupplier: 0, pendingAdmin: 0, changesRequested: 0 };
+
   return {
     ...creator,
     id: String(creator?.id || ""),
@@ -56,20 +66,18 @@ function normalizeWorkspaceCreator(creator) {
     relationship: String(creator?.relationship || "Past collab"),
     following: Boolean(creator?.following),
     favourite: Boolean(creator?.favourite),
+    primaryContact: String(creator?.primaryContact || creator?.handle || "Not assigned"),
     nextLive: String(creator?.nextLive || "Not scheduled"),
     nextAction: String(creator?.nextAction || "No active deliverables"),
     lifetimeRevenue: Number(creator?.lifetimeRevenue || 0),
     currentValue: Number(creator?.currentValue || 0),
+    avgConversion: Number(creator?.avgConversion ?? creator?.conversion ?? 0),
+    campaignsCount: Number(creator?.campaignsCount ?? activeCampaigns.length),
+    lastCampaign: String(creator?.lastCampaign || activeCampaigns?.[0]?.name || "No campaigns yet"),
+    openProposals: Number(creator?.openProposals ?? queues.pendingSupplier ?? 0),
     activeContracts: Number(creator?.activeContracts || 0),
-    activeCampaigns: Array.isArray(creator?.activeCampaigns) ? creator.activeCampaigns : [],
-    queues:
-      creator?.queues && typeof creator.queues === "object"
-        ? {
-            pendingSupplier: Number(creator.queues.pendingSupplier || 0),
-            pendingAdmin: Number(creator.queues.pendingAdmin || 0),
-            changesRequested: Number(creator.queues.changesRequested || 0),
-          }
-        : { pendingSupplier: 0, pendingAdmin: 0, changesRequested: 0 },
+    activeCampaigns,
+    queues,
     activeContractIds: Array.isArray(creator?.activeContractIds) ? creator.activeContractIds.map(String) : [],
   };
 }
