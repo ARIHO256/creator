@@ -48,6 +48,7 @@ import {
   mapListingVersions,
   SELLER_LISTINGS_LABELS,
 } from './runtime';
+import { buildListingAdzPrefill } from './adzPrefill';
 
 /**
  * Listings Hub (Merged) v2
@@ -146,6 +147,14 @@ function openSharePreview(draft, navigate) {
   if (typeof window !== 'undefined') {
     navigate(`/p/${encodeURIComponent(entry.sku)}`);
   }
+}
+
+function openAdBuilderForListing(listing, navigate) {
+  navigate('/mldz/adz/builder', {
+    state: {
+      prefillListing: buildListingAdzPrefill(listing),
+    },
+  });
 }
 
 function Badge({ children, tone = 'slate' }) {
@@ -751,7 +760,7 @@ function InlineListingRail({ listing, versions, onEdit, onScan, pushToast, label
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => navigate('/mldz/adz/dashboard')}
+                onClick={() => openAdBuilderForListing(listing, navigate)}
                 className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                 style={{ background: TOKENS.orange }}
               >
@@ -1021,7 +1030,7 @@ function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             type="button"
-                            onClick={() => (navigate('/mldz/adz/dashboard'))}
+                            onClick={() => openAdBuilderForListing(listing, navigate)}
                             className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
                             style={{ background: TOKENS.orange }}
                           >
@@ -1281,7 +1290,7 @@ function ListingDetailDrawer({ open, listing, onClose, onEdit, pushToast, labels
                     desc="Promote this listing inside MyLiveDealz Adz"
                     icon={Flame}
                     primary
-                    onClick={() => (navigate('/mldz/adz/dashboard'))}
+                    onClick={() => openAdBuilderForListing(listing, navigate)}
                   />
                   <PromoteCard
                     title="Schedule Live Session"
