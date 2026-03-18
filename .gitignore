@@ -5,6 +5,7 @@ node_modules/
 .pnp.*
 /creator/node_modules/
 /seller/node_modules/
+/CreatorApp/node_modules/
 
 # Build output
 dist/
@@ -16,6 +17,10 @@ dist-ssr/
 /seller/dist/
 /creator/build/
 /seller/build/
+/CreatorApp/dist/
+/CreatorApp/build/
+/CreatorApp/coverage/
+/CreatorApp/.vite/
 
 # Environment files
 .env
@@ -28,6 +33,12 @@ dist-ssr/
 !.env.example
 !.env.*.example
 *.local
+/CreatorApp/.env
+/CreatorApp/.env.local
+/CreatorApp/.env.*
+
+# Nested repositories
+/CreatorApp/.git/
 
 # Logs
 *.log
