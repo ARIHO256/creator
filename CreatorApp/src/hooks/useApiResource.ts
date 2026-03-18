@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../lib/api";
 
 type UseApiResourceOptions<T> = {
@@ -14,34 +14,52 @@ export function useApiResource<T>({
   loader,
   onError
 }: UseApiResourceOptions<T>) {
-  const stableInitialData = useMemo(() => initialData, [initialData]);
-  const [data, setData] = useState<T>(stableInitialData);
+  const initialDataRef = useRef<T>(initialData);
+  const loaderRef = useRef(loader);
+  const onErrorRef = useRef(onError);
+  const [data, setData] = useState<T>(initialData);
   const [loading, setLoading] = useState<boolean>(enabled);
   const [error, setError] = useState<ApiError | Error | null>(null);
 
+  useEffect(() => {
+    initialDataRef.current = initialData;
+  }, [initialData]);
+
+  useEffect(() => {
+    loaderRef.current = loader;
+  }, [loader]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
   const reload = useCallback(async () => {
-    if (!enabled) return stableInitialData;
+    if (!enabled) return initialDataRef.current;
 
     setLoading(true);
     setError(null);
 
     try {
-      const next = await loader();
+      const next = await loaderRef.current();
       setData(next);
       return next;
     } catch (caught) {
       const nextError = caught instanceof Error ? caught : new Error("Request failed");
       setError(nextError);
-      onError?.(nextError);
-      return stableInitialData;
+      onErrorRef.current?.(nextError);
+      return initialDataRef.current;
     } finally {
       setLoading(false);
     }
-  }, [enabled, loader, onError, stableInitialData]);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     void reload();
-  }, [reload]);
+  }, [enabled, reload]);
 
   return {
     data,

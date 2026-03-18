@@ -382,6 +382,12 @@ export type AssetRecord = {
 };
 
 export const creatorApi = {
+  dashboardFeed() {
+    return api.get<Record<string, unknown>>("/dashboard/feed");
+  },
+  creatorHome() {
+    return api.get<Record<string, unknown>>("/dashboard/creator-home");
+  },
   sellers(params?: { limit?: number; offset?: number }) {
     return api.get<PublicSellerRecord[]>(withQuery("/sellers", params));
   },

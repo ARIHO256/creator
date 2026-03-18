@@ -206,6 +206,10 @@ export class DashboardService {
     return this.readReadModel(userId, 'feed', () => this.computeFeed(userId));
   }
 
+  async creatorHome(userId: string) {
+    return this.readReadModel(userId, 'creator-home', () => this.computeCreatorHome(userId));
+  }
+
   private async computeFeed(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -275,6 +279,217 @@ export class DashboardService {
         { label: 'Active campaigns', value: activeCampaigns },
         { label: 'Pending proposals', value: pendingProposals }
       ]
+    };
+  }
+
+  private async computeCreatorHome(userId: string) {
+    const [user, campaigns, pendingProposals, sessions, replays, follows, opportunities, proposals, contracts] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { creatorProfile: true }
+      }),
+      this.prisma.campaign.findMany({
+        where: { creatorId: userId },
+        include: { seller: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 20
+      }),
+      this.prisma.proposal.count({
+        where: { creatorId: userId, status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] } }
+      }),
+      this.prisma.liveSession.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' },
+        take: 20
+      }),
+      this.prisma.liveReplay.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' },
+        take: 12
+      }),
+      this.prisma.sellerFollow.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 12
+      }),
+      this.prisma.opportunity.findMany({
+        where: { OR: [{ creatorId: userId }, { creatorId: null }] },
+        include: { seller: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 12
+      }),
+      this.prisma.proposal.findMany({
+        where: { creatorId: userId },
+        orderBy: { updatedAt: 'desc' },
+        take: 20
+      }),
+      this.prisma.contract.findMany({
+        where: { creatorId: userId },
+        orderBy: { updatedAt: 'desc' },
+        take: 20
+      })
+    ]);
+    const sellers = follows.length
+      ? await this.prisma.seller.findMany({
+          where: {
+            id: {
+              in: follows.map((entry) => entry.sellerId)
+            }
+          }
+        })
+      : [];
+
+    const sellerById = new Map(sellers.map((seller) => [seller.id, seller]));
+    const campaignsById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
+    const creatorName = user?.creatorProfile?.name || 'Creator workspace';
+    const subtitle = 'Campaigns, proposals, tasks, and performance in one backend.';
+
+    const normalizedSessions = sessions.map((session) => {
+      const data = session.data && typeof session.data === 'object' && !Array.isArray(session.data)
+        ? session.data as Record<string, unknown>
+        : {};
+      const campaignId = this.readString(data, 'campaignId');
+      const campaign = campaignId ? campaignsById.get(campaignId) : null;
+      return {
+        session,
+        campaign,
+        title: session.title || this.readString(data, 'title') || campaign?.title || 'Live session',
+        startISO: this.readDateValue(session.scheduledAt, this.readString(data, 'startISO'))?.toISOString() || session.createdAt.toISOString(),
+        endISO: this.readDateValue(session.endedAt, this.readString(data, 'endISO'))?.toISOString() || session.updatedAt.toISOString(),
+        status: this.normalizeLiveSessionStatus(session.status, session),
+        sellerName: campaign?.seller?.displayName || campaign?.seller?.name || this.readString(data, 'supplier') || 'Your workspace',
+        category: campaign?.title || this.readString(data, 'campaignTitle') || 'Live session',
+        peakViewers: this.readNumber(data, 'peakViewers')
+      };
+    });
+
+    const upcomingSessions = normalizedSessions
+      .filter((entry) => entry.status !== 'Ended')
+      .sort((left, right) => new Date(left.startISO).getTime() - new Date(right.startISO).getTime());
+
+    const feedItems = [
+      ...normalizedSessions.slice(0, 8).map((entry, index) => ({
+        id: index + 1,
+        type: entry.status === 'Live' ? 'live' : entry.status === 'Ended' ? 'replay' : 'upcoming',
+        title: entry.title,
+        brand: entry.sellerName,
+        viewers: entry.status === 'Live' ? this.formatCompactNumber(entry.peakViewers || 0) : entry.status === 'Ended' ? `${this.formatCompactNumber(entry.peakViewers || 0)} views` : 'Scheduled',
+        time: entry.status === 'Live' ? `Live now · ${Math.max(1, Math.round((entry.peakViewers || 0) / 100))} min` : entry.status === 'Ended' ? `Replay · ${this.formatShortDate(entry.endISO)}` : this.formatShortDate(entry.startISO),
+        tag: entry.category,
+        category: entry.category
+      })),
+      ...replays.slice(0, 4).map((replay, index) => {
+        const data = replay.data && typeof replay.data === 'object' && !Array.isArray(replay.data)
+          ? replay.data as Record<string, unknown>
+          : {};
+        return {
+          id: 100 + index,
+          type: 'replay',
+          title: this.readString(data, 'title') || this.readString(data, 'headline') || 'Replay highlight',
+          brand: this.readString(data, 'campaignTitle') || 'Replay library',
+          viewers: `${this.formatCompactNumber(this.readNumber(data, 'views') || this.readNumber(data, 'peakViewers') || 0)} views`,
+          time: `Replay · ${this.formatShortDate(replay.updatedAt)}`,
+          tag: 'Replay',
+          category: 'Replay'
+        };
+      })
+    ].slice(0, 8);
+
+    const followedEntities = follows.map((follow, index) => {
+      const seller = sellerById.get(follow.sellerId);
+      return {
+        id: index + 1,
+        sellerId: follow.sellerId,
+        name: seller?.displayName || seller?.name || 'Seller',
+        type: seller?.kind === SellerKind.PROVIDER ? 'Provider' : 'Seller',
+        category: this.readStringList(seller?.categories)[0] || seller?.category || 'General',
+        status: 'Updates only',
+        viewers: null
+      };
+    });
+
+    const activeContracts = contracts.filter((contract) =>
+      ['ACTIVE', 'TERMINATION_REQUESTED'].includes(String(contract.status || ''))
+    );
+    const openProposals = proposals.filter((proposal) =>
+      ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'].includes(String(proposal.status || ''))
+    );
+    const totalOpportunityBudget = opportunities.reduce((sum, opportunity) => {
+      return sum + Number(opportunity.budgetMax ?? opportunity.budget ?? opportunity.budgetMin ?? 0);
+    }, 0);
+
+    const categoryPool = this.uniqueStrings([
+      ...campaigns.flatMap((campaign) => this.readStringList(campaign.seller?.categories)),
+      ...opportunities.flatMap((opportunity) => {
+        const direct = Array.isArray(opportunity.categories) ? opportunity.categories.map((entry) => String(entry)) : [];
+        return [...direct, String(opportunity.category || '')];
+      })
+    ]).slice(0, 3);
+
+    return {
+      hero: {
+        initials: this.buildInitials(creatorName),
+        name: creatorName,
+        subtitle,
+        tier: 'Creator Tier',
+        kpis: [
+          {
+            label: 'Active campaigns',
+            value: String(campaigns.length),
+            sub: `${upcomingSessions.length} upcoming live${upcomingSessions.length === 1 ? '' : 's'}`
+          },
+          {
+            label: 'Upcoming lives',
+            value: String(upcomingSessions.length),
+            sub: upcomingSessions[0] ? `Next: ${this.formatShortDate(upcomingSessions[0].startISO)}` : 'No scheduled live'
+          },
+          {
+            label: 'Pending proposals',
+            value: String(pendingProposals),
+            sub: `${openProposals.length} need reply`
+          }
+        ]
+      },
+      todayItems: [
+        ...upcomingSessions.slice(0, 2).map((entry) => ({
+          time: this.formatTime(entry.startISO),
+          label: entry.title,
+          badge: entry.status,
+          badgeColor: entry.status === 'Live' ? 'bg-red-500' : 'bg-amber-500'
+        })),
+        {
+          time: 'Today',
+          label: `Review ${openProposals.length} open proposal${openProposals.length === 1 ? '' : 's'}`,
+          badge: openProposals.length > 0 ? 'Due soon' : undefined,
+          badgeColor: openProposals.length > 0 ? 'bg-emerald-500' : undefined
+        }
+      ].slice(0, 3),
+      feedItems,
+      followedEntities,
+      pipeline: [
+        { label: 'Leads', value: String(opportunities.length), amount: this.formatMoney(totalOpportunityBudget), progress: 'w-11/12', highlight: false },
+        { label: 'Pitches sent', value: String(proposals.length), amount: this.formatMoney(totalOpportunityBudget * 0.68), progress: 'w-9/12', highlight: false },
+        { label: 'Negotiating', value: String(openProposals.length), amount: this.formatMoney(totalOpportunityBudget * 0.42), progress: 'w-7/12', highlight: false },
+        { label: 'Active contracts', value: String(activeContracts.length), amount: this.formatMoney(activeContracts.reduce((sum, contract) => sum + Number(contract.value ?? 0), 0)), progress: 'w-5/12', highlight: true }
+      ],
+      crew: {
+        title: upcomingSessions[0]?.title || 'No scheduled live session',
+        rows: [
+          { role: 'Creator', name: 'You', status: upcomingSessions[0] ? 'Confirmed' : 'Missing' },
+          { role: 'Producer', name: upcomingSessions[0]?.sellerName || 'Not assigned', status: upcomingSessions[0] ? 'Assigned' : 'Missing' },
+          { role: 'Moderator', name: 'Not assigned', status: 'Missing' }
+        ]
+      },
+      aiSuggestions: [
+        { title: `Pitch ${Math.min(3, opportunities.length)} matching opportunit${opportunities.length === 1 ? 'y' : 'ies'}`, body: 'Fresh briefs are already available in your workspace.' },
+        { title: upcomingSessions[0] ? `Best next action: prepare ${upcomingSessions[0].title}` : 'Schedule your next live session', body: 'Use the live workspace to confirm assets, platforms, and timing.' },
+        { title: 'Follow high-fit sellers', body: `${followedEntities.length} seller workspace${followedEntities.length === 1 ? '' : 's'} are already connected to your feed.` }
+      ],
+      insights: categoryPool.map((label, index) => ({
+        label,
+        badge: index === 0 ? `${opportunities.length} open opportunities` : index === 1 ? `${activeContracts.length} active contracts` : `${feedItems.length} feed updates`,
+        badgeColor: index === 0 ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' : index === 1 ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400' : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+      }))
     };
   }
 
