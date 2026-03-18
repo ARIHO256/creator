@@ -21,6 +21,7 @@ import {
   Sparkles,
   Upload
 } from "lucide-react";
+import { creatorApi } from "../../lib/creatorApi";
 import { useTheme } from "../../contexts/ThemeContext";
 
 // MyLiveDealz - Creator Awaiting Admin Approval (Premium)
@@ -71,6 +72,15 @@ const STATUS_STEPS: StatusStep[] = [
     desc: "Creator tools are unlocked. Welcome to Creator Studio."
   }
 ];
+
+function mapApprovalStatus(value?: string) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "approved") return "Approved";
+  if (normalized === "rejected") return "SendBack";
+  if (normalized === "resubmitted") return "Resubmitted";
+  if (normalized === "in_review") return "UnderReview";
+  return "Submitted";
+}
 
 interface Toast {
   id: string;
@@ -404,6 +414,7 @@ interface OnboardingData {
 export default function CreatorAwaitingApprovalPremium() {
   const { toasts, push } = useToasts();
   const navigate = useNavigate();
+  const [apiOnboarding, setApiOnboarding] = useState<OnboardingData | null>(null);
 
   const qp = useMemo<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
@@ -412,6 +423,7 @@ export default function CreatorAwaitingApprovalPremium() {
 
   // Pull onboarding summary if available
   const onboarding = useMemo<OnboardingData | null>(() => {
+    if (apiOnboarding) return apiOnboarding;
     if (typeof window === "undefined") return null;
     for (const k of ONBOARDING_KEYS_TO_TRY) {
       const raw = localStorage.getItem(k);
@@ -421,7 +433,7 @@ export default function CreatorAwaitingApprovalPremium() {
       }
     }
     return null;
-  }, []);
+  }, [apiOnboarding]);
 
   const displayName =
     qp.name || onboarding?.profile?.name || localStorage.getItem("creatorOnb.name") || "New Creator";
@@ -485,6 +497,60 @@ export default function CreatorAwaitingApprovalPremium() {
   const [showSubmission, setShowSubmission] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([creatorApi.onboarding(), creatorApi.accountApproval()])
+      .then(([onboardingPayload, approval]) => {
+        if (cancelled) return;
+        const creatorForm =
+          onboardingPayload &&
+          typeof onboardingPayload === "object" &&
+          (onboardingPayload as { metadata?: { creatorForm?: OnboardingData } }).metadata?.creatorForm
+            ? (onboardingPayload as { metadata: { creatorForm: OnboardingData } }).metadata.creatorForm
+            : null;
+        if (creatorForm) {
+          setApiOnboarding(creatorForm);
+        }
+        setStatus(mapApprovalStatus(approval.status));
+        if (approval.submittedAt) {
+          localStorage.setItem("creatorOnb.submittedAt", approval.submittedAt);
+        }
+        if (Array.isArray(approval.requiredActions) && approval.requiredActions.length > 0) {
+          setItems(
+            approval.requiredActions.map((item, index) => ({
+              id: String(item.id || `item-${index}`),
+              text: String(item.label || item.description || `Action ${index + 1}`),
+              done: Boolean(item.completed)
+            }))
+          );
+        }
+        if (Array.isArray(approval.documents) && approval.documents.length > 0) {
+          setAdminDocs(
+            approval.documents.map((doc, index) => ({
+              name: String(doc.type || `Document ${index + 1}`),
+              url: "#",
+              type: String(doc.status || "file")
+            }))
+          );
+        }
+        const metadata = approval.metadata && typeof approval.metadata === "object" ? approval.metadata : {};
+        if (typeof (metadata as { note?: unknown }).note === "string") {
+          setNote((metadata as { note: string }).note);
+        }
+        if (typeof approval.reviewNotes === "string" && approval.reviewNotes.trim()) {
+          setAdminReason(approval.reviewNotes);
+        }
+      })
+      .catch(() => {
+        // local fallback remains active
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const currentIndex = useMemo(() => {
     const map: Record<string, number> = {
@@ -561,41 +627,22 @@ export default function CreatorAwaitingApprovalPremium() {
     setNotice("");
     push("Refreshing status...", "success");
 
-    await new Promise((r) => setTimeout(r, 700));
-
-    // Simple simulation rules
-    if (status === "UnderReview") {
-      const nextEta = Math.max(5, etaMin - 15);
-      setEtaMin(nextEta);
-
-      // Simulate possible send-back if key onboarding data is missing
-      const missingKyc = onboarding ? !(onboarding?.kyc?.idUploaded && onboarding?.kyc?.selfieUploaded) : false;
-      const missingProfile = onboarding ? !(onboarding?.profile?.name && onboarding?.profile?.handle) : false;
-      const shouldSendBack = missingKyc || missingProfile;
-
-      if (nextEta <= 10 && !shouldSendBack) {
-        setStatus("Approved");
+    try {
+      const approval = await creatorApi.refreshAccountApproval();
+      const nextStatus = mapApprovalStatus(approval.status);
+      setStatus(nextStatus);
+      if (typeof approval.reviewNotes === "string" && approval.reviewNotes.trim()) {
+        setAdminReason(approval.reviewNotes);
+      }
+      if (nextStatus === "Approved") {
         push("Approved. Creator tools are unlocked.", "success");
-      } else if (shouldSendBack) {
-        setStatus("SendBack");
-        setEtaMin(60);
+      } else if (nextStatus === "SendBack") {
         push("Action required. Please review admin feedback.", "error");
       } else {
-        push("Still under review. Thanks for your patience.", "success");
+        push("Status is up to date.", "success");
       }
-    } else if (status === "Resubmitted") {
-      const nextEta = Math.max(5, etaMin - 15);
-      setEtaMin(nextEta);
-      if (nextEta <= 10) {
-        setStatus("Approved");
-        push("Approved. Welcome to Creator Studio.", "success");
-      } else {
-        push("Back in review. We are checking your updates.", "success");
-      }
-    } else if (status === "SendBack") {
-      push("Action required. Complete checklist and resubmit.", "error");
-    } else {
-      push("Status is up to date.", "success");
+    } catch {
+      push("Unable to refresh approval status right now.", "error");
     }
 
     setRefreshing(false);
@@ -611,12 +658,40 @@ export default function CreatorAwaitingApprovalPremium() {
     }
 
     push("Submitting updates...", "success");
-    await new Promise((r) => setTimeout(r, 800));
+    try {
+      const approval = await creatorApi.resubmitAccountApproval({
+        status: "resubmitted",
+        reviewNotes: adminReason || note,
+        requiredActions: items.map((item) => ({
+          id: item.id,
+          label: item.text,
+          completed: item.done
+        })),
+        documents: [
+          ...adminDocs.map((doc, index) => ({
+            id: `doc-${index}`,
+            type: doc.name,
+            status: doc.type
+          })),
+          ...files.map((file, index) => ({
+            id: `upload-${index}`,
+            type: file.name,
+            status: "uploaded"
+          }))
+        ],
+        metadata: {
+          note,
+          attachments: files.map((file) => file.name)
+        }
+      });
 
-    setStatus("Resubmitted");
-    setEtaMin(60);
-    setFiles([]);
-    push("Resubmitted. Back in review.", "success");
+      setStatus(mapApprovalStatus(approval.status));
+      setEtaMin(60);
+      setFiles([]);
+      push("Resubmitted. Back in review.", "success");
+    } catch {
+      push("Could not resubmit updates right now.", "error");
+    }
   }
 
   function clearDraft() {
@@ -652,7 +727,7 @@ export default function CreatorAwaitingApprovalPremium() {
         onClose={() => setShowSubmission(false)}
       >
         <div className="text-[12px] text-slate-600 dark:text-slate-400">
-          This preview is pulled from localStorage when available. In production, this comes from your API.
+          This preview is loaded from the backend when available, with local draft fallback if the API is offline.
         </div>
         <pre className="mt-3 text-[11px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 overflow-auto max-h-[420px] text-slate-700 dark:text-slate-300">
           {JSON.stringify(onboarding || { note: "No onboarding data found" }, null, 2)}

@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useScrollLock } from "../hooks/useScrollLock";
-import { savePayoutMethod } from "../utils/payoutMethodUtils";
+import { creatorApi } from "../lib/creatorApi";
+import {
+    buildPayoutMethodsPayload,
+    getPayoutMethodDisplayFromApi,
+    normalizePayoutMethodType,
+    savePayoutMethod
+} from "../utils/payoutMethodUtils";
 
 export type PayoutMethod = "bank" | "mobile" | "wallet";
 
@@ -17,34 +23,64 @@ export const PayoutMethodsDialog: React.FC<PayoutMethodsDialogProps> = ({ isOpen
     const [selectedMethod, setSelectedMethod] = useState<PayoutMethod>("bank");
     const [accountDetails, setAccountDetails] = useState("");
     const [isSaving, setIsSaving] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     // Lock background scroll when open
     useScrollLock(isOpen);
 
     useEffect(() => {
-        const savedMethod = localStorage.getItem(STORAGE_KEY_METHOD) as PayoutMethod;
+        if (!isOpen) return;
+
+        let cancelled = false;
+
+        const savedMethod = localStorage.getItem(STORAGE_KEY_METHOD) as PayoutMethod | null;
         const savedDetails = localStorage.getItem(STORAGE_KEY_DETAILS);
 
         if (savedMethod) setSelectedMethod(savedMethod);
-        if (savedDetails) setAccountDetails(savedDetails);
-        else if (savedMethod === "bank") {
+        if (savedDetails) {
+            setAccountDetails(savedDetails);
+        } else if (savedMethod === "bank") {
             setAccountDetails("Standard Chartered Bank • Ronald Isabirye • 0123456789");
         }
+
+        void creatorApi.payoutMethods()
+            .then((response) => {
+                if (cancelled) return;
+                const primary = response.methods.find((method) => method.isDefault) || response.methods[0];
+                if (!primary) return;
+
+                const display = getPayoutMethodDisplayFromApi(primary);
+                setSelectedMethod(normalizePayoutMethodType(primary.type || primary.kind));
+                setAccountDetails(display.detail);
+                savePayoutMethod(normalizePayoutMethodType(primary.type || primary.kind), display.detail);
+                setLoadError(null);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setLoadError("Using saved payout details until the backend is available.");
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
     }, [isOpen]);
 
     if (!isOpen) return null;
 
-    const handleSave = () => {
+    const handleSave = async () => {
         setIsSaving(true);
-
-        // Use centralized utility function to save and dispatch event
-        savePayoutMethod(selectedMethod, accountDetails);
-
-        setTimeout(() => {
+        try {
+            await creatorApi.updatePayoutMethods(buildPayoutMethodsPayload(selectedMethod, accountDetails));
+            savePayoutMethod(selectedMethod, accountDetails);
+            setLoadError(null);
             setIsSaving(false);
             onSave?.(selectedMethod, accountDetails);
             onClose();
-        }, 800);
+        } catch {
+            setIsSaving(false);
+            setLoadError("Failed to save payout method to the backend.");
+        }
     };
 
     return (
@@ -100,6 +136,9 @@ export const PayoutMethodsDialog: React.FC<PayoutMethodsDialogProps> = ({ isOpen
                         <p className="text-[10px] text-slate-500 font-medium">
                             Manual verification may take up to 24 hours after changing details.
                         </p>
+                        {loadError ? (
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400">{loadError}</p>
+                        ) : null}
                     </div>
                 </div>
 

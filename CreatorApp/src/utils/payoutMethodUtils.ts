@@ -1,87 +1,142 @@
-// Utility functions for payout method management
+import React from "react";
+import type { PayoutMethodRecord } from "../lib/creatorApi";
+
 export type PayoutMethodType = "bank" | "mobile" | "wallet";
 
 export interface PayoutMethodDisplay {
-    name: string;
-    detail: string;
-    icon: string;
+  name: string;
+  detail: string;
+  icon: string;
 }
 
 const STORAGE_KEY_METHOD = "evzone_payout_method";
 const STORAGE_KEY_DETAILS = "evzone_payout_details";
 
-/**
- * Get the current payout method from localStorage
- */
+function safeGet(key: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+export function normalizePayoutMethodType(value?: string | null): PayoutMethodType {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized.includes("mobile")) return "mobile";
+  if (
+    normalized.includes("wallet") ||
+    normalized.includes("paypal") ||
+    normalized.includes("provider")
+  ) {
+    return "wallet";
+  }
+  return "bank";
+}
+
 export function getPayoutMethod(): PayoutMethodType {
-    const method = localStorage.getItem(STORAGE_KEY_METHOD) as PayoutMethodType;
-    return method || "bank";
+  const method = safeGet(STORAGE_KEY_METHOD) as PayoutMethodType | null;
+  return method || "bank";
 }
 
-/**
- * Get the current payout details from localStorage
- */
 export function getPayoutDetails(): string {
-    return localStorage.getItem(STORAGE_KEY_DETAILS) || "Standard Chartered **** 6789";
+  return safeGet(STORAGE_KEY_DETAILS) || "Standard Chartered **** 6789";
 }
 
-/**
- * Get the display information for the current payout method
- */
+export function buildPayoutMethodDisplay(method: PayoutMethodType, details: string): PayoutMethodDisplay {
+  return {
+    name:
+      method === "mobile"
+        ? "Mobile Money"
+        : method === "wallet"
+          ? "PayPal / Others"
+          : "Bank Account",
+    detail: details,
+    icon: method === "mobile" ? "📱" : method === "wallet" ? "💳" : "🏦"
+  };
+}
+
 export function getPayoutMethodDisplay(): PayoutMethodDisplay {
-    const method = getPayoutMethod();
-    const details = getPayoutDetails();
-
-    return {
-        name: method === "mobile" ? "Mobile Money" :
-            method === "wallet" ? "PayPal / Others" :
-                "Bank Account",
-        detail: details,
-        icon: method === "mobile" ? "📱" :
-            method === "wallet" ? "💳" :
-                "🏦"
-    };
+  return buildPayoutMethodDisplay(getPayoutMethod(), getPayoutDetails());
 }
 
-/**
- * Save payout method and details to localStorage and dispatch event
- */
+export function getPayoutMethodDisplayFromApi(record?: PayoutMethodRecord | null): PayoutMethodDisplay {
+  if (!record) {
+    return getPayoutMethodDisplay();
+  }
+
+  const method = normalizePayoutMethodType(record.type || record.kind);
+  const detail =
+    record.label ||
+    record.masked ||
+    String((record.details as { masked?: string } | undefined)?.masked || "") ||
+    getPayoutDetails();
+
+  return buildPayoutMethodDisplay(method, detail);
+}
+
+export function buildPayoutMethodsPayload(method: PayoutMethodType, details: string) {
+  return {
+    methods: [
+      {
+        id: `creator-${method}`,
+        type: method === "bank" ? "bank" : method === "mobile" ? "mobile_money" : "wallet",
+        kind: method === "bank" ? "bank" : "provider",
+        provider:
+          method === "bank" ? "Bank" : method === "mobile" ? "Mobile Money" : "Digital Wallet",
+        label: details,
+        currency: "USD",
+        status: "Pending verification",
+        isDefault: true,
+        details: {
+          masked: details
+        }
+      }
+    ]
+  };
+}
+
 export function savePayoutMethod(method: PayoutMethodType, details: string): void {
-    localStorage.setItem(STORAGE_KEY_METHOD, method);
-    localStorage.setItem(STORAGE_KEY_DETAILS, details);
+  safeSet(STORAGE_KEY_METHOD, method);
+  safeSet(STORAGE_KEY_DETAILS, details);
 
-    // Dispatch custom event to notify all components
-    window.dispatchEvent(new CustomEvent('payoutMethodChanged', {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("payoutMethodChanged", {
         detail: { method, details }
-    }));
+      })
+    );
+  }
 }
 
-/**
- * Hook to listen for payout method changes
- * Returns the current payout method display information
- */
 export function usePayoutMethod(callback?: () => void): PayoutMethodDisplay {
-    const [display, setDisplay] = React.useState<PayoutMethodDisplay>(getPayoutMethodDisplay());
+  const [display, setDisplay] = React.useState<PayoutMethodDisplay>(getPayoutMethodDisplay());
 
-    React.useEffect(() => {
-        const handleChange = () => {
-            setDisplay(getPayoutMethodDisplay());
-            callback?.();
-        };
+  React.useEffect(() => {
+    if (typeof window === "undefined") return undefined;
 
-        // Listen for custom event (same tab)
-        window.addEventListener('payoutMethodChanged', handleChange);
-        // Listen for storage event (cross-tab)
-        window.addEventListener('storage', handleChange);
+    const handleChange = () => {
+      setDisplay(getPayoutMethodDisplay());
+      callback?.();
+    };
 
-        return () => {
-            window.removeEventListener('payoutMethodChanged', handleChange);
-            window.removeEventListener('storage', handleChange);
-        };
-    }, [callback]);
+    window.addEventListener("payoutMethodChanged", handleChange);
+    window.addEventListener("storage", handleChange);
 
-    return display;
+    return () => {
+      window.removeEventListener("payoutMethodChanged", handleChange);
+      window.removeEventListener("storage", handleChange);
+    };
+  }, [callback]);
+
+  return display;
 }
-
-// For non-React usage
-import React from 'react';

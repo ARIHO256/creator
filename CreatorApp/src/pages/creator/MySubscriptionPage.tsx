@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MemoryRouter, useInRouterContext, useNavigate } from "react-router-dom";
+import { creatorApi } from "../../lib/creatorApi";
 import {
   BadgeCheck,
   Building2,
@@ -906,6 +907,7 @@ function MySubscriptionPageInner() {
   const [salesCompany, setSalesCompany] = useState("");
   const [salesTeamSize, setSalesTeamSize] = useState("5");
   const [salesMessage, setSalesMessage] = useState("We'd like Enterprise for our agency team.");
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   useEffect(() => {
     const storedPlan = safeReadLS(LS_PLAN_KEY);
@@ -917,6 +919,31 @@ function MySubscriptionPageInner() {
     // seed demo billing fields
     setBillingName("Creator Admin");
     setBillingEmail("admin@creator.app");
+
+    let cancelled = false;
+
+    void creatorApi.subscription()
+      .then((subscription) => {
+        if (cancelled) return;
+        if (subscription.plan === "basic" || subscription.plan === "pro" || subscription.plan === "enterprise") {
+          setPlan(subscription.plan);
+          safeWriteLS(LS_PLAN_KEY, subscription.plan);
+        }
+        if (subscription.cycle === "monthly" || subscription.cycle === "yearly") {
+          setCycle(subscription.cycle);
+          safeWriteLS(LS_CYCLE_KEY, subscription.cycle);
+        }
+        setSubscriptionError(null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSubscriptionError("Subscription backend is unavailable. Using saved plan settings.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const meta = PLAN_META[plan];
@@ -935,9 +962,15 @@ function MySubscriptionPageInner() {
     return "Multi-seat";
   }, [plan]);
 
-  function applyPlan(next: PlanKey) {
+  async function applyPlan(next: PlanKey) {
     setPlan(next);
     safeWriteLS(LS_PLAN_KEY, next);
+    try {
+      await creatorApi.updateSubscription({ plan: next, cycle, status: next === "basic" ? "inactive" : "active" });
+      setSubscriptionError(null);
+    } catch {
+      setSubscriptionError("Failed to save the plan change to the backend.");
+    }
 
     if (next === "basic") {
       showWarning("Switched to Basic (Free). Pro tools remain visible in demo but are intended to be gated.");
@@ -948,9 +981,15 @@ function MySubscriptionPageInner() {
     }
   }
 
-  function applyCycle(next: BillingCycle) {
+  async function applyCycle(next: BillingCycle) {
     setCycle(next);
     safeWriteLS(LS_CYCLE_KEY, next);
+    try {
+      await creatorApi.updateSubscription({ plan, cycle: next, status: plan === "basic" ? "inactive" : "active" });
+      setSubscriptionError(null);
+    } catch {
+      setSubscriptionError("Failed to save the billing cycle to the backend.");
+    }
   }
 
   const topProUpsell = useMemo(
@@ -998,6 +1037,11 @@ function MySubscriptionPageInner() {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden bg-[#f2f2f2] dark:bg-slate-950">
         <div className="w-full flex flex-col gap-4">
+          {subscriptionError ? (
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
+              {subscriptionError}
+            </div>
+          ) : null}
           {/* Top Callout */}
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 sm:p-5">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">

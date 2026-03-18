@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { useNotification } from "../../contexts/NotificationContext";
+import { creatorApi, type CreatorNotification } from "../../lib/creatorApi";
 
 // MyLiveDealz - Creator Notifications Panel
 // Purpose: What the top-right notifications (bell) icon should bring.
@@ -133,17 +134,91 @@ type NotificationsPanelProps = {
 };
 
 type Tab = "all" | "proposal" | "invite" | "live" | "earnings" | "system";
+type NotificationPriority = "high" | "normal" | "low";
 type Notification = {
-  id: number;
+  id: string;
   type: Tab;
   title: string;
   message: string;
   time: string;
   unread: boolean;
-  priority: "high" | "normal" | "low";
+  priority: NotificationPriority;
   meta: { seller: string; campaign: string };
   cta: string;
 };
+
+function normalizePriority(priority: unknown): NotificationPriority {
+  const normalized = String(priority || "").trim().toLowerCase();
+  if (normalized === "high" || normalized === "urgent") return "high";
+  if (normalized === "low") return "low";
+  return "normal";
+}
+
+function formatRelativeTime(value?: string | null) {
+  if (!value) return "Just now";
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "Just now";
+  const diffMinutes = Math.max(1, Math.round((Date.now() - time) / 60000));
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.round(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function mapDemoNotification(notification: typeof DEMO_NOTIFICATIONS[number]): Notification {
+  return {
+    id: String(notification.id),
+    type: notification.type as Tab,
+    title: notification.title,
+    message: notification.message,
+    time: notification.time,
+    unread: notification.unread,
+    priority: normalizePriority(notification.priority),
+    meta: {
+      seller: notification.meta?.seller || "MyLiveDealz",
+      campaign: notification.meta?.campaign || ""
+    },
+    cta: notification.cta
+  };
+}
+
+function mapBackendNotification(notification: CreatorNotification): Notification {
+  const metadata = notification.metadata || {};
+  const priority =
+    normalizePriority(
+      metadata.priority ||
+      (notification.type === "proposal" || notification.type === "live" ? "high" : "normal")
+    );
+
+  return {
+    id: notification.id,
+    type: (["proposal", "invite", "live", "earnings", "system"].includes(notification.type)
+      ? notification.type
+      : "system") as Tab,
+    title: notification.title,
+    message: notification.message,
+    time: formatRelativeTime(notification.createdAt || notification.updatedAt),
+    unread: !notification.read,
+    priority,
+    meta: {
+      seller: notification.brand || "MyLiveDealz",
+      campaign: notification.campaign || ""
+    },
+    cta:
+      typeof metadata.cta === "string" && metadata.cta.trim()
+        ? metadata.cta
+        : notification.type === "proposal"
+          ? "Review proposal"
+          : notification.type === "invite"
+            ? "Open invite"
+            : notification.type === "live"
+              ? "Open live studio"
+              : notification.type === "earnings"
+                ? "View earnings"
+                : "Open settings"
+  };
+}
 
 export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: externalUnreadCount, onChangePage }: NotificationsPanelProps) {
   const { showSuccess, showNotification } = useNotification();
@@ -742,6 +817,5 @@ function NotificationAccordionRow({ n, expanded, onToggle, onToggleRead, onClose
     </div >
   );
 }
-
 
 

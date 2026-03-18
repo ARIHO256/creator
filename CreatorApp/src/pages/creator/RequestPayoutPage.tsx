@@ -2,25 +2,11 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 // import { useTheme } from "../../contexts/ThemeContext";
+import { creatorApi } from "../../lib/creatorApi";
 import { PayoutMethodsDialog } from "../../shell/PayoutMethodsDialog";
+import { getPayoutMethodDisplay } from "../../utils/payoutMethodUtils";
 
 type Step = "amount" | "confirm" | "success";
-
-// Helper function to get payout method display info
-const getPayoutMethodDisplay = () => {
-    const method = localStorage.getItem("evzone_payout_method");
-    const details = localStorage.getItem("evzone_payout_details");
-
-    return {
-        name: method === "mobile" ? "Mobile Money" :
-            method === "wallet" ? "PayPal / Others" :
-                "Bank Account",
-        detail: details || "Standard Chartered **** 6789",
-        icon: method === "mobile" ? "📱" :
-            method === "wallet" ? "💳" :
-                "🏦"
-    };
-};
 
 export const RequestPayoutPage: React.FC = () => {
     const navigate = useNavigate();
@@ -29,6 +15,12 @@ export const RequestPayoutPage: React.FC = () => {
     const [amount, setAmount] = useState<string>("500");
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [selectedMethod, setSelectedMethod] = useState(getPayoutMethodDisplay());
+    const [availableBalance, setAvailableBalance] = useState(0);
+    const [currency, setCurrency] = useState("USD");
+    const [transactionId, setTransactionId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [requestError, setRequestError] = useState<string | null>(null);
 
     useEffect(() => {
         // Update payout method display when it changes
@@ -47,12 +39,64 @@ export const RequestPayoutPage: React.FC = () => {
         };
     }, []);
 
-    const availableBalance = 1243.50;
-    const currency = "USD";
+    useEffect(() => {
+        let cancelled = false;
 
-    const handleNext = () => {
-        if (step === "amount") setStep("confirm");
-        else if (step === "confirm") setStep("success");
+        void Promise.all([
+            creatorApi.earningsSummary(),
+            creatorApi.payoutMethods()
+        ])
+            .then(([summary, payoutMethods]) => {
+                if (cancelled) return;
+                setAvailableBalance(Number(summary.available || 0));
+                const primary = payoutMethods.methods.find((method) => method.isDefault) || payoutMethods.methods[0];
+                if (primary?.currency) {
+                    setCurrency(primary.currency);
+                }
+                setRequestError(null);
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setRequestError("Unable to load live payout data right now.");
+                }
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const handleNext = async () => {
+        if (step === "amount") {
+            setStep("confirm");
+            return;
+        }
+
+        setSubmitting(true);
+        setRequestError(null);
+
+        try {
+            const payout = await creatorApi.requestPayout({
+                amount: Number(amount),
+                currency,
+                note: `Creator payout via ${selectedMethod.name}`,
+                metadata: {
+                    payoutMethodLabel: selectedMethod.name,
+                    payoutMethodDetail: selectedMethod.detail
+                }
+            });
+            setTransactionId(payout.id);
+            setStep("success");
+        } catch {
+            setRequestError("Failed to submit payout request.");
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const handleBack = () => {
@@ -128,6 +172,9 @@ export const RequestPayoutPage: React.FC = () => {
                                     isOpen={isDialogOpen}
                                     onClose={() => setIsDialogOpen(false)}
                                 />
+                                {requestError ? (
+                                    <p className="text-xs text-amber-600 dark:text-amber-400">{requestError}</p>
+                                ) : null}
                             </>
                         )}
 
@@ -163,6 +210,9 @@ export const RequestPayoutPage: React.FC = () => {
                                         Funds will be settled to your <strong>{selectedMethod.name}</strong>. Ensure your account is active to avoid delays.
                                     </p>
                                 </div>
+                                {requestError ? (
+                                    <p className="text-xs text-rose-600 dark:text-rose-400">{requestError}</p>
+                                ) : null}
                             </>
                         )}
 
@@ -172,7 +222,7 @@ export const RequestPayoutPage: React.FC = () => {
                                 <div>
                                     <h2 className="text-2xl font-bold dark:text-slate-100">Withdrawal Requested!</h2>
                                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
-                                        We've received your request for <strong>{currency} {parseFloat(amount).toLocaleString()}</strong>. Your funds are on their way to your bank account.
+                                        We've received your request for <strong>{currency} {parseFloat(amount).toLocaleString()}</strong>. Your funds are on their way to your {selectedMethod.name.toLowerCase()}.
                                     </p>
                                 </div>
                                 <div className="flex flex-col w-full gap-3 mt-4">
@@ -196,10 +246,10 @@ export const RequestPayoutPage: React.FC = () => {
                             <div className="flex flex-col gap-3 mt-4">
                                 <button
                                     onClick={handleNext}
-                                    disabled={!amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableBalance}
+                                    disabled={loading || submitting || !amount || parseFloat(amount) <= 0 || parseFloat(amount) > availableBalance}
                                     className="w-full py-5 rounded-2xl bg-[#f77f00] text-white text-lg font-bold hover:bg-[#e26f00] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/20"
                                 >
-                                    {step === "amount" ? "Continue" : "Confirm and Withdraw"}
+                                    {loading ? "Loading..." : submitting ? "Submitting..." : step === "amount" ? "Continue" : "Confirm and Withdraw"}
                                 </button>
                                 <button
                                     onClick={handleBack}
@@ -213,7 +263,7 @@ export const RequestPayoutPage: React.FC = () => {
 
                     {step !== "success" && (
                         <p className="text-center text-xs text-slate-400 dark:text-slate-600">
-                            Transaction ID: REQ-{Math.random().toString(36).substring(7).toUpperCase()}
+                            Transaction ID: {transactionId || "Pending creation"}
                         </p>
                     )}
 

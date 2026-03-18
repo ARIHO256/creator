@@ -23,6 +23,7 @@ import {
   Moon,
   Sun
 } from "lucide-react";
+import { creatorApi } from "../../lib/creatorApi";
 import { useTheme } from "../../contexts/ThemeContext";
 
 // Creator Onboarding v2.5 (Premium Wizard)
@@ -704,6 +705,124 @@ function defaultForm(): OnboardingForm {
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function payoutMethodToApi(method: string) {
+  if (method === "Bank") return "bank_account";
+  if (method === "Mobile Money") return "mobile_money";
+  if (method === "AliPay") return "alipay";
+  if (method === "WeChat Pay") return "wechat_pay";
+  if (method === "PayPal / Wallet") return "other_local";
+  return "";
+}
+
+function payoutRhythmToApi(schedule: string) {
+  if (schedule === "Weekly") return "weekly";
+  if (schedule === "Bi-weekly") return "biweekly";
+  if (schedule === "Monthly") return "monthly";
+  return "weekly";
+}
+
+function extractBackendCreatorForm(payload: unknown): Partial<OnboardingForm> | null {
+  const root = asRecord(payload);
+  const metadata = asRecord(root?.metadata);
+  const creatorForm = asRecord(metadata?.creatorForm);
+  if (creatorForm) {
+    return creatorForm as Partial<OnboardingForm>;
+  }
+
+  if (!root) return null;
+
+  return {
+    profile: {
+      name: String(root.owner || ""),
+      handle: String(root.storeSlug || ""),
+      bio: String(root.about || ""),
+      country: String(asRecord(root.shipFrom)?.country || ""),
+      timezone: "Africa/Kampala (EAT)",
+      currency: String(asRecord(root.payout)?.currency || "USD"),
+      tagline: "",
+      contentLanguages: Array.isArray(root.languages) ? root.languages.map((entry) => String(entry)) : ["English"],
+      audienceRegions: [],
+      creatorType: "Individual",
+      email: String(root.email || ""),
+      phone: String(root.phone || ""),
+      whatsapp: String(asRecord(root.support)?.whatsapp || ""),
+      profilePhotoName: "",
+      mediaKitName: "",
+      team: { name: "", type: "", size: "1-5", website: "", logoName: "" },
+      agency: { name: "", type: "", website: "", logoName: "" }
+    }
+  };
+}
+
+function buildBackendOnboardingPayload(form: OnboardingForm, submitted = false) {
+  return {
+    profileType: "CREATOR",
+    status: submitted ? "submitted" : "in_progress",
+    owner: form.profile.name,
+    storeName: form.profile.name,
+    storeSlug: String(form.profile.handle || "").replace(/^@+/, ""),
+    email: form.profile.email,
+    phone: form.profile.phone,
+    about: form.profile.bio,
+    languages: form.profile.contentLanguages,
+    support: {
+      whatsapp: form.profile.whatsapp,
+      email: form.profile.email,
+      phone: form.profile.phone
+    },
+    shipFrom: {
+      country: form.profile.country
+    },
+    payout: {
+      method: payoutMethodToApi(form.payout.method),
+      currency: form.payout.currency,
+      rhythm: payoutRhythmToApi(form.payout.schedule),
+      thresholdAmount: form.payout.minThreshold,
+      bankName: form.payout.bank.bankName,
+      accountName: form.payout.bank.accountName,
+      accountNo: form.payout.bank.accountNumber,
+      swiftBic: form.payout.bank.swift,
+      mobileProvider: form.payout.mobile.provider,
+      mobileNo: form.payout.mobile.phone,
+      otherProvider: form.payout.method === "PayPal / Wallet" ? "PayPal / Wallet" : "",
+      otherDetails: form.payout.wallet.email,
+      alipayLogin: form.payout.alipay.account,
+      wechatId: form.payout.wechat.wechatId,
+      confirmDetails: form.payout.acceptPayoutPolicy,
+      notificationsEmail: form.profile.email,
+      notificationsWhatsApp: form.profile.whatsapp || form.profile.phone
+    },
+    tax: {
+      taxCountry: form.profile.country,
+      taxId: form.payout.tax.taxId,
+      legalName: form.profile.name
+    },
+    verification: {
+      emailVerified: false,
+      phoneVerified: false,
+      verificationPhone: form.profile.phone,
+      verificationEmail: form.profile.email,
+      kycStatus: form.kyc.idUploaded && form.kyc.selfieUploaded ? "IN_REVIEW" : "PENDING",
+      otpStatus: form.payout.verification.status === "verified" ? "VERIFIED" : form.payout.verification.status === "code_sent" ? "SENT" : "NOT_STARTED"
+    },
+    providerServices: form.preferences.lines,
+    metadata: {
+      creatorForm: form,
+      preferences: {
+        lines: form.preferences.lines,
+        formats: form.preferences.formats,
+        models: form.preferences.models
+      }
+    }
+  };
+}
+
 function getPrimarySocialDisplay(socials: Socials) {
   const s = socials;
   const primary = s.primaryPlatform || "Instagram";
@@ -1337,16 +1456,41 @@ export default function CreatorOnboardingWorldClassV25() {
 
   // Load (v2.4+ key, with v2.3 fallback)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setForm(deepMerge(defaultForm(), parsed));
-        push("Progress restored.", "success");
-      }
-    } catch {
-      // ignore
-    }
+    let cancelled = false;
+
+    void creatorApi.onboarding()
+      .then((payload) => {
+        if (cancelled) return;
+        const restored = extractBackendCreatorForm(payload);
+        if (restored) {
+          setForm(deepMerge(defaultForm(), restored as OnboardingForm));
+          push("Progress restored.", "success");
+          return;
+        }
+
+        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setForm(deepMerge(defaultForm(), parsed));
+          push("Progress restored.", "success");
+        }
+      })
+      .catch(() => {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            setForm(deepMerge(defaultForm(), parsed));
+            push("Progress restored.", "success");
+          }
+        } catch {
+          // ignore
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1401,6 +1545,9 @@ export default function CreatorOnboardingWorldClassV25() {
       } catch {
         // ignore
       }
+      void creatorApi.saveOnboarding(buildBackendOnboardingPayload(form)).catch(() => {
+        // keep local fallback if backend save fails
+      });
       setSaved(true);
     }, 350);
     return () => clearTimeout(t);
@@ -1523,7 +1670,7 @@ export default function CreatorOnboardingWorldClassV25() {
     return unlocks;
   }, [trustScore]);
 
-  const goNext = () => {
+  const goNext = async () => {
     if (!canContinue) {
       push("Complete required fields to continue.", "error");
       return;
@@ -1532,11 +1679,16 @@ export default function CreatorOnboardingWorldClassV25() {
       setStepIndex((i) => i + 1);
       push("Step completed.", "success");
     } else {
-      push("Account created! Please sign in to continue.", "success");
-      // Clear session to force re-login
-      localStorage.removeItem("creatorPlatformEntered");
-      localStorage.removeItem("mldz_creator_approval_status");
-      setTimeout(() => navigate("/"), 1500);
+      try {
+        await creatorApi.submitOnboarding(buildBackendOnboardingPayload(form, true));
+      } catch {
+        push("Saved locally, but backend submission failed.", "error");
+        return;
+      }
+      localStorage.setItem("creatorPlatformEntered", "true");
+      localStorage.setItem("mldz_creator_approval_status", "UnderReview");
+      push("Onboarding submitted. Opening approval status.", "success");
+      setTimeout(() => navigate("/account-approval"), 1200);
     }
   };
 
@@ -1560,6 +1712,9 @@ export default function CreatorOnboardingWorldClassV25() {
 
   const confirmResetNow = () => {
     setConfirmReset(false);
+    void creatorApi.resetOnboarding().catch(() => {
+      // local reset fallback remains in place
+    });
     try {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(STORAGE_KEY_LEGACY);
