@@ -1651,7 +1651,7 @@ export class WorkflowService {
   }
 
   private shouldAutoApproveSubmittedOnboarding(profileType: string) {
-    return profileType === 'SELLER' || profileType === 'PROVIDER';
+    return profileType === 'CREATOR' || profileType === 'SELLER' || profileType === 'PROVIDER';
   }
 
   private async syncUserAccessFromOnboarding(

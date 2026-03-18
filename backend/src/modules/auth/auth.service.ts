@@ -164,7 +164,7 @@ export class AuthService {
       });
     }
 
-    const normalizedUser = await this.autoApproveSubmittedSellerProvider(user);
+    const normalizedUser = await this.autoApproveSubmittedOnboarding(user);
 
     return this.issueTokens(
       normalizedUser.id,
@@ -176,7 +176,7 @@ export class AuthService {
 
   async me(userId: string) {
     const user = await this.findUserOrThrow(userId);
-    const normalizedUser = await this.autoApproveSubmittedSellerProvider(user);
+    const normalizedUser = await this.autoApproveSubmittedOnboarding(user);
     return this.serializeUser(normalizedUser);
   }
 
@@ -550,14 +550,17 @@ export class AuthService {
     return user;
   }
 
-  private async autoApproveSubmittedSellerProvider(user: AuthUserRecord) {
+  private async autoApproveSubmittedOnboarding(user: AuthUserRecord) {
     if (user.approvalStatus === 'APPROVED' && user.onboardingCompleted) {
       return user;
     }
 
     const assignedRoles = this.getAssignedRoles(user);
-    const sellerSide = assignedRoles.includes(UserRole.SELLER) || assignedRoles.includes(UserRole.PROVIDER);
-    if (!sellerSide) {
+    const onboardingEligible =
+      assignedRoles.includes(UserRole.CREATOR) ||
+      assignedRoles.includes(UserRole.SELLER) ||
+      assignedRoles.includes(UserRole.PROVIDER);
+    if (!onboardingEligible) {
       return user;
     }
 
@@ -575,9 +578,10 @@ export class AuthService {
     const profileType = String(onboarding?.profileType || '').toUpperCase();
     const onboardingStatus = String(onboarding?.status || '').toLowerCase();
     const submitted = onboardingStatus === 'submitted';
-    const sellerOrProvider = profileType === 'SELLER' || profileType === 'PROVIDER';
+    const autoApprovedProfile =
+      profileType === 'CREATOR' || profileType === 'SELLER' || profileType === 'PROVIDER';
 
-    if (!submitted || !sellerOrProvider) {
+    if (!submitted || !autoApprovedProfile) {
       return user;
     }
 
