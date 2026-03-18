@@ -4,6 +4,7 @@ import type { PageId } from "../layouts/CreatorShellLayout";
 import { useTheme } from "../contexts/ThemeContext";
 import { AvatarMenuDropdown } from "../components/AvatarMenuDropdown";
 import { creatorApi } from "../lib/creatorApi";
+import { readAuthSession } from "../lib/authSession";
 import { NotificationsPanel } from "../pages/creator/NotificationsPage";
 import {
   Menu,
@@ -43,6 +44,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   const searchBtnRef = useRef<HTMLButtonElement>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const hasSession = Boolean(readAuthSession());
 
   useEffect(() => {
     if (!onSearchRectUpdate || !searchBtnRef.current) return;
@@ -71,6 +73,11 @@ export const TopBar: React.FC<TopBarProps> = ({
   }, [onSearchRectUpdate]); // Only re-run if the callback changes
 
   useEffect(() => {
+    if (!hasSession) {
+      setUnreadCount(0);
+      return;
+    }
+
     let cancelled = false;
 
     void creatorApi.notifications()
@@ -88,7 +95,7 @@ export const TopBar: React.FC<TopBarProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [notificationsOpen]);
+  }, [hasSession, notificationsOpen]);
 
   return (
     <header className="fixed top-0 left-0 right-0 w-full h-14 flex items-center justify-between px-2 sm:px-4 md:px-6 lg:px-8 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm z-50 transition-colors">

@@ -24,10 +24,6 @@ export const getUserStatus = (): UserStatus => {
         return "NEEDS_ONBOARDING";
     }
 
-    if (approvalStatus && approvalStatus !== "APPROVED") {
-        return "AWAITING_APPROVAL";
-    }
-
     if (!approvalStatus) {
         return "NEEDS_ONBOARDING";
     }
@@ -97,7 +93,5 @@ export const getPostAuthTarget = (): string => {
     const status = getUserStatus();
     return status === "APPROVED"
         ? "/home"
-        : status === "AWAITING_APPROVAL"
-            ? "/account-approval"
-            : "/onboarding";
+        : "/onboarding";
 };

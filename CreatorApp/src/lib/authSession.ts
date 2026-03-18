@@ -18,6 +18,8 @@ export type AuthUserSession = {
 };
 
 const AUTH_SESSION_KEY = "mldz:auth:user";
+const AUTH_DASHBOARD_OVERRIDE_KEY = "mldz:auth:dashboard-override";
+export const AUTH_INVALIDATED_EVENT = "mldz:auth:invalidated";
 
 export function readAuthSession(): AuthUserSession | null {
   if (typeof window === "undefined") return null;
@@ -28,6 +30,18 @@ export function readAuthSession(): AuthUserSession | null {
     return JSON.parse(raw) as AuthUserSession;
   } catch {
     return null;
+  }
+}
+
+export function hasStoredAuthState() {
+  if (typeof window === "undefined") return false;
+
+  if (readAuthSession()) return true;
+
+  try {
+    return window.localStorage.getItem("creatorPlatformEntered") === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -44,6 +58,36 @@ export function persistAuthSession(session: AuthUserSession) {
   }
 }
 
+export function enableDashboardAuthOverride() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(AUTH_DASHBOARD_OVERRIDE_KEY, "true");
+  } catch {
+    // ignore
+  }
+}
+
+export function hasDashboardAuthOverride() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return window.sessionStorage.getItem(AUTH_DASHBOARD_OVERRIDE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function clearDashboardAuthOverride() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.removeItem(AUTH_DASHBOARD_OVERRIDE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 export function clearAuthSession() {
   if (typeof window === "undefined") return;
 
@@ -52,9 +96,18 @@ export function clearAuthSession() {
     window.localStorage.removeItem("creatorPlatformEntered");
     window.localStorage.removeItem("mldz_creator_approval_status");
     window.localStorage.removeItem("userRole");
+    window.sessionStorage.removeItem(AUTH_DASHBOARD_OVERRIDE_KEY);
   } catch {
     // ignore
   }
+}
+
+export function invalidateAuthSession() {
+  clearAuthSession();
+
+  if (typeof window === "undefined") return;
+
+  window.dispatchEvent(new CustomEvent(AUTH_INVALIDATED_EVENT));
 }
 
 export function deriveUserStatusFromSession(
@@ -62,12 +115,12 @@ export function deriveUserStatusFromSession(
 ): "GUEST" | "AWAITING_APPROVAL" | "NEEDS_ONBOARDING" | "APPROVED" {
   if (!session) return "GUEST";
 
-  if (!session.onboardingCompleted || session.approvalStatus === "NEEDS_ONBOARDING") {
-    return "NEEDS_ONBOARDING";
+  if (hasDashboardAuthOverride()) {
+    return "APPROVED";
   }
 
-  if (session.approvalStatus !== "APPROVED") {
-    return "AWAITING_APPROVAL";
+  if (!session.onboardingCompleted || session.approvalStatus === "NEEDS_ONBOARDING") {
+    return "NEEDS_ONBOARDING";
   }
 
   return "APPROVED";

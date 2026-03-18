@@ -12,6 +12,7 @@ import {
 import { useCreator } from "../../contexts/CreatorContext";
 import { PageHeader } from "../../components/PageHeader";
 import { useApiResource } from "../../hooks/useApiResource";
+import { readAuthSession } from "../../lib/authSession";
 import { creatorApi } from "../../lib/creatorApi";
 import type { PageId } from "../../layouts/CreatorShellLayout";
 
@@ -219,7 +220,9 @@ export function CreatorLiveDealzFeedPage() {
   };
   /* Shared Friend/Follow State */
   const { toggleFollowSeller } = useCreator();
+  const hasSession = Boolean(readAuthSession());
   const { data: homeData } = useApiResource({
+    enabled: hasSession,
     initialData: {
       hero: {
         initials: "CW",

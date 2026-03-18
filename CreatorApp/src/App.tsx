@@ -8,7 +8,13 @@ import { getUserStatus, getLandingPageTarget, hasPermission } from "./utils/acce
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import { authApi } from "./lib/authApi";
-import { clearAuthSession, getPostAuthPath, persistAuthSession } from "./lib/authSession";
+import {
+  AUTH_INVALIDATED_EVENT,
+  clearAuthSession,
+  getPostAuthPath,
+  hasStoredAuthState,
+  persistAuthSession
+} from "./lib/authSession";
 
 
 // Page Imports
@@ -122,9 +128,65 @@ const AuthRedirectHandler = () => {
   return <Navigate to={targetPath} replace />;
 };
 
+let authBootstrapPromise: Promise<void> | null = null;
+
+function ensureStoredAuthSession() {
+  if (!hasStoredAuthState()) {
+    return Promise.resolve();
+  }
+
+  if (!authBootstrapPromise) {
+    authBootstrapPromise = authApi
+      .me()
+      .then((session) => {
+        persistAuthSession(session);
+      })
+      .catch(() => {
+        clearAuthSession();
+      })
+      .finally(() => {
+        authBootstrapPromise = null;
+      });
+  }
+
+  return authBootstrapPromise;
+}
+
 const App: React.FC = () => {
   const navigate = useNavigate();
   const handleNavigate = (page: string) => navigate(page);
+  const [authReady, setAuthReady] = useState(() => !hasStoredAuthState());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!hasStoredAuthState()) {
+      setAuthReady(true);
+      return;
+    }
+
+    void ensureStoredAuthSession().finally(() => {
+      if (!cancelled) {
+        setAuthReady(true);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleInvalidated = () => {
+      clearAuthSession();
+      navigate("/", { replace: true });
+    };
+
+    window.addEventListener(AUTH_INVALIDATED_EVENT, handleInvalidated);
+    return () => {
+      window.removeEventListener(AUTH_INVALIDATED_EVENT, handleInvalidated);
+    };
+  }, [navigate]);
 
   const handleLogout = () => {
     void authApi.logout().catch(() => undefined).finally(() => {
@@ -132,6 +194,10 @@ const App: React.FC = () => {
       window.location.href = "/";
     });
   };
+
+  if (!authReady) {
+    return null;
+  }
 
   return (
     <AppThemeProvider>

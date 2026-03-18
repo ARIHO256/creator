@@ -1,3 +1,5 @@
+import { invalidateAuthSession } from "./authSession";
+
 export class ApiError extends Error {
   status: number;
   details: unknown;
@@ -27,6 +29,7 @@ const RAW_API_BASE =
   (typeof import.meta !== "undefined" && (import.meta as ImportMeta).env?.VITE_API_URL) || "/api";
 
 const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
+const pendingGetRequests = new Map<string, Promise<unknown>>();
 
 function buildUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -57,6 +60,17 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
+function shouldInvalidateSession(path: string, status: number) {
+  if (status !== 401) return false;
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (normalizedPath === "/auth/me") return true;
+  if (normalizedPath.startsWith("/auth/login")) return false;
+  if (normalizedPath.startsWith("/auth/register")) return false;
+  if (normalizedPath.startsWith("/auth/logout")) return false;
+  return true;
+}
+
 async function parseResponse(response: Response) {
   const text = await response.text();
   if (!text) return null;
@@ -69,43 +83,69 @@ async function parseResponse(response: Response) {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers = new Headers(options.headers ?? {});
-  const body = options.body;
+  const method = String(options.method ?? "GET").toUpperCase();
+  const requestUrl = buildUrl(path);
+  const requestKey = `${method}:${requestUrl}`;
 
-  if (isJsonBody(body) && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
+  const runRequest = async () => {
+    const headers = new Headers(options.headers ?? {});
+    const body = options.body;
 
-  const response = await fetch(buildUrl(path), {
-    ...options,
-    credentials: "include",
-    headers,
-    body: isJsonBody(body) ? JSON.stringify(body) : (body as BodyInit | null | undefined)
-  });
+    if (isJsonBody(body) && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
 
-  const payload = await parseResponse(response);
+    const response = await fetch(requestUrl, {
+      ...options,
+      credentials: "include",
+      headers,
+      body: isJsonBody(body) ? JSON.stringify(body) : (body as BodyInit | null | undefined)
+    });
 
-  if (!response.ok) {
-    throw new ApiError(
-      extractErrorMessage(payload, `Request failed with status ${response.status}`),
-      response.status,
-      payload
-    );
-  }
+    const payload = await parseResponse(response);
 
-  if (payload && typeof payload === "object" && "success" in (payload as Record<string, unknown>)) {
-    const envelope = payload as ApiEnvelope<T>;
-    if (envelope.success === false) {
+    if (!response.ok) {
+      if (shouldInvalidateSession(path, response.status)) {
+        invalidateAuthSession();
+      }
+
       throw new ApiError(
-        extractErrorMessage(payload, "Request failed"),
-        envelope.error?.statusCode ?? response.status,
+        extractErrorMessage(payload, `Request failed with status ${response.status}`),
+        response.status,
         payload
       );
     }
-    return (envelope.data ?? null) as T;
+
+    if (payload && typeof payload === "object" && "success" in (payload as Record<string, unknown>)) {
+      const envelope = payload as ApiEnvelope<T>;
+      if (envelope.success === false) {
+        throw new ApiError(
+          extractErrorMessage(payload, "Request failed"),
+          envelope.error?.statusCode ?? response.status,
+          payload
+        );
+      }
+      return (envelope.data ?? null) as T;
+    }
+
+    return payload as T;
+  };
+
+  if (method === "GET") {
+    const pending = pendingGetRequests.get(requestKey);
+    if (pending) {
+      return pending as Promise<T>;
+    }
+
+    const nextRequest = runRequest().finally(() => {
+      pendingGetRequests.delete(requestKey);
+    });
+
+    pendingGetRequests.set(requestKey, nextRequest as Promise<unknown>);
+    return nextRequest;
   }
 
-  return payload as T;
+  return runRequest();
 }
 
 export const api = {
@@ -122,4 +162,3 @@ export const api = {
     return request<T>(path, { ...options, method: "DELETE" });
   }
 };
-

@@ -16,7 +16,14 @@ import {
   Users
 } from "lucide-react";
 import { authApi } from "../../lib/authApi";
-import { clearAuthSession, getPostAuthPath, persistAuthSession } from "../../lib/authSession";
+import {
+  clearDashboardAuthOverride,
+  clearAuthSession,
+  enableDashboardAuthOverride,
+  getPostAuthPath,
+  hasStoredAuthState,
+  persistAuthSession
+} from "../../lib/authSession";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const ORANGE = "#f77f00";
@@ -268,12 +275,19 @@ export default function CreatorAuthRedirectNotice() {
   useEffect(() => {
     let active = true;
 
+    if (!hasStoredAuthState()) {
+      setInitializing(false);
+      return () => {
+        active = false;
+      };
+    }
+
     void authApi
       .me()
       .then((session) => {
         if (!active) return;
         persistAuthSession(session);
-        navigate(getPostAuthPath(session), { replace: true });
+        navigate("/dashboard", { replace: true });
       })
       .catch(() => {
         if (!active) return;
@@ -316,10 +330,16 @@ export default function CreatorAuthRedirectNotice() {
     setQueueMessage("");
   };
 
-  const completeLogin = async () => {
+  const completeLogin = async (targetPath = getPostAuthPath) => {
     const session = await authApi.me();
     persistAuthSession(session);
-    navigate(getPostAuthPath(session), { replace: true });
+    const nextPath = targetPath(session);
+    if (nextPath === "/dashboard") {
+      enableDashboardAuthOverride();
+    } else {
+      clearDashboardAuthOverride();
+    }
+    navigate(nextPath, { replace: true });
   };
 
   const waitForQueuedRegistration = async (requestId: string, passwordValue: string) => {
@@ -338,7 +358,7 @@ export default function CreatorAuthRedirectNotice() {
           phone: identifierMode === "phone" ? phone.trim() : undefined,
           password: passwordValue
         });
-        await completeLogin();
+        await completeLogin(() => "/dashboard");
         return;
       }
 
@@ -412,7 +432,7 @@ export default function CreatorAuthRedirectNotice() {
         phone: identifierMode === "phone" ? phone.trim() : undefined,
         password
       });
-      await completeLogin();
+      await completeLogin(() => "/dashboard");
     } catch (error) {
       push(error instanceof Error ? error.message : "Authentication failed.", "error");
     } finally {

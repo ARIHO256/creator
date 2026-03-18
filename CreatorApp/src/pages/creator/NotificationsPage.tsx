@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { useNotification } from "../../contexts/NotificationContext";
 import { creatorApi, type CreatorNotification } from "../../lib/creatorApi";
+import { readAuthSession } from "../../lib/authSession";
 
 // MyLiveDealz - Creator Notifications Panel
 // Purpose: What the top-right notifications (bell) icon should bring.
@@ -262,6 +263,11 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
 
   useEffect(() => {
     if (!open) return;
+    if (!readAuthSession()) {
+      setAllNotifs([]);
+      setSyncError(null);
+      return;
+    }
 
     let cancelled = false;
 
