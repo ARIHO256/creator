@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import type { PageId } from "../layouts/CreatorShellLayout";
 import { useTheme } from "../contexts/ThemeContext";
 import { AvatarMenuDropdown } from "../components/AvatarMenuDropdown";
+import { creatorApi } from "../lib/creatorApi";
 import { NotificationsPanel } from "../pages/creator/NotificationsPage";
 import {
   Menu,
@@ -41,7 +42,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsButtonRef = useRef<HTMLButtonElement>(null);
   const searchBtnRef = useRef<HTMLButtonElement>(null);
-  const unreadCount = 3; // TODO: Get from actual notifications state/API
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     if (!onSearchRectUpdate || !searchBtnRef.current) return;
@@ -68,6 +69,26 @@ export const TopBar: React.FC<TopBarProps> = ({
       window.removeEventListener("resize", updateRect);
     };
   }, [onSearchRectUpdate]); // Only re-run if the callback changes
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void creatorApi.notifications()
+      .then((notifications) => {
+        if (!cancelled) {
+          setUnreadCount(notifications.filter((notification) => !notification.read).length);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUnreadCount(0);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [notificationsOpen]);
 
   return (
     <header className="fixed top-0 left-0 right-0 w-full h-14 flex items-center justify-between px-2 sm:px-4 md:px-6 lg:px-8 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm z-50 transition-colors">

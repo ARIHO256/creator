@@ -226,9 +226,11 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
   const [unreadOnly, setUnreadOnly] = useState(false);
   // const [dnd, setDnd] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("all");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
+  const [allNotifs, setAllNotifs] = useState<Notification[]>(() => DEMO_NOTIFICATIONS.map(mapDemoNotification));
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
@@ -258,123 +260,27 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
     return () => window.removeEventListener('resize', handleResize);
   }, [open, buttonRef]);
 
-  const allNotifs: Notification[] = useMemo(() => [
-    {
-      id: 1,
-      type: "proposal",
-      title: "New proposal from GlowUp Hub",
-      message:
-        "They updated terms: $450–$600 + 5% commission. Reply to keep the slot.",
-      time: "2h ago",
-      unread: true,
-      priority: "high",
-      meta: { seller: "GlowUp Hub", campaign: "Autumn Beauty Flash" },
-      cta: "Review proposal"
-    },
-    {
-      id: 2,
-      type: "invite",
-      title: "Invite accepted",
-      message:
-        "GadgetMart Africa accepted your pitch. Confirm dates and deliverables.",
-      time: "Yesterday",
-      unread: true,
-      priority: "normal",
-      meta: { seller: "GadgetMart Africa", campaign: "Tech Fest 2025" },
-      cta: "Confirm collaboration"
-    },
-    {
-      id: 3,
-      type: "live",
-      title: "Live starts in 30 mins",
-      message:
-        "Beauty Flash Live · Make sure products & overlays are ready. Check your mic.",
-      time: "Today",
-      unread: false,
-      priority: "high",
-      meta: { seller: "GlowUp Hub", campaign: "Beauty Flash Live" },
-      cta: "Open Live Studio"
-    },
-    {
-      id: 4,
-      type: "earnings",
-      title: "Payout scheduled",
-      message:
-        "USD 260 scheduled for Nov 15 via Bank transfer. Track in Earnings.",
-      time: "2 days ago",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "GlowUp Hub", campaign: "Oct Earnings" },
-      cta: "View payout details"
-    },
-    {
-      id: 5,
-      type: "system",
-      title: "Faith desk guidelines updated",
-      message:
-        "Updated wording restrictions for Faith-compatible campaigns. Review changes.",
-      time: "Last week",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "MyLiveDealz", campaign: "Platform Updates" },
-      cta: "Read guidelines"
-    },
-    {
-      id: 6,
-      type: "proposal",
-      title: "Revised offer: Urban Kicks",
-      message: "Urban Kicks increased the base rate by 15% in response to your counter.",
-      time: "3h ago",
-      unread: true,
-      priority: "normal",
-      meta: { seller: "Urban Kicks", campaign: "Spring Streetwear" },
-      cta: "Review proposal"
-    },
-    {
-      id: 7,
-      type: "earnings",
-      title: "Bonus payment received!",
-      message: "You earned a $50 bonus for the 'Tech Friday' live engagement.",
-      time: "5h ago",
-      unread: true,
-      priority: "high",
-      meta: { seller: "GadgetMart Africa", campaign: "Tech Friday" },
-      cta: "Check earnings"
-    },
-    {
-      id: 8,
-      type: "invite",
-      title: "New partnership request",
-      message: "EcoHome Essentials wants to supplier for 'Green Living' series.",
-      time: "Today",
-      unread: true,
-      priority: "normal",
-      meta: { seller: "EcoHome Essentials", campaign: "Green Living" },
-      cta: "Review request"
-    },
-    {
-      id: 9,
-      type: "live",
-      title: "Live clips ready",
-      message: "5 highlight clips from your last session are ready to review.",
-      time: "Yesterday",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "GlowUp Hub", campaign: "Autumn Beauty" },
-      cta: "Review clips"
-    },
-    {
-      id: 10,
-      type: "system",
-      title: "New feature: AI Script Assistant",
-      message: "Draft engaging scripts for your live sessionz with our new AI.",
-      time: "3 days ago",
-      unread: false,
-      priority: "normal",
-      meta: { seller: "MyLiveDealz", campaign: "Platform Update" },
-      cta: "Try it now"
-    }
-  ], []); // Empty dependency array to ensure allNotifs is stable
+  useEffect(() => {
+    if (!open) return;
+
+    let cancelled = false;
+
+    void creatorApi.notifications()
+      .then((notifications) => {
+        if (cancelled) return;
+        setAllNotifs(notifications.map(mapBackendNotification));
+        setSyncError(null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSyncError("Using cached notifications while the backend is unavailable.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
 
 
@@ -428,27 +334,32 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
   }, [notifications, expandedId]);
 
   const markAllRead = () => {
-    // Mark all notifications as read
-    allNotifs.forEach(n => n.unread = false);
+    setAllNotifs((current) => current.map((notification) => ({ ...notification, unread: false })));
+    void creatorApi.markAllNotificationsRead().catch(() => {
+      setSyncError("Failed to sync the read-all action.");
+    });
     showSuccess("All notifications marked as read");
-    // Force re-render to update unread counts and filtered lists
     setExpandedId(null);
     setUnreadOnly(false);
     setActiveTab("all");
   };
 
-  const handleToggleExpand = (id: number) => {
+  const handleToggleExpand = (id: string) => {
     if (expandedId === id) {
       setExpandedId(null);
     } else {
       setExpandedId(id);
-      // Mark as read when expanded
       const notif = allNotifs.find(n => n.id === id);
       if (notif && notif.unread) {
-        notif.unread = false;
+        setAllNotifs((current) =>
+          current.map((notification) =>
+            notification.id === id ? { ...notification, unread: false } : notification
+          )
+        );
+        void creatorApi.markNotificationRead(id).catch(() => {
+          setSyncError("Failed to sync notification state.");
+        });
         showNotification(`Marked “${notif.title}” as read`);
-        // Force re-render to update unread counts
-        setUnreadOnly(prev => prev); // Trigger state update
       }
     }
   };
@@ -592,6 +503,9 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
                   </button>
                 ))}
               </div>
+              {syncError ? (
+                <div className="mt-2 text-[11px] text-amber-600 dark:text-amber-400">{syncError}</div>
+              ) : null}
             </div>
 
             {/* Body - Scrollable accordion list */}
@@ -610,13 +524,24 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
                       onToggle={() => handleToggleExpand(n.id)}
                       onClose={onClose}
                       onToggleRead={(id) => {
-                        const notif = allNotifs.find(n => n.id === id);
-                        if (notif) {
-                          notif.unread = !notif.unread;
-                          // Force re-render
-                          setExpandedId(null);
-                          setTimeout(() => setExpandedId(id), 0);
-                        }
+                        const notif = allNotifs.find((notification) => notification.id === id);
+                        if (!notif) return;
+
+                        const nextUnread = !notif.unread;
+                        setAllNotifs((current) =>
+                          current.map((notification) =>
+                            notification.id === id
+                              ? { ...notification, unread: nextUnread }
+                              : notification
+                          )
+                        );
+
+                        const syncCall = nextUnread
+                          ? creatorApi.markNotificationUnread(id)
+                          : creatorApi.markNotificationRead(id);
+                        void syncCall.catch(() => {
+                          setSyncError("Failed to sync notification state.");
+                        });
                       }}
                       onChangePage={onChangePage}
                     />
@@ -717,7 +642,7 @@ function NotificationAccordionRow({ n, expanded, onToggle, onToggleRead, onClose
   n: Notification;
   expanded: boolean;
   onToggle: () => void;
-  onToggleRead: (id: number) => void;
+  onToggleRead: (id: string) => void;
   onClose: () => void;
   onChangePage?: (page: PageId) => void;
 }) {
@@ -817,5 +742,3 @@ function NotificationAccordionRow({ n, expanded, onToggle, onToggleRead, onClose
     </div >
   );
 }
-
-
