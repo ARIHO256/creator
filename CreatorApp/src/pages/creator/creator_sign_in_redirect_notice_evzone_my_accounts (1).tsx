@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   ArrowRight,
   BadgeCheck,
@@ -10,23 +10,14 @@ import {
   Lock,
   Mail,
   MessageCircle,
+  Phone,
   ShieldCheck,
-
   User,
   Users
 } from "lucide-react";
+import { authApi } from "../../lib/authApi";
+import { clearAuthSession, getPostAuthPath, persistAuthSession } from "../../lib/authSession";
 import { useTheme } from "../../contexts/ThemeContext";
-import { getPostAuthTarget } from "../../utils/accessControl";
-
-// Premium informational page
-// Purpose: Explain why MyLiveDealz redirects creators to EVzone My Accounts for Sign in / Sign up.
-// Requirements:
-// - Professional, brief explanation
-// - Two paths:
-//   1) Already have EVzone account -> Sign in
-//   2) No EVzone account -> Sign up
-// - Premium UI, mobile-friendly
-// - All buttons work (demo actions + toasts)
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
@@ -36,6 +27,9 @@ interface Toast {
   message: string;
   tone: "default" | "success" | "error";
 }
+
+type AuthMode = "signin" | "signup" | null;
+type IdentifierMode = "email" | "phone";
 
 function cx(...xs: (string | boolean | undefined | null)[]): string {
   return xs.filter(Boolean).join(" ");
@@ -83,7 +77,17 @@ function ToastStack({ toasts }: { toasts: Toast[] }) {
   );
 }
 
-function Modal({ open, title, children, onClose }: { open: boolean; title: string; children: React.ReactNode; onClose: () => void }) {
+function Modal({
+  open,
+  title,
+  children,
+  onClose
+}: {
+  open: boolean;
+  title: string;
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
@@ -105,7 +109,15 @@ function Modal({ open, title, children, onClose }: { open: boolean; title: strin
   );
 }
 
-function Pill({ icon, text, tone = "default" }: { icon: React.ReactNode; text: string; tone?: "good" | "warn" | "default" }) {
+function Pill({
+  icon,
+  text,
+  tone = "default"
+}: {
+  icon: React.ReactNode;
+  text: string;
+  tone?: "good" | "warn" | "default";
+}) {
   return (
     <span
       className={cx(
@@ -123,8 +135,21 @@ function Pill({ icon, text, tone = "default" }: { icon: React.ReactNode; text: s
   );
 }
 
-function CTAButton({ children, onClick, variant = "primary" }: { children: React.ReactNode; onClick: () => void; variant?: "primary" | "green" | "secondary" }) {
-  const base = "w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-[14px] font-bold transition-all shadow-sm active:scale-[0.98]";
+function CTAButton({
+  children,
+  onClick,
+  variant = "primary",
+  disabled = false,
+  type = "button"
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  variant?: "primary" | "green" | "secondary";
+  disabled?: boolean;
+  type?: "button" | "submit";
+}) {
+  const base =
+    "w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-[14px] font-bold transition-all shadow-sm active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none";
   const styles =
     variant === "primary"
       ? "bg-[#f77f00] text-white hover:bg-[#e26f00]"
@@ -133,7 +158,7 @@ function CTAButton({ children, onClick, variant = "primary" }: { children: React
         : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700";
 
   return (
-    <button type="button" className={cx(base, styles)} onClick={onClick}>
+    <button type={type} className={cx(base, styles)} onClick={onClick} disabled={disabled}>
       {children}
     </button>
   );
@@ -149,57 +174,255 @@ function Accordion({ q, a }: { q: string; a: string }) {
         className="w-full px-5 py-5 flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
       >
         <div className="text-left flex-1 min-w-0">
-          <div className="text-[14px] font-bold text-slate-900 dark:text-slate-50 tracking-tight leading-snug">{q}</div>
+          <div className="text-[14px] font-bold text-slate-900 dark:text-slate-50 tracking-tight leading-snug">
+            {q}
+          </div>
         </div>
-        <ChevronDown className={cx("h-5 w-5 text-slate-400 transition-transform flex-shrink-0", open ? "rotate-180" : "")} />
+        <ChevronDown
+          className={cx("h-5 w-5 text-slate-400 transition-transform flex-shrink-0", open ? "rotate-180" : "")}
+        />
       </button>
-      {open ? <div className="px-5 pb-5 text-[14px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-50 dark:border-slate-800/50">{a}</div> : null}
+      {open ? (
+        <div className="px-5 pb-5 text-[14px] text-slate-600 dark:text-slate-400 leading-relaxed border-t border-slate-50 dark:border-slate-800/50">
+          {a}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+  hint
+}: {
+  label: string;
+  children: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <label className="block">
+      <div className="mb-1.5 text-[12px] font-semibold text-slate-700 dark:text-slate-300">{label}</div>
+      {children}
+      {hint ? <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{hint}</div> : null}
+    </label>
+  );
+}
+
+function AuthInput(
+  props: React.InputHTMLAttributes<HTMLInputElement> & { icon?: React.ReactNode }
+) {
+  const { icon, className, ...rest } = props;
+
+  return (
+    <div className="relative">
+      {icon ? (
+        <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+          {icon}
+        </div>
+      ) : null}
+      <input
+        {...rest}
+        className={cx(
+          "w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-3 text-[14px] text-slate-900 dark:text-slate-100 outline-none focus:border-[#f77f00] placeholder:text-slate-400",
+          icon ? "pl-10" : "",
+          className
+        )}
+      />
     </div>
   );
 }
 
 export default function CreatorAuthRedirectNotice() {
-  const { toasts, push } = useToasts();
+  const location = useLocation();
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
+  const { toasts, push } = useToasts();
+
   const [showWhy, setShowWhy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [redirecting, setRedirecting] = useState<"signin" | "signup" | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>(null);
+  const [identifierMode, setIdentifierMode] = useState<IdentifierMode>("email");
+  const [initializing, setInitializing] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [queueMessage, setQueueMessage] = useState("");
 
-  const redirectLabel = useMemo(() => {
-    if (redirecting === "signin") return "Redirecting to EVzone My Accounts (Sign in)";
-    if (redirecting === "signup") return "Redirecting to EVzone My Accounts (Sign up)";
-    return "";
-  }, [redirecting]);
+  const [name, setName] = useState("");
+  const [handle, setHandle] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
-    if (!redirecting) return;
-    const t = setTimeout(() => {
-      push("This is a preview. In production, you will be redirected automatically.", "success");
-      setRedirecting(null);
-    }, 900);
-    return () => clearTimeout(t);
-  }, [redirecting, push]);
+    const nextMode = new URLSearchParams(location.search).get("mode");
+    if (nextMode === "register") {
+      setAuthMode("signup");
+      return;
+    }
+    if (nextMode === "login") {
+      setAuthMode("signin");
+    }
+  }, [location.search]);
+
+  useEffect(() => {
+    let active = true;
+
+    void authApi
+      .me()
+      .then((session) => {
+        if (!active) return;
+        persistAuthSession(session);
+        navigate(getPostAuthPath(session), { replace: true });
+      })
+      .catch(() => {
+        if (!active) return;
+        clearAuthSession();
+      })
+      .finally(() => {
+        if (active) {
+          setInitializing(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
+
+  const statusLabel = useMemo(() => {
+    if (queueMessage) return queueMessage;
+    if (submitting && authMode === "signin") return "Signing in to your EVzone account";
+    if (submitting && authMode === "signup") return "Creating your EVzone account";
+    return "";
+  }, [authMode, queueMessage, submitting]);
+
+  const identifierValue = identifierMode === "email" ? email.trim() : phone.trim();
+
+  const resetAuthForm = () => {
+    setIdentifierMode("email");
+    setSubmitting(false);
+    setQueueMessage("");
+    setName("");
+    setHandle("");
+    setEmail("");
+    setPhone("");
+    setPassword("");
+    setConfirmPassword("");
+  };
+
+  const closeAuthModal = () => {
+    setAuthMode(null);
+    setQueueMessage("");
+  };
+
+  const completeLogin = async () => {
+    const session = await authApi.me();
+    persistAuthSession(session);
+    navigate(getPostAuthPath(session), { replace: true });
+  };
+
+  const waitForQueuedRegistration = async (requestId: string, passwordValue: string) => {
+    let attempts = 0;
+    let delayMs = 1000;
+
+    while (attempts < 40) {
+      attempts += 1;
+      const status = await authApi.registerStatus(requestId);
+      if (status.failed) {
+        throw new Error(status.errorMessage || "Registration failed");
+      }
+      if (status.readyToLogin) {
+        await authApi.login({
+          email: identifierMode === "email" ? email.trim().toLowerCase() : undefined,
+          phone: identifierMode === "phone" ? phone.trim() : undefined,
+          password: passwordValue
+        });
+        await completeLogin();
+        return;
+      }
+
+      delayMs = status.pollAfterMs || delayMs;
+      setQueueMessage(`Creating your account${status.status ? `: ${status.status}` : ""}...`);
+      await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+    }
+
+    throw new Error("Registration is taking longer than expected. Try signing in in a moment.");
+  };
 
   const onSignIn = () => {
-    setRedirecting("signin");
-    push("Opening EVzone My Accounts for Sign in...", "success");
-    setTimeout(() => {
-      localStorage.setItem("creatorPlatformEntered", "true");
-      localStorage.setItem("mldz_creator_approval_status", "Approved");
-      // Use standard target logic
-      navigate(getPostAuthTarget());
-    }, 1500);
+    resetAuthForm();
+    setAuthMode("signin");
   };
 
   const onSignUp = () => {
-    setRedirecting("signup");
-    push("Opening EVzone My Accounts for Sign up...", "success");
-    setTimeout(() => {
-      localStorage.setItem("creatorPlatformEntered", "true");
-      // For now, go with onboarding
-      navigate("/onboarding");
-    }, 1500);
+    resetAuthForm();
+    setAuthMode("signup");
   };
+
+  const handleAuthSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!authMode) return;
+
+    setSubmitting(true);
+    setQueueMessage("");
+
+    try {
+      if (!identifierValue) {
+        throw new Error(identifierMode === "email" ? "Email is required." : "Phone number is required.");
+      }
+      if (!password || password.length < 8) {
+        throw new Error("Password must be at least 8 characters.");
+      }
+
+      if (authMode === "signup") {
+        if (!name.trim()) {
+          throw new Error("Full name is required.");
+        }
+        if (password !== confirmPassword) {
+          throw new Error("Passwords do not match.");
+        }
+
+        const registration = await authApi.register({
+          name: name.trim(),
+          handle: handle.trim() || undefined,
+          email: identifierMode === "email" ? email.trim().toLowerCase() : undefined,
+          phone: identifierMode === "phone" ? phone.trim() : undefined,
+          password,
+          role: "CREATOR",
+          roles: ["CREATOR"]
+        });
+
+        if ("registrationQueued" in registration && registration.registrationQueued) {
+          push("Registration accepted. Finishing account setup...", "success");
+          await waitForQueuedRegistration(registration.requestId, password);
+        } else {
+          await authApi.login({
+            email: identifierMode === "email" ? email.trim().toLowerCase() : undefined,
+            phone: identifierMode === "phone" ? phone.trim() : undefined,
+            password
+          });
+          await completeLogin();
+        }
+        return;
+      }
+
+      await authApi.login({
+        email: identifierMode === "email" ? email.trim().toLowerCase() : undefined,
+        phone: identifierMode === "phone" ? phone.trim() : undefined,
+        password
+      });
+      await completeLogin();
+    } catch (error) {
+      push(error instanceof Error ? error.message : "Authentication failed.", "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (initializing) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors">
@@ -263,6 +486,136 @@ export default function CreatorAuthRedirectNotice() {
         </div>
       </Modal>
 
+      <Modal
+        open={authMode !== null}
+        title={authMode === "signin" ? "Sign in with EVzone" : "Create EVzone account"}
+        onClose={closeAuthModal}
+      >
+        <form className="space-y-4" onSubmit={handleAuthSubmit}>
+          {authMode === "signup" ? (
+            <>
+              <Field label="Full Name">
+                <AuthInput
+                  icon={<User className="h-4 w-4" />}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Ronald Isabirye"
+                />
+              </Field>
+              <Field label="Preferred Handle" hint="Optional. We will generate one if you leave this blank.">
+                <AuthInput
+                  icon={<User className="h-4 w-4" />}
+                  value={handle}
+                  onChange={(event) => setHandle(event.target.value)}
+                  placeholder="ronald.creates"
+                />
+              </Field>
+            </>
+          ) : null}
+
+          <Field label="Use Email Or Phone">
+            <div className="mb-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIdentifierMode("email")}
+                className={cx(
+                  "rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  identifierMode === "email"
+                    ? "bg-[#f77f00] text-white"
+                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                )}
+              >
+                Email
+              </button>
+              <button
+                type="button"
+                onClick={() => setIdentifierMode("phone")}
+                className={cx(
+                  "rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  identifierMode === "phone"
+                    ? "bg-[#f77f00] text-white"
+                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                )}
+              >
+                Phone
+              </button>
+            </div>
+
+            {identifierMode === "email" ? (
+              <AuthInput
+                icon={<Mail className="h-4 w-4" />}
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="creator@example.com"
+              />
+            ) : (
+              <AuthInput
+                icon={<Phone className="h-4 w-4" />}
+                value={phone}
+                onChange={(event) => setPhone(event.target.value)}
+                placeholder="+256700000000"
+              />
+            )}
+          </Field>
+
+          <Field label="Password" hint={authMode === "signup" ? "Use at least 8 characters." : undefined}>
+            <AuthInput
+              icon={<Lock className="h-4 w-4" />}
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter your password"
+            />
+          </Field>
+
+          {authMode === "signup" ? (
+            <Field label="Confirm Password">
+              <AuthInput
+                icon={<Lock className="h-4 w-4" />}
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Repeat your password"
+              />
+            </Field>
+          ) : null}
+
+          {statusLabel ? (
+            <div className="rounded-3xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-[12px] text-amber-800 dark:text-amber-400">
+              <span className="font-semibold">{statusLabel}</span>...
+            </div>
+          ) : null}
+
+          <CTAButton type="submit" variant={authMode === "signup" ? "green" : "primary"} disabled={submitting}>
+            {submitting
+              ? authMode === "signin"
+                ? "Signing in"
+                : "Creating account"
+              : authMode === "signin"
+                ? "Sign in with EVzone"
+                : "Create EVzone account"}
+            <ArrowRight className="h-4 w-4" />
+          </CTAButton>
+
+          {authMode === "signin" ? (
+            <button
+              type="button"
+              className="text-[13px] font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 inline-flex items-center gap-2 transition-colors"
+              onClick={() => {
+                push("Password recovery is available on EVzone My Accounts.", "success");
+              }}
+            >
+              Forgot password? <ExternalLink className="h-4 w-4" />
+            </button>
+          ) : (
+            <div className="text-[13px] text-slate-600 dark:text-slate-400 leading-relaxed italic">
+              After sign-up, you’ll return here to complete Creator onboarding.
+            </div>
+          )}
+        </form>
+      </Modal>
+
       {/* Header */}
       <header className="border-b border-slate-200 dark:border-slate-800 bg-white/85 dark:bg-slate-950/85 backdrop-blur">
         <div className="w-full px-4 md:px-8 py-4 flex items-center justify-between gap-3">
@@ -281,17 +634,19 @@ export default function CreatorAuthRedirectNotice() {
             </div>
             <div className="hidden sm:block h-6 w-px bg-slate-200 dark:bg-slate-800 mx-2" />
             <div className="hidden sm:flex items-center gap-2 text-[12px] font-semibold text-slate-600 dark:text-slate-400">
-              <span className="px-3 py-1 rounded-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">Creator Access</span>
+              <span className="px-3 py-1 rounded-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                Creator Access
+              </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={useTheme().toggleTheme}
+              onClick={toggleTheme}
               className="p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               title="Toggle Theme"
             >
-              {useTheme().theme === "light" ? "🌙" : "☀️"}
+              {theme === "light" ? "🌙" : "☀️"}
             </button>
             <button
               type="button"
@@ -330,9 +685,9 @@ export default function CreatorAuthRedirectNotice() {
                 To protect creators and unify access across EVzone services, creator sign-in and sign-up are handled through EVzone My Accounts.
               </p>
 
-              {redirectLabel ? (
+              {statusLabel ? (
                 <div className="mt-4 rounded-3xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-[12px] text-amber-800 dark:text-amber-400">
-                  <span className="font-semibold">{redirectLabel}</span>...
+                  <span className="font-semibold">{statusLabel}</span>...
                 </div>
               ) : null}
 
@@ -340,10 +695,17 @@ export default function CreatorAuthRedirectNotice() {
                 <div className="rounded-[32px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-[0_15px_40px_rgba(0,0,0,0.03)] dark:shadow-none transition-all hover:shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-[15px] font-bold text-slate-900 dark:text-slate-50 tracking-tight leading-snug">I already have an EVzone account</div>
-                      <div className="mt-1.5 text-[14px] text-slate-600 dark:text-slate-400 leading-relaxed">Use your existing email/phone to sign in.</div>
+                      <div className="text-[15px] font-bold text-slate-900 dark:text-slate-50 tracking-tight leading-snug">
+                        I already have an EVzone account
+                      </div>
+                      <div className="mt-1.5 text-[14px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Use your existing email/phone to sign in.
+                      </div>
                     </div>
-                    <span className="h-12 w-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center flex-shrink-0 shadow-sm" style={{ color: GREEN }}>
+                    <span
+                      className="h-12 w-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center flex-shrink-0 shadow-sm"
+                      style={{ color: GREEN }}
+                    >
                       <BadgeCheck className="h-6 w-6" />
                     </span>
                   </div>
@@ -366,10 +728,17 @@ export default function CreatorAuthRedirectNotice() {
                 <div className="rounded-[32px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-[0_15px_40px_rgba(0,0,0,0.03)] dark:shadow-none transition-all hover:shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-[15px] font-bold text-slate-900 dark:text-slate-50 tracking-tight leading-snug">I don’t have an EVzone account</div>
-                      <div className="mt-1.5 text-[14px] text-slate-600 dark:text-slate-400 leading-relaxed">Create one account to access EVzone services.</div>
+                      <div className="text-[15px] font-bold text-slate-900 dark:text-slate-50 tracking-tight leading-snug">
+                        I don’t have an EVzone account
+                      </div>
+                      <div className="mt-1.5 text-[14px] text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Create one account to access EVzone services.
+                      </div>
                     </div>
-                    <span className="h-12 w-12 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-center justify-center flex-shrink-0 shadow-sm" style={{ color: ORANGE }}>
+                    <span
+                      className="h-12 w-12 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 flex items-center justify-center flex-shrink-0 shadow-sm"
+                      style={{ color: ORANGE }}
+                    >
                       <User className="h-6 w-6" />
                     </span>
                   </div>
@@ -385,7 +754,9 @@ export default function CreatorAuthRedirectNotice() {
               </div>
 
               <div className="mt-8 rounded-[32px] border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
-                <div className="text-[15px] font-bold text-slate-900 dark:text-slate-50 mb-4 tracking-tight">What happens next</div>
+                <div className="text-[15px] font-bold text-slate-900 dark:text-slate-50 mb-4 tracking-tight">
+                  What happens next
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {[
                     { n: 1, t: "Choose Sign in / Sign up", d: "Go to EVzone My Accounts" },
@@ -393,10 +764,19 @@ export default function CreatorAuthRedirectNotice() {
                     { n: 3, t: "Return to MyLiveDealz", d: "Auto redirect back" },
                     { n: 4, t: "Finish Creator setup", d: "KYC, payouts, preferences" }
                   ].map((s) => (
-                    <div key={s.n} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm hover:shadow">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Step {s.n}</div>
-                      <div className="mt-2 text-[14px] font-bold text-slate-900 dark:text-slate-50 leading-tight">{s.t}</div>
-                      <div className="mt-1 text-[13px] text-slate-600 dark:text-slate-400 leading-normal">{s.d}</div>
+                    <div
+                      key={s.n}
+                      className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm hover:shadow"
+                    >
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        Step {s.n}
+                      </div>
+                      <div className="mt-2 text-[14px] font-bold text-slate-900 dark:text-slate-50 leading-tight">
+                        {s.t}
+                      </div>
+                      <div className="mt-1 text-[13px] text-slate-600 dark:text-slate-400 leading-normal">
+                        {s.d}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -409,7 +789,9 @@ export default function CreatorAuthRedirectNotice() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Security & privacy</div>
-                    <div className="mt-1 text-[12px] text-slate-600 dark:text-slate-400">One secure identity across EVzone products.</div>
+                    <div className="mt-1 text-[12px] text-slate-600 dark:text-slate-400">
+                      One secure identity across EVzone products.
+                    </div>
                   </div>
                   <span className="h-10 w-10 rounded-2xl bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-center">
                     <Lock className="h-5 w-5" />
@@ -425,7 +807,13 @@ export default function CreatorAuthRedirectNotice() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Have these ready</div>
                 <div className="mt-3 space-y-2">
-                  {["Email or phone number", "Access to verification codes", "A short creator bio", "ID for KYC (later)", "Preferred payout method"].map((x) => (
+                  {[
+                    "Email or phone number",
+                    "Access to verification codes",
+                    "A short creator bio",
+                    "ID for KYC (later)",
+                    "Preferred payout method"
+                  ].map((x) => (
                     <div key={x} className="flex items-start gap-2">
                       <span className="mt-0.5 h-5 w-5 rounded-full bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-center">
                         <Check className="h-3 w-3" />

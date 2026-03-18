@@ -7,13 +7,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { useScrollLock } from "../../hooks/useScrollLock";
 // import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
-import { useCreator } from "../../contexts/CreatorContext";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type PublicSellerRecord } from "../../lib/creatorApi";
 import type { PageId } from "../../layouts/CreatorShellLayout";
 
 type Trend = "up" | "down" | "flat";
 
 type Seller = {
   id: number;
+  apiId: string;
   name: string;
   initials: string;
   tagline: string;
@@ -40,6 +42,59 @@ type Seller = {
   hasActiveCampaigns: boolean;
 };
 
+function sellerNumericId(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits) return Number(digits.slice(-9));
+  return Array.from(value).reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
+}
+
+function sellerInitials(name?: string | null) {
+  return (
+    String(name || "SP")
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "SP"
+  );
+}
+
+function toSeller(record: PublicSellerRecord): Seller {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const categories = Array.isArray(record.categories) && record.categories.length > 0
+    ? record.categories
+    : [String(record.category || "General")];
+
+  return {
+    id: sellerNumericId(String(record.id)),
+    apiId: String(record.id),
+    name: String(record.displayName || record.name || "Supplier"),
+    initials: sellerInitials(record.displayName || record.name),
+    tagline: String(record.description || "Supplier profile"),
+    categories,
+    followers: Number((metadata as { followers?: unknown }).followers || 0),
+    livesCompleted: Number((metadata as { livesCompleted?: unknown }).livesCompleted || 0),
+    avgOrderValue: Number((metadata as { avgOrderValue?: unknown }).avgOrderValue || 0),
+    badge: String((metadata as { badge?: unknown }).badge || (record.isVerified ? "Verified" : "Supplier")),
+    collabStatus: String((metadata as { collabStatus?: unknown }).collabStatus || "Open to collabs"),
+    rating: Number(record.rating || 0),
+    region: String(record.region || "Global"),
+    similarTo: Array.isArray((metadata as { similarTo?: unknown[] }).similarTo) ? ((metadata as { similarTo?: unknown[] }).similarTo as unknown[]).map((item) => String(item)) : [],
+    relationship: String((metadata as { relationship?: unknown }).relationship || "New"),
+    fitScore: Number((metadata as { fitScore?: unknown }).fitScore || 0),
+    fitReason: String((metadata as { fitReason?: unknown }).fitReason || "Potential supplier match."),
+    followersTrend: "flat",
+    livesTrend: "flat",
+    orderTrend: "flat",
+    trustBadges: Array.isArray((metadata as { trustBadges?: unknown[] }).trustBadges) ? ((metadata as { trustBadges?: unknown[] }).trustBadges as unknown[]).map((item) => String(item)) : [],
+    lastActive: String((metadata as { lastActive?: unknown }).lastActive || "Recently active"),
+    supplierType: String(record.type || record.kind || "Seller").toLowerCase() === "provider" ? "Provider" : "Seller",
+    isActivelyCollaborating: Boolean((metadata as { isActivelyCollaborating?: unknown }).isActivelyCollaborating),
+    hasActiveCampaigns: Boolean((metadata as { hasActiveCampaigns?: unknown }).hasActiveCampaigns)
+  };
+}
+
 
 function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) => void }) {
   // const { theme } = useTheme();
@@ -48,8 +103,11 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
   const [minFollowers, setMinFollowers] = useState<string>("");
   const [minRating, setMinRating] = useState<string>("Any");
 
-
-  const { followedSellerIds: followedSellers, toggleFollowSeller } = useCreator();
+  const [followedSellers, setFollowedSellers] = useState<number[]>([]);
+  const { data: sellerRecords } = useApiResource({
+    initialData: [] as PublicSellerRecord[],
+    loader: () => creatorApi.sellers()
+  });
 
   const [selectedSeller, setSelectedSeller] = useState<Seller | null>(null);
   const [showInvite, setShowInvite] = useState<boolean>(false);
@@ -71,141 +129,7 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
     setTimeout(() => setIsTransitioning(false), 300);
   };
 
-  const sellers = useMemo<Seller[]>(
-    () => [
-      {
-        id: 1,
-        name: "GlowUp Hub",
-        initials: "GH",
-        tagline: "Beauty & skincare for glowing routines.",
-        categories: ["Beauty", "Skincare"],
-        followers: 42000,
-        livesCompleted: 38,
-        avgOrderValue: 22,
-        badge: "Top Brand",
-        collabStatus: "Open to collabs",
-        rating: 4.8,
-        region: "Africa",
-        similarTo: ["Grace Living Store"],
-        relationship: "2 past campaigns",
-        fitScore: 93,
-        fitReason: "You convert 3.1× platform avg in Beauty.",
-        followersTrend: "up" as Trend,
-        livesTrend: "up" as Trend,
-        orderTrend: "flat" as Trend,
-        trustBadges: ["Verified", "Fast payouts"],
-        lastActive: "Active this week",
-        supplierType: "Seller",
-        isActivelyCollaborating: true,
-        hasActiveCampaigns: true
-      },
-      {
-        id: 2,
-        name: "GadgetMart Africa",
-        initials: "GA",
-        tagline: "Everyday gadgets with an EV twist.",
-        categories: ["Tech", "Gadgets"],
-        followers: 35500,
-        livesCompleted: 24,
-        avgOrderValue: 45,
-        badge: "Top Brand",
-        collabStatus: "Open to collabs",
-        rating: 4.5,
-        region: "Africa / Asia",
-        similarTo: ["EV Gadget World"],
-        relationship: "1 past Tech Friday series",
-        fitScore: 86,
-        fitReason: "Strong Tech Friday performance with their niche.",
-        followersTrend: "up" as Trend,
-        livesTrend: "up" as Trend,
-        orderTrend: "up" as Trend,
-        trustBadges: ["Verified"],
-        lastActive: "Live 2 days ago",
-        supplierType: "Seller",
-        isActivelyCollaborating: true,
-        hasActiveCampaigns: false
-      },
-      {
-        id: 3,
-        name: "Grace Living Store",
-        initials: "GL",
-        tagline: "Faith-compatible wellness & lifestyle.",
-        categories: ["Faith", "Wellness"],
-        followers: 18800,
-        livesCompleted: 17,
-        avgOrderValue: 28,
-        badge: "Faith friendly",
-        collabStatus: "Invite only",
-        rating: 4.9,
-        region: "Africa",
-        similarTo: ["GlowUp Hub"],
-        relationship: "New (no campaigns yet)",
-        fitScore: 88,
-        fitReason: "High retention in Faith-compatible sessions.",
-        followersTrend: "up" as Trend,
-        livesTrend: "flat" as Trend,
-        orderTrend: "flat" as Trend,
-        trustBadges: ["Low return rate"],
-        lastActive: "Active this week",
-        supplierType: "Provider",
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: true
-      },
-      {
-        id: 4,
-        name: "EV Gadget World",
-        initials: "EG",
-        tagline: "Accessories & gadgets for EV owners.",
-        categories: ["EV", "Mobility", "Tech"],
-        followers: 15200,
-        livesCompleted: 9,
-        avgOrderValue: 60,
-        badge: "New Seller",
-        collabStatus: "Open to collabs",
-        rating: 4.2,
-        region: "Global",
-        similarTo: ["GadgetMart Africa"],
-        relationship: "New EV-focused potential",
-        fitScore: 72,
-        fitReason: "Category match; limited collab history in this sub-niche.",
-        followersTrend: "up" as Trend,
-        livesTrend: "up" as Trend,
-        orderTrend: "up" as Trend,
-        trustBadges: ["Fast payouts"],
-        lastActive: "Active this month",
-        supplierType: "Seller",
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: true
-      },
-      {
-        id: 5,
-        name: "ShopNow Foods",
-        initials: "SF",
-        tagline: "Groceries & pantry delivered same day.",
-        categories: ["Food", "Groceries"],
-        followers: 8600,
-        livesCompleted: 5,
-        avgOrderValue: 18,
-        badge: "New Seller",
-        collabStatus: "Not seeking",
-        rating: 4.0,
-        region: "Africa",
-        similarTo: [],
-        relationship: "New",
-        fitScore: 60,
-        fitReason: "Outside your top-performing categories.",
-        followersTrend: "flat",
-        livesTrend: "flat",
-        orderTrend: "flat",
-        trustBadges: [],
-        lastActive: "Occasionally active",
-        supplierType: "Seller",
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: false
-      }
-    ],
-    []
-  );
+  const sellers = useMemo(() => sellerRecords.map(toSeller), [sellerRecords]);
 
 
 
@@ -217,6 +141,14 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
   const closeInvite = () => {
     setShowInvite(false);
     setSelectedSeller(null);
+  };
+
+  const toggleSellerFollow = (seller: Seller) => {
+    const isFollowing = followedSellers.includes(seller.id);
+    void creatorApi.followSeller(seller.apiId, !isFollowing);
+    setFollowedSellers((prev) =>
+      isFollowing ? prev.filter((id) => id !== seller.id) : [...prev, seller.id]
+    );
   };
 
   // Base filters: search, category, followers, rating
@@ -507,7 +439,7 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
                   key={s.id}
                   seller={s}
                   followed={followedSellers.includes(s.id)}
-                  onToggleFollow={() => toggleFollowSeller(s.id)}
+                  onToggleFollow={() => toggleSellerFollow(s)}
                   onInvite={openInvite}
                   onChangePage={onChangePage}
                   isRecommended={s.badge === "Top Brand"}

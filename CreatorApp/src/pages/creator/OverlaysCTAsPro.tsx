@@ -17,6 +17,8 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * Overlays & CTAs Pro (Premium)
@@ -43,6 +45,43 @@ type Product = {
   price: string;
   stock: number;
   posterUrl: string;
+};
+
+type OverlaysPayload = {
+  isPro?: boolean;
+  session?: {
+    id?: string;
+    title?: string;
+    status?: SessionStatus;
+    startISO?: string;
+    endISO?: string;
+  };
+  products?: Product[];
+  tab?: "qr" | "links" | "timer" | "lower" | "ab";
+  variant?: VariantKey;
+  qrEnabled?: boolean;
+  qrLabel?: string;
+  qrUrl?: string;
+  qrCorner?: "tr" | "tl" | "br" | "bl";
+  qrSize?: number;
+  destUrl?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  utmContent?: string;
+  shortDomain?: string;
+  shortSlug?: string;
+  timerEnabled?: boolean;
+  timerStyle?: "pill" | "bar";
+  timerText?: string;
+  dealEndISO?: string;
+  lowerEnabled?: boolean;
+  lowerPlacement?: "bottom" | "top";
+  lowerProductId?: string;
+  ctaText?: string;
+  abEnabled?: boolean;
+  notesA?: string;
+  notesB?: string;
 };
 
 function cn(...classes: Array<string | false | null | undefined>) {
@@ -167,45 +206,26 @@ function toCountdown(now: number, startISO: string, endISO: string) {
 }
 
 export default function OverlaysCTAsPro() {
-  // Demo pro toggle
+  const { data: payload } = useApiResource({
+    initialData: {} as OverlaysPayload,
+    loader: () => creatorApi.liveTool("overlays") as Promise<OverlaysPayload>,
+  });
   const [isPro, setIsPro] = useState(true);
 
   const session = useMemo(
     () => ({
-      id: "LS-20418",
-      title: "Autumn Beauty Flash",
-      status: "Scheduled" as SessionStatus,
-      startISO: new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-      endISO: new Date(Date.now() + 130 * 60 * 1000).toISOString(),
+      id: payload.session?.id || "LS-20418",
+      title: payload.session?.title || "Autumn Beauty Flash",
+      status: payload.session?.status || ("Scheduled" as SessionStatus),
+      startISO: payload.session?.startISO || new Date(Date.now() + 40 * 60 * 1000).toISOString(),
+      endISO: payload.session?.endISO || new Date(Date.now() + 130 * 60 * 1000).toISOString(),
     }),
-    [],
+    [payload.session],
   );
 
   const products: Product[] = useMemo(
-    () => [
-      {
-        id: "p1",
-        name: "GlowUp Serum Bundle",
-        price: "$29.99",
-        stock: 18,
-        posterUrl: "https://images.unsplash.com/photo-1585232351009-aa87416fca90?auto=format&fit=crop&w=500&q=60",
-      },
-      {
-        id: "p2",
-        name: "Vitamin C Glow Kit",
-        price: "$24.50",
-        stock: 6,
-        posterUrl: "https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=500&q=60",
-      },
-      {
-        id: "p3",
-        name: "Hydration Night Mask",
-        price: "$19.00",
-        stock: 0,
-        posterUrl: "https://images.unsplash.com/photo-1585386959984-a41552231691?auto=format&fit=crop&w=500&q=60",
-      },
-    ],
-    [],
+    () => payload.products || [],
+    [payload.products],
   );
 
   const [tab, setTab] = useState<"qr" | "links" | "timer" | "lower" | "ab">("qr");
@@ -256,13 +276,42 @@ export default function OverlaysCTAsPro() {
   // Lower third
   const [lowerEnabled, setLowerEnabled] = useState(true);
   const [lowerPlacement, setLowerPlacement] = useState<"bottom" | "top">("bottom");
-  const [lowerProductId, setLowerProductId] = useState(products[0].id);
+  const [lowerProductId, setLowerProductId] = useState("");
   const [ctaText, setCtaText] = useState("Buy now");
 
   // A/B
   const [abEnabled, setAbEnabled] = useState(true);
   const [notesA, setNotesA] = useState("Variant A: QR top-right + lower-third.");
   const [notesB, setNotesB] = useState("Variant B: Countdown bar + shorter CTA.");
+  useEffect(() => {
+    if (!Object.keys(payload).length) return;
+    setIsPro(payload.isPro ?? true);
+    setTab(payload.tab || "qr");
+    setVariant(payload.variant || "A");
+    setQrEnabled(payload.qrEnabled ?? true);
+    setQrLabel(payload.qrLabel || "Scan to shop");
+    setQrUrl(payload.qrUrl || `https://mylivedealz.com/live/${session.id}`);
+    setQrCorner(payload.qrCorner || "tr");
+    setQrSize(typeof payload.qrSize === "number" ? payload.qrSize : 180);
+    setDestUrl(payload.destUrl || "https://mylivedealz.com/dealz/autumn-flash");
+    setUtmSource(payload.utmSource || "whatsapp");
+    setUtmMedium(payload.utmMedium || "msg");
+    setUtmCampaign(payload.utmCampaign || "autumn_beauty_flash");
+    setUtmContent(payload.utmContent || "reminder_t10m");
+    setShortDomain(payload.shortDomain || "go.mylivedealz.com");
+    setShortSlug(payload.shortSlug || makeSlug());
+    setTimerEnabled(payload.timerEnabled ?? true);
+    setTimerStyle(payload.timerStyle || "pill");
+    setTimerText(payload.timerText || "Deal ends in");
+    setDealEndISO(payload.dealEndISO || session.endISO);
+    setLowerEnabled(payload.lowerEnabled ?? true);
+    setLowerPlacement(payload.lowerPlacement || "bottom");
+    setLowerProductId(payload.lowerProductId || payload.products?.[0]?.id || "");
+    setCtaText(payload.ctaText || "Buy now");
+    setAbEnabled(payload.abEnabled ?? true);
+    setNotesA(payload.notesA || "Variant A: QR top-right + lower-third.");
+    setNotesB(payload.notesB || "Variant B: Countdown bar + shorter CTA.");
+  }, [payload, session.endISO, session.id]);
 
   const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? products[0], [products, lowerProductId]);
 
@@ -351,7 +400,38 @@ export default function OverlaysCTAsPro() {
                 Copy short link
               </Btn>
             </div>
-            <Btn tone="primary" onClick={() => setToast("Saved overlays (demo)")} left={<CheckCircle2 className="h-4 w-4" />}>
+            <Btn tone="primary" onClick={() => {
+              void creatorApi.patchLiveTool("overlays", {
+                isPro,
+                session,
+                products,
+                tab,
+                variant,
+                qrEnabled,
+                qrLabel,
+                qrUrl,
+                qrCorner,
+                qrSize,
+                destUrl,
+                utmSource,
+                utmMedium,
+                utmCampaign,
+                utmContent,
+                shortDomain,
+                shortSlug,
+                timerEnabled,
+                timerStyle,
+                timerText,
+                dealEndISO,
+                lowerEnabled,
+                lowerPlacement,
+                lowerProductId,
+                ctaText,
+                abEnabled,
+                notesA,
+                notesB,
+              }).then(() => setToast("Saved overlays"));
+            }} left={<CheckCircle2 className="h-4 w-4" />}>
               Save
             </Btn>
           </div>

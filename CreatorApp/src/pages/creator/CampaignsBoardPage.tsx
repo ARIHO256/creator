@@ -10,6 +10,8 @@ import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type CollaborationCampaignRecord } from "../../lib/creatorApi";
 
 const STAGES = [
   "Leads",
@@ -43,104 +45,60 @@ type Campaign = {
   lastActivity: string;
 };
 
-const CAMPAIGNS: Campaign[] = [
-  {
-    id: "C-101",
-    name: "Beauty Flash with GlowUp",
-    seller: "GlowUp Hub",
-    stage: "Active contracts",
-    origin: "seller-invite",
-    estValue: 1400,
-    currency: "USD",
-    type: "Shoppable Adz + Live",
-    region: "Africa",
-    nextAction: "Live tonight 18:30",
-    promoCount: 2,
-    liveCount: 3,
-    health: "on-track",
-    lastActivity: "Live scheduled · today"
-  },
-  {
-    id: "C-102",
-    name: "Tech Friday Mega Live",
-    seller: "GadgetMart Africa",
-    stage: "Negotiating",
-    origin: "creator-pitch",
-    estValue: 2100,
-    currency: "USD",
-    type: "Live series",
-    region: "Africa / Asia",
-    nextAction: "Review revised terms",
-    promoCount: 1,
-    liveCount: 4,
-    health: "at-risk",
-    lastActivity: "Waiting on brand · 5 days"
-  },
-  {
-    id: "C-103",
-    name: "Faith & Wellness Morning Dealz",
-    seller: "Grace Living Store",
-    stage: "Pitches sent",
-    origin: "creator-pitch",
-    estValue: 900,
-    currency: "USD",
-    type: "Shoppable Adz",
-    region: "Africa",
-    nextAction: "Wait for seller reply",
-    promoCount: 1,
-    liveCount: 2,
-    health: "on-track",
-    lastActivity: "Pitch sent · 2 days"
-  },
-  {
-    id: "C-104",
-    name: "Gadget Unboxing Marathon",
-    seller: "GadgetMart Africa",
-    stage: "Leads",
-    origin: "seller-invite",
-    estValue: 3500,
-    currency: "USD",
-    type: "Live + Clips series",
-    region: "Global",
-    nextAction: "Send pitch",
-    promoCount: 0,
-    liveCount: 0,
-    health: "stalled",
-    lastActivity: "Invite opened · 1 week"
-  },
-  {
-    id: "C-105",
-    name: "ShopNow Groceries – Soft Promo",
-    seller: "ShopNow Foods",
-    stage: "Completed",
-    origin: "creator-pitch",
-    estValue: 600,
-    currency: "USD",
-    type: "Shoppable Adz",
-    region: "Africa",
-    nextAction: "Closed · review performance",
-    promoCount: 1,
-    liveCount: 1,
-    health: "on-track",
-    lastActivity: "Completed · last month"
-  },
-  {
-    id: "C-106",
-    name: "Gadget Overload – Viral Series",
-    seller: "TechMarket",
-    stage: "Terminated",
-    origin: "seller-invite",
-    estValue: 4200,
-    currency: "USD",
-    type: "Live series",
-    region: "Global",
-    nextAction: "Campaign Ended",
-    promoCount: 0,
-    liveCount: 2,
-    health: "stalled",
-    lastActivity: "Terminated by brand · 2 weeks"
+function mapCampaignStage(status?: string | null): StageId {
+  const normalized = String(status || "").trim().toUpperCase();
+  if (["ACTIVE", "APPROVED", "LIVE", "RUNNING", "IN_PROGRESS"].includes(normalized)) return "Active contracts";
+  if (["COMPLETED", "DONE", "FINISHED"].includes(normalized)) return "Completed";
+  if (["TERMINATED", "CANCELLED", "REJECTED"].includes(normalized)) return "Terminated";
+  if (["NEGOTIATING", "NEGOTIATION", "COUNTERED"].includes(normalized)) return "Negotiating";
+  if (["SUBMITTED", "PITCHED", "PROPOSED", "PENDING"].includes(normalized)) return "Pitches sent";
+  return "Leads";
+}
+
+function mapCampaignOrigin(metadata: Record<string, unknown>): Origin {
+  return String(metadata.origin || "").trim().toLowerCase() === "seller-invite" ? "seller-invite" : "creator-pitch";
+}
+
+function mapCampaignHealth(stage: StageId, metadata: Record<string, unknown>): PipelineHealth {
+  const explicit = String(metadata.health || "").trim().toLowerCase();
+  if (explicit === "on-track" || explicit === "at-risk" || explicit === "stalled") {
+    return explicit as PipelineHealth;
   }
-];
+  if (stage === "Negotiating") return "at-risk";
+  if (stage === "Terminated" || stage === "Leads") return "stalled";
+  return "on-track";
+}
+
+function formatActivityLabel(value?: string | null) {
+  if (!value) return "Recently updated";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recently updated";
+  return `Updated · ${date.toLocaleDateString()}`;
+}
+
+function toCampaign(record: CollaborationCampaignRecord): Campaign {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const stage = mapCampaignStage(record.status);
+
+  return {
+    id: record.id,
+    name: String(record.title || "Campaign"),
+    seller: String(record.seller || "Supplier"),
+    stage,
+    origin: mapCampaignOrigin(metadata),
+    estValue: Number(record.budget || 0),
+    currency: String(record.currency || "USD"),
+    type: String((metadata as { type?: unknown }).type || "Campaign"),
+    region: String((metadata as { region?: unknown }).region || "Global"),
+    nextAction: String(
+      (metadata as { nextAction?: unknown }).nextAction || (stage === "Completed" ? "Review performance" : "Open campaign")
+    ),
+    promoCount: Number((metadata as { promoCount?: unknown }).promoCount || 0),
+    liveCount: Number((metadata as { liveCount?: unknown }).liveCount || 0),
+    health: mapCampaignHealth(stage, metadata),
+    lastActivity: formatActivityLabel(record.updatedAt || record.createdAt)
+  };
+}
 
 export type CampaignsBoardPageProps = {
   onChangePage?: (page: string) => void;
@@ -155,6 +113,11 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [isPitchDrawerOpen, setIsPitchDrawerOpen] = useState(false);
   const [pitchRecipient, setPitchRecipient] = useState<Campaign | null>(null);
+  const { data: campaignRecords } = useApiResource({
+    initialData: [] as CollaborationCampaignRecord[],
+    loader: () => creatorApi.campaigns()
+  });
+  const campaigns = useMemo(() => campaignRecords.map(toCampaign), [campaignRecords]);
 
   const openPitchDrawer = (campaign?: Campaign) => {
     setPitchRecipient(campaign || null);
@@ -162,8 +125,8 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
   };
 
   const totalValue = useMemo(() => {
-    return CAMPAIGNS.reduce((sum, c) => sum + c.estValue, 0);
-  }, []);
+    return campaigns.reduce((sum, c) => sum + c.estValue, 0);
+  }, [campaigns]);
 
   const stageSummaries = useMemo(() => {
     const map: Record<StageId, { count: number; value: number }> = {
@@ -174,28 +137,28 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
       Completed: { count: 0, value: 0 },
       Terminated: { count: 0, value: 0 }
     };
-    CAMPAIGNS.forEach((c) => {
+    campaigns.forEach((c) => {
       map[c.stage].count += 1;
       map[c.stage].value += c.estValue;
     });
     return map;
-  }, []);
+  }, [campaigns]);
 
   const originSummaries = useMemo(() => {
     const base = {
       "seller-invite": { count: 0, value: 0 },
       "creator-pitch": { count: 0, value: 0 }
     };
-    CAMPAIGNS.forEach((c) => {
+    campaigns.forEach((c) => {
       base[c.origin].count += 1;
       base[c.origin].value += c.estValue;
     });
     return base;
-  }, []);
+  }, [campaigns]);
 
   const filteredCampaigns = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const result = CAMPAIGNS.filter((c) => {
+    const result = campaigns.filter((c) => {
       if (activeStageFilter !== "All" && c.stage !== activeStageFilter) return false;
       if (q) {
         const inName = c.name.toLowerCase().includes(q);
@@ -215,7 +178,7 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
     });
 
     return result;
-  }, [activeStageFilter, search, sortKey, sortOrder]);
+  }, [activeStageFilter, campaigns, search, sortKey, sortOrder]);
 
   const toggleSort = (key: keyof Campaign) => {
     if (sortKey === key) {

@@ -8,9 +8,10 @@ import React, { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
-import { useNotification } from "../../contexts/NotificationContext";
+import { useApiResource } from "../../hooks/useApiResource";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
+import { creatorApi, type ProposalRecord } from "../../lib/creatorApi";
 
 type ProposalStatus =
   | "Draft"
@@ -40,99 +41,6 @@ type Proposal = {
   lastActivity: string;
   notesShort: string;
 };
-
-const PROPOSALS: Proposal[] = [
-  {
-    id: "P-301",
-    brand: "GlowUp Hub",
-    initials: "GH",
-    campaign: "Autumn Beauty Flash",
-    origin: "from-seller",
-    offerType: "Live + Clips package",
-    category: "Beauty",
-    region: "East Africa",
-    baseFeeMin: 400,
-    baseFeeMax: 600,
-    currency: "USD",
-    commissionPct: 5,
-    estimatedValue: 1200,
-    status: "In negotiation",
-    lastActivity: "Countered terms · 2h ago",
-    notesShort: "Brand proposed 60–90 min live + 3 clips and 5% commission during promo."
-  },
-  {
-    id: "P-302",
-    brand: "GadgetMart Africa",
-    initials: "GA",
-    campaign: "Tech Friday Mega Live",
-    origin: "my-pitch",
-    offerType: "Launch live series (3 episodes)",
-    category: "Tech",
-    region: "Africa / Asia",
-    baseFeeMin: 900,
-    baseFeeMax: 1400,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 1400,
-    status: "New",
-    lastActivity: "Sent to brand · Yesterday",
-    notesShort: "You pitched a 3-episode Tech Friday series with mid-ticket gadgets."
-  },
-  {
-    id: "P-303",
-    brand: "Grace Living Store",
-    initials: "GL",
-    campaign: "Faith & Wellness Morning Dealz",
-    origin: "my-pitch",
-    offerType: "Morning lives + Shoppable Adz",
-    category: "Faith-compatible",
-    region: "Africa",
-    baseFeeMin: 320,
-    baseFeeMax: 480,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 480,
-    status: "Draft",
-    lastActivity: "Draft saved · 1 day ago",
-    notesShort: "Draft proposal – you have not sent this to the brand yet."
-  },
-  {
-    id: "P-304",
-    brand: "ShopNow Foods",
-    initials: "SF",
-    campaign: "ShopNow Groceries – Soft Promo",
-    origin: "from-seller",
-    offerType: "Shoppable Adz",
-    category: "Food",
-    region: "Africa",
-    baseFeeMin: 300,
-    baseFeeMax: 300,
-    currency: "USD",
-    commissionPct: 3,
-    estimatedValue: 450,
-    status: "Accepted",
-    lastActivity: "Accepted · 4 days ago",
-    notesShort: "Accepted: soft groceries promo with flat fee and small commission."
-  },
-  {
-    id: "P-305",
-    brand: "EV Gadget World",
-    initials: "EG",
-    campaign: "EV Accessories Launch",
-    origin: "from-seller",
-    offerType: "Shoppable Adz + Live",
-    category: "EV",
-    region: "Global",
-    baseFeeMin: 350,
-    baseFeeMax: 500,
-    currency: "USD",
-    commissionPct: 4,
-    estimatedValue: 600,
-    status: "Declined",
-    lastActivity: "Declined · last week",
-    notesShort: "You declined due to timing and focus. Could be revisited later."
-  }
-];
 
 const TABS = [
   { id: "all", label: "All" },
@@ -166,40 +74,110 @@ type CategoryFilter = (typeof CATEGORIES)[number];
 const currencyFormat = (value: number): string =>
   value.toLocaleString(undefined, { minimumFractionDigits: 0 });
 
+function proposalInitials(name?: string | null) {
+  return (
+    String(name || "SP")
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "SP"
+  );
+}
+
+function mapProposalStatus(value?: string | null): ProposalStatus {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "DRAFT") return "Draft";
+  if (normalized === "ACCEPTED" || normalized === "APPROVED") return "Accepted";
+  if (normalized === "DECLINED" || normalized === "REJECTED") return "Declined";
+  if (normalized === "EXPIRED") return "Expired";
+  if (normalized === "COUNTERED" || normalized === "NEGOTIATING" || normalized === "IN_NEGOTIATION") return "In negotiation";
+  return "New";
+}
+
+function mapProposalOrigin(metadata: Record<string, unknown>): ProposalOrigin {
+  return String(metadata.origin || "").trim().toLowerCase() === "my-pitch" ? "my-pitch" : "from-seller";
+}
+
+function formatProposalActivity(value?: string | null) {
+  if (!value) return "Recently updated";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return `Updated · ${date.toLocaleDateString()}`;
+}
+
+function toProposal(record: ProposalRecord): Proposal {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const feeMin = Number(
+    (metadata as { baseFeeMin?: unknown }).baseFeeMin ??
+    (metadata as { feeMin?: unknown }).feeMin ??
+    record.amount ??
+    0
+  );
+  const feeMax = Number(
+    (metadata as { baseFeeMax?: unknown }).baseFeeMax ??
+    (metadata as { feeMax?: unknown }).feeMax ??
+    feeMin
+  );
+
+  return {
+    id: record.id,
+    brand: String(record.sellerName || "Supplier"),
+    initials: proposalInitials(record.sellerName),
+    campaign: String(record.campaignTitle || record.title || "Campaign"),
+    origin: mapProposalOrigin(metadata),
+    offerType: String((metadata as { offerType?: unknown }).offerType || "Collaboration offer"),
+    category: String((metadata as { category?: unknown }).category || "General"),
+    region: String((metadata as { region?: unknown }).region || "Global"),
+    baseFeeMin: feeMin,
+    baseFeeMax: feeMax,
+    currency: String(record.currency || "USD"),
+    commissionPct: Number((metadata as { commissionPct?: unknown }).commissionPct || 0),
+    estimatedValue: Number((metadata as { estimatedValue?: unknown }).estimatedValue || record.amount || feeMax || feeMin),
+    status: mapProposalStatus(record.status),
+    lastActivity: formatProposalActivity(record.updatedAt || record.createdAt),
+    notesShort: String(record.summary || (metadata as { notesShort?: unknown }).notesShort || "Open proposal in the inbox to review terms.")
+  };
+}
+
 
 
 // Main page component
 export function ProposalsInboxPage(): JSX.Element {
   const navigate = useNavigate();
-  const [proposals, setProposals] = useState<Proposal[]>(PROPOSALS);
   const [tab, setTab] = useState<TabId>("all");
   const [statusFilter, setStatusFilter] = useState<"All" | ProposalStatus>("All");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
   const [minBudget, setMinBudget] = useState<string>("");
-  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(
-    PROPOSALS[0]?.id ?? null
-  );
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
   const [expandedProposalId, setExpandedProposalId] = useState<string | null>(null);
-  const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
+  const {
+    data: proposalRecords,
+    setData: setProposalRecords,
+    loading
+  } = useApiResource({
+    initialData: [] as ProposalRecord[],
+    loader: () => creatorApi.proposals()
+  });
+  const proposals = useMemo(() => proposalRecords.map(toProposal), [proposalRecords]);
+  const categoryOptions = useMemo(
+    () => ["All", ...Array.from(new Set(proposals.map((proposal) => proposal.category).filter(Boolean)))],
+    [proposals]
+  );
 
   const handleAcceptProposal = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
-      setProposals((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: "Accepted", lastActivity: "Accepted · Just now" } : p))
-      );
+      const updated = await creatorApi.proposalTransition(id, "ACCEPTED");
+      setProposalRecords((prev) => prev.map((proposal) => (proposal.id === id ? updated : proposal)));
     }, { successMessage: "Proposal accepted!" });
   };
 
   const handleDeclineProposal = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
-      setProposals((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: "Declined", lastActivity: "Declined · Just now" } : p))
-      );
+      const updated = await creatorApi.proposalTransition(id, "DECLINED");
+      setProposalRecords((prev) => prev.map((proposal) => (proposal.id === id ? updated : proposal)));
     }, { successMessage: "Proposal declined." });
   };
 
@@ -308,7 +286,7 @@ export function ProposalsInboxPage(): JSX.Element {
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
                   >
-                    {CATEGORIES.map((c) => (
+                    {categoryOptions.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -337,6 +315,7 @@ export function ProposalsInboxPage(): JSX.Element {
                 Showing <span className="text-slate-900 dark:text-slate-100 font-black">{filteredProposals.length}</span> of{" "}
                 <span className="font-bold">{proposals.length}</span> active proposals
               </span>
+              {loading ? <span>Loading…</span> : null}
               <button
                 className="px-4 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hover:border-slate-300 dark:hover:border-slate-600 shadow-sm"
                 onClick={() => {
@@ -762,4 +741,3 @@ function ProposalDetailPanel({ proposal, isInline, onAccept, onDecline, isPendin
     </div>
   );
 }
-

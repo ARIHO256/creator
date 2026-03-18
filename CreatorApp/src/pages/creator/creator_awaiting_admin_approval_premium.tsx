@@ -542,6 +542,10 @@ export default function CreatorAwaitingApprovalPremium() {
         if (typeof approval.reviewNotes === "string" && approval.reviewNotes.trim()) {
           setAdminReason(approval.reviewNotes);
         }
+        if (mapApprovalStatus(approval.status) === "Approved") {
+          push("Approved. Opening your creator workspace.", "success");
+          navigate("/auth", { replace: true });
+        }
       })
       .catch(() => {
         // local fallback remains active
@@ -636,6 +640,7 @@ export default function CreatorAwaitingApprovalPremium() {
       }
       if (nextStatus === "Approved") {
         push("Approved. Creator tools are unlocked.", "success");
+        navigate("/auth", { replace: true });
       } else if (nextStatus === "SendBack") {
         push("Action required. Please review admin feedback.", "error");
       } else {
@@ -816,9 +821,8 @@ export default function CreatorAwaitingApprovalPremium() {
             <Button
               variant="dark"
               onClick={() => {
-                localStorage.setItem("mldz_creator_approval_status", "Approved");
-                push("Account approved for testing. Opening Auth page...", "success");
-                navigate("/auth-redirect");
+                push("Refreshing your account session...", "success");
+                navigate("/auth");
               }}
             >
               Go to Sign In <ArrowRight className="h-4 w-4" />
@@ -1129,7 +1133,7 @@ export default function CreatorAwaitingApprovalPremium() {
               className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors underline decoration-slate-300 dark:decoration-slate-700 underline-offset-4"
               onClick={() => {
                 push("Opening Sign In...", "success");
-                navigate("/auth-redirect");
+                navigate("/auth");
               }}
             >
               Sign In

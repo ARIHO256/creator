@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { PageHeader } from "../../components/PageHeader";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type FinancePayoutRecord } from "../../lib/creatorApi";
 // import { useTheme } from "../../contexts/ThemeContext";
 
 type PayoutStatus = "Paid" | "Pending" | "Scheduled" | "Failed";
@@ -15,21 +17,67 @@ type Payout = {
     recipient: string;
 };
 
-const MOCK_PAYOUTS: Payout[] = [
-    { id: "1", date: "2026-01-15", amount: 1250.00, currency: "USD", method: "Bank Transfer", status: "Paid", reference: "TXN-882190", recipient: "Ronald Isabirye" },
-    { id: "2", date: "2026-01-10", amount: 450.50, currency: "USD", method: "Mobile Money", status: "Paid", reference: "TXN-771239", recipient: "+256 770 000 000" },
-    { id: "3", date: "2025-12-28", amount: 2100.00, currency: "USD", method: "Bank Transfer", status: "Paid", reference: "TXN-661002", recipient: "Ronald Isabirye" },
-    { id: "4", date: "2025-12-15", amount: 890.00, currency: "USD", method: "PayPal", status: "Paid", reference: "TXN-551998", recipient: "ronald@example.com" },
-    { id: "5", date: "2025-11-30", amount: 1500.00, currency: "USD", method: "Bank Transfer", status: "Paid", reference: "TXN-441887", recipient: "Ronald Isabirye" },
-    { id: "6", date: "2026-01-20", amount: 620.75, currency: "USD", method: "Mobile Money", status: "Pending", reference: "TXN-991200", recipient: "+256 770 000 000" },
-];
+function mapPayoutStatus(value?: string | null): PayoutStatus {
+    const normalized = String(value || "").trim().toUpperCase();
+    if (normalized === "PAID" || normalized === "AVAILABLE") return "Paid";
+    if (normalized === "SCHEDULED") return "Scheduled";
+    if (normalized === "FAILED" || normalized === "REJECTED" || normalized === "CANCELLED") return "Failed";
+    return "Pending";
+}
+
+function mapPayoutMethod(record: FinancePayoutRecord) {
+    const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+    return String(
+        (metadata as { methodLabel?: unknown }).methodLabel ||
+        (metadata as { method?: unknown }).method ||
+        "Payout"
+    );
+}
+
+function mapPayoutRecipient(record: FinancePayoutRecord) {
+    const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+    return String(
+        (metadata as { recipient?: unknown }).recipient ||
+        (metadata as { destination?: unknown }).destination ||
+        (metadata as { note?: unknown }).note ||
+        "Saved payout method"
+    );
+}
+
+function mapPayoutReference(record: FinancePayoutRecord) {
+    const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+    return String(
+        (metadata as { reference?: unknown }).reference ||
+        (metadata as { transactionReference?: unknown }).transactionReference ||
+        record.id
+    );
+}
+
+function toPayoutRecord(record: FinancePayoutRecord): Payout {
+    return {
+        id: record.id,
+        date: String(record.createdAt || ""),
+        amount: Number(record.amount || 0),
+        currency: String(record.currency || "USD"),
+        method: mapPayoutMethod(record),
+        status: mapPayoutStatus(record.status),
+        reference: mapPayoutReference(record),
+        recipient: mapPayoutRecipient(record)
+    };
+}
 
 export const PayoutHistoryPage: React.FC = () => {
     // const { theme } = useTheme();
     const [searchTerm, setSearchTerm] = useState("");
     const [statusFilter, setStatusFilter] = useState<PayoutStatus | "All">("All");
+    const { data: payoutRecords, loading } = useApiResource({
+        initialData: [] as FinancePayoutRecord[],
+        loader: () => creatorApi.payouts()
+    });
 
-    const filteredPayouts = MOCK_PAYOUTS.filter(p => {
+    const payouts = useMemo(() => payoutRecords.map(toPayoutRecord), [payoutRecords]);
+
+    const filteredPayouts = payouts.filter(p => {
         const matchesSearch = p.reference.toLowerCase().includes(searchTerm.toLowerCase()) ||
             p.method.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesStatus = statusFilter === "All" || p.status === statusFilter;
@@ -135,9 +183,28 @@ export const PayoutHistoryPage: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-800/50">
+                                    {!loading && filteredPayouts.length === 0 && (
+                                        <tr>
+                                            <td colSpan={6} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <span className="text-3xl">🏜️</span>
+                                                    <span className="text-sm">No payouts found matching your criteria.</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                    {loading && (
+                                        <tr>
+                                            <td colSpan={6} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
+                                                Loading payout history...
+                                            </td>
+                                        </tr>
+                                    )}
                                     {filteredPayouts.map((p) => (
                                         <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                                            <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 font-medium">{p.date}</td>
+                                            <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300 font-medium">
+                                                {p.date ? new Date(p.date).toLocaleDateString() : "—"}
+                                            </td>
                                             <td className="px-6 py-4 text-sm font-semibold text-[#f77f00]">
                                                 {p.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {p.currency}
                                             </td>
@@ -151,16 +218,6 @@ export const PayoutHistoryPage: React.FC = () => {
                                             <td className="px-6 py-4 text-sm font-mono text-slate-400 dark:text-slate-500">{p.reference}</td>
                                         </tr>
                                     ))}
-                                    {filteredPayouts.length === 0 && (
-                                        <tr>
-                                            <td colSpan={6} className="px-6 py-12 text-center text-slate-500 dark:text-slate-400">
-                                                <div className="flex flex-col items-center gap-2">
-                                                    <span className="text-3xl">🏜️</span>
-                                                    <span className="text-sm">No payouts found matching your criteria.</span>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    )}
                                 </tbody>
                             </table>
                         </div>

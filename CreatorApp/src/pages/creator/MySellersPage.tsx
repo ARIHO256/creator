@@ -9,6 +9,8 @@ import React, { useState, useMemo } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
 import { useNavigate } from "react-router-dom";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type PublicSellerRecord } from "../../lib/creatorApi";
 
 // Relationship reflects current state of collaboration with a seller that has
 // already accepted at least one collab in the past.
@@ -19,6 +21,7 @@ type Relationship = "Active collab" | "Past collab";
 
 type MySeller = {
   id: number;
+  apiId: string;
   name: string;
   initials: string;
   tagline: string;
@@ -41,77 +44,56 @@ type MySeller = {
   favourite: boolean;
 };
 
-const INITIAL_MY_SELLERS: MySeller[] = [
-  {
-    id: 1,
-    name: "GlowUp Hub",
-    initials: "GH",
-    tagline: "Beauty & skincare for glowing routines.",
-    categories: ["Beauty", "Skincare"],
-    relationship: "Active collab",
-    lifetimeRevenue: 4800,
-    currentValue: 1400,
-    avgConversion: 4.8,
-    campaignsCount: 4,
-    lastCampaign: "Autumn Beauty Flash",
-    lastResult: "500 units sold in 45 mins",
-    openProposals: 1,
-    activeContracts: 1,
-    rating: 4.8,
-    trustBadges: ["Top Brand", "Fast payouts"],
-    primaryContact: "Mary – Brand manager",
-    nextLive: "Today · 18:30",
-    nextAction: "Prep clip for tonight live",
-    following: true,
-    favourite: true
-  },
-  {
-    id: 2,
-    name: "GadgetMart Africa",
-    initials: "GA",
-    tagline: "Everyday gadgets with an EV twist.",
-    categories: ["Tech", "Gadgets"],
-    relationship: "Active collab",
-    lifetimeRevenue: 3900,
-    currentValue: 2100,
-    avgConversion: 4.2,
-    campaignsCount: 3,
-    lastCampaign: "Tech Friday Mega Live",
-    lastResult: "Bundle upsells performed best",
-    openProposals: 0,
-    activeContracts: 2,
-    rating: 4.6,
-    trustBadges: ["Verified"],
-    primaryContact: "Derrick – Growth lead",
-    nextLive: "Fri · 20:00",
-    nextAction: "Review Q4 series terms",
-    following: true,
-    favourite: false
-  },
-  {
-    id: 3,
-    name: "ShopNow Foods",
-    initials: "SF",
-    tagline: "Groceries & pantry delivered same day.",
-    categories: ["Food", "Groceries"],
-    relationship: "Past collab",
-    lifetimeRevenue: 900,
-    currentValue: 0,
-    avgConversion: 2.8,
-    campaignsCount: 2,
-    lastCampaign: "ShopNow Groceries – Soft Promo",
-    lastResult: "Steady orders across week",
-    openProposals: 0,
-    activeContracts: 0,
-    rating: 4,
-    trustBadges: [],
-    primaryContact: "Lena – Marketing",
-    nextLive: "Not scheduled",
-    nextAction: "Optional: check in for festive season",
-    following: false,
-    favourite: false
-  }
-];
+function mySellerNumericId(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits) return Number(digits.slice(-9));
+  return Array.from(value).reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
+}
+
+function mySellerInitials(name?: string | null) {
+  return (
+    String(name || "SP")
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "SP"
+  );
+}
+
+function toMySeller(record: PublicSellerRecord): MySeller {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const categories = Array.isArray(record.categories) && record.categories.length > 0
+    ? record.categories
+    : [String(record.category || "General")];
+  const activeContracts = Number((metadata as { activeContracts?: unknown }).activeContracts || 0);
+
+  return {
+    id: mySellerNumericId(String(record.id)),
+    apiId: String(record.id),
+    name: String(record.displayName || record.name || "Supplier"),
+    initials: mySellerInitials(record.displayName || record.name),
+    tagline: String(record.description || "Supplier profile"),
+    categories,
+    relationship: activeContracts > 0 ? "Active collab" : "Past collab",
+    lifetimeRevenue: Number((metadata as { lifetimeRevenue?: unknown }).lifetimeRevenue || 0),
+    currentValue: Number((metadata as { currentValue?: unknown }).currentValue || 0),
+    avgConversion: Number((metadata as { avgConversion?: unknown }).avgConversion || 0),
+    campaignsCount: Number((metadata as { campaignsCount?: unknown }).campaignsCount || 0),
+    lastCampaign: String((metadata as { lastCampaign?: unknown }).lastCampaign || "Campaign"),
+    lastResult: String((metadata as { lastResult?: unknown }).lastResult || "No campaign summary yet"),
+    openProposals: Number((metadata as { openProposals?: unknown }).openProposals || 0),
+    activeContracts,
+    rating: Number(record.rating || 0),
+    trustBadges: Array.isArray((metadata as { trustBadges?: unknown[] }).trustBadges) ? ((metadata as { trustBadges?: unknown[] }).trustBadges as unknown[]).map((item) => String(item)) : [],
+    primaryContact: String((metadata as { primaryContact?: unknown }).primaryContact || "Brand team"),
+    nextLive: String((metadata as { nextLive?: unknown }).nextLive || "Not scheduled"),
+    nextAction: String((metadata as { nextAction?: unknown }).nextAction || "Review supplier workspace"),
+    following: Boolean((metadata as { following?: unknown }).following),
+    favourite: Boolean((metadata as { favourite?: unknown }).favourite)
+  };
+}
 
 type MySellersPageProps = {
   onChangePage?: (page: string) => void;
@@ -120,24 +102,30 @@ type MySellersPageProps = {
 export function MySellersPage({ onChangePage }: MySellersPageProps) {
   // const { theme } = useTheme();
   // const navigate = useNavigate();
-  const [mySellers, setMySellers] = useState<MySeller[]>(INITIAL_MY_SELLERS);
+  const { data: mySellerRecords } = useApiResource({
+    initialData: [] as PublicSellerRecord[],
+    loader: () => creatorApi.mySellers()
+  });
+  const [mySellers, setMySellers] = useState<MySeller[]>([]);
   const [search, setSearch] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState<"All" | Relationship>("All");
   const [viewTab, setViewTab] = useState<"all" | "active" | "past">("all");
-  const [selectedSellerId, setSelectedSellerId] = useState<number | null>(
-    INITIAL_MY_SELLERS[0]?.id ?? null
-  );
+  const [selectedSellerId, setSelectedSellerId] = useState<number | null>(null);
   const [expandedSellerId, setExpandedSellerId] = useState<number | null>(null);
   const [isPitchDrawerOpen, setIsPitchDrawerOpen] = useState(false);
   const [pitchRecipient, setPitchRecipient] = useState<MySeller | null>(null);
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    setMySellers(mySellerRecords.map(toMySeller));
+  }, [mySellerRecords]);
 
   const openPitchDrawer = (seller?: MySeller) => {
     if (seller) {
       setPitchRecipient(seller);
     } else {
       // If global "Pitch Suppliers" is clicked, maybe pick selected or default
-      setPitchRecipient(selectedSeller || INITIAL_MY_SELLERS[0]);
+      setPitchRecipient(selectedSeller || mySellers[0] || null);
     }
     setIsPitchDrawerOpen(true);
   };
@@ -179,14 +167,14 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
 
   const toggleFollow = (id: number) => {
     setMySellers((prev) =>
-      prev.map((s) =>
-        s.id === id
-          ? {
-            ...s,
-            following: !s.following
-          }
-          : s
-      )
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        void creatorApi.followSeller(s.apiId, !s.following);
+        return {
+          ...s,
+          following: !s.following
+        };
+      })
     );
   };
 

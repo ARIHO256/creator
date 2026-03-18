@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { useApiResource } from '../../hooks/useApiResource';
+import { creatorApi } from '../../lib/creatorApi';
 import { CircularProgress } from '@mui/material';
 import {
   Activity,
@@ -153,6 +155,19 @@ type PreflightItem = {
   status: 'Pass' | 'Fail' | 'Warn';
   detail?: string;
   fix?: string;
+};
+
+type StreamingPayload = {
+  isPro?: boolean;
+  sessionStatus?: SessionStatus;
+  profile?: OutputProfile;
+  degradeMode?: DegradeMode;
+  recordMaster?: boolean;
+  autoReplay?: boolean;
+  autoHighlights?: boolean;
+  downloadMasterAllowed?: boolean;
+  estimatedUploadMbps?: number;
+  destinations?: Destination[];
 };
 
 function Badge({
@@ -401,6 +416,10 @@ const DEFAULT_TITLE = 'GlowUp Hub: Autumn Beauty Flash Live';
 export default function StreamToPlatformsPage() {
   const { showSuccess, showError, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
+  const { data: payload } = useApiResource({
+    initialData: {} as StreamingPayload,
+    loader: () => creatorApi.liveTool("streaming") as Promise<StreamingPayload>,
+  });
   const [isPro, setIsPro] = useState(true);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('Draft');
   const [selectedDestId, setSelectedDestId] = useState<string | null>(null);
@@ -427,136 +446,30 @@ export default function StreamToPlatformsPage() {
 
   const [estimatedUploadMbps, setEstimatedUploadMbps] = useState(12.4);
 
-  const [destinations, setDestinations] = useState<Destination[]>(() => {
-    const base: Destination[] = [
-      {
-        id: 'yt',
-        name: 'YouTube Live',
-        kind: 'Video Live',
-        status: 'Connected',
-        enabled: true,
-        accountLabel: 'GlowUp Hub Official',
-        supportsStreamKey: true,
-        supportsPrivacy: true,
-        supportsCategory: true,
-        supportsTags: true,
-        supportsDelay: true,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        settings: {
-          title: DEFAULT_TITLE,
-          description: 'Serum benefits, fit checks, and instant buy links.',
-          privacy: 'Public',
-          category: 'Beauty',
-          tags: ['beauty', 'serum', 'flash'],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 2, outBitrateKbps: 4300 },
-      },
-      {
-        id: 'fb',
-        name: 'Facebook Live',
-        kind: 'Community Live',
-        status: 'Needs re-auth',
-        enabled: false,
-        accountLabel: 'GlowUp Community',
-        supportsStreamKey: true,
-        supportsPrivacy: true,
-        supportsCategory: false,
-        supportsTags: false,
-        supportsDelay: false,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        errorTitle: 'Your session expired',
-        errorNext: 'Re-authenticate the connected account to restore posting permissions.',
-        settings: {
-          title: DEFAULT_TITLE,
-          description: 'Beauty Flash live. Products pinned for instant checkout.',
-          privacy: 'Public',
-          tags: ['live'],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 },
-      },
-      {
-        id: 'tt',
-        name: 'TikTok Live',
-        kind: 'Video Live',
-        status: 'Stream key missing',
-        enabled: false,
-        accountLabel: 'Creator account',
-        supportsStreamKey: true,
-        supportsPrivacy: false,
-        supportsCategory: false,
-        supportsTags: false,
-        supportsDelay: true,
-        supportsAutoReconnect: true,
-        proAdvanced: true,
-        errorTitle: 'Stream key required',
-        errorNext: 'Add a stream key or connect via OAuth if supported in your region.',
-        settings: {
-          title: DEFAULT_TITLE,
-          description: 'Live now. Limited stock.',
-          tags: ['tiktok'],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 },
-      },
-      {
-        id: 'ig',
-        name: 'Instagram Live',
-        kind: 'Video Live',
-        status: 'Connected',
-        enabled: true,
-        accountLabel: 'Creator Studio',
-        supportsStreamKey: false,
-        supportsPrivacy: false,
-        supportsCategory: false,
-        supportsTags: false,
-        supportsDelay: false,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        settings: {
-          title: DEFAULT_TITLE,
-          description: 'Quick demo + price breakdown + instant buy.',
-          tags: ['beauty', 'live'],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 1, reconnects: 0, lastAckSec: 3, outBitrateKbps: 3800 },
-      },
-      {
-        id: 'tw',
-        name: 'Twitch',
-        kind: 'Video Live',
-        status: 'Blocked',
-        enabled: false,
-        accountLabel: 'Channel under review',
-        supportsStreamKey: true,
-        supportsPrivacy: false,
-        supportsCategory: true,
-        supportsTags: false,
-        supportsDelay: true,
-        supportsAutoReconnect: true,
-        proAdvanced: false,
-        errorTitle: 'Destination blocked',
-        errorNext: 'Account flagged by platform policy. Contact support or switch destination.',
-        settings: {
-          title: DEFAULT_TITLE,
-          description: 'Live commerce stream.',
-          category: 'Just Chatting',
-          tags: ['commerce'],
-          delaySec: 0,
-          autoReconnect: true,
-        },
-        health: { framesDropped: 0, reconnects: 0, lastAckSec: 0, outBitrateKbps: 0 },
-      },
-    ];
-    return base;
-  });
+  const [destinations, setDestinations] = useState<Destination[]>([]);
+  useEffect(() => {
+    if (!Object.keys(payload).length) return;
+    setIsPro(payload.isPro ?? true);
+    setSessionStatus(payload.sessionStatus || 'Draft');
+    setProfile(payload.profile || {
+      orientation: 'Auto',
+      quality: 'High',
+      advancedOpen: false,
+      resolution: '1080p',
+      bitrateKbps: 4500,
+      audio: 'Stereo',
+      gainDb: 0,
+      latency: 'Low',
+      adaptiveBitrate: true,
+    });
+    setDegradeMode(payload.degradeMode || 'Reduce quality, keep all destinations');
+    setRecordMaster(payload.recordMaster ?? true);
+    setAutoReplay(payload.autoReplay ?? true);
+    setAutoHighlights(payload.autoHighlights ?? false);
+    setDownloadMasterAllowed(payload.downloadMasterAllowed ?? false);
+    setEstimatedUploadMbps(typeof payload.estimatedUploadMbps === 'number' ? payload.estimatedUploadMbps : 12.4);
+    setDestinations(payload.destinations || []);
+  }, [payload]);
 
   // Derived
   const enabledDests = useMemo(() => destinations.filter((d) => d.enabled), [destinations]);
@@ -688,6 +601,18 @@ export default function StreamToPlatformsPage() {
       setDestinations((prev) =>
         prev.map((d) => (d.enabled && (d.status === 'Connected' || d.status === 'Live') ? { ...d, status: 'Live' } : d))
       );
+      await creatorApi.patchLiveTool("streaming", {
+        isPro,
+        sessionStatus: 'Live',
+        profile,
+        degradeMode,
+        recordMaster,
+        autoReplay,
+        autoHighlights,
+        downloadMasterAllowed,
+        estimatedUploadMbps,
+        destinations: destinations.map((d) => (d.enabled && (d.status === 'Connected' || d.status === 'Live') ? { ...d, status: 'Live' } : d)),
+      });
     }, {
       successMessage: 'You are live',
       delay: 2000
@@ -1669,7 +1594,20 @@ export default function StreamToPlatformsPage() {
                     <div className="mt-6 flex flex-wrap gap-2">
                       <button
                         onClick={() => {
-                          showSuccess(`Saved advanced settings for ${selectedDest.name}`);
+                          void creatorApi.patchLiveTool("streaming", {
+                            isPro,
+                            sessionStatus,
+                            profile,
+                            degradeMode,
+                            recordMaster,
+                            autoReplay,
+                            autoHighlights,
+                            downloadMasterAllowed,
+                            estimatedUploadMbps,
+                            destinations,
+                          }).then(() => {
+                            showSuccess(`Saved advanced settings for ${selectedDest.name}`);
+                          });
                           setAdvancedOpen(false);
                         }}
                         className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-2xl bg-white dark:bg-slate-900 px-4 text-sm font-bold text-slate-900 dark:text-slate-50 hover:brightness-95 transition active:scale-[0.98] shadow-md"

@@ -982,8 +982,8 @@ function CreatorChecklist({ onNav }: { onNav: (p: string) => void }) {
           </div>
         ))}
       </div>
-      <button className="mt-6 w-full px-4 py-3 rounded-2xl bg-[#f77f00] text-white font-semibold hover:bg-[#e26f00] transition-all active:scale-[0.98] active:opacity-90" onClick={() => onNav("/auth-redirect")}>Start onboarding</button>
-      <div className="mt-3 text-[12px] text-slate-500 dark:text-slate-400">Already a creator? <button className="text-[#f77f00] hover:underline" onClick={() => onNav("/auth-redirect")}>Sign in</button></div>
+      <button className="mt-6 w-full px-4 py-3 rounded-2xl bg-[#f77f00] text-white font-semibold hover:bg-[#e26f00] transition-all active:scale-[0.98] active:opacity-90" onClick={() => onNav("/auth-redirect?mode=register")}>Start onboarding</button>
+      <div className="mt-3 text-[12px] text-slate-500 dark:text-slate-400">Already a creator? <button className="text-[#f77f00] hover:underline" onClick={() => onNav("/auth-redirect?mode=login")}>Sign in</button></div>
     </div>
   );
 }
@@ -997,13 +997,19 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
   const [mobileMenu, setMobileMenu] = useState(false);
 
   const handleNav = (path: string) => {
-    // All sign-in and join actions route through the auth page
+    // Keep guest users on the auth gate, but preserve whether they chose sign-in or registration.
     if (IS_EVZONE_ACCOUNTS_CONNECTED) {
       window.location.href = `https://accounts.evzone.app?target=${encodeURIComponent(path)}`;
       return;
     }
-    // INTERIM: Route to the auth redirect notice page so users go through
-    // the proper sign-in / sign-up flow instead of being auto-approved.
+    if (path.startsWith("/auth-redirect")) {
+      navigate(path);
+      return;
+    }
+    if (path === "/onboarding") {
+      navigate("/auth-redirect?mode=register");
+      return;
+    }
     navigate("/auth-redirect");
   };
 
@@ -1072,10 +1078,10 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
             >
               {theme === "light" ? "🌙" : "☀️"}
             </button>
-            <button className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold transition-all active:scale-[0.98] active:opacity-80" onClick={() => handleNav("/auth-redirect")}>
+            <button className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold transition-all active:scale-[0.98] active:opacity-80" onClick={() => handleNav("/auth-redirect?mode=login")}>
               Sign in <ArrowRight className="h-4 w-4" />
             </button>
-            <button className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-white font-semibold transition-all hover:opacity-90 active:scale-[0.98] active:opacity-80" style={{ background: ORANGE }} onClick={() => handleNav("/auth-redirect")}>
+            <button className="hidden md:inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-white font-semibold transition-all hover:opacity-90 active:scale-[0.98] active:opacity-80" style={{ background: ORANGE }} onClick={() => handleNav("/auth-redirect?mode=register")}>
               Join as a Creator <Sparkles className="h-4 w-4" />
             </button>
 
@@ -1094,8 +1100,8 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
                   {n.label}
                 </button>
               ))}
-              <button className="col-span-1 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 font-semibold text-slate-900 dark:text-slate-100 transition-all active:scale-[0.98] active:opacity-80" onClick={() => handleNav("/auth-redirect")}>Sign in</button>
-              <button className="col-span-1 px-4 py-3 rounded-2xl text-white font-semibold transition-all active:scale-[0.98] active:opacity-80" style={{ background: ORANGE }} onClick={() => handleNav("/auth-redirect")}>Join as a Creator</button>
+              <button className="col-span-1 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 font-semibold text-slate-900 dark:text-slate-100 transition-all active:scale-[0.98] active:opacity-80" onClick={() => handleNav("/auth-redirect?mode=login")}>Sign in</button>
+              <button className="col-span-1 px-4 py-3 rounded-2xl text-white font-semibold transition-all active:scale-[0.98] active:opacity-80" style={{ background: ORANGE }} onClick={() => handleNav("/auth-redirect?mode=register")}>Join as a Creator</button>
             </div>
           </div>
         ) : null}
@@ -1125,7 +1131,7 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
               </p>
 
               <div className="mt-5 flex flex-col sm:flex-row gap-3">
-                <button className="px-5 py-3 rounded-2xl text-white font-semibold inline-flex items-center justify-center gap-2 hover:bg-[#e26f00] transition-all active:scale-[0.98] active:opacity-90" style={{ background: ORANGE }} onClick={() => handleNav("/auth-redirect")}>
+                <button className="px-5 py-3 rounded-2xl text-white font-semibold inline-flex items-center justify-center gap-2 hover:bg-[#e26f00] transition-all active:scale-[0.98] active:opacity-90" style={{ background: ORANGE }} onClick={() => handleNav("/auth-redirect?mode=register")}>
                   Join as a Creator <ArrowRight className="h-4 w-4" />
                 </button>
                 <button className="px-5 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 font-semibold inline-flex items-center justify-center gap-2 text-slate-900 dark:text-slate-100 transition-all active:scale-[0.98] active:bg-slate-100 dark:active:bg-slate-700" onClick={() => scrollToId("studio")}>

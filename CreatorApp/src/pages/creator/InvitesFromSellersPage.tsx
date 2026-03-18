@@ -7,9 +7,10 @@ import React, { useState, useMemo } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { PitchDrawer } from "../../components/PitchDrawer";
 import { useNavigate } from "react-router-dom";
-import { useNotification } from "../../contexts/NotificationContext";
+import { useApiResource } from "../../hooks/useApiResource";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
+import { creatorApi, type InviteRecord } from "../../lib/creatorApi";
 
 type InviteStatus = "New" | "In discussion" | "Accepted" | "Declined" | "Expired";
 
@@ -37,97 +38,6 @@ type Invite = {
   logoUrl?: string;
 };
 
-const INVITES: Invite[] = [
-  {
-    id: "INV-201",
-    brand: "GlowUp Hub",
-    initials: "GH",
-    campaign: "Autumn Beauty Flash",
-    inviteType: "Live + Shoppable Adz",
-    category: "Beauty",
-    region: "East Africa",
-    baseFee: 400,
-    currency: "USD",
-    commissionPct: 5,
-    estimatedValue: 820,
-    status: "New",
-    daysAgo: 0,
-    expiresIn: "3 days",
-    fitScore: 92,
-    fitReason: "You convert 3.1× platform average in Beauty & Skincare.",
-    messageShort: "We'd love you to host a 60 min Beauty Flash live focusing on the new serum.",
-    lastActivity: "New invite · 2h ago",
-    supplierDescription: "GlowUp Hub is a leading beauty marketplace connecting premium skincare brands with top-tier African creators.",
-    supplierRating: 4.8
-  },
-  {
-    id: "INV-202",
-    brand: "GadgetMart Africa",
-    initials: "GA",
-    campaign: "Tech Friday Mega Live",
-    inviteType: "Live series (3 episodes)",
-    category: "Tech",
-    region: "Africa / Asia",
-    baseFee: 1200,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 1200,
-    status: "In discussion",
-    daysAgo: 1,
-    expiresIn: "5 days",
-    fitScore: 86,
-    fitReason: "Strong Tech Friday performance with mid-ticket gadgets.",
-    messageShort: "Looking for a host for our Q4 Tech Friday series.",
-    lastActivity: "Countered terms · Yesterday",
-    supplierDescription: "Specializing in electronic retail across the continent, GadgetMart brings the latest tech to African consumers.",
-    supplierRating: 4.5
-  },
-  {
-    id: "INV-203",
-    brand: "Grace Living Store",
-    initials: "GL",
-    campaign: "Faith & Wellness Morning Dealz",
-    inviteType: "Morning lives",
-    category: "Faith-compatible",
-    region: "Africa",
-    baseFee: 320,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 320,
-    status: "Accepted",
-    daysAgo: 3,
-    expiresIn: "Starts next week",
-    fitScore: 88,
-    fitReason: "High retention in Faith-compatible sessions.",
-    messageShort: "Thank you for accepting – let's finalise dates and deliverables.",
-    lastActivity: "Accepted · 3 days ago",
-    supplierDescription: "Curated wellness and lifestyle products that align with faith-based values and holistic living.",
-    supplierRating: 4.9
-  },
-  {
-    id: "INV-204",
-    brand: "EV Gadget World",
-    initials: "EG",
-    campaign: "EV Accessories Launch",
-    inviteType: "Shoppable Adz + Live",
-    category: "EV",
-    region: "Global",
-    baseFee: 350,
-    currency: "USD",
-    commissionPct: 4,
-    estimatedValue: 600,
-    status: "Declined",
-    daysAgo: 7,
-    expiresIn: "Expired",
-    fitScore: 70,
-    fitReason: "Interesting EV niche, but off your current focus.",
-    messageShort: "Thanks for reviewing – we may revisit next quarter.",
-    lastActivity: "Declined · 7 days ago",
-    supplierDescription: "Pioneering the electric vehicle accessory market with high-performance chargers and interior tech.",
-    supplierRating: 4.2
-  }
-];
-
 const TABS = [
   { id: "all", label: "All" },
   { id: "new", label: "New" },
@@ -153,24 +63,114 @@ type CategoryFilter = (typeof CATEGORIES)[number];
 const currencyFormat = (value: number): string =>
   value.toLocaleString(undefined, { minimumFractionDigits: 0 });
 
+function sellerInitials(name?: string | null, fallback?: string | null) {
+  if (fallback && fallback.trim()) return fallback.trim().slice(0, 3).toUpperCase();
+  return (
+    String(name || "SP")
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "SP"
+  );
+}
+
+function mapInviteStatus(value?: string | null): InviteStatus {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "ACCEPTED") return "Accepted";
+  if (normalized === "DECLINED" || normalized === "REJECTED") return "Declined";
+  if (normalized === "EXPIRED") return "Expired";
+  if (normalized === "NEGOTIATING" || normalized === "COUNTERED" || normalized === "IN_DISCUSSION") return "In discussion";
+  return "New";
+}
+
+function relativeDays(value?: string) {
+  if (!value) return 0;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 0;
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / (24 * 60 * 60 * 1000)));
+}
+
+function formatLastActivity(value?: string | null) {
+  if (!value) return "Recently updated";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return `Updated · ${date.toLocaleDateString()}`;
+}
+
+function formatExpires(metadata: Record<string, unknown>, status: InviteStatus) {
+  if (typeof metadata.expiresIn === "string" && metadata.expiresIn.trim()) return metadata.expiresIn;
+  if (typeof metadata.expiresAt === "string" && metadata.expiresAt.trim()) {
+    const date = new Date(metadata.expiresAt);
+    if (!Number.isNaN(date.getTime())) {
+      const days = Math.ceil((date.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+      if (days <= 0) return "Expired";
+      if (days === 1) return "1 day";
+      return `${days} days`;
+    }
+  }
+  if (status === "Accepted") return "Accepted";
+  if (status === "Declined" || status === "Expired") return "Expired";
+  return "Open";
+}
+
+function toInvite(record: InviteRecord): Invite {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const status = mapInviteStatus(record.status);
+
+  return {
+    id: record.id,
+    brand: String(record.seller || record.sender || "Supplier"),
+    initials: sellerInitials(record.seller, record.sellerInitials),
+    campaign: String(record.campaign || record.title || "Campaign"),
+    inviteType: String(record.type || (metadata as { inviteType?: unknown }).inviteType || "Collaboration"),
+    category: String(record.category || (metadata as { category?: unknown }).category || "General"),
+    region: String(record.region || (metadata as { region?: unknown }).region || "Global"),
+    baseFee: Number(record.baseFee || 0),
+    currency: String(record.currency || "USD"),
+    commissionPct: Number(record.commissionPct || 0),
+    estimatedValue: Number(record.estimatedValue || record.baseFee || 0),
+    status,
+    daysAgo: relativeDays(record.createdAt),
+    expiresIn: formatExpires(metadata, status),
+    fitScore: Number(record.fitScore || 0),
+    fitReason: String(record.fitReason || (metadata as { fitReason?: unknown }).fitReason || "Good match for your audience."),
+    messageShort: String(record.messageShort || record.message || "Review invite details and terms."),
+    lastActivity: formatLastActivity(record.updatedAt || record.createdAt || record.lastActivity),
+    supplierDescription: String(record.supplierDescription || record.message || "Supplier invite details are available in this workspace."),
+    supplierRating: record.supplierRating == null ? undefined : Number(record.supplierRating),
+    logoUrl: typeof (metadata as { logoUrl?: unknown }).logoUrl === "string" ? String((metadata as { logoUrl?: unknown }).logoUrl) : undefined
+  };
+}
+
 
 
 // Main page component
 export function InvitesFromSellersPage() {
 
   const navigate = useNavigate();
-  const [invites, setInvites] = useState<Invite[]>(INVITES); // Initialize from constant, but manageable
   const [tab, setTab] = useState<TabId>("all");
   const [statusFilter, setStatusFilter] = useState<"All" | InviteStatus>("All");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
   const [minBudget, setMinBudget] = useState<string>("");
-  const [selectedInviteId, setSelectedInviteId] = useState<string | null>(
-    INVITES[0]?.id ?? null
-  );
+  const [selectedInviteId, setSelectedInviteId] = useState<string | null>(null);
   const [isPitchDrawerOpen, setIsPitchDrawerOpen] = useState(false);
   const [pitchRecipient, setPitchRecipient] = useState<Invite | null>(null);
-  const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
+  const {
+    data: inviteRecords,
+    setData: setInviteRecords,
+    loading
+  } = useApiResource({
+    initialData: [] as InviteRecord[],
+    loader: () => creatorApi.invites()
+  });
+  const invites = useMemo(() => inviteRecords.map(toInvite), [inviteRecords]);
+  const categoryOptions = useMemo(
+    () => ["All", ...Array.from(new Set(invites.map((invite) => invite.category).filter(Boolean)))],
+    [invites]
+  );
 
   const openPitchDrawer = (invite?: Invite) => {
     setPitchRecipient(invite || null);
@@ -180,21 +180,15 @@ export function InvitesFromSellersPage() {
   // Actions
   const handleAccept = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
-      setInvites((prev) =>
-        prev.map((inv) => (inv.id === id ? { ...inv, status: "Accepted" } : inv))
-      );
+      const updated = await creatorApi.respondInvite(id, "ACCEPTED");
+      setInviteRecords((prev) => prev.map((inv) => (inv.id === id ? updated : inv)));
     }, { successMessage: "Invite accepted! Collaboration started." });
   };
 
   const handleDecline = (id: string) => {
     run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
-      setInvites((prev) =>
-        prev.map((inv) => (inv.id === id ? { ...inv, status: "Declined" } : inv))
-      );
+      const updated = await creatorApi.respondInvite(id, "DECLINED");
+      setInviteRecords((prev) => prev.map((inv) => (inv.id === id ? updated : inv)));
     }, { successMessage: "Invite declined." });
   };
 
@@ -303,7 +297,7 @@ export function InvitesFromSellersPage() {
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value as CategoryFilter)}
                 >
-                  {CATEGORIES.map((c) => (
+                  {categoryOptions.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -326,6 +320,7 @@ export function InvitesFromSellersPage() {
                 Showing <span className="font-semibold dark:font-bold">{filteredInvites.length}</span> of {""}
                 {invites.length} invites
               </span>
+              {loading ? <span>Loading…</span> : null}
               <button
                 className="px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
                 onClick={() => {

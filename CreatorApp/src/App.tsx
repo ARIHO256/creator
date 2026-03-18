@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { CreatorShellLayout } from "./layouts/CreatorShellLayout";
 import CreatorPlatformLanding from "./pages/creator/creator_platform_landing_v_3_4 (2)";
@@ -7,6 +7,8 @@ import { AppThemeProvider } from "./contexts/ThemeContext";
 import { getUserStatus, getLandingPageTarget, hasPermission } from "./utils/accessControl";
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { NotificationProvider } from "./contexts/NotificationContext";
+import { authApi } from "./lib/authApi";
+import { clearAuthSession, getPostAuthPath, persistAuthSession } from "./lib/authSession";
 
 
 // Page Imports
@@ -92,19 +94,32 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 };
 
 const AuthRedirectHandler = () => {
-  const target = getLandingPageTarget("/home");
+  const [targetPath, setTargetPath] = useState<string | null>(null);
 
-  if (target.startsWith("http")) {
-    window.location.href = target;
+  useEffect(() => {
+    const target = getLandingPageTarget("/home");
+
+    if (target.startsWith("http")) {
+      window.location.href = target;
+      return;
+    }
+
+    void authApi.me()
+      .then((session) => {
+        persistAuthSession(session);
+        setTargetPath(getPostAuthPath(session));
+      })
+      .catch(() => {
+        clearAuthSession();
+        setTargetPath("/auth-redirect");
+      });
+  }, []);
+
+  if (!targetPath) {
     return null;
   }
 
-  // Interim flow: Since we are going to a protected route (/home), 
-  // we should ensure the user is "logged in" so they aren't bounced back.
-  localStorage.setItem("creatorPlatformEntered", "true");
-  localStorage.setItem("mldz_creator_approval_status", "Approved");
-
-  return <Navigate to={target} replace />;
+  return <Navigate to={targetPath} replace />;
 };
 
 const App: React.FC = () => {
@@ -112,8 +127,10 @@ const App: React.FC = () => {
   const handleNavigate = (page: string) => navigate(page);
 
   const handleLogout = () => {
-    localStorage.removeItem("creatorPlatformEntered");
-    window.location.href = "/";
+    void authApi.logout().catch(() => undefined).finally(() => {
+      clearAuthSession();
+      window.location.href = "/";
+    });
   };
 
   return (

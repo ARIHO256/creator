@@ -17,6 +17,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type ContractRecord, type TaskRecord } from "../../lib/creatorApi";
 
 const ORANGE = "#f77f00";
 
@@ -102,59 +104,6 @@ const PRIORITY: Array<{ k: Priority; pill: string }> = [
   { k: "Critical", pill: "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-300" },
 ];
 
-/* ----------------------------- Mock Data ----------------------------- */
-
-const CONTRACTS: Contract[] = [
-  {
-    id: "C-101",
-    status: "Active",
-    campaign: "Valentine Glow Week",
-    brand: "GlowUp Hub",
-    supplier: "GlowUp Hub",
-    currency: "UGX",
-    value: 7200000,
-    totalTasks: 6,
-    creator: { name: "Amina K.", handle: "@amina.dealz", avatarUrl: "https://i.pravatar.cc/120?img=7" },
-    deliverables: [
-      { id: 1, label: "Intro clip: unboxing + hook (15s)", done: false, type: "vod" },
-      { id: 2, label: "Story frame: offer announcement", done: false, type: "story" },
-      { id: 3, label: "Live session: serum demo + consult CTA", done: false, type: "live" },
-      { id: 4, label: "Post: recap + link in bio", done: false, type: "post" },
-    ],
-  },
-  {
-    id: "C-102",
-    status: "Active",
-    campaign: "Back-to-Work Essentials",
-    brand: "Urban Supply",
-    supplier: "Urban Supply",
-    currency: "UGX",
-    value: 5400000,
-    totalTasks: 4,
-    creator: { name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
-    deliverables: [
-      { id: 1, label: "VOD: backpack review (30–45s)", done: false, type: "vod" },
-      { id: 2, label: "Story: price/stock urgency", done: false, type: "story" },
-      { id: 3, label: "Post: bundle options", done: false, type: "post" },
-    ],
-  },
-  {
-    id: "C-103",
-    status: "Paused",
-    campaign: "Home Essentials Drop",
-    brand: "HomePro",
-    supplier: "HomePro",
-    currency: "UGX",
-    value: 3900000,
-    totalTasks: 3,
-    creator: { name: "Sade Bello", handle: "@sade.home", avatarUrl: "https://i.pravatar.cc/120?img=21" },
-    deliverables: [
-      { id: 1, label: "VOD: blender highlight (15s)", done: false, type: "vod" },
-      { id: 2, label: "Live: recipe demo", done: false, type: "live" },
-    ],
-  },
-];
-
 /* ----------------------------- Helpers ----------------------------- */
 
 function seedInitials(name: string) {
@@ -227,6 +176,119 @@ function getColumnTasks(columns: ColumnsState, colId: ColumnId) {
 
 function flattenColumns(columns: ColumnsState) {
   return Object.values(columns).flat();
+}
+
+function normalizeTaskType(value?: string | null): TaskType {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "live") return "live";
+  if (normalized === "vod" || normalized === "video") return "vod";
+  if (normalized === "story") return "story";
+  return "post";
+}
+
+function normalizePriority(value?: string | null): Priority {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "critical") return "Critical";
+  if (normalized === "high") return "High";
+  if (normalized === "low") return "Low";
+  return "Normal";
+}
+
+function taskColumnForStatus(value?: string | null): ColumnId {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "IN_PROGRESS") return "in-progress";
+  if (normalized === "SUBMITTED" || normalized === "IN_REVIEW") return "submitted";
+  if (normalized === "APPROVED" || normalized === "DONE" || normalized === "COMPLETED") return "approved";
+  if (normalized === "NEEDS_CHANGES" || normalized === "CHANGES_REQUESTED") return "needs-changes";
+  return "todo";
+}
+
+function toBoardContract(record: ContractRecord): Contract {
+  const deliverables = Array.isArray(record.deliverables)
+    ? record.deliverables.map((item, index) => {
+        const payload = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+        return {
+          id: Number(payload.id || index + 1),
+          label: String(payload.label || payload.title || `Deliverable ${index + 1}`),
+          done: Boolean(payload.done || payload.completed),
+          type: normalizeTaskType(String(payload.type || "post"))
+        };
+      })
+    : [];
+
+  return {
+    id: record.id,
+    status: mapContractStatus(String(record.status || "ACTIVE")),
+    campaign: String(record.campaignName || record.campaign || "Campaign"),
+    brand: String(record.brand || record.sellerName || record.seller || "Supplier"),
+    supplier: String(record.sellerName || record.seller || record.brand || "Supplier"),
+    currency: String(record.currency || "USD"),
+    value: Number(record.value || 0),
+    totalTasks: Number(record.totalTasks || deliverables.length || 0),
+    creator: { name: String(record.creatorName || "Creator"), handle: "@creator", avatarUrl: "" },
+    deliverables
+  };
+}
+
+function mapContractStatus(value?: string | null): Contract["status"] {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "TERMINATED" || normalized === "CANCELLED") return "Terminated";
+  if (normalized === "PAUSED") return "Paused";
+  return "Active";
+}
+
+function formatDueLabel(date?: string | null) {
+  if (!date) return "TBD";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "TBD";
+  const diffDays = Math.ceil((parsed.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Tomorrow";
+  if (diffDays === -1) return "Yesterday";
+  if (diffDays < 0) return `${Math.abs(diffDays)}d overdue`;
+  return `In ${diffDays}d`;
+}
+
+function dueOffset(date?: string | null) {
+  if (!date) return 0;
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  return Math.ceil((parsed.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+}
+
+function toBoardTask(record: TaskRecord): { column: ColumnId; task: Task } {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const contract = record.contract;
+  const supplier =
+    String(
+      (record.campaign && typeof record.campaign === "object" && (record.campaign as { seller?: unknown }).seller) ||
+      contract?.sellerName ||
+      contract?.seller ||
+      contract?.brand ||
+      "Supplier"
+    );
+  const dueDaysFromNow = dueOffset(record.dueAt);
+
+  return {
+    column: taskColumnForStatus(record.status),
+    task: {
+      id: record.id,
+      title: String(record.title || "Task"),
+      campaign: String(contract?.campaignName || contract?.campaign || (metadata as { campaign?: unknown }).campaign || "Campaign"),
+      supplier,
+      supplierInitials: seedInitials(supplier),
+      brand: String(contract?.brand || contract?.sellerName || contract?.seller || supplier),
+      type: normalizeTaskType(String((metadata as { type?: unknown }).type || "post")),
+      priority: normalizePriority(record.priority),
+      dueLabel: formatDueLabel(record.dueAt),
+      dueDaysFromNow,
+      overdue: dueDaysFromNow < 0,
+      earnings: Number((metadata as { earnings?: unknown }).earnings || 0),
+      currency: String(contract?.currency || "USD"),
+      createdAtISO: String(record.createdAt || new Date().toISOString()),
+      linkedContractId: contract?.id || undefined
+    }
+  };
 }
 
 /* ----------------------------- UI atoms ----------------------------- */
@@ -326,8 +388,17 @@ function Toast({ text, onClose }: { text: string | null; onClose: () => void }) 
 export function TaskBoardPage() {
   const navigate = useNavigate();
   const [toast, setToast] = useState<string | null>(null);
+  const { data: contractRecords } = useApiResource({
+    initialData: [] as ContractRecord[],
+    loader: () => creatorApi.contracts()
+  });
+  const { data: taskRecords } = useApiResource({
+    initialData: [] as TaskRecord[],
+    loader: () => creatorApi.tasks()
+  });
+  const contracts = useMemo(() => contractRecords.map(toBoardContract), [contractRecords]);
 
-  // Seed tasks from contracts
+  // Seed tasks from backend tasks
   const seededColumns = useMemo<ColumnsState>(() => {
     const col: ColumnsState = {
       todo: [],
@@ -336,54 +407,18 @@ export function TaskBoardPage() {
       approved: [],
       "needs-changes": [],
     };
-
-    let seed = 1;
-    for (const c of CONTRACTS) {
-      for (const d of c.deliverables) {
-        const due = getDeterministicDue(seed * 7);
-        const dueLabel = due.label;
-        const diffDays = due.days;
-        const priority: Priority =
-          due.days < 0 ? "High" : due.days === 0 ? "Critical" : seed % 4 === 0 ? "Low" : "Normal";
-
-        const t: Task = {
-          id: `T-${c.id}-${d.id}`,
-          title: d.label,
-          campaign: c.campaign,
-          supplier: c.supplier,
-          supplierInitials: seedInitials(c.supplier),
-          brand: c.brand,
-          type: d.type || (seed % 2 === 0 ? "vod" : "post"),
-          priority,
-          dueLabel: dueLabel,
-          dueDaysFromNow: diffDays,
-          overdue: diffDays < 0,
-          earnings: Math.round((c.value / Math.max(1, c.totalTasks)) * (0.7 + (seed % 4) * 0.1)),
-          currency: c.currency,
-          createdAtISO: addDays(new Date(), -((seed * 3) % 6)).toISOString(),
-          linkedContractId: c.id,
-        };
-
-        // Distribute across columns for demo
-        const bucket =
-          seed % 7 === 0
-            ? "approved"
-            : seed % 5 === 0
-              ? "submitted"
-              : seed % 4 === 0
-                ? "in-progress"
-                : seed % 9 === 0
-                  ? "needs-changes"
-                  : "todo";
-
-        col[bucket as ColumnId].push(t);
-        seed += 1;
-      }
-    }
+    taskRecords.forEach((record) => {
+      const mapped = toBoardTask(record);
+      col[mapped.column].push(mapped.task);
+    });
     return col;
-  }, []);
+  }, [taskRecords]);
 
   const [columns, setColumns] = useState<ColumnsState>(seededColumns);
+
+  useEffect(() => {
+    setColumns(seededColumns);
+  }, [seededColumns]);
 
   const taskToColumn = useMemo(() => {
     const map = new Map<string, ColumnId>();
@@ -714,7 +749,7 @@ export function TaskBoardPage() {
       <NewTaskDrawer
         open={newTaskOpen}
         onClose={() => setNewTaskOpen(false)}
-        contracts={CONTRACTS.filter((c) => c.status !== "Terminated")}
+        contracts={contracts.filter((c) => c.status !== "Terminated")}
         existingTasks={allTasksFlat}
         onCreate={addNewTaskToBoard}
         setToast={setToast}

@@ -9,13 +9,17 @@ import { PageHeader } from "../../components/PageHeader";
 import { Tooltip } from "../../components/Tooltip";
 import { PitchForm } from "../../components/PitchForm";
 import { useNotification } from "../../contexts/NotificationContext";
+import { useApiResource } from "../../hooks/useApiResource";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
 import { useLocation } from "react-router-dom";
+import { creatorApi, type OpportunityRecord } from "../../lib/creatorApi";
 
 
 type Campaign = {
   id: number;
+  apiId: string;
+  sellerId: string;
   seller: string;
   sellerInitials: string;
   rating: number;
@@ -50,6 +54,78 @@ type OpportunitiesLocationState = {
   source?: string;
 };
 
+function opportunityInitials(name?: string | null) {
+  return (
+    String(name || "SP")
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "SP"
+  );
+}
+
+function numericIdFromString(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits) return Number(digits.slice(-9));
+  return Array.from(value).reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
+}
+
+function mapMatchScore(value?: unknown) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "high" || normalized === "strong") return "High";
+  if (normalized === "medium" || normalized === "mid") return "Medium";
+  return "Low";
+}
+
+function toCampaign(record: OpportunityRecord): Campaign {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const seller = record.seller && typeof record.seller === "object" ? record.seller : null;
+  const categories = Array.isArray(record.categories) && record.categories.length > 0
+    ? record.categories
+    : Array.isArray(seller?.categories) && seller.categories.length > 0
+      ? seller.categories
+      : [String(record.category || seller?.category || "General")];
+  const budgetMin = Number(record.budgetMin || 0);
+  const budgetMax = Number(record.budgetMax || record.budget || budgetMin || 0);
+  const commission = Number((metadata as { commissionPct?: unknown }).commissionPct || 0);
+  const sellerName = String(seller?.displayName || seller?.name || "Supplier");
+
+  return {
+    id: numericIdFromString(String(record.id)),
+    apiId: String(record.id),
+    sellerId: String(seller?.id || ""),
+    seller: sellerName,
+    sellerInitials: opportunityInitials(sellerName),
+    rating: Number(seller?.rating || 0),
+    category: String(record.category || seller?.category || categories[0] || "General"),
+    categories,
+    region: String(record.region || seller?.region || "Global"),
+    language: String(record.language || seller?.languages?.[0] || "Any"),
+    payBand: `${String(record.currency || "USD")} ${budgetMin.toLocaleString()}–${budgetMax.toLocaleString()}${commission ? ` + ${commission}%` : ""}`,
+    budgetMin,
+    budgetMax,
+    commission,
+    matchScore: mapMatchScore((metadata as { matchScore?: unknown }).matchScore),
+    matchReason: String((metadata as { matchReason?: unknown }).matchReason || "Opportunity aligned to your creator profile."),
+    deliverables: Array.isArray((metadata as { deliverables?: unknown[] }).deliverables)
+      ? ((metadata as { deliverables?: unknown[] }).deliverables as unknown[]).map((item) => String(item))
+      : ["Live"],
+    liveWindow: String((metadata as { liveWindow?: unknown }).liveWindow || "Flexible schedule"),
+    timeline: Array.isArray((metadata as { timeline?: unknown[] }).timeline)
+      ? ((metadata as { timeline?: unknown[] }).timeline as unknown[]).map((item) => String(item))
+      : ["Review brief", "Confirm terms", "Go live"],
+    summary: String(record.description || "Open opportunity available for creator collaboration."),
+    tags: Array.isArray((metadata as { tags?: unknown[] }).tags)
+      ? ((metadata as { tags?: unknown[] }).tags as unknown[]).map((item) => String(item))
+      : categories,
+    supplierType: String(seller?.type || seller?.kind || "Seller").toLowerCase() === "provider" ? "Provider" : "Seller",
+    collaborationStatus: String((metadata as { collaborationStatus?: unknown }).collaborationStatus || "Not invited") as Campaign["collaborationStatus"],
+    opportunityStatus: String(record.status || "OPEN").trim().toUpperCase() === "CLOSED" ? "Closed" : "Open"
+  };
+}
+
 function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBoardPageProps) {
   const { showSuccess, showNotification, showError } = useNotification();
   const { run, isPending } = useAsyncAction();
@@ -79,130 +155,18 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
   const [showBatchPanel, setShowBatchPanel] = useState(false);
   const [followedSellers, setFollowedSellers] = useState<string[]>([]);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-
-  // Sample campaigns
-  const [campaigns, setCampaigns] = useState<Campaign[]>([
-    {
-      id: 1,
-      seller: "GlowUp Hub",
-      sellerInitials: "GH",
-      rating: 4.7,
-      category: "Beauty & Skincare",
-      categories: ["Beauty", "Skincare"],
-      region: "Africa",
-      language: "English",
-      payBand: "$200–$400 + 5%",
-      budgetMin: 200,
-      budgetMax: 400,
-      commission: 5,
-      matchScore: "High",
-      matchReason: "Strong performance in Beauty campaigns (3.1× conv.)",
-      deliverables: ["Live", "VOD", "Posts"],
-      liveWindow: "This Friday · 20:00–21:30",
-      timeline: ["Brief call", "Asset handoff", "Live", "Post clips"],
-      summary: "Launch live for new GlowUp serum line with flash dealz and limited bundlez.",
-      tags: ["Flash dealz", "New launch", "High volume"],
-      supplierType: "Seller",
-      collaborationStatus: "Collaborating",
-      opportunityStatus: "Open"
-    },
-    {
-      id: 2,
-      seller: "GadgetMart Africa",
-      sellerInitials: "GA",
-      rating: 4.5,
-      category: "Tech & Gadgets",
-      categories: ["Tech", "Gadgets"],
-      region: "Africa / Asia",
-      language: "English",
-      payBand: "$600–$900 + 3%",
-      budgetMin: 600,
-      budgetMax: 900,
-      commission: 3,
-      matchScore: "Medium",
-      matchReason: "Your Tech Friday lives perform above platform average.",
-      deliverables: ["Live", "Posts"],
-      liveWindow: "Next week · 2-part Tech Friday series",
-      timeline: ["Script prep", "Series 1", "Series 2"],
-      summary: "Two-part Tech Friday series focusing on EV-friendly gadgets and accessories.",
-      tags: ["Series", "EV gadgets", "Q&A heavy"],
-      supplierType: "Seller",
-      collaborationStatus: "Not invited",
-      opportunityStatus: "Open"
-    },
-    {
-      id: 3,
-      seller: "Grace Living Store",
-      sellerInitials: "GL",
-      rating: 4.9,
-      category: "Faith-compatible wellness",
-      categories: ["Faith", "Wellness"],
-      region: "Africa",
-      language: "English",
-      payBand: "$150–$250 + 8%",
-      budgetMin: 150,
-      budgetMax: 250,
-      commission: 8,
-      matchScore: "High",
-      matchReason: "Great fit with faith-compatible guidelines and high retention.",
-      deliverables: ["Live", "VOD"],
-      liveWindow: "Sunday mornings · Monthly slot",
-      timeline: ["Morning live", "Replay edits"],
-      summary: "Monthly Faith & Wellness morning live around soft-sell wellness products.",
-      tags: ["Faith-compatible", "Low returns", "Community"],
-      supplierType: "Provider",
-      collaborationStatus: "Invited",
-      opportunityStatus: "Open"
-    },
-    {
-      id: 4,
-      seller: "EV Gadget World",
-      sellerInitials: "EG",
-      rating: 4.2,
-      category: "EV & Mobility",
-      categories: ["EV", "Mobility", "Tech"],
-      region: "Global",
-      language: "English",
-      payBand: "$800–$1,200 + 10%",
-      budgetMin: 800,
-      budgetMax: 1200,
-      commission: 10,
-      matchScore: "Low",
-      matchReason: "Category fit but fewer past campaigns in this sub-niche.",
-      deliverables: ["Live", "Posts", "VOD"],
-      liveWindow: "This month · Flexible slot",
-      timeline: ["Concept", "Live", "Follow-up clips"],
-      summary: "EV accessories showcase live with follow-up evergreen content.",
-      tags: ["EV", "Accessories", "Evergreen"],
-      supplierType: "Seller",
-      collaborationStatus: "Not invited",
-      opportunityStatus: "Open"
-    },
-    {
-      id: 5,
-      seller: "GlowUp Hub",
-      sellerInitials: "GH",
-      rating: 4.7,
-      category: "Beauty & Skincare",
-      categories: ["Beauty", "Skincare"],
-      region: "Africa",
-      language: "English",
-      payBand: "$200–$350 + 4%",
-      budgetMin: 200,
-      budgetMax: 350,
-      commission: 4,
-      matchScore: "High",
-      matchReason: "Historical campaign kept for records only.",
-      deliverables: ["Live", "Posts"],
-      liveWindow: "Ended",
-      timeline: ["Completed"],
-      summary: "Archived seasonal beauty campaign from a past cycle.",
-      tags: ["Archived", "Past campaign"],
-      supplierType: "Seller",
-      collaborationStatus: "Collaborating",
-      opportunityStatus: "Closed"
-    }
-  ]);
+  const { data: opportunityRecords } = useApiResource({
+    initialData: [] as OpportunityRecord[],
+    loader: () => creatorApi.opportunities()
+  });
+  const [localStatuses, setLocalStatuses] = useState<Record<number, Campaign["collaborationStatus"]>>({});
+  const campaigns = useMemo(
+    () => opportunityRecords.map(toCampaign).map((campaign) => ({
+      ...campaign,
+      collaborationStatus: localStatuses[campaign.id] || campaign.collaborationStatus
+    })),
+    [localStatuses, opportunityRecords]
+  );
 
   const scopedCampaigns = useMemo(() => {
     return campaigns.filter((c) => {
@@ -211,9 +175,6 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
 
       // Supplier-scoped view from My Suppliers must include past collaborators too.
       if (scopedSupplierName && c.seller !== scopedSupplierName) return false;
-
-      // Default board behavior: show opportunities from active collaborations.
-      if (!scopedSupplierName && c.collaborationStatus !== "Collaborating") return false;
       return true;
     });
   }, [campaigns, currentOnly, scopedSupplierName]);
@@ -254,16 +215,13 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
   }, [scopedCampaigns, filters]);
 
   const toggleSaved = (id: number): void => {
-    setSavedCampaignIds((prev) => {
-      const isSaved = prev.includes(id);
-      if (isSaved) {
-        showNotification("Removed from saved opportunities");
-        return prev.filter((x) => x !== id);
-      } else {
-        showSuccess("Opportunity saved!");
-        return [...prev, id];
-      }
-    });
+    run(async () => {
+      const isSaved = savedCampaignIds.includes(id);
+      const campaign = campaigns.find((item) => item.id === id);
+      if (!campaign) return;
+      await creatorApi.saveOpportunity(campaign.apiId, !isSaved);
+      setSavedCampaignIds((prev) => (isSaved ? prev.filter((x) => x !== id) : [...prev, id]));
+    }, { successMessage: savedCampaignIds.includes(id) ? "Removed from saved opportunities" : "Opportunity saved!" });
   };
 
   const toggleBatchSelection = (id: number): void => {
@@ -273,16 +231,14 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
   };
 
   const toggleFollowSeller = (seller: string): void => {
-    setFollowedSellers((prev) => {
-      const isFollowing = prev.includes(seller);
-      if (isFollowing) {
-        showNotification(`Unfollowed ${seller}`);
-        return prev.filter((s) => s !== seller);
-      } else {
-        showSuccess(`Now following ${seller}`);
-        return [...prev, seller];
-      }
-    });
+    const campaign = campaigns.find((item) => item.seller === seller);
+    if (!campaign) return;
+    run(async () => {
+      const isFollowing = followedSellers.includes(seller);
+      if (!campaign.sellerId) return;
+      await creatorApi.followSeller(campaign.sellerId, !isFollowing);
+      setFollowedSellers((prev) => (isFollowing ? prev.filter((item) => item !== seller) : [...prev, seller]));
+    }, { successMessage: followedSellers.includes(seller) ? `Unfollowed ${seller}` : `Now following ${seller}` });
   };
 
   const openDetails = (campaign: Campaign, pitch = false): void => {
@@ -306,13 +262,8 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
   };
 
   const handleInviteToCollaborate = (id: number) => {
-    run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1000));
-      setCampaigns((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, collaborationStatus: "Invited" } : c))
-      );
-    }, { successMessage: "Invitation sent successfully!" });
+    setLocalStatuses((prev) => ({ ...prev, [id]: "Invited" }));
+    showSuccess("Invitation sent successfully!");
   };
 
   const batchCampaigns = scopedCampaigns.filter((c) => batchSelection.includes(c.id));

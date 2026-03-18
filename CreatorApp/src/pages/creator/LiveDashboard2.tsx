@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi } from "../../lib/creatorApi";
 import { CircularProgress } from "@mui/material";
 
 
@@ -276,109 +278,40 @@ type LiveSession = {
   crewConflicts?: number; // Count of conflicts
 };
 
+type LiveDashboardWorkspace = {
+  sessions?: Array<Record<string, unknown>>;
+  suppliers?: Supplier[];
+  campaigns?: Campaign[];
+  hosts?: Host[];
+};
+
+function toLiveSession(record: Record<string, unknown>): LiveSession {
+  return {
+    id: String(record.id || ""),
+    title: String(record.title || "Untitled live session"),
+    status: String(record.status || "Draft") as LiveStatus,
+    supplierId: String(record.supplierId || ""),
+    campaignId: typeof record.campaignId === "string" ? record.campaignId : undefined,
+    hostId: String(record.hostId || ""),
+    platforms: Array.isArray(record.platforms) ? record.platforms.map((item) => String(item)) as LivePlatform[] : [],
+    heroImageUrl: String(record.heroImageUrl || ""),
+    heroVideoUrl: typeof record.heroVideoUrl === "string" ? record.heroVideoUrl : undefined,
+    desktopMode: record.desktopMode === "fullscreen" ? "fullscreen" : "modal",
+    startISO: String(record.startISO || new Date().toISOString()),
+    endISO: String(record.endISO || new Date().toISOString()),
+    peakViewers: Number(record.peakViewers || 0),
+    avgWatchMin: Number(record.avgWatchMin || 0),
+    chatRate: Number(record.chatRate || 0),
+    gmv: Number(record.gmv || 0),
+    crewConflicts: Number(record.crewConflicts || 0),
+  };
+}
+
 /* --------------------------------- Seed data ------------------------------ */
 
 const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 const SAMPLE_VIDEO_2 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4";
 
-const suppliersSeed: Supplier[] = [
-  { id: "pt_glowup", name: "GlowUp Hub", kind: "Seller", avatarUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?auto=format&fit=crop&w=120&q=60" },
-  { id: "pt_gadget", name: "GadgetMart Africa", kind: "Seller", avatarUrl: "https://images.unsplash.com/photo-1520975682031-a6ad56ae0f68?auto=format&fit=crop&w=120&q=60" },
-  { id: "pt_grace", name: "Grace Living Studio", kind: "Provider", avatarUrl: "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=120&q=60" }
-];
-
-const campaignsSeed: Campaign[] = [
-  { id: "cp_autumn_beauty", supplierId: "pt_glowup", name: "Autumn Beauty Flash" },
-  { id: "cp_tech_friday", supplierId: "pt_gadget", name: "Tech Friday Mega" },
-  { id: "cp_wellness", supplierId: "pt_grace", name: "Wellness Booking Sprint" }
-];
-
-const hostsSeed: Host[] = [
-  { id: "cr_1", name: "Luna Ade", handle: "@lunaade", followers: "410k", verified: true, avatarUrl: "https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=256&q=60" },
-  { id: "cr_2", name: "Noah K.", handle: "@noahknows", followers: "680k", verified: true, avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=60" },
-  { id: "cr_3", name: "Rina Vale", handle: "@rinavale", followers: "220k", verified: false, avatarUrl: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=256&q=60" }
-];
-
-function isoNowPlus(ms: number) {
-  return new Date(Date.now() + ms).toISOString();
-}
-
-const sessionsSeed: LiveSession[] = [
-  {
-    id: "ls_9001",
-    title: "Autumn Beauty: serum + cleanser bundle",
-    status: "Scheduled",
-    supplierId: "pt_glowup",
-    campaignId: "cp_autumn_beauty",
-    hostId: "cr_1",
-    platforms: ["TikTok Live", "Instagram Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_1,
-    desktopMode: "modal",
-    startISO: isoNowPlus(1000 * 60 * 60 * 3),
-    endISO: isoNowPlus(1000 * 60 * 60 * 4),
-    peakViewers: 12400,
-    avgWatchMin: 11.2,
-    chatRate: 180,
-    gmv: 32840,
-    crewConflicts: 2
-  },
-  {
-    id: "ls_9002",
-    title: "Tech Friday Live: top 3 gadgets under £50",
-    status: "Draft",
-    supplierId: "pt_gadget",
-    campaignId: "cp_tech_friday",
-    hostId: "cr_2",
-    platforms: ["TikTok Live", "YouTube Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1518441902117-f0a80e5b0c17?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_2,
-    desktopMode: "fullscreen",
-    startISO: isoNowPlus(1000 * 60 * 60 * 28),
-    endISO: isoNowPlus(1000 * 60 * 60 * 29),
-    peakViewers: 0,
-    avgWatchMin: 0,
-    chatRate: 0,
-    gmv: 0,
-    crewConflicts: 0
-  },
-  {
-    id: "ls_9003",
-    title: "Wellness booking live: before/after + Q&A",
-    status: "Live",
-    supplierId: "pt_grace",
-    campaignId: "cp_wellness",
-    hostId: "cr_3",
-    platforms: ["Instagram Live", "Facebook Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_1,
-    desktopMode: "modal",
-    startISO: isoNowPlus(-1000 * 60 * 15),
-    endISO: isoNowPlus(1000 * 60 * 45),
-    peakViewers: 3100,
-    avgWatchMin: 7.4,
-    chatRate: 92,
-    gmv: 5400
-  },
-  {
-    id: "ls_9004",
-    title: "Replay: price breakdown + honest Q&A",
-    status: "Ended",
-    supplierId: "pt_glowup",
-    campaignId: "cp_autumn_beauty",
-    hostId: "cr_1",
-    platforms: ["TikTok Live"],
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=60",
-    heroVideoUrl: SAMPLE_VIDEO_2,
-    desktopMode: "modal",
-    startISO: isoNowPlus(-1000 * 60 * 60 * 36),
-    endISO: isoNowPlus(-1000 * 60 * 60 * 35),
-    peakViewers: 11200,
-    avgWatchMin: 9.8,
-    chatRate: 150,
-    gmv: 27900
-  }
-];
 
 /* ------------------------------ UI primitives ----------------------------- */
 
@@ -853,13 +786,20 @@ export default function LiveDashboardPage() {
   const navigate = useNavigate();
   const { showSuccess, showError, showInfo, showWarning } = useNotification();
   const { run, isPending } = useAsyncAction();
+  const { data: workspace } = useApiResource({
+    initialData: {} as LiveDashboardWorkspace,
+    loader: () => creatorApi.liveDashboardWorkspace() as Promise<LiveDashboardWorkspace>,
+  });
+  const suppliers = useMemo(() => workspace.suppliers || [], [workspace.suppliers]);
+  const campaigns = useMemo(() => workspace.campaigns || [], [workspace.campaigns]);
+  const hosts = useMemo(() => workspace.hosts || [], [workspace.hosts]);
 
 
   function safeNav(url: string) {
     if (!url) return;
     navigate(url);
   }
-  const [sessions, setSessions] = useState<LiveSession[]>(sessionsSeed);
+  const [sessions, setSessions] = useState<LiveSession[]>([]);
 
   // Filters
   const [tab, setTab] = useState<"All" | "Upcoming" | "Live" | "Ended">("All");
@@ -878,7 +818,7 @@ export default function LiveDashboardPage() {
   const [builderSessionId, setBuilderSessionId] = useState<string | undefined>(undefined);
 
   // Live Sessionz Pro hub context (which session the Pro tool cards should act on)
-  const [toolSessionId, setToolSessionId] = useState<string>(sessionsSeed[0]?.id || "");
+  const [toolSessionId, setToolSessionId] = useState<string>("");
 
   // Sidebar active route (app-like nav highlight)
   const [pathname, setPathname] = useState<string>("");
@@ -896,6 +836,10 @@ export default function LiveDashboardPage() {
   // const navActive = "bg-slate-900 border-slate-900 text-white";
   const proActive = "bg-violet-600 border-violet-600 text-white";
 
+
+  useEffect(() => {
+    setSessions((workspace.sessions || []).map(toLiveSession));
+  }, [workspace.sessions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -945,9 +889,9 @@ export default function LiveDashboardPage() {
   }, [sessions, tab, supplierId, q]);
 
   const active = useMemo(() => (activeId ? sessions.find((s) => s.id === activeId) || null : null), [sessions, activeId]);
-  const activeSupplier = useMemo(() => (active ? suppliersSeed.find((p) => p.id === active.supplierId) : undefined), [active]);
-  const activeCampaign = useMemo(() => (active?.campaignId ? campaignsSeed.find((c) => c.id === active.campaignId) : undefined), [active]);
-  const activeHost = useMemo(() => (active ? hostsSeed.find((h) => h.id === active.hostId) : undefined), [active]);
+  const activeSupplier = useMemo(() => (active ? suppliers.find((p) => p.id === active.supplierId) : undefined), [active, suppliers]);
+  const activeCampaign = useMemo(() => (active?.campaignId ? campaigns.find((c) => c.id === active.campaignId) : undefined), [active, campaigns]);
+  const activeHost = useMemo(() => (active ? hosts.find((h) => h.id === active.hostId) : undefined), [active, hosts]);
 
   const kpis = useMemo(() => {
     const live = sessions.filter((s) => s.status === "Live").length;
@@ -977,8 +921,8 @@ export default function LiveDashboardPage() {
 
   // Live Sessionz Pro — derived status for the selected toolkit session (demo logic)
   const toolSession = useMemo(() => sessions.find((s) => s.id === toolSessionId) || null, [sessions, toolSessionId]);
-  const toolSupplier = useMemo(() => (toolSession ? suppliersSeed.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession]);
-  const toolHost = useMemo(() => (toolSession ? hostsSeed.find((h) => h.id === toolSession.hostId) : undefined), [toolSession]);
+  const toolSupplier = useMemo(() => (toolSession ? suppliers.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession, suppliers]);
+  const toolHost = useMemo(() => (toolSession ? hosts.find((h) => h.id === toolSession.hostId) : undefined), [toolSession, hosts]);
 
   const waPrompt = useMemo(() => {
     if (!toolSession) return null;
@@ -1643,7 +1587,7 @@ export default function LiveDashboardPage() {
                   onChange={(e) => setSupplierId(e.target.value)}
                 >
                   <option value="all">All suppliers</option>
-                  {suppliersSeed.map((p) => (
+                  {suppliers.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -1677,8 +1621,8 @@ export default function LiveDashboardPage() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filtered.map((s) => {
-                      const p = suppliersSeed.find((x) => x.id === s.supplierId);
-                      const h = hostsSeed.find((x) => x.id === s.hostId);
+                      const p = suppliers.find((x) => x.id === s.supplierId);
+                      const h = hosts.find((x) => x.id === s.hostId);
                       const tone = s.status === "Live" ? "good" : s.status === "Scheduled" ? "warn" : s.status === "Ended" ? "neutral" : "neutral";
 
                       return (
@@ -1707,7 +1651,7 @@ export default function LiveDashboardPage() {
                               {p?.avatarUrl ? <img src={p.avatarUrl} className="h-7 w-7 rounded-full border border-slate-200 object-cover" alt={p.name} /> : null}
                               <div className="min-w-0">
                                 <div className="text-[12px] font-semibold truncate text-slate-900 dark:text-slate-100">{p?.name || "—"}</div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaignsSeed.find((c) => c.id === s.campaignId)?.name || "—"}</div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaigns.find((c) => c.id === s.campaignId)?.name || "—"}</div>
                               </div>
                             </div>
                           </td>
@@ -1775,9 +1719,9 @@ export default function LiveDashboardPage() {
         <NewLiveSessionDrawer
           open={newOpen}
           onClose={() => setNewOpen(false)}
-          suppliers={suppliersSeed}
-          campaigns={campaignsSeed}
-          hosts={hostsSeed}
+          suppliers={suppliers}
+          campaigns={campaigns}
+          hosts={hosts}
           onCreate={onCreateSession}
         />
 

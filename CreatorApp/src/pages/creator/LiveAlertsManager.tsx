@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CircularProgress } from "@mui/material";
 import { useNotification } from "../../contexts/NotificationContext";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi } from "../../lib/creatorApi";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -55,6 +57,28 @@ type AlertTemplate = {
   minIntervalMinutes: number;
   icon: React.ReactNode;
   build: (ctx: { sessionTitle: string; link: string; dealName: string; endsIn: string }) => string;
+};
+
+type LiveAlertsPayload = {
+  session?: {
+    id?: string;
+    title?: string;
+    status?: SessionStatus;
+    startedISO?: string;
+    endsISO?: string;
+  };
+  channels?: Channel[];
+  templates?: Array<{
+    key: AlertKey;
+    title: string;
+    subtitle: string;
+    minIntervalMinutes: number;
+    template: string;
+  }>;
+  enabledDest?: Partial<Record<ChannelKey, boolean>>;
+  dealName?: string;
+  dealEndsMinutes?: number;
+  lastSent?: Partial<Record<AlertKey, number>>;
 };
 
 function cn(...classes: Array<string | false | null | undefined>) {
@@ -209,94 +233,45 @@ function Modal({
 export default function LiveAlertsManager() {
   const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
+  const { data: payload } = useApiResource({
+    initialData: {} as LiveAlertsPayload,
+    loader: () => creatorApi.liveTool("live-alerts") as Promise<LiveAlertsPayload>,
+  });
   const session = useMemo(
     () => ({
-      id: "LS-20418",
-      title: "Autumn Beauty Flash",
-      status: "Live" as SessionStatus,
-      startedISO: new Date(Date.now() - 9 * 60 * 1000).toISOString(),
-      endsISO: new Date(Date.now() + 51 * 60 * 1000).toISOString(),
+      id: payload.session?.id || "LS-20418",
+      title: payload.session?.title || "Autumn Beauty Flash",
+      status: payload.session?.status || ("Live" as SessionStatus),
+      startedISO: payload.session?.startedISO || new Date(Date.now() - 9 * 60 * 1000).toISOString(),
+      endsISO: payload.session?.endsISO || new Date(Date.now() + 51 * 60 * 1000).toISOString(),
     }),
-    [],
+    [payload.session],
   );
 
   const liveLink = useMemo(() => buildLiveLink(session.id), [session.id]);
 
   const channels: Channel[] = useMemo(
-    () => [
-      {
-        key: "whatsapp",
-        name: "WhatsApp",
-        short: "WA",
-        status: "Connected",
-        supportsPin: true,
-        pinHint: "Pin the live link message so late joiners can tap it quickly.",
-      },
-      {
-        key: "telegram",
-        name: "Telegram",
-        short: "TG",
-        status: "Connected",
-        supportsPin: true,
-        pinHint: "Pin the latest message in the channel/group to keep the link visible.",
-      },
-      {
-        key: "line",
-        name: "LINE",
-        short: "LINE",
-        status: "Needs re-auth",
-        supportsPin: true,
-        pinHint: "Reconnect your LINE account, then pin the live link message.",
-      },
-      {
-        key: "viber",
-        name: "Viber",
-        short: "Viber",
-        status: "Connected",
-        supportsPin: true,
-        pinHint: "Pin one live link message so it stays visible while you’re live.",
-      },
-      {
-        key: "rcs",
-        name: "RCS",
-        short: "RCS",
-        status: "Connected",
-        supportsPin: false,
-        pinHint: "Pinning varies by device. Keep alerts spaced out and resend sparingly.",
-      },
-    ],
-    [],
+    () => payload.channels || [],
+    [payload.channels],
   );
 
   const templates: AlertTemplate[] = useMemo(
-    () => [
-      {
-        key: "were_live",
-        title: "We’re live",
-        subtitle: "Kick off attendance fast.",
-        minIntervalMinutes: 8,
-        icon: <Bell className="h-4 w-4" />,
-        build: ({ sessionTitle, link }) => `🔴 We’re LIVE: ${sessionTitle}\nTap to join: ${link}`,
-      },
-      {
-        key: "flash_deal",
-        title: "Flash deal",
-        subtitle: "Announce a drop (with caps).",
-        minIntervalMinutes: 10,
-        icon: <Flame className="h-4 w-4" />,
+    () =>
+      (payload.templates || []).map((template) => ({
+        key: template.key,
+        title: template.title,
+        subtitle: template.subtitle,
+        minIntervalMinutes: template.minIntervalMinutes,
+        icon:
+          template.key === "flash_deal" ? <Flame className="h-4 w-4" /> : template.key === "last_chance" ? <Timer className="h-4 w-4" /> : <Bell className="h-4 w-4" />,
         build: ({ sessionTitle, link, dealName, endsIn }) =>
-          `⚡ Flash deal: ${dealName}\nLive in: ${sessionTitle}\nEnds in ${endsIn} • Tap: ${link}`,
-      },
-      {
-        key: "last_chance",
-        title: "Last chance",
-        subtitle: "Final push before end.",
-        minIntervalMinutes: 12,
-        icon: <Timer className="h-4 w-4" />,
-        build: ({ sessionTitle, link, endsIn }) => `⏳ Last chance!\n${sessionTitle}\nEnding in ${endsIn} • Join: ${link}`,
-      },
-    ],
-    [],
+          template.template
+            .replaceAll("{{sessionTitle}}", sessionTitle)
+            .replaceAll("{{link}}", link)
+            .replaceAll("{{dealName}}", dealName)
+            .replaceAll("{{endsIn}}", endsIn),
+      })),
+    [payload.templates],
   );
 
   const [enabledDest, setEnabledDest] = useState<Record<ChannelKey, boolean>>({
@@ -318,6 +293,13 @@ export default function LiveAlertsManager() {
     flash_deal: Date.now() - 20 * 60 * 1000,
     last_chance: Date.now() - 40 * 60 * 1000,
   });
+  useEffect(() => {
+    if (!Object.keys(payload).length) return;
+    setEnabledDest((current) => ({ ...current, ...(payload.enabledDest || {}) }));
+    setDealName(payload.dealName || "GlowUp Serum Bundle");
+    setDealEndsMinutes(typeof payload.dealEndsMinutes === "number" ? payload.dealEndsMinutes : 10);
+    setLastSent((current) => ({ ...current, ...(payload.lastSent || {}) }));
+  }, [payload]);
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -336,9 +318,13 @@ export default function LiveAlertsManager() {
       endsIn: `${dealEndsMinutes}m`,
     });
 
-  const [active, setActive] = useState<AlertTemplate>(templates[0]);
+  const [active, setActive] = useState<AlertTemplate | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
+  useEffect(() => {
+    if (!templates.length) return;
+    setActive((current) => current && templates.some((item) => item.key === current.key) ? templates.find((item) => item.key === current.key) || templates[0] : templates[0]);
+  }, [templates]);
 
 
   const openConfirm = (t: AlertTemplate) => {
@@ -352,16 +338,26 @@ export default function LiveAlertsManager() {
     const issues: string[] = [];
     if (enabledChannels.length === 0) issues.push("Enable at least one destination.");
     if (enabledChannels.some((c) => c.status !== "Connected")) issues.push("Some enabled destinations need re-auth or are blocked.");
-    if (!canSend(active)) issues.push("Frequency cap active for this alert.");
+    if (active && !canSend(active)) issues.push("Frequency cap active for this alert.");
     return issues;
   }, [enabledChannels, active, tick, canSend]);
 
   const blocked = preflightIssues.length > 0 || isPending;
 
   const send = () => {
+    if (!active) return;
     run(async () => {
       setLastSent((s) => ({ ...s, [active.key]: Date.now() }));
       setConfirmOpen(false);
+      await creatorApi.patchLiveTool("live-alerts", {
+        session,
+        channels,
+        templates: (payload.templates || []),
+        enabledDest,
+        dealName,
+        dealEndsMinutes,
+        lastSent: { ...lastSent, [active.key]: Date.now() },
+      });
     }, { successMessage: `Sent “${active.title}” to ${enabledChannels.length} destination(s)` });
   };
 
@@ -413,7 +409,7 @@ export default function LiveAlertsManager() {
                 Copy link
               </Btn>
             </div>
-            <Btn tone="primary" onClick={() => openConfirm(templates[0])} disabled={!canSend(templates[0])} left={<Zap className="h-4 w-4" />}>
+            <Btn tone="primary" onClick={() => templates[0] && openConfirm(templates[0])} disabled={!templates[0] || !canSend(templates[0])} left={<Zap className="h-4 w-4" />}>
               <span className="hidden sm:inline">Quick “We’re live”</span>
               <span className="sm:hidden">Alert</span>
             </Btn>
@@ -617,22 +613,22 @@ export default function LiveAlertsManager() {
               <div className="mt-3 rounded-3xl bg-neutral-900 dark:bg-black p-3 transition">
                 <div className="rounded-2xl bg-white dark:bg-slate-900 p-3">
                   <div className="mb-2 flex items-center justify-between">
-                    <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">{active.title}</div>
-                    <Pill tone={canSend(active) ? "good" : "warn"}>
-                      {canSend(active) ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Timer className="h-3.5 w-3.5" />}
-                      {canSend(active) ? "Ready" : `Wait ${msToLabel(nextWaitMs(active))}`}
+                    <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">{active?.title || "Alert"}</div>
+                    <Pill tone={!active || canSend(active) ? "good" : "warn"}>
+                      {!active || canSend(active) ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Timer className="h-3.5 w-3.5" />}
+                      {!active || canSend(active) ? "Ready" : `Wait ${msToLabel(nextWaitMs(active))}`}
                     </Pill>
                   </div>
 
                   <div className="rounded-2xl bg-neutral-50 dark:bg-slate-800 p-3 ring-1 ring-neutral-200 dark:ring-slate-700 transition">
-                    <div className="whitespace-pre-wrap text-sm text-neutral-800 dark:text-slate-100">{buildBody(active)}</div>
+                    <div className="whitespace-pre-wrap text-sm text-neutral-800 dark:text-slate-100">{active ? buildBody(active) : ""}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Btn tone="primary" onClick={() => openConfirm(active)} disabled={!canSend(active)} left={<Send className="h-4 w-4" />}>
+                      <Btn tone="primary" onClick={() => active && openConfirm(active)} disabled={!active || !canSend(active)} left={<Send className="h-4 w-4" />}>
                         Send with confirm
                       </Btn>
                       <Btn
                         onClick={async () => {
-                          await navigator.clipboard?.writeText(buildBody(active));
+                          await navigator.clipboard?.writeText(active ? buildBody(active) : "");
                           showSuccess("Copied message body");
                         }}
                         left={<Copy className="h-4 w-4" />}
@@ -672,7 +668,7 @@ export default function LiveAlertsManager() {
         </div>
 
         {/* Confirm modal */}
-        <Modal open={confirmOpen} title={`Confirm send: ${active.title}`} onClose={() => setConfirmOpen(false)}>
+        <Modal open={confirmOpen && !!active} title={`Confirm send: ${active?.title || "Alert"}`} onClose={() => setConfirmOpen(false)}>
           <div className="space-y-4">
             <div className={cn("rounded-3xl p-4 ring-1 transition", blocked ? "bg-amber-50 dark:bg-amber-500/10 ring-amber-200 dark:ring-amber-500/20" : "bg-emerald-50 dark:bg-emerald-500/10 ring-emerald-200 dark:ring-emerald-500/20")}>
               <div className="flex items-start justify-between gap-2">

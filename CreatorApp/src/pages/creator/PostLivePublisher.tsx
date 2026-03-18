@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CircularProgress } from '@mui/material';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { useApiResource } from '../../hooks/useApiResource';
+import { creatorApi } from '../../lib/creatorApi';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -89,6 +91,44 @@ type Clip = {
   endSec: number;
   format: '9:16' | '16:9' | '1:1';
   status: 'Draft' | 'Queued' | 'Exported';
+};
+
+type PostLivePayload = {
+  session?: {
+    id?: string;
+    title?: string;
+    status?: SessionStatus;
+    endedISO?: string;
+    replayUrl?: string;
+    coverUrl?: string;
+  };
+  plan?: 'Standard' | 'Pro';
+  published?: boolean;
+  schedulePublish?: boolean;
+  publishAt?: string;
+  allowComments?: boolean;
+  showProductStrip?: boolean;
+  clips?: Clip[];
+  channels?: Channel[];
+  enabledChannels?: Partial<Record<ChannelKey, boolean>>;
+  audience?: AudienceKey;
+  scheduleSends?: boolean;
+  sendNow?: boolean;
+  templatePack?: 'Default' | 'VIP' | 'High intent';
+  cartRecovery?: boolean;
+  priceDrop?: boolean;
+  restock?: boolean;
+  metrics?: {
+    viewers?: number;
+    clicks?: number;
+    orders?: number;
+    gmv?: number;
+    addToCart?: number;
+    cartAbandon?: number;
+    ctr?: number;
+    conv?: number;
+    ordersSeries?: number[];
+  };
 };
 
 function fmtInt(n: number) {
@@ -249,20 +289,24 @@ export default function PostLivePublisherPage() {
   const { run, isPending } = useAsyncAction();
   const sp = useMemo(() => parseSearch(), []);
   const sessionId = sp.get('sessionId') ?? 'LS-20418';
+  const { data: payload } = useApiResource({
+    initialData: {} as PostLivePayload,
+    loader: () => creatorApi.liveTool("post-live") as Promise<PostLivePayload>,
+  });
 
   const [plan, setPlan] = useState<'Standard' | 'Pro'>('Pro');
   const isPro = plan === 'Pro';
 
   const session = useMemo(
     () => ({
-      id: sessionId,
-      title: 'Autumn Beauty Flash',
-      status: 'Ended' as SessionStatus,
-      endedISO: new Date(Date.now() - 33 * 60 * 1000).toISOString(),
-      replayUrl: `https://mylivedealz.com/replay/${sessionId}`,
-      coverUrl: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=70',
+      id: payload.session?.id || sessionId,
+      title: payload.session?.title || 'Autumn Beauty Flash',
+      status: payload.session?.status || ('Ended' as SessionStatus),
+      endedISO: payload.session?.endedISO || new Date(Date.now() - 33 * 60 * 1000).toISOString(),
+      replayUrl: payload.session?.replayUrl || `https://mylivedealz.com/replay/${sessionId}`,
+      coverUrl: payload.session?.coverUrl || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=70',
     }),
-    [sessionId],
+    [payload.session, sessionId],
   );
 
   // Replay/publish state
@@ -273,11 +317,7 @@ export default function PostLivePublisherPage() {
   const [showProductStrip, setShowProductStrip] = useState(true);
 
   // Clips
-  const [clips, setClips] = useState<Clip[]>([
-    { id: 'c1', title: 'GlowUp Bundle – Key benefits', startSec: 140, endSec: 210, format: '9:16', status: 'Exported' },
-    { id: 'c2', title: 'Price drop moment', startSec: 520, endSec: 560, format: '9:16', status: 'Queued' },
-    { id: 'c3', title: 'Buyer Q&A – shipping', startSec: 760, endSec: 840, format: '16:9', status: 'Draft' },
-  ]);
+  const [clips, setClips] = useState<Clip[]>([]);
 
   const [clipModal, setClipModal] = useState(false);
   const [clipTitle, setClipTitle] = useState('');
@@ -294,16 +334,7 @@ export default function PostLivePublisherPage() {
   };
 
   // Channels (send replay)
-  const channels: Channel[] = useMemo(
-    () => [
-      { key: 'whatsapp', name: 'WhatsApp', short: 'WA', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.002 },
-      { key: 'telegram', name: 'Telegram', short: 'TG', connected: 'Connected', supportsRich: true, costPerMessageUSD: 0.0 },
-      { key: 'line', name: 'LINE', short: 'LINE', connected: 'Needs re-auth', supportsRich: true, costPerMessageUSD: 0.003 },
-      { key: 'viber', name: 'Viber', short: 'Viber', connected: 'Connected', supportsRich: false, costPerMessageUSD: 0.0015 },
-      { key: 'rcs', name: 'RCS', short: 'RCS', connected: 'Connected', supportsRich: false, costPerMessageUSD: 0.008 },
-    ],
-    [],
-  );
+  const channels = useMemo(() => payload.channels || [], [payload.channels]);
 
   const [enabledChannels, setEnabledChannels] = useState<Record<ChannelKey, boolean>>({
     whatsapp: true,
@@ -322,20 +353,38 @@ export default function PostLivePublisherPage() {
   const [cartRecovery, setCartRecovery] = useState(true);
   const [priceDrop, setPriceDrop] = useState(false);
   const [restock, setRestock] = useState(true);
+  useEffect(() => {
+    if (!Object.keys(payload).length) return;
+    setPlan(payload.plan || 'Pro');
+    setPublished(payload.published ?? false);
+    setSchedulePublish(payload.schedulePublish ?? false);
+    setPublishAt(payload.publishAt || new Date(Date.now() + 30 * 60 * 1000).toISOString());
+    setAllowComments(payload.allowComments ?? true);
+    setShowProductStrip(payload.showProductStrip ?? true);
+    setClips(payload.clips || []);
+    setEnabledChannels((current) => ({ ...current, ...(payload.enabledChannels || {}) }));
+    setAudience(payload.audience || 'past_buyers');
+    setScheduleSends(payload.scheduleSends ?? true);
+    setSendNow(payload.sendNow ?? false);
+    setTemplatePack(payload.templatePack || 'Default');
+    setCartRecovery(payload.cartRecovery ?? true);
+    setPriceDrop(payload.priceDrop ?? false);
+    setRestock(payload.restock ?? true);
+  }, [payload]);
 
   const metrics = useMemo(
     () => ({
-      viewers: 18420,
-      clicks: 3120,
-      orders: 284,
-      gmv: 9210,
-      addToCart: 740,
-      cartAbandon: 310,
-      ctr: 0.169,
-      conv: 0.091,
-      ordersSeries: [4, 6, 8, 10, 9, 12, 15, 14, 18, 17, 16, 19, 21, 18, 16],
+      viewers: payload.metrics?.viewers || 18420,
+      clicks: payload.metrics?.clicks || 3120,
+      orders: payload.metrics?.orders || 284,
+      gmv: payload.metrics?.gmv || 9210,
+      addToCart: payload.metrics?.addToCart || 740,
+      cartAbandon: payload.metrics?.cartAbandon || 310,
+      ctr: payload.metrics?.ctr || 0.169,
+      conv: payload.metrics?.conv || 0.091,
+      ordersSeries: payload.metrics?.ordersSeries || [4, 6, 8, 10, 9, 12, 15, 14, 18, 17, 16, 19, 21, 18, 16],
     }),
-    [],
+    [payload.metrics],
   );
   void metrics; // Suppress unused
 
@@ -434,6 +483,26 @@ export default function PostLivePublisherPage() {
                 disabled={publishBlocked}
                 onClick={() => run(async () => {
                   setPublished(true);
+                  await creatorApi.patchLiveTool("post-live", {
+                    session,
+                    plan,
+                    published: true,
+                    schedulePublish,
+                    publishAt,
+                    allowComments,
+                    showProductStrip,
+                    clips,
+                    channels,
+                    enabledChannels,
+                    audience,
+                    scheduleSends,
+                    sendNow,
+                    templatePack,
+                    cartRecovery,
+                    priceDrop,
+                    restock,
+                    metrics,
+                  });
                 }, { successMessage: "Replay published successfully!" })}
                 left={<CheckCircle2 className="h-4 w-4" />}
               >
@@ -615,8 +684,29 @@ export default function PostLivePublisherPage() {
                         <Btn
                           tone="ghost"
                           onClick={() => {
-                            setClips((s) => s.map((x) => (x.id === c.id ? { ...x, status: x.status === "Draft" ? "Queued" : x.status } : x)));
-                            showNotification("Queued export (demo)");
+                            const nextClips = clips.map((x) => (x.id === c.id ? { ...x, status: x.status === "Draft" ? "Queued" : x.status } : x));
+                            setClips(nextClips);
+                            void creatorApi.patchLiveTool("post-live", {
+                              session,
+                              plan,
+                              published,
+                              schedulePublish,
+                              publishAt,
+                              allowComments,
+                              showProductStrip,
+                              clips: nextClips,
+                              channels,
+                              enabledChannels,
+                              audience,
+                              scheduleSends,
+                              sendNow,
+                              templatePack,
+                              cartRecovery,
+                              priceDrop,
+                              restock,
+                              metrics,
+                            });
+                            showNotification("Queued export");
                           }}
                           left={<Download className="h-4 w-4" />}
                           disabled={c.status !== "Draft"}
@@ -626,7 +716,28 @@ export default function PostLivePublisherPage() {
                         <Btn
                           tone="ghost"
                           onClick={() => {
-                            setClips((s) => s.filter((x) => x.id !== c.id));
+                            const nextClips = clips.filter((x) => x.id !== c.id);
+                            setClips(nextClips);
+                            void creatorApi.patchLiveTool("post-live", {
+                              session,
+                              plan,
+                              published,
+                              schedulePublish,
+                              publishAt,
+                              allowComments,
+                              showProductStrip,
+                              clips: nextClips,
+                              channels,
+                              enabledChannels,
+                              audience,
+                              scheduleSends,
+                              sendNow,
+                              templatePack,
+                              cartRecovery,
+                              priceDrop,
+                              restock,
+                              metrics,
+                            });
                             showNotification("Clip removed");
                           }}
                           left={<Trash2 className="h-4 w-4" />}
@@ -761,7 +872,26 @@ export default function PostLivePublisherPage() {
                     <Btn
                       tone="primary"
                       onClick={() => run(async () => {
-                        // Demo logic
+                        await creatorApi.patchLiveTool("post-live", {
+                          session,
+                          plan,
+                          published,
+                          schedulePublish,
+                          publishAt,
+                          allowComments,
+                          showProductStrip,
+                          clips,
+                          channels,
+                          enabledChannels,
+                          audience,
+                          scheduleSends,
+                          sendNow,
+                          templatePack,
+                          cartRecovery,
+                          priceDrop,
+                          restock,
+                          metrics,
+                        });
                       }, { successMessage: "Replay notification queued!" })}
                       disabled={enabledChannelList.length === 0 || isPending}
                       left={<Send className="h-4 w-4" />}
@@ -881,7 +1011,26 @@ export default function PostLivePublisherPage() {
                   Preview
                 </Btn>
                 <Btn tone="primary" onClick={() => run(async () => {
-                  // Save logic
+                  await creatorApi.patchLiveTool("post-live", {
+                    session,
+                    plan,
+                    published,
+                    schedulePublish,
+                    publishAt,
+                    allowComments,
+                    showProductStrip,
+                    clips,
+                    channels,
+                    enabledChannels,
+                    audience,
+                    scheduleSends,
+                    sendNow,
+                    templatePack,
+                    cartRecovery,
+                    priceDrop,
+                    restock,
+                    metrics,
+                  });
                 }, { successMessage: "Booster plan saved!" })} left={<CheckCircle2 className="h-4 w-4" />}>
                   {isPending ? "Saving..." : "Save booster plan"}
                 </Btn>

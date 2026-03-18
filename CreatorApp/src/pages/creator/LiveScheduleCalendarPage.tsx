@@ -8,6 +8,8 @@ import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { QRCodeCanvas } from "qrcode.react";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi } from "../../lib/creatorApi";
 
 const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
@@ -33,106 +35,37 @@ type Session = {
   conflict: boolean;
 };
 
-const SESSIONS: Session[] = [
-  {
-    id: "L-101",
-    title: "Beauty Flash – Serum launch",
-    campaign: "Autumn Beauty Flash",
-    seller: "GlowUp Hub",
-    weekday: "Thu",
-    dateLabel: "Thu 10 Oct",
-    time: "18:30–19:30",
-    location: "MyLiveDealz",
-    simulcast: "YouTube",
-    status: "Confirmed",
-    role: "Host",
-    durationMin: 60,
-    scriptsReady: true,
-    assetsReady: false,
-    productsCount: 8,
-    workloadScore: 3,
-    conflict: false
-  },
-  {
-    id: "L-102",
-    title: "Tech Friday – Gadgets Q&A",
-    campaign: "Tech Friday Mega Live",
-    seller: "GadgetMart Africa",
-    weekday: "Fri",
-    dateLabel: "Fri 11 Oct",
-    time: "20:00–21:30",
-    location: "MyLiveDealz",
-    simulcast: "Facebook",
-    status: "Draft",
-    role: "Host",
-    durationMin: 90,
-    scriptsReady: false,
-    assetsReady: false,
-    productsCount: 12,
-    workloadScore: 4,
-    conflict: true // overlaps with prep window
-  },
-  {
-    id: "L-103",
-    title: "Faith & Wellness Morning Dealz",
-    campaign: "Faith & Wellness Morning Dealz",
-    seller: "Grace Living Store",
-    weekday: "Sat",
-    dateLabel: "Sat 12 Oct",
-    time: "09:00–10:00",
-    location: "MyLiveDealz",
-    simulcast: "",
-    status: "Confirmed",
-    role: "Host",
-    durationMin: 60,
-    scriptsReady: true,
-    assetsReady: true,
-    productsCount: 6,
-    workloadScore: 2,
-    conflict: false
-  },
-  {
-    id: "L-104",
-    title: "Tech Friday – Clips replay",
-    campaign: "Tech Friday Mega Live",
-    seller: "GadgetMart Africa",
-    weekday: "Sun",
-    dateLabel: "Sun 13 Oct",
-    time: "21:00–21:30",
-    location: "Replays only",
-    simulcast: "MyLiveDealz",
-    status: "Scheduled",
-    role: "Replay host",
-    durationMin: 30,
-    scriptsReady: false,
-    assetsReady: true,
-    productsCount: 4,
-    workloadScore: 1,
-    conflict: false
-  }
-];
+type ScheduleWorkspaceResponse = {
+  sessions?: Array<Record<string, unknown>>;
+  aiSlots?: Array<Record<string, unknown>>;
+};
 
-const AI_SLOTS = [
-  {
-    id: 1,
-    label: "Wed 20:00–21:00",
-    reason: "Peak East Africa view time · 1.3× retention",
-    recommendedFor: "Tech & Beauty"
-  },
-  {
-    id: 2,
-    label: "Fri 19:30–20:30",
-    reason: "High intent just before weekend shopping",
-    recommendedFor: "Gadgets & Flash dealz"
-  },
-  {
-    id: 3,
-    label: "Sun 09:00–10:00",
-    reason: "Faith & Wellness audience spike",
-    recommendedFor: "Faith-compatible shows"
-  }
+function normalizeWeekday(value: unknown): WeekDay {
+  const normalized = String(value || "").slice(0, 3) as WeekDay;
+  return WEEK_DAYS.includes(normalized) ? normalized : "Mon";
+}
 
-];
+function toSession(record: Record<string, unknown>): Session {
+  return {
+    id: String(record.id || ""),
+    title: String(record.title || "Untitled session"),
+    campaign: String(record.campaign || "Untitled campaign"),
+    seller: String(record.supplier || "Unknown seller"),
+    weekday: normalizeWeekday(record.weekday),
+    dateLabel: String(record.dateLabel || ""),
+    time: String(record.time || ""),
+    location: String(record.location || "MyLiveDealz"),
+    simulcast: String(record.simulcast || ""),
+    status: String(record.status || "Draft"),
+    role: String(record.hostRole || "Host"),
+    durationMin: Number(record.durationMin || 0),
+    scriptsReady: Boolean(record.scriptsReady),
+    assetsReady: Boolean(record.assetsReady),
+    productsCount: Number(record.productsCount || 0),
+    workloadScore: Number(record.workloadScore || 0),
+    conflict: Boolean(record.conflict),
+  };
+}
 
 // Mock Toast for user feedback
 function Toast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -152,49 +85,62 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
 
 function LiveScheduleCalendarPage() {
   const navigate = useNavigate();
+  const { data: workspace } = useApiResource({
+    initialData: {} as ScheduleWorkspaceResponse,
+    loader: () => creatorApi.liveScheduleWorkspace() as Promise<ScheduleWorkspaceResponse>,
+  });
 
   const [viewMode, setViewMode] = useState<"week" | "month" | "agenda">("week");
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const sessions = useMemo(() => (workspace.sessions || []).map(toSession), [workspace.sessions]);
+  const aiSlots = useMemo(() => {
+    return (workspace.aiSlots || []).map((slot, index) => ({
+      id: Number(slot.id || index + 1),
+      label: String(slot.label || ""),
+      reason: String(slot.reason || ""),
+      recommendedFor: String(slot.recommendedFor || ""),
+    }));
+  }, [workspace.aiSlots]);
 
   const showToast = (msg: string) => setToast(msg);
 
   const conflicts = useMemo(() => {
     const msgs: string[] = [];
-    const heavyDays = SESSIONS.filter((s) => s.workloadScore >= 4);
+    const heavyDays = sessions.filter((s) => s.workloadScore >= 4);
     if (heavyDays.length > 0) {
       msgs.push(
         "You have heavy workload on Tech Friday. Consider spacing prep and lives."
       );
     }
-    const conflictSessions = SESSIONS.filter((s) => s.conflict);
+    const conflictSessions = sessions.filter((s) => s.conflict);
     if (conflictSessions.length > 0) {
       msgs.push(
         "Some sessionz may overlap with prep windows. Check Tech Friday schedule."
       );
     }
     return msgs;
-  }, []);
+  }, [sessions]);
 
   const sessionsByDay = useMemo(() => {
     const map: Record<string, Session[]> = {};
     WEEK_DAYS.forEach((d) => {
       map[d] = [];
     });
-    SESSIONS.forEach((s) => {
+    sessions.forEach((s) => {
       if (!map[s.weekday]) map[s.weekday] = [];
       map[s.weekday].push(s);
     });
     return map;
-  }, []);
+  }, [sessions]);
 
   const agendaSessions = useMemo(() => {
-    return [...SESSIONS].sort((a, b) => {
+    return [...sessions].sort((a, b) => {
       const order = WEEK_DAYS.indexOf(a.weekday) - WEEK_DAYS.indexOf(b.weekday);
       if (order !== 0) return order;
       return a.time.localeCompare(b.time);
     });
-  }, []);
+  }, [sessions]);
 
 
   const [rescheduleSession, setRescheduleSession] = useState<Session | null>(null);
@@ -276,7 +222,7 @@ function LiveScheduleCalendarPage() {
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
-              {AI_SLOTS.map((slot) => (
+              {aiSlots.map((slot) => (
                 <div
                   key={slot.id}
                   className="border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 bg-slate-50 dark:bg-slate-800 flex flex-col gap-0.5 transition-colors"
@@ -319,7 +265,7 @@ function LiveScheduleCalendarPage() {
           <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1.3fr)] gap-3 items-start text-sm">
             {/* Calendar View (Week, Month, or Agenda) */}
             {viewMode === "month" ? (
-              <MonthView sessions={SESSIONS} onSelectSession={setSelectedSession} />
+              <MonthView sessions={sessions} onSelectSession={setSelectedSession} />
             ) : viewMode === "agenda" ? (
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
                 <div className="flex items-center justify-between mb-2">
@@ -442,6 +388,7 @@ function LiveScheduleCalendarPage() {
       {rescheduleSession && (
         <RescheduleDrawer
           session={rescheduleSession}
+          aiSlots={aiSlots}
           onClose={() => setRescheduleSession(null)}
           onSubmit={submitReschedule}
         />
@@ -583,18 +530,19 @@ function AgendaRow({
 
 type RescheduleDrawerProps = {
   session: Session;
+  aiSlots: Array<{ id: number; label: string; reason: string; recommendedFor: string }>;
   onClose: () => void;
   onSubmit: (reason: string) => void;
 };
 
-function RescheduleDrawer({ session, onClose, onSubmit }: RescheduleDrawerProps) {
+function RescheduleDrawer({ session, aiSlots, onClose, onSubmit }: RescheduleDrawerProps) {
   const [reason, setReason] = useState("");
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
 
   const handleSubmit = () => {
     if (!reason.trim() && !selectedSlot) return;
     const finalReason = selectedSlot
-      ? `Preferred slot: ${AI_SLOTS.find(s => s.id === selectedSlot)?.label}. ${reason}`
+      ? `Preferred slot: ${aiSlots.find((s) => s.id === selectedSlot)?.label}. ${reason}`
       : reason;
     onSubmit(finalReason);
   };
@@ -638,7 +586,7 @@ function RescheduleDrawer({ session, onClose, onSubmit }: RescheduleDrawerProps)
               <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">Suggested alternative slots</h4>
             </div>
             <div className="space-y-2">
-              {AI_SLOTS.map((slot) => (
+              {aiSlots.map((slot) => (
                 <button
                   key={slot.id}
                   onClick={() => setSelectedSlot(slot.id === selectedSlot ? null : slot.id)}

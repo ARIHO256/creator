@@ -11,6 +11,8 @@ import React, { useState, useMemo } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
 import { QRCodeCanvas } from "qrcode.react";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type LiveReplayRecord } from "../../lib/creatorApi";
 
 type Replay = {
   id: string;
@@ -38,10 +40,44 @@ type ExportTargets = {
   assetLibrary: boolean;
 };
 
+function mapReplayStatus(record: LiveReplayRecord) {
+  if (record.published) return "Published";
+  if (String(record.status || "").trim().toLowerCase() === "archived") return "Private";
+  return "Draft replay";
+}
+
+function colorForReplay(status: string) {
+  if (status === "Published") return "bg-emerald-100";
+  if (status === "Private") return "bg-slate-200";
+  return "bg-sky-100";
+}
+
+function toReplay(record: LiveReplayRecord): Replay {
+  const data = record.data && typeof record.data === "object" ? record.data : {};
+  const status = mapReplayStatus(record);
+  return {
+    id: record.id,
+    title: String((data as { title?: unknown }).title || `Replay ${record.id}`),
+    date: new Date(record.updatedAt || record.createdAt || Date.now()).toLocaleDateString(undefined, {
+      month: "short",
+      day: "2-digit",
+      year: "numeric"
+    }),
+    views: Number((data as { views?: unknown }).views || 0),
+    sales: Number((data as { sales?: unknown }).sales || 0),
+    duration: String((data as { duration?: unknown }).duration || "00:00:00"),
+    status,
+    thumbColor: colorForReplay(status),
+    performanceTags: Array.isArray((data as { performanceTags?: unknown[] }).performanceTags)
+      ? ((data as { performanceTags?: unknown[] }).performanceTags as unknown[]).map((item) => String(item))
+      : []
+  };
+}
+
 
 function LiveReplaysClipsPage() {
 
-  const [selectedReplayId, setSelectedReplayId] = useState("R-101");
+  const [selectedReplayId, setSelectedReplayId] = useState<string | null>(null);
   const [shareReplay, setShareReplay] = useState<Replay | null>(null); // State for sharing modal
   const [clipStart, setClipStart] = useState(30); // seconds
   const [clipEnd, setClipEnd] = useState(90); // seconds
@@ -55,41 +91,11 @@ function LiveReplaysClipsPage() {
     assetLibrary: true
   });
 
-  const [replays, setReplays] = useState<Replay[]>([
-    {
-      id: "R-101",
-      title: "Autumn Beauty Flash – Serum launch",
-      date: "Oct 10, 2025",
-      views: 1543,
-      sales: 62,
-      duration: "01:12:45",
-      status: "Published",
-      thumbColor: "bg-rose-100",
-      performanceTags: ["Strong hook", "High retention", "Serum focus"]
-    },
-    {
-      id: "R-102",
-      title: "Tech Friday Mega Live – Gadgets Q&A",
-      date: "Oct 11, 2025",
-      views: 2310,
-      sales: 87,
-      duration: "01:28:03",
-      status: "Draft replay",
-      thumbColor: "bg-sky-100",
-      performanceTags: ["Q&A heavy", "Late peak", "Bundle upsells"]
-    },
-    {
-      id: "R-103",
-      title: "Faith & Wellness Morning Dealz",
-      date: "Oct 12, 2025",
-      views: 987,
-      sales: 29,
-      duration: "00:54:10",
-      status: "Published",
-      thumbColor: "bg-emerald-100",
-      performanceTags: ["Soft opener", "High replay", "Community chat"]
-    }
-  ]);
+  const { data: replayRecords, setData: setReplayRecords } = useApiResource({
+    initialData: [] as LiveReplayRecord[],
+    loader: () => creatorApi.liveReplays()
+  });
+  const replays = useMemo(() => replayRecords.map(toReplay), [replayRecords]);
 
   const selectedReplay =
     replays.find((r) => r.id === selectedReplayId) || replays[0] || null;
@@ -171,15 +177,15 @@ function LiveReplaysClipsPage() {
   };
 
   const handlePublishReplay = (id: string): void => {
-    setReplays((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: "Published" } : r))
-    );
+    void creatorApi.publishLiveReplay(id, {}).then((updated) => {
+      setReplayRecords((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    });
   };
 
   const handleSetPrivate = (id: string): void => {
-    setReplays((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: "Private" } : r))
-    );
+    void creatorApi.updateLiveReplay(id, { status: "archived" }).then((updated) => {
+      setReplayRecords((prev) => prev.map((item) => (item.id === id ? updated : item)));
+    });
   };
 
   const handleExportClip = () => {

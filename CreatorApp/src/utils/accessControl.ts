@@ -1,21 +1,33 @@
 
+import {
+    deriveUserStatusFromSession,
+    getPostAuthPath,
+    readAuthSession
+} from "../lib/authSession";
+
 export type UserStatus = "GUEST" | "AWAITING_APPROVAL" | "NEEDS_ONBOARDING" | "APPROVED";
 
 export const getUserStatus = (): UserStatus => {
     if (typeof window === 'undefined') return "GUEST";
 
+    const session = readAuthSession();
+    if (session) {
+        return deriveUserStatusFromSession(session);
+    }
+
     const isAuthenticated = localStorage.getItem("creatorPlatformEntered") === "true";
     if (!isAuthenticated) return "GUEST";
 
-    const approvalStatus = localStorage.getItem("mldz_creator_approval_status");
+    const approvalStatus = localStorage.getItem("mldz_creator_approval_status")?.toUpperCase();
 
-    // If we have an approval status and it's not Approved, they are awaiting
-    if (approvalStatus && approvalStatus !== "Approved") {
+    if (approvalStatus === "NEEDS_ONBOARDING") {
+        return "NEEDS_ONBOARDING";
+    }
+
+    if (approvalStatus && approvalStatus !== "APPROVED") {
         return "AWAITING_APPROVAL";
     }
 
-    // If they are authenticated but we have no approval status record, 
-    // it implies they haven't finished onboarding yet (which triggers approval flow)
     if (!approvalStatus) {
         return "NEEDS_ONBOARDING";
     }
@@ -38,6 +50,10 @@ export const getLandingPageTarget = (targetPath: string): string => {
 
 export const getUserRole = (): string => {
     if (typeof window === 'undefined') return "creator";
+    const session = readAuthSession();
+    if (session?.activeRole || session?.role) {
+        return String(session.activeRole || session.role).toLowerCase();
+    }
     return localStorage.getItem("userRole") || "owner";
 };
 
@@ -73,17 +89,15 @@ export const hasPermission = (permission: string): boolean => {
 };
 
 export const getPostAuthTarget = (): string => {
-    const status = getUserStatus();
-
-    switch (status) {
-        case "AWAITING_APPROVAL":
-            return "/account-approval";
-        case "NEEDS_ONBOARDING":
-            return "/onboarding";
-        case "APPROVED":
-            return "/home";
-        case "GUEST":
-        default:
-            return "/onboarding";
+    const session = readAuthSession();
+    if (session) {
+        return getPostAuthPath(session);
     }
+
+    const status = getUserStatus();
+    return status === "APPROVED"
+        ? "/home"
+        : status === "AWAITING_APPROVAL"
+            ? "/account-approval"
+            : "/onboarding";
 };

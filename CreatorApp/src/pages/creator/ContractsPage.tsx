@@ -11,18 +11,156 @@ import React, { useState, useMemo } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
 import { jsPDF } from "jspdf";
-
-import { CONTRACTS, Contract, ScheduleSegment, Deliverable, TimelineEvent } from "../../data/mockContracts";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type ContractRecord } from "../../lib/creatorApi";
 
 const CONTRACT_FILTERS = ["All", "Active", "Upcoming", "Completed", "Terminated"] as const;
+
+type ScheduleSegment = {
+  label: string;
+  start: number;
+  end: number;
+};
+
+type Deliverable = {
+  id: number;
+  label: string;
+  due: string;
+  done: boolean;
+};
+
+type TimelineEvent = {
+  date: string;
+  label: string;
+};
+
+type Contract = {
+  id: string;
+  brand: string;
+  campaign: string;
+  period: string;
+  status: string;
+  value: number;
+  currency: string;
+  remainingTasks: number;
+  totalTasks: number;
+  payoutStatus: string;
+  health: string;
+  healthScore: number;
+  schedule: ScheduleSegment[];
+  deliverables: Deliverable[];
+  timeline: TimelineEvent[];
+};
+
+function formatContractDate(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function mapContractStatus(value?: string | null) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "COMPLETED") return "Completed";
+  if (normalized === "TERMINATED" || normalized === "CANCELLED") return "Terminated";
+  if (normalized === "PENDING" || normalized === "DRAFT" || normalized === "UPCOMING") return "Upcoming";
+  return "Active";
+}
+
+function mapDeliverables(deliverables: unknown[], totalTasks: number): Deliverable[] {
+  const mapped = deliverables
+    .map((item, index) => {
+      if (!item || typeof item !== "object") return null;
+      const payload = item as Record<string, unknown>;
+      return {
+        id: Number(payload.id || index + 1),
+        label: String(payload.label || payload.title || `Deliverable ${index + 1}`),
+        due: String(payload.due || payload.dueAt || "TBD"),
+        done: Boolean(payload.done || payload.completed)
+      };
+    })
+    .filter((item): item is Deliverable => Boolean(item));
+
+  if (mapped.length > 0) return mapped;
+
+  return Array.from({ length: Math.max(0, totalTasks) }).map((_, index) => ({
+    id: index + 1,
+    label: `Deliverable ${index + 1}`,
+    due: "TBD",
+    done: false
+  }));
+}
+
+function toContract(record: ContractRecord): Contract {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const status = mapContractStatus(record.status);
+  const totalTasks = Number(record.totalTasks || 0);
+  const deliverables = mapDeliverables(Array.isArray(record.deliverables) ? record.deliverables : [], totalTasks);
+  const completedTasks = deliverables.filter((item) => item.done).length;
+  const schedule = Array.isArray((metadata as { schedule?: unknown[] }).schedule)
+    ? ((metadata as { schedule?: unknown[] }).schedule as unknown[])
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const payload = item as Record<string, unknown>;
+          return {
+            label: String(payload.label || "Stage"),
+            start: Number(payload.start || 0),
+            end: Number(payload.end || 0)
+          };
+        })
+        .filter((item): item is ScheduleSegment => Boolean(item))
+    : [];
+  const timeline = Array.isArray((metadata as { timeline?: unknown[] }).timeline)
+    ? ((metadata as { timeline?: unknown[] }).timeline as unknown[])
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const payload = item as Record<string, unknown>;
+          return {
+            date: String(payload.date || formatContractDate(record.createdAt) || "—"),
+            label: String(payload.label || "Contract updated")
+          };
+        })
+        .filter((item): item is TimelineEvent => Boolean(item))
+    : [];
+
+  return {
+    id: record.id,
+    brand: String(record.brand || record.sellerName || record.seller || "Supplier"),
+    campaign: String(record.campaignName || record.campaign || "Campaign"),
+    period:
+      String((metadata as { period?: unknown }).period || "").trim() ||
+      [formatContractDate(record.createdAt), formatContractDate(record.updatedAt)].filter(Boolean).join(" – ") ||
+      "Current term",
+    status,
+    value: Number(record.value || 0),
+    currency: String(record.currency || "USD"),
+    remainingTasks: Math.max(0, totalTasks - completedTasks),
+    totalTasks,
+    payoutStatus: String((metadata as { payoutStatus?: unknown }).payoutStatus || (status === "Completed" ? "Ready for payout" : "In progress")),
+    health: String((metadata as { health?: unknown }).health || (status === "Completed" ? "Completed" : status === "Terminated" ? "Terminated" : "On track")),
+    healthScore: Number((metadata as { healthScore?: unknown }).healthScore || (status === "Completed" ? 95 : status === "Terminated" ? 25 : 80)),
+    schedule,
+    deliverables,
+    timeline:
+      timeline.length > 0
+        ? timeline
+        : [
+            { date: formatContractDate(record.createdAt) || "—", label: "Contract created" },
+            { date: formatContractDate(record.updatedAt || record.createdAt) || "—", label: "Last updated" }
+          ]
+  };
+}
 
 
 function ContractsPage() {
 
   const [activeFilter, setActiveFilter] = useState("Active");
-  const [selectedContractId, setSelectedContractId] = useState("C-101");
-
-  const contracts = CONTRACTS;
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(null);
+  const { data: contractRecords, setData: setContractRecords } = useApiResource({
+    initialData: [] as ContractRecord[],
+    loader: () => creatorApi.contracts()
+  });
+  const contracts = useMemo(() => contractRecords.map(toContract), [contractRecords]);
 
   const filteredContracts = useMemo(() => {
     return contracts.filter((c) => {
@@ -113,7 +251,27 @@ function ContractsPage() {
                 </p>
               </div>
             ) : (
-              <ContractDetail contract={selectedContract} />
+              <ContractDetail
+                contract={selectedContract}
+                onTerminationRequested={() => {
+                  setContractRecords((prev) =>
+                    prev.map((item) =>
+                      item.id === selectedContract.id
+                        ? {
+                            ...item,
+                            status: "TERMINATED",
+                            metadata: {
+                              ...(item.metadata && typeof item.metadata === "object" ? item.metadata : {}),
+                              health: "Terminated",
+                              healthScore: 25,
+                              payoutStatus: "Termination requested"
+                            }
+                          }
+                        : item
+                    )
+                  );
+                }}
+              />
             )}
           </section>
         </div>
@@ -191,9 +349,10 @@ function ContractHealthPill({ health, score }: ContractHealthPillProps) {
 
 type ContractDetailProps = {
   contract: Contract;
+  onTerminationRequested: () => void;
 };
 
-function ContractDetail({ contract }: ContractDetailProps) {
+function ContractDetail({ contract, onTerminationRequested }: ContractDetailProps) {
   const [terminationReason, setTerminationReason] = useState("for-cause");
   const [terminationExplanation, setTerminationExplanation] = useState("");
   const [terminationError, setTerminationError] = useState("");
@@ -210,20 +369,15 @@ function ContractDetail({ contract }: ContractDetailProps) {
     }
     setTerminationError("");
     setIsSimulating(true);
-
-    // Simulate simultaneous notifications
-    setTimeout(() => {
+    try {
+      await creatorApi.terminateContract(contract.id, `${terminationReason}: ${terminationExplanation.trim()}`);
       setNotificationsSentTo(["Supplier", "EVzone Admin"]);
       setTerminationStatus("Requested");
-      setIsSimulating(false);
       setIsTerminationRequested(true);
-
-      console.log("Termination request submitted:", {
-        reason: terminationReason,
-        explanation: terminationExplanation,
-        notified: ["Supplier", "EVzone Admin"]
-      });
-    }, 1500);
+      onTerminationRequested();
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
   const handleDownloadPDF = () => {

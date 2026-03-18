@@ -21,11 +21,10 @@ import {
 import { useLocation } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { creatorApi, type ReviewRecord as BackendReviewRecord } from "../../lib/creatorApi";
 import { getUserRole } from "../../utils/accessControl";
 
 const ORANGE = "#f77f00";
-const REVIEW_STORAGE_KEY = "mldz:liveSessionReviews:v1";
-
 type TransactionIntent =
   | "bought"
   | "added_to_cart"
@@ -110,60 +109,52 @@ function resolveCreatorIdentity(params: { queryCreatorId?: string; queryCreatorN
   return { creatorId, creatorName, creatorHandle };
 }
 
-function normalizeReviewShape(record: unknown): ReviewRecord | null {
-  if (!record || typeof record !== "object") return null;
-  const r = record as Partial<ReviewRecord>;
-  if (!r.id || !r.sessionId || !r.creatorId || !r.creatorName || !r.sessionTitle || !r.createdAt) return null;
-
-  return {
-    id: String(r.id),
-    sessionId: String(r.sessionId),
-    creatorId: String(r.creatorId),
-    creatorName: String(r.creatorName),
-    creatorHandle: String(r.creatorHandle || toHandle(String(r.creatorName))),
-    sessionTitle: String(r.sessionTitle),
-    endedAt: String(r.endedAt || r.createdAt),
-    overallRating: Number(r.overallRating || 0),
-    categoryRatings: {
-      presentation: Number(r.categoryRatings?.presentation || 0),
-      helpfulness: Number(r.categoryRatings?.helpfulness || 0),
-      productKnowledge: Number(r.categoryRatings?.productKnowledge || 0),
-      interaction: Number(r.categoryRatings?.interaction || 0),
-      trust: Number(r.categoryRatings?.trust || 0)
-    },
-    quickTags: Array.isArray(r.quickTags) ? r.quickTags.map((tag) => String(tag)) : [],
-    issueTags: Array.isArray(r.issueTags) ? r.issueTags.map((tag) => String(tag)) : [],
-    reviewText: String(r.reviewText || ""),
-    wouldJoinAgain: r.wouldJoinAgain === true || r.wouldJoinAgain === false ? r.wouldJoinAgain : null,
-    transactionIntent:
-      r.transactionIntent === "bought" ||
-        r.transactionIntent === "added_to_cart" ||
-        r.transactionIntent === "booked" ||
-        r.transactionIntent === "requested_quote" ||
-        r.transactionIntent === "just_watched"
-        ? r.transactionIntent
-        : null,
-    publicReview: Boolean(r.publicReview),
-    anonymous: Boolean(r.anonymous),
-    createdAt: String(r.createdAt)
-  };
+function normalizeTransactionIntent(value: unknown): TransactionIntent {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (
+    normalized === "bought" ||
+    normalized === "added_to_cart" ||
+    normalized === "booked" ||
+    normalized === "requested_quote" ||
+    normalized === "just_watched"
+  ) {
+    return normalized;
+  }
+  return null;
 }
 
-function readStoredReviewsForCreator(creatorId: string, isOwner: boolean): ReviewRecord[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(REVIEW_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map(normalizeReviewShape)
-      .filter((v): v is ReviewRecord => Boolean(v))
-      .filter((review) => isOwner || review.creatorId === creatorId)
-      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-  } catch {
-    return [];
-  }
+function normalizeReviewShape(record: BackendReviewRecord, creator: { creatorId: string; creatorName: string; creatorHandle: string }): ReviewRecord | null {
+  if (!record?.id) return null;
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const ratingBreakdown = record.ratingBreakdown && typeof record.ratingBreakdown === "object" ? record.ratingBreakdown : {};
+  const subjectUserId = String(record.subjectUserId || creator.creatorId);
+  const sessionId = String(record.sessionId || record.subjectId || record.campaignId || record.id);
+  const sessionTitle = String(record.title || (metadata as { sessionTitle?: unknown }).sessionTitle || "Live session");
+  return {
+    id: String(record.id),
+    sessionId,
+    creatorId: subjectUserId,
+    creatorName: creator.creatorName,
+    creatorHandle: creator.creatorHandle,
+    sessionTitle,
+    endedAt: String((metadata as { endedAt?: unknown }).endedAt || record.createdAt || new Date().toISOString()),
+    overallRating: Number(record.ratingOverall || 0),
+    categoryRatings: {
+      presentation: Number((ratingBreakdown as { presentation?: unknown }).presentation || 0),
+      helpfulness: Number((ratingBreakdown as { helpfulness?: unknown }).helpfulness || 0),
+      productKnowledge: Number((ratingBreakdown as { productKnowledge?: unknown }).productKnowledge || 0),
+      interaction: Number((ratingBreakdown as { interaction?: unknown }).interaction || 0),
+      trust: Number((ratingBreakdown as { trust?: unknown }).trust || 0)
+    },
+    quickTags: Array.isArray(record.quickTags) ? record.quickTags.map((tag) => String(tag)) : [],
+    issueTags: Array.isArray(record.issueTags) ? record.issueTags.map((tag) => String(tag)) : [],
+    reviewText: String(record.reviewText || ""),
+    wouldJoinAgain: record.wouldJoinAgain === true || record.wouldJoinAgain === false ? record.wouldJoinAgain : null,
+    transactionIntent: normalizeTransactionIntent(record.transactionIntent),
+    publicReview: Boolean(record.isPublic),
+    anonymous: Boolean(record.isAnonymous),
+    createdAt: String(record.createdAt || new Date().toISOString())
+  };
 }
 
 function formatIntent(intent: TransactionIntent) {
@@ -372,14 +363,16 @@ export default function CreatorReviewsDashboardPage() {
 
     run(
       async () => {
-        // Keep async call shape aligned with project flow without seeding local demo data.
-        await new Promise<void>((resolve) => setTimeout(resolve, 300));
         const creator = resolveCreatorIdentity({
           queryCreatorId: queryCreatorId || undefined,
           queryCreatorName: queryCreatorName || undefined
         });
         const isOwner = getUserRole().toLowerCase() === "owner";
-        const reviews = readStoredReviewsForCreator(creator.creatorId, isOwner);
+        const reviews = (await creatorApi.reviews({ limit: 500 }))
+          .map((review) => normalizeReviewShape(review, creator))
+          .filter((review): review is ReviewRecord => Boolean(review))
+          .filter((review) => isOwner || review.creatorId === creator.creatorId)
+          .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
         return { creator, reviews };
       },
       {

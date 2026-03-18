@@ -20,9 +20,10 @@ import {
   X
 } from "lucide-react";
 import { PageHeader } from "../../components/PageHeader";
-import { useNotification } from "../../contexts/NotificationContext";
+import { useApiResource } from "../../hooks/useApiResource";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
+import { creatorApi, type AuditLogRecord } from "../../lib/creatorApi";
 
 /**
  * Creator Platform – Audit Log (Premium)
@@ -355,49 +356,80 @@ function Modal({
   );
 }
 
-function buildMockEvents(): AuditEvent[] {
-  const now = Date.now();
-  const iso = (ms: number) => new Date(ms).toISOString();
+function prettifyAction(value?: string | null) {
+  return String(value || "Event")
+    .replace(/[._]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (match) => match.toUpperCase()) || "Event";
+}
 
-  return [
-    {
-      id: "AUD-90001",
-      ts: iso(now - 2 * 60 * 1000),
-      actor: { name: "Ronald Isabirye", handle: "@ronald", role: "Owner" },
-      module: "Shoppable Adz",
-      action: "Ad published",
-      entity: { type: "Ad", id: "AD-10021", name: "Holiday EV Shoppable Ad" },
-      severity: "Info",
-      outcome: "Success",
-      ip: "102.88.12.34",
-      location: "Kampala, UG",
-      meta: { platform: "TikTok", schedule: "Publish now", tracking: "mldz.link/..." }
+function mapModuleName(route?: string | null, entityType?: string | null, action?: string | null): ModuleName {
+  const source = `${route || ""} ${entityType || ""} ${action || ""}`.toLowerCase();
+  if (source.includes("role")) return "Roles & Permissions";
+  if (source.includes("onboarding") || source.includes("approval")) return "Onboarding";
+  if (source.includes("payout") || source.includes("earning")) return "Payouts";
+  if (source.includes("setting") || source.includes("security") || source.includes("safety")) return "Settings & Safety";
+  if (source.includes("guest") || source.includes("partner")) return "Partners & Guests";
+  if (source.includes("crew") || source.includes("live")) return "Live Crew";
+  return "Shoppable Adz";
+}
+
+function mapSeverity(record: AuditLogRecord): Severity {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const explicit = String((metadata as { severity?: unknown }).severity || "").trim().toLowerCase();
+  if (explicit === "critical") return "Critical";
+  if (explicit === "warning" || explicit === "warn") return "Warning";
+  const statusCode = Number(record.statusCode || 0);
+  if (statusCode >= 500) return "Critical";
+  if (statusCode >= 400) return "Warning";
+  return "Info";
+}
+
+function mapOutcome(record: AuditLogRecord): Outcome {
+  const statusCode = Number(record.statusCode || 0);
+  if (!statusCode) return "Pending";
+  if (statusCode >= 500) return "Failed";
+  if (statusCode >= 400) return "Blocked";
+  if (statusCode >= 200 && statusCode < 300) return "Success";
+  return "Pending";
+}
+
+function toAuditEvent(record: AuditLogRecord): AuditEvent {
+  const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const actorName = String(
+    (metadata as { actorName?: unknown; userName?: unknown; email?: unknown }).actorName ||
+    (metadata as { actorName?: unknown; userName?: unknown; email?: unknown }).userName ||
+    (metadata as { actorName?: unknown; userName?: unknown; email?: unknown }).email ||
+    "Workspace user"
+  );
+  const actorHandle = String(
+    (metadata as { actorHandle?: unknown; username?: unknown }).actorHandle ||
+    (metadata as { actorHandle?: unknown; username?: unknown }).username ||
+    ""
+  ).trim();
+
+  return {
+    id: record.id,
+    ts: String(record.createdAt || new Date().toISOString()),
+    actor: {
+      name: actorName,
+      handle: actorHandle || undefined,
+      role: String((metadata as { actorRole?: unknown; role?: unknown }).actorRole || (metadata as { actorRole?: unknown; role?: unknown }).role || "")
     },
-    {
-      id: "AUD-90002",
-      ts: iso(now - 18 * 60 * 1000),
-      actor: { name: "Producer Team", handle: "@producerteam", role: "Producer" },
-      module: "Shoppable Adz",
-      action: "Tracking link regenerated",
-      entity: { type: "Ad", id: "AD-10023", name: "Home Picks Shoppable Adz" },
-      severity: "Warning",
-      outcome: "Success",
-      ip: "102.88.12.34",
-      location: "Kampala, UG",
-      meta: { reason: "Broken link detected", old: "mldz.link/old", next: "mldz.link/new" }
+    module: mapModuleName(record.route, record.entityType, record.action),
+    action: prettifyAction(record.action),
+    entity: {
+      type: String(record.entityType || "Record"),
+      id: record.entityId ? String(record.entityId) : undefined,
+      name: typeof (metadata as { entityName?: unknown }).entityName === "string" ? String((metadata as { entityName?: unknown }).entityName) : undefined
     },
-    {
-      id: "AUD-90003",
-      ts: iso(now - 55 * 60 * 1000),
-      actor: { name: "Amina S.", handle: "@amina", role: "Editor" },
-      module: "Shoppable Adz",
-      action: "Ad submitted for approval",
-      entity: { type: "Ad", id: "AD-10022", name: "Beauty Drop Shoppable Adz" },
-      severity: "Info",
-      outcome: "Pending",
-      meta: { approvalQueue: "Brand review", requestedBy: "Editor" }
-    }
-  ];
+    severity: mapSeverity(record),
+    outcome: mapOutcome(record),
+    ip: record.ipAddress ? String(record.ipAddress) : undefined,
+    location: typeof (metadata as { location?: unknown }).location === "string" ? String((metadata as { location?: unknown }).location) : undefined,
+    meta: metadata
+  };
 }
 
 // Lightweight self-tests (run once)
@@ -424,7 +456,6 @@ function __selfTest() {
 }
 
 export default function CreatorAuditLogPage() {
-  const { showNotification } = useNotification();
   const { run, isPending: actionPending } = useAsyncAction();
 
   useEffect(() => {
@@ -448,8 +479,11 @@ export default function CreatorAuditLogPage() {
   const canView = !!viewerPerms["audit.view"];
   const canExport = !!viewerPerms["audit.export"];
   const canViewSensitive = !!viewerPerms["audit.view_sensitive"];
-
-  const [events] = useState<AuditEvent[]>(() => buildMockEvents());
+  const { data: auditRecords } = useApiResource({
+    initialData: [] as AuditLogRecord[],
+    loader: () => creatorApi.auditLogs()
+  });
+  const events = useMemo(() => auditRecords.map(toAuditEvent), [auditRecords]);
 
   // Filters
   const [range, setRange] = useState<"24h" | "7d" | "30d" | "all">("7d");

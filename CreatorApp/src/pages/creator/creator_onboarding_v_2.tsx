@@ -1685,10 +1685,8 @@ export default function CreatorOnboardingWorldClassV25() {
         push("Saved locally, but backend submission failed.", "error");
         return;
       }
-      localStorage.setItem("creatorPlatformEntered", "true");
-      localStorage.setItem("mldz_creator_approval_status", "UnderReview");
-      push("Onboarding submitted. Opening approval status.", "success");
-      setTimeout(() => navigate("/account-approval"), 1200);
+      push("Onboarding submitted. Updating your account status...", "success");
+      setTimeout(() => navigate("/auth"), 300);
     }
   };
 
