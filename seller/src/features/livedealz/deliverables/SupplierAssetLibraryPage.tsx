@@ -184,12 +184,65 @@ async function readFileAsDataUrl(file) {
   });
 }
 
+function extensionFromName(name) {
+  const match = String(name || "").match(/\.([a-z0-9]{1,12})$/i);
+  return match ? match[1].toLowerCase() : undefined;
+}
+
+function inferUploadKind(file, fallbackType) {
+  const mime = String(file?.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (
+    mime === "application/pdf" ||
+    mime.startsWith("text/") ||
+    mime.includes("msword") ||
+    mime.includes("officedocument") ||
+    mime.includes("spreadsheet") ||
+    mime.includes("presentation")
+  ) {
+    return "document";
+  }
+
+  if (fallbackType === "video") return "video";
+  if (fallbackType === "image" || fallbackType === "overlay") return "image";
+  if (fallbackType === "doc" || fallbackType === "script" || fallbackType === "template") return "document";
+  return "other";
+}
+
+function inferAssetPreviewKind(mediaType, explicit) {
+  const normalized = String(explicit || "").toLowerCase();
+  if (normalized === "video") return "video";
+  if (normalized === "document" || normalized === "doc" || normalized === "pdf") return "document";
+  if (normalized === "image") return "image";
+  if (mediaType === "video") return "video";
+  if (mediaType === "doc" || mediaType === "script" || mediaType === "template") return "document";
+  return "image";
+}
+
+function canRenderAssetImage(asset) {
+  return asset.previewKind === "image" && Boolean(asset.previewUrl);
+}
+
+function renderAssetThumbnail(asset) {
+  if (canRenderAssetImage(asset) && (asset.thumbnailUrl || asset.previewUrl)) {
+    return <img src={asset.thumbnailUrl || asset.previewUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />;
+  }
+
+  return (
+    <div className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+      {asset.previewKind === "video" ? "🎬" : asset.previewKind === "document" ? "📄" : mediaEmoji(asset.mediaType)}
+    </div>
+  );
+}
+
 function mapBackendAsset(asset) {
   const metadata = asset?.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
   const tags = Array.isArray(metadata.tags) ? metadata.tags.map((tag) => String(tag)) : [];
   const width = Number(metadata.width);
   const height = Number(metadata.height);
-  const previewKind = String(metadata.previewKind || (asset.kind === "video" ? "video" : "image"));
+  const mediaType = String(asset.kind || metadata.mediaType || "image");
+  const previewKind = inferAssetPreviewKind(mediaType, metadata.previewKind);
   return {
     id: String(asset.id || ""),
     creatorScope: String(metadata.creatorScope || "all"),
@@ -199,7 +252,7 @@ function mapBackendAsset(asset) {
     supplierId: String(metadata.supplierId || ""),
     brand: String(metadata.brand || ""),
     tags,
-    mediaType: String(asset.kind || metadata.mediaType || "image"),
+    mediaType,
     source: String(metadata.source || "supplier"),
     ownerLabel: String(metadata.ownerLabel || `Owner: ${metadata.owner || "Supplier"}`),
     status: String(metadata.status || "draft"),
@@ -230,7 +283,7 @@ function buildAssetMetadata(asset, note) {
     source: asset.source || "supplier",
     ownerLabel: asset.ownerLabel || "Owner: Supplier",
     status: asset.status || "draft",
-    previewKind: asset.previewKind || (asset.mediaType === "video" ? "video" : "image"),
+    previewKind: asset.previewKind || inferAssetPreviewKind(asset.mediaType, null),
     thumbnailUrl: asset.thumbnailUrl || "",
     posterUrl: asset.thumbnailUrl || "",
     role: asset.role || null,
@@ -762,6 +815,20 @@ function PreviewPane({
               playsInline
             />
           </div>
+        ) : asset.previewKind === "document" && asset.previewUrl ? (
+          /\.pdf($|\?)/i.test(asset.previewUrl) ? (
+            <iframe
+              src={asset.previewUrl}
+              title={asset.title}
+              className="h-[420px] w-full bg-white"
+            />
+          ) : (
+            <div className="flex min-h-[220px] flex-col items-center justify-center p-6 text-center text-sm text-slate-600 dark:text-slate-300">
+              <div className="text-4xl">📄</div>
+              <div className="mt-2 font-semibold text-slate-900 dark:text-slate-50">{asset.title}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">Document preview is not inline for this file type.</div>
+            </div>
+          )
         ) : asset.previewKind === "image" && asset.previewUrl ? (
           <div className="relative aspect-video bg-slate-200">
             <img src={asset.previewUrl} alt={asset.title} className="absolute inset-0 h-full w-full object-cover" />
@@ -1205,13 +1272,7 @@ export default function SupplierAssetLibraryPage() {
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const previewKind = submitDraft.mediaType === "video" ? "video" : "image";
-    const previewUrl =
-      submitDraft.mediaType === "link"
-        ? submitDraft.linkUrl
-        : submitDraft.files[0]
-          ? await readFileAsDataUrl(submitDraft.files[0])
-          : submitDraft.postUrl;
+    const previewKind = inferAssetPreviewKind(submitDraft.mediaType, null);
 
     const dims = submitImageMeta ? { width: submitImageMeta.width, height: submitImageMeta.height } : undefined;
 
@@ -1229,8 +1290,8 @@ export default function SupplierAssetLibraryPage() {
       ownerLabel: "Owner: Supplier",
       status: finalStatus,
       lastUpdatedLabel: "Last updated: Just now",
-      thumbnailUrl: previewKind === "image" ? previewUrl : undefined,
-      previewUrl,
+      thumbnailUrl: undefined,
+      previewUrl: "",
       previewKind,
       dimensions: dims,
       role: submitDraft.role || undefined,
@@ -1239,13 +1300,54 @@ export default function SupplierAssetLibraryPage() {
     };
 
     try {
-      const created = await sellerBackendApi.createMediaAsset({
-        name: nextAsset.title,
-        kind: nextAsset.mediaType,
-        url: nextAsset.previewUrl,
-        isPublic: false,
-        metadata: buildAssetMetadata(nextAsset, ""),
-      });
+      let uploadedMediaRecord = null;
+      if (submitDraft.mediaType !== "link" && submitDraft.files[0]) {
+        const file = submitDraft.files[0];
+        uploadedMediaRecord = await sellerBackendApi.uploadMediaFile({
+          name: file.name,
+          dataUrl: await readFileAsDataUrl(file),
+          kind: inferUploadKind(file, submitDraft.mediaType),
+          mimeType: file.type || undefined,
+          sizeBytes: file.size,
+          extension: extensionFromName(file.name),
+          purpose: "supplier_asset_library",
+          isPublic: true,
+          visibility: "PUBLIC",
+          metadata: {
+            campaignId: submitDraft.campaignId,
+            deliverableId: submitDraft.deliverableId,
+            uploadedFrom: "supplier-asset-library"
+          }
+        });
+      }
+
+      const previewUrl =
+        (uploadedMediaRecord && String(uploadedMediaRecord.publicUrl || uploadedMediaRecord.url || "")) ||
+        (submitDraft.mediaType === "link" ? submitDraft.linkUrl : submitDraft.postUrl);
+      nextAsset.thumbnailUrl = previewKind === "image" ? previewUrl : undefined;
+      nextAsset.previewUrl = previewUrl;
+
+      const created = uploadedMediaRecord?.id
+        ? await sellerBackendApi.patchMediaAsset(String(uploadedMediaRecord.id), {
+            name: nextAsset.title,
+            kind: nextAsset.mediaType,
+            url: nextAsset.previewUrl,
+            metadata: {
+              ...buildAssetMetadata(nextAsset, ""),
+              mediaAssetId: uploadedMediaRecord.id,
+              deliverableId: submitDraft.deliverableId
+            },
+          })
+        : await sellerBackendApi.createMediaAsset({
+            name: nextAsset.title,
+            kind: nextAsset.mediaType,
+            url: nextAsset.previewUrl,
+            isPublic: true,
+            metadata: {
+              ...buildAssetMetadata(nextAsset, ""),
+              deliverableId: submitDraft.deliverableId
+            },
+          });
       setAssets((prev) => [mapBackendAsset(created), ...prev]);
       setActiveAssetId(String(created.id || nextAsset.id));
     } catch {
@@ -1527,13 +1629,7 @@ export default function SupplierAssetLibraryPage() {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {filteredAssets.map((a) => {
                   const selected = a.id === activeAssetId;
-                  const thumb = a.thumbnailUrl || a.previewUrl ? (
-                    <img src={a.thumbnailUrl || a.previewUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
-                  ) : (
-                    <div className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
-                      <span className="text-lg">{mediaEmoji(a.mediaType)}</span>
-                    </div>
-                  );
+                  const thumb = renderAssetThumbnail(a);
 
                   return (
                     <button

@@ -117,7 +117,7 @@ export class OnboardingDocumentDto {
   file?: string;
 
   @IsOptional()
-  @IsUrl({ require_tld: false })
+  @IsString()
   fileUrl?: string;
 
   @IsOptional()

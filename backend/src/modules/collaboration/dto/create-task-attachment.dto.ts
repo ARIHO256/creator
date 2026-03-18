@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsObject, IsOptional, IsString, IsUrl, Max, Min } from 'class-validator';
+import { IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CreateTaskAttachmentDto {
   @IsString()
@@ -33,7 +33,7 @@ export class CreateTaskAttachmentDto {
   storageKey?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   url?: string;
 
   @IsString()

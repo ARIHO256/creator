@@ -106,6 +106,97 @@ function serializeAttachmentSize(sizeBytes) {
   return `${Math.max(1, Math.round(Number(sizeBytes || 0) / (1024 * 1024)))}MB`;
 }
 
+function extensionFromName(name) {
+  const match = String(name || "").match(/\.([a-z0-9]{1,12})$/i);
+  return match ? match[1].toLowerCase() : undefined;
+}
+
+function inferUploadKind(file) {
+  const mime = String(file?.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (
+    mime === "application/pdf" ||
+    mime.startsWith("text/") ||
+    mime.includes("msword") ||
+    mime.includes("officedocument") ||
+    mime.includes("spreadsheet") ||
+    mime.includes("presentation")
+  ) {
+    return "document";
+  }
+  return "other";
+}
+
+async function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function inferAttachmentPreviewKind(file) {
+  const url = String(file?.url || "").toLowerCase();
+  const name = String(file?.name || "").toLowerCase();
+  const kind = String(file?.kind || "").toLowerCase();
+  if (kind === "image" || /\.(png|jpe?g|gif|webp|svg)($|\?)/i.test(url) || /\.(png|jpe?g|gif|webp|svg)$/i.test(name)) {
+    return "image";
+  }
+  if (kind === "video" || /\.(mp4|webm|mov|m4v|ogg)($|\?)/i.test(url) || /\.(mp4|webm|mov|m4v|ogg)$/i.test(name)) {
+    return "video";
+  }
+  if (kind === "document" && (/\.pdf($|\?)/i.test(url) || /\.pdf$/i.test(name))) {
+    return "pdf";
+  }
+  return kind === "document" ? "document" : null;
+}
+
+function TaskAttachmentPreview({ file }) {
+  if (!file?.url) return null;
+  const previewKind = inferAttachmentPreviewKind(file);
+
+  if (previewKind === "image") {
+    return <img src={file.url} alt={file.name} className="mt-2 h-40 w-full rounded-lg object-cover border border-slate-200 dark:border-slate-800" />;
+  }
+
+  if (previewKind === "video") {
+    return (
+      <video
+        src={file.url}
+        controls
+        playsInline
+        className="mt-2 h-48 w-full rounded-lg bg-black border border-slate-200 dark:border-slate-800"
+      />
+    );
+  }
+
+  if (previewKind === "pdf") {
+    return (
+      <iframe
+        src={file.url}
+        title={file.name}
+        className="mt-2 h-64 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white"
+      />
+    );
+  }
+
+  if (previewKind === "document") {
+    return (
+      <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-600 dark:text-slate-300">
+        Document attached. Use `Open` to view it.
+      </div>
+    );
+  }
+
+  return null;
+}
+
 function normalizeTaskRecord(task) {
   const contract = task?.contract && typeof task.contract === "object" ? task.contract : {};
   const campaign = task?.campaign && typeof task.campaign === "object" ? task.campaign : {};
@@ -113,10 +204,14 @@ function normalizeTaskRecord(task) {
   const dueAt = task?.dueAt ? new Date(task.dueAt) : null;
   const dueDaysFromNow = dueAt ? daysFromNowForYMD(toYMD(dueAt)) : 0;
   const columnId = mapTaskStatusToColumn(task?.status);
-  const submissionFiles = Array.isArray(task?.attachments)
+  const normalizedAttachments = Array.isArray(task?.attachments)
     ? task.attachments.map((attachment) => ({
+        id: String(attachment?.id || ""),
         name: String(attachment?.name || "attachment"),
         size: serializeAttachmentSize(attachment?.sizeBytes),
+        sizeLabel: serializeAttachmentSize(attachment?.sizeBytes),
+        url: String(attachment?.url || ""),
+        kind: String(attachment?.kind || "file"),
       }))
     : [];
   return {
@@ -156,7 +251,7 @@ function normalizeTaskRecord(task) {
               ? "Needs changes"
               : "In progress",
       link: String(metadata?.contentLink || metadata?.submissionLink || task?.attachments?.[0]?.url || ""),
-      files: submissionFiles
+      files: normalizedAttachments
     },
     comments: Array.isArray(task?.comments)
       ? task.comments.map((comment) => ({
@@ -167,7 +262,7 @@ function normalizeTaskRecord(task) {
           time: comment?.createdAt ? new Date(comment.createdAt).toLocaleString() : "Now"
         }))
       : [],
-    attachments: Array.isArray(task?.attachments) ? task.attachments : [],
+    attachments: normalizedAttachments,
     contractId: String(task?.contractId || contract?.id || ""),
     campaignId: String(task?.campaignId || campaign?.id || ""),
     assigneeUserId: String(task?.assigneeUserId || ""),
@@ -535,18 +630,39 @@ export default function SupplierTaskBoardPage() {
     if (!selectedTask || !e.target.files || e.target.files.length === 0) return;
     const files = Array.from(e.target.files || []);
     void Promise.all(
-      files.map((file) =>
-        sellerBackendApi.createCollaborationTaskAttachment(selectedTask.id, {
+      files.map(async (file) => {
+        const uploadKind = inferUploadKind(file);
+        const uploaded = await sellerBackendApi.uploadMediaFile({
           name: file.name,
-          kind: file.type.startsWith("video/") ? "video" : file.type.startsWith("image/") ? "image" : "document",
-          mimeType: file.type || "application/octet-stream",
-          sizeBytes: file.size || 1,
-          url: contentLink || `https://workspace.local/${encodeURIComponent(file.name)}`,
+          dataUrl: await readFileAsDataUrl(file),
+          kind: uploadKind,
+          mimeType: file.type || undefined,
+          sizeBytes: file.size,
+          extension: extensionFromName(file.name),
+          purpose: "task_attachment",
+          isPublic: true,
+          visibility: "PUBLIC",
           metadata: {
+            taskId: selectedTask.id,
             uploadedFrom: "supplier-task-board"
           }
-        })
-      )
+        });
+
+        return sellerBackendApi.createCollaborationTaskAttachment(selectedTask.id, {
+          name: file.name,
+          kind: String(uploaded.kind || uploadKind),
+          mimeType: uploaded.mimeType || file.type || "application/octet-stream",
+          sizeBytes: Number(uploaded.sizeBytes || file.size || 1),
+          extension: uploaded.extension || extensionFromName(file.name),
+          storageProvider: uploaded.storageProvider,
+          storageKey: uploaded.storageKey,
+          url: String(uploaded.publicUrl || uploaded.url || contentLink || ""),
+          metadata: {
+            mediaAssetId: uploaded.id,
+            uploadedFrom: "supplier-task-board"
+          }
+        });
+      })
     )
       .then(() => sellerBackendApi.getCollaborationTask(selectedTask.id))
       .then((record) => {
@@ -1035,10 +1151,24 @@ function TaskSidePanel({
                   {(task.submission?.files || []).map((f) => (
                     <div
                       key={f.name}
-                      className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1"
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1"
                     >
-                      <span className="truncate max-w-[220px]">{f.name}</span>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400">{f.size}</span>
+                      <div className="flex items-center justify-between">
+                        <span className="truncate max-w-[220px]">{f.name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">{f.size}</span>
+                          {f.url ? (
+                            <button
+                              type="button"
+                              className="text-[#f77f00] hover:underline text-[11px]"
+                              onClick={() => window.open(f.url, "_blank", "noopener,noreferrer")}
+                            >
+                              Open
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <TaskAttachmentPreview file={f} />
                     </div>
                   ))}
                 </div>
@@ -1061,7 +1191,16 @@ function TaskSidePanel({
             </div>
 
             <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-lg px-2 py-3 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 mb-1 transition-colors">
-              <input type="file" multiple className="hidden" ref={fileInputRef} onChange={onFileUpload} />
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                ref={fileInputRef}
+                onChange={(e) => {
+                  onFileUpload(e);
+                  e.currentTarget.value = "";
+                }}
+              />
               <p>
                 {supplierIsHost
                   ? "Drag & drop content files here, or click to upload."
@@ -1079,9 +1218,25 @@ function TaskSidePanel({
             {uploadedFiles.length > 0 ? (
               <div className="flex flex-col gap-1 mb-2">
                 {uploadedFiles.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                    <span className="truncate max-w-[200px]">{f.name}</span>
-                    <span className="text-emerald-500">Attached</span>
+                  <div key={i} className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate max-w-[200px]">{f.name}</div>
+                        <div className="text-slate-500 dark:text-slate-400">{f.sizeLabel || f.size || "Attached"}</div>
+                      </div>
+                      {f.url ? (
+                        <button
+                          type="button"
+                          className="text-[#f77f00] hover:underline"
+                          onClick={() => window.open(f.url, "_blank", "noopener,noreferrer")}
+                        >
+                          Open
+                        </button>
+                      ) : (
+                        <span className="text-emerald-500">Attached</span>
+                      )}
+                    </div>
+                    <TaskAttachmentPreview file={f} />
                   </div>
                 ))}
               </div>

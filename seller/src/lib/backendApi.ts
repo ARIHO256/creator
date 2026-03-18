@@ -737,6 +737,11 @@ export const sellerBackendApi = {
       method: "DELETE",
     }),
   getMediaAssets: () => request<Array<Record<string, unknown>>>("/api/media/assets"),
+  uploadMediaFile: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/media/files", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   createMediaAsset: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/media/assets", {
       method: "POST",
