@@ -101,10 +101,13 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
   // Upper card now only shows Sign In and Register
   const resolvedDefaultTab = useMemo<AuthTab>(() => {
     const params = new URLSearchParams(location.search);
-    const intentParam = params.get("intent") || params.get("tab");
+    const intentParam = params.get("intent") || params.get("tab") || params.get("mode");
     const stateDefault = (location.state as { defaultTab?: string } | null)?.defaultTab;
-    const candidate = stateDefault || intentParam || defaultTab;
-    return candidate === "signup" ? "signup" : "signin";
+    const candidate = String(stateDefault || intentParam || defaultTab || "").trim().toLowerCase();
+    if (["signup", "register", "create", "create-account"].includes(candidate)) {
+      return "signup";
+    }
+    return "signin";
   }, [location.search, location.state, defaultTab]);
   const initialTab: AuthTab = AUTH_TABS.includes(resolvedDefaultTab) ? resolvedDefaultTab : "signin";
   const [tab, setTab] = useState<AuthTab>(initialTab);
@@ -244,7 +247,7 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
     if (!hasWebAuthn) return say(t("Passkeys not supported"));
     try {
       const identifier = (user.userId || user.email || user.phone || "guest").toString();
-      let activeUser = user;
+      const activeUser = user;
       if (!activeUser.accessToken && !activeUser.token) {
         say(t("Sign in first before registering a passkey"));
         return;
@@ -516,11 +519,12 @@ export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = 
     @media (max-width: 480px){ .wrap{ padding:14px !important; } .btn{ padding:12px; } .pill{ min-width:92px; } .rolebar{ grid-template-columns:minmax(0,1fr) minmax(0,1.55fr); } .role{ font-size:12px; padding:10px 12px; } }
     .modal-shell{ border-radius:18px; border:1px solid #273149; background:#121b30; box-shadow:0 30px 120px rgba(0,0,0,.35); max-height:90vh; overflow-y:auto; overscroll-behavior:contain; color:#f4f7fb; }
   `;
+  const shellStyle = { "--ink": brand.ink } as React.CSSProperties;
 
   return (
     <div
       className={`${isModal ? "w-full max-w-[430px]" : "min-h-screen"} text-[--ink]`}
-      style={{ ["--ink" as "--ink"]: brand.ink } as React.CSSProperties}
+      style={shellStyle}
     >
       <style>{styles}</style>
       {isModal ? (
@@ -720,6 +724,9 @@ function SignUp({ policy, userType, onDone, onSocial }) {
     <section>
       <div className="text-lg font-extrabold">{t("Create your account")}</div>
       <div className="auth-subtle text-xs">{userType === 'seller' ? t('Start your store with EVzone') : t('Start your service business with EVzone')}</div>
+      <div className="mt-2 rounded-xl border border-[rgba(148,163,184,0.28)] bg-[rgba(15,23,42,0.28)] px-3 py-2 text-xs text-[#c6d4f2]">
+        {t("One email is used for one EVzone account. That account can add seller, provider, or creator access, but it cannot register the same role twice.")}
+      </div>
       <SocialRow onSocial={onSocial} />
       <div className="my-3 divider">{t("or sign up with email")}</div>
       <div className="grid grid-cols-1 gap-2 text-sm">

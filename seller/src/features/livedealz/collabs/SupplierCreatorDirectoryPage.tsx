@@ -58,6 +58,8 @@ function normalizeCreator(creator) {
   return {
     ...creator,
     id: String(creator?.id || ""),
+    registeredAt: String(creator?.registeredAt || ""),
+    avatarUrl: String(creator?.avatarUrl || ""),
     name: String(creator?.name || "Creator"),
     handle: String(creator?.handle || "@creator"),
     initials: String(creator?.initials || buildInitials(creator?.name, creator?.handle)),
@@ -201,7 +203,11 @@ function CreatorCard({ creator, saved, onToggleSave, onInvite, isRecommended, is
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-4 min-w-0">
           <div className={cx("h-12 w-12 rounded-2xl border flex items-center justify-center text-lg font-black transition-colors flex-shrink-0", creator.avatarBg)}>
-            {creator.initials}
+            {creator.avatarUrl ? (
+              <img src={creator.avatarUrl} alt={creator.name} className="h-full w-full rounded-2xl object-cover" />
+            ) : (
+              creator.initials
+            )}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -457,7 +463,11 @@ function InviteModal({ creator, campaigns, onClose }) {
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <div className={cx("h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors border", creator.avatarBg)}>
-              {creator.initials}
+              {creator.avatarUrl ? (
+                <img src={creator.avatarUrl} alt={creator.name} className="h-full w-full rounded-full object-cover" />
+              ) : (
+                creator.initials
+              )}
             </div>
             <div>
               <div className="flex items-center gap-1">
@@ -793,7 +803,11 @@ function AiDiscoveryDialog({ creators, onClose, onViewCreator }) {
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={cx("h-10 w-10 rounded-full border flex items-center justify-center font-bold text-sm", c.avatarBg)}>
-                        {c.initials}
+                        {c.avatarUrl ? (
+                          <img src={c.avatarUrl} alt={c.name} className="h-full w-full rounded-full object-cover" />
+                        ) : (
+                          c.initials
+                        )}
                       </div>
                       <div className="min-w-0">
                         <h4 className="font-bold text-sm dark:text-slate-100 truncate">{c.name}</h4>
@@ -836,7 +850,7 @@ export default function SupplierCreatorDirectoryPage() {
   const [minTier, setMinTier] = useState("Any");
 
   const [viewTab, setViewTab] = useState("all"); // all | saved | new
-  const [sortBy, setSortBy] = useState("relevance");
+  const [sortBy, setSortBy] = useState("newest");
   const [presetFilter, setPresetFilter] = useState("none"); // none | live-first | faith | high-ticket
 
   const [aiHint, setAiHint] = useState("");
@@ -855,7 +869,7 @@ export default function SupplierCreatorDirectoryPage() {
     let cancelled = false;
 
     setDataState("loading");
-    void Promise.all([sellerBackendApi.getCreators(), sellerBackendApi.getCampaignWorkspace()])
+    void Promise.all([sellerBackendApi.getAllCreators(), sellerBackendApi.getCampaignWorkspace()])
       .then(([creatorRecords, workspace]) => {
         if (cancelled) return;
         const nextCreators = Array.isArray(creatorRecords) ? creatorRecords.map(normalizeCreator) : [];
@@ -955,6 +969,10 @@ export default function SupplierCreatorDirectoryPage() {
   const sortedCreators = useMemo(() => {
     const arr = [...tabFilteredCreators];
     arr.sort((a, b) => {
+      if (sortBy === "newest") {
+        const registeredAtDiff = new Date(b.registeredAt || 0).getTime() - new Date(a.registeredAt || 0).getTime();
+        if (registeredAtDiff !== 0) return registeredAtDiff;
+      }
       if (sortBy === "followers") return b.followers - a.followers;
       if (sortBy === "rating") return b.rating - a.rating;
       if (sortBy === "lives") return b.livesCompleted - a.livesCompleted;
@@ -1272,6 +1290,7 @@ export default function SupplierCreatorDirectoryPage() {
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
                 >
+                  <option value="newest" className="bg-white dark:bg-slate-900">Newest</option>
                   <option value="relevance" className="bg-white dark:bg-slate-900">Relevance</option>
                   <option value="followers" className="bg-white dark:bg-slate-900">Followers</option>
                   <option value="rating" className="bg-white dark:bg-slate-900">Top Rated</option>

@@ -17,7 +17,7 @@ import { bootstrapTelemetry, shutdownTelemetry } from './platform/telemetry/tele
 async function bootstrap() {
   const port = Number(process.env.PORT ?? '4010');
   const host = process.env.HOST ?? '0.0.0.0';
-  const bodyLimit = Number(process.env.BODY_LIMIT_BYTES ?? `${10 * 1024 * 1024}`);
+  const bodyLimit = Number(process.env.BODY_LIMIT_BYTES ?? `${20 * 1024 * 1024}`);
   const keepAliveTimeout = Number(process.env.KEEP_ALIVE_TIMEOUT_MS ?? '72000');
   const connectionTimeout = Number(process.env.CONNECTION_TIMEOUT_MS ?? '5000');
   const maxRequestsPerSocket = Number(process.env.MAX_REQUESTS_PER_SOCKET ?? '1000');

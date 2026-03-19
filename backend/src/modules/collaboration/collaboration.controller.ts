@@ -14,7 +14,6 @@ import { CreateTaskDto } from './dto/create-task.dto.js';
 import { ReviewAssetDto } from './dto/review-asset.dto.js';
 import { TerminateContractDto } from './dto/terminate-contract.dto.js';
 import { TransitionProposalDto } from './dto/transition-proposal.dto.js';
-import { UpdateDealzMarketplaceDto } from './dto/update-dealz-marketplace.dto.js';
 import { UpdateProposalDto } from './dto/update-proposal.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
 import { UpsertWorkspaceCampaignDto } from './dto/upsert-workspace-campaign.dto.js';
@@ -28,14 +27,28 @@ export class CollaborationController {
   @Get('campaigns/dealz-marketplace') dealzMarketplace(@CurrentUser() user: RequestUser) { return this.service.dealzMarketplace(user.sub); }
   @Patch('campaigns/dealz-marketplace')
   @RateLimit({ limit: 30, windowMs: 60_000 })
-  updateDealzMarketplace(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateDealzMarketplaceDto)) body: UpdateDealzMarketplaceDto) {
-    return this.service.updateDealzMarketplace(user.sub, body.payload);
+  updateDealzMarketplace(@CurrentUser() user: RequestUser, @Body() body: unknown) {
+    const raw =
+      body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : {};
+    const candidate = raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload)
+      ? raw.payload as Record<string, unknown>
+      : raw;
+    return this.service.updateDealzMarketplace(user.sub, candidate);
   }
   @Get('campaigns/legacy-marketplace') legacyMarketplace(@CurrentUser() user: RequestUser) { return this.service.legacyMarketplace(user.sub); }
   @Patch('campaigns/legacy-marketplace')
   @RateLimit({ limit: 30, windowMs: 60_000 })
-  updateLegacyMarketplace(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateDealzMarketplaceDto)) body: UpdateDealzMarketplaceDto) {
-    return this.service.updateLegacyMarketplace(user.sub, body.payload);
+  updateLegacyMarketplace(@CurrentUser() user: RequestUser, @Body() body: unknown) {
+    const raw =
+      body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : {};
+    const candidate = raw.payload && typeof raw.payload === 'object' && !Array.isArray(raw.payload)
+      ? raw.payload as Record<string, unknown>
+      : raw;
+    return this.service.updateLegacyMarketplace(user.sub, candidate);
   }
   @Get('campaigns') campaigns(@CurrentUser() user: RequestUser) { return this.service.campaigns(user.sub); }
   @Get('campaigns/:id') campaign(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.campaign(user.sub, id); }

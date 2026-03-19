@@ -44,6 +44,11 @@ export class DashboardController {
     return this.dashboardService.feed(user.sub);
   }
 
+  @Get('dashboard/creator-home')
+  creatorHome(@CurrentUser() user: RequestUser) {
+    return this.dashboardService.creatorHome(user.sub);
+  }
+
   @Get('dashboard/live-feed')
   liveFeed(@CurrentUser() user: RequestUser) {
     return this.dashboardService.liveFeed(user.sub);

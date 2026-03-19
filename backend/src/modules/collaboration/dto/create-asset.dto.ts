@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsObject, IsOptional, IsString, IsUrl, Max, Min } from 'class-validator';
+import { IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CreateAssetDto {
   @IsOptional()
@@ -44,7 +44,7 @@ export class CreateAssetDto {
   storageKey?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
   url?: string;
 
   @IsOptional()

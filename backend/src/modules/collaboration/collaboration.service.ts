@@ -965,7 +965,13 @@ export class CollaborationService {
   }
 
   private sanitizeLegacyMarketplacePayload(value: Record<string, unknown>) {
-    const safe = sanitizePayload(value, { maxDepth: 8, maxArrayLength: 500, maxKeys: 500 }) as Record<string, unknown>;
+    const safe = sanitizePayload(value, {
+      maxDepth: 8,
+      maxArrayLength: 500,
+      maxKeys: 500,
+      normalizeUrlFields: false,
+      throwOnInvalidUrl: false
+    }) as Record<string, unknown>;
 
     return {
       deals: Array.isArray(safe.deals) ? safe.deals : [],
@@ -979,23 +985,30 @@ export class CollaborationService {
   }
 
   private async loadDealzMarketplaceSuppliers(userId: string) {
-    const seller = await this.prisma.seller.findFirst({
-      where: { userId },
-      include: { storefront: true }
+    const sellers = await this.prisma.seller.findMany({
+      take: 24,
+      include: { storefront: true },
+      orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
     });
 
-    if (!seller) {
+    if (!sellers.length) {
       return [];
     }
 
-    return [
-      {
-        id: seller.id,
-        name: seller.displayName || seller.storefrontName || seller.name,
-        category: seller.category || 'Seller',
-        logoUrl: seller.storefront?.logoUrl || seller.storefront?.coverUrl || ''
-      }
-    ];
+    const mapped = sellers.map((seller) => ({
+      id: seller.id,
+      name: seller.displayName || seller.storefrontName || seller.name,
+      category: seller.category || 'Seller',
+      logoUrl: seller.storefront?.logoUrl || seller.storefront?.coverUrl || ''
+    }));
+
+    const currentSellerId = sellers.find((seller) => seller.userId === userId)?.id;
+    const currentSeller = currentSellerId ? mapped.find((seller) => seller.id === currentSellerId) : null;
+    if (!currentSeller) {
+      return mapped;
+    }
+
+    return [currentSeller, ...mapped.filter((seller) => seller.id !== currentSeller.id)];
   }
 
   private async loadDealzMarketplaceCreators() {

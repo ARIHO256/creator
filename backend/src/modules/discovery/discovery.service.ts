@@ -145,11 +145,11 @@ export class DiscoveryService {
       include: {
         user: true
       },
-      orderBy: [{ followers: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
+      orderBy: [{ createdAt: 'desc' }, { updatedAt: 'desc' }]
     });
 
     const creatorUserIds = creatorProfiles.map((profile) => profile.userId);
-    const [follows, campaigns, contracts, invites, reviews] = await Promise.all([
+    const [follows, campaigns, contracts, invites, reviews, onboardingPayloads, settingsPayloads, avatarUploadsMap] = await Promise.all([
       seller
         ? this.prisma.creatorFollow.findMany({
             where: {
@@ -224,7 +224,10 @@ export class DiscoveryService {
           status: 'PUBLISHED'
         },
         orderBy: { createdAt: 'desc' }
-      })
+      }),
+      this.loadCreatorOnboardingPayloadMap(creatorUserIds),
+      this.loadCreatorSettingsScreenStatePayloadMap(creatorUserIds),
+      this.loadCreatorAvatarUploadSessionsMap(creatorUserIds)
     ]);
 
     const followedCreatorIds = new Set(follows.map((entry) => entry.creatorUserId));
@@ -237,7 +240,10 @@ export class DiscoveryService {
         campaigns: campaigns.filter((entry) => entry.creatorId === profile.userId),
         contracts: contracts.filter((entry) => entry.creatorId === profile.userId),
         invites: invites.filter((entry) => entry.recipientUserId === profile.userId),
-        reviews: reviews.filter((entry) => entry.subjectUserId === profile.userId || entry.subjectId === profile.id)
+        reviews: reviews.filter((entry) => entry.subjectUserId === profile.userId || entry.subjectId === profile.id),
+        onboardingPayload: onboardingPayloads.get(profile.userId) ?? null,
+        settingsPayload: settingsPayloads.get(profile.userId) ?? null,
+        avatarUploads: avatarUploadsMap.get(profile.userId) ?? []
       })
     );
   }
@@ -249,7 +255,7 @@ export class DiscoveryService {
       throw new NotFoundException('Creator profile not found');
     }
 
-    const [follow, campaigns, contracts, invites, reviews, creatorWorkspace] = await Promise.all([
+    const [follow, campaigns, contracts, invites, reviews, creatorWorkspace, onboardingPayload, settingsPayload, avatarUploads] = await Promise.all([
       seller
         ? this.prisma.creatorFollow.findUnique({
             where: {
@@ -311,7 +317,10 @@ export class DiscoveryService {
         orderBy: { createdAt: 'desc' },
         take: 12
       }),
-      this.ensureCreatorWorkspaceProfile(profile.userId, profile)
+      this.ensureCreatorWorkspaceProfile(profile.userId, profile),
+      this.loadCreatorOnboardingPayload(profile.userId),
+      this.loadCreatorSettingsScreenStatePayload(profile.userId),
+      this.loadCreatorAvatarUploadSessions(profile.userId)
     ]);
 
     const deliverablePacks = await this.ensureDeliverablePacks(userId);
@@ -324,7 +333,10 @@ export class DiscoveryService {
       invites,
       reviews,
       creatorWorkspace,
-      deliverablePacks
+      deliverablePacks,
+      onboardingPayload,
+      settingsPayload,
+      avatarUploads
     });
   }
 
@@ -1065,6 +1077,9 @@ export class DiscoveryService {
     contracts: Array<Prisma.ContractGetPayload<{ include: { seller: true; creator: { include: { creatorProfile: true } }; campaign: true } }>>;
     invites: Array<Prisma.CollaborationInviteGetPayload<{}>>;
     reviews: Array<Prisma.ReviewGetPayload<{}>>;
+    onboardingPayload?: Record<string, unknown> | null;
+    settingsPayload?: Record<string, unknown> | null;
+    avatarUploads?: Array<Record<string, unknown>>;
   }) {
     const categories = this.readStringList(params.profile.categories);
     const languages = this.readStringList(params.profile.languages);
@@ -1082,6 +1097,8 @@ export class DiscoveryService {
     return {
       id: params.profile.userId,
       profileId: params.profile.id,
+      registeredAt: params.profile.user.createdAt.toISOString(),
+      avatarUrl: this.buildCreatorAvatarUrl(params.profile, params.onboardingPayload, params.settingsPayload, params.avatarUploads),
       name: params.profile.name,
       handle: `@${params.profile.handle}`,
       tagline: params.profile.tagline || this.buildCreatorTagline(categories),
@@ -1184,6 +1201,9 @@ export class DiscoveryService {
     reviews: Array<Prisma.ReviewGetPayload<{}>>;
     creatorWorkspace: Record<string, unknown>;
     deliverablePacks: Array<Record<string, unknown>>;
+    onboardingPayload?: Record<string, unknown> | null;
+    settingsPayload?: Record<string, unknown> | null;
+    avatarUploads?: Array<Record<string, unknown>>;
   }) {
     const categories = this.readStringList(params.profile.categories);
     const languages = this.readStringList(params.profile.languages);
@@ -1202,6 +1222,12 @@ export class DiscoveryService {
       creator: {
         id: params.profile.userId,
         profileId: params.profile.id,
+        avatarUrl: this.buildCreatorAvatarUrl(
+          params.profile,
+          params.onboardingPayload,
+          params.settingsPayload,
+          params.avatarUploads
+        ),
         name: params.profile.name,
         handle: `@${params.profile.handle}`,
         tier: `${this.formatTier(params.profile.tier)} Tier`,
@@ -1722,6 +1748,155 @@ export class DiscoveryService {
     return typeof source === 'string' && source.trim() ? source.trim() : '';
   }
 
+  private readObject(value: unknown, key?: string) {
+    const source = key && value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)[key]
+      : value;
+    return source && typeof source === 'object' && !Array.isArray(source)
+      ? (source as Record<string, unknown>)
+      : null;
+  }
+
+  private async loadCreatorOnboardingPayloadMap(userIds: string[]) {
+    if (!userIds.length) {
+      return new Map<string, Record<string, unknown>>();
+    }
+
+    const records = await this.prismaRead.workflowRecord.findMany({
+      where: {
+        userId: { in: userIds },
+        recordType: 'onboarding',
+        recordKey: { in: ['creator', 'main'] }
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    const payloads = new Map<string, Record<string, unknown>>();
+    const prioritizedRecords = [...records].sort((left, right) => {
+      const priority = (value: string) => (value === 'creator' ? 2 : value === 'main' ? 1 : 0);
+      return priority(right.recordKey) - priority(left.recordKey);
+    });
+
+    for (const record of prioritizedRecords) {
+      if (payloads.has(record.userId)) {
+        continue;
+      }
+      const payload =
+        record.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+          ? (record.payload as Record<string, unknown>)
+          : null;
+      if (!payload) {
+        continue;
+      }
+      payloads.set(record.userId, payload);
+    }
+
+    return payloads;
+  }
+
+  private async loadCreatorOnboardingPayload(userId: string) {
+    const payloads = await this.loadCreatorOnboardingPayloadMap([userId]);
+    return payloads.get(userId) ?? null;
+  }
+
+  private async loadCreatorSettingsScreenStatePayloadMap(userIds: string[]) {
+    if (!userIds.length) {
+      return new Map<string, Record<string, unknown>>();
+    }
+
+    const payloads = new Map<string, Record<string, unknown>>();
+
+    try {
+      const records = await this.prismaRead.workflowScreenState.findMany({
+        where: {
+          userId: { in: userIds },
+          key: 'creator-settings'
+        },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+      });
+      for (const record of records) {
+        if (payloads.has(record.userId)) {
+          continue;
+        }
+        const payload = this.readObject(record.payload);
+        if (payload) {
+          payloads.set(record.userId, payload);
+        }
+      }
+    } catch {
+      // Some environments may still run without workflowScreenState.
+    }
+
+    if (payloads.size >= userIds.length) {
+      return payloads;
+    }
+
+    const legacyRecords = await this.prismaRead.workflowRecord.findMany({
+      where: {
+        userId: { in: userIds },
+        recordType: 'screen_state',
+        recordKey: 'creator-settings'
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+    });
+    for (const record of legacyRecords) {
+      if (payloads.has(record.userId)) {
+        continue;
+      }
+      const payload = this.readObject(record.payload);
+      if (payload) {
+        payloads.set(record.userId, payload);
+      }
+    }
+
+    return payloads;
+  }
+
+  private async loadCreatorSettingsScreenStatePayload(userId: string) {
+    const payloads = await this.loadCreatorSettingsScreenStatePayloadMap([userId]);
+    return payloads.get(userId) ?? null;
+  }
+
+  private async loadCreatorAvatarUploadSessionsMap(userIds: string[]) {
+    if (!userIds.length) {
+      return new Map<string, Array<Record<string, unknown>>>();
+    }
+
+    const records = await this.prismaRead.uploadSession.findMany({
+      where: {
+        userId: { in: userIds },
+        purpose: 'creator_profile_photo'
+      },
+      orderBy: [{ createdAt: 'desc' }]
+    });
+
+    const payloads = new Map<string, Array<Record<string, unknown>>>();
+    for (const record of records) {
+      const metadata =
+        record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata)
+          ? (record.metadata as Record<string, unknown>)
+          : {};
+      const nextRecord: Record<string, unknown> = {
+        id: record.id,
+        userId: record.userId,
+        purpose: record.purpose,
+        storageKey: record.storageKey,
+        createdAt: record.createdAt.toISOString(),
+        metadata
+      };
+      const existing = payloads.get(record.userId) ?? [];
+      existing.push(nextRecord);
+      payloads.set(record.userId, existing);
+    }
+
+    return payloads;
+  }
+
+  private async loadCreatorAvatarUploadSessions(userId: string) {
+    const payloads = await this.loadCreatorAvatarUploadSessionsMap([userId]);
+    return payloads.get(userId) ?? [];
+  }
+
   private async loadSetting(userId: string, key: string) {
     const setting = await this.prisma.workspaceSetting.findUnique({
       where: {
@@ -1912,5 +2087,156 @@ export class DiscoveryService {
       .map((entry) => entry[0]?.toUpperCase() || '')
       .join('');
     return initials || String(defaultValue || '').replace(/^@/, '').slice(0, 2).toUpperCase() || 'CR';
+  }
+
+  private buildCreatorAvatarUrl(
+    profile: Prisma.CreatorProfileGetPayload<{ include: { user: true } }>,
+    onboardingPayload?: Record<string, unknown> | null,
+    settingsPayload?: Record<string, unknown> | null,
+    avatarUploads?: Array<Record<string, unknown>>
+  ) {
+    const metadata = this.readObject(onboardingPayload, 'metadata');
+    const creatorForm = this.readObject(metadata, 'creatorForm');
+    const creatorProfile = this.readObject(creatorForm, 'profile');
+    const settingsForm = this.readObject(settingsPayload, 'settingsForm');
+    const onboardingUploads = this.readObject(creatorForm, 'uploads');
+    const settingsUploads = this.readObject(settingsForm, 'uploads');
+    const onboardingDocs = this.readObject(onboardingPayload, 'docs');
+    const settingsDocs =
+      settingsPayload && typeof settingsPayload === 'object' && !Array.isArray(settingsPayload)
+        ? (settingsPayload as Record<string, unknown>).docs
+        : null;
+    const uploadedAvatarUrl =
+      this.readAvatarUrl(metadata ? metadata.creatorAvatarUrl : null) ||
+      this.readAvatarUrl(creatorProfile ? creatorProfile.profilePhotoUrl : null) ||
+      this.readAvatarFromUploadsMap(settingsUploads) ||
+      this.readAvatarFromUploadsMap(onboardingUploads) ||
+      this.readAvatarFromUploadSessions(avatarUploads) ||
+      this.readAvatarFromDocsList(settingsDocs) ||
+      this.readAvatarFromDocsList(onboardingDocs ? onboardingDocs.list : null);
+    if (uploadedAvatarUrl) {
+      return uploadedAvatarUrl;
+    }
+
+    const seed = `${profile.userId}:${profile.handle}:${profile.name}`;
+    const palettes: Array<[string, string]> = [
+      ['#7C3AED', '#EC4899'],
+      ['#0F766E', '#06B6D4'],
+      ['#1D4ED8', '#60A5FA'],
+      ['#B45309', '#F59E0B'],
+      ['#BE123C', '#FB7185'],
+      ['#047857', '#34D399']
+    ];
+    const palette = palettes[this.hashString(seed) % palettes.length] ?? palettes[0];
+    const initials = this.buildInitials(profile.name, profile.handle);
+    const safeName = String(profile.name || 'Creator').replace(/[&<>"']/g, '');
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="${safeName}">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="${palette[0]}"/>
+            <stop offset="100%" stop-color="${palette[1]}"/>
+          </linearGradient>
+        </defs>
+        <rect width="128" height="128" rx="32" fill="url(#g)"/>
+        <circle cx="64" cy="48" r="24" fill="rgba(255,255,255,0.18)"/>
+        <path d="M24 118c6-23 24-36 40-36s34 13 40 36" fill="rgba(255,255,255,0.18)"/>
+        <text x="64" y="74" text-anchor="middle" dominant-baseline="middle" fill="#ffffff" font-family="Arial, sans-serif" font-size="30" font-weight="700">${initials}</text>
+      </svg>
+    `.trim();
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  }
+
+  private readAvatarFromUploadsMap(source: unknown) {
+    const uploads = this.readObject(source);
+    if (!uploads) {
+      return '';
+    }
+    const profileUpload = this.readObject(uploads, 'profile.profilePhotoName');
+    if (!profileUpload) {
+      return '';
+    }
+    const metadata = this.readObject(profileUpload, 'metadata');
+    return (
+      this.readAvatarUrl(profileUpload.url) ||
+      this.readAvatarUrl(profileUpload.previewUrl) ||
+      this.readAvatarUrl(metadata ? metadata.previewDataUrl : null)
+    );
+  }
+
+  private readAvatarFromDocsList(source: unknown) {
+    if (!Array.isArray(source)) {
+      return '';
+    }
+    for (const entry of source) {
+      const row = this.readObject(entry);
+      if (!row) {
+        continue;
+      }
+      const type = this.readString(row, 'type').toLowerCase();
+      const id = this.readString(row, 'id').toLowerCase();
+      if (type !== 'profile_photo' && id !== 'profile-photo') {
+        continue;
+      }
+      const fileUrl = this.readAvatarUrl(row.fileUrl);
+      if (fileUrl) {
+        return fileUrl;
+      }
+    }
+    return '';
+  }
+
+  private readAvatarFromUploadSessions(source: unknown) {
+    if (!Array.isArray(source)) {
+      return '';
+    }
+    for (const entry of source) {
+      const row = this.readObject(entry);
+      if (!row) {
+        continue;
+      }
+      const metadata = this.readObject(row, 'metadata');
+      const fieldKey = this.readString(metadata, 'fieldKey');
+      const purpose = this.readString(row, 'purpose').toLowerCase();
+      if (fieldKey !== 'profile.profilePhotoName' && purpose !== 'creator_profile_photo') {
+        continue;
+      }
+      const url =
+        this.readAvatarUrl(row.url) ||
+        this.readAvatarUrl(metadata ? metadata.url : null) ||
+        this.readAvatarUrl(metadata ? metadata.previewDataUrl : null);
+      if (url) {
+        return url;
+      }
+    }
+    return '';
+  }
+
+  private readAvatarUrl(value: unknown) {
+    const source = this.readString(value);
+    if (!source) {
+      return '';
+    }
+    if (source.startsWith('data:image/')) {
+      return source;
+    }
+    if (/^https?:\/\//i.test(source)) {
+      return source;
+    }
+    if (source.startsWith('/')) {
+      return source;
+    }
+    if (/\.(png|jpe?g|webp|gif|bmp|svg|avif)(\?.*)?$/i.test(source)) {
+      return source;
+    }
+    return '';
+  }
+
+  private hashString(value: string) {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+    }
+    return hash;
   }
 }
