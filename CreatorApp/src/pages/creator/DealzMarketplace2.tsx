@@ -692,12 +692,50 @@ function Modal({
   );
 }
 
-function AdBuilderDrawer({ open, onClose, adId }: { open: boolean; onClose: () => void; adId?: string }) {
+function AdBuilderDrawer({
+  open,
+  onClose,
+  adId,
+  pickerContext,
+}: {
+  open: boolean;
+  onClose: () => void;
+  adId?: string;
+  pickerContext?: {
+    dealId?: string;
+    supplierId?: string;
+    supplierName?: string;
+    supplierKind?: string;
+    supplierBrand?: string;
+    campaignId?: string;
+    campaignName?: string;
+    campaignBrand?: string;
+    campaignStatus?: "Active" | "Paused";
+    startISO?: string;
+    endISO?: string;
+    offers?: Array<{
+      id: string;
+      type?: "PRODUCT" | "SERVICE";
+      name?: string;
+      price?: number;
+      basePrice?: number;
+      currency?: "UGX" | "USD";
+      stockLeft?: number;
+      sold?: number;
+      posterUrl?: string;
+      videoUrl?: string;
+      desktopMode?: "fullscreen" | "modal";
+    }>;
+  };
+}) {
   // AdBuilder typically uses URL search params or local storage for its context.
   // We can wrap it in a custom drawer.
   return (
     <Drawer open={open} onClose={onClose} title="Ad Builder" width="w-full max-w-[1240px]" zIndex="z-[100]">
-      <AdBuilder />
+      <AdBuilder
+        initialAdId={adId}
+        pickerContext={pickerContext}
+      />
     </Drawer>
   );
 }
@@ -2180,6 +2218,43 @@ export default function DealzMarketplace() {
     setAdzPerformanceOpen(true);
   };
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const isPickerReturn = sp.get("restore") === "1" || sp.has("assetId");
+    if (!isPickerReturn) return;
+    const returnDealId = sp.get("dealId") || "";
+    if (returnDealId) {
+      setSelectedId(returnDealId);
+    }
+
+    const source = (sp.get("pickerSource") || "").toLowerCase();
+    if (source === "live-builder") {
+      setLiveBuilderOpen(true);
+      return;
+    }
+    if (source === "ad-builder") {
+      setAdBuilderOpen(true);
+      return;
+    }
+
+    // Backward compatibility for older picker links without pickerSource.
+    const applyTo = sp.get("applyTo") || "";
+    const looksLiveApplyTo =
+      applyTo.startsWith("promoHero") ||
+      applyTo === "opener" ||
+      applyTo === "lowerThird" ||
+      applyTo === "overlay" ||
+      applyTo.startsWith("itemPoster:") ||
+      applyTo.startsWith("itemVideo:");
+
+    if (looksLiveApplyTo) {
+      setLiveBuilderOpen(true);
+    } else {
+      setAdBuilderOpen(true);
+    }
+  }, []);
+
   // Cart state for the Shoppable Ad preview (per selected deal)
   const [cart, setCart] = useState<Record<string, number>>({});
   // Cart state for the Live Session invite preview (per selected deal)
@@ -3107,6 +3182,36 @@ export default function DealzMarketplace() {
         open={adBuilderOpen}
         onClose={() => setAdBuilderOpen(false)}
         adId={selected?.shoppable?.id}
+        pickerContext={
+          selected
+            ? {
+                dealId: selected.id,
+                supplierId: `deal-supplier:${selected.id}`,
+                supplierName: selected.supplier.name,
+                supplierKind: selected.supplier.category,
+                supplierBrand: selected.supplier.name,
+                campaignId: `deal-campaign:${selected.shoppable?.id || selected.id}`,
+                campaignName: selected.shoppable?.campaignName || selected.title,
+                campaignBrand: selected.supplier.name,
+                campaignStatus: "Active",
+                startISO: selected.startISO,
+                endISO: selected.endISO,
+                offers: (selected.shoppable?.offers || []).map((offer) => ({
+                  id: offer.id,
+                  type: offer.type,
+                  name: offer.name,
+                  price: offer.price,
+                  basePrice: offer.basePrice,
+                  currency: offer.currency,
+                  stockLeft: offer.stockLeft,
+                  sold: offer.sold,
+                  posterUrl: offer.posterUrl,
+                  videoUrl: offer.videoUrl,
+                  desktopMode: offer.desktopMode,
+                })),
+              }
+            : undefined
+        }
       />
 
       <LiveBuilderDrawer

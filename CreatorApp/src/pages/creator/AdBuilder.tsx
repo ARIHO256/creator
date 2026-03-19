@@ -200,30 +200,6 @@ function parseLocalDateTime(dateStr: string, timeStr: string) {
   return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
 }
 
-/**
- * Mock backend validation call.
- * In a real system, this would be an async API call.
- */
-function mockValidateSchedule(campaignId: string, start: Date, end: Date) {
-  const campaign = CAMPAIGNS.find((c) => c.id === campaignId);
-  if (!campaign) return { ok: false, error: "Invalid campaign selected" };
-
-  const campStart = new Date(campaign.startsAtISO);
-  const campEnd = new Date(campaign.endsAtISO);
-
-  if (start < campStart) {
-    return { ok: false, error: `Schedule starts before campaign window (${fmtLocal(campStart)})` };
-  }
-  if (end > campEnd) {
-    return { ok: false, error: `Schedule ends after campaign window (${fmtLocal(campEnd)})` };
-  }
-  if (start >= end) {
-    return { ok: false, error: "Start time must be before end time" };
-  }
-
-  return { ok: true };
-}
-
 function toDateInputValue(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
@@ -1505,10 +1481,37 @@ export default function AdBuilder({
   isDrawer = false,
   onClose,
   initialAdId: _initialAdId,
+  pickerContext,
 }: {
   isDrawer?: boolean;
   onClose?: () => void;
   initialAdId?: string;
+  pickerContext?: {
+    dealId?: string;
+    supplierId?: string;
+    supplierName?: string;
+    supplierKind?: string;
+    supplierBrand?: string;
+    campaignId?: string;
+    campaignName?: string;
+    campaignBrand?: string;
+    campaignStatus?: "Active" | "Paused";
+    startISO?: string;
+    endISO?: string;
+    offers?: Array<{
+      id: string;
+      type?: "PRODUCT" | "SERVICE";
+      name?: string;
+      price?: number;
+      basePrice?: number;
+      currency?: "UGX" | "USD";
+      stockLeft?: number;
+      sold?: number;
+      posterUrl?: string;
+      videoUrl?: string;
+      desktopMode?: ViewerMode;
+    }>;
+  };
 }) {
   const isMobile = useIsMobile();
 
@@ -1570,27 +1573,98 @@ export default function AdBuilder({
   // Preflight is collapsible and collapsed by default (per requirement)
   const [preflightOpen, setPreflightOpen] = useState(false);
 
-  const defaultSupplierId = SUPPLIERS[0]?.id || "p1";
-  const defaultCampaignId = CAMPAIGNS.find((c) => c.supplierId === defaultSupplierId)?.id || CAMPAIGNS[0]?.id || "c1";
+  const dealScope = useMemo(() => {
+    if (!pickerContext?.dealId) return null;
+
+    const supplierId = pickerContext.supplierId || `deal-supplier:${pickerContext.dealId}`;
+    const campaignId = pickerContext.campaignId || `deal-campaign:${pickerContext.dealId}`;
+    const supplierName = pickerContext.supplierName || "Supplier";
+    const campaignName = pickerContext.campaignName || "Campaign";
+    const campaignStatus = pickerContext.campaignStatus === "Paused" ? "Paused" : "Active";
+    const startISO = pickerContext.startISO || new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const endISO = pickerContext.endISO || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+    const supplierEntry: Supplier = {
+      id: supplierId,
+      name: supplierName,
+      category: pickerContext.supplierKind || "Seller",
+      avatarUrl: "",
+    };
+
+    const campaignEntry: Campaign = {
+      id: campaignId,
+      supplierId,
+      name: campaignName,
+      status: campaignStatus,
+      startsAtISO: startISO,
+      endsAtISO: endISO,
+    };
+
+    const offerEntries: Offer[] =
+      (pickerContext.offers || []).map((offer, index) => ({
+        id: offer.id || `deal-offer-${index + 1}`,
+        supplierId,
+        campaignId,
+        type: offer.type === "SERVICE" ? "SERVICE" : "PRODUCT",
+        name: offer.name || `Offer ${index + 1}`,
+        price: typeof offer.price === "number" ? offer.price : 0,
+        basePrice: typeof offer.basePrice === "number" ? offer.basePrice : undefined,
+        currency: offer.currency === "UGX" ? "UGX" : "USD",
+        stockLeft: typeof offer.stockLeft === "number" ? offer.stockLeft : -1,
+        sold: typeof offer.sold === "number" ? offer.sold : 0,
+        catalogPosterUrl: offer.posterUrl || "",
+        catalogVideoUrl: offer.videoUrl || undefined,
+      })) || [];
+
+    return { supplierEntry, campaignEntry, offerEntries };
+  }, [pickerContext]);
+
+  const availableSuppliers = useMemo(
+    () => (dealScope ? [dealScope.supplierEntry] : SUPPLIERS),
+    [dealScope],
+  );
+  const availableCampaigns = useMemo(
+    () => (dealScope ? [dealScope.campaignEntry] : CAMPAIGNS),
+    [dealScope],
+  );
+  const availableOffers = useMemo(
+    () => (dealScope ? dealScope.offerEntries : OFFERS),
+    [dealScope],
+  );
+  const dealScopeLocked = Boolean(dealScope);
+
+  const defaultSupplierId = availableSuppliers[0]?.id || "p1";
+  const defaultCampaignId =
+    availableCampaigns.find((campaign) => campaign.supplierId === defaultSupplierId)?.id ||
+    availableCampaigns[0]?.id ||
+    "c1";
 
   // default schedule: tomorrow 18:00-19:00
   const defaultStart = useMemo(() => {
+    if (dealScope?.campaignEntry?.startsAtISO) {
+      const parsed = new Date(dealScope.campaignEntry.startsAtISO);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(18, 0, 0, 0);
     return d;
-  }, []);
+  }, [dealScope]);
   const defaultEnd = useMemo(() => {
+    if (dealScope?.campaignEntry?.endsAtISO) {
+      const parsed = new Date(dealScope.campaignEntry.endsAtISO);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
     const d = new Date(defaultStart);
     d.setHours(d.getHours() + 1);
     return d;
-  }, [defaultStart]);
+  }, [defaultStart, dealScope]);
 
   const [builder, setBuilder] = useState<BuilderState>(() => ({
     supplierId: defaultSupplierId,
     campaignId: defaultCampaignId,
-    selectedOfferIds: [OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1"].filter(Boolean),
-    primaryOfferId: OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1",
+    selectedOfferIds: [availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || "o1"].filter(Boolean),
+    primaryOfferId: availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || "o1",
     platforms: ["Instagram"],
     platformOtherList: [],
     platformOtherDraft: "",
@@ -1616,13 +1690,65 @@ export default function AdBuilder({
   // External assets from Asset Library picker roundtrip
   const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>({});
 
-  const supplier = useMemo(() => SUPPLIERS.find((p) => p.id === builder.supplierId) || SUPPLIERS[0], [builder.supplierId]);
-  const campaignOptions = useMemo(() => CAMPAIGNS.filter((c) => c.supplierId === builder.supplierId), [builder.supplierId]);
-  const campaign = useMemo(() => CAMPAIGNS.find((c) => c.id === builder.campaignId) || campaignOptions[0], [builder.campaignId, campaignOptions]);
+  const supplier = useMemo(
+    () => availableSuppliers.find((entry) => entry.id === builder.supplierId) || availableSuppliers[0],
+    [availableSuppliers, builder.supplierId],
+  );
+  const campaignOptions = useMemo(
+    () => availableCampaigns.filter((entry) => entry.supplierId === builder.supplierId),
+    [availableCampaigns, builder.supplierId],
+  );
+  const campaign = useMemo(
+    () => availableCampaigns.find((entry) => entry.id === builder.campaignId) || campaignOptions[0],
+    [availableCampaigns, builder.campaignId, campaignOptions],
+  );
 
-  const scopedOffers = useMemo(() => OFFERS.filter((o) => o.supplierId === builder.supplierId && o.campaignId === builder.campaignId), [builder.supplierId, builder.campaignId]);
-  const selectedOffers = useMemo(() => builder.selectedOfferIds.map((id) => scopedOffers.find((o) => o.id === id) || OFFERS.find((o) => o.id === id)).filter(Boolean) as Offer[], [builder.selectedOfferIds, scopedOffers]);
+  const scopedOffers = useMemo(
+    () => availableOffers.filter((entry) => entry.supplierId === builder.supplierId && entry.campaignId === builder.campaignId),
+    [availableOffers, builder.supplierId, builder.campaignId],
+  );
+  const selectedOffers = useMemo(
+    () =>
+      builder.selectedOfferIds
+        .map((id) => scopedOffers.find((entry) => entry.id === id) || availableOffers.find((entry) => entry.id === id))
+        .filter(Boolean) as Offer[],
+    [builder.selectedOfferIds, scopedOffers, availableOffers],
+  );
   const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
+  const builderContextKey = pickerContext?.dealId ? `deal:${pickerContext.dealId}` : "global";
+
+  useEffect(() => {
+    if (!dealScopeLocked) return;
+    const scopedOfferIds = availableOffers
+      .filter((entry) => entry.supplierId === defaultSupplierId && entry.campaignId === defaultCampaignId)
+      .map((entry) => entry.id);
+    setBuilder((prev) => {
+      const selectedOfferIds = prev.selectedOfferIds.filter((id) => scopedOfferIds.includes(id));
+      const normalizedSelectedOfferIds = selectedOfferIds.length ? selectedOfferIds : scopedOfferIds.slice(0, 2);
+      const primaryOfferId =
+        normalizedSelectedOfferIds.includes(prev.primaryOfferId)
+          ? prev.primaryOfferId
+          : normalizedSelectedOfferIds[0] || "";
+
+      if (
+        prev.supplierId === defaultSupplierId &&
+        prev.campaignId === defaultCampaignId &&
+        prev.primaryOfferId === primaryOfferId &&
+        prev.selectedOfferIds.length === normalizedSelectedOfferIds.length &&
+        prev.selectedOfferIds.every((id, idx) => id === normalizedSelectedOfferIds[idx])
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        supplierId: defaultSupplierId,
+        campaignId: defaultCampaignId,
+        selectedOfferIds: normalizedSelectedOfferIds,
+        primaryOfferId,
+      };
+    });
+  }, [availableOffers, dealScopeLocked, defaultCampaignId, defaultSupplierId]);
 
   // Cart state (shared between the preview cards and the fullscreen viewer)
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -1681,6 +1807,25 @@ export default function AdBuilder({
   // Schedule times
   const startsAt = useMemo(() => parseLocalDateTime(builder.startDate, builder.startTime), [builder.startDate, builder.startTime]);
   const endsAt = useMemo(() => parseLocalDateTime(builder.endDate, builder.endTime), [builder.endDate, builder.endTime]);
+
+  function validateSchedule(campaignId: string, start: Date, end: Date) {
+    const selectedCampaign = availableCampaigns.find((entry) => entry.id === campaignId);
+    if (!selectedCampaign) return { ok: false, error: "Invalid campaign selected" };
+
+    const campaignStart = new Date(selectedCampaign.startsAtISO);
+    const campaignEnd = new Date(selectedCampaign.endsAtISO);
+
+    if (start < campaignStart) {
+      return { ok: false, error: `Schedule starts before campaign window (${fmtLocal(campaignStart)})` };
+    }
+    if (end > campaignEnd) {
+      return { ok: false, error: `Schedule ends after campaign window (${fmtLocal(campaignEnd)})` };
+    }
+    if (start >= end) {
+      return { ok: false, error: "End time must be after start time" };
+    }
+    return { ok: true };
+  }
 
   const countdownState = useMemo<CountdownState>(() => computeCountdownState(Date.now(), startsAt.getTime(), endsAt.getTime()), [startsAt, endsAt]);
   const countdownLabel = useMemo(() => (countdownState === "upcoming" ? "Starts in" : countdownState === "live" ? "Ends in" : "Session ended"), [countdownState]);
@@ -1816,6 +1961,7 @@ export default function AdBuilder({
         BUILDER_DRAFT_KEY,
         JSON.stringify({
           ts: Date.now(),
+          contextKey: builderContextKey,
           step,
           builder,
           externalAssets,
@@ -1830,6 +1976,8 @@ export default function AdBuilder({
     const u = new URL(window.location.href);
     u.searchParams.set("restore", "1");
     u.searchParams.set("step", step);
+    u.searchParams.set("pickerSource", "ad-builder");
+    if (pickerContext?.dealId) u.searchParams.set("dealId", pickerContext.dealId);
     // clean old picker params
     u.searchParams.delete("assetId");
     u.searchParams.delete("applyTo");
@@ -1843,6 +1991,22 @@ export default function AdBuilder({
     picker.searchParams.set("mode", "picker");
     picker.searchParams.set("target", "shoppable");
     picker.searchParams.set("applyTo", applyTo);
+    const supplierIdForPicker = pickerContext?.supplierId || builder.supplierId;
+    const campaignIdForPicker = pickerContext?.campaignId || builder.campaignId;
+    const supplierNameForPicker = pickerContext?.supplierName || supplier?.name;
+    const supplierKindForPicker = pickerContext?.supplierKind || "Seller";
+    const supplierBrandForPicker = pickerContext?.supplierBrand || supplierNameForPicker || "";
+    const campaignNameForPicker = pickerContext?.campaignName || campaign?.name;
+    const campaignBrandForPicker = pickerContext?.campaignBrand || campaignNameForPicker || "";
+
+    if (pickerContext?.dealId) picker.searchParams.set("dealId", pickerContext.dealId);
+    if (supplierIdForPicker) picker.searchParams.set("supplierId", supplierIdForPicker);
+    if (campaignIdForPicker) picker.searchParams.set("campaignId", campaignIdForPicker);
+    if (supplierNameForPicker) picker.searchParams.set("supplierName", supplierNameForPicker);
+    if (supplierKindForPicker) picker.searchParams.set("supplierKind", supplierKindForPicker);
+    if (supplierBrandForPicker) picker.searchParams.set("supplierBrand", supplierBrandForPicker);
+    if (campaignNameForPicker) picker.searchParams.set("campaignName", campaignNameForPicker);
+    if (campaignBrandForPicker) picker.searchParams.set("campaignBrand", campaignBrandForPicker);
     picker.searchParams.set("returnTo", buildReturnToUrl());
     // Mini-step exists inside picker mode, so this is treated as "suggested applyTo"
     window.location.assign(picker.toString());
@@ -1903,6 +2067,14 @@ export default function AdBuilder({
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
     const shouldRestore = sp.get("restore") === "1" || sp.has("assetId");
+    const returnDealId = sp.get("dealId") || "";
+    if (returnDealId) {
+      const currentDealId = pickerContext?.dealId || "";
+      // Wait until this Ad Builder instance is bound to the same deal that opened picker.
+      if (currentDealId !== returnDealId) {
+        return;
+      }
+    }
     const assetId = sp.get("assetId") || "";
     const applyTo = sp.get("applyTo") || "";
 
@@ -1911,9 +2083,12 @@ export default function AdBuilder({
         const raw = sessionStorage.getItem(BUILDER_DRAFT_KEY);
         if (raw) {
           const saved = JSON.parse(raw);
-          if (saved?.builder) setBuilder(saved.builder);
-          if (saved?.step) setStep(saved.step);
-          if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
+          const savedContextKey = typeof saved?.contextKey === "string" ? saved.contextKey : "global";
+          if (savedContextKey === builderContextKey) {
+            if (saved?.builder) setBuilder(saved.builder);
+            if (saved?.step) setStep(saved.step);
+            if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
+          }
         }
       } catch {
         // ignore
@@ -1940,13 +2115,14 @@ export default function AdBuilder({
       clean.searchParams.delete("applyTo");
       clean.searchParams.delete("restore");
       clean.searchParams.delete("step");
+      clean.searchParams.delete("dealId");
       window.history.replaceState({}, "", clean.pathname + (clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : ""));
     }
-  }, []);
+  }, [builderContextKey]);
 
   // Supplier -> campaign resets offers
   function resetScope(nextSupplierId: string, nextCampaignId: string) {
-    const offers = OFFERS.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
+    const offers = availableOffers.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
     const ids = offers.slice(0, 2).map((o) => o.id);
     const primary = ids[0] || offers[0]?.id || "";
     setBuilder((prev) => ({
@@ -2024,7 +2200,7 @@ export default function AdBuilder({
     issues.push({ label: "End date/time set", ok: !!builder.endDate && !!builder.endTime });
     issues.push({ label: "End after start", ok: endsAt.getTime() > startsAt.getTime(), fix: "Adjust schedule." });
 
-    const scheduleValidation = mockValidateSchedule(builder.campaignId, startsAt, endsAt);
+    const scheduleValidation = validateSchedule(builder.campaignId, startsAt, endsAt);
     issues.push({ label: "Schedule within campaign window", ok: scheduleValidation.ok, fix: scheduleValidation.error });
 
     const ok = issues.every((i) => i.ok);
@@ -2253,13 +2429,16 @@ export default function AdBuilder({
                     <select
                       className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                       value={builder.supplierId}
+                      disabled={dealScopeLocked}
                       onChange={(e) => {
                         const nextSupplier = e.target.value;
-                        const nextCampaign = CAMPAIGNS.find((c) => c.supplierId === nextSupplier)?.id || CAMPAIGNS[0]?.id;
+                        const nextCampaign =
+                          availableCampaigns.find((c) => c.supplierId === nextSupplier)?.id ||
+                          availableCampaigns[0]?.id;
                         resetScope(nextSupplier, nextCampaign);
                       }}
                     >
-                      {SUPPLIERS.map((p) => (
+                      {availableSuppliers.map((p) => (
                         <option key={p.id} value={p.id} className="dark:bg-slate-800">
                           {p.name}
                         </option>
@@ -2270,6 +2449,7 @@ export default function AdBuilder({
                     <select
                       className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                       value={builder.campaignId}
+                      disabled={dealScopeLocked}
                       onChange={(e) => resetScope(builder.supplierId, e.target.value)}
                     >
                       {campaignOptions.map((c) => (
@@ -2893,7 +3073,7 @@ export default function AdBuilder({
                 </div>
 
                 {(() => {
-                  const val = mockValidateSchedule(builder.campaignId, startsAt, endsAt);
+                  const val = validateSchedule(builder.campaignId, startsAt, endsAt);
                   if (!val.ok) {
                     return (
                       <div className="mt-4 flex items-start gap-2 rounded-2xl bg-rose-50 dark:bg-rose-900/20 p-3 text-xs text-rose-900 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800 transition-colors">
@@ -2917,8 +3097,8 @@ export default function AdBuilder({
                   tone="primary"
                   onClick={handleNext}
                   right={<ChevronRight className="h-4 w-4" />}
-                  disabled={!mockValidateSchedule(builder.campaignId, startsAt, endsAt).ok}
-                  title={!mockValidateSchedule(builder.campaignId, startsAt, endsAt).ok ? "Fix schedule issues" : undefined}
+                  disabled={!validateSchedule(builder.campaignId, startsAt, endsAt).ok}
+                  title={!validateSchedule(builder.campaignId, startsAt, endsAt).ok ? "Fix schedule issues" : undefined}
                 >
                   Next: Review
                 </Btn>

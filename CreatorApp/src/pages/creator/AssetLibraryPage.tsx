@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -35,6 +35,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react";
+import { creatorApi, type AssetRecord, type MediaAssetRecord, type MediaWorkspaceResponse } from "../../lib/creatorApi";
 
 /**
  * Asset Library (Independent Premium Page)
@@ -154,6 +155,183 @@ function cx(...classes: Array<string | false | undefined | null>) {
   return classes.filter(Boolean).join(" ");
 }
 
+function toRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function toArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function toStringValue(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function toNumberValue(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function toStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item)) : [];
+}
+
+function formatShortTimeAgo(dateLike: string | null | undefined) {
+  const value = typeof dateLike === "string" ? dateLike : "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Last updated: recently";
+  return `Last updated: ${parsed.toLocaleDateString()}`;
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Failed to read file"));
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function dataUrlBytes(dataUrl: string) {
+  const base64 = dataUrl.split(",")[1] || "";
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+}
+
+function replaceFileExtension(fileName: string, nextExt: string) {
+  const base = fileName.includes(".") ? fileName.slice(0, fileName.lastIndexOf(".")) : fileName;
+  return `${base}.${nextExt}`;
+}
+
+function isImageLikeFile(file: File) {
+  if (file.type.startsWith("image/")) return true;
+  return /\.(png|jpe?g|webp|gif|bmp|heic|heif|avif)$/i.test(file.name || "");
+}
+
+function readImageFile(file: File): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Failed to decode image file"));
+    };
+    image.src = objectUrl;
+  });
+}
+
+async function normalizeImageForRequiredSize(
+  file: File,
+  targetWidth: number,
+  targetHeight: number,
+): Promise<{ name: string; dataUrl: string; mimeType: string; sizeBytes: number; extension: string }> {
+  const image = await readImageFile(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas is not available for image processing");
+
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  const sourceRatio = sourceWidth / sourceHeight;
+  const targetRatio = targetWidth / targetHeight;
+
+  let sx = 0;
+  let sy = 0;
+  let sw = sourceWidth;
+  let sh = sourceHeight;
+  if (sourceRatio > targetRatio) {
+    sw = Math.round(sourceHeight * targetRatio);
+    sx = Math.max(0, Math.floor((sourceWidth - sw) / 2));
+  } else if (sourceRatio < targetRatio) {
+    sh = Math.round(sourceWidth / targetRatio);
+    sy = Math.max(0, Math.floor((sourceHeight - sh) / 2));
+  }
+
+  context.drawImage(image, sx, sy, sw, sh, 0, 0, targetWidth, targetHeight);
+
+  const outputMime = file.type === "image/png" ? "image/png" : "image/jpeg";
+  const outputExt = outputMime === "image/png" ? "png" : "jpg";
+  const dataUrl = outputMime === "image/png"
+    ? canvas.toDataURL(outputMime)
+    : canvas.toDataURL(outputMime, 0.92);
+
+  return {
+    name: replaceFileExtension(file.name || "image", outputExt),
+    dataUrl,
+    mimeType: outputMime,
+    sizeBytes: dataUrlBytes(dataUrl),
+    extension: outputExt,
+  };
+}
+
+function mediaTypeFromPayload(kindRaw: unknown, mimeRaw: unknown, metadataTypeRaw: unknown): MediaType {
+  const metadataType = toStringValue(metadataTypeRaw, "").toLowerCase();
+  if (metadataType === "video" || metadataType === "image" || metadataType === "template" || metadataType === "script" || metadataType === "overlay" || metadataType === "link" || metadataType === "doc") {
+    return metadataType;
+  }
+
+  const kind = toStringValue(kindRaw, "").toLowerCase();
+  const mime = toStringValue(mimeRaw, "").toLowerCase();
+  if (kind.includes("video") || mime.startsWith("video/")) return "video";
+  if (kind.includes("overlay")) return "overlay";
+  if (kind.includes("script")) return "script";
+  if (kind.includes("template")) return "template";
+  if (kind.includes("link")) return "link";
+  if (
+    mime === "application/pdf" ||
+    mime.includes("word") ||
+    mime.includes("spreadsheet") ||
+    mime.includes("presentation") ||
+    mime.startsWith("text/")
+  ) {
+    return "doc";
+  }
+  if (kind.includes("doc")) return "doc";
+  return "image";
+}
+
+function reviewStatusFromPayload(raw: unknown): ReviewStatus {
+  const value = toStringValue(raw, "").toLowerCase();
+  if (value === "approved") return "approved";
+  if (value === "pending_supplier") return "pending_supplier";
+  if (value === "pending_admin" || value === "pending" || value === "submitted" || value === "in_review") return "pending_admin";
+  if (value === "changes_requested" || value === "needs_changes") return "changes_requested";
+  if (value === "rejected") return "rejected";
+  return "draft";
+}
+
+function sourceFromPayload(raw: unknown): AssetSource {
+  const value = toStringValue(raw, "").toLowerCase();
+  if (value === "supplier") return "supplier";
+  if (value === "catalog") return "catalog";
+  return "creator";
+}
+
+function collectionStatusMeta(statusRaw: string) {
+  const status = statusRaw.toLowerCase();
+  if (status === "ready" || status === "approved" || status === "published" || status === "active") {
+    return {
+      label: "Ready",
+      className:
+        "inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-200 dark:ring-emerald-700",
+    };
+  }
+  return {
+    label: "Needs review",
+    className:
+      "inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-700",
+  };
+}
 
 
 function statusLabel(s: ReviewStatus) {
@@ -256,6 +434,13 @@ type PickerParams = {
   target?: string;
   returnTo?: string;
   applyTo?: string;
+  supplierId?: string;
+  campaignId?: string;
+  supplierName?: string;
+  supplierKind?: string;
+  supplierBrand?: string;
+  campaignName?: string;
+  campaignBrand?: string;
 };
 
 function useQueryParams() {
@@ -269,7 +454,27 @@ function useQueryParams() {
     const target = sp.get("target") || undefined; // e.g. "shoppable" | "live"
     const returnTo = sp.get("returnTo") || undefined;
     const applyTo = sp.get("applyTo") || undefined;
-    setParams({ dealId, mode, target, returnTo, applyTo });
+    const supplierId = sp.get("supplierId") || undefined;
+    const campaignId = sp.get("campaignId") || undefined;
+    const supplierName = sp.get("supplierName") || undefined;
+    const supplierKind = sp.get("supplierKind") || undefined;
+    const supplierBrand = sp.get("supplierBrand") || undefined;
+    const campaignName = sp.get("campaignName") || undefined;
+    const campaignBrand = sp.get("campaignBrand") || undefined;
+    setParams({
+      dealId,
+      mode,
+      target,
+      returnTo,
+      applyTo,
+      supplierId,
+      campaignId,
+      supplierName,
+      supplierKind,
+      supplierBrand,
+      campaignName,
+      campaignBrand,
+    });
   }, []);
 
   return params;
@@ -885,258 +1090,192 @@ function MiniChart({ points, height = 54 }: { points: number[]; height?: number 
   );
 }
 
-// --- Static Data Moved Outside Component ---
-const creators: Creator[] = [
-  {
-    id: "cr-1",
-    name: "Aisha Mensah",
-    handle: "@aisha.m",
-    avatarUrl: "https://i.pravatar.cc/100?img=47",
-  },
-  {
-    id: "cr-2",
-    name: "Jason Lin",
-    handle: "@jasonl",
-    avatarUrl: "https://i.pravatar.cc/100?img=12",
-  },
-  {
-    id: "cr-3",
-    name: "Grace K.",
-    handle: "@gracek",
-    avatarUrl: "https://i.pravatar.cc/100?img=56",
-  },
-];
+const DEFAULT_CREATOR: Creator = {
+  id: "creator",
+  name: "Creator",
+  handle: "@creator",
+  avatarUrl: "",
+};
 
-const suppliers: Supplier[] = [
-  { id: "p-1", name: "GlowUp Hub", kind: "Seller", brand: "GlowUp Hub" },
-  { id: "p-2", name: "GadgetMart Africa", kind: "Seller", brand: "GadgetMart" },
-  { id: "p-3", name: "Grace Living Store", kind: "Provider", brand: "Grace Living" },
-];
+function normalizeCreatorRow(row: unknown): Creator | null {
+  const record = toRecord(row);
+  if (!record) return null;
+  const id = toStringValue(record.id, "").trim();
+  const name = toStringValue(record.name, "").trim();
+  if (!id || !name) return null;
+  const handle = toStringValue(record.handle, "@creator").trim();
+  return {
+    id,
+    name,
+    handle: handle.startsWith("@") ? handle : `@${handle}`,
+    avatarUrl: toStringValue(record.avatarUrl, ""),
+  };
+}
 
-const campaigns: Campaign[] = [
-  { id: "c-1", supplierId: "p-1", name: "Autumn Beauty Flash", brand: "GlowUp Hub", status: "Active" },
-  { id: "c-2", supplierId: "p-2", name: "Tech Friday Mega Live", brand: "GadgetMart", status: "Active" },
-  { id: "c-3", supplierId: "p-3", name: "Faith & Wellness Morning Dealz", brand: "Grace Living", status: "Active" },
-];
+function normalizeSupplierRow(row: unknown): Supplier | null {
+  const record = toRecord(row);
+  if (!record) return null;
+  const id = toStringValue(record.id, "").trim();
+  const name = toStringValue(record.name, "").trim();
+  if (!id || !name) return null;
+  return {
+    id,
+    name,
+    kind: /^provider$/i.test(toStringValue(record.kind, "")) ? "Provider" : "Seller",
+    brand: toStringValue(record.brand, name),
+  };
+}
 
-const deliverables: Deliverable[] = [
-  { id: "d-1", campaignId: "c-1", label: "3× Shoppable Adz clips", dueDateLabel: "Due: 18 Nov" },
-  { id: "d-2", campaignId: "c-1", label: "1× Live opener + overlays pack", dueDateLabel: "Due: 20 Nov" },
-  { id: "d-3", campaignId: "c-2", label: "2× Tech offer overlays", dueDateLabel: "Due: 28 Nov" },
-  { id: "d-4", campaignId: "c-3", label: "1× Service booking promo", dueDateLabel: "Due: 03 Dec" },
-];
+function normalizeCampaignRow(row: unknown): Campaign | null {
+  const record = toRecord(row);
+  if (!record) return null;
+  const id = toStringValue(record.id, "").trim();
+  const supplierId = toStringValue(record.supplierId, "").trim();
+  const name = toStringValue(record.name, "").trim();
+  if (!id || !supplierId || !name) return null;
+  return {
+    id,
+    supplierId,
+    name,
+    brand: toStringValue(record.brand, "Seller"),
+    status: /^paused$/i.test(toStringValue(record.status, "")) ? "Paused" : "Active",
+  };
+}
 
-const seedAssets: Asset[] = [
-  {
-    id: "a-1",
-    creatorScope: "all",
-    title: "Autumn Beauty opener sequence",
-    subtitle: "Autumn Beauty Flash · GlowUp Hub",
-    campaignId: "c-1",
-    supplierId: "p-1",
-    brand: "GlowUp Hub",
-    tags: ["Beauty", "Serum", "Opener"],
-    mediaType: "video",
-    source: "supplier",
-    ownerLabel: "Owner: Supplier",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 2 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=320&q=60",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "opener",
-    usageNotes: "Intro bumper for Beauty Flash lives. Include for all serum-focused shows.",
-    restrictions: "Use only for GlowUp serum campaigns in 2025.",
-  },
-  {
-    id: "a-2",
-    creatorScope: "all",
-    title: "GlowUp hero slide — Serum benefits",
-    subtitle: "Autumn Beauty Flash · GlowUp Hub",
-    campaignId: "c-1",
-    supplierId: "p-1",
-    brand: "GlowUp Hub",
-    tags: ["Beauty", "Hero", "Benefits"],
-    mediaType: "image",
-    source: "supplier",
-    ownerLabel: "Owner: Supplier",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: Yesterday",
-    thumbnailUrl: "https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=320&q=60",
-    previewUrl: `https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=${HERO_IMAGE_REQUIRED.width}&h=${HERO_IMAGE_REQUIRED.height}&q=70`,
-    previewKind: "image",
-    dimensions: { width: HERO_IMAGE_REQUIRED.width, height: HERO_IMAGE_REQUIRED.height },
-    role: "hero",
-    usageNotes: "Use as hero still when creator has no hero video.",
-    restrictions: "Do not crop brand mark. Keep safe margins for subtitles.",
-  },
-  {
-    id: "a-3",
-    creatorScope: "all",
-    title: "Flash offer graphic — 20% off window",
-    subtitle: "Autumn Beauty Flash · GlowUp Hub",
-    campaignId: "c-1",
-    supplierId: "p-1",
-    brand: "GlowUp Hub",
-    tags: ["Offer", "Timer", "Flash"],
-    mediaType: "overlay",
-    source: "supplier",
-    ownerLabel: "Owner: Supplier",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 3 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=320&q=60",
-    previewUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70",
-    previewKind: "image",
-    role: "offer",
-    usageNotes: "Overlay for mid-show offer callouts. Best with voiceover.",
-    restrictions: "Avoid stacking with other countdown overlays.",
-  },
-  {
-    id: "a-4",
-    creatorScope: "all",
-    title: "Deal ticker lower third",
-    subtitle: "Tech Friday Mega Live · GadgetMart Africa",
-    campaignId: "c-2",
-    supplierId: "p-2",
-    brand: "GadgetMart",
-    tags: ["Ticker", "Dealz", "Lower third"],
-    mediaType: "overlay",
-    source: "catalog",
-    ownerLabel: "Owner: Platform",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 1 week ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=320&q=60",
-    previewUrl: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70",
-    previewKind: "image",
-    role: "lower_third",
-    usageNotes: "Auto-populated from catalog promos. Works best with dark backgrounds.",
-    restrictions: "Do not modify product prices in this overlay.",
-  },
-  {
-    id: "a-5",
-    creatorScope: "cr-1",
-    title: "Creator base script — Flash format",
-    subtitle: "Global template · Creator library",
-    campaignId: "c-1",
-    supplierId: "p-1",
-    brand: "GlowUp Hub",
-    tags: ["Template", "Script", "Flash"],
-    mediaType: "script",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: Today",
-    thumbnailUrl: "",
-    previewUrl: "",
-    previewKind: "image",
-    role: "script",
-    usageNotes: "Compliance-safe script skeleton including disclosure and CTA blocks.",
-    restrictions: "Customize product claims to match verified catalog facts only.",
-  },
-  {
-    id: "a-6",
-    creatorScope: "cr-2",
-    title: "Universal price-drop overlay",
-    subtitle: "Global template · Creator library",
-    campaignId: "c-2",
-    supplierId: "p-2",
-    brand: "GadgetMart",
-    tags: ["Template", "Overlay", "Price drop"],
-    mediaType: "overlay",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "pending_admin",
-    lastUpdatedLabel: "Last updated: 3 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=320&q=60",
-    previewUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70",
-    previewKind: "image",
-    role: "overlay",
-    usageNotes: "Use for live price-drop moments. Keep overlay on screen < 6 seconds.",
-    restrictions: "Requires approval for each campaign.",
-  },
-  {
-    id: "a-7",
-    creatorScope: "all",
-    title: "Tech Friday hero overlay",
-    subtitle: "Tech Friday Mega Live · GadgetMart Africa",
-    campaignId: "c-2",
-    supplierId: "p-2",
-    brand: "GadgetMart",
-    tags: ["Tech", "Overlay"],
-    mediaType: "overlay",
-    source: "supplier",
-    ownerLabel: "Owner: Supplier",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 5 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=320&q=60",
-    previewUrl: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=70",
-    previewKind: "image",
-    role: "hero",
-    usageNotes: "Overlay for opening of Tech Friday shows.",
-    restrictions: "Use only for Tech Friday campaigns.",
-  },
-  {
-    id: "a-8",
-    creatorScope: "cr-3",
-    title: "Faith Morning warm opener",
-    subtitle: "Faith & Wellness Morning Dealz · Grace Living Store",
-    campaignId: "c-3",
-    supplierId: "p-3",
-    brand: "Grace Living",
-    tags: ["Faith", "Opener"],
-    mediaType: "video",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "changes_requested",
-    lastUpdatedLabel: "Last updated: 4 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=320&q=60",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "opener",
-    usageNotes: "Warm opener for service sessionz.",
-    restrictions: "Remove background music unless licensed.",
-  },
-];
+function normalizeDeliverableRow(row: unknown): Deliverable | null {
+  const record = toRecord(row);
+  if (!record) return null;
+  const id = toStringValue(record.id, "").trim();
+  const campaignId = toStringValue(record.campaignId, "").trim();
+  const label = toStringValue(record.label, "").trim();
+  if (!id || !campaignId || !label) return null;
+  return {
+    id,
+    campaignId,
+    label,
+    dueDateLabel: toStringValue(record.dueDateLabel, "No due date"),
+  };
+}
 
-const smartPacks: SmartPack[] = [
-  {
-    id: "sp-1",
-    name: "Show pack",
-    campaignId: "c-1",
-    brand: "Autumn Beauty Flash · GlowUp Hub",
-    autoGrouped: true,
-    items: [
-      { title: "Autumn Beauty opener sequence", assetId: "a-1" },
-      { title: "GlowUp hero slide — Serum benefits", assetId: "a-2" },
-      { title: "Flash offer graphic — 20% off window", assetId: "a-3" },
-    ],
-  },
-];
+function normalizeMediaAsset(row: MediaAssetRecord): Asset {
+  const metadata = toRecord(row.metadata) ?? {};
+  const mediaType = mediaTypeFromPayload(row.kind, row.mimeType, metadata.mediaType);
+  const source = sourceFromPayload(metadata.source);
+  const status = reviewStatusFromPayload(metadata.status);
+  const role = toStringValue(metadata.role, "");
+  const dimensions = toRecord(metadata.dimensions);
+  const width = dimensions ? toNumberValue(dimensions.width, 0) : 0;
+  const height = dimensions ? toNumberValue(dimensions.height, 0) : 0;
+
+  return {
+    id: row.id,
+    creatorScope: toStringValue(metadata.creatorScope, "all"),
+    title: toStringValue(metadata.title, row.name || "Untitled asset"),
+    subtitle: toStringValue(metadata.subtitle, ""),
+    campaignId: toStringValue(metadata.campaignId, ""),
+    supplierId: toStringValue(metadata.supplierId, ""),
+    brand: toStringValue(metadata.brand, ""),
+    tags: toStringList(metadata.tags),
+    mediaType,
+    source,
+    ownerLabel: toStringValue(
+      metadata.ownerLabel,
+      source === "creator" ? "Owner: Creator" : source === "supplier" ? "Owner: Supplier" : "Owner: Platform",
+    ),
+    status,
+    lastUpdatedLabel: formatShortTimeAgo(toStringValue(row.updatedAt, toStringValue(row.createdAt, ""))),
+    thumbnailUrl: toStringValue(metadata.thumbnailUrl, toStringValue(row.url, "")),
+    previewUrl: toStringValue(metadata.previewUrl, toStringValue(row.url, "")),
+    previewKind: toStringValue(metadata.previewKind, "") === "video" || mediaType === "video" ? "video" : "image",
+    dimensions: width > 0 && height > 0 ? { width, height } : undefined,
+    role: role ? (role as Asset["role"]) : undefined,
+    usageNotes: toStringValue(metadata.usageNotes, ""),
+    restrictions: toStringValue(metadata.restrictions, ""),
+    desktopMode: toStringValue(metadata.desktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
+    aspect: toStringValue(metadata.aspect, "") === "horizontal" ? "horizontal" : "vertical",
+    relatedDealId: toStringValue(metadata.relatedDealId, ""),
+  };
+}
+
+function normalizeCollabAsset(row: AssetRecord): Asset {
+  const metadata = toRecord(row.metadata) ?? {};
+  const mediaType = mediaTypeFromPayload(row.assetType, row.mimeType, metadata.mediaType);
+  const source = sourceFromPayload(metadata.source || "supplier");
+  const status = reviewStatusFromPayload(metadata.status || row.status);
+  const role = toStringValue(metadata.role, "");
+
+  return {
+    id: row.id,
+    creatorScope: "all",
+    title: toStringValue(metadata.title, toStringValue(row.title, "Untitled asset")),
+    subtitle: toStringValue(metadata.subtitle, ""),
+    campaignId: toStringValue(row.campaignId, toStringValue(metadata.campaignId, "")),
+    supplierId: toStringValue(metadata.supplierId, ""),
+    brand: toStringValue(metadata.brand, ""),
+    tags: toStringList(metadata.tags),
+    mediaType,
+    source,
+    ownerLabel: toStringValue(metadata.ownerLabel, source === "supplier" ? "Owner: Supplier" : "Owner: Platform"),
+    status,
+    lastUpdatedLabel: formatShortTimeAgo(toStringValue(row.updatedAt, toStringValue(row.createdAt, ""))),
+    thumbnailUrl: toStringValue(metadata.thumbnailUrl, toStringValue(row.url, "")),
+    previewUrl: toStringValue(metadata.previewUrl, toStringValue(row.url, "")),
+    previewKind: toStringValue(metadata.previewKind, "") === "video" || mediaType === "video" ? "video" : "image",
+    role: role ? (role as Asset["role"]) : undefined,
+    usageNotes: toStringValue(metadata.usageNotes, ""),
+    restrictions: toStringValue(metadata.restrictions, ""),
+    desktopMode: toStringValue(metadata.desktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
+    aspect: toStringValue(metadata.aspect, "") === "horizontal" ? "horizontal" : "vertical",
+    relatedDealId: toStringValue(metadata.relatedDealId, ""),
+  };
+}
 
 
 
 export default function AssetLibraryPage() {
-  const { dealId, mode, target, returnTo, applyTo } = useQueryParams();
+  const {
+    dealId,
+    mode,
+    target,
+    returnTo,
+    applyTo,
+    supplierId: pickerSupplierId,
+    campaignId: pickerCampaignId,
+    supplierName: pickerSupplierName,
+    supplierKind: pickerSupplierKind,
+    supplierBrand: pickerSupplierBrand,
+    campaignName: pickerCampaignName,
+    campaignBrand: pickerCampaignBrand,
+  } = useQueryParams();
   const pickerMode = mode === "picker"; // when launched from builder to pick assets for a specific deal
   const pickerTarget = target === "live" ? "live" : target === "shoppable" ? "shoppable" : "shoppable";
 
 
 
   // ------ State ------
-  const [assets, setAssets] = useState<Asset[]>(seedAssets);
-  const [selectedCreatorId, setSelectedCreatorId] = useState(creators[0]?.id ?? "");
-  const [selectedSupplierId, setSelectedSupplierId] = useState(suppliers[0]?.id ?? "");
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(() => {
-    const first = campaigns.find((c) => c.supplierId === suppliers[0]?.id);
-    return first?.id ?? campaigns[0]?.id ?? "";
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [creators, setCreators] = useState<Creator[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
+  const [smartPacks, setSmartPacks] = useState<SmartPack[]>([]);
+  const [activityPoints, setActivityPoints] = useState<number[]>(Array.from({ length: 14 }, () => 0));
+  const [activitySummary, setActivitySummary] = useState({ newCount: 0, approvedCount: 0, pendingCount: 0 });
+  const [collectionSummary, setCollectionSummary] = useState({
+    starterPack: { assetCount: 0, status: "needs_review" },
+    priceDropOverlays: { assetCount: 0, status: "needs_review" },
   });
+  const [selectedCreatorId, setSelectedCreatorId] = useState("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
 
   const [search, setSearch] = useState("");
   const [filterMedia, setFilterMedia] = useState<MediaType | "all">("all");
-  const [filterStatus, setFilterStatus] = useState<ReviewStatus | "all">("all");
+  const [filterStatus, setFilterStatus] = useState<ReviewStatus | "pending" | "all">("all");
   const [filterSource, setFilterSource] = useState<AssetSource | "all">("all");
 
-  const [activeAssetId, setActiveAssetId] = useState<string | null>(seedAssets[0]?.id ?? null);
+  const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
 
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
@@ -1155,26 +1294,23 @@ export default function AssetLibraryPage() {
 
   // Submission draft state
   const [submitStatus, setSubmitStatus] = useState<ReviewStatus>("draft");
-  const [submitDraft, setSubmitDraft] = useState<SubmitDraft>(() => {
-    const firstDeliverable = deliverables.find((d) => d.campaignId === selectedCampaignId)?.id ?? "";
-    return {
-      campaignId: selectedCampaignId,
-      deliverableId: firstDeliverable,
-      title: "",
-      caption: "",
-      notes: "",
-      tagsCsv: "",
-      mediaType: "video",
-      role: "hero",
-      heroSizeConfirmed: false,
-      itemPosterSizeConfirmed: false,
-      linkUrl: "",
-      files: [],
-      fromCamera: false,
-      rightsConfirmed: false,
-      noCopyrightedMusicConfirmed: false,
-      disclosureConfirmed: false,
-    };
+  const [submitDraft, setSubmitDraft] = useState<SubmitDraft>({
+    campaignId: "",
+    deliverableId: "",
+    title: "",
+    caption: "",
+    notes: "",
+    tagsCsv: "",
+    mediaType: "video",
+    role: "hero",
+    heroSizeConfirmed: false,
+    itemPosterSizeConfirmed: false,
+    linkUrl: "",
+    files: [],
+    fromCamera: false,
+    rightsConfirmed: false,
+    noCopyrightedMusicConfirmed: false,
+    disclosureConfirmed: false,
   });
 
   // When submitting an image, we can detect pixel size for validations (e.g., Hero image requirement).
@@ -1190,30 +1326,268 @@ export default function AssetLibraryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCampaignId]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const campaignsForSupplier = useMemo(() => campaigns.filter((c) => c.supplierId === selectedSupplierId), [campaigns, selectedSupplierId]);
+  const pickerSupplierFallback = useMemo<Supplier | null>(() => {
+    if (!pickerMode) return null;
+    if (!pickerSupplierId && !pickerSupplierName) return null;
+    const id = pickerSupplierId || "picker-supplier";
+    const kind = /^provider$/i.test(pickerSupplierKind || "") ? "Provider" : "Seller";
+    const name = pickerSupplierName || "Supplier";
+    return {
+      id,
+      name,
+      kind,
+      brand: pickerSupplierBrand || name,
+    };
+  }, [pickerMode, pickerSupplierBrand, pickerSupplierId, pickerSupplierKind, pickerSupplierName]);
+
+  const pickerCampaignFallback = useMemo<Campaign | null>(() => {
+    if (!pickerMode) return null;
+    if (!pickerCampaignId && !pickerCampaignName) return null;
+    const fallbackSupplierId = pickerSupplierFallback?.id || pickerSupplierId || "";
+    if (!fallbackSupplierId) return null;
+    return {
+      id: pickerCampaignId || "picker-campaign",
+      supplierId: fallbackSupplierId,
+      name: pickerCampaignName || "Campaign",
+      brand: pickerCampaignBrand || pickerSupplierBrand || pickerSupplierFallback?.brand || "Seller",
+      status: "Active",
+    };
+  }, [
+    pickerMode,
+    pickerCampaignBrand,
+    pickerCampaignId,
+    pickerCampaignName,
+    pickerSupplierBrand,
+    pickerSupplierFallback,
+    pickerSupplierId,
+  ]);
+
+  const campaignsForSupplier = useMemo(() => {
+    const base = campaigns.filter((campaign) => campaign.supplierId === selectedSupplierId);
+    if (!pickerMode || !pickerCampaignFallback) return base;
+    if (selectedSupplierId !== pickerCampaignFallback.supplierId) return base;
+    if (base.some((campaign) => campaign.id === pickerCampaignFallback.id)) return base;
+    return [pickerCampaignFallback, ...base];
+  }, [campaigns, pickerCampaignFallback, pickerMode, selectedSupplierId]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const deliverablesForCampaign = useMemo(() => deliverables.filter((d) => d.campaignId === selectedCampaignId), [deliverables, selectedCampaignId]);
+
+  const loadLibraryFromBackend = useCallback(async () => {
+    setIsLoadingLibrary(true);
+    try {
+      const [workspaceRaw, mediaAssetsRaw, collabAssetsRaw] = await Promise.all([
+        creatorApi.mediaWorkspace(),
+        creatorApi.mediaAssets(),
+        creatorApi.assets(),
+      ]);
+
+      const workspace = toRecord(workspaceRaw as MediaWorkspaceResponse) ?? {};
+      const nextCreators = toArray(workspace.creators)
+        .map((row) => normalizeCreatorRow(row))
+        .filter((row): row is Creator => Boolean(row));
+      const nextSuppliers = toArray(workspace.suppliers)
+        .map((row) => normalizeSupplierRow(row))
+        .filter((row): row is Supplier => Boolean(row));
+      const nextCampaigns = toArray(workspace.campaigns)
+        .map((row) => normalizeCampaignRow(row))
+        .filter((row): row is Campaign => Boolean(row));
+      const nextDeliverables = toArray(workspace.deliverables)
+        .map((row) => normalizeDeliverableRow(row))
+        .filter((row): row is Deliverable => Boolean(row));
+
+      const mediaAssets = Array.isArray(mediaAssetsRaw)
+        ? mediaAssetsRaw.map((row) => normalizeMediaAsset(row as MediaAssetRecord))
+        : [];
+      const collabAssets = Array.isArray(collabAssetsRaw)
+        ? collabAssetsRaw.map((row) => normalizeCollabAsset(row as AssetRecord))
+        : [];
+      const mergedAssets = Array.from(
+        new Map([...mediaAssets, ...collabAssets].map((asset) => [asset.id, asset])).values(),
+      ).sort((left, right) => right.id.localeCompare(left.id));
+
+      const collections = toRecord(workspace.collections) ?? {};
+      const starterPack = toRecord(collections.starterPack) ?? {};
+      const priceDropOverlays = toRecord(collections.priceDropOverlays) ?? {};
+      const workspaceActivity = toRecord(workspace.activity) ?? {};
+      const points = toArray(workspaceActivity.points)
+        .map((point) => Number(point))
+        .filter((point) => Number.isFinite(point));
+
+      const groupedByCampaign = new Map<string, Asset[]>();
+      mergedAssets.forEach((asset) => {
+        if (!asset.campaignId || asset.status !== "approved") return;
+        const current = groupedByCampaign.get(asset.campaignId) || [];
+        current.push(asset);
+        groupedByCampaign.set(asset.campaignId, current);
+      });
+      const nextSmartPacks: SmartPack[] = Array.from(groupedByCampaign.entries())
+        .map(([campaignId, campaignAssets]) => {
+          const campaign = nextCampaigns.find((entry) => entry.id === campaignId);
+          return {
+            id: `sp-${campaignId}`,
+            name: "Show pack",
+            campaignId,
+            brand: campaign?.name || "Campaign",
+            autoGrouped: true,
+            items: campaignAssets.slice(0, 5).map((asset) => ({
+              title: asset.title,
+              assetId: asset.id,
+            })),
+          } satisfies SmartPack;
+        })
+        .filter((pack) => pack.items.length > 0);
+
+      setCreators(nextCreators.length ? nextCreators : [DEFAULT_CREATOR]);
+      setSuppliers(nextSuppliers);
+      setCampaigns(nextCampaigns);
+      setDeliverables(nextDeliverables);
+      setAssets(mergedAssets);
+      setSmartPacks(nextSmartPacks);
+      setActivityPoints(points.length ? points : Array.from({ length: 14 }, () => 0));
+      setActivitySummary({
+        newCount: Math.max(0, toNumberValue(workspaceActivity.newCount, 0)),
+        approvedCount: Math.max(0, toNumberValue(workspaceActivity.approvedCount, 0)),
+        pendingCount: Math.max(0, toNumberValue(workspaceActivity.pendingCount, 0)),
+      });
+      setCollectionSummary({
+        starterPack: {
+          assetCount: Math.max(0, toNumberValue(starterPack.assetCount, 0)),
+          status: toStringValue(starterPack.status, "needs_review"),
+        },
+        priceDropOverlays: {
+          assetCount: Math.max(0, toNumberValue(priceDropOverlays.assetCount, 0)),
+          status: toStringValue(priceDropOverlays.status, "needs_review"),
+        },
+      });
+
+      setSelectedCreatorId((prev) => (prev && nextCreators.some((c) => c.id === prev) ? prev : (nextCreators[0]?.id || DEFAULT_CREATOR.id)));
+      setSelectedSupplierId((prev) => (prev && nextSuppliers.some((p) => p.id === prev) ? prev : (nextSuppliers[0]?.id || "")));
+      setSelectedCampaignId((prev) => {
+        if (prev && nextCampaigns.some((c) => c.id === prev)) return prev;
+        const supplierId = nextSuppliers[0]?.id || "";
+        const firstForSupplier = nextCampaigns.find((c) => c.supplierId === supplierId);
+        return firstForSupplier?.id || nextCampaigns[0]?.id || "";
+      });
+      setActiveAssetId((prev) => (prev && mergedAssets.some((asset) => asset.id === prev) ? prev : (mergedAssets[0]?.id || null)));
+    } catch (error) {
+      setToast({
+        title: "Failed to load asset library",
+        body: error instanceof Error ? error.message : "Could not fetch library data from backend.",
+      });
+    } finally {
+      setIsLoadingLibrary(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLibraryFromBackend();
+  }, [loadLibraryFromBackend]);
+
+  useEffect(() => {
+    if (!pickerMode) return;
+    const hasPickerSupplierContext = Boolean(pickerSupplierId || pickerSupplierName);
+    const hasPickerCampaignContext = Boolean(pickerCampaignId || pickerCampaignName);
+    if (!hasPickerSupplierContext && !hasPickerCampaignContext) return;
+
+    const hasSuppliers = suppliers.length > 0;
+    const hasCampaigns = campaigns.length > 0;
+    if (!hasSuppliers && !hasCampaigns && !pickerSupplierFallback && !pickerCampaignFallback) return;
+
+    if (pickerSupplierId) {
+      const supplierMatch = suppliers.find((supplier) => supplier.id === pickerSupplierId);
+      if (supplierMatch) {
+        setSelectedSupplierId(pickerSupplierId);
+
+        if (pickerCampaignId) {
+          const campaignMatch = campaigns.find(
+            (campaign) => campaign.id === pickerCampaignId && campaign.supplierId === pickerSupplierId,
+          );
+          if (campaignMatch) {
+            setSelectedCampaignId(campaignMatch.id);
+            return;
+          }
+        }
+
+        const firstSupplierCampaign = campaigns.find((campaign) => campaign.supplierId === pickerSupplierId);
+        if (firstSupplierCampaign) {
+          setSelectedCampaignId(firstSupplierCampaign.id);
+        }
+        return;
+      }
+    }
+
+    if (pickerCampaignId) {
+      const campaignMatch = campaigns.find((campaign) => campaign.id === pickerCampaignId);
+      if (campaignMatch) {
+        setSelectedSupplierId(campaignMatch.supplierId);
+        setSelectedCampaignId(campaignMatch.id);
+        return;
+      }
+    }
+
+    if (pickerSupplierFallback) {
+      setSelectedSupplierId((prev) => (prev === pickerSupplierFallback.id ? prev : pickerSupplierFallback.id));
+    }
+
+    if (pickerCampaignFallback) {
+      setSelectedCampaignId((prev) => (prev === pickerCampaignFallback.id ? prev : pickerCampaignFallback.id));
+    }
+  }, [
+    campaigns,
+    pickerCampaignFallback,
+    pickerCampaignId,
+    pickerCampaignName,
+    pickerMode,
+    pickerSupplierFallback,
+    pickerSupplierId,
+    pickerSupplierName,
+    suppliers,
+  ]);
 
   const filteredAssets = useMemo(() => {
     const q = search.trim().toLowerCase();
     return assets
       .filter((a) => (selectedCampaignId ? a.campaignId === selectedCampaignId : true))
+      .filter((a) => {
+        if (!pickerMode || !dealId) return true;
+        if (a.source !== "creator") return true;
+        return a.relatedDealId === dealId;
+      })
       .filter((a) => a.creatorScope === "all" || a.creatorScope === selectedCreatorId)
       .filter((a) => (filterMedia === "all" ? true : a.mediaType === filterMedia))
-      .filter((a) => (filterStatus === "all" ? true : a.status === filterStatus))
+      .filter((a) => {
+        if (filterStatus === "all") return true;
+        if (filterStatus === "pending") return a.status === "pending_admin" || a.status === "pending_supplier";
+        return a.status === filterStatus;
+      })
       .filter((a) => (filterSource === "all" ? true : a.source === filterSource))
       .filter((a) => {
         if (!q) return true;
         const hay = `${a.title} ${a.subtitle ?? ""} ${a.tags.join(" ")} ${a.ownerLabel} ${a.brand ?? ""}`.toLowerCase();
         return hay.includes(q);
       });
-  }, [assets, selectedCampaignId, filterMedia, filterSource, filterStatus, search, selectedCreatorId]);
+  }, [assets, dealId, filterMedia, filterSource, filterStatus, pickerMode, search, selectedCampaignId, selectedCreatorId]);
 
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) ?? null, [assets, activeAssetId]);
 
-  const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) ?? creators[0], [selectedCreatorId]);
-  const selectedSupplier = useMemo(() => suppliers.find((p) => p.id === selectedSupplierId) ?? suppliers[0], [selectedSupplierId]);
+  const selectedCreator = useMemo(
+    () => creators.find((c) => c.id === selectedCreatorId) ?? creators[0] ?? DEFAULT_CREATOR,
+    [creators, selectedCreatorId],
+  );
+  const selectedSupplier = useMemo(
+    () =>
+      suppliers.find((p) => p.id === selectedSupplierId) ??
+      (pickerSupplierFallback && pickerSupplierFallback.id === selectedSupplierId ? pickerSupplierFallback : null) ??
+      suppliers[0] ??
+      pickerSupplierFallback ??
+      { id: "", name: "Supplier", kind: "Seller" as const, brand: "Supplier" },
+    [pickerSupplierFallback, selectedSupplierId, suppliers],
+  );
+  const supplierOptions = useMemo(() => {
+    if (!pickerMode || !pickerSupplierFallback) return suppliers;
+    const contextSupplier = suppliers.find((supplier) => supplier.id === pickerSupplierFallback.id) || pickerSupplierFallback;
+    return contextSupplier ? [contextSupplier] : suppliers;
+  }, [pickerMode, pickerSupplierFallback, suppliers]);
   const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) ?? campaignsForSupplier[0], [selectedCampaignId, campaignsForSupplier]);
 
   // If supplier changes, auto-select first campaign under supplier
@@ -1304,7 +1678,7 @@ export default function AssetLibraryPage() {
     setSubmitImageMeta(null);
 
     const first = files[0];
-    if (first && first.type.startsWith("image/")) {
+    if (first && isImageLikeFile(first)) {
       const meta = await readImageMeta(first);
       setSubmitImageMeta(meta);
       // If the user is uploading a correctly sized hero image or item poster, auto-confirm.
@@ -1343,7 +1717,7 @@ export default function AssetLibraryPage() {
     });
   }
 
-  function submitForReview() {
+  async function submitForReview() {
     // Validate basics
     const missingRights = !submitDraft.rightsConfirmed || !submitDraft.noCopyrightedMusicConfirmed;
     const hasAnyMedia = submitDraft.mediaType === "link" ? Boolean(submitDraft.linkUrl.trim()) : submitDraft.files.length > 0;
@@ -1369,13 +1743,12 @@ export default function AssetLibraryPage() {
 
     // Required: Hero images must be the canonical size. We can auto-check uploaded files.
     if (isHeroImage) {
-      const canAutoValidate = submitDraft.files.length > 0 && submitImageMeta;
-      if (canAutoValidate) {
-        const ok = submitImageMeta!.width === HERO_IMAGE_REQUIRED.width && submitImageMeta!.height === HERO_IMAGE_REQUIRED.height;
-        if (!ok) {
+      if (submitDraft.files.length > 0) {
+        const hasNonImageFile = submitDraft.files.some((file) => !isImageLikeFile(file));
+        if (hasNonImageFile) {
           setToast({
-            title: "Hero image size mismatch",
-            body: `Hero images must be ${HERO_IMAGE_REQUIRED.width}×${HERO_IMAGE_REQUIRED.height}px. Detected ${submitImageMeta!.width}×${submitImageMeta!.height}px.`,
+            title: "Image file required",
+            body: "Hero image uploads must be image files.",
           });
           return;
         }
@@ -1392,13 +1765,12 @@ export default function AssetLibraryPage() {
 
     // Required: Featured item posters must be the canonical size (500×500).
     if (isItemPosterImage) {
-      const canAutoValidate = submitDraft.files.length > 0 && submitImageMeta;
-      if (canAutoValidate) {
-        const ok = submitImageMeta!.width === ITEM_POSTER_REQUIRED.width && submitImageMeta!.height === ITEM_POSTER_REQUIRED.height;
-        if (!ok) {
+      if (submitDraft.files.length > 0) {
+        const hasNonImageFile = submitDraft.files.some((file) => !isImageLikeFile(file));
+        if (hasNonImageFile) {
           setToast({
-            title: "Featured item poster size mismatch",
-            body: `Featured item posters must be ${ITEM_POSTER_REQUIRED.width}×${ITEM_POSTER_REQUIRED.height}px. Detected ${submitImageMeta!.width}×${submitImageMeta!.height}px.`,
+            title: "Image file required",
+            body: "Featured item poster uploads must be image files.",
           });
           return;
         }
@@ -1413,28 +1785,16 @@ export default function AssetLibraryPage() {
       }
     }
 
-    setSubmitStatus(supplierAutoApprove ? "pending_admin" : "pending_supplier");
+    const finalStatus: ReviewStatus = "approved";
+    setSubmitStatus(finalStatus);
 
-    // Add to library as a new pending asset (demo)
-    const newId = `a-${Math.floor(Math.random() * 9000) + 1000}`;
     const subtitle = `${selectedCampaign?.name ?? "Campaign"} · ${selectedSupplier?.name ?? "Supplier"}`;
     const tags = submitDraft.tagsCsv
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const inferredMediaKind =
-      submitDraft.mediaType === "video"
-        ? "video"
-        : submitDraft.mediaType === "image"
-          ? "image"
-          : submitDraft.mediaType === "link"
-            ? "image"
-            : "image";
-
-    const newAsset: Asset = {
-      id: newId,
-      creatorScope: selectedCreatorId,
+    const metadata: Record<string, unknown> = {
       title: submitDraft.title || "Untitled submission",
       subtitle,
       campaignId: submitDraft.campaignId,
@@ -1444,41 +1804,83 @@ export default function AssetLibraryPage() {
       mediaType: submitDraft.mediaType,
       source: "creator",
       ownerLabel: "Owner: Creator",
-      status: "pending_supplier", // temporary, will be overwritten
-      lastUpdatedLabel: "Last updated: just now",
-      previewUrl:
-        submitDraft.mediaType === "link"
-          ? submitDraft.linkUrl
-          : submitDraft.mediaType === "video"
-            ? "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"
-            : submitDraft.mediaType === "image"
-              ? `https://images.unsplash.com/photo-1522336572468-97b06e8ef143?auto=format&fit=crop&w=${HERO_IMAGE_REQUIRED.width}&h=${HERO_IMAGE_REQUIRED.height}&q=70`
-              : undefined,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      previewKind: inferredMediaKind as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      role: submitDraft.role ? (submitDraft.role as any) : submitDraft.mediaType === "video" ? "hero" : undefined,
-      dimensions: submitDraft.mediaType === "image" ? submitImageMeta ?? undefined : undefined,
-      usageNotes: submitDraft.notes || "—",
+      status: finalStatus,
+      role: submitDraft.role || (submitDraft.mediaType === "video" ? "hero" : ""),
+      usageNotes: submitDraft.notes || "",
       restrictions: "Pending review.",
-      relatedDealId: dealId,
+      relatedDealId: dealId || "",
+      dealId: dealId || "",
+      creatorScope: selectedCreatorId || "all",
+      caption: submitDraft.caption || "",
+      deliverableId: submitDraft.deliverableId || "",
+      desktopMode: submitDraft.mediaType === "video" ? "fullscreen" : "modal",
+      aspect:
+        submitDraft.mediaType === "image" && isHeroImage
+          ? "horizontal"
+          : submitDraft.mediaType === "image" && isItemPosterImage
+            ? "horizontal"
+            : submitImageMeta && submitImageMeta.width >= submitImageMeta.height
+              ? "horizontal"
+              : "vertical",
+      dimensions:
+        submitDraft.mediaType === "image" && isHeroImage
+          ? { width: HERO_IMAGE_REQUIRED.width, height: HERO_IMAGE_REQUIRED.height }
+          : submitDraft.mediaType === "image" && isItemPosterImage
+            ? { width: ITEM_POSTER_REQUIRED.width, height: ITEM_POSTER_REQUIRED.height }
+            : submitDraft.mediaType === "image" && submitImageMeta
+              ? { width: submitImageMeta.width, height: submitImageMeta.height }
+          : undefined,
     };
 
-    const finalStatus: ReviewStatus = supplierAutoApprove ? "pending_admin" : "pending_supplier";
-    newAsset.status = finalStatus;
+    try {
+      if (submitDraft.mediaType === "link") {
+        await creatorApi.createMediaAsset({
+          name: submitDraft.title || "Untitled submission",
+          kind: "link",
+          mimeType: "text/uri-list",
+          url: submitDraft.linkUrl.trim(),
+          metadata,
+        });
+      } else {
+        for (const file of submitDraft.files) {
+          const preparedUpload = submitDraft.mediaType === "image" && isHeroImage
+            ? await normalizeImageForRequiredSize(file, HERO_IMAGE_REQUIRED.width, HERO_IMAGE_REQUIRED.height)
+            : submitDraft.mediaType === "image" && isItemPosterImage
+              ? await normalizeImageForRequiredSize(file, ITEM_POSTER_REQUIRED.width, ITEM_POSTER_REQUIRED.height)
+              : null;
+          const dataUrl = preparedUpload ? preparedUpload.dataUrl : await fileToDataUrl(file);
+          const extension = preparedUpload
+            ? preparedUpload.extension
+            : file.name.includes(".")
+              ? file.name.split(".").pop()
+              : undefined;
+          await creatorApi.uploadMediaFile({
+            name: preparedUpload?.name || file.name || submitDraft.title || "submission",
+            dataUrl,
+            kind: submitDraft.mediaType,
+            mimeType: preparedUpload?.mimeType || file.type || undefined,
+            sizeBytes: preparedUpload?.sizeBytes || file.size || undefined,
+            extension,
+            visibility: "PRIVATE",
+            purpose: "asset_library",
+            metadata,
+          });
+        }
+      }
 
-    setAssets((prev) => [newAsset, ...prev]);
-    setActiveAssetId(newId);
-
-    setToast({
-      title: "Submitted for review",
-      body: supplierAutoApprove
-        ? "Your submission has been sent directly to Admin review (Supplier Auto-Approve ON)."
-        : "Your submission is now pending Supplier review."
-    });
-    setIsSubmitOpen(false);
-    // keep submit drawer state around for a moment, then reset
-    setTimeout(() => resetSubmitDraft(), 250);
+      await loadLibraryFromBackend();
+      setToast({
+        title: "Asset ready",
+        body: "Your upload was approved automatically and is ready to attach/use in builders.",
+      });
+      setIsSubmitOpen(false);
+      setTimeout(() => resetSubmitDraft(), 250);
+    } catch (error) {
+      setToast({
+        title: "Submission failed",
+        body: error instanceof Error ? error.message : "Could not submit to backend.",
+      });
+    }
   }
 
 
@@ -1518,6 +1920,16 @@ export default function AssetLibraryPage() {
     if (!returnTo) return;
     try {
       const url = new URL(returnTo, window.location.origin);
+      const contextParams: Record<string, string> = {};
+      if (dealId) contextParams.dealId = dealId;
+      if (pickerSupplierId) contextParams.supplierId = pickerSupplierId;
+      if (pickerCampaignId) contextParams.campaignId = pickerCampaignId;
+      if (pickerSupplierName) contextParams.supplierName = pickerSupplierName;
+      if (pickerSupplierKind) contextParams.supplierKind = pickerSupplierKind;
+      if (pickerSupplierBrand) contextParams.supplierBrand = pickerSupplierBrand;
+      if (pickerCampaignName) contextParams.campaignName = pickerCampaignName;
+      if (pickerCampaignBrand) contextParams.campaignBrand = pickerCampaignBrand;
+      Object.entries(contextParams).forEach(([k, v]) => url.searchParams.set(k, v));
       Object.entries(extra || {}).forEach(([k, v]) => url.searchParams.set(k, v));
       url.searchParams.set("restore", "1");
       const qs = url.searchParams.toString();
@@ -1652,6 +2064,9 @@ export default function AssetLibraryPage() {
     setChooseApplyOpen(false);
     setPendingPickAssetId(null);
   }
+
+  const starterCollectionStatus = collectionStatusMeta(collectionSummary.starterPack.status);
+  const priceDropCollectionStatus = collectionStatusMeta(collectionSummary.priceDropOverlays.status);
 
   // ---- Render ----
   return (
@@ -1807,7 +2222,7 @@ export default function AssetLibraryPage() {
                       onChange={(e) => setSelectedSupplierId(e.target.value)}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {suppliers.map((p) => (
+                      {supplierOptions.map((p) => (
                         <option key={p.id} value={p.id}>
                           Supplier: {p.name} ({p.kind})
                         </option>
@@ -1873,7 +2288,7 @@ export default function AssetLibraryPage() {
 
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as ReviewStatus | "all")}
+                onChange={(e) => setFilterStatus(e.target.value as ReviewStatus | "pending" | "all")}
                 className="rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-50 px-3 py-2 text-sm outline-none transition-colors"
               >
                 <option value="all">Status: All</option>
@@ -1917,7 +2332,7 @@ export default function AssetLibraryPage() {
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2" data-loading={isLoadingLibrary ? "true" : "false"}>
                 {filteredAssets.map((a) => {
                   const selected = a.id === activeAssetId;
                   const thumb =
@@ -2014,10 +2429,12 @@ export default function AssetLibraryPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">Autumn Beauty Flash — Starter pack</div>
-                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">3 assets · opener + hero + offer</div>
+                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">
+                        {collectionSummary.starterPack.assetCount} assets · opener + hero + offer
+                      </div>
                     </div>
-                    <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-200 dark:ring-emerald-700">
-                      Ready
+                    <span className={starterCollectionStatus.className}>
+                      {starterCollectionStatus.label}
                     </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
@@ -2032,10 +2449,12 @@ export default function AssetLibraryPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">Price-drop overlays</div>
-                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">2 assets · overlay variants</div>
+                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">
+                        {collectionSummary.priceDropOverlays.assetCount} assets · overlay variants
+                      </div>
                     </div>
-                    <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-400 ring-1 ring-amber-200 dark:ring-amber-700">
-                      Needs review
+                    <span className={priceDropCollectionStatus.className}>
+                      {priceDropCollectionStatus.label}
                     </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
@@ -2076,20 +2495,26 @@ export default function AssetLibraryPage() {
                 </span>
               </div>
               <div className="mt-3 rounded-xl bg-slate-50 dark:bg-slate-800 p-3 text-slate-700 dark:text-slate-100">
-                <MiniChart points={[4, 3, 2, 5, 7, 6, 5, 8, 7, 6, 9, 10, 8, 11]} />
+                <MiniChart points={activityPoints} />
               </div>
               <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">New</div>
-                  <div className="mt-1 font-semibold dark:font-bold text-slate-900 dark:text-slate-50">+11</div>
+                  <div className="mt-1 font-semibold dark:font-bold text-slate-900 dark:text-slate-50">
+                    +{activitySummary.newCount}
+                  </div>
                 </div>
                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">Approved</div>
-                  <div className="mt-1 font-semibold dark:font-bold text-slate-900 dark:text-slate-50">8</div>
+                  <div className="mt-1 font-semibold dark:font-bold text-slate-900 dark:text-slate-50">
+                    {activitySummary.approvedCount}
+                  </div>
                 </div>
                 <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">Pending</div>
-                  <div className="mt-1 font-semibold dark:font-bold text-slate-900 dark:text-slate-50">3</div>
+                  <div className="mt-1 font-semibold dark:font-bold text-slate-900 dark:text-slate-50">
+                    {activitySummary.pendingCount}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2402,7 +2827,7 @@ export default function AssetLibraryPage() {
 
           <div className="mt-3 space-y-3">
             <Dropzone
-              accept="video/*,image/*,application/pdf"
+              accept="*/*"
               helper="Supported: MP4, MOV, JPG, PNG, PDF · Max 500MB (demo)"
               onFiles={(files, fromCamera) => handleSubmitFiles(files, fromCamera)}
               cameraMode

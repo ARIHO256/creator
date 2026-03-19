@@ -478,6 +478,35 @@ export type AssetRecord = {
   [key: string]: unknown;
 };
 
+export type MediaAssetRecord = {
+  id: string;
+  userId?: string;
+  name: string;
+  kind?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  extension?: string | null;
+  checksum?: string | null;
+  storageProvider?: string | null;
+  storageKey?: string | null;
+  url?: string | null;
+  isPublic?: boolean;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type MediaWorkspaceResponse = {
+  creators?: Array<Record<string, unknown>>;
+  suppliers?: Array<Record<string, unknown>>;
+  campaigns?: Array<Record<string, unknown>>;
+  deliverables?: Array<Record<string, unknown>>;
+  collections?: Record<string, unknown>;
+  activity?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
 export type UploadSessionRecord = {
   id: string;
   name: string;
@@ -699,6 +728,49 @@ export const creatorApi = {
     metadata?: Record<string, unknown>;
   }) {
     return api.post<UploadSessionRecord>("/uploads", body);
+  },
+  mediaWorkspace() {
+    return api.get<MediaWorkspaceResponse>("/media/workspace");
+  },
+  mediaAssets() {
+    return api.get<MediaAssetRecord[]>("/media/assets");
+  },
+  uploadMediaFile(body: {
+    name: string;
+    dataUrl: string;
+    kind?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    extension?: string;
+    visibility?: string;
+    purpose?: string;
+    isPublic?: boolean;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.post<MediaAssetRecord>("/media/files", body);
+  },
+  createMediaAsset(body: {
+    name: string;
+    kind?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    extension?: string;
+    checksum?: string;
+    storageProvider?: string;
+    storageKey?: string;
+    url?: string;
+    isPublic?: boolean;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.post<MediaAssetRecord>("/media/assets", body);
+  },
+  updateMediaAsset(id: string, body: {
+    name?: string;
+    kind?: string;
+    url?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.patch<MediaAssetRecord>(`/media/assets/${encodeURIComponent(id)}`, body);
   },
   asset(id: string) {
     return api.get<AssetRecord>(`/assets/${id}`);
