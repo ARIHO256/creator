@@ -444,6 +444,27 @@ export type AssetRecord = {
   [key: string]: unknown;
 };
 
+export type UploadSessionRecord = {
+  id: string;
+  name: string;
+  kind?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  extension?: string | null;
+  checksum?: string | null;
+  storageProvider?: string | null;
+  storageKey?: string | null;
+  url?: string | null;
+  visibility?: string | null;
+  purpose?: string | null;
+  domain?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  status?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+};
+
 export const creatorApi = {
   dashboardFeed() {
     return api.get<Record<string, unknown>>("/dashboard/feed");
@@ -519,6 +540,30 @@ export const creatorApi = {
   },
   assets() {
     return api.get<AssetRecord[]>("/assets");
+  },
+  uploads() {
+    return api.get<UploadSessionRecord[]>("/uploads");
+  },
+  createUpload(body: {
+    id?: string;
+    name: string;
+    kind?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    extension?: string;
+    checksum?: string;
+    storageProvider?: string;
+    storageKey?: string;
+    url?: string;
+    visibility?: string;
+    purpose?: string;
+    domain?: string;
+    entityType?: string;
+    entityId?: string;
+    status?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.post<UploadSessionRecord>("/uploads", body);
   },
   asset(id: string) {
     return api.get<AssetRecord>(`/assets/${id}`);
@@ -656,6 +701,13 @@ export const creatorApi = {
   },
   submitOnboarding(body: Record<string, unknown>) {
     return api.post<Record<string, unknown>>("/onboarding/submit", body);
+  },
+
+  workflowScreenState(key: string) {
+    return api.get<Record<string, unknown>>(`/workflow/screen-state/${encodeURIComponent(key)}`);
+  },
+  patchWorkflowScreenState(key: string, body: Record<string, unknown>) {
+    return api.patch<Record<string, unknown>>(`/workflow/screen-state/${encodeURIComponent(key)}`, body);
   },
 
   accountApproval() {

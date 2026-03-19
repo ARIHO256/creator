@@ -28,6 +28,7 @@ import {
   Users,
   X
 } from "lucide-react";
+import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * Creator Settings & Safety (Premium)
@@ -45,6 +46,7 @@ const GREEN = "#03cd8c";
 
 const STORAGE_KEY = "mldz_creator_onboarding_v2_4";
 const STORAGE_KEY_LEGACY = "mldz_creator_onboarding_v2_3";
+const SETTINGS_SCREEN_STATE_KEY = "creator-settings";
 
 function cx(...xs: (string | undefined | null | false)[]) {
   return xs.filter(Boolean).join(" ");
@@ -53,6 +55,11 @@ function cx(...xs: (string | undefined | null | false)[]) {
 function deepClone<T>(obj: T): T {
   if (typeof structuredClone === "function") return structuredClone(obj);
   return JSON.parse(JSON.stringify(obj));
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -288,6 +295,21 @@ interface Review {
   scrolledToBottom: boolean;
 }
 
+interface UploadedFileRef {
+  id: string;
+  name: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  extension?: string;
+  storageKey?: string;
+  url?: string | null;
+  status?: string;
+  createdAt?: string;
+  purpose?: string;
+  fieldKey?: string;
+  previewUrl?: string | null;
+}
+
 interface SettingsForm {
   profile: Profile;
   socials: Socials;
@@ -296,9 +318,13 @@ interface SettingsForm {
   payout: Payout;
   settings: Settings;
   review: Review;
+  uploads: Record<string, UploadedFileRef>;
 }
 
 type LegacyOnboardingCompat = SettingsForm & {
+  docs?: {
+    list?: Array<Record<string, unknown>>;
+  };
   kyc?: {
     org?: {
       registrationFileName?: string;
@@ -612,10 +638,11 @@ interface UploadMiniProps {
   helper?: string;
   value?: string;
   onPick: (val: string) => void;
+  onFilePick?: (file: File) => void;
   accept?: string;
 }
 
-function UploadMini({ title, helper, value, onPick, accept = "*/*" }: UploadMiniProps) {
+function UploadMini({ title, helper, value, onPick, onFilePick, accept = "*/*" }: UploadMiniProps) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:border-amber-200 dark:bg-slate-900 dark:border-slate-700 dark:hover:border-amber-700">
       <div className="flex items-start justify-between gap-3">
@@ -635,13 +662,179 @@ function UploadMini({ title, helper, value, onPick, accept = "*/*" }: UploadMini
             className="hidden"
             onChange={(e) => {
               const file = e.target.files && e.target.files[0];
-              if (file) onPick(file.name);
+              if (file) {
+                onPick(file.name);
+                onFilePick?.(file);
+              }
               // reset so the same file can be picked again
               e.target.value = "";
             }}
           />
         </label>
       </div>
+    </div>
+  );
+}
+
+function fileKindFromMime(mimeType: string) {
+  const normalized = String(mimeType || "").toLowerCase();
+  if (normalized.startsWith("image/")) return "image";
+  if (normalized.startsWith("video/")) return "video";
+  if (normalized.startsWith("audio/")) return "audio";
+  if (normalized.includes("pdf") || normalized.startsWith("text/") || normalized.includes("document")) return "document";
+  return "other";
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+function readImagePreviewDataUrl(file: File): Promise<string> {
+  const isImage = String(file.type || "").toLowerCase().startsWith("image/");
+  if (!isImage) return Promise.resolve("");
+
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxSide = 1200;
+        const longest = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height, 1);
+        const scale = Math.min(1, maxSide / longest);
+        const width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+        const height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
+          resolve("");
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const preview = canvas.toDataURL("image/jpeg", 0.82);
+        URL.revokeObjectURL(objectUrl);
+        resolve(preview.startsWith("data:image/") ? preview : "");
+      } catch {
+        URL.revokeObjectURL(objectUrl);
+        resolve("");
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve("");
+    };
+    img.src = objectUrl;
+  });
+}
+
+function formatFileSize(sizeBytes?: number) {
+  if (!sizeBytes || sizeBytes <= 0) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = sizeBytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function isImageLike(mimeType?: string, fileName?: string) {
+  const mime = String(mimeType || "").toLowerCase();
+  if (mime.startsWith("image/")) return true;
+  const name = String(fileName || "").toLowerCase();
+  return [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".avif"].some((ext) => name.endsWith(ext));
+}
+
+interface FileDetailItem {
+  label: string;
+  fieldKey: string;
+  fileName?: string;
+}
+
+function UploadedFilesPanel({
+  title,
+  items,
+  uploads
+}: {
+  title: string;
+  items: FileDetailItem[];
+  uploads: Record<string, UploadedFileRef>;
+}) {
+  const rows = items.filter((item) => {
+    const record = uploads[item.fieldKey];
+    return Boolean(record?.name || item.fileName);
+  });
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+      <div className="text-sm font-semibold">{title}</div>
+      <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+        File IDs and upload details for currently selected documents.
+      </div>
+      {rows.length === 0 ? (
+        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">No file details yet.</div>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {rows.map((item) => {
+            const record = uploads[item.fieldKey];
+            const createdAt = record?.createdAt ? new Date(record.createdAt).toLocaleString() : "—";
+            const previewHref = record?.previewUrl || record?.url || "";
+            const canPreviewImage = Boolean(previewHref) && isImageLike(record?.mimeType, record?.name || item.fileName);
+            return (
+              <div
+                key={item.fieldKey}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-2.5 dark:border-slate-700 dark:bg-slate-800"
+              >
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">{item.label}</div>
+                <div className="mt-1 flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-[11px] text-slate-600 dark:text-slate-300 flex-1">
+                    <div>File ID: <span className="font-medium">{record?.id || "—"}</span></div>
+                    <div>Name: <span className="font-medium">{record?.name || item.fileName || "—"}</span></div>
+                    <div>Type: <span className="font-medium">{record?.mimeType || "—"}</span></div>
+                    <div>Size: <span className="font-medium">{formatFileSize(record?.sizeBytes)}</span></div>
+                    <div>Uploaded: <span className="font-medium">{createdAt}</span></div>
+                    <div>Status: <span className="font-medium">{record?.status || "selected"}</span></div>
+                    <div className="md:col-span-2">
+                      Preview:
+                      {previewHref ? (
+                        <a
+                          href={previewHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-1 font-medium text-amber-700 dark:text-amber-400 underline"
+                        >
+                          Open file
+                        </a>
+                      ) : (
+                        <span className="ml-1 font-medium">Unavailable</span>
+                      )}
+                    </div>
+                  </div>
+                  {canPreviewImage ? (
+                    <div className="h-20 w-20 rounded-xl border border-slate-200 bg-white overflow-hidden dark:border-slate-700 dark:bg-slate-900">
+                      <img
+                        src={previewHref}
+                        alt={`${item.label} preview`}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -918,12 +1111,67 @@ function defaultForm(): SettingsForm {
       acceptTerms: false,
       acceptedAt: ""
     },
-    settings: defaultSettings()
+    settings: defaultSettings(),
+    uploads: {}
   };
 }
 
 function isFilled(v: unknown): boolean {
   return String(v || "").trim().length > 0;
+}
+
+function normalizeEmail(value: unknown): string | undefined {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return undefined;
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+  return ok ? text : undefined;
+}
+
+const RESERVED_SLUGS = new Set([
+  "admin",
+  "support",
+  "help",
+  "market",
+  "marketplace",
+  "seller",
+  "buyers",
+  "checkout",
+  "evzone",
+  "evzonepay",
+  "terms",
+  "privacy",
+  "policies",
+  "settings",
+  "billing"
+]);
+
+function normalizeHandleToSlug(value: unknown) {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  if (!slug) return "creator";
+  if (RESERVED_SLUGS.has(slug)) return `${slug}-creator`;
+  return slug;
+}
+
+function safeText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function safeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => safeText(entry))
+    .filter((entry) => entry.length > 0);
+}
+
+function safeFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function clampNumber(n: number | string, min: number, max: number): number {
@@ -939,6 +1187,55 @@ function normalizePrimaryPlatform(value: string): "instagram" | "tiktok" | "yout
   if (v === "youtube" || v === "yt") return "youtube";
   if (v === "other") return "other";
   return "other";
+}
+
+const DOC_FIELD_KEY_MAP: Record<string, string> = {
+  "government-id": "kyc.idFileName",
+  government_id: "kyc.idFileName",
+  "selfie-verification": "kyc.selfieFileName",
+  selfie_verification: "kyc.selfieFileName",
+  "address-proof": "kyc.addressFileName",
+  address_proof: "kyc.addressFileName",
+  "org-registration": "kyc.org.registrationName",
+  organization_registration: "kyc.org.registrationName",
+  "org-tax": "kyc.org.taxName",
+  organization_tax: "kyc.org.taxName",
+  "org-authorization": "kyc.org.authorizationName",
+  organization_authorization: "kyc.org.authorizationName",
+  profile_photo: "profile.profilePhotoName",
+  media_kit: "profile.mediaKitName",
+  team_logo: "profile.team.logoName",
+  agency_logo: "profile.agency.logoName"
+};
+
+function mapDocFieldKey(doc: Record<string, unknown>) {
+  const idKey = String(doc.id || "").trim().toLowerCase();
+  if (idKey && DOC_FIELD_KEY_MAP[idKey]) {
+    return DOC_FIELD_KEY_MAP[idKey];
+  }
+  const typeKey = String(doc.type || "").trim().toLowerCase();
+  if (typeKey && DOC_FIELD_KEY_MAP[typeKey]) {
+    return DOC_FIELD_KEY_MAP[typeKey];
+  }
+  return "";
+}
+
+function uploadedRefFromDoc(doc: Record<string, unknown>, fieldKey: string): UploadedFileRef {
+  const fileUrl = typeof doc.fileUrl === "string" ? doc.fileUrl : null;
+  return {
+    id: String(doc.id || `${fieldKey}-${Date.now()}`),
+    name: String(doc.name || doc.file || ""),
+    mimeType: String(doc.mimeType || ""),
+    sizeBytes: typeof doc.sizeBytes === "number" ? doc.sizeBytes : undefined,
+    extension: String(doc.extension || ""),
+    storageKey: String(doc.storageKey || ""),
+    url: fileUrl,
+    status: String(doc.status || "submitted"),
+    createdAt: String(doc.uploadedAt || ""),
+    purpose: String(doc.type || ""),
+    fieldKey,
+    previewUrl: fileUrl
+  };
 }
 
 function normalizeFormFromOnboarding(input: SettingsForm): SettingsForm {
@@ -966,6 +1263,55 @@ function normalizeFormFromOnboarding(input: SettingsForm): SettingsForm {
   if (rawInput.payout?.wechat?.wechatId) next.payout.wechat.accountId = rawInput.payout.wechat.wechatId;
   if (rawInput.payout?.verificationContactValue) next.payout.verification.lastSentTo = rawInput.payout.verificationContactValue;
 
+  if (!next.uploads || typeof next.uploads !== "object") {
+    next.uploads = {};
+  }
+
+  const docList = Array.isArray(rawInput.docs?.list) ? rawInput.docs.list : [];
+  docList.forEach((doc) => {
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return;
+    const row = doc as Record<string, unknown>;
+    const fieldKey = mapDocFieldKey(row);
+    if (!fieldKey) return;
+    const fileName = String(row.name || row.file || "").trim();
+    if (!fileName) return;
+    if (fieldKey === "kyc.idFileName") {
+      next.kyc.idFileName = fileName;
+      next.kyc.idUploaded = true;
+    } else if (fieldKey === "kyc.selfieFileName") {
+      next.kyc.selfieFileName = fileName;
+      next.kyc.selfieUploaded = true;
+    } else if (fieldKey === "kyc.addressFileName") {
+      next.kyc.addressFileName = fileName;
+      next.kyc.addressUploaded = true;
+    } else if (fieldKey === "kyc.org.registrationName") {
+      next.kyc.org.registrationName = fileName;
+      next.kyc.org.registrationUploaded = true;
+    } else if (fieldKey === "kyc.org.taxName") {
+      next.kyc.org.taxName = fileName;
+      next.kyc.org.taxUploaded = true;
+    } else if (fieldKey === "kyc.org.authorizationName") {
+      next.kyc.org.authorizationName = fileName;
+      next.kyc.org.authorizationUploaded = true;
+    } else if (fieldKey === "profile.profilePhotoName") {
+      next.profile.profilePhotoName = fileName;
+    } else if (fieldKey === "profile.mediaKitName") {
+      next.profile.mediaKitName = fileName;
+    } else if (fieldKey === "profile.team.logoName") {
+      next.profile.team.logoName = fileName;
+    } else if (fieldKey === "profile.agency.logoName") {
+      next.profile.agency.logoName = fileName;
+    }
+    next.uploads[fieldKey] = uploadedRefFromDoc(row, fieldKey);
+  });
+
+  if (isFilled(next.kyc.idFileName)) next.kyc.idUploaded = true;
+  if (isFilled(next.kyc.selfieFileName)) next.kyc.selfieUploaded = true;
+  if (isFilled(next.kyc.addressFileName)) next.kyc.addressUploaded = true;
+  if (isFilled(next.kyc.org.registrationName)) next.kyc.org.registrationUploaded = true;
+  if (isFilled(next.kyc.org.taxName)) next.kyc.org.taxUploaded = true;
+  if (isFilled(next.kyc.org.authorizationName)) next.kyc.org.authorizationUploaded = true;
+
   // Preferences (Days / Time Window might need conversion if structures differ, but they match)
 
   // If a non-standard platform was selected in onboarding (e.g., Facebook),
@@ -982,6 +1328,229 @@ function normalizeFormFromOnboarding(input: SettingsForm): SettingsForm {
   }
 
   return next;
+}
+
+function payoutMethodToApi(method: string) {
+  if (method === "Bank") return "bank_account";
+  if (method === "Mobile Money") return "mobile_money";
+  if (method === "AliPay") return "alipay";
+  if (method === "WeChat Pay") return "wechat_pay";
+  if (method === "PayPal / Wallet") return "other_local";
+  return "";
+}
+
+function payoutMethodFromApi(method: string) {
+  if (method === "bank_account") return "Bank";
+  if (method === "mobile_money") return "Mobile Money";
+  if (method === "alipay") return "AliPay";
+  if (method === "wechat_pay") return "WeChat Pay";
+  if (method === "other_local") return "PayPal / Wallet";
+  return "";
+}
+
+function payoutRhythmToApi(schedule: string) {
+  if (schedule === "Weekly") return "weekly";
+  if (schedule === "Bi-weekly") return "biweekly";
+  if (schedule === "Monthly") return "monthly";
+  return "weekly";
+}
+
+function payoutRhythmFromApi(rhythm: string) {
+  if (rhythm === "weekly") return "Weekly";
+  if (rhythm === "biweekly") return "Bi-weekly";
+  if (rhythm === "monthly") return "Monthly";
+  return "Weekly";
+}
+
+function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | null {
+  const root = asRecord(payload);
+  const metadata = asRecord(root?.metadata);
+  const creatorForm = asRecord(metadata?.creatorForm);
+  if (creatorForm) {
+    return creatorForm as Partial<SettingsForm>;
+  }
+  if (!root) return null;
+
+  const method = String(asRecord(root.payout)?.method || "");
+  const rhythm = String(asRecord(root.payout)?.rhythm || "");
+  const payout = asRecord(root.payout);
+  const verification = asRecord(root.verification);
+  const tax = asRecord(root.tax);
+
+  return {
+    profile: {
+      name: String(root.owner || ""),
+      handle: String(root.storeSlug || ""),
+      bio: String(root.about || ""),
+      country: String(asRecord(root.shipFrom)?.country || ""),
+      timezone: "Africa/Kampala",
+      currency: String(payout?.currency || "UGX"),
+      tagline: "",
+      contentLanguages: Array.isArray(root.languages) ? root.languages.map((entry) => String(entry)) : [],
+      audienceRegions: [],
+      creatorType: "Individual",
+      email: String(root.email || ""),
+      phone: String(root.phone || ""),
+      whatsapp: String(asRecord(root.support)?.whatsapp || ""),
+      profilePhotoName: "",
+      mediaKitName: "",
+      team: { name: "", type: "", size: "1–5", website: "", logoName: "" },
+      agency: { name: "", type: "", website: "", logoName: "" }
+    },
+    kyc: {
+      status:
+        String(verification?.kycStatus || "").toUpperCase() === "VERIFIED"
+          ? "verified"
+          : String(verification?.kycStatus || "").toUpperCase() === "IN_REVIEW"
+            ? "in_review"
+            : String(verification?.kycStatus || "").toUpperCase() === "REJECTED"
+              ? "rejected"
+              : "unverified",
+      documentType: "National ID",
+      idUploaded: false,
+      selfieUploaded: false,
+      addressUploaded: false,
+      org: {
+        registrationUploaded: false,
+        taxUploaded: false,
+        authorizationUploaded: false
+      }
+    },
+    payout: {
+      method: payoutMethodFromApi(method),
+      currency: String(payout?.currency || "UGX"),
+      schedule: payoutRhythmFromApi(rhythm),
+      minThreshold: Number(payout?.thresholdAmount || 0),
+      bank: {
+        bankName: String(payout?.bankName || ""),
+        accountName: String(payout?.accountName || ""),
+        accountNumber: String(payout?.accountNo || ""),
+        swift: String(payout?.swiftBic || "")
+      },
+      mobile: {
+        provider: String(payout?.mobileProvider || ""),
+        number: String(payout?.mobileNo || "")
+      },
+      wallet: {
+        provider: "PayPal",
+        email: String(payout?.otherDetails || "")
+      },
+      alipay: {
+        name: "",
+        accountId: String(payout?.alipayLogin || "")
+      },
+      wechat: {
+        name: "",
+        accountId: String(payout?.wechatId || ""),
+        phone: ""
+      },
+      verification: {
+        status:
+          String(verification?.otpStatus || "").toUpperCase() === "VERIFIED"
+            ? "verified"
+            : String(verification?.otpStatus || "").toUpperCase() === "SENT"
+              ? "code_sent"
+              : "unverified",
+        lastSentTo: String(payout?.notificationsEmail || payout?.notificationsWhatsApp || "")
+      },
+      tax: {
+        residency: String(tax?.taxCountry || ""),
+        taxId: String(tax?.taxId || "")
+      },
+      acceptPayoutPolicy: Boolean(asRecord(root.acceptance)?.dataProcessing || payout?.confirmDetails)
+    }
+  };
+}
+
+function sanitizeSettingsFormForStorage(form: SettingsForm) {
+  const copy = deepClone(form);
+  Object.keys(copy.uploads || {}).forEach((key) => {
+    const row = copy.uploads[key];
+    if (!row) return;
+    if (typeof row.url === "string" && row.url.startsWith("blob:")) {
+      row.url = null;
+    }
+    if (typeof row.previewUrl === "string" && row.previewUrl.startsWith("blob:")) {
+      row.previewUrl = null;
+    }
+  });
+  return copy;
+}
+
+function collectSettingsDocs(form: SettingsForm) {
+  return [
+    { id: "profile-photo", type: "profile_photo", fieldKey: "profile.profilePhotoName", name: form.profile.profilePhotoName },
+    { id: "media-kit", type: "media_kit", fieldKey: "profile.mediaKitName", name: form.profile.mediaKitName },
+    { id: "team-logo", type: "team_logo", fieldKey: "profile.team.logoName", name: form.profile.team.logoName },
+    { id: "agency-logo", type: "agency_logo", fieldKey: "profile.agency.logoName", name: form.profile.agency.logoName },
+    { id: "government-id", type: "government_id", fieldKey: "kyc.idFileName", name: form.kyc.idFileName },
+    { id: "selfie-verification", type: "selfie_verification", fieldKey: "kyc.selfieFileName", name: form.kyc.selfieFileName },
+    { id: "address-proof", type: "address_proof", fieldKey: "kyc.addressFileName", name: form.kyc.addressFileName },
+    { id: "org-registration", type: "organization_registration", fieldKey: "kyc.org.registrationName", name: form.kyc.org.registrationName },
+    { id: "org-tax", type: "organization_tax", fieldKey: "kyc.org.taxName", name: form.kyc.org.taxName },
+    { id: "org-authorization", type: "organization_authorization", fieldKey: "kyc.org.authorizationName", name: form.kyc.org.authorizationName }
+  ]
+    .filter((entry) => isFilled(entry.name))
+    .map((entry) => {
+      const uploaded = form.uploads[entry.fieldKey];
+      return {
+        id: uploaded?.id || entry.id,
+        type: entry.type,
+        name: entry.name,
+        file: entry.name,
+        status: uploaded?.status || "submitted",
+        uploadedAt: uploaded?.createdAt || new Date().toISOString(),
+        mimeType: uploaded?.mimeType || undefined,
+        storageKey: uploaded?.storageKey || undefined,
+        fileUrl: uploaded?.url || undefined
+      };
+    });
+}
+
+function buildScreenStateSettingsPayload(form: SettingsForm) {
+  const formForStorage = sanitizeSettingsFormForStorage(form);
+  const docs = collectSettingsDocs(form);
+  return {
+    settingsForm: formForStorage,
+    docs,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function extractScreenStateSettingsForm(payload: unknown): Partial<SettingsForm> | null {
+  const root = asRecord(payload);
+  if (!root) return null;
+
+  const direct = asRecord(root.settingsForm) || asRecord(root.creatorForm);
+  if (direct) {
+    return direct as Partial<SettingsForm>;
+  }
+
+  const metadata = asRecord(root.metadata);
+  const nested = asRecord(metadata?.settingsForm) || asRecord(metadata?.creatorForm);
+  if (nested) {
+    return nested as Partial<SettingsForm>;
+  }
+
+  return null;
+}
+
+function errorMessageFromUnknown(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+  const direct = "message" in error ? (error as { message?: unknown }).message : null;
+  if (typeof direct === "string" && direct.trim()) return direct;
+  if (Array.isArray(direct) && direct.length) {
+    return direct.map((entry) => String(entry)).join(", ");
+  }
+  const details = "details" in error ? (error as { details?: unknown }).details : null;
+  if (details && typeof details === "object" && !Array.isArray(details)) {
+    const message = (details as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+    if (Array.isArray(message) && message.length) {
+      return message.map((entry) => String(entry)).join(", ");
+    }
+  }
+  return "";
 }
 
 function getPrimaryPlatformName(form: SettingsForm): string {
@@ -1071,6 +1640,9 @@ export default function CreatorSettingsSafetyPremium() {
 
   const [form, setForm] = useState<SettingsForm>(() => defaultForm());
   const [saved, setSaved] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const hydratedRef = useRef(false);
+  const objectUrlRef = useRef<Record<string, string>>({});
 
   // Policy modal + scroll-to-bottom gate
   const [openPolicy, setOpenPolicy] = useState<string | null>(null); // "platform" | "content" | "payout" | "full" | null
@@ -1112,34 +1684,161 @@ export default function CreatorSettingsSafetyPremium() {
     return { done, total, pct: Math.round((done / total) * 100) };
   }, [form, primaryPlatformName]);
 
-  // Load from onboarding storage
+  // Load from backend onboarding record (fallback: local storage)
   useEffect(() => {
+    let cancelled = false;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        const merged = deepMerge(defaultForm(), parsed);
-        setForm(normalizeFormFromOnboarding(merged));
-        push("Settings loaded from onboarding.", "success");
-      }
+      void creatorApi
+        .onboarding()
+        .then(async (payload) => {
+          if (cancelled) return;
+          const restored = extractBackendSettingsForm(payload);
+          if (restored) {
+            const merged = deepMerge(defaultForm(), restored as SettingsForm);
+            const normalized = normalizeFormFromOnboarding(merged);
+            setForm(normalized);
+            push("Settings loaded from backend.", "success");
+          } else {
+            const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              const merged = deepMerge(defaultForm(), parsed);
+              setForm(normalizeFormFromOnboarding(merged));
+              push("Settings loaded from onboarding.", "success");
+            }
+          }
+
+          const screenState = await creatorApi.workflowScreenState(SETTINGS_SCREEN_STATE_KEY).catch(() => null);
+          const savedSettingsForm = extractScreenStateSettingsForm(screenState);
+          if (!cancelled && savedSettingsForm) {
+            setForm((prev) => normalizeFormFromOnboarding(deepMerge(prev, savedSettingsForm as SettingsForm)));
+            push("Settings loaded from saved draft.", "success");
+          }
+
+          const uploads = await creatorApi.uploads().catch(() => []);
+          if (cancelled || !Array.isArray(uploads) || uploads.length === 0) return;
+          setForm((prev) => {
+            const next = deepClone(prev);
+            uploads.forEach((upload) => {
+              const meta =
+                upload.metadata && typeof upload.metadata === "object" && !Array.isArray(upload.metadata)
+                  ? (upload.metadata as Record<string, unknown>)
+                  : null;
+              const fieldKey = typeof meta?.fieldKey === "string" ? meta.fieldKey : "";
+              if (!fieldKey) return;
+              const previewDataUrl = typeof meta?.previewDataUrl === "string" ? meta.previewDataUrl : "";
+              const persistedPreview = previewDataUrl.startsWith("data:image/") ? previewDataUrl : "";
+              next.uploads[fieldKey] = {
+                id: upload.id,
+                name: upload.name,
+                mimeType: upload.mimeType || "",
+                sizeBytes: typeof upload.sizeBytes === "number" ? upload.sizeBytes : undefined,
+                extension: upload.extension || "",
+                storageKey: upload.storageKey || "",
+                url: upload.url || persistedPreview || null,
+                status: upload.status || "uploaded",
+                createdAt: upload.createdAt || "",
+                purpose: upload.purpose || "",
+                fieldKey,
+                previewUrl: upload.url || persistedPreview || null
+              };
+
+              if (fieldKey === "profile.profilePhotoName" && !next.profile.profilePhotoName) next.profile.profilePhotoName = upload.name;
+              if (fieldKey === "profile.mediaKitName" && !next.profile.mediaKitName) next.profile.mediaKitName = upload.name;
+              if (fieldKey === "profile.team.logoName" && !next.profile.team.logoName) next.profile.team.logoName = upload.name;
+              if (fieldKey === "profile.agency.logoName" && !next.profile.agency.logoName) next.profile.agency.logoName = upload.name;
+              if (fieldKey === "kyc.idFileName" && !next.kyc.idFileName) {
+                next.kyc.idFileName = upload.name;
+                next.kyc.idUploaded = true;
+              }
+              if (fieldKey === "kyc.selfieFileName" && !next.kyc.selfieFileName) {
+                next.kyc.selfieFileName = upload.name;
+                next.kyc.selfieUploaded = true;
+              }
+              if (fieldKey === "kyc.addressFileName" && !next.kyc.addressFileName) {
+                next.kyc.addressFileName = upload.name;
+                next.kyc.addressUploaded = true;
+              }
+              if (fieldKey === "kyc.org.registrationName" && !next.kyc.org.registrationName) {
+                next.kyc.org.registrationName = upload.name;
+                next.kyc.org.registrationUploaded = true;
+              }
+              if (fieldKey === "kyc.org.taxName" && !next.kyc.org.taxName) {
+                next.kyc.org.taxName = upload.name;
+                next.kyc.org.taxUploaded = true;
+              }
+              if (fieldKey === "kyc.org.authorizationName" && !next.kyc.org.authorizationName) {
+                next.kyc.org.authorizationName = upload.name;
+                next.kyc.org.authorizationUploaded = true;
+              }
+            });
+            return next;
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const merged = deepMerge(defaultForm(), parsed);
+            setForm(normalizeFormFromOnboarding(merged));
+            push("Settings loaded from onboarding.", "success");
+          }
+          void creatorApi
+            .workflowScreenState(SETTINGS_SCREEN_STATE_KEY)
+            .then((screenState) => {
+              if (cancelled) return;
+              const savedSettingsForm = extractScreenStateSettingsForm(screenState);
+              if (!savedSettingsForm) return;
+              setForm((prev) => normalizeFormFromOnboarding(deepMerge(prev, savedSettingsForm as SettingsForm)));
+              push("Settings loaded from saved draft.", "success");
+            })
+            .catch(() => undefined);
+        })
+        .finally(() => {
+          hydratedRef.current = true;
+        });
     } catch {
       // ignore
+      hydratedRef.current = true;
     }
+
+    return () => {
+      cancelled = true;
+      hydratedRef.current = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Autosave
   useEffect(() => {
+    return () => {
+      Object.values(objectUrlRef.current).forEach((url) => {
+        if (typeof url === "string" && url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
+  }, []);
+
+  // Draft autosave (local only). Backend save happens via the Save changes button.
+  useEffect(() => {
+    if (!hydratedRef.current) {
+      return;
+    }
     setSaved(false);
-    const t = setTimeout(() => {
+
+    const localTimer = setTimeout(() => {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
       } catch {
         // ignore
       }
-      setSaved(true);
-    }, 450);
-    return () => clearTimeout(t);
+    }, 350);
+
+    return () => {
+      clearTimeout(localTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1169,6 +1868,104 @@ export default function CreatorSettingsSafetyPremium() {
       next.settings.audit = [entry, ...arr].slice(0, 20);
       return next;
     });
+  }
+
+  function registerUpload(fieldKey: string, file: File, purpose: string) {
+    const isImage = String(file.type || "").toLowerCase().startsWith("image/");
+    const shouldPersistPreview = isImage;
+
+    const applyUpload = (persistedPreviewUrl: string) => {
+      const localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const safeName = file.name.replace(/\s+/g, "_");
+      const storageKey = `creator/settings/${fieldKey.replace(/\./g, "_")}/${Date.now()}-${safeName}`;
+      const previewUrl = URL.createObjectURL(file);
+      const previousUrl = objectUrlRef.current[fieldKey];
+      if (previousUrl && previousUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previousUrl);
+      }
+      objectUrlRef.current[fieldKey] = previewUrl;
+      const displayUrl = persistedPreviewUrl || previewUrl;
+
+      setForm((prev) => {
+        const next = deepClone(prev);
+        next.uploads[fieldKey] = {
+          id: localId,
+          name: file.name,
+          mimeType: file.type || "",
+          sizeBytes: file.size,
+          extension: file.name.includes(".") ? file.name.split(".").pop() || "" : "",
+          storageKey,
+          url: displayUrl,
+          status: "uploaded",
+          createdAt: new Date().toISOString(),
+          purpose,
+          fieldKey,
+          previewUrl: displayUrl
+        };
+        return next;
+      });
+
+      void creatorApi
+        .createUpload({
+          name: file.name,
+          kind: fileKindFromMime(file.type || ""),
+          mimeType: file.type || undefined,
+          sizeBytes: file.size > 0 ? file.size : undefined,
+          extension: file.name.includes(".") ? file.name.split(".").pop() || undefined : undefined,
+          storageKey,
+          purpose,
+          domain: "creator_settings",
+          entityType: "creator_profile",
+          status: "UPLOADED",
+          metadata: {
+            fieldKey,
+            source: "creator_settings",
+            acceptedAt: new Date().toISOString(),
+            previewDataUrl: persistedPreviewUrl || undefined
+          }
+        })
+        .then((uploaded) => {
+          setForm((prev) => {
+            const next = deepClone(prev);
+            const uploadedPreviewDataUrl =
+              uploaded.metadata && typeof uploaded.metadata === "object" && !Array.isArray(uploaded.metadata)
+                ? String((uploaded.metadata as Record<string, unknown>).previewDataUrl || "")
+                : "";
+            const finalPreviewUrl = uploaded.url || uploadedPreviewDataUrl || persistedPreviewUrl || previewUrl;
+            next.uploads[fieldKey] = {
+              id: uploaded.id,
+              name: uploaded.name,
+              mimeType: uploaded.mimeType || file.type || "",
+              sizeBytes: typeof uploaded.sizeBytes === "number" ? uploaded.sizeBytes : file.size,
+              extension: uploaded.extension || "",
+              storageKey: uploaded.storageKey || storageKey,
+              url: finalPreviewUrl,
+              status: uploaded.status || "uploaded",
+              createdAt: uploaded.createdAt || new Date().toISOString(),
+              purpose: uploaded.purpose || purpose,
+              fieldKey,
+              previewUrl: finalPreviewUrl
+            };
+            return next;
+          });
+        })
+        .catch(() => {
+          push("File selected. Metadata sync failed.", "warn");
+        });
+    };
+
+    if (shouldPersistPreview) {
+      void readImagePreviewDataUrl(file)
+        .then((preview) => {
+          applyUpload(preview.startsWith("data:image/") ? preview : "");
+        })
+        .catch(() => {
+          applyUpload("");
+        });
+      return;
+    }
+
+    applyUpload("");
   }
 
 
@@ -1259,6 +2056,25 @@ export default function CreatorSettingsSafetyPremium() {
   function copyPrimary() {
     navigator.clipboard?.writeText(primaryPlatformName || "");
     push("Copied.", "success");
+  }
+
+  async function saveSettings() {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await creatorApi.patchWorkflowScreenState(
+        SETTINGS_SCREEN_STATE_KEY,
+        buildScreenStateSettingsPayload(form)
+      );
+      setSaved(true);
+      addAudit("Settings saved", "workflow screen-state");
+      push("Settings saved.", "success");
+    } catch (error) {
+      const backendMessage = errorMessageFromUnknown(error);
+      push(backendMessage || "Failed to save settings to backend.", "error");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
 
@@ -1481,9 +2297,19 @@ export default function CreatorSettingsSafetyPremium() {
               <ExternalLink className="h-4 w-4" /> Open onboarding
             </GhostButton>
 
-            <PrimaryButton onClick={downloadData}>
-              <Download className="h-4 w-4" /> Export data
+            <PrimaryButton
+              onClick={() => {
+                void saveSettings();
+              }}
+              disabled={isSaving || saved}
+              className={cx(isSaving || saved ? "opacity-60 cursor-not-allowed" : "")}
+            >
+              <Check className="h-4 w-4" /> {isSaving ? "Saving..." : "Save changes"}
             </PrimaryButton>
+
+            <GhostButton onClick={downloadData}>
+              <Download className="h-4 w-4" /> Export data
+            </GhostButton>
           </div>
         </div>
 
@@ -1734,8 +2560,41 @@ export default function CreatorSettingsSafetyPremium() {
             </div>
 
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <UploadMini title="Profile photo" helper="JPG/PNG, 1:1 recommended." value={form.profile.profilePhotoName} onPick={(name) => update("profile.profilePhotoName", name)} accept="image/*" />
-              <UploadMini title="Media kit" helper="PDF recommended; use for supplier pitches." value={form.profile.mediaKitName} onPick={(name) => update("profile.mediaKitName", name)} accept=".pdf,application/pdf" />
+              <UploadMini
+                title="Profile photo"
+                helper="JPG/PNG, 1:1 recommended."
+                value={form.profile.profilePhotoName}
+                onPick={(name) => update("profile.profilePhotoName", name)}
+                onFilePick={(file) => {
+                  registerUpload("profile.profilePhotoName", file, "creator_profile_photo");
+                  addAudit("Profile photo uploaded", file.name);
+                }}
+                accept="image/*"
+              />
+              <UploadMini
+                title="Media kit"
+                helper="PDF recommended; use for supplier pitches."
+                value={form.profile.mediaKitName}
+                onPick={(name) => update("profile.mediaKitName", name)}
+                onFilePick={(file) => {
+                  registerUpload("profile.mediaKitName", file, "creator_media_kit");
+                  addAudit("Media kit uploaded", file.name);
+                }}
+                accept=".pdf,application/pdf"
+              />
+            </div>
+
+            <div className="mt-3">
+              <UploadedFilesPanel
+                title="Profile file details"
+                uploads={form.uploads}
+                items={[
+                  { label: "Profile photo", fieldKey: "profile.profilePhotoName", fileName: form.profile.profilePhotoName },
+                  { label: "Media kit", fieldKey: "profile.mediaKitName", fileName: form.profile.mediaKitName },
+                  { label: "Team logo", fieldKey: "profile.team.logoName", fileName: form.profile.team.logoName },
+                  { label: "Agency logo", fieldKey: "profile.agency.logoName", fileName: form.profile.agency.logoName }
+                ]}
+              />
             </div>
 
             <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
@@ -1815,6 +2674,10 @@ export default function CreatorSettingsSafetyPremium() {
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.team.logoName}
                       onPick={(name) => update("profile.team.logoName", name)}
+                      onFilePick={(file) => {
+                        registerUpload("profile.team.logoName", file, "creator_team_logo");
+                        addAudit("Team logo uploaded", file.name);
+                      }}
                       accept="image/*"
                     />
                   </div>
@@ -1851,6 +2714,10 @@ export default function CreatorSettingsSafetyPremium() {
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.agency.logoName}
                       onPick={(name) => update("profile.agency.logoName", name)}
+                      onFilePick={(file) => {
+                        registerUpload("profile.agency.logoName", file, "creator_agency_logo");
+                        addAudit("Agency logo uploaded", file.name);
+                      }}
                       accept="image/*"
                     />
                   </div>
@@ -2345,6 +3212,9 @@ export default function CreatorSettingsSafetyPremium() {
                       update("kyc.idUploaded", true);
                       addAudit("KYC doc uploaded", "ID document");
                     }}
+                    onFilePick={(file) => {
+                      registerUpload("kyc.idFileName", file, "creator_kyc_document");
+                    }}
                   />
                   <UploadMini
                     title="Selfie"
@@ -2355,6 +3225,9 @@ export default function CreatorSettingsSafetyPremium() {
                       update("kyc.selfieUploaded", true);
                       addAudit("KYC doc uploaded", "Selfie");
                     }}
+                    onFilePick={(file) => {
+                      registerUpload("kyc.selfieFileName", file, "creator_kyc_selfie");
+                    }}
                   />
                   <UploadMini
                     title="Address proof"
@@ -2364,6 +3237,9 @@ export default function CreatorSettingsSafetyPremium() {
                       update("kyc.addressFileName", name);
                       update("kyc.addressUploaded", true);
                       addAudit("KYC doc uploaded", "Address proof");
+                    }}
+                    onFilePick={(file) => {
+                      registerUpload("kyc.addressFileName", file, "creator_kyc_address");
                     }}
                   />
                 </div>
@@ -2381,6 +3257,9 @@ export default function CreatorSettingsSafetyPremium() {
                           update("kyc.org.registrationUploaded", true);
                           addAudit("Org doc uploaded", "Registration");
                         }}
+                        onFilePick={(file) => {
+                          registerUpload("kyc.org.registrationName", file, "creator_org_registration");
+                        }}
                       />
                       <UploadMini
                         title="Tax certificate"
@@ -2389,6 +3268,9 @@ export default function CreatorSettingsSafetyPremium() {
                           update("kyc.org.taxName", name);
                           update("kyc.org.taxUploaded", true);
                           addAudit("Org doc uploaded", "Tax");
+                        }}
+                        onFilePick={(file) => {
+                          registerUpload("kyc.org.taxName", file, "creator_org_tax");
                         }}
                       />
                       <UploadMini
@@ -2399,10 +3281,28 @@ export default function CreatorSettingsSafetyPremium() {
                           update("kyc.org.authorizationUploaded", true);
                           addAudit("Org doc uploaded", "Authorization");
                         }}
+                        onFilePick={(file) => {
+                          registerUpload("kyc.org.authorizationName", file, "creator_org_authorization");
+                        }}
                       />
                     </div>
                   </div>
                 ) : null}
+
+                <div className="mt-3">
+                  <UploadedFilesPanel
+                    title="Verification file details"
+                    uploads={form.uploads}
+                    items={[
+                      { label: "ID document", fieldKey: "kyc.idFileName", fileName: form.kyc.idFileName },
+                      { label: "Selfie", fieldKey: "kyc.selfieFileName", fileName: form.kyc.selfieFileName },
+                      { label: "Address proof", fieldKey: "kyc.addressFileName", fileName: form.kyc.addressFileName },
+                      { label: "Registration", fieldKey: "kyc.org.registrationName", fileName: form.kyc.org.registrationName },
+                      { label: "Tax certificate", fieldKey: "kyc.org.taxName", fileName: form.kyc.org.taxName },
+                      { label: "Authorization letter", fieldKey: "kyc.org.authorizationName", fileName: form.kyc.org.authorizationName }
+                    ]}
+                  />
+                </div>
               </div>
 
               <div className="space-y-3">

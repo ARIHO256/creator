@@ -37,6 +37,16 @@ function readString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function readAvatarUrl(value: unknown) {
+  const source = readString(value);
+  if (!source) return "";
+  if (source.startsWith("data:image/")) return source;
+  if (/^https?:\/\//i.test(source)) return source;
+  if (source.startsWith("/")) return source;
+  if (/\.(png|jpe?g|webp|gif|bmp|svg|avif)(\?.*)?$/i.test(source)) return source;
+  return "";
+}
+
 function buildUserIdentity() {
   const session = readAuthSession();
   const creatorProfile = readRecord(session?.creatorProfile);
@@ -70,7 +80,93 @@ function buildUserIdentity() {
       .map((part) => part[0]?.toUpperCase() || "")
       .join("") || "CR";
 
-  return { name, handle, initials };
+  const avatarUrl =
+    readAvatarUrl(creatorProfile.avatarUrl) ||
+    readAvatarUrl(creatorProfile.profilePhotoUrl) ||
+    readAvatarUrl(creatorProfile.photoUrl) ||
+    readAvatarUrl(creatorProfile.imageUrl) ||
+    readAvatarUrl(creatorProfile.logoUrl) ||
+    readAvatarUrl(sellerProfile.avatarUrl) ||
+    readAvatarUrl(sellerProfile.logoUrl);
+
+  return { name, handle, initials, avatarUrl };
+}
+
+function readAvatarFromUploadsRecord(source: unknown) {
+  const row = readRecord(source);
+  const metadata = readRecord(row.metadata);
+  return (
+    readAvatarUrl(row.url) ||
+    readAvatarUrl(row.previewUrl) ||
+    readAvatarUrl(metadata.previewDataUrl)
+  );
+}
+
+function resolveAvatarFromScreenState(payload: unknown) {
+  const root = readRecord(payload);
+  const settingsForm = readRecord(root.settingsForm);
+  const uploads = readRecord(settingsForm.uploads);
+  const profileUpload = readRecord(uploads["profile.profilePhotoName"]);
+  return readAvatarFromUploadsRecord(profileUpload);
+}
+
+function resolveAvatarFromOnboarding(payload: unknown) {
+  const root = readRecord(payload);
+  const metadata = readRecord(root.metadata);
+  const creatorForm = readRecord(metadata.creatorForm);
+  const uploads = readRecord(creatorForm.uploads);
+  const profileUpload = readRecord(uploads["profile.profilePhotoName"]);
+  const direct = readAvatarFromUploadsRecord(profileUpload);
+  if (direct) return direct;
+
+  const docs = readRecord(root.docs);
+  const list = Array.isArray(docs.list) ? docs.list : [];
+  for (const entry of list) {
+    const row = readRecord(entry);
+    const type = readString(row.type).toLowerCase();
+    const id = readString(row.id).toLowerCase();
+    if (type === "profile_photo" || id === "profile-photo") {
+      const url = readAvatarUrl(row.fileUrl);
+      if (url) return url;
+    }
+  }
+  return "";
+}
+
+function resolveAvatarFromUploadSessions(payload: unknown) {
+  if (!Array.isArray(payload)) return "";
+  for (const entry of payload) {
+    const row = readRecord(entry);
+    const metadata = readRecord(row.metadata);
+    const fieldKey = readString(metadata.fieldKey);
+    const purpose = readString(row.purpose).toLowerCase();
+    if (fieldKey !== "profile.profilePhotoName" && purpose !== "creator_profile_photo") {
+      continue;
+    }
+    const url = readAvatarUrl(row.url) || readAvatarUrl(metadata.previewDataUrl);
+    if (url) return url;
+  }
+  return "";
+}
+
+function resolveAvatarFromLocalDraft() {
+  if (typeof window === "undefined") return "";
+  const keys = ["mldz_creator_onboarding_v2_4", "mldz_creator_onboarding_v2_3"];
+  for (const key of keys) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const payload = JSON.parse(raw) as unknown;
+      const root = readRecord(payload);
+      const uploads = readRecord(root.uploads);
+      const profileUpload = readRecord(uploads["profile.profilePhotoName"]);
+      const direct = readAvatarFromUploadsRecord(profileUpload);
+      if (direct) return direct;
+    } catch {
+      // ignore malformed drafts
+    }
+  }
+  return "";
 }
 
 export const TopBar: React.FC<TopBarProps> = ({
@@ -90,6 +186,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const [unreadCount, setUnreadCount] = useState(0);
   const hasSession = Boolean(readAuthSession());
   const userIdentity = buildUserIdentity();
+  const [avatarUrl, setAvatarUrl] = useState(userIdentity.avatarUrl || "");
 
   useEffect(() => {
     if (!onSearchRectUpdate || !searchBtnRef.current) return;
@@ -141,6 +238,43 @@ export const TopBar: React.FC<TopBarProps> = ({
       cancelled = true;
     };
   }, [hasSession, notificationsOpen]);
+
+  useEffect(() => {
+    setAvatarUrl(userIdentity.avatarUrl || "");
+  }, [userIdentity.avatarUrl]);
+
+  useEffect(() => {
+    if (!hasSession) {
+      setAvatarUrl("");
+      return;
+    }
+
+    let cancelled = false;
+    void Promise.allSettled([
+      creatorApi.workflowScreenState("creator-settings"),
+      creatorApi.onboarding(),
+      creatorApi.uploads()
+    ])
+      .then((results) => {
+        if (cancelled) return;
+        const fromScreenState =
+          results[0].status === "fulfilled" ? resolveAvatarFromScreenState(results[0].value) : "";
+        const fromOnboarding =
+          results[1].status === "fulfilled" ? resolveAvatarFromOnboarding(results[1].value) : "";
+        const fromUploads =
+          results[2].status === "fulfilled" ? resolveAvatarFromUploadSessions(results[2].value) : "";
+        const fromLocalDraft = resolveAvatarFromLocalDraft();
+        const nextAvatar = fromScreenState || fromOnboarding || fromUploads || fromLocalDraft || "";
+        if (nextAvatar) {
+          setAvatarUrl(nextAvatar);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSession]);
 
   return (
     <header className="fixed top-0 left-0 right-0 w-full h-14 flex items-center justify-between px-2 sm:px-4 md:px-6 lg:px-8 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm z-50 transition-colors">
@@ -244,6 +378,7 @@ export const TopBar: React.FC<TopBarProps> = ({
           userName={userIdentity.name}
           userHandle={userIdentity.handle}
           userInitials={userIdentity.initials}
+          userAvatarUrl={avatarUrl}
           onChangePage={onChangePage}
           onViewEarnings={onViewEarnings}
           onOpenCommand={onOpenCommand}

@@ -7,6 +7,7 @@ type AvatarMenuDropdownProps = {
   userName?: string;
   userHandle?: string;
   userInitials?: string;
+  userAvatarUrl?: string;
   onChangePage?: (page: PageId) => void;
   onViewEarnings?: () => void;
   onOpenCommand?: () => void;
@@ -17,6 +18,7 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
   userName = "Creator",
   userHandle,
   userInitials,
+  userAvatarUrl,
   onChangePage,
   onViewEarnings,
   onOpenCommand,
@@ -88,6 +90,8 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
       .map((part) => part[0]?.toUpperCase() || "")
       .join("") ||
     "CR";
+  const normalizedAvatarUrl = String(userAvatarUrl || "").trim();
+  const hasAvatar = Boolean(normalizedAvatarUrl);
 
   const handleViewEarnings = () => {
     setOpen(false);
@@ -116,9 +120,17 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        <div className={`h-7 w-7 rounded-full flex-shrink-0 ${darkMode ? "bg-slate-700" : "bg-slate-200"} flex items-center justify-center text-xs font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-          {initials}
-        </div>
+        {hasAvatar ? (
+          <img
+            src={normalizedAvatarUrl}
+            alt={normalizedName}
+            className="h-7 w-7 rounded-full flex-shrink-0 object-cover"
+          />
+        ) : (
+          <div className={`h-7 w-7 rounded-full flex-shrink-0 ${darkMode ? "bg-slate-700" : "bg-slate-200"} flex items-center justify-center text-xs font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+            {initials}
+          </div>
+        )}
         <span className={`hidden sm:inline text-md font-medium ${darkMode ? "text-slate-100" : "text-slate-800"}`}>
           {normalizedName}
         </span>
@@ -139,9 +151,17 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
           >
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                <div className={`h-10 w-10 rounded-full flex-shrink-0 ${darkMode ? "bg-slate-700" : "bg-slate-200"} flex items-center justify-center text-sm font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-                  {initials}
-                </div>
+                {hasAvatar ? (
+                  <img
+                    src={normalizedAvatarUrl}
+                    alt={normalizedName}
+                    className="h-10 w-10 rounded-full flex-shrink-0 object-cover"
+                  />
+                ) : (
+                  <div className={`h-10 w-10 rounded-full flex-shrink-0 ${darkMode ? "bg-slate-700" : "bg-slate-200"} flex items-center justify-center text-sm font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
+                    {initials}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="text-md font-semibold truncate dark:text-slate-100">
                     {normalizedName}
