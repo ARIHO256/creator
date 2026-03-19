@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useMobile } from "../../hooks/useMobile";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type DealzMarketplaceWorkspaceResponse } from "../../lib/creatorApi";
 import { formatCurrencyValue } from "../../utils/formatUtils";
 import { PageHeader } from "../../components/PageHeader";
 import { AdzPerformanceDrawer, PerformanceEntity, PerfPlatform } from "./AdzPerformance";
@@ -62,7 +64,7 @@ import {
  * - Offer posters canonical size: 500×500, 2 per row in preview surfaces (builder/marketplace)
  *
  * Notes:
- * - UI is mock-data driven. Replace with API calls + router navigation.
+ * - This page keeps the original UI while reading its data from backend workspace endpoints.
  */
 
 const ORANGE = "#f77f00";
@@ -516,202 +518,260 @@ function BarList({
 
 /** ------------------------------ Mock data ------------------------------ */
 
-const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
+  deals: [],
+  suppliers: [],
+  creators: [],
+  selectedId: "",
+  cart: {},
+  liveCart: {},
+};
 
-const DEMO_ADS: Ad[] = [
-  {
-    id: "ADZ-2201",
-    campaignName: "Valentine Glow Week",
-    campaignSubtitle: "Limited-time drops · Host-first",
+const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function asCurrency(value: unknown, fallback: "UGX" | "USD" | "GBP" = "UGX"): "UGX" | "USD" | "GBP" {
+  const normalized = asString(value, fallback).toUpperCase();
+  if (normalized === "UGX" || normalized === "USD" || normalized === "GBP") {
+    return normalized;
+  }
+  return fallback;
+}
+
+function parseCompactMetric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/,/g, "").trim().toLowerCase();
+  if (!cleaned) return null;
+  const match = cleaned.match(/^(-?\d+(?:\.\d+)?)([kmb])?$/);
+  if (!match) return null;
+  const base = Number(match[1]);
+  if (!Number.isFinite(base)) return null;
+  const suffix = match[2] || "";
+  if (suffix === "k") return Math.round(base * 1_000);
+  if (suffix === "m") return Math.round(base * 1_000_000);
+  if (suffix === "b") return Math.round(base * 1_000_000_000);
+  return Math.round(base);
+}
+
+function metricFromKpis(kpisRaw: unknown, labels: string[]): number | null {
+  const normalizedLabels = labels.map((label) => label.toLowerCase());
+  for (const entry of asArray(kpisRaw)) {
+    const record = asRecord(entry);
+    if (!record) continue;
+    const label = asString(record.label, "").toLowerCase();
+    if (!label || !normalizedLabels.some((target) => label.includes(target))) continue;
+    const metric = parseCompactMetric(record.value);
+    if (metric !== null) return metric;
+  }
+  return null;
+}
+
+function normalizeStatus(value: unknown): AdStatus {
+  const raw = asString(value, "").trim().toLowerCase();
+  if (raw.includes("pending")) return "Pending approval";
+  if (raw.includes("reject")) return "Rejected";
+  if (raw.includes("pause")) return "Paused";
+  if (raw.includes("end") || raw.includes("complete")) return "Ended";
+  if (raw.includes("live")) return "Live";
+  if (raw.includes("generated") || raw.includes("publish") || raw.includes("active")) return "Generated";
+  if (raw.includes("schedule")) return "Scheduled";
+  return "Draft";
+}
+
+function normalizeRate(value: unknown, fallback = 0.1) {
+  const raw = asNumber(value, fallback);
+  if (raw > 1) {
+    return raw / 100;
+  }
+  return raw;
+}
+
+function mapCompensation(raw: unknown, fallbackCurrency: "UGX" | "USD" | "GBP"): Compensation {
+  const record = asRecord(raw);
+  const rawType = asString(record?.type, "").trim().toLowerCase();
+  const commissionRate = normalizeRate(record?.commissionRate, 0.1);
+  const flatFee = asNumber(record?.flatFee, 0);
+  const currency = asCurrency(record?.currency, fallbackCurrency);
+
+  if (rawType.includes("hybrid")) {
+    return { type: "Hybrid", commissionRate, flatFee, currency };
+  }
+  if (rawType.includes("flat")) {
+    return { type: "Flat fee", flatFee, currency };
+  }
+  return { type: "Commission", commissionRate };
+}
+
+function mapOffer(raw: unknown, index: number, fallbackPosterUrl: string): Offer {
+  const record = asRecord(raw);
+  const type = asString(record?.type, "PRODUCT").toUpperCase() === "SERVICE" ? "SERVICE" : "PRODUCT";
+  const sellingModes = asArray(record?.sellingModes)
+    .map((entry) => asString(entry, "").toUpperCase())
+    .filter((entry): entry is SellingMode => entry === "RETAIL" || entry === "WHOLESALE");
+  const defaultModeRaw = asString(record?.defaultSellingMode, "").toUpperCase();
+  const defaultSellingMode: SellingMode | undefined = defaultModeRaw === "WHOLESALE" ? "WHOLESALE" : defaultModeRaw === "RETAIL" ? "RETAIL" : undefined;
+
+  const wholesaleRaw = asRecord(record?.wholesale);
+  const tiers = asArray(wholesaleRaw?.tiers)
+    .map((tier) => asRecord(tier))
+    .filter((tier): tier is Record<string, unknown> => Boolean(tier))
+    .map((tier) => ({
+      minQty: Math.max(1, asNumber(tier.minQty, 1)),
+      unitPrice: Math.max(0, asNumber(tier.unitPrice, 0)),
+    }))
+    .filter((tier) => tier.unitPrice > 0);
+
+  return {
+    id: asString(record?.id, `offer_${index + 1}`),
+    type,
+    name: asString(record?.name, "Offer"),
+    currency: asCurrency(record?.currency, "UGX"),
+    price: Math.max(0, asNumber(record?.price, 0)),
+    basePrice: typeof record?.basePrice === "number" ? record.basePrice : undefined,
+    stockLeft: asNumber(record?.stockLeft, 0),
+    posterUrl: asString(record?.posterUrl, fallbackPosterUrl),
+    videoUrl: asString(record?.videoUrl, "") || undefined,
+    sellingModes: sellingModes.length ? sellingModes : undefined,
+    defaultSellingMode,
+    wholesale: tiers.length
+      ? {
+          moq: Math.max(1, asNumber(wholesaleRaw?.moq, tiers[0]?.minQty || 1)),
+          step: Math.max(1, asNumber(wholesaleRaw?.step, 1)),
+          leadTimeLabel: asString(wholesaleRaw?.leadTimeLabel, "") || undefined,
+          businessOnly: asBoolean(wholesaleRaw?.businessOnly, false),
+          tiers,
+        }
+      : undefined,
+    serviceMeta:
+      type === "SERVICE"
+        ? {
+            durationMins: asNumber(asRecord(record?.serviceMeta)?.durationMins, 0) || undefined,
+            bookingType: asString(asRecord(record?.serviceMeta)?.bookingType, "Instant") === "Request" ? "Request" : "Instant",
+          }
+        : undefined,
+  };
+}
+
+function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
+  const record = asRecord(raw);
+  if (!record) return null;
+  const shoppable = asRecord(record.shoppable);
+  if (!shoppable) return null;
+
+  const supplierRecord = asRecord(record.supplier);
+  const creatorRecord = asRecord(record.creator);
+
+  const offersRaw = asArray(shoppable.offers);
+  const fallbackHero = asString(shoppable.heroImageUrl, asString(supplierRecord?.logoUrl, BLANK_IMAGE) || BLANK_IMAGE);
+  const offers = offersRaw.map((offer, offerIndex) => mapOffer(offer, offerIndex, fallbackHero));
+
+  const inferredCurrency = offers[0]?.currency || asCurrency(shoppable.currency, "UGX");
+  const metricsRecord = asRecord(shoppable.metrics);
+  const status = normalizeStatus(shoppable.status ?? record.status);
+
+  const impressions7d =
+    asNumber(shoppable.impressions7d, Number.NaN) ||
+    asNumber(metricsRecord?.impressions, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["view", "impression"]) ||
+    0;
+  const clicks7d =
+    asNumber(shoppable.clicks7d, Number.NaN) ||
+    asNumber(metricsRecord?.clicks, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["click"]) ||
+    0;
+  const orders7d =
+    asNumber(shoppable.orders7d, Number.NaN) ||
+    asNumber(metricsRecord?.orders, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["order", "purchase", "sale"]) ||
+    0;
+  const revenue7d =
+    asNumber(shoppable.revenue7d, Number.NaN) ||
+    asNumber(metricsRecord?.revenue, Number.NaN) ||
+    asNumber(metricsRecord?.earnings, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["revenue", "earning", "gmv"]) ||
+    0;
+
+  const generated = status === "Generated" || status === "Live" || status === "Ended" || asBoolean(shoppable.generated, false);
+  const lowStock = asBoolean(shoppable.lowStock, false) || offers.some((offer) => offer.type === "PRODUCT" && offer.stockLeft >= 0 && offer.stockLeft <= 5);
+
+  return {
+    id: asString(record.id, `adz_${index + 1}`),
+    campaignName: asString(shoppable.campaignName, asString(record.title, `Campaign ${index + 1}`)),
+    campaignSubtitle: asString(shoppable.campaignSubtitle, asString(record.tagline, "")),
     supplier: {
-      name: "GlowUp Hub",
-      category: "Beauty",
-      logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=256&auto=format&fit=crop",
+      name: asString(supplierRecord?.name, "Seller"),
+      category: asString(supplierRecord?.category, "Seller"),
+      logoUrl: asString(supplierRecord?.logoUrl, BLANK_IMAGE) || BLANK_IMAGE,
     },
     creator: {
-      name: "Amina K.",
-      handle: "@amina.dealz",
-      avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop",
-      verified: true,
+      name: asString(creatorRecord?.name, "Creator"),
+      handle: (() => {
+        const handle = asString(creatorRecord?.handle, "@creator");
+        return handle.startsWith("@") ? handle : `@${handle}`;
+      })(),
+      avatarUrl: asString(creatorRecord?.avatarUrl, BLANK_IMAGE) || BLANK_IMAGE,
+      verified: asBoolean(creatorRecord?.verified, false),
     },
-    status: "Generated",
-    platforms: ["Instagram", "TikTok"],
-    startISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    compensation: { type: "Commission", commissionRate: 0.12 },
-    offers: [
-      {
-        id: "O-100",
-        type: "PRODUCT",
-        name: "Glow Serum (30ml)",
-        currency: "UGX",
-        price: 38000,
-        basePrice: 52000,
-        stockLeft: 12,
-        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 10,
-          step: 5,
-          leadTimeLabel: "Ships in 3–5 days",
-          tiers: [
-            { minQty: 10, unitPrice: 32000 },
-            { minQty: 25, unitPrice: 29500 },
-            { minQty: 50, unitPrice: 27000 },
-          ],
-        },
-      },
-      {
-        id: "O-101",
-        type: "SERVICE",
-        name: "Skin consult (30min)",
-        currency: "UGX",
-        price: 60000,
-        stockLeft: -1,
-        posterUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        serviceMeta: { durationMins: 30, bookingType: "Instant" },
-      },
-    ],
-    generated: true,
-    hasBrokenLink: false,
-    lowStock: false,
-    impressions7d: 410000,
-    clicks7d: 14800,
-    orders7d: 920,
-    revenue7d: 34500000,
-    currency: "UGX",
-  },
-  {
-    id: "ADZ-2202",
-    campaignName: "Back-to-Work Essentials",
-    campaignSubtitle: "Bags & Accessories · Campus-ready",
-    supplier: {
-      name: "Urban Supply",
-      category: "Accessories",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop",
-    },
-    creator: {
-      name: "Chris M.",
-      handle: "@chris.finds",
-      avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=256&auto=format&fit=crop",
-    },
-    status: "Scheduled",
-    platforms: ["Instagram"],
-    startISO: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 40 * 3600 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    compensation: { type: "Flat fee", flatFee: 250, currency: "GBP" },
-    offers: [
-      {
-        id: "O-110",
-        type: "PRODUCT",
-        name: "Laptop Backpack",
-        currency: "UGX",
-        price: 180000,
-        basePrice: 220000,
-        stockLeft: 18,
-        posterUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 5,
-          step: 1,
-          leadTimeLabel: "Ships in 2–4 days",
-          tiers: [
-            { minQty: 5, unitPrice: 155000 },
-            { minQty: 10, unitPrice: 149000 },
-            { minQty: 25, unitPrice: 139000 },
-          ],
-        },
-      },
-      {
-        id: "O-111",
-        type: "PRODUCT",
-        name: "Daily Tote",
-        currency: "UGX",
-        price: 95000,
-        stockLeft: 4,
-        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL",
-      },
-    ],
-    generated: false,
-    hasBrokenLink: false,
-    lowStock: true,
-    impressions7d: 92000,
-    clicks7d: 2800,
-    orders7d: 155,
-    revenue7d: 8900000,
-    currency: "UGX",
-  },
-  {
-    id: "ADZ-2203",
-    campaignName: "Home Essentials Drop",
-    campaignSubtitle: "Kitchen upgrade · Bundles",
-    supplier: {
-      name: "HomePro",
-      category: "Home",
-      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop",
-    },
-    creator: {
-      name: "Sade Bello",
-      handle: "@sade.home",
-      avatarUrl: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=256&auto=format&fit=crop",
-      verified: true,
-    },
-    status: "Pending approval",
-    platforms: ["TikTok"],
-    startISO: new Date(Date.now() + 34 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 35 * 3600 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 150, currency: "GBP" },
-    offers: [
-      {
-        id: "O-120",
-        type: "PRODUCT",
-        name: "6-Speed Blender",
-        currency: "UGX",
-        price: 240000,
-        stockLeft: 10,
-        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 3,
-          step: 1,
-          leadTimeLabel: "Ships in 3–6 days",
-          tiers: [
-            { minQty: 3, unitPrice: 210000 },
-            { minQty: 6, unitPrice: 199000 },
-            { minQty: 12, unitPrice: 189000 },
-          ],
-        },
-      },
-    ],
-    generated: false,
-    hasBrokenLink: true,
-    lowStock: false,
-    impressions7d: 18000,
-    clicks7d: 430,
-    orders7d: 18,
-    revenue7d: 2100000,
-    currency: "UGX",
-  },
-];
+    status,
+    platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
+    startISO: asString(shoppable.startISO, asString(record.startISO, new Date().toISOString())),
+    endISO: asString(shoppable.endISO, asString(record.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString())),
+    timezone: asString(shoppable.timezone, Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+    heroImageUrl: asString(shoppable.heroImageUrl, offers[0]?.posterUrl || BLANK_IMAGE),
+    heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
+    compensation: mapCompensation(shoppable.compensation ?? record.compensation, inferredCurrency),
+    offers,
+    generated,
+    hasBrokenLink: asBoolean(shoppable.hasBrokenLink, false),
+    lowStock,
+    lock: (() => {
+      const lock = asRecord(shoppable.lock);
+      if (!lock || !asBoolean(lock.locked, false)) return undefined;
+      return {
+        locked: true,
+        label: asString(lock.label, "Locked"),
+        reason: asString(lock.reason, "Editing is locked for this ad"),
+      };
+    })(),
+    impressions7d: Math.max(0, impressions7d),
+    clicks7d: Math.max(0, clicks7d),
+    orders7d: Math.max(0, orders7d),
+    revenue7d: Math.max(0, revenue7d),
+    currency: inferredCurrency,
+  };
+}
+
+function mapMarketplacePayloadToAds(payload: DealzMarketplaceWorkspaceResponse): Ad[] {
+  return asArray(payload.deals)
+    .map((deal, index) => mapMarketplaceDealToAd(deal, index))
+    .filter((deal): deal is Ad => Boolean(deal));
+}
+
+function buildTrendSeries(ads: Ad[], key: "impressions7d" | "orders7d") {
+  const series = ads.map((ad) => Math.max(0, Math.round(ad[key]))).filter((value) => Number.isFinite(value));
+  return series.length ? series : [0];
+}
 
 /** ------------------------------ Page ------------------------------ */
 
@@ -725,9 +785,36 @@ export default function AdzDashboard() {
   const [drawer, setDrawer] = useState<DrawerKey>(null);
   const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
 
-  const [ads, setAds] = useState<Ad[]>(DEMO_ADS);
-  const [selectedId, setSelectedId] = useState<string>(DEMO_ADS[0]?.id || "");
+  const { data: workspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
+    initialData: EMPTY_MARKETPLACE_STATE,
+    loader: () => creatorApi.dealzMarketplace(),
+    onError: () => {
+      showNotification("Unable to load dashboard data from API.", "error");
+    },
+  });
+
+  const [ads, setAds] = useState<Ad[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  const drawerAd = useMemo(
+    () => ads.find((ad) => ad.id === drawerData) || selected,
+    [ads, drawerData, selected],
+  );
+
+  useEffect(() => {
+    const nextAds = mapMarketplacePayloadToAds(workspaceState || EMPTY_MARKETPLACE_STATE);
+    const selectedFromPayload = asString(workspaceState?.selectedId, "");
+    setAds(nextAds);
+    setSelectedId((current) => {
+      if (current && nextAds.some((ad) => ad.id === current)) {
+        return current;
+      }
+      if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) {
+        return selectedFromPayload;
+      }
+      return nextAds[0]?.id || "";
+    });
+  }, [workspaceState]);
 
   // Search/filter
   const [q, setQ] = useState("");
@@ -752,9 +839,8 @@ export default function AdzDashboard() {
       });
   }, [ads, q, status, onlyWholesaleReady]);
 
-  // Global dashboard analytics (mock)
-  const seriesImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
-  const seriesOrders = useMemo(() => [3, 4, 5, 4, 6, 7, 8, 7, 10, 9, 12, 13, 14, 15], []);
+  const seriesImpr = useMemo(() => buildTrendSeries(ads, "impressions7d"), [ads]);
+  const seriesOrders = useMemo(() => buildTrendSeries(ads, "orders7d"), [ads]);
 
   const retailWholesaleSplit = useMemo(() => {
     // simple derived counts from offers
@@ -1361,7 +1447,46 @@ export default function AdzDashboard() {
       />
 
       {/* Ad Builder Drawer */}
-      {drawer === "builder" ? <AdBuilder isDrawer={true} onClose={() => setDrawer(null)} /> : null}
+      {drawer === "builder" ? (
+        <AdBuilder
+          isDrawer={true}
+          onClose={() => setDrawer(null)}
+          pickerContext={
+            drawerAd
+              ? {
+                  dealId: drawerAd.id,
+                  creatorName: drawerAd.creator.name,
+                  creatorHandle: drawerAd.creator.handle,
+                  creatorAvatarUrl: drawerAd.creator.avatarUrl,
+                  creatorVerified: drawerAd.creator.verified,
+                  supplierId: `deal-supplier:${drawerAd.id}`,
+                  supplierName: drawerAd.supplier.name,
+                  supplierKind: drawerAd.supplier.category,
+                  supplierBrand: drawerAd.supplier.name,
+                  campaignId: `deal-campaign:${drawerAd.id}`,
+                  campaignName: drawerAd.campaignName,
+                  campaignBrand: drawerAd.supplier.name,
+                  campaignStatus: drawerAd.status === "Scheduled" ? "Paused" : "Active",
+                  startISO: drawerAd.startISO,
+                  endISO: drawerAd.endISO,
+                  offers: drawerAd.offers.map((offer) => ({
+                    id: offer.id,
+                    type: offer.type,
+                    name: offer.name,
+                    price: offer.price,
+                    basePrice: offer.basePrice,
+                    currency: offer.currency,
+                    stockLeft: offer.stockLeft,
+                    sold: 0,
+                    posterUrl: offer.posterUrl,
+                    videoUrl: offer.videoUrl,
+                    desktopMode: "modal",
+                  })),
+                }
+              : undefined
+          }
+        />
+      ) : null}
 
     </div >
   );

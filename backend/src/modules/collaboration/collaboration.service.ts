@@ -106,7 +106,7 @@ export class CollaborationService {
     const payload = await this.readDealzMarketplace(userId, 'seller_dealz_marketplace') as Record<string, unknown>;
     const [suppliers, creators, campaigns] = await Promise.all([
       this.loadDealzMarketplaceSuppliers(userId),
-      this.loadDealzMarketplaceCreators(),
+      this.loadDealzMarketplaceCreators(userId),
       this.loadDealzMarketplaceCampaigns(userId)
     ]);
 
@@ -1011,19 +1011,41 @@ export class CollaborationService {
     return [currentSeller, ...mapped.filter((seller) => seller.id !== currentSeller.id)];
   }
 
-  private async loadDealzMarketplaceCreators() {
-    const profiles = await this.prisma.creatorProfile.findMany({
-      take: 12,
-      orderBy: [{ followers: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
-    });
+  private async loadDealzMarketplaceCreators(userId: string) {
+    const [profiles, currentProfile] = await Promise.all([
+      this.prisma.creatorProfile.findMany({
+        take: 12,
+        orderBy: [{ followers: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
+      }),
+      this.prisma.creatorProfile.findUnique({
+        where: { userId }
+      })
+    ]);
 
-    return profiles.map((profile) => ({
+    const mapped = profiles.map((profile) => ({
       id: profile.userId,
       name: profile.name || profile.handle || 'Creator',
       handle: profile.handle ? `@${profile.handle.replace(/^@/, '')}` : '@creator',
       avatarUrl: '',
       verified: Boolean(profile.isKycVerified)
     }));
+
+    const currentMapped =
+      currentProfile
+        ? {
+          id: currentProfile.userId,
+          name: currentProfile.name || currentProfile.handle || 'Creator',
+          handle: currentProfile.handle ? `@${currentProfile.handle.replace(/^@/, '')}` : '@creator',
+          avatarUrl: '',
+          verified: Boolean(currentProfile.isKycVerified)
+        }
+        : null;
+
+    if (!currentMapped) {
+      return mapped;
+    }
+
+    return [currentMapped, ...mapped.filter((entry) => entry.id !== currentMapped.id)];
   }
 
   private async loadDealzMarketplaceCampaigns(userId: string) {
@@ -1115,6 +1137,17 @@ export class CollaborationService {
       metadata.live && typeof metadata.live === 'object' && !Array.isArray(metadata.live)
         ? metadata.live as Record<string, unknown>
         : null;
+    const relationCreatorName = campaign.creator?.creatorProfile?.name ?? campaign.creator?.email ?? '';
+    const relationCreatorHandle = campaign.creator?.creatorProfile?.handle
+      ? `@${String(campaign.creator.creatorProfile.handle).replace(/^@/, '')}`
+      : '';
+    const payloadCreatorHandle =
+      typeof creatorPayload.handle === 'string' && creatorPayload.handle.trim()
+        ? creatorPayload.handle.trim()
+        : '';
+    const normalizedPayloadCreatorHandle = payloadCreatorHandle
+      ? (payloadCreatorHandle.startsWith('@') ? payloadCreatorHandle : `@${payloadCreatorHandle}`)
+      : '';
 
     return {
       id: campaign.id,
@@ -1142,23 +1175,23 @@ export class CollaborationService {
       },
       creator: {
         name:
-          typeof creatorPayload.name === 'string' && creatorPayload.name.trim()
-            ? creatorPayload.name.trim()
-            : campaign.creator?.creatorProfile?.name ?? campaign.creator?.email ?? 'Creator',
+          relationCreatorName
+            ? relationCreatorName
+            : typeof creatorPayload.name === 'string' && creatorPayload.name.trim()
+              ? creatorPayload.name.trim()
+              : 'Creator',
         handle:
-          typeof creatorPayload.handle === 'string' && creatorPayload.handle.trim()
-            ? creatorPayload.handle.trim()
-            : campaign.creator?.creatorProfile?.handle
-              ? `@${String(campaign.creator.creatorProfile.handle).replace(/^@/, '')}`
-              : '@creator',
+          relationCreatorHandle || normalizedPayloadCreatorHandle || '@creator',
         avatarUrl:
           typeof creatorPayload.avatarUrl === 'string'
             ? creatorPayload.avatarUrl
             : '',
         verified:
-          typeof creatorPayload.verified === 'boolean'
-            ? creatorPayload.verified
-            : Boolean(campaign.creator?.creatorProfile?.isKycVerified)
+          relationCreatorHandle
+            ? Boolean(campaign.creator?.creatorProfile?.isKycVerified)
+            : typeof creatorPayload.verified === 'boolean'
+              ? creatorPayload.verified
+              : false
       },
       startISO: campaign.startAt?.toISOString?.() ?? campaign.startAt ?? new Date().toISOString(),
       endISO: campaign.endAt?.toISOString?.() ?? campaign.endAt ?? new Date().toISOString(),

@@ -662,9 +662,9 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 
 /** ------------------------------ Demo Data ------------------------------ */
 
-const CREATOR = {
-  name: "Amina K.",
-  handle: "@amina.dealz",
+const DEFAULT_CREATOR = {
+  name: "Creator",
+  handle: "@creator",
   avatarUrl:
     "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=512&auto=format&fit=crop",
   badge: "Host",
@@ -863,13 +863,13 @@ const UTM_PRESETS: UTMTemplate[] = [
     id: "utm1",
     name: "Host IG Story",
     description: "Strong host attribution for IG story swipes.",
-    params: { utm_source: "instagram", utm_medium: "story", utm_campaign: "host", utm_content: "amina" },
+    params: { utm_source: "instagram", utm_medium: "story", utm_campaign: "host", utm_content: "creator" },
   },
   {
     id: "utm2",
     name: "TikTok Bio Link",
     description: "Bio link tracking for TikTok host traffic.",
-    params: { utm_source: "tiktok", utm_medium: "bio", utm_campaign: "host", utm_content: "amina" },
+    params: { utm_source: "tiktok", utm_medium: "bio", utm_campaign: "host", utm_content: "creator" },
   },
   {
     id: "utm3",
@@ -1558,6 +1558,10 @@ export default function AdBuilder({
   initialAdId?: string;
   pickerContext?: {
     dealId?: string;
+    creatorName?: string;
+    creatorHandle?: string;
+    creatorAvatarUrl?: string;
+    creatorVerified?: boolean;
     supplierId?: string;
     supplierName?: string;
     supplierKind?: string;
@@ -1725,6 +1729,16 @@ export default function AdBuilder({
     },
     [contextCustomOffers, dealScope],
   );
+  const previewCreator = useMemo(() => {
+    const rawHandle = (pickerContext?.creatorHandle || "").trim();
+    const handle = rawHandle ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : DEFAULT_CREATOR.handle;
+    return {
+      name: (pickerContext?.creatorName || "").trim() || DEFAULT_CREATOR.name,
+      handle,
+      avatarUrl: (pickerContext?.creatorAvatarUrl || "").trim() || DEFAULT_CREATOR.avatarUrl,
+      verified: Boolean(pickerContext?.creatorVerified),
+    };
+  }, [pickerContext]);
   const dealScopeLocked = Boolean(dealScope);
 
   const defaultSupplierId = availableSuppliers[0]?.id || "p1";
@@ -3495,7 +3509,7 @@ export default function AdBuilder({
             <div className="mt-3">
               <ShoppableAdPreview
                 title={campaign?.name ? `${campaign.name}` : "Shoppable Adz"}
-                sharedByCreatorLabel={`Shared by ${CREATOR.handle} · Platforms: ${effectivePlatforms.length ? effectivePlatforms.join(" · ") : "—"}`}
+                sharedByCreatorLabel={`Shared by ${previewCreator.handle} · Platforms: ${effectivePlatforms.length ? effectivePlatforms.join(" · ") : "—"}`}
                 supplierName={supplier?.name}
                 campaignStatus={campaign?.status}
                 ctaHelperText={builder.ctaText}

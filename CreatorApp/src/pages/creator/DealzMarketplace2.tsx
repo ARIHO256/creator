@@ -3197,6 +3197,10 @@ export default function DealzMarketplace() {
           selected
             ? {
                 dealId: selected.id,
+                creatorName: selected.creator.name,
+                creatorHandle: selected.creator.handle,
+                creatorAvatarUrl: selected.creator.avatarUrl,
+                creatorVerified: selected.creator.verified,
                 supplierId: `deal-supplier:${selected.id}`,
                 supplierName: selected.supplier.name,
                 supplierKind: selected.supplier.category,
