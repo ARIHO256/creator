@@ -30,6 +30,7 @@ const RAW_API_BASE =
 
 const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
 const pendingGetRequests = new Map<string, Promise<unknown>>();
+let pendingAuthRefresh: Promise<boolean> | null = null;
 
 function buildUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -64,11 +65,43 @@ function shouldInvalidateSession(path: string, status: number) {
   if (status !== 401) return false;
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  if (normalizedPath === "/auth/me") return false;
   if (normalizedPath.startsWith("/auth/login")) return false;
   if (normalizedPath.startsWith("/auth/register")) return false;
   if (normalizedPath.startsWith("/auth/logout")) return false;
+  if (normalizedPath.startsWith("/auth/refresh")) return false;
   return true;
+}
+
+function shouldTryRefresh(path: string, status: number) {
+  if (status !== 401) return false;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (normalizedPath.startsWith("/auth/login")) return false;
+  if (normalizedPath.startsWith("/auth/register")) return false;
+  if (normalizedPath.startsWith("/auth/logout")) return false;
+  if (normalizedPath.startsWith("/auth/refresh")) return false;
+  return true;
+}
+
+async function refreshAuthSession() {
+  if (pendingAuthRefresh) {
+    return pendingAuthRefresh;
+  }
+
+  pendingAuthRefresh = fetch(buildUrl("/auth/refresh"), {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({})
+  })
+    .then((response) => response.ok)
+    .catch(() => false)
+    .finally(() => {
+      pendingAuthRefresh = null;
+    });
+
+  return pendingAuthRefresh;
 }
 
 async function parseResponse(response: Response) {
@@ -95,40 +128,52 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       headers.set("Content-Type", "application/json");
     }
 
-    const response = await fetch(requestUrl, {
-      ...options,
-      credentials: "include",
-      headers,
-      body: isJsonBody(body) ? JSON.stringify(body) : (body as BodyInit | null | undefined)
-    });
+    let attemptedRefresh = false;
 
-    const payload = await parseResponse(response);
+    while (true) {
+      const response = await fetch(requestUrl, {
+        ...options,
+        credentials: "include",
+        headers,
+        body: isJsonBody(body) ? JSON.stringify(body) : (body as BodyInit | null | undefined)
+      });
 
-    if (!response.ok) {
-      if (shouldInvalidateSession(path, response.status)) {
-        invalidateAuthSession();
-      }
+      const payload = await parseResponse(response);
 
-      throw new ApiError(
-        extractErrorMessage(payload, `Request failed with status ${response.status}`),
-        response.status,
-        payload
-      );
-    }
+      if (!response.ok) {
+        if (!attemptedRefresh && shouldTryRefresh(path, response.status)) {
+          const refreshed = await refreshAuthSession();
+          if (refreshed) {
+            attemptedRefresh = true;
+            continue;
+          }
+        }
 
-    if (payload && typeof payload === "object" && "success" in (payload as Record<string, unknown>)) {
-      const envelope = payload as ApiEnvelope<T>;
-      if (envelope.success === false) {
+        if (shouldInvalidateSession(path, response.status)) {
+          invalidateAuthSession();
+        }
+
         throw new ApiError(
-          extractErrorMessage(payload, "Request failed"),
-          envelope.error?.statusCode ?? response.status,
+          extractErrorMessage(payload, `Request failed with status ${response.status}`),
+          response.status,
           payload
         );
       }
-      return (envelope.data ?? null) as T;
-    }
 
-    return payload as T;
+      if (payload && typeof payload === "object" && "success" in (payload as Record<string, unknown>)) {
+        const envelope = payload as ApiEnvelope<T>;
+        if (envelope.success === false) {
+          throw new ApiError(
+            extractErrorMessage(payload, "Request failed"),
+            envelope.error?.statusCode ?? response.status,
+            payload
+          );
+        }
+        return (envelope.data ?? null) as T;
+      }
+
+      return payload as T;
+    }
   };
 
   if (method === "GET") {

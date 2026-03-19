@@ -200,6 +200,76 @@ function parseLocalDateTime(dateStr: string, timeStr: string) {
   return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
 }
 
+function isProtectedMediaAssetUrl(url: string) {
+  return /\/api\/media\/assets\/[^/]+\/content(?:$|\?)/.test(url);
+}
+
+function useResolvedMediaUrl(rawUrl?: string) {
+  const [resolvedUrl, setResolvedUrl] = useState(rawUrl || "");
+
+  useEffect(() => {
+    if (!rawUrl) {
+      setResolvedUrl("");
+      return;
+    }
+
+    let active = true;
+    let objectUrl: string | null = null;
+    setResolvedUrl(rawUrl);
+
+    if (!isProtectedMediaAssetUrl(rawUrl)) {
+      return () => {
+        active = false;
+      };
+    }
+
+    const load = async () => {
+      const fetchAsset = () =>
+        fetch(rawUrl, {
+          credentials: "include",
+        });
+
+      let response = await fetchAsset();
+      if (response.status === 401) {
+        const refresh = await fetch("/api/auth/refresh", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }).catch(() => null);
+
+        if (refresh?.ok) {
+          response = await fetchAsset();
+        }
+      }
+
+      if (!response.ok) return;
+      const blob = await response.blob();
+      objectUrl = URL.createObjectURL(blob);
+      if (active && objectUrl) {
+        setResolvedUrl(objectUrl);
+      }
+    };
+
+    void load();
+
+    return () => {
+      active = false;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [rawUrl]);
+
+  return resolvedUrl || rawUrl || "";
+}
+
+function floorToMinute(input: Date) {
+  const d = new Date(input);
+  d.setSeconds(0, 0);
+  return d;
+}
+
 function toDateInputValue(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
@@ -1550,6 +1620,23 @@ export default function AdBuilder({
   const [step, setStep] = useState<BuilderStep>("offer");
 
   const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
+  const builderContextKey = pickerContext?.dealId ? `deal:${pickerContext.dealId}` : "global";
+
+  const [customOffersByContext, setCustomOffersByContext] = useState<Record<string, Offer[]>>({});
+  const contextCustomOffers = useMemo(() => customOffersByContext[builderContextKey] || [], [builderContextKey, customOffersByContext]);
+  const [offerDraft, setOfferDraft] = useState<{
+    name: string;
+    type: OfferType;
+    price: string;
+    currency: "UGX" | "USD";
+    stockLeft: string;
+  }>({
+    name: "",
+    type: "PRODUCT",
+    price: "",
+    currency: "UGX",
+    stockLeft: "-1",
+  });
 
   const handleNext = () => {
     const currentIndex = stepKeys.indexOf(step);
@@ -1628,8 +1715,15 @@ export default function AdBuilder({
     [dealScope],
   );
   const availableOffers = useMemo(
-    () => (dealScope ? dealScope.offerEntries : OFFERS),
-    [dealScope],
+    () => {
+      const base = dealScope ? dealScope.offerEntries : OFFERS;
+      if (!contextCustomOffers.length) return base;
+      const byId = new Map<string, Offer>();
+      base.forEach((entry) => byId.set(entry.id, entry));
+      contextCustomOffers.forEach((entry) => byId.set(entry.id, entry));
+      return Array.from(byId.values());
+    },
+    [contextCustomOffers, dealScope],
   );
   const dealScopeLocked = Boolean(dealScope);
 
@@ -1715,7 +1809,6 @@ export default function AdBuilder({
     [builder.selectedOfferIds, scopedOffers, availableOffers],
   );
   const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
-  const builderContextKey = pickerContext?.dealId ? `deal:${pickerContext.dealId}` : "global";
 
   useEffect(() => {
     if (!dealScopeLocked) return;
@@ -1782,6 +1875,11 @@ export default function AdBuilder({
 
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);
+  const fallbackHeroImageUrl = ASSETS[0]?.url || "";
+  const resolvedHeroImageUrl = useResolvedMediaUrl(heroImageAsset?.url || fallbackHeroImageUrl);
+  const resolvedHeroVideoPosterUrl = useResolvedMediaUrl(
+    heroVideoAsset?.posterUrl || heroImageAsset?.url || fallbackHeroImageUrl
+  );
 
   // Build per-offer poster/video urls (prefer picked assets, fallback to catalog)
   const perOfferPosterUrl = useMemo(() => {
@@ -1812,16 +1910,19 @@ export default function AdBuilder({
     const selectedCampaign = availableCampaigns.find((entry) => entry.id === campaignId);
     if (!selectedCampaign) return { ok: false, error: "Invalid campaign selected" };
 
-    const campaignStart = new Date(selectedCampaign.startsAtISO);
-    const campaignEnd = new Date(selectedCampaign.endsAtISO);
+    // Compare at minute precision to match the date/time inputs (which have no seconds).
+    const campaignStart = floorToMinute(new Date(selectedCampaign.startsAtISO));
+    const campaignEnd = floorToMinute(new Date(selectedCampaign.endsAtISO));
+    const startMinute = floorToMinute(start);
+    const endMinute = floorToMinute(end);
 
-    if (start < campaignStart) {
+    if (startMinute < campaignStart) {
       return { ok: false, error: `Schedule starts before campaign window (${fmtLocal(campaignStart)})` };
     }
-    if (end > campaignEnd) {
+    if (endMinute > campaignEnd) {
       return { ok: false, error: `Schedule ends after campaign window (${fmtLocal(campaignEnd)})` };
     }
-    if (start >= end) {
+    if (startMinute >= endMinute) {
       return { ok: false, error: "End time must be after start time" };
     }
     return { ok: true };
@@ -1870,7 +1971,7 @@ export default function AdBuilder({
       kind: "hero",
       title: "Intro video (creator)",
       videoUrl: heroVideoAsset.url,
-      posterUrl: heroVideoAsset.posterUrl || heroImageAsset?.url,
+      posterUrl: resolvedHeroVideoPosterUrl || resolvedHeroImageUrl,
       desktopMode: heroVideoAsset.desktopMode || "fullscreen",
     });
     setViewerOpen(true);
@@ -1965,6 +2066,7 @@ export default function AdBuilder({
           step,
           builder,
           externalAssets,
+          customOffersByContext,
         }),
       );
     } catch {
@@ -2088,6 +2190,9 @@ export default function AdBuilder({
             if (saved?.builder) setBuilder(saved.builder);
             if (saved?.step) setStep(saved.step);
             if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
+            if (saved?.customOffersByContext && typeof saved.customOffersByContext === "object") {
+              setCustomOffersByContext(saved.customOffersByContext as Record<string, Offer[]>);
+            }
           }
         }
       } catch {
@@ -2149,6 +2254,70 @@ export default function AdBuilder({
       const nextPrimary = nextIds.includes(prev.primaryOfferId) ? prev.primaryOfferId : nextIds[0] || "";
       return { ...prev, selectedOfferIds: nextIds, primaryOfferId: nextPrimary };
     });
+  }
+
+  function addOfferToCampaign() {
+    const name = offerDraft.name.trim();
+    if (!name) {
+      setToast("Offer name is required.");
+      return;
+    }
+
+    const price = Number(offerDraft.price);
+    if (!Number.isFinite(price) || price < 0) {
+      setToast("Enter a valid offer price.");
+      return;
+    }
+
+    const parsedStock = Number.parseInt(offerDraft.stockLeft, 10);
+    const stockLeft = Number.isFinite(parsedStock) ? parsedStock : -1;
+    const offerId = `o_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    const fallbackPoster =
+      supplier?.avatarUrl ||
+      heroImageAsset?.url ||
+      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop";
+
+    const nextOffer: Offer = {
+      id: offerId,
+      supplierId: builder.supplierId,
+      campaignId: builder.campaignId,
+      type: offerDraft.type,
+      name,
+      price,
+      currency: offerDraft.currency,
+      stockLeft,
+      sold: 0,
+      catalogPosterUrl: fallbackPoster,
+      catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    };
+
+    setCustomOffersByContext((prev) => {
+      const current = prev[builderContextKey] || [];
+      return {
+        ...prev,
+        [builderContextKey]: [nextOffer, ...current],
+      };
+    });
+
+    const autoSelect = builder.selectedOfferIds.length < 6;
+    setBuilder((prev) => {
+      const selectedOfferIds = autoSelect ? [...prev.selectedOfferIds, offerId] : prev.selectedOfferIds;
+      const primaryOfferId = prev.primaryOfferId || (autoSelect ? offerId : prev.primaryOfferId);
+      return {
+        ...prev,
+        selectedOfferIds,
+        primaryOfferId,
+      };
+    });
+
+    setOfferDraft({
+      name: "",
+      type: "PRODUCT",
+      price: "",
+      currency: offerDraft.currency,
+      stockLeft: offerDraft.stockLeft,
+    });
+    setToast(autoSelect ? "Offer added to this campaign." : "Offer added. Remove one selected item to include it.");
   }
 
   // recomputeSchedule removed for simple schedule UI        ...next,
@@ -2586,6 +2755,47 @@ export default function AdBuilder({
                   </Pill>
                 </div>
 
+                <div className="mt-3 rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                  <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Quick add offer</div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-5">
+                    <input
+                      className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 md:col-span-2"
+                      value={offerDraft.name}
+                      onChange={(e) => setOfferDraft((prev) => ({ ...prev, name: e.target.value }))}
+                      placeholder="Offer name"
+                    />
+                    <select
+                      className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                      value={offerDraft.type}
+                      onChange={(e) =>
+                        setOfferDraft((prev) => ({
+                          ...prev,
+                          type: e.target.value === "SERVICE" ? "SERVICE" : "PRODUCT",
+                        }))
+                      }
+                    >
+                      <option value="PRODUCT" className="dark:bg-slate-800">
+                        Product
+                      </option>
+                      <option value="SERVICE" className="dark:bg-slate-800">
+                        Service
+                      </option>
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                      value={offerDraft.price}
+                      onChange={(e) => setOfferDraft((prev) => ({ ...prev, price: e.target.value }))}
+                      placeholder="Price"
+                    />
+                    <Btn tone="primary" onClick={addOfferToCampaign} left={<Plus className="h-4 w-4" />}>
+                      Add offer
+                    </Btn>
+                  </div>
+                </div>
+
                 <div className="mt-3 grid grid-cols-1 gap-2">
                   {scopedOffers.map((o) => {
                     const selected = builder.selectedOfferIds.includes(o.id);
@@ -2656,7 +2866,7 @@ export default function AdBuilder({
                     </span>
                   </div>
                   <div className="mt-3 overflow-hidden rounded-2xl ring-1 ring-neutral-200 dark:ring-slate-800">
-                    <img src={heroImageAsset?.url || "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop"} alt="Hero" className="h-40 w-full object-cover" />
+                    <img src={resolvedHeroImageUrl || "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop"} alt="Hero" className="h-40 w-full object-cover" />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_image")} left={<Search className="h-4 w-4" />}>
@@ -3291,8 +3501,12 @@ export default function AdBuilder({
                 ctaHelperText={builder.ctaText}
                 primaryCtaLabel={builder.primaryCtaLabel}
                 secondaryCtaLabel={builder.secondaryCtaLabel}
-                heroImageUrl={heroImageAsset?.url || ASSETS[0].url}
-                heroIntroVideo={heroVideoAsset?.kind === "video" ? { url: heroVideoAsset.url, poster: heroVideoAsset.posterUrl } : undefined}
+                heroImageUrl={resolvedHeroImageUrl || ASSETS[0].url}
+                heroIntroVideo={
+                  heroVideoAsset?.kind === "video"
+                    ? { url: heroVideoAsset.url, poster: resolvedHeroVideoPosterUrl || heroVideoAsset.posterUrl }
+                    : undefined
+                }
                 offers={selectedOffers}
                 primaryOfferId={builder.primaryOfferId}
                 perOfferPosterUrl={perOfferPosterUrl}

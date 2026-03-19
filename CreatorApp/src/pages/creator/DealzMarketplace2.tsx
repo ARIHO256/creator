@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
@@ -733,6 +733,7 @@ function AdBuilderDrawer({
   return (
     <Drawer open={open} onClose={onClose} title="Ad Builder" width="w-full max-w-[1240px]" zIndex="z-[100]">
       <AdBuilder
+        key={pickerContext?.dealId || adId || "ad-builder"}
         initialAdId={adId}
         pickerContext={pickerContext}
       />
@@ -2180,6 +2181,7 @@ function NewDealzWizard({
 /** ------------------------------ Page ------------------------------ */
 
 export default function DealzMarketplace() {
+  const pickerReturnDealIdRef = useRef<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -2225,6 +2227,7 @@ export default function DealzMarketplace() {
     if (!isPickerReturn) return;
     const returnDealId = sp.get("dealId") || "";
     if (returnDealId) {
+      pickerReturnDealIdRef.current = returnDealId;
       setSelectedId(returnDealId);
     }
 
@@ -2267,7 +2270,15 @@ export default function DealzMarketplace() {
     setDealz(normalized.deals);
     setCart(normalized.cart);
     setLiveCart(normalized.liveCart);
+    const forcedDealId = pickerReturnDealIdRef.current;
+    const forcedDealExists = Boolean(forcedDealId && normalized.deals.some((deal) => deal.id === forcedDealId));
+    if (forcedDealExists) {
+      pickerReturnDealIdRef.current = null;
+    }
     setSelectedId((current) => {
+      if (forcedDealId && forcedDealExists) {
+        return forcedDealId;
+      }
       if (current && normalized.deals.some((deal) => deal.id === current)) {
         return current;
       }
