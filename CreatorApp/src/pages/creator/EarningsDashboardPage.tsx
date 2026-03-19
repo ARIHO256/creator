@@ -7,13 +7,19 @@
 // 4) Payout actions: Request payout, Setup / edit payout method.
 // Premium extras: Forecast card, Tax/export tools.
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { PayoutMethodsDialog } from "../../shell/PayoutMethodsDialog";
-import { useNotification } from "../../contexts/NotificationContext";
+import { useApiResource } from "../../hooks/useApiResource";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
+import {
+  creatorApi,
+  type ContractRecord,
+  type EarningsSummary,
+  type FinancePayoutRecord
+} from "../../lib/creatorApi";
 import { CircularProgress } from "@mui/material";
 
 type BreakdownRow = {
@@ -50,83 +56,226 @@ type Payout = {
   reference: string;
 };
 
-// Monthly earnings (demo)
-const monthlyEarnings = [
-  { label: "Aug 2025", total: 3400 },
-  { label: "Sep 2025", total: 4200 },
-  { label: "Oct 2025", total: 5200 }
-];
-
-// By campaign (demo)
-const campaignEarnings = [
-  { label: "Autumn Beauty Flash", total: 3200 },
-  { label: "Tech Friday Mega Live", total: 2800 },
-  { label: "Faith & Wellness Morning", total: 1600 }
-];
-
-// By seller (demo)
-const sellerEarnings = [
-  { label: "GlowUp Hub", total: 2800 },
-  { label: "GadgetMart Africa", total: 2500 },
-  { label: "Grace Living Store", total: 1500 }
-];
-
-// Composition (pie-style breakdown)
-const earningsComposition = {
-  flatFees: 4800,
-  commission: 2800,
-  bonuses: 600
+type EarningsDataset = {
+  summary: Summary;
+  payouts: FinancePayoutRecord[];
+  contracts: ContractRecord[];
 };
 
-const payouts = [
-  {
-    id: "P-2025-010",
-    date: "Oct 12, 2025",
-    amount: 820.5,
-    currency: "USD",
-    status: "Paid",
-    method: "Bank transfer",
-    reference: "BNK-847392"
+const INITIAL_EARNINGS_DATASET: EarningsDataset = {
+  summary: {
+    available: 0,
+    pending: 0,
+    lifetime: 0
   },
-  {
-    id: "P-2025-009",
-    date: "Oct 05, 2025",
-    amount: 420.0,
-    currency: "USD",
-    status: "Processing",
-    method: "Mobile money",
-    reference: "MOMO-239475"
-  },
-  {
-    id: "P-2025-008",
-    date: "Sep 28, 2025",
-    amount: 600.0,
-    currency: "USD",
-    status: "Failed",
-    method: "PayPal",
-    reference: "PP-998233"
+  payouts: [],
+  contracts: []
+};
+
+function toNumber(value: unknown) {
+  const next = Number(value);
+  return Number.isFinite(next) ? next : 0;
+}
+
+function parseDate(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
   }
-];
+  const parsed = value ? new Date(String(value)) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+}
+
+function monthLabel(date: Date) {
+  return date.toLocaleString("en", { month: "short", year: "numeric" });
+}
+
+function getRangeStart(range: string) {
+  const now = new Date();
+  if (range === "year-to-date") {
+    return new Date(now.getFullYear(), 0, 1);
+  }
+  if (range === "last-12-months") {
+    return new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  }
+  return new Date(now.getFullYear(), now.getMonth() - 2, 1);
+}
+
+function formatPayoutDate(value: unknown) {
+  const date = parseDate(value);
+  return date
+    ? date.toLocaleDateString("en", { month: "short", day: "2-digit", year: "numeric" })
+    : "—";
+}
+
+function normalizePayoutStatus(value: string | null | undefined) {
+  const status = String(value || "").toUpperCase();
+  if (status === "PAID") return "Paid";
+  if (status === "PENDING" || status === "AVAILABLE") return "Processing";
+  if (status === "FAILED" || status === "CANCELLED") return "Failed";
+  return "Processing";
+}
+
+function readStringMetadata(payload: Record<string, unknown> | undefined, key: string) {
+  const value = payload?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
 
 function EarningsDashboardPage() {
   const navigate = useNavigate();
-  const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
 
   const [viewMode, setViewMode] = useState("month"); // month | campaign | seller
   const [dateRange, setDateRange] = useState("last-3-months");
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
-
-  // Summary values (demo data)
-  const summary = {
-    available: 1243.5,
-    pending: 620.75,
-    lifetime: 18240.25
-  };
-
   const [payoutStatusFilter, setPayoutStatusFilter] = useState("All");
 
+  const { data: dataset } = useApiResource<EarningsDataset>({
+    initialData: INITIAL_EARNINGS_DATASET,
+    loader: async () => {
+      const [summary, payouts, contracts] = await Promise.all([
+        creatorApi.earningsSummary(),
+        creatorApi.payouts(),
+        creatorApi.contracts()
+      ]);
+      return {
+        summary: {
+          available: toNumber((summary as EarningsSummary).available),
+          pending: toNumber((summary as EarningsSummary).pending),
+          lifetime: toNumber((summary as EarningsSummary).lifetime)
+        },
+        payouts,
+        contracts
+      };
+    }
+  });
 
+  const summary = dataset.summary;
+  const rangeStart = useMemo(() => getRangeStart(dateRange), [dateRange]);
+  const contractRows = useMemo(() => {
+    return dataset.contracts
+      .map((contract) => {
+        const metadata =
+          contract.metadata && typeof contract.metadata === "object" && !Array.isArray(contract.metadata)
+            ? (contract.metadata as Record<string, unknown>)
+            : undefined;
+        const createdAt = parseDate(contract.updatedAt || contract.createdAt);
+        return {
+          campaign: String(contract.campaignName || contract.campaign || "Unassigned campaign"),
+          seller: String(contract.sellerName || contract.seller || contract.brand || "Unassigned seller"),
+          amount: Math.max(0, toNumber(contract.value)),
+          createdAt,
+          metadata
+        };
+      })
+      .filter((record) => record.amount > 0 && record.createdAt);
+  }, [dataset.contracts]);
+
+  const rangedContracts = useMemo(
+    () => contractRows.filter((record) => (record.createdAt as Date) >= rangeStart),
+    [contractRows, rangeStart]
+  );
+
+  const monthlyEarnings = useMemo(() => {
+    const grouped = new Map<string, { label: string; total: number; sortAt: number }>();
+    rangedContracts.forEach((record) => {
+      const date = record.createdAt as Date;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const entry = grouped.get(key) ?? {
+        label: monthLabel(date),
+        total: 0,
+        sortAt: new Date(date.getFullYear(), date.getMonth(), 1).getTime()
+      };
+      entry.total += record.amount;
+      grouped.set(key, entry);
+    });
+    const rows = Array.from(grouped.values())
+      .sort((left, right) => left.sortAt - right.sortAt)
+      .map((entry) => ({ label: entry.label, total: Number(entry.total.toFixed(2)) }));
+    return rows.length > 0 ? rows : [{ label: "No records", total: 0 }];
+  }, [rangedContracts]);
+
+  const campaignEarnings = useMemo(() => {
+    const grouped = new Map<string, number>();
+    rangedContracts.forEach((record) => {
+      grouped.set(record.campaign, (grouped.get(record.campaign) ?? 0) + record.amount);
+    });
+    const rows = Array.from(grouped.entries())
+      .map(([label, total]) => ({ label, total: Number(total.toFixed(2)) }))
+      .sort((left, right) => right.total - left.total)
+      .slice(0, 8);
+    return rows.length > 0 ? rows : [{ label: "No records", total: 0 }];
+  }, [rangedContracts]);
+
+  const sellerEarnings = useMemo(() => {
+    const grouped = new Map<string, number>();
+    rangedContracts.forEach((record) => {
+      grouped.set(record.seller, (grouped.get(record.seller) ?? 0) + record.amount);
+    });
+    const rows = Array.from(grouped.entries())
+      .map(([label, total]) => ({ label, total: Number(total.toFixed(2)) }))
+      .sort((left, right) => right.total - left.total)
+      .slice(0, 8);
+    return rows.length > 0 ? rows : [{ label: "No records", total: 0 }];
+  }, [rangedContracts]);
+
+  const earningsComposition = useMemo(() => {
+    const composition: EarningsComposition = {
+      flatFees: 0,
+      commission: 0,
+      bonuses: 0
+    };
+    rangedContracts.forEach((record) => {
+      const modelText = [
+        readStringMetadata(record.metadata, "compensationModel"),
+        readStringMetadata(record.metadata, "collabMode"),
+        readStringMetadata(record.metadata, "paymentModel"),
+        readStringMetadata(record.metadata, "pricingModel")
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (modelText.includes("bonus")) {
+        composition.bonuses += record.amount;
+      } else if (modelText.includes("commission")) {
+        composition.commission += record.amount;
+      } else {
+        composition.flatFees += record.amount;
+      }
+    });
+
+    const composedTotal = composition.flatFees + composition.commission + composition.bonuses;
+    if (composedTotal === 0 && summary.lifetime > 0) {
+      composition.flatFees = summary.lifetime;
+    }
+    return composition;
+  }, [rangedContracts, summary.lifetime]);
+
+  const payoutRows = useMemo(() => {
+    return dataset.payouts.map((payout) => {
+      const metadata =
+        payout.metadata && typeof payout.metadata === "object" && !Array.isArray(payout.metadata)
+          ? (payout.metadata as Record<string, unknown>)
+          : undefined;
+      const fallbackReference = payout.id.slice(0, 12).toUpperCase();
+      return {
+        id: payout.id,
+        date: formatPayoutDate(payout.createdAt),
+        amount: toNumber(payout.amount),
+        currency: String(payout.currency || "USD"),
+        status: normalizePayoutStatus(payout.status),
+        method:
+          readStringMetadata(metadata, "method")
+          || readStringMetadata(metadata, "provider")
+          || readStringMetadata(metadata, "channel")
+          || "Wallet",
+        reference:
+          readStringMetadata(metadata, "reference")
+          || readStringMetadata(metadata, "transactionRef")
+          || readStringMetadata(metadata, "payoutRef")
+          || fallbackReference
+      } satisfies Payout;
+    });
+  }, [dataset.payouts]);
 
   // Forecast: simple extrapolation based on monthly data
   const forecast = useMemo(() => {
@@ -140,12 +289,12 @@ function EarningsDashboardPage() {
       projected,
       growth
     };
-  }, []);
+  }, [monthlyEarnings]);
 
   const filteredPayouts = useMemo(() => {
-    if (payoutStatusFilter === "All") return payouts;
-    return payouts.filter(p => p.status === payoutStatusFilter);
-  }, [payoutStatusFilter]);
+    if (payoutStatusFilter === "All") return payoutRows;
+    return payoutRows.filter(p => p.status === payoutStatusFilter);
+  }, [payoutRows, payoutStatusFilter]);
 
   const breakdownData =
     viewMode === "campaign"

@@ -1,4 +1,4 @@
-import { api } from "./api";
+import { ApiError, api } from "./api";
 
 function withQuery(path: string, params?: Record<string, string | number | boolean | undefined | null>) {
   if (!params) return path;
@@ -156,6 +156,17 @@ export type CollaborationCampaignRecord = {
   metadata?: Record<string, unknown>;
   createdAt?: string | null;
   updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type DealzMarketplaceWorkspaceResponse = {
+  deals?: Array<Record<string, unknown>>;
+  suppliers?: Array<Record<string, unknown>>;
+  creators?: Array<Record<string, unknown>>;
+  selectedId?: string;
+  cart?: Record<string, number>;
+  liveCart?: Record<string, number>;
+  templates?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -404,6 +415,29 @@ export type LiveReplayRecord = {
   [key: string]: unknown;
 };
 
+export type LiveBuilderRecord = {
+  id: string;
+  sessionId?: string | null;
+  status?: string | null;
+  published?: boolean;
+  publishedAt?: string | null;
+  data?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type LiveCampaignGiveawayRecord = {
+  id: string;
+  campaignId?: string | null;
+  status?: string | null;
+  title?: string | null;
+  data?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
 export type WorkspaceRolesResponse = {
   workspace?: Record<string, unknown>;
   roles?: Array<Record<string, unknown>>;
@@ -465,12 +499,97 @@ export type UploadSessionRecord = {
   createdAt?: string | null;
 };
 
+export type MyDayDashboardResponse = {
+  header?: {
+    isLiveRunning?: boolean;
+    liveViewers?: number;
+    statusLabel?: string;
+  };
+  recentLive?: {
+    peakViewers?: number;
+    conversionRate?: number;
+    sales?: number;
+    currency?: string;
+  } | null;
+  kpis?: {
+    lives?: number;
+    tasks?: number;
+    proposals?: number;
+    approvals?: number;
+  };
+  smartPlan?: Array<{
+    id: string;
+    title: string;
+    context?: string;
+    duration?: string;
+    impact?: string;
+  }>;
+  timeline?: Array<{
+    time: string;
+    label: string;
+    type: "light" | "medium" | "live";
+  }>;
+  nextLive?: {
+    title?: string;
+    startsAtISO?: string | null;
+    timeLabel?: string;
+  } | null;
+  crew?: {
+    title?: string;
+    rows?: Array<{
+      role: string;
+      name: string;
+      status: string;
+    }>;
+  };
+  tasks?: Array<{
+    id: string;
+    title: string;
+    deal: string;
+    due: string;
+    status: "open" | "done";
+    type: string;
+    campaign: string;
+  }>;
+  proposals?: Array<{
+    id: string;
+    brand: string;
+    title?: string;
+    budget?: string;
+    status?: string;
+  }>;
+  earnings?: {
+    today?: number;
+    todayFlat?: number;
+    todayCommission?: number;
+    todaySpark?: number[];
+    last7?: number;
+    last7Avg?: number;
+    last7Spark?: number[];
+    mtd?: number;
+    mtdGoal?: number;
+    mtdSpark?: number[];
+    currency?: string;
+    available?: number;
+    pending?: number;
+    lifetime?: number;
+  };
+  counts?: {
+    dueToday?: number;
+    completedToday?: number;
+  };
+  lastUpdatedAt?: string;
+};
+
 export const creatorApi = {
   dashboardFeed() {
     return api.get<Record<string, unknown>>("/dashboard/feed");
   },
   creatorHome() {
     return api.get<Record<string, unknown>>("/dashboard/creator-home");
+  },
+  myDay() {
+    return api.get<MyDayDashboardResponse>("/dashboard/my-day");
   },
   sellers(params?: { limit?: number; offset?: number }) {
     return api.get<PublicSellerRecord[]>(withQuery("/sellers", params));
@@ -508,6 +627,19 @@ export const creatorApi = {
   campaigns() {
     return api.get<CollaborationCampaignRecord[]>("/campaigns");
   },
+  dealzMarketplace() {
+    return api.get<DealzMarketplaceWorkspaceResponse>("/campaigns/dealz-marketplace");
+  },
+  async updateDealzMarketplace(payload: Record<string, unknown>) {
+    try {
+      return await api.patch<DealzMarketplaceWorkspaceResponse>("/campaigns/dealz-marketplace", payload);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        return api.patch<DealzMarketplaceWorkspaceResponse>("/campaigns/dealz-marketplace", { payload });
+      }
+      throw error;
+    }
+  },
   proposals() {
     return api.get<ProposalRecord[]>("/proposals");
   },
@@ -537,6 +669,9 @@ export const creatorApi = {
   },
   task(id: string) {
     return api.get<TaskRecord>(`/tasks/${id}`);
+  },
+  updateTask(id: string, body: Record<string, unknown>) {
+    return api.patch<TaskRecord>(`/tasks/${id}`, body);
   },
   assets() {
     return api.get<AssetRecord[]>("/assets");
@@ -573,6 +708,18 @@ export const creatorApi = {
   },
   liveSessions() {
     return api.get<LiveSessionRecord[]>("/live/sessions");
+  },
+  liveBuilder(id: string) {
+    return api.get<LiveBuilderRecord>(`/live/builder/${encodeURIComponent(id)}`);
+  },
+  saveLiveBuilder(body: Record<string, unknown>) {
+    return api.post<LiveBuilderRecord>("/live/builder/save", body);
+  },
+  publishLiveBuilder(id: string, body: Record<string, unknown>) {
+    return api.post<LiveBuilderRecord>(`/live/builder/${encodeURIComponent(id)}/publish`, body);
+  },
+  liveCampaignGiveaways(campaignId: string) {
+    return api.get<LiveCampaignGiveawayRecord[]>(`/live/campaigns/${encodeURIComponent(campaignId)}/giveaways`);
   },
   liveScheduleWorkspace() {
     return api.get<Record<string, unknown>>("/live/schedule-workspace");

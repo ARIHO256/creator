@@ -971,19 +971,35 @@ export class DashboardService {
   }
 
   async myDay(userId: string) {
-    return this.readReadModel(userId, 'my-day', () => this.computeMyDay(userId));
+    return this.readReadModel(userId, 'my-day-shell', () => this.computeMyDay(userId));
   }
 
   private async computeMyDay(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { creatorProfile: true }
+    });
     const activeRole = user?.role ?? UserRole.CREATOR;
     const tasksPromise = this.prisma.task.findMany({
       where: {
         OR: [{ assigneeUserId: userId }, { createdByUserId: userId }]
       },
-      take: 5,
+      include: {
+        campaign: {
+          include: {
+            seller: true
+          }
+        }
+      },
+      take: 12,
       orderBy: { updatedAt: 'desc' }
     });
+
+    const now = new Date();
+    const todayStart = this.startOfDay(now);
+    const tomorrowStart = this.addDays(todayStart, 1);
+    const last7Start = this.addDays(todayStart, -6);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     if (activeRole === UserRole.PROVIDER) {
       const [tasks, bookings, consultations] = await Promise.all([
@@ -1001,39 +1017,527 @@ export class DashboardService {
       ]);
 
       return {
-        agenda: [
+        header: {
+          isLiveRunning: false,
+          liveViewers: 0,
+          statusLabel: 'Online'
+        },
+        recentLive: null,
+        kpis: {
+          lives: 0,
+          tasks: tasks.filter((task) => !['COMPLETED', 'APPROVED'].includes(String(task.status || ''))).length,
+          proposals: 0,
+          approvals: 0
+        },
+        smartPlan: [],
+        timeline: [
           ...bookings.map((booking) => `Booking ${booking.id} (${booking.status})`),
           ...consultations.map((consultation) => `Consultation ${consultation.id} (${consultation.status})`)
-        ],
+        ]
+          .slice(0, 5)
+          .map((label, index) => ({
+            time: index === 0 ? 'Now' : `${index + 1}:00`,
+            label,
+            type: 'medium'
+          })),
+        nextLive: null,
+        crew: {
+          title: 'No scheduled live session',
+          rows: []
+        },
         tasks: tasks.map((task) => ({
           id: task.id,
           title: task.title,
-          status: task.status,
-          dueAt: task.dueAt
-        }))
+          deal: 'Provider workflow',
+          due: this.formatMyDayDueLabel(task.dueAt),
+          status: ['COMPLETED', 'APPROVED'].includes(String(task.status || '')) ? 'done' : 'open',
+          type: this.resolveMyDayTaskType(task),
+          campaign: this.readString(task.metadata, 'campaignTitle') || 'General'
+        })),
+        proposals: [],
+        earnings: {
+          today: 0,
+          todayFlat: 0,
+          todayCommission: 0,
+          todaySpark: [0, 0, 0, 0, 0, 0, 0],
+          last7: 0,
+          last7Avg: 0,
+          last7Spark: [0, 0, 0, 0, 0, 0, 0],
+          mtd: 0,
+          mtdGoal: 0,
+          mtdSpark: [0, 0, 0, 0, 0, 0, 0],
+          currency: 'USD'
+        },
+        lastUpdatedAt: now.toISOString()
       };
     }
 
-    const [tasks, campaigns] = await Promise.all([
+    const [
+      tasks,
+      campaigns,
+      proposals,
+      liveSessions,
+      taskOpenCount,
+      taskDueTodayCount,
+      taskCompletedTodayCount,
+      proposalOpenCount,
+      proposalApprovalCount,
+      taskApprovalCount,
+      groupedTransactions,
+      recentTransactions,
+      monthTransactions,
+      workspace
+    ] = await Promise.all([
       tasksPromise,
       this.prisma.campaign.findMany({
         where: activeRole === UserRole.SELLER
           ? { seller: { userId } }
           : { OR: [{ creatorId: userId }, { createdByUserId: userId }] },
+        include: {
+          seller: true
+        },
+        take: 20,
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.prisma.proposal.findMany({
+        where: {
+          creatorId: userId,
+          status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING', 'ACCEPTED'] }
+        },
+        include: {
+          seller: true,
+          campaign: true
+        },
         take: 5,
         orderBy: { updatedAt: 'desc' }
+      }),
+      this.prisma.liveSession.findMany({
+        where: { userId },
+        take: 12,
+        orderBy: { updatedAt: 'desc' }
+      }),
+      this.prisma.task.count({
+        where: {
+          OR: [{ assigneeUserId: userId }, { createdByUserId: userId }],
+          status: { notIn: ['COMPLETED', 'APPROVED'] }
+        }
+      }),
+      this.prisma.task.count({
+        where: {
+          OR: [{ assigneeUserId: userId }, { createdByUserId: userId }],
+          dueAt: { gte: todayStart, lt: tomorrowStart },
+          status: { notIn: ['COMPLETED', 'APPROVED'] }
+        }
+      }),
+      this.prisma.task.count({
+        where: {
+          OR: [{ assigneeUserId: userId }, { createdByUserId: userId }],
+          updatedAt: { gte: todayStart, lt: tomorrowStart },
+          status: { in: ['COMPLETED', 'APPROVED'] }
+        }
+      }),
+      this.prisma.proposal.count({
+        where: {
+          creatorId: userId,
+          status: { in: ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'] }
+        }
+      }),
+      this.prisma.proposal.count({
+        where: {
+          creatorId: userId,
+          status: { in: ['IN_REVIEW'] }
+        }
+      }),
+      this.prisma.task.count({
+        where: {
+          OR: [{ assigneeUserId: userId }, { createdByUserId: userId }],
+          status: { in: ['IN_REVIEW'] }
+        }
+      }),
+      this.prisma.transaction.groupBy({
+        by: ['status'],
+        where: {
+          userId,
+          status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] }
+        },
+        _sum: { amount: true }
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          userId,
+          status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] },
+          createdAt: { gte: last7Start }
+        },
+        select: {
+          amount: true,
+          createdAt: true,
+          type: true
+        },
+        orderBy: { createdAt: 'asc' }
+      }),
+      this.prisma.transaction.findMany({
+        where: {
+          userId,
+          status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] },
+          createdAt: { gte: monthStart }
+        },
+        select: {
+          amount: true,
+          createdAt: true
+        },
+        orderBy: { createdAt: 'asc' }
+      }),
+      this.prisma.workspace.findUnique({
+        where: { ownerUserId: userId },
+        include: {
+          crewSessions: {
+            include: {
+              assignments: {
+                include: {
+                  member: true
+                }
+              }
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: 1
+          }
+        }
       })
     ]);
 
+    const creatorName = user?.creatorProfile?.name || 'Creator';
+    const campaignsById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
+    const normalizedSessions = liveSessions.map((session) => this.normalizeWorkspaceSession(session, creatorName, campaigns));
+    const liveSession = normalizedSessions.find((session) => session.status === 'Live') ?? null;
+    const nextSession = normalizedSessions
+      .filter((session) => session.status === 'Live' || session.status === 'Upcoming' || session.status === 'Ready')
+      .sort((left, right) => new Date(left.startISO).getTime() - new Date(right.startISO).getTime())[0] ?? null;
+    const recentLive = normalizedSessions
+      .filter((session) => session.status === 'Ended')
+      .sort((left, right) => new Date(right.endISO).getTime() - new Date(left.endISO).getTime())[0] ?? null;
+
+    const serializedTasks = tasks
+      .slice()
+      .sort((left, right) => {
+        const leftValue = left.dueAt?.getTime() ?? left.updatedAt.getTime();
+        const rightValue = right.dueAt?.getTime() ?? right.updatedAt.getTime();
+        return leftValue - rightValue;
+      })
+      .map((task) => {
+        const campaign = task.campaign;
+        const campaignTitle = campaign?.title || this.readString(task.metadata, 'campaignTitle') || 'General';
+        const brandName = campaign?.seller?.displayName || campaign?.seller?.name || 'Campaign task';
+        return {
+          id: task.id,
+          title: task.title,
+          deal: `${brandName} · ${campaignTitle}`,
+          due: this.formatMyDayDueLabel(task.dueAt),
+          status: ['COMPLETED', 'APPROVED'].includes(String(task.status || '')) ? 'done' : 'open',
+          type: this.resolveMyDayTaskType(task),
+          campaign: campaignTitle
+        };
+      });
+
+    const openTasks = serializedTasks.filter((task) => task.status === 'open');
+    const serializedProposals = proposals.map((proposal) => ({
+      id: proposal.id,
+      brand: proposal.seller?.displayName || proposal.seller?.name || 'Seller',
+      title: proposal.title || proposal.campaign?.title || 'Proposal',
+      budget: proposal.amount != null ? this.formatMoney(Number(proposal.amount), proposal.currency || 'USD') : 'Budget pending',
+      status: this.humanizeStatus(String(proposal.status || 'SUBMITTED'))
+    }));
+
+    const timeline = [
+      ...normalizedSessions
+        .filter((session) => session.status === 'Live' || session.status === 'Upcoming' || session.status === 'Ready')
+        .map((session) => ({
+          sortAt: new Date(session.startISO).getTime(),
+          time: this.formatTime(session.startISO),
+          label: session.title,
+          type: session.status === 'Live' ? 'live' : 'medium'
+        })),
+      ...tasks
+        .filter((task) => task.dueAt)
+        .map((task) => ({
+          sortAt: (task.dueAt as Date).getTime(),
+          time: this.formatTime(task.dueAt as Date),
+          label: task.title,
+          type: this.resolveMyDayTaskType(task) === 'proposal' ? 'medium' : 'light'
+        }))
+    ]
+      .sort((left, right) => left.sortAt - right.sortAt)
+      .slice(0, 5)
+      .map(({ time, label, type }) => ({ time, label, type }));
+
+    const todaySpark = this.buildMyDayTrendSeries(recentTransactions, last7Start, 7);
+    const mtdSpark = this.buildMyDayTrendSeries(monthTransactions, monthStart, 7);
+    const todayTotal = todaySpark[todaySpark.length - 1] ?? 0;
+    const todayCommission = Number(
+      recentTransactions
+        .filter((entry) => entry.type === 'COMMISSION' && entry.createdAt >= todayStart && entry.createdAt < tomorrowStart)
+        .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0)
+        .toFixed(2)
+    );
+    const todayFlat = Number(Math.max(todayTotal - todayCommission, 0).toFixed(2));
+    const last7Total = Number(recentTransactions.reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0).toFixed(2));
+    const mtdTotal = Number(monthTransactions.reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0).toFixed(2));
+    const totalsByStatus = new Map(
+      groupedTransactions.map((transaction) => [transaction.status, Number(transaction._sum.amount ?? 0)])
+    );
+    const currency = proposals.find((proposal) => proposal.currency)?.currency
+      || campaigns.find((campaign) => campaign.currency)?.currency
+      || 'USD';
+    const recentLiveData = recentLive ? (campaignsById.get(this.readString((liveSessions.find((session) => session.id === recentLive.id) as any)?.data, 'campaignId') || '') ?? null) : null;
+    const recentLiveSession = recentLive ? liveSessions.find((session) => session.id === recentLive.id) ?? null : null;
+    const recentLivePayload = recentLiveSession?.data && typeof recentLiveSession.data === 'object' && !Array.isArray(recentLiveSession.data)
+      ? recentLiveSession.data as Record<string, unknown>
+      : null;
+    const smartPlan = this.buildMyDaySmartPlan({
+      nextSession,
+      openTasks,
+      openTaskCount: taskOpenCount,
+      openProposalCount: proposalOpenCount,
+      proposals: serializedProposals
+    });
+
+    const crewSession = workspace?.crewSessions?.[0] ?? null;
+    const crewRows = crewSession
+      ? crewSession.assignments
+          .map((assignment) => {
+            const payload = assignment.payload && typeof assignment.payload === 'object' && !Array.isArray(assignment.payload)
+              ? assignment.payload as Record<string, unknown>
+              : {};
+            const name = assignment.member?.name
+              || this.readString(payload, 'name')
+              || this.readString(payload, 'memberName')
+              || this.readString(payload, 'label')
+              || 'Not assigned';
+            const role = assignment.assignmentRole
+              || this.readString(payload, 'role')
+              || this.readString(payload, 'crewRole')
+              || 'Crew';
+            const rawStatus = this.readString(payload, 'status');
+            return {
+              role: this.humanizeStatus(role),
+              name,
+              status: rawStatus ? this.humanizeStatus(rawStatus) : name === 'Not assigned' ? 'Missing' : 'Assigned'
+            };
+          })
+          .filter((entry) => entry.role || entry.name)
+          .slice(0, 3)
+      : [];
+
     return {
-      agenda: campaigns.map((campaign) => `${campaign.title} (${campaign.status})`),
-      tasks: tasks.map((task) => ({
-        id: task.id,
-        title: task.title,
-        status: task.status,
-        dueAt: task.dueAt
-      }))
+      header: {
+        isLiveRunning: Boolean(liveSession),
+        liveViewers: liveSession?.peakViewers || 0,
+        statusLabel: liveSession
+          ? `Live · ${this.formatCompactNumber(liveSession.peakViewers || 0)} viewers`
+          : nextSession
+            ? `Upcoming · ${this.formatShortDate(nextSession.startISO)}`
+            : 'Online'
+      },
+      recentLive: recentLive
+        ? {
+            peakViewers: recentLive.peakViewers || 0,
+            conversionRate: this.readNumber(recentLivePayload, 'conversionRate')
+              || this.readNumber(recentLivePayload, 'conversionPct')
+              || this.readNumber(recentLivePayload, 'conversion'),
+            sales: this.readNumber(recentLivePayload, 'sales')
+              || this.readNumber(recentLivePayload, 'gmv')
+              || this.readNumber(recentLivePayload, 'revenue'),
+            currency: recentLiveData?.currency || currency
+          }
+        : null,
+      kpis: {
+        lives: normalizedSessions.filter((session) => session.status === 'Live' || session.status === 'Upcoming' || session.status === 'Ready').length,
+        tasks: taskOpenCount,
+        proposals: proposalOpenCount,
+        approvals: proposalApprovalCount + taskApprovalCount
+      },
+      smartPlan,
+      timeline: timeline.length > 0 ? timeline : [{ time: 'Today', label: 'No scheduled items yet', type: 'light' }],
+      nextLive: nextSession
+        ? {
+            title: nextSession.title,
+            startsAtISO: nextSession.startISO,
+            timeLabel: `${this.formatShortDate(nextSession.startISO)} · ${this.formatTime(nextSession.startISO)}`
+          }
+        : null,
+      crew: {
+        title: nextSession?.campaign || 'No scheduled live session',
+        rows: crewRows.length > 0
+          ? crewRows
+          : [
+              { role: 'Creator', name: creatorName, status: nextSession ? 'Confirmed' : 'Missing' },
+              { role: 'Producer', name: nextSession?.campaign || 'Not assigned', status: nextSession ? 'Assigned' : 'Missing' },
+              { role: 'Moderator', name: 'Not assigned', status: 'Missing' }
+            ]
+      },
+      tasks: serializedTasks,
+      proposals: serializedProposals,
+      earnings: {
+        today: todayTotal,
+        todayFlat,
+        todayCommission,
+        todaySpark,
+        last7: last7Total,
+        last7Avg: Number((last7Total / 7).toFixed(2)),
+        last7Spark: todaySpark,
+        mtd: mtdTotal,
+        mtdGoal: Math.max(Math.ceil(mtdTotal / 250) * 250, 250),
+        mtdSpark,
+        currency,
+        available: totalsByStatus.get(TransactionStatus.AVAILABLE) ?? 0,
+        pending: totalsByStatus.get(TransactionStatus.PENDING) ?? 0,
+        lifetime: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID].reduce(
+          (sum, status) => sum + (totalsByStatus.get(status) ?? 0),
+          0
+        )
+      },
+      lastUpdatedAt: now.toISOString(),
+      counts: {
+        dueToday: taskDueTodayCount,
+        completedToday: taskCompletedTodayCount
+      }
     };
+  }
+
+  private buildMyDaySmartPlan(params: {
+    nextSession: {
+      title: string;
+      campaign: string;
+      startISO: string;
+    } | null;
+    openTasks: Array<{
+      id: string;
+      title: string;
+      deal: string;
+      due: string;
+      type: string;
+    }>;
+    openTaskCount: number;
+    openProposalCount: number;
+    proposals: Array<{
+      brand: string;
+      title: string;
+    }>;
+  }) {
+    const items: Array<{ id: string; title: string; context: string; duration: string; impact: string }> = [];
+
+    if (params.nextSession) {
+      items.push({
+        id: `session-${params.nextSession.title}`,
+        title: `Prepare ${params.nextSession.title}`,
+        context: `${params.nextSession.campaign} · ${this.formatShortDate(params.nextSession.startISO)} ${this.formatTime(params.nextSession.startISO)}`,
+        duration: '45 min',
+        impact: 'High'
+      });
+    }
+
+    if (params.openProposalCount > 0) {
+      const firstProposal = params.proposals[0];
+      items.push({
+        id: 'proposals',
+        title: `Reply to ${params.openProposalCount} open proposal${params.openProposalCount === 1 ? '' : 's'}`,
+        context: firstProposal ? `${firstProposal.brand} · ${firstProposal.title}` : 'Negotiations need your response',
+        duration: '30 min',
+        impact: 'High'
+      });
+    }
+
+    const nextTask = params.openTasks.find((task) => task.type !== 'proposal') ?? params.openTasks[0];
+    if (nextTask) {
+      items.push({
+        id: nextTask.id,
+        title: nextTask.title,
+        context: `${nextTask.deal} · ${nextTask.due}`,
+        duration: nextTask.type === 'post' || nextTask.type === 'report' ? '35 min' : '25 min',
+        impact: nextTask.type === 'proposal' ? 'High' : 'Medium'
+      });
+    }
+
+    if (params.openTaskCount > 1) {
+      items.push({
+        id: 'task-summary',
+        title: `Clear ${params.openTaskCount} open task${params.openTaskCount === 1 ? '' : 's'}`,
+        context: 'Closing today’s queue keeps your workspace current.',
+        duration: '20 min',
+        impact: 'Medium'
+      });
+    }
+
+    return items.slice(0, 4);
+  }
+
+  private buildMyDayTrendSeries(
+    transactions: Array<{ amount: number; createdAt: Date }>,
+    startDate: Date,
+    maxPoints: number
+  ) {
+    const dayTotals = new Map<string, number>();
+    for (const transaction of transactions) {
+      const key = this.startOfDay(transaction.createdAt).toISOString();
+      dayTotals.set(key, Number(((dayTotals.get(key) ?? 0) + Number(transaction.amount ?? 0)).toFixed(2)));
+    }
+
+    const points: number[] = [];
+    for (let index = 0; index < maxPoints; index += 1) {
+      const day = this.addDays(startDate, index);
+      points.push(Number((dayTotals.get(day.toISOString()) ?? 0).toFixed(2)));
+    }
+    return points;
+  }
+
+  private resolveMyDayTaskType(task: { title?: string | null; metadata?: Prisma.JsonValue | null }) {
+    const explicitType = this.readString(task.metadata, 'type') || this.readString(task.metadata, 'taskType');
+    if (explicitType) {
+      return explicitType.toLowerCase();
+    }
+
+    const title = String(task.title || '').toLowerCase();
+    if (title.includes('proposal')) return 'proposal';
+    if (title.includes('report')) return 'report';
+    if (title.includes('upload') || title.includes('deliverable') || title.includes('clip') || title.includes('asset')) return 'post';
+    if (title.includes('script') || title.includes('prep')) return 'prep';
+    if (title.includes('review') || title.includes('approve')) return 'review';
+    if (title.includes('confirm') || title.includes('admin')) return 'admin';
+    return 'task';
+  }
+
+  private formatMyDayDueLabel(value?: Date | null) {
+    if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+      return 'No due date';
+    }
+
+    const now = new Date();
+    const todayStart = this.startOfDay(now);
+    const tomorrowStart = this.addDays(todayStart, 1);
+    const dayAfterTomorrowStart = this.addDays(todayStart, 2);
+    const dueDay = this.startOfDay(value);
+
+    if (dueDay.getTime() === todayStart.getTime()) {
+      return `Today · ${this.formatTime(value)}`;
+    }
+    if (dueDay.getTime() === tomorrowStart.getTime()) {
+      return `Tomorrow · ${this.formatTime(value)}`;
+    }
+    if (dueDay.getTime() === dayAfterTomorrowStart.getTime()) {
+      return 'In 2 days';
+    }
+    return `${this.formatShortDate(value)} · ${this.formatTime(value)}`;
+  }
+
+  private startOfDay(value: Date) {
+    const next = new Date(value);
+    next.setHours(0, 0, 0, 0);
+    return next;
+  }
+
+  private addDays(value: Date, amount: number) {
+    const next = new Date(value);
+    next.setDate(next.getDate() + amount);
+    return next;
   }
 
   private securityWarnings() {

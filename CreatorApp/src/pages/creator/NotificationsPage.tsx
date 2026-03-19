@@ -9,121 +9,6 @@ import { readAuthSession } from "../../lib/authSession";
 // Pattern: Premium anchored panel (popover) with tabs + bulk actions.
 // Primary accent: Orange #f77f00
 
-const DEMO_NOTIFICATIONS = [
-  {
-    id: "N-9001",
-    type: "proposal",
-    priority: "high",
-    unread: true,
-    title: "New proposal from GlowUp Hub",
-    message: "They updated terms: $450–$600 + 5% commission. Reply to keep the slot.",
-    meta: { seller: "GlowUp Hub", campaign: "Autumn Beauty Flash" },
-    time: "2h ago",
-    cta: "Review proposal"
-  },
-  {
-    id: "N-9002",
-    type: "invite",
-    priority: "medium",
-    unread: true,
-    title: "Invite accepted – contract draft ready",
-    message: "GadgetMart Africa accepted your pitch. Confirm dates to generate contract.",
-    meta: { seller: "GadgetMart Africa", campaign: "Tech Friday Mega Live" },
-    time: "Yesterday",
-    cta: "Open contract"
-  },
-  {
-    id: "N-9003",
-    type: "live",
-    priority: "high",
-    unread: true,
-    title: "Live starts in 45 minutes",
-    message: "Beauty Flash Live · Make sure products & overlays are ready.",
-    meta: { seller: "GlowUp Hub", campaign: "Beauty Flash Live" },
-    time: "Today",
-    cta: "Open Live Studio"
-  },
-  {
-    id: "N-9004",
-    type: "earnings",
-    priority: "medium",
-    unread: false,
-    title: "Payout scheduled",
-    message: "USD 260 scheduled for Nov 15 via Bank transfer (GlowUp Hub).",
-    meta: { seller: "GlowUp Hub", campaign: "Payout" },
-    time: "2 days ago",
-    cta: "View payouts"
-  },
-  {
-    id: "N-9005",
-    type: "system",
-    priority: "low",
-    unread: false,
-    title: "Faith desk guideline update",
-    message: "Updated wording restrictions for Faith-compatible campaigns. Review to stay compliant.",
-    meta: { seller: "MyLiveDealz", campaign: "Compliance" },
-    time: "Last week",
-    cta: "View guidelines"
-  },
-  {
-    id: "N-9006",
-    type: "proposal",
-    priority: "normal",
-    unread: true,
-    title: "Revised offer: Urban Kicks",
-    message: "Urban Kicks responded to your counter-offer. They've increased the base rate by 15%.",
-    meta: { seller: "Urban Kicks", campaign: "Spring Streetwear" },
-    time: "3h ago",
-    cta: "View revised proposal"
-  },
-  {
-    id: "N-9007",
-    type: "earnings",
-    priority: "high",
-    unread: true,
-    title: "Bonus payment received!",
-    message: "You've earned a $50 bonus for exceeding engagement targets on the 'Tech Friday' live.",
-    meta: { seller: "GadgetMart Africa", campaign: "Tech Friday" },
-    time: "5h ago",
-    cta: "Check earnings"
-  },
-  {
-    id: "N-9008",
-    type: "invite",
-    priority: "medium",
-    unread: true,
-    title: "New partnership request",
-    message: "EcoHome Essentials wants to supplier with you for their sustainable living series.",
-    meta: { seller: "EcoHome Essentials", campaign: "Green Living" },
-    time: "Today",
-    cta: "Review request"
-  },
-  {
-    id: "N-9009",
-    type: "live",
-    priority: "normal",
-    unread: false,
-    title: "Clips from your last live are ready",
-    message: "We've automatically generated 5 highlight clips from your 'Autumn Beauty' session.",
-    meta: { seller: "GlowUp Hub", campaign: "Autumn Beauty" },
-    time: "Yesterday",
-    cta: "Review clips"
-  },
-  {
-    id: "N-9010",
-    type: "system",
-    priority: "low",
-    unread: false,
-    title: "New feature: AI Script Assistant",
-    message: "Try our new AI assistant to help you draft engaging scripts for your live sessions.",
-    meta: { seller: "MyLiveDealz", campaign: "Platform Update" },
-    time: "3 days ago",
-    cta: "Try it now"
-  }
-];
-
-
-
 import type { PageId } from "../../layouts/CreatorShellLayout";
 
 type NotificationsPanelProps = {
@@ -165,23 +50,6 @@ function formatRelativeTime(value?: string | null) {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.round(diffHours / 24);
   return `${diffDays}d ago`;
-}
-
-function mapDemoNotification(notification: typeof DEMO_NOTIFICATIONS[number]): Notification {
-  return {
-    id: String(notification.id),
-    type: notification.type as Tab,
-    title: notification.title,
-    message: notification.message,
-    time: notification.time,
-    unread: notification.unread,
-    priority: normalizePriority(notification.priority),
-    meta: {
-      seller: notification.meta?.seller || "MyLiveDealz",
-      campaign: notification.meta?.campaign || ""
-    },
-    cta: notification.cta
-  };
 }
 
 function mapBackendNotification(notification: CreatorNotification): Notification {
@@ -230,7 +98,7 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
-  const [allNotifs, setAllNotifs] = useState<Notification[]>(() => DEMO_NOTIFICATIONS.map(mapDemoNotification));
+  const [allNotifs, setAllNotifs] = useState<Notification[]>([]);
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
@@ -591,7 +459,7 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
 export default function CreatorNotificationsPanelDemo() {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
-  const unreadCount = DEMO_NOTIFICATIONS.filter((n) => n.unread).length;
+  const unreadCount = 0;
 
   return (
     <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors">

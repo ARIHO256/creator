@@ -2,15 +2,18 @@
 // Operational cockpit for creators – Daily Work Hub
 // EVzone colours: Orange #f77f00, Green #03cd8c, Light Grey #f2f2f2
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
+import { useApiResource } from "../../hooks/useApiResource";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { creatorApi, type MyDayDashboardResponse } from "../../lib/creatorApi";
 import type { PageId } from "../../layouts/CreatorShellLayout";
 
 type Toast = { message: string } | null;
 
 type Task = {
-  id: number;
+  id: string;
   title: string;
   deal: string;
   due: string;
@@ -19,7 +22,13 @@ type Task = {
   campaign: string;
 };
 
-
+type SmartPlanItem = {
+  id: string;
+  title: string;
+  context?: string;
+  duration?: string;
+  impact?: string;
+};
 
 type TopKpiCardProps = {
   label: string;
@@ -32,6 +41,7 @@ type TopKpiCardProps = {
 type SmartDayPlanProps = {
   expanded: boolean;
   onToggle: () => void;
+  planItems: SmartPlanItem[];
   tasksDueToday: number;
   tasksCompletedToday: number;
 };
@@ -65,8 +75,9 @@ type TaskMiniBoardProps = {
   filteredNextTasks: Task[];
   filter: string;
   onFilterChange: (filter: string) => void;
-  onToggleTask: (id: number) => void;
-  onSnoozeTask: (id: number) => void;
+  actionPending?: boolean;
+  onToggleTask: (id: string) => void;
+  onSnoozeTask: (id: string) => void;
   tasksDueToday: number;
   tasksCompletedToday: number;
   onChangePage?: (page: PageId) => void;
@@ -109,7 +120,7 @@ type TimelineBlockProps = {
 };
 
 type Proposal = {
-  id: string | number;
+  id: string;
   brand: string;
   campaign?: string;
   title?: string;
@@ -124,6 +135,124 @@ type ProposalsPanelProps = {
   onChangePage?: (page: PageId) => void;
 };
 
+type MyDayShellData = MyDayDashboardResponse & {
+  header: {
+    isLiveRunning: boolean;
+    liveViewers: number;
+    statusLabel: string;
+  };
+  kpis: {
+    lives: number;
+    tasks: number;
+    proposals: number;
+    approvals: number;
+  };
+  smartPlan: SmartPlanItem[];
+  timeline: TimelineSlot[];
+  nextLive: {
+    title?: string;
+    startsAtISO?: string | null;
+    timeLabel?: string;
+  } | null;
+  crew: {
+    title: string;
+    rows: CrewRowProps[];
+  };
+  tasks: Task[];
+  proposals: Proposal[];
+  earnings: Earnings & {
+    currency?: string;
+    available?: number;
+    pending?: number;
+    lifetime?: number;
+  };
+  counts: {
+    dueToday: number;
+    completedToday: number;
+  };
+};
+
+const EMPTY_EARNINGS: MyDayShellData["earnings"] = {
+  today: 0,
+  todayFlat: 0,
+  todayCommission: 0,
+  todaySpark: [0, 0, 0, 0, 0, 0, 0],
+  last7: 0,
+  last7Avg: 0,
+  last7Spark: [0, 0, 0, 0, 0, 0, 0],
+  mtd: 0,
+  mtdGoal: 0,
+  mtdSpark: [0, 0, 0, 0, 0, 0, 0],
+  currency: "USD",
+  available: 0,
+  pending: 0,
+  lifetime: 0
+};
+
+const INITIAL_SHELL_DATA: MyDayShellData = {
+  header: {
+    isLiveRunning: false,
+    liveViewers: 0,
+    statusLabel: "Online"
+  },
+  recentLive: null,
+  kpis: {
+    lives: 0,
+    tasks: 0,
+    proposals: 0,
+    approvals: 0
+  },
+  smartPlan: [],
+  timeline: [],
+  nextLive: null,
+  crew: {
+    title: "No scheduled live session",
+    rows: []
+  },
+  tasks: [],
+  proposals: [],
+  earnings: EMPTY_EARNINGS,
+  counts: {
+    dueToday: 0,
+    completedToday: 0
+  },
+  lastUpdatedAt: ""
+};
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
+}
+
+function formatMoney(value: number, currency = "USD") {
+  try {
+    return new Intl.NumberFormat("en", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 1
+    }).format(Number(value || 0));
+  } catch {
+    return `${currency} ${Number(value || 0).toFixed(1)}`;
+  }
+}
+
+function formatPercent(value: number) {
+  const safeValue = Number(value || 0);
+  const decimals = safeValue > 0 && safeValue < 10 ? 1 : 0;
+  return `${safeValue.toFixed(decimals)}%`;
+}
+
+function formatStartsIn(iso?: string | null) {
+  if (!iso) return "00:00:00";
+  const startsAt = new Date(iso);
+  if (Number.isNaN(startsAt.getTime())) return "00:00:00";
+  const diffMs = Math.max(startsAt.getTime() - Date.now(), 0);
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const seconds = String(totalSeconds % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
 export function CreatorMyDayDashboardPage() {
   const navigate = useNavigate();
   const onChangePage = (page: PageId) => {
@@ -132,79 +261,57 @@ export function CreatorMyDayDashboardPage() {
   // const { theme } = useTheme(); // Reserved for future use
   const [viewMode, setViewMode] = useState("today"); // today | launch | collab
   const [smartPlanExpanded, setSmartPlanExpanded] = useState(true);
-  const [isLiveRunning] = useState(true);
-  const [liveViewers] = useState(842);
-  const [hasRecentLive] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
-
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: 1,
-      title: "Upload Beauty Flash teaser clip",
-      deal: "GlowUp Hub · Beauty Flash",
-      due: "Today · 16:00",
-      status: "open",
-      type: "post",
-      campaign: "Beauty Flash"
-    },
-    {
-      id: 2,
-      title: "Draft script for Tech Friday intro",
-      deal: "GadgetMart · Tech Friday",
-      due: "Today · 18:00",
-      status: "open",
-      type: "prep",
-      campaign: "Tech Friday"
-    },
-    {
-      id: 3,
-      title: "Confirm product list with Grace Living",
-      deal: "Faith & Wellness Morning Dealz",
-      due: "Tomorrow · 10:00",
-      status: "open",
-      type: "admin",
-      campaign: "Faith & Wellness"
-    },
-    {
-      id: 4,
-      title: "Review 2 new proposals",
-      deal: "Multiple brands",
-      due: "Tomorrow · 14:00",
-      status: "open",
-      type: "proposal",
-      campaign: "Multi"
-    },
-    {
-      id: 5,
-      title: "Send performance report to GlowUp",
-      deal: "Beauty Flash recap",
-      due: "In 2 days",
-      status: "open",
-      type: "report",
-      campaign: "Beauty Flash"
+  const { run: runTaskAction, isPending: taskActionPending } = useAsyncAction();
+  const { data: shellData } = useApiResource({
+    initialData: INITIAL_SHELL_DATA,
+    loader: async () => {
+      const payload = await creatorApi.myDay();
+      return {
+        ...INITIAL_SHELL_DATA,
+        ...payload,
+        header: {
+          ...INITIAL_SHELL_DATA.header,
+          ...(payload.header ?? {})
+        },
+        kpis: {
+          ...INITIAL_SHELL_DATA.kpis,
+          ...(payload.kpis ?? {})
+        },
+        smartPlan: Array.isArray(payload.smartPlan) ? payload.smartPlan : [],
+        timeline: Array.isArray(payload.timeline) ? payload.timeline : [],
+        nextLive: payload.nextLive ?? null,
+        crew: {
+          title: payload.crew?.title || INITIAL_SHELL_DATA.crew.title,
+          rows: Array.isArray(payload.crew?.rows) ? payload.crew?.rows : []
+        },
+        tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
+        proposals: Array.isArray(payload.proposals) ? payload.proposals : [],
+        earnings: {
+          ...EMPTY_EARNINGS,
+          ...(payload.earnings ?? {})
+        },
+        counts: {
+          ...INITIAL_SHELL_DATA.counts,
+          ...(payload.counts ?? {})
+        }
+      };
     }
-  ]);
+  });
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   const [taskFilter, setTaskFilter] = useState("all"); // all | today | proposals | beauty
   const [proposalsPanelOpen, setProposalsPanelOpen] = useState(false);
 
-  const proposals = [
-    {
-      id: "P-101",
-      brand: "GlowUp Hub",
-      title: "Autumn Beauty Flash",
-      budget: "$400 + 5% commission",
-      status: "New"
-    },
-    {
-      id: "P-102",
-      brand: "GadgetMart",
-      title: "Tech Friday Q4 series",
-      budget: "$1,200 flat",
-      status: "Awaiting reply"
-    }
-  ];
+  useEffect(() => {
+    setTasks(shellData.tasks);
+  }, [shellData.tasks]);
+
+  const isLiveRunning = Boolean(shellData.header.isLiveRunning);
+  const liveViewers = Number(shellData.header.liveViewers || 0);
+  const hasRecentLive = Boolean(shellData.recentLive);
+  const proposals = shellData.proposals;
 
   const openTasks = tasks.filter((t) => t.status === "open");
   const nextTasksAll = openTasks.slice(0, 5);
@@ -212,72 +319,67 @@ export function CreatorMyDayDashboardPage() {
   const filteredNextTasks = nextTasksAll.filter((t) => {
     if (taskFilter === "today") return t.due.startsWith("Today");
     if (taskFilter === "proposals") return t.type === "proposal";
-    if (taskFilter === "beauty") return t.campaign === "Beauty Flash";
+    if (taskFilter === "beauty") return t.campaign.toLowerCase().includes("beauty");
     return true;
   });
 
-  // Mock dynamic stats based on View Mode
-  const getStats = () => {
-    switch (viewMode) {
-      case "launch":
-        return { lives: 3, tasks: 12, proposals: 5, approvals: 2 };
-      case "collab":
-        return { lives: 0, tasks: 8, proposals: 8, approvals: 4 };
-      default: // today
-        return { lives: 1, tasks: openTasks.length, proposals: proposals.length, approvals: 1 };
-    }
-  };
-  const currentStats = getStats();
+  const currentStats = shellData.kpis;
+  const earnings = shellData.earnings;
 
-  const earnings = {
-    today: 120,
-    todayFlat: 80,
-    todayCommission: 40,
-    last7: 890,
-    last7Avg: 890 / 7,
-    mtd: 2430,
-    mtdGoal: 3000,
-    todaySpark: [2, 5, 3, 4, 6, 4, 7],
-    last7Spark: [3, 4, 5, 6, 5, 7, 8],
-    mtdSpark: [2, 3, 5, 7, 6, 8, 9]
-  };
-
-  const mtdProgress = Math.min(earnings.mtd / earnings.mtdGoal, 1);
+  const mtdProgress = earnings.mtdGoal > 0 ? Math.min(earnings.mtd / earnings.mtdGoal, 1) : 0;
 
   // Build dynamic burndown from tasks + live state
   const burndown = buildBurndown(tasks, isLiveRunning);
 
-  const timelineSlots: TimelineSlot[] = [
-    { time: "09:00", label: "Inbox & messages", type: "light" },
-    { time: "11:00", label: "Script writing", type: "medium" },
-    { time: "14:00", label: "Assets prep", type: "medium" },
-    { time: "18:30", label: "Beauty Flash live (GlowUp Hub)", type: "live" },
-    { time: "21:00", label: "Clip uploads & tagging", type: "light" }
-  ];
+  const timelineSlots: TimelineSlot[] = shellData.timeline.length > 0
+    ? shellData.timeline
+    : [{ time: "Today", label: "No scheduled items yet", type: "light" }];
 
-  const tasksDueToday = tasks.filter((t) => t.due.startsWith("Today")).length;
-  const tasksCompletedToday = tasks.filter(
-    (t) => t.status === "done" && t.due.startsWith("Today")
-  ).length;
+  const tasksDueToday = shellData.counts.dueToday || tasks.filter((t) => t.due.startsWith("Today")).length;
+  const tasksCompletedToday = tasks.length > 0
+    ? tasks.filter((t) => t.status === "done" && t.due.startsWith("Today")).length
+    : shellData.counts.completedToday;
 
   const headerStatusLabel = isLiveRunning
     ? `Live · ${liveViewers.toLocaleString()} viewers`
-    : "Online";
+    : shellData.header.statusLabel || "Online";
 
-  const handleCompleteTask = (id: number) => {
+  const handleCompleteTask = async (id: string) => {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
+    const newStatus = task?.status === "open" ? "marked done" : "reopened";
+    const backendStatus = task.status === "open" ? "COMPLETED" : "TODO";
+    const updated = await runTaskAction(
+      () => creatorApi.updateTask(id, { status: backendStatus }),
+      {
+        delay: 0,
+        showSuccess: false,
+        errorMessage: "Unable to update this task right now."
+      }
+    );
+    if (!updated) return;
     setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, status: t.status === "open" ? "done" : "open" } : t
+      prev.map((entry) =>
+        entry.id === id ? { ...entry, status: entry.status === "open" ? "done" : "open" } : entry
       )
     );
-    // Determine the new status to show correct toast message
-    const task = tasks.find((t) => t.id === id);
-    const newStatus = task?.status === "open" ? "marked done" : "reopened";
     setToast({ message: `Task ${newStatus} successfully.` });
     setTimeout(() => setToast(null), 2200);
   };
 
-  const handleSnoozeTask = (id: number) => {
+  const handleSnoozeTask = async (id: string) => {
+    const tomorrowAtNine = new Date();
+    tomorrowAtNine.setDate(tomorrowAtNine.getDate() + 1);
+    tomorrowAtNine.setHours(9, 0, 0, 0);
+    const updated = await runTaskAction(
+      () => creatorApi.updateTask(id, { dueAt: tomorrowAtNine.toISOString() }),
+      {
+        delay: 0,
+        showSuccess: false,
+        errorMessage: "Unable to reschedule this task right now."
+      }
+    );
+    if (!updated) return;
     setTasks((prev) =>
       prev.map((t) =>
         t.id === id ? { ...t, due: "Tomorrow · 09:00" } : t
@@ -335,7 +437,7 @@ export function CreatorMyDayDashboardPage() {
             <span className="text-lg">📊</span>
             <div>
               <p className="text-sm font-medium">
-                Last live: 3.1k peak viewers · 4.8% conversion · $620 sales
+                Last live: {formatCompactNumber(shellData.recentLive?.peakViewers || 0)} peak viewers · {formatPercent(shellData.recentLive?.conversionRate || 0)} conversion · {formatMoney(shellData.recentLive?.sales || 0, shellData.recentLive?.currency || shellData.earnings.currency || "USD")} sales
               </p>
               <p className="text-xs text-slate-500 dark:text-slate-300">
                 View full Analytics to see drop-off points and best-performing segments.
@@ -441,6 +543,7 @@ export function CreatorMyDayDashboardPage() {
           <SmartDayPlan
             expanded={smartPlanExpanded}
             onToggle={() => setSmartPlanExpanded((p) => !p)}
+            planItems={shellData.smartPlan}
             tasksDueToday={tasksDueToday}
             tasksCompletedToday={tasksCompletedToday}
           />
@@ -448,7 +551,7 @@ export function CreatorMyDayDashboardPage() {
           {/* Quick actions + crew */}
           <div className="flex flex-col gap-3">
             <QuickActions onChangePage={onChangePage} />
-            <CrewStrip onChangePage={onChangePage} />
+            <CrewStrip crew={shellData.crew} onChangePage={onChangePage} />
           </div>
         </section>
 
@@ -457,7 +560,7 @@ export function CreatorMyDayDashboardPage() {
           {/* Timeline + burndown */}
           <div id="todays-timeline" className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 flex flex-col gap-3 text-sm">
             {/* Next live strip */}
-            <NextLiveStrip onChangePage={onChangePage} />
+            <NextLiveStrip nextLive={shellData.nextLive} onChangePage={onChangePage} />
 
             <div className="flex items-center justify-between mb-1 mt-1">
               <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">Today’s timeline</h3>
@@ -491,6 +594,7 @@ export function CreatorMyDayDashboardPage() {
               filteredNextTasks={filteredNextTasks}
               filter={taskFilter}
               onFilterChange={setTaskFilter}
+              actionPending={taskActionPending}
               onToggleTask={handleCompleteTask}
               onSnoozeTask={handleSnoozeTask}
               tasksDueToday={tasksDueToday}
@@ -616,6 +720,7 @@ function TopKpiCard({ label, value, sub, accent, onClick }: TopKpiCardProps) {
 function SmartDayPlan({
   expanded,
   onToggle,
+  planItems,
   tasksDueToday,
   tasksCompletedToday
 }: SmartDayPlanProps) {
@@ -639,48 +744,33 @@ function SmartDayPlan({
         </button>
       </div>
       {expanded && (
-        <ol className="list-decimal pl-4 space-y-1 text-sm text-slate-700 dark:text-slate-100 font-medium transition-colors">
-          <li>
-            Finalise assets for
-            <span className="font-semibold dark:font-bold"> Beauty Flash live</span>{" "}
-            <span className="text-xs text-slate-500 dark:text-slate-300">
-              (Skipping may reduce conversion by ~15% based on past lives.)
-            </span>
-            <div className="text-xs text-slate-500 dark:text-slate-300">
-              Suggested duration: 45 min · Impact: ★★★★☆
-            </div>
-          </li>
-          <li>
-            Reply to <span className="font-semibold dark:font-bold">2 new proposals</span> in
-            Tech & Beauty.{" "}
-            <span className="text-xs text-slate-500 dark:text-slate-300">
-              (Delaying could push campaigns to other creators.)
-            </span>
-            <div className="text-xs text-slate-500 dark:text-slate-300">
-              Suggested duration: 30 min · Impact: ★★★★☆
-            </div>
-          </li>
-          <li>
-            Prepare <span className="font-semibold dark:font-bold">Tech Friday intro script</span>{" "}
-            <span className="text-xs text-slate-500 dark:text-slate-300">
-              (Stronger hooks usually add +20–30% watch time.)
-            </span>
-            <div className="text-xs text-slate-500 dark:text-slate-300">
-              Suggested duration: 40 min · Impact: ★★★☆☆
-            </div>
-          </li>
-          <li>
-            Upload yesterday’s{" "}
-            <span className="font-semibold dark:font-bold">Faith & Wellness clips</span> for
-            evergreen views.{" "}
-            <span className="text-xs text-slate-500 dark:text-slate-300">
-              (Undone clips mean you’re missing passive sales.)
-            </span>
-            <div className="text-xs text-slate-500 dark:text-slate-300">
-              Suggested duration: 30 min · Impact: ★★★☆☆
-            </div>
-          </li>
-        </ol>
+        <>
+          {planItems.length > 0 ? (
+            <ol className="list-decimal pl-4 space-y-1 text-sm text-slate-700 dark:text-slate-100 font-medium transition-colors">
+              {planItems.map((item) => (
+                <li key={item.id}>
+                  <span className="font-semibold dark:font-bold">{item.title}</span>{" "}
+                  {item.context && (
+                    <span className="text-xs text-slate-500 dark:text-slate-300">
+                      ({item.context})
+                    </span>
+                  )}
+                  {(item.duration || item.impact) && (
+                    <div className="text-xs text-slate-500 dark:text-slate-300">
+                      {item.duration ? `Suggested duration: ${item.duration}` : "Suggested duration: —"}
+                      {" · "}
+                      {item.impact ? `Impact: ${item.impact}` : "Impact: —"}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-xs text-slate-500 dark:text-slate-300">
+              Your next priority items will appear here as tasks, proposals, and live sessions are added.
+            </p>
+          )}
+        </>
       )}
       {tasksDueToday > 0 && (
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
@@ -756,7 +846,13 @@ function QuickActionButton({ label, icon, primary, onClick }: QuickActionButtonP
   );
 }
 
-function CrewStrip({ onChangePage }: { onChangePage?: (page: PageId) => void }) {
+function CrewStrip({
+  crew,
+  onChangePage
+}: {
+  crew: { title: string; rows: CrewRowProps[] };
+  onChangePage?: (page: PageId) => void;
+}) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -764,12 +860,12 @@ function CrewStrip({ onChangePage }: { onChangePage?: (page: PageId) => void }) 
           <span className="text-lg">👥</span>
           <h3 className="text-sm font-semibold dark:text-slate-50 dark:font-bold">Today’s crew</h3>
         </div>
-        <span className="text-xs text-slate-500 dark:text-slate-300">Beauty Flash live · 18:30</span>
+        <span className="text-xs text-slate-500 dark:text-slate-300">{crew.title}</span>
       </div>
       <ul className="space-y-1.5">
-        <CrewRow role="Creator" name="Ronald" status="Confirmed" />
-        <CrewRow role="Producer" name="Dacy" status="Assigned" />
-        <CrewRow role="Moderator" name="Not assigned" status="Missing" />
+        {(crew.rows.length > 0 ? crew.rows : [{ role: "Creator", name: "Not assigned", status: "Missing" }]).map((row) => (
+          <CrewRow key={`${row.role}-${row.name}`} role={row.role} name={row.name} status={row.status} />
+        ))}
       </ul>
       <button
         onClick={() => onChangePage?.("crew-manager")}
@@ -802,15 +898,23 @@ function CrewRow({ role, name, status }: CrewRowProps) {
   );
 }
 
-function NextLiveStrip({ onChangePage }: { onChangePage?: (page: PageId) => void }) {
+function NextLiveStrip({
+  nextLive,
+  onChangePage
+}: {
+  nextLive: { title?: string; startsAtISO?: string | null; timeLabel?: string } | null;
+  onChangePage?: (page: PageId) => void;
+}) {
   return (
     <div className="border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-2 flex items-center justify-between bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 transition-colors">
       <div className="flex items-center gap-2">
         <span className="text-lg">📺</span>
         <div>
-          <p className="text-sm font-semibold">Next live: Beauty Flash with GlowUp</p>
+          <p className="text-sm font-semibold">Next live: {nextLive?.title || "No scheduled live session"}</p>
           <p className="text-xs text-slate-500 dark:text-slate-300">
-            Starts in <span className="font-medium">02:13:45</span> · 18:30 EAT
+            {nextLive?.startsAtISO
+              ? <>Starts in <span className="font-medium">{formatStartsIn(nextLive.startsAtISO)}</span> · {nextLive.timeLabel || "Scheduled"}</>
+              : "Schedule a live session to see it here"}
           </p>
         </div>
       </div>
@@ -895,6 +999,7 @@ function TaskMiniBoard({
   filteredNextTasks,
   filter,
   onFilterChange,
+  actionPending = false,
   onToggleTask,
   onSnoozeTask,
   tasksDueToday,
@@ -933,6 +1038,7 @@ function TaskMiniBoard({
                     : "border-slate-300 text-transparent"
                     }`}
                   onClick={() => onToggleTask(t.id)}
+                  disabled={actionPending}
                 >
                   ✓
                 </button>
@@ -958,13 +1064,14 @@ function TaskMiniBoard({
               <button
                 onClick={() => onToggleTask(t.id)}
                 className="text-xs px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 transition-colors"
+                disabled={actionPending}
               >
                 {t.status === "done" ? "Undo" : "Mark done"}
               </button>
               <button
                 onClick={() => onSnoozeTask(t.id)}
                 className="text-tiny px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 transition-colors"
-                disabled={t.status === "done"}
+                disabled={t.status === "done" || actionPending}
               >
                 Snooze to tomorrow
               </button>
