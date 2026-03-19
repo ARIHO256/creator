@@ -13,7 +13,8 @@ import {
   clearAuthSession,
   getPostAuthPath,
   hasStoredAuthState,
-  persistAuthSession
+  persistAuthSession,
+  readAuthSession
 } from "./lib/authSession";
 
 
@@ -116,6 +117,11 @@ const AuthRedirectHandler = () => {
         setTargetPath(getPostAuthPath(session));
       })
       .catch(() => {
+        const storedSession = readAuthSession();
+        if (storedSession) {
+          setTargetPath(getPostAuthPath(storedSession));
+          return;
+        }
         clearAuthSession();
         setTargetPath("/auth-redirect");
       });
@@ -142,6 +148,11 @@ function ensureStoredAuthSession() {
         persistAuthSession(session);
       })
       .catch(() => {
+        const storedSession = readAuthSession();
+        if (storedSession) {
+          persistAuthSession(storedSession);
+          return;
+        }
         clearAuthSession();
       })
       .finally(() => {

@@ -64,7 +64,7 @@ function shouldInvalidateSession(path: string, status: number) {
   if (status !== 401) return false;
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  if (normalizedPath === "/auth/me") return true;
+  if (normalizedPath === "/auth/me") return false;
   if (normalizedPath.startsWith("/auth/login")) return false;
   if (normalizedPath.startsWith("/auth/register")) return false;
   if (normalizedPath.startsWith("/auth/logout")) return false;

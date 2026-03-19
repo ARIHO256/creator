@@ -1464,15 +1464,18 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
 
 function sanitizeSettingsFormForStorage(form: SettingsForm) {
   const copy = deepClone(form);
+  const persistableUrl = (value: unknown) => {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text) return null;
+    if (text.startsWith("/")) return text;
+    if (/^https?:\/\//i.test(text)) return text;
+    return null;
+  };
   Object.keys(copy.uploads || {}).forEach((key) => {
     const row = copy.uploads[key];
     if (!row) return;
-    if (typeof row.url === "string" && row.url.startsWith("blob:")) {
-      row.url = null;
-    }
-    if (typeof row.previewUrl === "string" && row.previewUrl.startsWith("blob:")) {
-      row.previewUrl = null;
-    }
+    row.url = persistableUrl(row.url);
+    row.previewUrl = persistableUrl(row.previewUrl);
   });
   return copy;
 }
@@ -1502,7 +1505,7 @@ function collectSettingsDocs(form: SettingsForm) {
         uploadedAt: uploaded?.createdAt || new Date().toISOString(),
         mimeType: uploaded?.mimeType || undefined,
         storageKey: uploaded?.storageKey || undefined,
-        fileUrl: uploaded?.url || undefined
+        fileUrl: uploadUrlForPersistence(uploaded) || undefined
       };
     });
 }
@@ -1514,6 +1517,149 @@ function buildScreenStateSettingsPayload(form: SettingsForm) {
     settingsForm: formForStorage,
     docs,
     updatedAt: new Date().toISOString()
+  };
+}
+
+function kycStatusToApi(status: Kyc["status"]): "PENDING" | "IN_REVIEW" | "VERIFIED" | "REJECTED" {
+  if (status === "verified") return "VERIFIED";
+  if (status === "in_review") return "IN_REVIEW";
+  if (status === "rejected") return "REJECTED";
+  return "PENDING";
+}
+
+function otpStatusToApi(status: PayoutVerification["status"]): "NOT_STARTED" | "SENT" | "VERIFIED" {
+  if (status === "verified") return "VERIFIED";
+  if (status === "code_sent") return "SENT";
+  return "NOT_STARTED";
+}
+
+function uploadUrlForPersistence(upload?: UploadedFileRef | null) {
+  const direct = typeof upload?.url === "string" ? upload.url : "";
+  if (direct && (direct.startsWith("/") || /^https?:\/\//i.test(direct))) return direct;
+  const preview = typeof upload?.previewUrl === "string" ? upload.previewUrl : "";
+  if (preview && (preview.startsWith("/") || /^https?:\/\//i.test(preview))) return preview;
+  return "";
+}
+
+function buildBackendSettingsPatchPayload(form: SettingsForm) {
+  const formForStorage = sanitizeSettingsFormForStorage(form);
+  const docs = collectSettingsDocs(form);
+  const creatorType = safeText(form.profile.creatorType) || "Individual";
+  const primaryPlatformName = safeText(getPrimaryPlatformName(form));
+  const primaryHandle =
+    normalizePrimaryPlatform(form.socials.primaryPlatform) === "instagram"
+      ? safeText(form.socials.instagram)
+      : normalizePrimaryPlatform(form.socials.primaryPlatform) === "tiktok"
+        ? safeText(form.socials.tiktok)
+        : normalizePrimaryPlatform(form.socials.primaryPlatform) === "youtube"
+          ? safeText(form.socials.youtube)
+          : safeText(form.socials.primaryOtherHandle);
+  const profilePhotoUrl = uploadUrlForPersistence(form.uploads["profile.profilePhotoName"]);
+  const mediaKitUrl = uploadUrlForPersistence(form.uploads["profile.mediaKitName"]);
+  const teamLogoUrl = uploadUrlForPersistence(form.uploads["profile.team.logoName"]);
+  const agencyLogoUrl = uploadUrlForPersistence(form.uploads["profile.agency.logoName"]);
+  const normalizedEmail = normalizeEmail(form.profile.email);
+  const normalizedSupportEmail = normalizeEmail(form.profile.email);
+  const normalizedNotificationsEmail = normalizeEmail(form.payout.wallet.email) || normalizedEmail;
+
+  return {
+    profileType: "CREATOR" as const,
+    owner: safeText(form.profile.name),
+    storeName: safeText(form.profile.name),
+    storeSlug: normalizeHandleToSlug(form.profile.handle),
+    email: normalizedEmail,
+    phone: safeText(form.profile.phone),
+    about: safeText(form.profile.bio),
+    shipFrom: {
+      country: safeText(form.profile.country)
+    },
+    channels: getSelectedSocialPlatforms(form.socials).map((entry) => entry.name),
+    languages: safeStringList(form.profile.contentLanguages),
+    docs: {
+      list: docs
+    },
+    payout: {
+      method: payoutMethodToApi(form.payout.method),
+      currency: safeText(form.payout.currency),
+      rhythm: payoutRhythmToApi(form.payout.schedule),
+      thresholdAmount: safeFiniteNumber(form.payout.minThreshold, 0),
+      bankName: safeText(form.payout.bank.bankName),
+      accountName: safeText(form.payout.bank.accountName),
+      accountNo: safeText(form.payout.bank.accountNumber),
+      swiftBic: safeText(form.payout.bank.swift),
+      mobileProvider: safeText(form.payout.mobile.provider),
+      mobileNo: safeText(form.payout.mobile.number),
+      alipayLogin: safeText(form.payout.alipay.accountId),
+      wechatId: safeText(form.payout.wechat.accountId),
+      otherProvider: form.payout.method === "PayPal / Wallet" ? safeText(form.payout.wallet.provider || "PayPal / Wallet") : "",
+      otherDetails: safeText(form.payout.wallet.email),
+      notificationsEmail: normalizedNotificationsEmail,
+      notificationsWhatsApp: safeText(form.profile.whatsapp || form.profile.phone),
+      confirmDetails: Boolean(form.payout.acceptPayoutPolicy)
+    },
+    tax: {
+      legalName: safeText(form.profile.name),
+      taxCountry: safeText(form.payout.tax.residency || form.profile.country),
+      taxId: safeText(form.payout.tax.taxId)
+    },
+    support: {
+      whatsapp: safeText(form.profile.whatsapp),
+      email: normalizedSupportEmail,
+      phone: safeText(form.profile.phone)
+    },
+    acceptance: {
+      sellerTerms: Boolean(form.review.acceptTerms),
+      contentPolicy: Boolean(form.review.seenPolicies.content),
+      dataProcessing: Boolean(form.review.scrolledToBottom || form.payout.acceptPayoutPolicy)
+    },
+    verification: {
+      verificationPhone: safeText(form.profile.phone),
+      verificationEmail: normalizedEmail,
+      kycStatus: kycStatusToApi(form.kyc.status),
+      otpStatus: otpStatusToApi(form.payout.verification.status)
+    },
+    providerServices: safeStringList(form.preferences.lines),
+    metadata: {
+      creatorAvatarUrl: profilePhotoUrl || undefined,
+      creatorForm: {
+        ...formForStorage,
+        profile: {
+          ...formForStorage.profile,
+          profilePhotoUrl,
+          mediaKitUrl,
+          team: {
+            ...formForStorage.profile.team,
+            logoUrl: teamLogoUrl
+          },
+          agency: {
+            ...formForStorage.profile.agency,
+            logoUrl: agencyLogoUrl
+          }
+        },
+        socials: {
+          ...formForStorage.socials,
+          primaryPlatformName,
+          primaryHandle
+        }
+      },
+      settingsForm: formForStorage,
+      preferences: {
+        lines: safeStringList(form.preferences.lines),
+        formats: safeStringList(form.preferences.formats),
+        models: safeStringList(form.preferences.models)
+      },
+      docs,
+      uploads: formForStorage.uploads,
+      profile: {
+        creatorType,
+        primaryPlatformName,
+        primaryHandle,
+        profilePhotoUrl,
+        mediaKitUrl,
+        teamLogoUrl,
+        agencyLogoUrl
+      }
+    }
   };
 }
 
@@ -2062,12 +2208,17 @@ export default function CreatorSettingsSafetyPremium() {
     if (isSaving) return;
     setIsSaving(true);
     try {
-      await creatorApi.patchWorkflowScreenState(
-        SETTINGS_SCREEN_STATE_KEY,
-        buildScreenStateSettingsPayload(form)
-      );
+      const screenStatePayload = buildScreenStateSettingsPayload(form);
+      const onboardingPayload = buildBackendSettingsPatchPayload(form);
+      await Promise.all([
+        creatorApi.patchWorkflowScreenState(
+          SETTINGS_SCREEN_STATE_KEY,
+          screenStatePayload
+        ),
+        creatorApi.saveOnboarding(onboardingPayload)
+      ]);
       setSaved(true);
-      addAudit("Settings saved", "workflow screen-state");
+      addAudit("Settings saved", "workflow screen-state + onboarding");
       push("Settings saved.", "success");
     } catch (error) {
       const backendMessage = errorMessageFromUnknown(error);

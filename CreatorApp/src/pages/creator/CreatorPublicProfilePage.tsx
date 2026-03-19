@@ -72,6 +72,11 @@ function CreatorPublicProfilePage() {
 
   const session = readAuthSession();
   const profileUserId = session?.id ?? "";
+  const hasSellerProfile = Boolean(
+    session?.sellerProfile &&
+    typeof session.sellerProfile === "object" &&
+    Object.keys(session.sellerProfile).length > 0
+  );
 
   const { data } = useApiResource<CreatorPublicProfileResponse>({
     enabled: Boolean(profileUserId),
@@ -87,6 +92,7 @@ function CreatorPublicProfilePage() {
   const creatorName = creator.name || "Creator profile";
   const creatorHandle = creator.handle || "@creator";
   const creatorInitials = creator.initials || "CP";
+  const creatorAvatarUrl = String(creator.avatarUrl || "").trim();
   const creatorTier = creator.tier || "Creator Tier";
   const creatorVerified = Boolean(creator.verified);
   const creatorBio = creator.bio || "No biography yet.";
@@ -226,6 +232,10 @@ function CreatorPublicProfilePage() {
   };
 
   const toggleFollow = () => {
+    if (!hasSellerProfile || (creator.id && creator.id === profileUserId)) {
+      showNotification("Following creators is only available from a seller account.", "info");
+      return;
+    }
     const nextState = !isFollowing;
     run(
       async () => {
@@ -265,6 +275,7 @@ function CreatorPublicProfilePage() {
 
   const followLabel = isFollowing ? "Unfollow creator" : "Follow this creator";
   const heroSocials = socials.slice(0, 3);
+  const canFollowCreator = hasSellerProfile && (!creator.id || creator.id !== profileUserId);
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors relative">
@@ -279,7 +290,7 @@ function CreatorPublicProfilePage() {
                 : "border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100"
             }`}
             onClick={toggleFollow}
-            disabled={isPending}
+            disabled={isPending || !canFollowCreator}
           >
             {isPending && <CircularProgress size={12} color="inherit" />}
             {followLabel}
@@ -294,9 +305,17 @@ function CreatorPublicProfilePage() {
             <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 flex flex-col md:flex-row gap-4 items-center md:items-end">
               <div className="flex items-end gap-3 w-full md:w-auto">
                 <div className="relative">
-                  <div className="h-20 w-20 md:h-24 md:w-24 rounded-full border-4 border-white bg-slate-200 dark:bg-slate-600 transition-colors flex items-center justify-center text-lg md:text-xl font-semibold text-slate-600 dark:text-slate-300">
-                    {creatorInitials}
-                  </div>
+                  {creatorAvatarUrl ? (
+                    <img
+                      src={creatorAvatarUrl}
+                      alt={creatorName}
+                      className="h-20 w-20 md:h-24 md:w-24 rounded-full border-4 border-white object-cover bg-slate-200 dark:bg-slate-600 transition-colors"
+                    />
+                  ) : (
+                    <div className="h-20 w-20 md:h-24 md:w-24 rounded-full border-4 border-white bg-slate-200 dark:bg-slate-600 transition-colors flex items-center justify-center text-lg md:text-xl font-semibold text-slate-600 dark:text-slate-300">
+                      {creatorInitials}
+                    </div>
+                  )}
                   <span className="absolute bottom-0 right-0 h-5 w-5 rounded-full bg-[#03cd8c] border-2 border-white flex items-center justify-center text-xs text-white">
                     {creatorVerified ? "✓" : "•"}
                   </span>
@@ -345,7 +364,7 @@ function CreatorPublicProfilePage() {
                         : "border-slate-200 text-slate-700 hover:bg-slate-50 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100"
                     }`}
                     onClick={toggleFollow}
-                    disabled={isPending}
+                    disabled={isPending || !canFollowCreator}
                   >
                     {isPending && <CircularProgress size={12} color="inherit" />}
                     {followLabel}
