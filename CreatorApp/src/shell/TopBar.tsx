@@ -29,6 +29,50 @@ type TopBarProps = {
   onSearchRectUpdate?: (rect: DOMRect | null) => void;
 };
 
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function buildUserIdentity() {
+  const session = readAuthSession();
+  const creatorProfile = readRecord(session?.creatorProfile);
+  const sellerProfile = readRecord(session?.sellerProfile);
+
+  const name =
+    readString(creatorProfile.name) ||
+    readString(sellerProfile.displayName) ||
+    readString(sellerProfile.name) ||
+    (() => {
+      const email = readString(session?.email);
+      if (email.includes("@")) {
+        return email.split("@")[0];
+      }
+      return readString(session?.phone) || "Creator";
+    })();
+
+  const handleRaw = readString(creatorProfile.handle) || readString(sellerProfile.handle);
+  const handle =
+    handleRaw && handleRaw !== "@"
+      ? handleRaw.startsWith("@")
+        ? handleRaw
+        : `@${handleRaw}`
+      : `@${name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "creator"}`;
+
+  const initials =
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("") || "CR";
+
+  return { name, handle, initials };
+}
+
 export const TopBar: React.FC<TopBarProps> = ({
   onChangePage,
   onOpenCommand,
@@ -45,6 +89,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   const searchBtnRef = useRef<HTMLButtonElement>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const hasSession = Boolean(readAuthSession());
+  const userIdentity = buildUserIdentity();
 
   useEffect(() => {
     if (!onSearchRectUpdate || !searchBtnRef.current) return;
@@ -196,7 +241,9 @@ export const TopBar: React.FC<TopBarProps> = ({
           onChangePage={onChangePage}
         />
         <AvatarMenuDropdown
-          userName="Ronald"
+          userName={userIdentity.name}
+          userHandle={userIdentity.handle}
+          userInitials={userIdentity.initials}
           onChangePage={onChangePage}
           onViewEarnings={onViewEarnings}
           onOpenCommand={onOpenCommand}

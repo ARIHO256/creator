@@ -5,6 +5,8 @@ import { useScrollLock } from "../hooks/useScrollLock";
 
 type AvatarMenuDropdownProps = {
   userName?: string;
+  userHandle?: string;
+  userInitials?: string;
   onChangePage?: (page: PageId) => void;
   onViewEarnings?: () => void;
   onOpenCommand?: () => void;
@@ -12,7 +14,9 @@ type AvatarMenuDropdownProps = {
 };
 
 export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
-  userName = "Ronald",
+  userName = "Creator",
+  userHandle,
+  userInitials,
   onChangePage,
   onViewEarnings,
   onOpenCommand,
@@ -67,6 +71,23 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
     ? "bg-slate-900 border-slate-800 text-slate-50"
     : "bg-white border-slate-200 text-slate-900";
   const muted = darkMode ? "text-slate-400" : "text-slate-500";
+  const normalizedName = String(userName || "").trim() || "Creator";
+  const normalizedHandle = String(userHandle || "").trim();
+  const handleText =
+    normalizedHandle && normalizedHandle !== "@"
+      ? normalizedHandle.startsWith("@")
+        ? normalizedHandle
+        : `@${normalizedHandle}`
+      : `@${normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "creator"}`;
+  const initials =
+    String(userInitials || "").trim() ||
+    normalizedName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("") ||
+    "CR";
 
   const handleViewEarnings = () => {
     setOpen(false);
@@ -96,10 +117,10 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
         aria-expanded={open}
       >
         <div className={`h-7 w-7 rounded-full flex-shrink-0 ${darkMode ? "bg-slate-700" : "bg-slate-200"} flex items-center justify-center text-xs font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-          RI
+          {initials}
         </div>
         <span className={`hidden sm:inline text-md font-medium ${darkMode ? "text-slate-100" : "text-slate-800"}`}>
-          {userName}
+          {normalizedName}
         </span>
         <span className={`text-xs ${muted} flex-shrink-0`}>▾</span>
       </button>
@@ -119,14 +140,14 @@ export const AvatarMenuDropdown: React.FC<AvatarMenuDropdownProps> = ({
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                 <div className={`h-10 w-10 rounded-full flex-shrink-0 ${darkMode ? "bg-slate-700" : "bg-slate-200"} flex items-center justify-center text-sm font-semibold ${darkMode ? "text-slate-300" : "text-slate-600"}`}>
-                  RI
+                  {initials}
                 </div>
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="text-md font-semibold truncate dark:text-slate-100">
-                    {userName} Isabirye
+                    {normalizedName}
                   </div>
                   <div className={`text-sm ${muted} truncate`}>
-                    @{userName.toLowerCase()}.creates · Silver Tier · KYC Verified
+                    {handleText} · Silver Tier · KYC Verified
                   </div>
                 </div>
               </div>

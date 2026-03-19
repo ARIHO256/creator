@@ -258,6 +258,69 @@ export type ReviewsSummaryResponse = {
   average?: number;
 };
 
+export type CreatorPublicProfileResponse = {
+  creator?: {
+    id?: string;
+    profileId?: string;
+    avatarUrl?: string | null;
+    name?: string;
+    handle?: string;
+    tier?: string;
+    verified?: boolean;
+    region?: string;
+    initials?: string;
+    categories?: string[];
+    tagline?: string;
+    bio?: string;
+    languages?: string[];
+    markets?: string[];
+    followers?: number;
+    followersLabel?: string;
+    avgLiveViewersLabel?: string;
+    totalSalesDrivenLabel?: string;
+    rating?: number;
+    completedCollabs?: number;
+    reviewCount?: number;
+    isFollowing?: boolean;
+  };
+  performance?: Array<{ label?: string; value?: string; sub?: string }>;
+  portfolio?: Array<{
+    id?: string;
+    brand?: string;
+    category?: string;
+    title?: string;
+    body?: string;
+    actionLabel?: string;
+  }>;
+  liveSlots?: Array<{ id?: string; label?: string; title?: string; time?: string; cta?: string }>;
+  reviews?: Array<{ id?: string; brand?: string; quote?: string }>;
+  socials?: Array<{
+    id?: string;
+    name?: string;
+    handle?: string;
+    tag?: string;
+    color?: string;
+    href?: string | null;
+    followers?: string | number | null;
+  }>;
+  pastCampaigns?: Array<{
+    id?: string;
+    title?: string;
+    period?: string;
+    gmv?: string;
+    ctr?: string;
+    conv?: string;
+  }>;
+  tags?: string[];
+  compatibility?: {
+    score?: number;
+    summary?: string;
+    bullets?: string[];
+  };
+  quickFacts?: string[];
+  deckContent?: string;
+};
+
 export type ReviewRecord = {
   id: string;
   subjectUserId?: string | null;
@@ -396,6 +459,12 @@ export const creatorApi = {
   },
   mySellers(params?: { limit?: number; offset?: number }) {
     return api.get<PublicSellerRecord[]>(withQuery("/my-sellers", params));
+  },
+  creatorPublicProfile(id: string) {
+    return api.get<CreatorPublicProfileResponse>(`/creators/${id}/profile`);
+  },
+  followCreator(id: string, follow = true) {
+    return api.post(`/creators/${id}/follow`, { follow });
   },
   opportunities(params?: { limit?: number; offset?: number }) {
     return api.get<OpportunityRecord[]>(withQuery("/opportunities", params));

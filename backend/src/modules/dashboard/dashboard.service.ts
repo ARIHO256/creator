@@ -283,7 +283,7 @@ export class DashboardService {
   }
 
   private async computeCreatorHome(userId: string) {
-    const [user, campaigns, pendingProposals, sessions, replays, follows, opportunities, proposals, contracts] = await Promise.all([
+    const [user, campaigns, pendingProposals, sessions, replays, follows, proposals, contracts] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
         include: { creatorProfile: true }
@@ -312,12 +312,6 @@ export class DashboardService {
         orderBy: { createdAt: 'desc' },
         take: 12
       }),
-      this.prisma.opportunity.findMany({
-        where: { OR: [{ creatorId: userId }, { creatorId: null }] },
-        include: { seller: true },
-        orderBy: { updatedAt: 'desc' },
-        take: 12
-      }),
       this.prisma.proposal.findMany({
         where: { creatorId: userId },
         orderBy: { updatedAt: 'desc' },
@@ -329,6 +323,18 @@ export class DashboardService {
         take: 20
       })
     ]);
+    const followSellerIds = follows.map((entry) => entry.sellerId).filter(Boolean);
+    const opportunities = await this.prisma.opportunity.findMany({
+      where: followSellerIds.length
+        ? {
+            status: 'OPEN',
+            sellerId: { in: followSellerIds }
+          }
+        : { status: 'OPEN' },
+      include: { seller: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 12
+    });
     const sellers = follows.length
       ? await this.prisma.seller.findMany({
           where: {
@@ -415,15 +421,12 @@ export class DashboardService {
       ['SUBMITTED', 'IN_REVIEW', 'NEGOTIATING'].includes(String(proposal.status || ''))
     );
     const totalOpportunityBudget = opportunities.reduce((sum, opportunity) => {
-      return sum + Number(opportunity.budgetMax ?? opportunity.budget ?? opportunity.budgetMin ?? 0);
+      return sum + this.estimateOpportunityBudget(opportunity);
     }, 0);
 
     const categoryPool = this.uniqueStrings([
       ...campaigns.flatMap((campaign) => this.readStringList(campaign.seller?.categories)),
-      ...opportunities.flatMap((opportunity) => {
-        const direct = Array.isArray(opportunity.categories) ? opportunity.categories.map((entry) => String(entry)) : [];
-        return [...direct, String(opportunity.category || '')];
-      })
+      ...opportunities.flatMap((opportunity) => this.readOpportunityCategories(opportunity))
     ]).slice(0, 3);
 
     return {
@@ -1678,6 +1681,38 @@ export class DashboardService {
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return '--:--';
     return date.toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  private estimateOpportunityBudget(opportunity: { payBand?: string | null; metadata?: Prisma.JsonValue | null }) {
+    const fromMetadata =
+      this.readNumber(opportunity.metadata, 'budgetMax') ||
+      this.readNumber(opportunity.metadata, 'budget') ||
+      this.readNumber(opportunity.metadata, 'budgetMin') ||
+      this.readNumber(opportunity.metadata, 'amount');
+    if (fromMetadata > 0) {
+      return fromMetadata;
+    }
+
+    const rawBand = String(opportunity.payBand || '');
+    const matches = rawBand.match(/\d[\d,.]*/g) || [];
+    const numbers = matches
+      .map((entry) => Number(entry.replace(/,/g, '')))
+      .filter((value) => Number.isFinite(value));
+    if (numbers.length > 0) {
+      return Math.max(...numbers);
+    }
+
+    return 0;
+  }
+
+  private readOpportunityCategories(opportunity: { metadata?: Prisma.JsonValue | null; title?: string | null }) {
+    return this.uniqueStrings([
+      ...this.readStringList(opportunity.metadata, 'categories'),
+      this.readString(opportunity.metadata, 'category'),
+      this.readString(opportunity.metadata, 'line'),
+      this.readString(opportunity.metadata, 'type'),
+      String(opportunity.title || '')
+    ]).slice(0, 2);
   }
 
   private formatDateRange(start?: Date | null, end?: Date | null) {

@@ -761,20 +761,88 @@ function extractBackendCreatorForm(payload: unknown): Partial<OnboardingForm> | 
 }
 
 function buildBackendOnboardingPayload(form: OnboardingForm, submitted = false) {
+  const normalizedEmail = isEmailLike(form.profile.email) ? String(form.profile.email).trim().toLowerCase() : undefined;
+  const normalizedSupportEmail = isEmailLike(form.profile.email)
+    ? String(form.profile.email).trim().toLowerCase()
+    : undefined;
+  const normalizedNotificationsEmail = isEmailLike(form.profile.email)
+    ? String(form.profile.email).trim().toLowerCase()
+    : undefined;
+
+  const docs = [
+    form.kyc.idUploaded && isFilled(form.kyc.idFileName)
+      ? {
+          id: "government-id",
+          type: "government_id",
+          name: form.kyc.idFileName,
+          file: form.kyc.idFileName,
+          status: "submitted"
+        }
+      : null,
+    form.kyc.selfieUploaded && isFilled(form.kyc.selfieFileName)
+      ? {
+          id: "selfie-verification",
+          type: "selfie_verification",
+          name: form.kyc.selfieFileName,
+          file: form.kyc.selfieFileName,
+          status: "submitted"
+        }
+      : null,
+    form.kyc.addressUploaded && isFilled(form.kyc.addressFileName)
+      ? {
+          id: "address-proof",
+          type: "address_proof",
+          name: form.kyc.addressFileName,
+          file: form.kyc.addressFileName,
+          status: "submitted"
+        }
+      : null,
+    form.kyc.org.registrationUploaded && isFilled(form.kyc.org.registrationFileName)
+      ? {
+          id: "org-registration",
+          type: "organization_registration",
+          name: form.kyc.org.registrationFileName,
+          file: form.kyc.org.registrationFileName,
+          status: "submitted"
+        }
+      : null,
+    form.kyc.org.taxUploaded && isFilled(form.kyc.org.taxFileName)
+      ? {
+          id: "org-tax",
+          type: "organization_tax",
+          name: form.kyc.org.taxFileName,
+          file: form.kyc.org.taxFileName,
+          status: "submitted"
+        }
+      : null,
+    form.kyc.org.authorizationUploaded && isFilled(form.kyc.org.authorizationFileName)
+      ? {
+          id: "org-authorization",
+          type: "organization_authorization",
+          name: form.kyc.org.authorizationFileName,
+          file: form.kyc.org.authorizationFileName,
+          status: "submitted"
+        }
+      : null
+  ].filter(Boolean);
+
   return {
     profileType: "CREATOR",
     status: submitted ? "submitted" : "in_progress",
     owner: form.profile.name,
     storeName: form.profile.name,
     storeSlug: String(form.profile.handle || "").replace(/^@+/, ""),
-    email: form.profile.email,
+    email: normalizedEmail,
     phone: form.profile.phone,
     about: form.profile.bio,
     languages: form.profile.contentLanguages,
     support: {
       whatsapp: form.profile.whatsapp,
-      email: form.profile.email,
+      email: normalizedSupportEmail,
       phone: form.profile.phone
+    },
+    docs: {
+      list: docs
     },
     shipFrom: {
       country: form.profile.country
@@ -795,7 +863,7 @@ function buildBackendOnboardingPayload(form: OnboardingForm, submitted = false) 
       alipayLogin: form.payout.alipay.account,
       wechatId: form.payout.wechat.wechatId,
       confirmDetails: form.payout.acceptPayoutPolicy,
-      notificationsEmail: form.profile.email,
+      notificationsEmail: normalizedNotificationsEmail,
       notificationsWhatsApp: form.profile.whatsapp || form.profile.phone
     },
     tax: {
@@ -803,11 +871,16 @@ function buildBackendOnboardingPayload(form: OnboardingForm, submitted = false) 
       taxId: form.payout.tax.taxId,
       legalName: form.profile.name
     },
+    acceptance: {
+      sellerTerms: form.review.acceptTerms,
+      contentPolicy: form.review.seenPolicies.content,
+      dataProcessing: form.review.scrolledToBottom
+    },
     verification: {
       emailVerified: false,
       phoneVerified: false,
       verificationPhone: form.profile.phone,
-      verificationEmail: form.profile.email,
+      verificationEmail: normalizedEmail,
       kycStatus: form.kyc.idUploaded && form.kyc.selfieUploaded ? "IN_REVIEW" : "PENDING",
       otpStatus: form.payout.verification.status === "verified" ? "VERIFIED" : form.payout.verification.status === "code_sent" ? "SENT" : "NOT_STARTED"
     },
@@ -1492,22 +1565,6 @@ export default function CreatorOnboardingWorldClassV25() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Pre-populate Email/Phone from EVzone if empty
-  useEffect(() => {
-    const mockFetchEvzoneAccount = async () => {
-      // simulate API delay
-      await new Promise(r => setTimeout(r, 800));
-      update("profile.email", "ronald.isabirye@evzone.test");
-      update("profile.phone", "+256 700 000 000");
-      update("profile.whatsapp", ""); // Empty to test fallback
-      push("Profile details pre-populated from EVzone Accounts.", "success");
-    };
-
-    if (!form.profile.email || !form.profile.phone) {
-      mockFetchEvzoneAccount();
-    }
   }, []);
 
   // Pre-populate Verification Contact Value based on method
