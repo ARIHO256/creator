@@ -511,6 +511,18 @@ export type LiveSessionDraft = {
   };
 };
 
+type DashboardSessionMetrics = {
+  id: string;
+  campaignId?: string;
+  peakViewers: number;
+  conversionRate?: number;
+  chatRate: number;
+  avgWatchMin: number;
+  gmv: number;
+  crewConflicts: number;
+  productsCount: number;
+};
+
 function getDefaultGoalMetric(kind: "product" | "service"): LiveGoalMetric {
   return kind === "service" ? "booked" : "sold";
 }
@@ -864,6 +876,193 @@ function normalizeCatalogFromMarketplace(value: unknown): LiveItem[] {
   });
 
   return Array.from(items.values());
+}
+
+function parseIsoToDateTimeParts(iso: string): { dateISO: string; time: string } | null {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return {
+    dateISO: toISODate(parsed),
+    time: `${pad2(parsed.getHours())}:${pad2(parsed.getMinutes())}`,
+  };
+}
+
+function normalizeLivePlatformLabel(value: string): LivePlatform | null {
+  const label = value.trim().toLowerCase();
+  if (!label) return null;
+  if (label.includes("tiktok")) return "TikTok Live";
+  if (label.includes("instagram")) return "Instagram Live";
+  if (label.includes("youtube")) return "YouTube Live";
+  if (label.includes("facebook")) return "Facebook Live";
+  if (label === "other") return "Other";
+  return null;
+}
+
+function normalizeDraftFromDealRecord(
+  value: unknown,
+  baseline: LiveSessionDraft,
+  fallbackItems: LiveItem[],
+): Partial<LiveSessionDraft> | null {
+  const deal = asRecord(value);
+  if (!deal) return null;
+  const live = asRecord(deal.live);
+  const shoppable = asRecord(deal.shoppable);
+  const supplier = asRecord(deal.supplier);
+  const creator = asRecord(deal.creator);
+
+  const title = toStr(live?.title, toStr(deal.title, baseline.title)).trim() || baseline.title;
+  const description = toStr(live?.description, toStr(deal.tagline, baseline.description)).trim() || baseline.description;
+
+  const tagsFromLive = asArray(live?.tags)
+    .map((entry) => toStr(entry, "").trim())
+    .filter(Boolean);
+  const tagsFromTagline = toStr(deal.tagline, "")
+    .split(/[;,|]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  const tags = (tagsFromLive.length ? tagsFromLive : tagsFromTagline).slice(0, 10);
+
+  const rawPlatforms = asArray(live?.platforms)
+    .map((entry) => toStr(entry, "").trim())
+    .filter(Boolean);
+  const mappedPlatforms: LivePlatform[] = [];
+  const platformOtherLabels: string[] = [];
+  rawPlatforms.forEach((entry) => {
+    const normalized = normalizeLivePlatformLabel(entry);
+    if (normalized) {
+      if (!mappedPlatforms.includes(normalized)) mappedPlatforms.push(normalized);
+      return;
+    }
+    platformOtherLabels.push(entry);
+  });
+  if (platformOtherLabels.length && !mappedPlatforms.includes("Other")) {
+    mappedPlatforms.push("Other");
+  }
+
+  const startISO = toStr(live?.startISO, toStr(deal.startISO, ""));
+  const endISO = toStr(live?.endISO, toStr(deal.endISO, ""));
+  const startParts = parseIsoToDateTimeParts(startISO);
+  const endParts = parseIsoToDateTimeParts(endISO);
+
+  const rawFeatured = asArray(live?.featured);
+  const featuredItems: LiveItem[] = rawFeatured
+    .map((entry, index) => {
+      const record = asRecord(entry);
+      if (!record) return null;
+      const id = toStr(record.id, `deal_item_${index + 1}`);
+      const kind = toStr(record.kind, "product").toLowerCase() === "service" ? "service" : "product";
+      const stockLeft = toNum(record.stockLeft, Number.NaN);
+      const sold = toNum(record.sold, Number.NaN);
+      const price = typeof record.price === "number" && Number.isFinite(record.price) ? record.price : undefined;
+      const currency = toStr(record.currency, "").trim() || undefined;
+      return {
+        id,
+        campaignId: toStr(deal.id, ""),
+        kind,
+        name: toStr(record.name, "Featured item"),
+        imageUrl: toStr(record.posterUrl, toStr(live?.heroImageUrl, baseline.heroImageUrl)),
+        videoUrl: toStr(record.videoUrl, "") || undefined,
+        badge: toStr(record.badge, ""),
+        stock: Number.isFinite(stockLeft) ? stockLeft : undefined,
+        claimedCount: Number.isFinite(sold) ? sold : undefined,
+        startingFrom: toStr(record.priceLabel, ""),
+        price,
+        currency,
+        url: toStr(record.url, ""),
+      } satisfies LiveItem;
+    })
+    .filter((item): item is LiveItem => Boolean(item));
+
+  const rawGiveaways = asArray(live?.giveaways);
+  const giveaways: LiveGiveaway[] = rawGiveaways
+    .map((entry, index) => {
+      const record = asRecord(entry);
+      if (!record) return null;
+      const quantity = Math.max(1, Math.floor(toNum(record.quantity, 1)));
+      return {
+        id: toStr(record.id, `gw_${index + 1}`),
+        linkedItemId: toStr(record.linkedItemId, "") || undefined,
+        title: toStr(record.title, "") || undefined,
+        imageUrl: toStr(record.imageUrl, "") || undefined,
+        notes: toStr(record.notes, "") || undefined,
+        quantity,
+        showOnPromo: toBool(record.showOnPromo, true),
+      } satisfies LiveGiveaway;
+    })
+    .filter((entry): entry is LiveGiveaway => Boolean(entry));
+
+  const products = featuredItems.length
+    ? featuredItems
+    : fallbackItems.length
+      ? fallbackItems
+      : baseline.products;
+
+  return {
+    id: baseline.id,
+    title,
+    description,
+    tags: tags.length ? tags : baseline.tags,
+    status: toDraftStatus(toStr(live?.status, toStr(deal.status, baseline.status))),
+    supplierId: toStr(supplier?.id, "") || baseline.supplierId,
+    campaignId: toStr(deal.id, "") || baseline.campaignId,
+    hostId: toStr(asRecord(live?.host)?.id, toStr(creator?.id, "")) || baseline.hostId,
+    platforms: mappedPlatforms.length ? mappedPlatforms : baseline.platforms,
+    platformOther: platformOtherLabels.length ? platformOtherLabels.join(", ") : baseline.platformOther,
+    locationLabel: toStr(live?.locationLabel, baseline.locationLabel),
+    publicJoinUrl: toStr(live?.promoLink, baseline.publicJoinUrl),
+    heroAspect: baseline.heroAspect,
+    heroImageUrl: toStr(
+      live?.heroImageUrl,
+      toStr(shoppable?.heroImageUrl, toStr(supplier?.logoUrl, baseline.heroImageUrl)),
+    ),
+    heroVideoUrl: toStr(live?.heroVideoUrl, baseline.heroVideoUrl || "") || undefined,
+    desktopMode: toStr(live?.heroDesktopMode, baseline.desktopMode) === "fullscreen" ? "fullscreen" : "modal",
+    timezoneLabel: toStr(live?.timezoneLabel, baseline.timezoneLabel),
+    startDateISO: startParts?.dateISO || baseline.startDateISO,
+    startTime: startParts?.time || baseline.startTime,
+    endDateISO: endParts?.dateISO || baseline.endDateISO,
+    endTime: endParts?.time || baseline.endTime,
+    products,
+    giveaways: giveaways.length ? giveaways : baseline.giveaways,
+  };
+}
+
+function normalizeDashboardSessionMetrics(value: unknown): DashboardSessionMetrics | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const id = toStr(record.id, "").trim();
+  if (!id) return null;
+  return {
+    id,
+    campaignId: toStr(record.campaignId, "") || undefined,
+    peakViewers: Math.max(0, toNum(record.peakViewers, 0)),
+    conversionRate: (() => {
+      const direct = toNum(record.conversionRate, Number.NaN);
+      if (Number.isFinite(direct)) return Math.max(0, direct);
+      const pct = toNum(record.conversionPct, Number.NaN);
+      if (Number.isFinite(pct)) return Math.max(0, pct);
+      const alt = toNum(record.conversion, Number.NaN);
+      if (Number.isFinite(alt)) return Math.max(0, alt);
+      return undefined;
+    })(),
+    chatRate: Math.max(0, toNum(record.chatRate, 0)),
+    avgWatchMin: Math.max(0, toNum(record.avgWatchMin, 0)),
+    gmv: Math.max(0, toNum(record.gmv, 0)),
+    crewConflicts: Math.max(0, toNum(record.crewConflicts, 0)),
+    productsCount: Math.max(0, toNum(record.productsCount, 0)),
+  };
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(Math.max(0, value));
+}
+
+function formatPercentage(value: number) {
+  const normalized = value <= 1 ? value * 100 : value;
+  return `${normalized.toFixed(1)}%`;
 }
 
 function normalizeAssetEntry(value: unknown): LiveAsset | null {
@@ -3302,26 +3501,34 @@ export function LiveBuilderView({
 }) {
   const { showSuccess, showError, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
+  const dealIdFromSearch = useMemo<string | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    return parseSearch().get("dealId") || undefined;
+  }, []);
+  const effectiveDealId = prefillDealId || dealIdFromSearch;
   const [draft, setDraft] = useState<LiveSessionDraft>(() =>
     defaultDraft(
       initialSessionId ||
-        prefillDealId ||
+        effectiveDealId ||
         `ls_${Math.random().toString(16).slice(2, 8)}`,
-      prefillDealId,
+      effectiveDealId,
     ),
   );
-  const builderSessionId = initialSessionId || prefillDealId || draft.id;
+  const builderSessionId = initialSessionId || effectiveDealId || draft.id;
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [step, setStep] = useState<StepKey>("setup");
   const [suppliersData, setSuppliersData] = useState<Supplier[]>([]);
   const [campaignsData, setCampaignsData] = useState<Campaign[]>([]);
   const [hostsData, setHostsData] = useState<Host[]>([]);
+  const [dashboardSessionsData, setDashboardSessionsData] = useState<DashboardSessionMetrics[]>([]);
   const [catalogData, setCatalogData] = useState<LiveItem[]>([]);
   const [assetLibraryData, setAssetLibraryData] = useState<LiveAsset[]>([]);
   const [customGiveawaysByCampaign, setCustomGiveawaysByCampaign] = useState<
     Record<string, SupplierCustomGiveawayPreset[]>
   >({});
   const backendHydratedRef = useRef(false);
+  const autoSavePrimedRef = useRef(false);
+  const lastPersistedSnapshotRef = useRef("");
 
   // Rank tier gates max live duration (Bronze/Silver/Gold).
   // TODO: Wire this to CreatorContext.rankTier once the context is extended.
@@ -3514,6 +3721,10 @@ export function LiveBuilderView({
   const [externalAssets, setExternalAssets] = useState<
     Record<string, LiveAsset>
   >({});
+  const pendingPickerAssetRef = useRef<{
+    asset: LiveAsset;
+    applyTo: string;
+  } | null>(null);
 
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalogSelected, setCatalogSelected] = useState<string[]>([]);
@@ -3725,6 +3936,46 @@ export function LiveBuilderView({
     () => hostsData.find((h) => h.id === draft.hostId),
     [hostsData, draft.hostId],
   );
+  const activeDashboardMetrics = useMemo(() => {
+    if (!dashboardSessionsData.length) return null;
+    const byId = (id?: string) =>
+      id ? dashboardSessionsData.find((entry) => entry.id === id) : undefined;
+    const byCampaign = (campaignId?: string) =>
+      campaignId
+        ? dashboardSessionsData.find((entry) => entry.campaignId === campaignId)
+        : undefined;
+
+    return (
+      byId(builderSessionId) ||
+      byId(effectiveDealId) ||
+      byId(draft.id) ||
+      byCampaign(effectiveDealId) ||
+      byCampaign(draft.campaignId) ||
+      dashboardSessionsData[0] ||
+      null
+    );
+  }, [
+    dashboardSessionsData,
+    builderSessionId,
+    effectiveDealId,
+    draft.id,
+    draft.campaignId,
+  ]);
+  const expectedPeakViewersLabel = useMemo(
+    () =>
+      activeDashboardMetrics
+        ? formatCompactNumber(activeDashboardMetrics.peakViewers)
+        : "—",
+    [activeDashboardMetrics],
+  );
+  const projectedConversionLabel = useMemo(() => {
+    if (!activeDashboardMetrics) return "—";
+    const source =
+      typeof activeDashboardMetrics.conversionRate === "number"
+        ? activeDashboardMetrics.conversionRate
+        : activeDashboardMetrics.chatRate;
+    return formatPercentage(source);
+  }, [activeDashboardMetrics]);
 
   const openerAsset = useMemo(
     () =>
@@ -3761,12 +4012,21 @@ export function LiveBuilderView({
   }, [externalAssets, assetLibraryData]);
 
   useEffect(() => {
+    backendHydratedRef.current = false;
+    autoSavePrimedRef.current = false;
+    lastPersistedSnapshotRef.current = "";
+
     let active = true;
+    const pickerRestoreInProgress = (() => {
+      if (typeof window === "undefined") return false;
+      const sp = new URLSearchParams(window.location.search);
+      return sp.get("restore") === "1" || sp.has("assetId");
+    })();
 
     const normalizeDraftFromSnapshot = (input: unknown): LiveSessionDraft | null => {
       const record = asRecord(input);
       if (!record) return null;
-      const baseline = defaultDraft(builderSessionId, prefillDealId);
+      const baseline = defaultDraft(builderSessionId, effectiveDealId);
       if (typeof record.title !== "string" || typeof record.startDateISO !== "string") {
         return null;
       }
@@ -3834,6 +4094,9 @@ export function LiveBuilderView({
         const hosts = Array.from(
           new Map([...workspaceHosts, ...marketplaceHosts].map((entry) => [entry.id, entry])).values(),
         );
+        const dashboardSessions = asArray(workspace.sessions)
+          .map((entry) => normalizeDashboardSessionMetrics(entry))
+          .filter((entry): entry is DashboardSessionMetrics => Boolean(entry));
         const catalog = normalizeCatalogFromMarketplace(marketplace.deals);
         const assets = asArray(assetsRaw)
           .map((entry) => normalizeAssetEntry(entry))
@@ -3842,6 +4105,7 @@ export function LiveBuilderView({
         setSuppliersData(suppliers);
         setCampaignsData(campaigns);
         setHostsData(hosts);
+        setDashboardSessionsData(dashboardSessions);
         setCatalogData(catalog);
         setAssetLibraryData(assets);
 
@@ -3864,6 +4128,29 @@ export function LiveBuilderView({
 
         const builderPayload = asRecord(builderRaw?.data) || {};
         const snapshotDraft = normalizeDraftFromSnapshot(builderPayload.draft || builderPayload);
+        const baselineSeed = defaultDraft(builderSessionId, effectiveDealId);
+        const activeDealRecord = effectiveDealId
+          ? marketplaceDeals.find((entry) => {
+            const record = asRecord(entry);
+            return record ? toStr(record.id, "") === effectiveDealId : false;
+          })
+          : null;
+        const catalogForDeal = effectiveDealId
+          ? catalog.filter((entry) => entry.campaignId === effectiveDealId)
+          : [];
+        const dealPrefill = activeDealRecord
+          ? normalizeDraftFromDealRecord(activeDealRecord, baselineSeed, catalogForDeal)
+          : null;
+        const snapshotLooksSeedLike = Boolean(
+          snapshotDraft &&
+          snapshotDraft.title === baselineSeed.title &&
+          snapshotDraft.description === baselineSeed.description &&
+          snapshotDraft.publicJoinUrl === baselineSeed.publicJoinUrl &&
+          snapshotDraft.products.length === baselineSeed.products.length &&
+          snapshotDraft.tags.join("|") === baselineSeed.tags.join("|") &&
+          !snapshotDraft.heroImageUrl &&
+          !snapshotDraft.heroVideoUrl,
+        );
 
         setDraft((prev) => {
           const fallback = {
@@ -3880,32 +4167,72 @@ export function LiveBuilderView({
               undefined,
             hostId: prev.hostId || hosts[0]?.id || undefined
           };
-
-          if (snapshotDraft) {
+          const picked = pendingPickerAssetRef.current;
+          const applyPickedSelection = (base: LiveSessionDraft) => {
+            if (!picked) return base;
+            return applyPickedAssetToDraftRef.current(
+              base,
+              picked.asset,
+              picked.applyTo,
+            );
+          };
+          const applyDealPrefill = (base: LiveSessionDraft) => {
+            if (!dealPrefill) return base;
+            const nextSupplierId =
+              dealPrefill.supplierId && suppliers.some((entry) => entry.id === dealPrefill.supplierId)
+                ? dealPrefill.supplierId
+                : base.supplierId;
+            const nextCampaignId =
+              dealPrefill.campaignId && campaigns.some((entry) => entry.id === dealPrefill.campaignId)
+                ? dealPrefill.campaignId
+                : nextSupplierId
+                  ? campaigns.find((entry) => entry.supplierId === nextSupplierId)?.id || base.campaignId
+                  : base.campaignId;
+            const nextHostId =
+              dealPrefill.hostId && hosts.some((entry) => entry.id === dealPrefill.hostId)
+                ? dealPrefill.hostId
+                : base.hostId;
             return {
-              ...fallback,
+              ...base,
+              ...dealPrefill,
+              supplierId: nextSupplierId,
+              campaignId: nextCampaignId,
+              hostId: nextHostId,
+            };
+          };
+          const withDealPrefill = applyDealPrefill(fallback);
+
+          if (snapshotDraft && !snapshotLooksSeedLike) {
+            const withSnapshot = {
+              ...withDealPrefill,
               ...snapshotDraft,
               id: builderSessionId,
               supplierId:
                 snapshotDraft.supplierId ||
-                fallback.supplierId,
+                withDealPrefill.supplierId,
               campaignId:
                 snapshotDraft.campaignId ||
-                fallback.campaignId,
+                withDealPrefill.campaignId,
               hostId:
                 snapshotDraft.hostId ||
-                fallback.hostId,
+                withDealPrefill.hostId,
               status: toDraftStatus(
                 toStr(snapshotDraft.status, toStr(builderRaw?.status, "draft")),
               ),
             };
+            return applyPickedSelection(withSnapshot);
           }
 
-          return fallback;
+          return applyPickedSelection(withDealPrefill);
         });
+        pendingPickerAssetRef.current = null;
 
         const savedStep = toStr(builderPayload.step, "");
-        if (savedStep && STEPS.some((entry) => entry.key === savedStep)) {
+        if (
+          !pickerRestoreInProgress &&
+          savedStep &&
+          STEPS.some((entry) => entry.key === savedStep)
+        ) {
           setStep(savedStep as StepKey);
         }
         const savedExternalAssets = asRecord(builderPayload.externalAssets);
@@ -3931,7 +4258,7 @@ export function LiveBuilderView({
     return () => {
       active = false;
     };
-  }, [builderSessionId, prefillDealId]);
+  }, [builderSessionId, effectiveDealId]);
 
   const startISO = useMemo(
     () => combineDateTime(draft.startDateISO, draft.startTime),
@@ -4087,12 +4414,12 @@ export function LiveBuilderView({
       const picker = new URL("/asset-library", window.location.origin);
       picker.searchParams.set("mode", "picker");
       picker.searchParams.set("target", "live");
-      picker.searchParams.set("dealId", prefillDealId || draft.id);
+      picker.searchParams.set("dealId", effectiveDealId || draft.id);
       if (applyTo) picker.searchParams.set("applyTo", applyTo);
       picker.searchParams.set("returnTo", returnTo);
       window.location.assign(picker.toString());
     },
-    [persistDraftForPicker, buildReturnToUrl, prefillDealId, draft.id],
+    [persistDraftForPicker, buildReturnToUrl, effectiveDealId, draft.id],
   );
 
   const coerceOwner = useCallback(
@@ -4246,6 +4573,10 @@ export function LiveBuilderView({
     },
     [activeFeaturedItemId],
   );
+  const applyPickedAssetToDraftRef = useRef(applyPickedAssetToDraft);
+  useEffect(() => {
+    applyPickedAssetToDraftRef.current = applyPickedAssetToDraft;
+  }, [applyPickedAssetToDraft]);
 
   const crewOk = useMemo(() => {
     // Mock logic: Sarah A. (mod_1) has a conflict
@@ -4258,6 +4589,7 @@ export function LiveBuilderView({
 
     const sp = new URLSearchParams(window.location.search);
     const shouldRestore = sp.get("restore") === "1" || sp.has("assetId");
+    const preferDatabaseDraft = Boolean(effectiveDealId);
 
     const stepParam = sp.get("step");
     if (stepParam && STEPS.some((s) => s.key === stepParam)) {
@@ -4353,7 +4685,7 @@ export function LiveBuilderView({
     };
 
     const saved = readSaved();
-    if (saved?.draft) {
+    if (saved?.draft && !preferDatabaseDraft) {
       const restored = saved.draft as LiveSessionDraft;
 
       // Avoid clobbering the current builder session with a different saved local draft.
@@ -4374,6 +4706,7 @@ export function LiveBuilderView({
           if (payload?.id === assetId) {
             const a = toLiveAsset(payload);
             if (a) {
+              pendingPickerAssetRef.current = { asset: a, applyTo };
               setExternalAssets((prevMap) => ({ ...prevMap, [a.id]: a }));
 
               setDraft((prev) => applyPickedAssetToDraft(prev, a, applyTo));
@@ -4397,7 +4730,7 @@ export function LiveBuilderView({
         clean.pathname + (qs ? `?${qs}` : ""),
       );
     }
-  }, [applyPickedAssetToDraft, toLiveAsset, builderSessionId]);
+  }, [applyPickedAssetToDraft, toLiveAsset, builderSessionId, effectiveDealId]);
 
   const canPublish =
     setupOk &&
@@ -4573,10 +4906,43 @@ export function LiveBuilderView({
     customGiveaway,
   ]);
 
+  useEffect(() => {
+    if (!backendHydratedRef.current) return;
+    if (typeof window === "undefined") return;
+
+    const payload = buildBuilderPayload();
+    const snapshot = JSON.stringify(payload);
+
+    // Prime after hydration to avoid writing unchanged data back immediately.
+    if (!autoSavePrimedRef.current) {
+      autoSavePrimedRef.current = true;
+      lastPersistedSnapshotRef.current = snapshot;
+      return;
+    }
+
+    if (snapshot === lastPersistedSnapshotRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void creatorApi
+        .saveLiveBuilder(payload)
+        .then(() => {
+          lastPersistedSnapshotRef.current = snapshot;
+        })
+        .catch(() => {
+          // Keep local draft persistence as fallback when autosave fails.
+        });
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [buildBuilderPayload]);
+
   const saveBuilderToBackend = useCallback(async () => {
     persistDraftForPicker();
     const payload = buildBuilderPayload();
     await creatorApi.saveLiveBuilder(payload);
+    lastPersistedSnapshotRef.current = JSON.stringify(payload);
   }, [persistDraftForPicker, buildBuilderPayload]);
 
   const publishBuilderToBackend = useCallback(async () => {
@@ -4697,7 +5063,7 @@ export function LiveBuilderView({
               Quick analytics (preview)
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              Historical baselines + projections (demo).
+              Historical baselines from your live dashboard workspace.
             </div>
             <div className="mt-3 space-y-2">
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 transition-colors min-h-[82px]">
@@ -4705,10 +5071,10 @@ export function LiveBuilderView({
                   Expected peak viewers
                 </div>
                 <div className="text-[18px] font-semibold mt-1 text-slate-900 dark:text-slate-100">
-                  12.4k
+                  {expectedPeakViewersLabel}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Based on host + platform mix.
+                  Pulled from `/live/dashboard-workspace` session metrics.
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 transition-colors min-h-[82px]">
@@ -4716,10 +5082,10 @@ export function LiveBuilderView({
                   Projected conversion
                 </div>
                 <div className="text-[18px] font-semibold mt-1 text-slate-900 dark:text-slate-100">
-                  2.6%
+                  {projectedConversionLabel}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Pinned cadence + featured item quality.
+                  Based on the same session chat-rate baseline.
                 </div>
               </div>
             </div>

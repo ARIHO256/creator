@@ -929,23 +929,27 @@ function ShoppableAdPreview({
   ad,
   cart,
   shareEnabled = true,
+  onBack,
   onPlayHero,
   onPlayOffer,
   onBuy,
   onAdd,
   onDecCart,
   onClearCart,
+  onCheckout,
   onShare
 }: {
   ad: ShoppableAd;
   cart: Record<string, number>;
   shareEnabled?: boolean;
+  onBack: () => void;
   onPlayHero: () => void;
   onPlayOffer: (id: string) => void;
   onBuy: (id: string) => void;
   onAdd: (id: string) => void;
   onDecCart: (id: string) => void;
   onClearCart: () => void;
+  onCheckout: (offerId: string) => void;
   onShare: () => void;
 }) {
   // Match the Adz Builder preview format (phone frame + hero chips + offers grid + cart dock),
@@ -1011,6 +1015,7 @@ function ShoppableAdPreview({
               <div className="px-4 py-3 flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={onBack}
                   className="rounded-full p-2 hover:bg-neutral-100 dark:hover:bg-slate-800 transition-colors"
                   aria-label="Back"
                   title="Back"
@@ -1348,7 +1353,16 @@ function ShoppableAdPreview({
                       >
                         Clear cart
                       </button>
-                      <Btn tone="primary" left={<Zap className="h-4 w-4" />} disabled={!cartLines.length} onClick={() => { }}>
+                      <Btn
+                        tone="primary"
+                        left={<Zap className="h-4 w-4" />}
+                        disabled={!cartLines.length}
+                        onClick={() => {
+                          const offerId = cartLines[0]?.offer.id;
+                          if (!offerId) return;
+                          onCheckout(offerId);
+                        }}
+                      >
                         Checkout
                       </Btn>
                     </div>
@@ -1405,7 +1419,7 @@ function TimePill({ n, label }: { n: number; label: string }) {
   );
 }
 
-function HostPreviewCard({ host }: { host: Creator }) {
+function HostPreviewCard({ host, onFollow }: { host: Creator; onFollow: () => void }) {
   return (
     <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 shadow-sm ring-1 ring-slate-100 dark:ring-slate-800 transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -1420,6 +1434,7 @@ function HostPreviewCard({ host }: { host: Creator }) {
         </div>
         <button
           type="button"
+          onClick={onFollow}
           className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[12px] font-extrabold bg-[#F77F00] text-white"
         >
           <Plus className="h-4 w-4" /> Follow
@@ -1429,7 +1444,7 @@ function HostPreviewCard({ host }: { host: Creator }) {
   );
 }
 
-function SupplierPreviewCard({ supplier }: { supplier: Supplier }) {
+function SupplierPreviewCard({ supplier, onFollow }: { supplier: Supplier; onFollow: () => void }) {
   return (
     <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 shadow-sm ring-1 ring-slate-100 dark:ring-slate-800 transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -1440,7 +1455,11 @@ function SupplierPreviewCard({ supplier }: { supplier: Supplier }) {
             <div className="mt-0.5 text-[12px] text-slate-600 dark:text-slate-400">{supplier.category} • Supplier</div>
           </div>
         </div>
-        <button type="button" className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[12px] font-extrabold bg-slate-900 text-white">
+        <button
+          type="button"
+          onClick={onFollow}
+          className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-[12px] font-extrabold bg-slate-900 text-white"
+        >
           <ShoppingBag className="h-4 w-4" /> Follow
         </button>
       </div>
@@ -1457,7 +1476,12 @@ function LiveInvitePreviewPhone({
   onPlayItem,
   onSharePromo,
   onBuy,
-  onAdd
+  onAdd,
+  onFollowHost,
+  onFollowSupplier,
+  onAskHost,
+  onRemind,
+  onAddToCalendar
 }: {
   live: LiveInvite;
   cart: Record<string, number>;
@@ -1468,6 +1492,11 @@ function LiveInvitePreviewPhone({
   onSharePromo: () => void;
   onBuy: (id: string) => void;
   onAdd: (id: string) => void;
+  onFollowHost: () => void;
+  onFollowSupplier: () => void;
+  onAskHost: (message: string) => void;
+  onRemind: () => void;
+  onAddToCalendar: () => void;
 }) {
   // NOTE: cart handlers are kept for compatibility with existing callers, but the promo link preview
   // matches the latest Live Builder preview format (no cart dock in the invite page).
@@ -1495,6 +1524,14 @@ function LiveInvitePreviewPhone({
   const promoGiveaways = useMemo(() => giveaways.filter((g) => g && (g.showOnPromo ?? true)), [giveaways]);
 
   const visibleItems = live.featured || [];
+  const [question, setQuestion] = useState("");
+
+  const submitQuestion = () => {
+    const cleaned = question.trim();
+    if (!cleaned) return;
+    onAskHost(cleaned);
+    setQuestion("");
+  };
 
   return (
     <div className="mx-auto w-full max-w-full sm:max-w-[440px] mt-4 mb-4 px-2 sm:px-0">
@@ -1571,8 +1608,8 @@ function LiveInvitePreviewPhone({
 
             {/* Host + supplier cards */}
             <div className="mt-2 grid grid-cols-1 gap-2 px-3">
-              <HostPreviewCard host={live.host} />
-              {live.supplier ? <SupplierPreviewCard supplier={live.supplier} /> : null}
+              <HostPreviewCard host={live.host} onFollow={onFollowHost} />
+              {live.supplier ? <SupplierPreviewCard supplier={live.supplier} onFollow={onFollowSupplier} /> : null}
             </div>
 
             {/* Description */}
@@ -1720,10 +1757,25 @@ function LiveInvitePreviewPhone({
                 <div className="mt-2 flex items-center gap-2">
                   <input
                     className="flex-1 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-[12px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submitQuestion();
+                      }
+                    }}
                     placeholder="Type a question…"
-                    disabled
                   />
-                  <button className="rounded-2xl bg-slate-900 text-white px-3 py-2 text-[12px] font-extrabold opacity-60 cursor-not-allowed">
+                  <button
+                    type="button"
+                    onClick={submitQuestion}
+                    disabled={!question.trim()}
+                    className={cx(
+                      "rounded-2xl bg-slate-900 text-white px-3 py-2 text-[12px] font-extrabold transition-colors",
+                      question.trim() ? "hover:bg-slate-700 dark:hover:bg-slate-200 dark:hover:text-slate-900" : "opacity-60 cursor-not-allowed"
+                    )}
+                  >
                     <Send className="h-4 w-4" />
                   </button>
                 </div>
@@ -1747,6 +1799,7 @@ function LiveInvitePreviewPhone({
                   <button
                     type="button"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[12px] font-extrabold text-slate-900 dark:text-slate-100"
+                    onClick={onRemind}
                     title="Remind me"
                   >
                     <Bell className="h-4 w-4" /> Remind
@@ -1754,6 +1807,7 @@ function LiveInvitePreviewPhone({
                   <button
                     type="button"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[12px] font-extrabold text-slate-900 dark:text-slate-100"
+                    onClick={onAddToCalendar}
                     title="Add to calendar"
                   >
                     <CalendarPlus className="h-4 w-4" /> +Cal
@@ -2519,6 +2573,45 @@ export default function DealzMarketplace() {
     setToast(`Added to cart: ${it.name}`);
   }
 
+  function onPreviewBack(label: string) {
+    setToast(`Back tapped: ${label}`);
+  }
+
+  function followHost(host: Creator) {
+    setToast(`Following ${host.handle}`);
+  }
+
+  function followSupplier(supplier?: Supplier) {
+    if (!supplier) {
+      setToast("No supplier profile available.");
+      return;
+    }
+    setToast(`Following ${supplier.name}`);
+  }
+
+  function askHost(live: LiveInvite, message: string) {
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    setToast(`Question sent to ${live.host.name}`);
+  }
+
+  function setLiveReminder(live: LiveInvite) {
+    setToast(`Reminder set for ${fmtLocal(new Date(live.startISO))}`);
+  }
+
+  function addLiveToCalendar(live: LiveInvite) {
+    const toGoogleDate = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    const details = live.description ? `${live.description}\n\n${live.promoLink}` : live.promoLink;
+    const params = new URLSearchParams({
+      action: "TEMPLATE",
+      text: live.title || "Live session",
+      dates: `${toGoogleDate(live.startISO)}/${toGoogleDate(live.endISO)}`,
+      details
+    });
+    window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank", "noopener,noreferrer");
+    setToast("Opening calendar event");
+  }
+
 
   // viewer CTA targets
   const viewerPriceLabel = useMemo(() => {
@@ -2863,12 +2956,14 @@ export default function DealzMarketplace() {
                                 ad={d.shoppable}
                                 cart={cart}
                                 shareEnabled={true}
+                                onBack={() => onPreviewBack(d.shoppable!.campaignName || "Shoppable preview")}
                                 onPlayHero={() => playShoppableHero(d.shoppable!)}
                                 onPlayOffer={(id) => playShoppableOffer(d.shoppable!, id)}
                                 onBuy={(id) => shoppableBuy(d.shoppable!, id)}
                                 onAdd={(id) => shoppableAdd(d.shoppable!, id)}
                                 onDecCart={decCart}
                                 onClearCart={clearCart}
+                                onCheckout={(offerId) => shoppableBuy(d.shoppable!, offerId)}
                                 onShare={() => shareShoppable(d.shoppable!)}
                               />
                             ) : null}
@@ -2884,6 +2979,11 @@ export default function DealzMarketplace() {
                                 onSharePromo={() => shareLivePromo(d.live!)}
                                 onBuy={(id) => liveBuy(d.live!, id)}
                                 onAdd={(id) => liveAdd(d.live!, id)}
+                                onFollowHost={() => followHost(d.live!.host)}
+                                onFollowSupplier={() => followSupplier(d.live!.supplier)}
+                                onAskHost={(message) => askHost(d.live!, message)}
+                                onRemind={() => setLiveReminder(d.live!)}
+                                onAddToCalendar={() => addLiveToCalendar(d.live!)}
                               />
                             ) : null}
 
@@ -2891,6 +2991,7 @@ export default function DealzMarketplace() {
                               hybridTab === "shoppable" ? (
                                 <ShoppableAdPreview
                                   ad={d.shoppable}
+                                  onBack={() => onPreviewBack(d.shoppable!.campaignName || "Shoppable preview")}
                                   onPlayHero={() => playShoppableHero(d.shoppable!)}
                                   onPlayOffer={(id) => playShoppableOffer(d.shoppable!, id)}
                                   onBuy={(id) => shoppableBuy(d.shoppable!, id)}
@@ -2898,6 +2999,7 @@ export default function DealzMarketplace() {
                                   onDecCart={decCart}
                                   onClearCart={clearCart}
                                   cart={cart}
+                                  onCheckout={(offerId) => shoppableBuy(d.shoppable!, offerId)}
                                   onShare={() => shareShoppable(d.shoppable!)}
                                 />
                               ) : (
@@ -2911,6 +3013,11 @@ export default function DealzMarketplace() {
                                   onSharePromo={() => shareLivePromo(d.live!)}
                                   onBuy={(id) => liveBuy(d.live!, id)}
                                   onAdd={(id) => liveAdd(d.live!, id)}
+                                  onFollowHost={() => followHost(d.live!.host)}
+                                  onFollowSupplier={() => followSupplier(d.live!.supplier)}
+                                  onAskHost={(message) => askHost(d.live!, message)}
+                                  onRemind={() => setLiveReminder(d.live!)}
+                                  onAddToCalendar={() => addLiveToCalendar(d.live!)}
                                 />
                               )
                             ) : null}
@@ -2974,12 +3081,14 @@ export default function DealzMarketplace() {
                     ad={selected.shoppable}
                     cart={cart}
                     shareEnabled={true}
+                    onBack={() => onPreviewBack(selected.shoppable!.campaignName || "Shoppable preview")}
                     onPlayHero={() => playShoppableHero(selected.shoppable!)}
                     onPlayOffer={(id) => playShoppableOffer(selected.shoppable!, id)}
                     onBuy={(id) => shoppableBuy(selected.shoppable!, id)}
                     onAdd={(id) => shoppableAdd(selected.shoppable!, id)}
                     onDecCart={decCart}
                     onClearCart={clearCart}
+                    onCheckout={(offerId) => shoppableBuy(selected.shoppable!, offerId)}
                     onShare={() => shareShoppable(selected.shoppable!)}
                   />
                 ) : null}
@@ -2995,6 +3104,11 @@ export default function DealzMarketplace() {
                     onSharePromo={() => shareLivePromo(selected.live!)}
                     onBuy={(id) => liveBuy(selected.live!, id)}
                     onAdd={(id) => liveAdd(selected.live!, id)}
+                    onFollowHost={() => followHost(selected.live!.host)}
+                    onFollowSupplier={() => followSupplier(selected.live!.supplier)}
+                    onAskHost={(message) => askHost(selected.live!, message)}
+                    onRemind={() => setLiveReminder(selected.live!)}
+                    onAddToCalendar={() => addLiveToCalendar(selected.live!)}
                   />
                 ) : null}
 
@@ -3002,6 +3116,7 @@ export default function DealzMarketplace() {
                   hybridTab === "shoppable" ? (
                     <ShoppableAdPreview
                       ad={selected.shoppable}
+                      onBack={() => onPreviewBack(selected.shoppable!.campaignName || "Shoppable preview")}
                       onPlayHero={() => playShoppableHero(selected.shoppable!)}
                       onPlayOffer={(id) => playShoppableOffer(selected.shoppable!, id)}
                       onBuy={(id) => shoppableBuy(selected.shoppable!, id)}
@@ -3009,6 +3124,7 @@ export default function DealzMarketplace() {
                       onDecCart={decCart}
                       onClearCart={clearCart}
                       cart={cart}
+                      onCheckout={(offerId) => shoppableBuy(selected.shoppable!, offerId)}
                       onShare={() => shareShoppable(selected.shoppable!)}
                     />
                   ) : (
@@ -3022,6 +3138,11 @@ export default function DealzMarketplace() {
                       onSharePromo={() => shareLivePromo(selected.live!)}
                       onBuy={(id) => liveBuy(selected.live!, id)}
                       onAdd={(id) => liveAdd(selected.live!, id)}
+                      onFollowHost={() => followHost(selected.live!.host)}
+                      onFollowSupplier={() => followSupplier(selected.live!.supplier)}
+                      onAskHost={(message) => askHost(selected.live!, message)}
+                      onRemind={() => setLiveReminder(selected.live!)}
+                      onAddToCalendar={() => addLiveToCalendar(selected.live!)}
                     />
                   )
                 ) : null}
@@ -3070,7 +3191,7 @@ export default function DealzMarketplace() {
                 ) : null}
 
                 {selected.shoppable ? (
-                  <Btn tone="neutral" onClick={() => shareShoppable(selected.shoppable!)} left={<Copy className="h-4 w-4" />} disabled={selected.shoppable.status !== "Generated"} title={selected.shoppable.status !== "Generated" ? "Generate the ad first" : undefined}>
+                  <Btn tone="neutral" onClick={() => shareShoppable(selected.shoppable!)} left={<Copy className="h-4 w-4" />}>
                     Copy Shoppable link
                   </Btn>
                 ) : null}
@@ -3084,8 +3205,8 @@ export default function DealzMarketplace() {
 
               {selected.shoppable && selected.shoppable.status !== "Generated" ? (
                 <div className="mt-3 rounded-2xl bg-neutral-200 dark:bg-white/10 p-3">
-                  <div className="text-xs font-extrabold">Shoppable share links are disabled</div>
-                  <div className="mt-1 text-xs text-neutral-600 dark:text-white/70">Generate the Shoppable Ad in Ad Builder to enable platform share links.</div>
+                  <div className="text-xs font-extrabold">Shoppable ad is still in Draft</div>
+                  <div className="mt-1 text-xs text-neutral-600 dark:text-white/70">You can still copy a preview link. Generate the ad in Ad Builder before publishing.</div>
                 </div>
               ) : null}
             </div>

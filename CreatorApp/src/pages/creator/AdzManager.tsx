@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "./AdBuilder";
 import { AdzPerformanceDrawer, PerformanceEntity, PerfPlatform } from "./AdzPerformance";
 import { useNavigate } from "react-router-dom";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type DealzMarketplaceWorkspaceResponse } from "../../lib/creatorApi";
 import {
   ArrowRight,
   BarChart3,
@@ -37,7 +38,7 @@ import {
  *   - Optional: Open Adz Marketplace preview → /adz-marketplace?adId=...
  *
  * Notes:
- * - This is a premium UI shell with mock data. Replace with API calls and your routing system.
+ * - UI remains unchanged while data is loaded from backend workspace endpoints.
  */
 
 const ORANGE = "#f77f00";
@@ -308,224 +309,264 @@ function Avatar({ src, alt }: { src: string; alt: string }) {
 
 /** ------------------------------ Page ------------------------------ */
 
-const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
+  deals: [],
+  suppliers: [],
+  creators: [],
+  selectedId: "",
+  cart: {},
+  liveCart: {},
+};
 
-const DEMO_ADS: Ad[] = [
-  {
-    id: "AD-10021",
-    name: "Flash Dealz: Power Bank",
-    status: "Live",
-    platforms: ["TikTok"],
-    supplier: {
-      name: "BBS",
-      category: "Electronics",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Flash Dealz", subtitle: "Limited-time drops" },
-    startISO: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "fullscreen",
-    creator: { name: "Kofi Mensah", handle: "@kofi_live", avatarUrl: "https://i.pravatar.cc/100?img=11", verified: true },
-    owner: "Producer",
-    compensation: { type: "Commission", commissionRate: 0.12 },
-    offers: [
-      {
-        id: "O-1",
-        type: "PRODUCT",
-        name: "20,000mAh Power Bank",
-        currency: "UGX",
-        price: 65000,
-        basePrice: 80000,
-        stockLeft: 8,
-        posterUrl: "https://images.unsplash.com/photo-1580915411954-282cb1f69d1c?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 10,
-          step: 5,
-          leadTimeLabel: "Ships in 2–4 days",
-          tiers: [
-            { minQty: 10, unitPrice: 56000 },
-            { minQty: 25, unitPrice: 52000 },
-            { minQty: 50, unitPrice: 49000 }
-          ]
-        }
-      },
-      {
-        id: "O-2",
-        type: "SERVICE",
-        name: "Device setup support (15min)",
-        currency: "UGX",
-        price: 15000,
-        stockLeft: -1,
-        posterUrl: "https://images.unsplash.com/photo-1556741533-f6acd647d2c4?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        serviceMeta: { durationMins: 15, bookingType: "Instant" }
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: true,
-    needsApproval: false,
-    lock: { locked: true, label: "Locked by Ops", reason: "Live ads cannot be edited." },
-    impressions: 182400,
-    clicks: 9720,
-    orders: 412,
-    earnings: 1860,
-    generated: true
-  },
-  {
-    id: "AD-10022",
-    name: "Beauty Drop: Glow Serum",
-    status: "Pending approval",
-    platforms: ["Instagram"],
-    supplier: {
-      name: "GlowCo",
-      category: "Beauty",
-      logoUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Beauty Drop", subtitle: "Host-first content" },
-    startISO: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 37 * 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    creator: { name: "Nala Okoye", handle: "@nala.skin", avatarUrl: "https://i.pravatar.cc/100?img=32", verified: true },
-    owner: "Editor",
-    compensation: { type: "Flat fee", flatFee: 550, currency: "GBP" },
-    offers: [
-      {
-        id: "O-3",
-        type: "PRODUCT",
-        name: "Vitamin C Serum",
-        currency: "UGX",
-        price: 38000,
-        basePrice: 52000,
-        stockLeft: 12,
-        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL"
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: false,
-    needsApproval: true,
-    impressions: 0,
-    clicks: 0,
-    orders: 0,
-    earnings: 0,
-    generated: false
-  },
-  {
-    id: "AD-10023",
-    name: "Home Picks: Blender",
-    status: "Paused",
-    platforms: ["YouTube"],
-    supplier: {
-      name: "HomePro",
-      category: "Home",
-      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Home Essentials", subtitle: "Kitchen upgrade" },
-    startISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    creator: { name: "Amina K.", handle: "@aminareviews", avatarUrl: "https://i.pravatar.cc/100?img=47" },
-    owner: "Owner",
-    compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 200, currency: "GBP" },
-    offers: [
-      {
-        id: "O-4",
-        type: "PRODUCT",
-        name: "6-Speed Blender",
-        currency: "UGX",
-        price: 240000,
-        stockLeft: 18,
-        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 3,
-          step: 1,
-          leadTimeLabel: "Ships in 3–6 days",
-          tiers: [
-            { minQty: 3, unitPrice: 210000 },
-            { minQty: 6, unitPrice: 199000 },
-            { minQty: 12, unitPrice: 189000 }
-          ]
-        }
-      }
-    ],
-    hasBrokenLink: true,
-    lowStock: false,
-    needsApproval: false,
-    impressions: 60200,
-    clicks: 1100,
-    orders: 21,
-    earnings: 95,
-    generated: true
-  },
-  {
-    id: "AD-10024",
-    name: "EV Accessories: Helmet",
-    status: "Rejected",
-    platforms: ["TikTok"],
-    supplier: {
-      name: "MotoGear",
-      category: "Auto",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "EV Accessories", subtitle: "Safety picks" },
-    startISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1495555961986-6d4c1ecb7be3?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    creator: { name: "Sade Bello", handle: "@sade.style", avatarUrl: "https://i.pravatar.cc/100?img=37" },
-    owner: "Editor",
-    compensation: { type: "Commission", commissionRate: 0.1 },
-    offers: [
-      {
-        id: "O-5",
-        type: "PRODUCT",
-        name: "Rider Helmet (ECE)",
-        currency: "UGX",
-        price: 165000,
-        stockLeft: 0,
-        posterUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL"
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: false,
-    needsApproval: false,
-    impressions: 3000,
-    clicks: 55,
-    orders: 1,
-    earnings: 4,
-    generated: false
+const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function asCurrency(value: unknown, fallback: "UGX" | "USD" | "GBP" = "UGX"): "UGX" | "USD" | "GBP" {
+  const upper = asString(value, fallback).toUpperCase();
+  if (upper === "USD") return "USD";
+  if (upper === "GBP") return "GBP";
+  return "UGX";
+}
+
+function normalizeManagerStatus(raw: unknown): AdStatus {
+  const value = asString(raw, "").toLowerCase();
+  if (value.includes("pending")) return "Pending approval";
+  if (value.includes("reject")) return "Rejected";
+  if (value.includes("pause")) return "Paused";
+  if (value.includes("live")) return "Live";
+  if (value.includes("end") || value.includes("complete")) return "Ended";
+  if (value.includes("schedule")) return "Scheduled";
+  return "Draft";
+}
+
+function parseCompactMetric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/,/g, "").trim().toLowerCase();
+  const m = cleaned.match(/^(-?\d+(?:\.\d+)?)([kmb])?%?$/);
+  if (!m) return null;
+  const base = Number(m[1]);
+  if (!Number.isFinite(base)) return null;
+  const suffix = m[2] || "";
+  if (suffix === "k") return Math.round(base * 1_000);
+  if (suffix === "m") return Math.round(base * 1_000_000);
+  if (suffix === "b") return Math.round(base * 1_000_000_000);
+  return Math.round(base);
+}
+
+function metricFromKpis(kpis: unknown, labelIncludes: string[]): number | null {
+  const targets = labelIncludes.map((label) => label.toLowerCase());
+  for (const item of asArray(kpis)) {
+    const rec = asRecord(item);
+    if (!rec) continue;
+    const label = asString(rec.label, "").toLowerCase();
+    if (!label || !targets.some((target) => label.includes(target))) continue;
+    const metric = parseCompactMetric(rec.value);
+    if (metric !== null) return metric;
   }
-];
+  return null;
+}
+
+function normalizeCommissionRate(raw: unknown, fallback = 0.1) {
+  const value = asNumber(raw, fallback);
+  return value > 1 ? value / 100 : value;
+}
+
+function mapCompensation(raw: unknown, fallbackCurrency: "UGX" | "USD" | "GBP"): Compensation {
+  const rec = asRecord(raw);
+  const rawType = asString(rec?.type, "").toLowerCase();
+  const flatFee = asNumber(rec?.flatFee, 0);
+  const commissionRate = normalizeCommissionRate(rec?.commissionRate, 0.1);
+  const currency = asCurrency(rec?.currency, fallbackCurrency);
+  if (rawType.includes("hybrid")) return { type: "Hybrid", commissionRate, flatFee, currency };
+  if (rawType.includes("flat")) return { type: "Flat fee", flatFee, currency };
+  return { type: "Commission", commissionRate };
+}
+
+function mapOffer(raw: unknown, index: number, fallbackPosterUrl: string): Offer {
+  const rec = asRecord(raw);
+  const type = asString(rec?.type, "PRODUCT").toUpperCase() === "SERVICE" ? "SERVICE" : "PRODUCT";
+  const modes = asArray(rec?.sellingModes)
+    .map((entry) => asString(entry, "").toUpperCase())
+    .filter((entry): entry is SellingMode => entry === "RETAIL" || entry === "WHOLESALE");
+  const defaultModeRaw = asString(rec?.defaultSellingMode, "").toUpperCase();
+  const wholesaleRaw = asRecord(rec?.wholesale);
+
+  return {
+    id: asString(rec?.id, `offer_${index + 1}`),
+    type,
+    name: asString(rec?.name, "Offer"),
+    currency: asCurrency(rec?.currency, "UGX"),
+    price: Math.max(0, asNumber(rec?.price, 0)),
+    basePrice: typeof rec?.basePrice === "number" ? rec.basePrice : undefined,
+    stockLeft: asNumber(rec?.stockLeft, type === "SERVICE" ? -1 : 0),
+    posterUrl: asString(rec?.posterUrl, fallbackPosterUrl),
+    videoUrl: asString(rec?.videoUrl, "") || undefined,
+    desktopMode: asString(rec?.desktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
+    sellingModes: modes.length ? modes : undefined,
+    defaultSellingMode: defaultModeRaw === "WHOLESALE" ? "WHOLESALE" : defaultModeRaw === "RETAIL" ? "RETAIL" : undefined,
+    wholesale:
+      wholesaleRaw && asArray(wholesaleRaw.tiers).length
+        ? {
+            moq: Math.max(1, asNumber(wholesaleRaw.moq, 1)),
+            step: Math.max(1, asNumber(wholesaleRaw.step, 1)),
+            leadTimeLabel: asString(wholesaleRaw.leadTimeLabel, "") || undefined,
+            businessOnly: asBoolean(wholesaleRaw.businessOnly, false),
+            tiers: asArray(wholesaleRaw.tiers)
+              .map((tier) => asRecord(tier))
+              .filter((tier): tier is Record<string, unknown> => Boolean(tier))
+              .map((tier) => ({
+                minQty: Math.max(1, asNumber(tier.minQty, 1)),
+                unitPrice: Math.max(0, asNumber(tier.unitPrice, 0)),
+              }))
+              .filter((tier) => tier.unitPrice > 0),
+          }
+        : undefined,
+    serviceMeta:
+      type === "SERVICE"
+        ? {
+            durationMins: asNumber(asRecord(rec?.serviceMeta)?.durationMins, 0) || undefined,
+            bookingType: asString(asRecord(rec?.serviceMeta)?.bookingType, "Instant") === "Request" ? "Request" : "Instant",
+          }
+        : undefined,
+  };
+}
+
+function mapDealToManagedAd(raw: unknown): Ad | null {
+  const deal = asRecord(raw);
+  if (!deal) return null;
+  const shoppable = asRecord(deal.shoppable);
+  if (!shoppable) return null;
+
+  const supplier = asRecord(deal.supplier);
+  const creator = asRecord(deal.creator);
+  const fallbackPoster = asString(shoppable.heroImageUrl, asString(supplier?.logoUrl, BLANK_IMAGE));
+  const offers = asArray(shoppable.offers).map((offer, index) => mapOffer(offer, index, fallbackPoster));
+  const metrics = asRecord(shoppable.metrics);
+
+  const status = normalizeManagerStatus(shoppable.status ?? deal.status);
+  const impressions =
+    asNumber(shoppable.impressions7d, Number.NaN) ||
+    asNumber(metrics?.impressions, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["impression", "view"]) ||
+    0;
+  const clicks =
+    asNumber(shoppable.clicks7d, Number.NaN) ||
+    asNumber(metrics?.clicks, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["click"]) ||
+    0;
+  const orders =
+    asNumber(shoppable.orders7d, Number.NaN) ||
+    asNumber(metrics?.orders, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["order", "purchase", "sale"]) ||
+    0;
+  const earnings =
+    asNumber(shoppable.revenue7d, Number.NaN) ||
+    asNumber(metrics?.earnings, Number.NaN) ||
+    asNumber(metrics?.revenue, Number.NaN) ||
+    metricFromKpis(shoppable.kpis, ["earning", "revenue", "gmv"]) ||
+    0;
+
+  const campaignName = asString(shoppable.campaignName, asString(deal.title, "Campaign"));
+  const campaignSubtitle = asString(shoppable.campaignSubtitle, asString(deal.tagline, ""));
+  const generatedRaw = asString(shoppable.status, "").toLowerCase();
+  const generated =
+    asBoolean(shoppable.generated, false) ||
+    generatedRaw.includes("generated") ||
+    generatedRaw.includes("publish") ||
+    generatedRaw.includes("active") ||
+    status === "Scheduled" ||
+    status === "Live" ||
+    status === "Ended";
+  const lockRec = asRecord(shoppable.lock);
+  const lock =
+    lockRec && asBoolean(lockRec.locked, false)
+      ? {
+          locked: true,
+          label: asString(lockRec.label, "Locked"),
+          reason: asString(lockRec.reason, "Editing is locked for this ad."),
+        }
+      : status === "Live"
+        ? { locked: true, label: "Locked by Ops", reason: "Live ads cannot be edited." }
+        : undefined;
+
+  return {
+    id: asString(deal.id, campaignName || `ad_${Date.now()}`),
+    name: campaignName,
+    status,
+    platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
+    supplier: {
+      name: asString(supplier?.name, "Supplier"),
+      category: asString(supplier?.category, "Supplier"),
+      logoUrl: asString(supplier?.logoUrl, BLANK_IMAGE),
+    },
+    campaign: {
+      name: campaignName,
+      subtitle: campaignSubtitle,
+    },
+    startISO: asString(shoppable.startISO, asString(deal.startISO, new Date().toISOString())),
+    endISO: asString(shoppable.endISO, asString(deal.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString())),
+    timezone: asString(shoppable.timezone, Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+    heroImageUrl: asString(shoppable.heroImageUrl, fallbackPoster || BLANK_IMAGE),
+    heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
+    heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
+    creator: {
+      name: asString(creator?.name, "Creator"),
+      handle: (() => {
+        const handle = asString(creator?.handle, "@creator");
+        return handle.startsWith("@") ? handle : `@${handle}`;
+      })(),
+      avatarUrl: asString(creator?.avatarUrl, BLANK_IMAGE),
+      verified: asBoolean(creator?.verified, false),
+    },
+    owner: asString(shoppable.owner, "Owner"),
+    compensation: mapCompensation(shoppable.compensation ?? deal.compensation, asCurrency(shoppable.currency, "USD")),
+    offers,
+    hasBrokenLink: asBoolean(shoppable.hasBrokenLink, false),
+    lowStock: asBoolean(shoppable.lowStock, false) || offers.some((offer) => offer.type === "PRODUCT" && offer.stockLeft >= 0 && offer.stockLeft <= 5),
+    needsApproval: status === "Pending approval",
+    lock,
+    impressions: Math.max(0, Math.round(impressions)),
+    clicks: Math.max(0, Math.round(clicks)),
+    orders: Math.max(0, Math.round(orders)),
+    earnings: Math.max(0, Math.round(earnings)),
+    generated,
+  };
+}
+
+function mapWorkspaceToManagedAds(payload: DealzMarketplaceWorkspaceResponse): Ad[] {
+  return asArray(payload.deals)
+    .map((deal) => mapDealToManagedAd(deal))
+    .filter((deal): deal is Ad => Boolean(deal))
+    .sort((a, b) => new Date(b.startISO).getTime() - new Date(a.startISO).getTime());
+}
 
 export default function AdzManager() {
   const navigate = useNavigate();
+  const { data: workspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
+    initialData: EMPTY_MARKETPLACE_STATE,
+    loader: () => creatorApi.dealzMarketplace(),
+  });
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -533,10 +574,34 @@ export default function AdzManager() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads, setAds] = useState<Ad[]>(DEMO_ADS);
-
-  const [selectedId, setSelectedId] = useState<string>(DEMO_ADS[0]?.id || "");
+  const [ads, setAds] = useState<Ad[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  // drawers
+  const [drawer, setDrawer] = useState<DrawerKey>(null);
+  const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
+  const drawerAd = useMemo(
+    () => ads.find((ad) => ad.id === drawerData) || selected,
+    [ads, drawerData, selected],
+  );
+
+  useEffect(() => {
+    const nextAds = mapWorkspaceToManagedAds(workspaceState || EMPTY_MARKETPLACE_STATE);
+    const selectedFromPayload = asString(workspaceState?.selectedId, "");
+    setAds(nextAds);
+    setSelectedId((current) => {
+      if (current && nextAds.some((ad) => ad.id === current)) return current;
+      if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) return selectedFromPayload;
+      return nextAds[0]?.id || "";
+    });
+  }, [workspaceState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const adId = new URLSearchParams(window.location.search).get("adId");
+    if (!adId) return;
+    setSelectedId((current) => (ads.some((ad) => ad.id === adId) ? adId : current));
+  }, [ads]);
 
   // filters
   const [statusTab, setStatusTab] = useState<AdStatus | "All">("All");
@@ -590,10 +655,6 @@ export default function AdzManager() {
         );
       });
   }, [ads, statusTab, platform, supplier, q, offerKind, sellingModeFilter]);
-
-  // drawers
-  const [drawer, setDrawer] = useState<DrawerKey>(null);
-  const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
 
   // performance entities mapper
   const performanceEntities: PerformanceEntity[] = useMemo(() => {
@@ -654,7 +715,7 @@ export default function AdzManager() {
     setToast("Share link copied (demo).");
   }
 
-  function generateAd(adId: string) {
+  async function generateAd(adId: string) {
     setAds((prev) =>
       prev.map((a) =>
         a.id === adId
@@ -666,7 +727,31 @@ export default function AdzManager() {
           : a
       )
     );
-    setToast("Ad generated. Share links are now enabled.");
+    try {
+      const nextDeals = asArray(workspaceState?.deals).map((entry) => {
+        const rec = asRecord(entry);
+        if (!rec || asString(rec.id, "") !== adId) {
+          return entry;
+        }
+        const shoppable = asRecord(rec.shoppable) || {};
+        const currentStatus = asString(shoppable.status, "");
+        return {
+          ...rec,
+          shoppable: {
+            ...shoppable,
+            status: currentStatus.toLowerCase() === "draft" ? "Scheduled" : currentStatus || "Scheduled",
+            generated: true,
+          },
+        };
+      });
+      await creatorApi.updateDealzMarketplace({
+        deals: nextDeals,
+        selectedId: adId,
+      });
+      setToast("Ad generated. Share links are now enabled.");
+    } catch {
+      setToast("Ad generated locally, but sync to backend failed.");
+    }
   }
 
   function updateOfferDefaultMode(offerId: string, mode: SellingMode) {
@@ -1131,7 +1216,45 @@ export default function AdzManager() {
 
       {
         drawer === "builder" ? (
-          <AdBuilder isDrawer={true} onClose={() => setDrawer(null)} initialAdId={drawerData} />
+          <AdBuilder
+            isDrawer={true}
+            onClose={() => setDrawer(null)}
+            initialAdId={drawerData}
+            pickerContext={
+              drawerAd
+                ? {
+                    dealId: drawerAd.id,
+                    creatorName: drawerAd.creator.name,
+                    creatorHandle: drawerAd.creator.handle,
+                    creatorAvatarUrl: drawerAd.creator.avatarUrl,
+                    creatorVerified: drawerAd.creator.verified,
+                    supplierId: `deal-supplier:${drawerAd.id}`,
+                    supplierName: drawerAd.supplier.name,
+                    supplierKind: drawerAd.supplier.category,
+                    supplierBrand: drawerAd.supplier.name,
+                    campaignId: `deal-campaign:${drawerAd.id}`,
+                    campaignName: drawerAd.campaign.name,
+                    campaignBrand: drawerAd.supplier.name,
+                    campaignStatus: drawerAd.status === "Paused" ? "Paused" : "Active",
+                    startISO: drawerAd.startISO,
+                    endISO: drawerAd.endISO,
+                    offers: drawerAd.offers.map((offer) => ({
+                      id: offer.id,
+                      type: offer.type,
+                      name: offer.name,
+                      price: offer.price,
+                      basePrice: offer.basePrice,
+                      currency: offer.currency === "GBP" ? "USD" : offer.currency,
+                      stockLeft: offer.stockLeft,
+                      sold: 0,
+                      posterUrl: offer.posterUrl,
+                      videoUrl: offer.videoUrl,
+                      desktopMode: offer.desktopMode,
+                    })),
+                  }
+                : undefined
+            }
+          />
         ) : null
       }
     </div >
