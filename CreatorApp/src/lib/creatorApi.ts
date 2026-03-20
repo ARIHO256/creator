@@ -687,6 +687,9 @@ export const creatorApi = {
   invites(params?: { limit?: number; offset?: number }) {
     return api.get<InviteRecord[]>(withQuery("/invites", params));
   },
+  createInvite(body: Record<string, unknown>) {
+    return api.post<InviteRecord>("/invites", body);
+  },
   respondInvite(id: string, status: string) {
     return api.post<InviteRecord>(`/invites/${id}/respond`, { status });
   },

@@ -16,6 +16,7 @@ import {
   Users
 } from "lucide-react";
 import { authApi } from "../../lib/authApi";
+import { creatorApi } from "../../lib/creatorApi";
 import {
   clearDashboardAuthOverride,
   clearAuthSession,
@@ -28,6 +29,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
+const AUTH_NOTICE_SCREEN_STATE_KEY = "creator-auth-redirect-notice-v1";
 
 interface Toast {
   id: string;
@@ -40,6 +42,95 @@ type IdentifierMode = "email" | "phone";
 
 function cx(...xs: (string | boolean | undefined | null)[]): string {
   return xs.filter(Boolean).join(" ");
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+type AuthNoticeStep = { n: number; t: string; d: string };
+type AuthNoticeFaq = { q: string; a: string };
+type AuthNoticeContent = {
+  nextSteps: AuthNoticeStep[];
+  readyItems: string[];
+  quickAnswers: AuthNoticeFaq[];
+};
+
+const DEFAULT_AUTH_NOTICE_CONTENT: AuthNoticeContent = {
+  nextSteps: [
+    { n: 1, t: "Choose Sign in / Sign up", d: "Go to EVzone My Accounts" },
+    { n: 2, t: "Verify your identity", d: "Email/phone confirmation" },
+    { n: 3, t: "Return to MyLiveDealz", d: "Auto redirect back" },
+    { n: 4, t: "Finish Creator setup", d: "KYC, payouts, preferences" }
+  ],
+  readyItems: [
+    "Email or phone number",
+    "Access to verification codes",
+    "A short creator bio",
+    "ID for KYC (later)",
+    "Preferred payout method"
+  ],
+  quickAnswers: [
+    {
+      q: "Can I use the same account for EVzone Marketplace and MyLiveDealz?",
+      a: "Yes. EVzone My Accounts is shared across EVzone services. One account helps you manage your identity, security, and payouts in one place."
+    },
+    {
+      q: "Will I come back to MyLiveDealz after signing in?",
+      a: "Yes. After signing in or signing up, you will be redirected back to MyLiveDealz to continue onboarding or access creator tools."
+    },
+    {
+      q: "What if I already created an EVzone account before?",
+      a: "Sign in using that account. Do not create another one. This helps keep your identity and payouts consistent."
+    }
+  ]
+};
+
+function normalizeAuthNoticeContent(value: unknown): AuthNoticeContent | null {
+  const root = asRecord(value);
+  if (!root) return null;
+  const nestedPayload = asRecord(root.payload);
+  const source =
+    asRecord(nestedPayload?.content) ||
+    asRecord(root.content) ||
+    asRecord(nestedPayload) ||
+    root;
+  if (!source) return null;
+
+  const nextSteps = asArray(source.nextSteps)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      n: Number(entry.n || 0),
+      t: asString(entry.t, "").trim(),
+      d: asString(entry.d, "").trim()
+    }))
+    .filter((entry) => Number.isFinite(entry.n) && entry.n > 0 && entry.t && entry.d);
+
+  const readyItems = asArray(source.readyItems)
+    .map((entry) => asString(entry, "").trim())
+    .filter(Boolean);
+
+  const quickAnswers = asArray(source.quickAnswers)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      q: asString(entry.q, "").trim(),
+      a: asString(entry.a, "").trim()
+    }))
+    .filter((entry) => entry.q && entry.a);
+
+  if (!nextSteps.length || !readyItems.length || !quickAnswers.length) return null;
+  return { nextSteps, readyItems, quickAnswers };
 }
 
 function useToasts() {
@@ -260,6 +351,7 @@ export default function CreatorAuthRedirectNotice() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [noticeContent, setNoticeContent] = useState<AuthNoticeContent>(DEFAULT_AUTH_NOTICE_CONTENT);
 
   useEffect(() => {
     const nextMode = new URLSearchParams(location.search).get("mode");
@@ -271,6 +363,32 @@ export default function CreatorAuthRedirectNotice() {
       setAuthMode("signin");
     }
   }, [location.search]);
+
+  useEffect(() => {
+    let active = true;
+    void creatorApi
+      .workflowScreenState(AUTH_NOTICE_SCREEN_STATE_KEY)
+      .then((screenState) => {
+        if (!active) return;
+        const normalized = normalizeAuthNoticeContent(screenState);
+        if (normalized) {
+          setNoticeContent(normalized);
+          return;
+        }
+        setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
+        void creatorApi.patchWorkflowScreenState(AUTH_NOTICE_SCREEN_STATE_KEY, {
+          content: DEFAULT_AUTH_NOTICE_CONTENT,
+          seededAt: new Date().toISOString()
+        }).catch(() => undefined);
+      })
+      .catch(() => {
+        if (!active) return;
+        setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -778,12 +896,7 @@ export default function CreatorAuthRedirectNotice() {
                   What happens next
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {[
-                    { n: 1, t: "Choose Sign in / Sign up", d: "Go to EVzone My Accounts" },
-                    { n: 2, t: "Verify your identity", d: "Email/phone confirmation" },
-                    { n: 3, t: "Return to MyLiveDealz", d: "Auto redirect back" },
-                    { n: 4, t: "Finish Creator setup", d: "KYC, payouts, preferences" }
-                  ].map((s) => (
+                  {noticeContent.nextSteps.map((s) => (
                     <div
                       key={s.n}
                       className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm hover:shadow"
@@ -827,13 +940,7 @@ export default function CreatorAuthRedirectNotice() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Have these ready</div>
                 <div className="mt-3 space-y-2">
-                  {[
-                    "Email or phone number",
-                    "Access to verification codes",
-                    "A short creator bio",
-                    "ID for KYC (later)",
-                    "Preferred payout method"
-                  ].map((x) => (
+                  {noticeContent.readyItems.map((x) => (
                     <div key={x} className="flex items-start gap-2">
                       <span className="mt-0.5 h-5 w-5 rounded-full bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-center">
                         <Check className="h-3 w-3" />
@@ -847,18 +954,9 @@ export default function CreatorAuthRedirectNotice() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Quick answers</div>
                 <div className="mt-3 space-y-2">
-                  <Accordion
-                    q="Can I use the same account for EVzone Marketplace and MyLiveDealz?"
-                    a="Yes. EVzone My Accounts is shared across EVzone services. One account helps you manage your identity, security, and payouts in one place."
-                  />
-                  <Accordion
-                    q="Will I come back to MyLiveDealz after signing in?"
-                    a="Yes. After signing in or signing up, you will be redirected back to MyLiveDealz to continue onboarding or access creator tools."
-                  />
-                  <Accordion
-                    q="What if I already created an EVzone account before?"
-                    a="Sign in using that account. Do not create another one. This helps keep your identity and payouts consistent."
-                  />
+                  {noticeContent.quickAnswers.map((item) => (
+                    <Accordion key={item.q} q={item.q} a={item.a} />
+                  ))}
                 </div>
               </div>
 
