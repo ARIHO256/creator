@@ -459,6 +459,7 @@ export type LiveSessionDraft = {
   heroAspect: PromoAspect;
 
   heroImageUrl: string;
+  heroImageAssetId?: string;
   heroVideoUrl?: string;
   desktopMode: LiveDesktopMode;
 
@@ -683,6 +684,7 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     heroAspect: "16:9",
 
     heroImageUrl: "",
+    heroImageAssetId: undefined,
     heroVideoUrl: "",
     desktopMode: "modal",
 
@@ -1015,6 +1017,7 @@ function normalizeDraftFromDealRecord(
       live?.heroImageUrl,
       toStr(shoppable?.heroImageUrl, toStr(supplier?.logoUrl, baseline.heroImageUrl)),
     ),
+    heroImageAssetId: toStr(live?.heroImageAssetId, baseline.heroImageAssetId || "") || baseline.heroImageAssetId,
     heroVideoUrl: toStr(live?.heroVideoUrl, baseline.heroVideoUrl || "") || undefined,
     desktopMode: toStr(live?.heroDesktopMode, baseline.desktopMode) === "fullscreen" ? "fullscreen" : "modal",
     timezoneLabel: toStr(live?.timezoneLabel, baseline.timezoneLabel),
@@ -2124,10 +2127,12 @@ function PromoLinkPreviewPhone({
   draft,
   host,
   supplier,
+  heroImageFallbackUrl,
 }: {
   draft: LiveSessionDraft;
   host?: Host;
   supplier?: Supplier;
+  heroImageFallbackUrl?: string;
 }) {
   const isMobile = useIsMobile(1024);
   const openMode = isMobile ? "fullscreen" : draft.desktopMode;
@@ -2202,6 +2207,7 @@ function PromoLinkPreviewPhone({
     () => items.find((it) => it.id === viewerItemId) || null,
     [items, viewerItemId],
   );
+  const heroImageSrc = (draft.heroImageUrl || heroImageFallbackUrl || "").trim();
 
   const [likedMap, setLikedMap] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<string | null>(null);
@@ -2287,19 +2293,25 @@ function PromoLinkPreviewPhone({
                     <video
                       className="h-full w-full object-cover"
                       src={draft.heroVideoUrl}
-                      poster={draft.heroImageUrl}
+                      poster={heroImageSrc}
                       muted
                       autoPlay
                       playsInline
                       loop
                     />
                   ) : (
-                    <img
-                      src={draft.heroImageUrl}
-                      alt={draft.title}
-                      loading="eager"
-                      className="h-full w-full object-cover"
-                    />
+                    heroImageSrc ? (
+                      <img
+                        src={heroImageSrc}
+                        alt={draft.title}
+                        loading="eager"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-full w-full grid place-items-center text-[11px] text-white/80 bg-gradient-to-br from-slate-800 to-slate-700">
+                        Poster preview
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -3976,6 +3988,21 @@ export function LiveBuilderView({
         : activeDashboardMetrics.chatRate;
     return formatPercentage(source);
   }, [activeDashboardMetrics]);
+  const resolvedHeroImagePreviewUrl = useMemo(() => {
+    const directUrl = (draft.heroImageUrl || "").trim();
+    if (directUrl) return directUrl;
+    const trackedAssetId = (draft.heroImageAssetId || "").trim();
+    if (!trackedAssetId) return "";
+    const externalUrl = (externalAssets[trackedAssetId]?.previewUrl || "").trim();
+    if (externalUrl) return externalUrl;
+    const libraryAsset = assetLibraryData.find((entry) => entry.id === trackedAssetId);
+    return (libraryAsset?.previewUrl || "").trim();
+  }, [
+    draft.heroImageUrl,
+    draft.heroImageAssetId,
+    externalAssets,
+    assetLibraryData,
+  ]);
 
   const openerAsset = useMemo(
     () =>
@@ -4192,9 +4219,18 @@ export function LiveBuilderView({
               dealPrefill.hostId && hosts.some((entry) => entry.id === dealPrefill.hostId)
                 ? dealPrefill.hostId
                 : base.hostId;
+            const prefillHeroImageUrl = toStr(dealPrefill.heroImageUrl, "").trim();
+            const prefillHeroVideoUrl = toStr(dealPrefill.heroVideoUrl, "").trim();
+            const prefillHeroImageAssetId = toStr(dealPrefill.heroImageAssetId, "").trim();
             return {
               ...base,
               ...dealPrefill,
+              heroImageUrl:
+                prefillHeroImageUrl || base.heroImageUrl,
+              heroVideoUrl:
+                prefillHeroVideoUrl || base.heroVideoUrl,
+              heroImageAssetId:
+                prefillHeroImageAssetId || base.heroImageAssetId,
               supplierId: nextSupplierId,
               campaignId: nextCampaignId,
               hostId: nextHostId,
@@ -4203,10 +4239,19 @@ export function LiveBuilderView({
           const withDealPrefill = applyDealPrefill(fallback);
 
           if (snapshotDraft && !snapshotLooksSeedLike) {
+            const snapshotHeroImageUrl = toStr(snapshotDraft.heroImageUrl, "").trim();
+            const snapshotHeroVideoUrl = toStr(snapshotDraft.heroVideoUrl, "").trim();
+            const snapshotHeroImageAssetId = toStr(snapshotDraft.heroImageAssetId, "").trim();
             const withSnapshot = {
               ...withDealPrefill,
               ...snapshotDraft,
               id: builderSessionId,
+              heroImageUrl:
+                snapshotHeroImageUrl || withDealPrefill.heroImageUrl,
+              heroVideoUrl:
+                snapshotHeroVideoUrl || withDealPrefill.heroVideoUrl,
+              heroImageAssetId:
+                snapshotHeroImageAssetId || withDealPrefill.heroImageAssetId,
               supplierId:
                 snapshotDraft.supplierId ||
                 withDealPrefill.supplierId,
@@ -4308,6 +4353,7 @@ export function LiveBuilderView({
 
   const LIVE_DRAFT_KEY = "mldz:liveBuilder:draft:v1";
   const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
+  const ASSET_PICK_APPLY_KEY = "mldz:assetPicker:apply:v1";
   const CREATOR_LIVE_DRAFT_KEY = "creator_live_draft";
 
   const persistDraftForPicker = useCallback(() => {
@@ -4461,13 +4507,16 @@ export function LiveBuilderView({
         payload.previewKind === "video" || payload.previewKind === "image"
           ? payload.previewKind
           : "image";
-      const previewUrl =
+      const previewUrlRaw =
         (typeof payload.previewUrl === "string" ? payload.previewUrl : "") ||
         "";
+      const directUrl =
+        (typeof payload.url === "string" ? payload.url : "") || "";
       const thumb =
         (typeof payload.thumbnailUrl === "string"
           ? payload.thumbnailUrl
-          : "") || previewUrl;
+          : "") || previewUrlRaw;
+      const previewUrl = previewUrlRaw || directUrl || thumb;
 
       return {
         id,
@@ -4481,7 +4530,7 @@ export function LiveBuilderView({
           ? payload.tags.map((t: unknown) => String(t))
           : [],
         lastUpdatedLabel: "Just now",
-        previewUrl: previewUrl || thumb,
+        previewUrl,
         previewKind,
         usageNotes:
           typeof payload.usageNotes === "string"
@@ -4528,8 +4577,12 @@ export function LiveBuilderView({
         return { ...prev, heroVideoUrl: asset.previewUrl };
       }
       if (applyTo === "promoHeroImage") {
-        if (asset.previewKind !== "image") return prev;
-        return { ...prev, heroImageUrl: asset.previewUrl };
+        if (!asset.previewUrl) return prev;
+        return {
+          ...prev,
+          heroImageUrl: asset.previewUrl || prev.heroImageUrl,
+          heroImageAssetId: asset.id,
+        };
       }
 
       const resolvedActiveItemId = activeFeaturedItemId || prev.products[0]?.id;
@@ -4697,20 +4750,141 @@ export function LiveBuilderView({
     const assetId = sp.get("assetId") || "";
     const applyTo = sp.get("applyTo") || "";
 
+    const resolveApplyTarget = (payload: Record<string, unknown>, applyTarget: string) => {
+      if (applyTarget) return applyTarget;
+      const kind =
+        payload.previewKind === "video" || payload.mediaType === "video"
+          ? "video"
+          : "image";
+      return kind === "video" ? "promoHeroVideo" : "promoHeroImage";
+    };
+
+    const applyPickedPayload = (payload: Record<string, unknown>, applyTarget: string, pickedAssetId: string) => {
+      const resolvedApplyTarget = resolveApplyTarget(payload, applyTarget);
+      const payloadAsset = toLiveAsset(payload);
+      const knownAsset =
+        externalAssets[pickedAssetId] ||
+        assetLibraryData.find((entry) => entry.id === pickedAssetId) ||
+        null;
+      const selectedAsset =
+              (payloadAsset && payloadAsset.previewUrl ? payloadAsset : null) ||
+              knownAsset ||
+              payloadAsset;
+      const applyResolvedAsset = (asset: LiveAsset) => {
+        pendingPickerAssetRef.current = { asset, applyTo: resolvedApplyTarget };
+        setExternalAssets((prevMap) => ({ ...prevMap, [asset.id]: asset }));
+        setDraft((prev) => applyPickedAssetToDraft(prev, asset, resolvedApplyTarget));
+      };
+
+      if (selectedAsset) {
+        applyResolvedAsset(selectedAsset);
+      }
+
+      if (!selectedAsset || !selectedAsset.previewUrl) {
+        void creatorApi
+          .asset(pickedAssetId)
+          .then((row) => {
+            const normalized = normalizeAssetEntry(row);
+            if (!normalized) return;
+            applyResolvedAsset(normalized);
+          })
+          .catch(() => {
+            // ignore
+          });
+      }
+    };
+
+    const applyAssetByIdFallback = (pickedAssetId: string, applyTarget: string) => {
+      void creatorApi
+        .asset(pickedAssetId)
+        .then((row) => {
+          const normalized = normalizeAssetEntry(row);
+          if (!normalized) return;
+          const resolvedApplyTarget =
+            applyTarget || (normalized.previewKind === "video" ? "promoHeroVideo" : "promoHeroImage");
+          pendingPickerAssetRef.current = { asset: normalized, applyTo: resolvedApplyTarget };
+          setExternalAssets((prevMap) => ({ ...prevMap, [normalized.id]: normalized }));
+          setDraft((prev) => applyPickedAssetToDraft(prev, normalized, resolvedApplyTarget));
+        })
+        .catch(() => {
+          // ignore
+        });
+    };
+
     if (assetId) {
       try {
+        sessionStorage.setItem(
+          ASSET_PICK_APPLY_KEY,
+          JSON.stringify({
+            assetId,
+            applyTo,
+            builderSessionId,
+            ts: Date.now(),
+          }),
+        );
         const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
         if (pickRaw) {
           const parsed = JSON.parse(pickRaw);
           const payload = parsed?.payload || parsed;
           if (payload?.id === assetId) {
-            const a = toLiveAsset(payload);
-            if (a) {
-              pendingPickerAssetRef.current = { asset: a, applyTo };
-              setExternalAssets((prevMap) => ({ ...prevMap, [a.id]: a }));
-
-              setDraft((prev) => applyPickedAssetToDraft(prev, a, applyTo));
+            sessionStorage.setItem(
+              ASSET_PICK_APPLY_KEY,
+              JSON.stringify({
+                assetId,
+                applyTo,
+                builderSessionId,
+                payload,
+                ts: Date.now(),
+              }),
+            );
+            applyPickedPayload(payload as Record<string, unknown>, applyTo, assetId);
+          } else {
+            applyAssetByIdFallback(assetId, applyTo);
+          }
+        } else {
+          applyAssetByIdFallback(assetId, applyTo);
+        }
+      } catch {
+        // ignore
+      }
+    } else {
+      try {
+        const applyRaw = sessionStorage.getItem(ASSET_PICK_APPLY_KEY);
+        if (applyRaw) {
+          const applyPayload = JSON.parse(applyRaw);
+          const applyAssetId = toStr(applyPayload?.assetId, "");
+          const applyTarget = toStr(applyPayload?.applyTo, "");
+          const applySessionId = toStr(applyPayload?.builderSessionId, "");
+          const applyTs = toNum(applyPayload?.ts, 0);
+          const isFresh = applyTs > 0 && Date.now() - applyTs <= 10 * 60_000;
+          const isSameSession = !applySessionId || applySessionId === builderSessionId;
+          if (applyAssetId && isFresh && isSameSession) {
+            const replayPayload = asRecord(applyPayload?.payload);
+            const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
+            if (pickRaw) {
+              const parsed = JSON.parse(pickRaw);
+              const payload = parsed?.payload || parsed;
+              if (payload?.id === applyAssetId) {
+                applyPickedPayload(
+                  payload as Record<string, unknown>,
+                  applyTarget,
+                  applyAssetId,
+                );
+                sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
+              }
+            } else if (replayPayload) {
+              applyPickedPayload(
+                replayPayload as Record<string, unknown>,
+                applyTarget,
+                applyAssetId,
+              );
+              sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
+            } else {
+              applyAssetByIdFallback(applyAssetId, applyTarget);
+              sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
             }
+          } else if (!isFresh) {
+            sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
           }
         }
       } catch {
@@ -4730,7 +4904,14 @@ export function LiveBuilderView({
         clean.pathname + (qs ? `?${qs}` : ""),
       );
     }
-  }, [applyPickedAssetToDraft, toLiveAsset, builderSessionId, effectiveDealId]);
+  }, [
+    applyPickedAssetToDraft,
+    toLiveAsset,
+    builderSessionId,
+    effectiveDealId,
+    externalAssets,
+    assetLibraryData,
+  ]);
 
   const canPublish =
     setupOk &&
@@ -5415,7 +5596,11 @@ export function LiveBuilderView({
                       <Input
                         value={draft.heroImageUrl}
                         onChange={(v) =>
-                          setDraft((d) => ({ ...d, heroImageUrl: v }))
+                          setDraft((d) => ({
+                            ...d,
+                            heroImageUrl: v,
+                            heroImageAssetId: undefined,
+                          }))
                         }
                         placeholder="https://..."
                       />
@@ -5432,11 +5617,17 @@ export function LiveBuilderView({
                     auto-crop to match the selected hero aspect.
                   </div>
                   <div className="mt-2 aspect-[16/9] rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 overflow-hidden transition-colors">
-                    <img
-                      src={draft.heroImageUrl}
-                      className="w-full h-full object-cover"
-                      alt="Poster preview"
-                    />
+                    {resolvedHeroImagePreviewUrl ? (
+                      <img
+                        src={resolvedHeroImagePreviewUrl}
+                        className="w-full h-full object-cover"
+                        alt="Poster preview"
+                      />
+                    ) : (
+                      <div className="w-full h-full grid place-items-center text-[11px] text-slate-500 dark:text-slate-400">
+                        Poster preview
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -7822,6 +8013,7 @@ export function LiveBuilderView({
             draft={draft}
             host={host}
             supplier={supplier}
+            heroImageFallbackUrl={resolvedHeroImagePreviewUrl}
           />
 
           <PreflightCard
@@ -7893,6 +8085,7 @@ export function LiveBuilderView({
           draft={draft}
           host={host || undefined}
           supplier={supplier || undefined}
+          heroImageFallbackUrl={resolvedHeroImagePreviewUrl}
         />
       </Drawer>
 
