@@ -339,6 +339,7 @@ export type Supplier = {
   id: string;
   name: string;
   kind: "Seller" | "Provider";
+  ownerUserId?: string;
   avatarUrl?: string;
   verified?: boolean;
   rating?: number;
@@ -347,6 +348,7 @@ export type Supplier = {
 export type Campaign = {
   id: string;
   supplierId: string;
+  supplierOwnerUserId?: string;
   name: string;
   startsAtISO: string;
   endsAtISO: string;
@@ -771,6 +773,7 @@ function normalizeSupplierEntry(value: unknown): Supplier | null {
     id,
     name,
     kind,
+    ownerUserId: toStr(record.ownerUserId, toStr(record.userId, "")).trim() || undefined,
     avatarUrl: toStr(record.avatarUrl, toStr(record.logoUrl, "")),
     verified: toBool(record.verified, false),
     rating: typeof record.rating === "number" ? record.rating : undefined,
@@ -782,7 +785,11 @@ function normalizeCampaignEntry(value: unknown): Campaign | null {
   const record = asRecord(value);
   if (!record) return null;
   const id = toStr(record.id, "").trim();
-  const supplierId = toStr(record.supplierId, "").trim();
+  const supplierId = toStr(record.supplierId, toStr(record.sellerId, "")).trim();
+  const supplierOwnerUserId = toStr(
+    record.supplierOwnerUserId,
+    toStr(record.ownerUserId, toStr(record.sellerUserId, "")),
+  ).trim();
   const name = toStr(record.name, toStr(record.title, "")).trim();
   if (!id || !supplierId || !name) return null;
   const startsAtRaw = toStr(record.startsAtISO, toStr(record.startISO, ""));
@@ -794,7 +801,119 @@ function normalizeCampaignEntry(value: unknown): Campaign | null {
   const endsAtISO = Number.isNaN(new Date(endsAtRaw).getTime())
     ? new Date(now + 365 * 24 * 3600 * 1000).toISOString()
     : new Date(endsAtRaw).toISOString();
-  return { id, supplierId, name, startsAtISO, endsAtISO };
+  return {
+    id,
+    supplierId,
+    supplierOwnerUserId: supplierOwnerUserId || undefined,
+    name,
+    startsAtISO,
+    endsAtISO,
+  };
+}
+
+function normalizeCampaignsFromMarketplaceDeals(
+  value: unknown,
+  suppliers: Supplier[],
+): Campaign[] {
+  const deals = asArray(value);
+  const suppliersById = new Map<string, Supplier>();
+  const suppliersByOwnerUserId = new Map<string, Supplier>();
+  const suppliersByName = new Map<string, Supplier>();
+  suppliers.forEach((entry) => {
+    suppliersById.set(entry.id, entry);
+    if (entry.ownerUserId && !suppliersByOwnerUserId.has(entry.ownerUserId)) {
+      suppliersByOwnerUserId.set(entry.ownerUserId, entry);
+    }
+    const key = entry.name.trim().toLowerCase();
+    if (!key || suppliersByName.has(key)) return;
+    suppliersByName.set(key, entry);
+  });
+  const now = Date.now();
+  const normalized = deals
+    .map((deal, index) => {
+      const record = asRecord(deal);
+      if (!record) return null;
+      const dealId = toStr(record.id, "").trim();
+      if (!dealId) return null;
+
+      const supplier = asRecord(record.supplier);
+      const supplierIdDirect = toStr(
+        supplier?.id,
+        toStr(
+          supplier?.supplierId,
+          toStr(record.supplierId, toStr(record.sellerId, "")),
+        ),
+      ).trim();
+      const supplierOwnerUserIdDirect = toStr(
+        supplier?.ownerUserId,
+        toStr(
+          supplier?.userId,
+          toStr(record.supplierOwnerUserId, toStr(record.ownerUserId, "")),
+        ),
+      ).trim();
+      const supplierName = toStr(supplier?.name, "").trim().toLowerCase();
+      const supplierByName = supplierName ? suppliersByName.get(supplierName) : undefined;
+      const supplierByOwnerUserId = supplierOwnerUserIdDirect
+        ? suppliersByOwnerUserId.get(supplierOwnerUserIdDirect)
+        : undefined;
+      const supplierIdByName = supplierByName?.id || "";
+      const supplierIdByOwner = supplierByOwnerUserId?.id || "";
+      const supplierId = supplierIdDirect || supplierIdByOwner || supplierIdByName;
+      if (!supplierId) return null;
+      const supplierById = suppliersById.get(supplierId);
+      const supplierOwnerUserId =
+        supplierOwnerUserIdDirect ||
+        supplierById?.ownerUserId ||
+        supplierByOwnerUserId?.ownerUserId ||
+        supplierByName?.ownerUserId ||
+        undefined;
+
+      const live = asRecord(record.live);
+      const title = toStr(
+        record.title,
+        toStr(live?.title, `Deal campaign ${index + 1}`),
+      ).trim();
+      const startsAtRaw = toStr(live?.startISO, toStr(record.startISO, ""));
+      const endsAtRaw = toStr(live?.endISO, toStr(record.endISO, ""));
+      const startsAtISO = Number.isNaN(new Date(startsAtRaw).getTime())
+        ? new Date(now - 365 * 24 * 3600 * 1000).toISOString()
+        : new Date(startsAtRaw).toISOString();
+      const endsAtISO = Number.isNaN(new Date(endsAtRaw).getTime())
+        ? new Date(now + 365 * 24 * 3600 * 1000).toISOString()
+        : new Date(endsAtRaw).toISOString();
+
+      return {
+        id: dealId,
+        supplierId,
+        supplierOwnerUserId,
+        name: title,
+        startsAtISO,
+        endsAtISO,
+      } satisfies Campaign;
+    })
+    .filter((entry): entry is Campaign => Boolean(entry));
+
+  return Array.from(new Map(normalized.map((entry) => [entry.id, entry])).values());
+}
+
+function campaignBelongsToSupplier(
+  campaign: Campaign,
+  supplier: Supplier | null | undefined,
+): boolean {
+  if (!supplier) return false;
+  if (campaign.supplierId === supplier.id) return true;
+  return Boolean(
+    campaign.supplierOwnerUserId &&
+      supplier.ownerUserId &&
+      campaign.supplierOwnerUserId === supplier.ownerUserId,
+  );
+}
+
+function firstCampaignForSupplier(
+  campaigns: Campaign[],
+  supplier: Supplier | null | undefined,
+): Campaign | undefined {
+  return campaigns.find((entry) => campaignBelongsToSupplier(entry, supplier));
 }
 
 function normalizeHostEntry(value: unknown): Host | null {
@@ -3937,8 +4056,8 @@ export function LiveBuilderView({
     [draft.supplierId, suppliersData],
   );
   const campaigns = useMemo(
-    () => campaignsData.filter((c) => c.supplierId === draft.supplierId),
-    [campaignsData, draft.supplierId],
+    () => campaignsData.filter((c) => campaignBelongsToSupplier(c, supplier)),
+    [campaignsData, supplier],
   );
   const campaign = useMemo(
     () => campaignsData.find((c) => c.id === draft.campaignId),
@@ -4109,9 +4228,21 @@ export function LiveBuilderView({
             ]),
           ).values(),
         );
-        const campaigns = asArray(workspace.campaigns)
+        const workspaceCampaigns = asArray(workspace.campaigns)
           .map((entry) => normalizeCampaignEntry(entry))
           .filter((entry): entry is Campaign => Boolean(entry));
+        const marketplaceCampaigns = normalizeCampaignsFromMarketplaceDeals(
+          marketplace.deals,
+          suppliers,
+        );
+        const campaigns = Array.from(
+          new Map(
+            [...workspaceCampaigns, ...marketplaceCampaigns].map((entry) => [
+              entry.id,
+              entry,
+            ]),
+          ).values(),
+        );
         const workspaceHosts = asArray(workspace.hosts)
           .map((entry) => normalizeHostEntry(entry))
           .filter((entry): entry is Host => Boolean(entry));
@@ -4180,18 +4311,22 @@ export function LiveBuilderView({
         );
 
         setDraft((prev) => {
+          const fallbackSupplierId =
+            prev.supplierId ||
+            suppliers[0]?.id ||
+            undefined;
+          const fallbackSupplier = fallbackSupplierId
+            ? suppliers.find((entry) => entry.id === fallbackSupplierId)
+            : undefined;
+          const fallbackCampaignId =
+            prev.campaignId && campaigns.some((entry) => entry.id === prev.campaignId)
+              ? prev.campaignId
+              : firstCampaignForSupplier(campaigns, fallbackSupplier)?.id;
           const fallback = {
             ...prev,
             id: builderSessionId,
-            supplierId:
-              prev.supplierId ||
-              suppliers[0]?.id ||
-              undefined,
-            campaignId:
-              prev.campaignId ||
-              campaigns.find((entry) => entry.supplierId === (prev.supplierId || suppliers[0]?.id))?.id ||
-              campaigns[0]?.id ||
-              undefined,
+            supplierId: fallbackSupplierId,
+            campaignId: fallbackCampaignId,
             hostId: prev.hostId || hosts[0]?.id || undefined
           };
           const picked = pendingPickerAssetRef.current;
@@ -4209,12 +4344,13 @@ export function LiveBuilderView({
               dealPrefill.supplierId && suppliers.some((entry) => entry.id === dealPrefill.supplierId)
                 ? dealPrefill.supplierId
                 : base.supplierId;
+            const nextSupplier = nextSupplierId
+              ? suppliers.find((entry) => entry.id === nextSupplierId)
+              : undefined;
             const nextCampaignId =
               dealPrefill.campaignId && campaigns.some((entry) => entry.id === dealPrefill.campaignId)
                 ? dealPrefill.campaignId
-                : nextSupplierId
-                  ? campaigns.find((entry) => entry.supplierId === nextSupplierId)?.id || base.campaignId
-                  : base.campaignId;
+                : firstCampaignForSupplier(campaigns, nextSupplier)?.id || base.campaignId;
             const nextHostId =
               dealPrefill.hostId && hosts.some((entry) => entry.id === dealPrefill.hostId)
                 ? dealPrefill.hostId

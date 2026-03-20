@@ -1000,6 +1000,7 @@ export class CollaborationService {
 
     const mapped = sellers.map((seller) => ({
       id: seller.id,
+      ownerUserId: seller.userId,
       name: seller.displayName || seller.storefrontName || seller.name,
       category: seller.category || 'Seller',
       logoUrl: seller.storefront?.logoUrl || seller.storefront?.coverUrl || ''
@@ -1277,6 +1278,8 @@ export class CollaborationService {
 
     return {
       id: campaign.id,
+      supplierId: campaign.sellerId,
+      supplierOwnerUserId: campaign.seller?.userId ?? null,
       type: marketplaceType,
       title: campaign.title,
       tagline:
@@ -1286,6 +1289,8 @@ export class CollaborationService {
             ? campaign.description.trim()
             : 'Deal draft',
       supplier: {
+        id: campaign.sellerId,
+        ownerUserId: campaign.seller?.userId ?? null,
         name:
           typeof supplierPayload.name === 'string' && supplierPayload.name.trim()
             ? supplierPayload.name.trim()

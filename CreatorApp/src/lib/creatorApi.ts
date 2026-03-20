@@ -781,6 +781,27 @@ export const creatorApi = {
   liveSessions() {
     return api.get<LiveSessionRecord[]>("/live/sessions");
   },
+  createLiveSession(body: {
+    id?: string;
+    status?: string;
+    title?: string;
+    scheduledAt?: string;
+    startedAt?: string;
+    endedAt?: string;
+    data?: Record<string, unknown>;
+  }) {
+    return api.post<LiveSessionRecord>("/live/sessions", body);
+  },
+  updateLiveSession(id: string, body: {
+    status?: string;
+    title?: string;
+    scheduledAt?: string;
+    startedAt?: string;
+    endedAt?: string;
+    data?: Record<string, unknown>;
+  }) {
+    return api.patch<LiveSessionRecord>(`/live/sessions/${encodeURIComponent(id)}`, body);
+  },
   liveBuilder(id: string) {
     return api.get<LiveBuilderRecord>(`/live/builder/${encodeURIComponent(id)}`);
   },

@@ -1340,6 +1340,7 @@ export class LiveService {
 
     const supplierRecord = {
       id: sellerId || userId,
+      ownerUserId: userId,
       name: sellerName,
       kind: seller?.kind === 'PROVIDER' ? 'Provider' : 'Seller',
       avatarUrl: sellerAvatar
@@ -1372,6 +1373,7 @@ export class LiveService {
       id: campaign.id,
       name: campaign.title,
       supplierId: supplierRecord.id,
+      supplierOwnerUserId: userId,
       creatorUsage: this.readString(campaign.metadata, 'creatorUsageDecision') || 'I will use a Creator',
       collabMode: this.readString(campaign.metadata, 'collabMode') || 'Open for Collabs',
       approvalMode: this.readString(campaign.metadata, 'approvalMode') || 'Manual'

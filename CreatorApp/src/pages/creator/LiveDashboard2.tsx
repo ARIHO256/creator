@@ -46,7 +46,6 @@ import { LiveBuilderDrawer, type LivePlatform, type LiveStatus, type LiveDesktop
  *
  * Notes:
  * - Self-contained styling (TailwindCSS assumed)
- * - Mock data only (replace with real API wiring)
  */
 
 const ORANGE = "#f77f00";
@@ -307,12 +306,6 @@ function toLiveSession(record: Record<string, unknown>): LiveSession {
   };
 }
 
-/* --------------------------------- Seed data ------------------------------ */
-
-const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-const SAMPLE_VIDEO_2 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/bee.mp4";
-
-
 /* ------------------------------ UI primitives ----------------------------- */
 
 function Pill({ text, tone = "neutral" }: { text: string; tone?: "neutral" | "good" | "warn" | "danger" }) {
@@ -462,7 +455,8 @@ function NewLiveSessionDrawer({
   suppliers,
   campaigns,
   hosts,
-  onCreate
+  onCreate,
+  createPending
 }: {
   open: boolean;
   onClose: () => void;
@@ -470,7 +464,6 @@ function NewLiveSessionDrawer({
   campaigns: Campaign[];
   hosts: Host[];
   onCreate: (created: {
-    id: string;
     title: string;
     supplierId: string;
     campaignId?: string;
@@ -479,21 +472,39 @@ function NewLiveSessionDrawer({
     endISO: string;
     desktopMode: "modal" | "fullscreen";
     platforms: LivePlatform[];
-  }) => void;
+  }) => Promise<void> | void;
+  createPending?: boolean;
 }) {
-  const now = new Date();
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id || "");
+  const [supplierId, setSupplierId] = useState("");
   const [campaignId, setCampaignId] = useState<string>("");
-  const [hostId, setHostId] = useState(hosts[0]?.id || "");
+  const [hostId, setHostId] = useState("");
   const [title, setTitle] = useState("New Live Session");
   const [platforms, setPlatforms] = useState<LivePlatform[]>(["TikTok Live", "Instagram Live"]);
 
   const scopedCampaigns = useMemo(() => campaigns.filter((c) => c.supplierId === supplierId), [campaigns, supplierId]);
 
   useEffect(() => {
+    if (!open) return;
+    const firstSupplierId = suppliers[0]?.id || "";
+    const firstHostId = hosts[0]?.id || "";
+    setSupplierId((prev) => (prev && suppliers.some((entry) => entry.id === prev) ? prev : firstSupplierId));
+    setHostId((prev) => (prev && hosts.some((entry) => entry.id === prev) ? prev : firstHostId));
+    setTitle("New Live Session");
+    setPlatforms(["TikTok Live", "Instagram Live"]);
+  }, [open, suppliers, hosts]);
+
+  useEffect(() => {
     // reset campaign if not in scoped list
+    if (!open) return;
     if (!scopedCampaigns.find((c) => c.id === campaignId)) setCampaignId(scopedCampaigns[0]?.id || "");
-  }, [scopedCampaigns, campaignId]);
+  }, [open, scopedCampaigns, campaignId]);
+
+  const canCreate = Boolean(
+    supplierId &&
+      hostId &&
+      title.trim() &&
+      platforms.length,
+  );
 
   return (
     <Drawer open={open} onClose={onClose} title="New Live Session" subtitle="Create a session and jump straight into Live Builder.">
@@ -581,13 +592,23 @@ function NewLiveSessionDrawer({
       <div className="mt-4 flex items-center justify-end gap-2">
         <SoftButton onClick={onClose}>Cancel</SoftButton>
         <PrimaryButton
+          disabled={!canCreate || createPending}
           onClick={() => {
-            const id = `ls_${Math.random().toString(16).slice(2, 8)}`;
             // Default to now + 1hr (unscheduled)
             const startISO = new Date(Date.now() + 3600 * 1000).toISOString();
             const endISO = new Date(Date.now() + 7200 * 1000).toISOString();
-            onCreate({ id, title, supplierId, campaignId, hostId, startISO, endISO, desktopMode: "modal", platforms });
-            onClose();
+            void Promise.resolve(
+              onCreate({
+                title: title.trim(),
+                supplierId,
+                campaignId: campaignId || undefined,
+                hostId,
+                startISO,
+                endISO,
+                desktopMode: "modal",
+                platforms,
+              }),
+            ).then(() => onClose());
           }}
         >
           Create & Open Builder <Zap className="h-4 w-4" />
@@ -712,7 +733,15 @@ function SessionDetailsDrawer({
                 Live Alerts <AlertTriangle className="h-4 w-4" />
               </SoftButton>
 
-              <SoftButton onClick={() => showSuccess("Live session link copied to clipboard!")}>
+              <SoftButton
+                onClick={() => {
+                  const sessionUrl = `${window.location.origin}${ROUTES.liveDashboard}?sessionId=${encodeURIComponent(session.id)}`;
+                  void navigator.clipboard
+                    .writeText(sessionUrl)
+                    .then(() => showSuccess("Live session link copied to clipboard!"))
+                    .catch(() => showError("Could not copy session link."));
+                }}
+              >
                 Share <LinkIcon className="h-4 w-4" />
               </SoftButton>
             </div>
@@ -734,7 +763,7 @@ function SessionDetailsDrawer({
         </div>
 
         <div className="space-y-3">
-          <Card title="KPIs" subtitle="Performance snapshot (demo).">
+          <Card title="KPIs" subtitle="Performance snapshot.">
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-3 transition-colors">
                 <div className="text-[11px] text-slate-500 dark:text-slate-400">Peak viewers</div>
@@ -784,22 +813,31 @@ function SessionDetailsDrawer({
 export default function LiveDashboardPage() {
   // const { theme } = useTheme();
   const navigate = useNavigate();
-  const { showSuccess, showError, showInfo, showWarning } = useNotification();
+  const { showSuccess, showError, showInfo } = useNotification();
   const { run, isPending } = useAsyncAction();
-  const { data: workspace } = useApiResource({
+  const {
+    data: workspace,
+    loading: workspaceLoading,
+    error: workspaceError,
+    reload: reloadWorkspace,
+  } = useApiResource({
     initialData: {} as LiveDashboardWorkspace,
     loader: () => creatorApi.liveDashboardWorkspace() as Promise<LiveDashboardWorkspace>,
+    onError: () => showError("Could not load live dashboard data."),
   });
   const suppliers = useMemo(() => workspace.suppliers || [], [workspace.suppliers]);
   const campaigns = useMemo(() => workspace.campaigns || [], [workspace.campaigns]);
   const hosts = useMemo(() => workspace.hosts || [], [workspace.hosts]);
+  const sessions = useMemo(
+    () => (workspace.sessions || []).map(toLiveSession),
+    [workspace.sessions],
+  );
 
 
   function safeNav(url: string) {
     if (!url) return;
     navigate(url);
   }
-  const [sessions, setSessions] = useState<LiveSession[]>([]);
 
   // Filters
   const [tab, setTab] = useState<"All" | "Upcoming" | "Live" | "Ended">("All");
@@ -835,11 +873,6 @@ export default function LiveDashboardPage() {
   const navInactive = "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-slate-100";
   // const navActive = "bg-slate-900 border-slate-900 text-white";
   const proActive = "bg-violet-600 border-violet-600 text-white";
-
-
-  useEffect(() => {
-    setSessions((workspace.sessions || []).map(toLiveSession));
-  }, [workspace.sessions]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -901,10 +934,25 @@ export default function LiveDashboardPage() {
     return { live, upcoming, drafts, gmv };
   }, [sessions]);
 
+  const avgPeakViewers = useMemo(() => {
+    if (!sessions.length) return 0;
+    return sessions.reduce((sum, entry) => sum + (entry.peakViewers || 0), 0) / sessions.length;
+  }, [sessions]);
+  const avgWatchMinutes = useMemo(() => {
+    if (!sessions.length) return 0;
+    return sessions.reduce((sum, entry) => sum + (entry.avgWatchMin || 0), 0) / sessions.length;
+  }, [sessions]);
+  const opsIncidents = useMemo(
+    () => sessions.reduce((sum, entry) => sum + Math.max(0, entry.crewConflicts || 0), 0),
+    [sessions],
+  );
+
   const viewersTrend = useMemo(() => {
-    // demo series
-    return [9, 12, 14, 11, 15, 18, 16, 17, 20, 18, 22, 19, 24, 21];
-  }, []);
+    return [...sessions]
+      .sort((a, b) => new Date(a.startISO).getTime() - new Date(b.startISO).getTime())
+      .slice(-14)
+      .map((entry) => Math.max(0, Math.round(entry.peakViewers || 0)));
+  }, [sessions]);
 
   const byPlatform = useMemo(() => {
     const m = new Map<string, number>();
@@ -1005,7 +1053,6 @@ export default function LiveDashboardPage() {
   }
 
   async function onCreateSession(payload: {
-    id: string;
     title: string;
     supplierId: string;
     campaignId?: string;
@@ -1016,35 +1063,35 @@ export default function LiveDashboardPage() {
     platforms: LivePlatform[];
   }) {
     await run(async () => {
-      const heroImageUrl = "https://images.unsplash.com/photo-1520975958225-82284e3d2e52?auto=format&fit=crop&w=1200&q=60";
-      const heroVideoUrl = SAMPLE_VIDEO_1;
-
-      const created: LiveSession = {
-        id: payload.id,
+      const created = await creatorApi.createLiveSession({
+        status: "draft",
         title: payload.title,
-        status: "Draft",
-        supplierId: payload.supplierId,
-        campaignId: payload.campaignId,
-        hostId: payload.hostId,
-        platforms: payload.platforms,
-        heroImageUrl,
-        heroVideoUrl,
-        desktopMode: payload.desktopMode,
-        startISO: payload.startISO,
-        endISO: payload.endISO,
-        peakViewers: 0,
-        avgWatchMin: 0,
-        chatRate: 0,
-        gmv: 0
-      };
-
-      setSessions((prev) => [created, ...prev]);
+        scheduledAt: payload.startISO,
+        data: {
+          title: payload.title,
+          supplierId: payload.supplierId,
+          campaignId: payload.campaignId || null,
+          hostId: payload.hostId,
+          platforms: payload.platforms,
+          desktopMode: payload.desktopMode,
+          startISO: payload.startISO,
+          endISO: payload.endISO,
+          heroImageUrl: "",
+          heroVideoUrl: "",
+          peakViewers: 0,
+          avgWatchMin: 0,
+          chatRate: 0,
+          gmv: 0,
+          crewConflicts: 0,
+        },
+      });
+      await reloadWorkspace();
       // Requirement: "+ New Live Session" leads to Live Builder page
-      openBuilderPage(created.id);
+      openBuilderPage(String(created.id || ""));
     }, {
       successMessage: `Session "${payload.title}" created successfully!`,
       errorMessage: "Connection failed. Please check your network and try again.",
-      delay: 1500
+      delay: 200
     });
   }
 
