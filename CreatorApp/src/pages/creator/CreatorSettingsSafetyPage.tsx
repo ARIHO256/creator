@@ -32,7 +32,7 @@ import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * Creator Settings & Safety (Premium)
- * - Designed to work with the Premium Onboarding flow (v2.5) by reading/writing the same localStorage payload.
+ * - Designed to work with the Premium Onboarding flow (v2.5) using backend onboarding + workflow state.
  * - Uses Orange as the primary color to match Roles & Permissions.
  * - Adds a compliance-friendly "scroll-to-bottom to enable consent" pattern for policy review inside Settings.
  *
@@ -44,8 +44,6 @@ const GREEN = "#03cd8c";
 // const LIGHT_GREY = "#f2f2f2"; // Kept for reference but often overridden by dark mode classes
 
 
-const STORAGE_KEY = "mldz_creator_onboarding_v2_4";
-const STORAGE_KEY_LEGACY = "mldz_creator_onboarding_v2_3";
 const SETTINGS_SCREEN_STATE_KEY = "creator-settings";
 
 function cx(...xs: (string | undefined | null | false)[]) {
@@ -1830,7 +1828,7 @@ export default function CreatorSettingsSafetyPremium() {
     return { done, total, pct: Math.round((done / total) * 100) };
   }, [form, primaryPlatformName]);
 
-  // Load from backend onboarding record (fallback: local storage)
+  // Load from backend onboarding record + workflow draft state.
   useEffect(() => {
     let cancelled = false;
     try {
@@ -1844,14 +1842,6 @@ export default function CreatorSettingsSafetyPremium() {
             const normalized = normalizeFormFromOnboarding(merged);
             setForm(normalized);
             push("Settings loaded from backend.", "success");
-          } else {
-            const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              const merged = deepMerge(defaultForm(), parsed);
-              setForm(normalizeFormFromOnboarding(merged));
-              push("Settings loaded from onboarding.", "success");
-            }
           }
 
           const screenState = await creatorApi.workflowScreenState(SETTINGS_SCREEN_STATE_KEY).catch(() => null);
@@ -1923,13 +1913,6 @@ export default function CreatorSettingsSafetyPremium() {
         })
         .catch(() => {
           if (cancelled) return;
-          const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            const merged = deepMerge(defaultForm(), parsed);
-            setForm(normalizeFormFromOnboarding(merged));
-            push("Settings loaded from onboarding.", "success");
-          }
           void creatorApi
             .workflowScreenState(SETTINGS_SCREEN_STATE_KEY)
             .then((screenState) => {
@@ -1966,23 +1949,20 @@ export default function CreatorSettingsSafetyPremium() {
     };
   }, []);
 
-  // Draft autosave (local only). Backend save happens via the Save changes button.
+  // Draft autosave to backend workflow screen-state.
   useEffect(() => {
     if (!hydratedRef.current) {
       return;
     }
     setSaved(false);
 
-    const localTimer = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
-      } catch {
-        // ignore
-      }
+    const autosaveTimer = window.setTimeout(() => {
+      const payload = buildScreenStateSettingsPayload(form);
+      void creatorApi.patchWorkflowScreenState(SETTINGS_SCREEN_STATE_KEY, payload).catch(() => undefined);
     }, 350);
 
     return () => {
-      clearTimeout(localTimer);
+      window.clearTimeout(autosaveTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);

@@ -56,11 +56,10 @@ import {
  * - Tracking includes short links + UTM presets library
  * - Schedule time selection uses a scrollable time list (vertical scroll)
  * - Shows explicit "Ad ends" time
- * - Asset Library wiring: opens /asset-library in picker mode and restores state via sessionStorage
+ * - Asset Library wiring: opens /asset-library in picker mode and restores via backend + URL params
  *
  * Notes:
  * - This page is wired to backend workspace endpoints for hydration + persistence.
- * - Asset Library picker round-trip still uses sessionStorage to preserve unsaved in-flight edits.
  */
 
 const ORANGE = "#f77f00";
@@ -78,10 +77,6 @@ const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
 // From your supported sizes list (already used elsewhere)
 const HERO_IMAGE_REQUIRED = { width: 1920, height: 1080 } as const;
 const ITEM_POSTER_REQUIRED = { width: 500, height: 500 } as const;
-
-// Storage keys for Asset Library picker round-trip
-const BUILDER_DRAFT_KEY = "mldz:adBuilder:builderDraft:v1";
-const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
 
 type ViewerMode = "fullscreen" | "modal";
 type MediaKind = "image" | "video";
@@ -124,6 +119,7 @@ type Offer = {
 };
 
 type BuilderStep = "offer" | "creative" | "tracking" | "schedule" | "review";
+const BUILDER_STEP_KEYS: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
 
 type UTMTemplate = {
   id: string;
@@ -1625,7 +1621,7 @@ export default function AdBuilder({
   ];
   const [step, setStep] = useState<BuilderStep>("offer");
 
-  const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
+  const stepKeys: BuilderStep[] = BUILDER_STEP_KEYS;
   const [queryDealId] = useState(() => {
     if (typeof window === "undefined") return "";
     const sp = new URLSearchParams(window.location.search);
@@ -2454,23 +2450,6 @@ export default function AdBuilder({
   }
 
   // Asset library picker wiring (independent page)
-  function persistDraftForPicker() {
-    try {
-      sessionStorage.setItem(
-        BUILDER_DRAFT_KEY,
-        JSON.stringify({
-          ts: Date.now(),
-          contextKey: builderContextKey,
-          step,
-          builder,
-          externalAssets,
-          customOffersByContext,
-        }),
-      );
-    } catch {
-      // ignore
-    }
-  }
 
   function buildReturnToUrl() {
     const u = new URL(window.location.href);
@@ -2486,7 +2465,6 @@ export default function AdBuilder({
 
   function openAssetLibraryPicker(applyTo: string) {
     if (typeof window === "undefined") return;
-    persistDraftForPicker();
     const picker = new URL("/asset-library", window.location.origin);
     picker.searchParams.set("mode", "picker");
     picker.searchParams.set("target", "shoppable");
@@ -2508,41 +2486,14 @@ export default function AdBuilder({
     if (campaignNameForPicker) picker.searchParams.set("campaignName", campaignNameForPicker);
     if (campaignBrandForPicker) picker.searchParams.set("campaignBrand", campaignBrandForPicker);
     picker.searchParams.set("returnTo", buildReturnToUrl());
-    // Mini-step exists inside picker mode, so this is treated as "suggested applyTo"
-    window.location.assign(picker.toString());
+    // Persist in-flight edits before opening picker so return hydration does not overwrite picked media.
+    void persistBuilderToWorkspace({ generated: isGenerated, syncLocalState: true }).finally(() => {
+      // Mini-step exists inside picker mode, so this is treated as "suggested applyTo".
+      window.location.assign(picker.toString());
+    });
   }
 
-  function coerceAssetFromPickerPayload(payload: Record<string, unknown>): Asset | null {
-    if (!payload || typeof payload !== "object") return null;
-    const id = String(payload.id || "");
-    if (!id) return null;
-
-    // AssetLibrary_updated emits: { id, title, subtitle, ownerLabel, mediaType, status, previewKind, previewUrl, thumbnailUrl, desktopMode, ... }
-    const title = String(payload.title || payload.name || "Asset");
-    const ownerLabel = String(payload.ownerLabel || payload.owner || "Host");
-    const owner: AssetOwner = ownerLabel.toLowerCase().includes("supplier") || ownerLabel.toLowerCase().includes("seller") ? "Supplier" : ownerLabel.toLowerCase().includes("catalog") ? "Catalog" : "Host";
-
-    const kind: MediaKind = payload.previewKind === "video" || payload.mediaType === "video" ? "video" : "image";
-    const status: AssetStatus = payload.status === "approved" ? "approved" : payload.status === "rejected" ? "rejected" : "pending";
-
-    const url = String(payload.previewUrl || payload.url || payload.thumbnailUrl || "");
-    if (!url) return null;
-
-    const desktopMode: ViewerMode | undefined = payload.desktopMode === "fullscreen" || payload.desktopMode === "modal" ? payload.desktopMode : undefined;
-
-    return {
-      id,
-      title,
-      owner,
-      kind,
-      status,
-      url,
-      posterUrl: kind === "video" ? String(payload.thumbnailUrl || payload.posterUrl || "") || undefined : undefined,
-      desktopMode,
-    };
-  }
-
-  function applyPickedAssetToBuilder(asset: Asset, applyTo: string) {
+  const applyPickedAssetToBuilder = React.useCallback((asset: Asset, applyTo: string) => {
     setExternalAssets((m) => ({ ...m, [asset.id]: asset }));
 
     setBuilder((prev) => {
@@ -2560,7 +2511,78 @@ export default function AdBuilder({
       }
       return next;
     });
-  }
+  }, []);
+
+  const mapBackendPickerAsset = React.useCallback((value: unknown): Asset | null => {
+    const record = asRecord(value);
+    if (!record) return null;
+    const id = asString(record.id, "").trim();
+    if (!id) return null;
+
+    const metadata = asRecord(record.metadata) || {};
+    const kindRaw = asString(record.kind, asString(record.assetType, asString(metadata.mediaType, ""))).toLowerCase();
+    const mimeType = asString(record.mimeType, "").toLowerCase();
+    const kind: MediaKind = kindRaw.includes("video") || mimeType.startsWith("video/") ? "video" : "image";
+    const url = asString(record.url, asString(record.previewUrl, asString(metadata.previewUrl, ""))).trim();
+    if (!url) return null;
+
+    const ownerRaw = asString(metadata.ownerLabel, "").toLowerCase();
+    const owner: AssetOwner = ownerRaw.includes("supplier") || ownerRaw.includes("seller")
+      ? "Supplier"
+      : ownerRaw.includes("catalog")
+        ? "Catalog"
+        : "Host";
+    const desktopMode: ViewerMode = asString(metadata.desktopMode, "").toLowerCase() === "fullscreen" ? "fullscreen" : "modal";
+
+    return {
+      id,
+      title: asString(record.name, asString(record.title, asString(metadata.title, "Asset"))),
+      owner,
+      kind,
+      status: normalizeAssetStatus(metadata.status ?? record.status ?? metadata.reviewStatus),
+      roleHint: (() => {
+        const role = asString(metadata.roleHint, "").toLowerCase();
+        if (role === "hero_image" || role === "hero_video" || role === "item_poster" || role === "item_video" || role === "overlay") {
+          return role;
+        }
+        return undefined;
+      })(),
+      width: typeof metadata.width === "number" ? metadata.width : undefined,
+      height: typeof metadata.height === "number" ? metadata.height : undefined,
+      url,
+      posterUrl: kind === "video" ? asString(metadata.thumbnailUrl, asString(metadata.posterUrl, "")) || undefined : undefined,
+      desktopMode,
+    };
+  }, []);
+
+  const resolvePickerAssetById = React.useCallback(
+    async (id: string): Promise<Asset | null> => {
+      const cached = assetById.get(id);
+      if (cached) return cached;
+
+      try {
+        const rows = await creatorApi.mediaAssets();
+        const direct = rows.find((entry) => entry.id === id);
+        if (direct) {
+          const mapped = mapWorkspaceMediaAsset(direct);
+          if (mapped) return mapped;
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const record = await creatorApi.asset(id);
+        const mapped = mapBackendPickerAsset(record);
+        if (mapped) return mapped;
+      } catch {
+        // ignore
+      }
+
+      return null;
+    },
+    [assetById, mapBackendPickerAsset],
+  );
 
   // Restore from Asset Library picker return
   useEffect(() => {
@@ -2569,50 +2591,21 @@ export default function AdBuilder({
     const shouldRestore = sp.get("restore") === "1" || sp.has("assetId");
     const returnDealId = sp.get("dealId") || "";
     if (returnDealId) {
-      const currentDealId = pickerContext?.dealId || "";
+      const currentDealId = activeDealId || pickerContext?.dealId || "";
       // Wait until this Ad Builder instance is bound to the same deal that opened picker.
       if (currentDealId !== returnDealId) {
         return;
       }
     }
-    const assetId = sp.get("assetId") || "";
-    const applyTo = sp.get("applyTo") || "";
-
-    if (shouldRestore) {
-      try {
-        const raw = sessionStorage.getItem(BUILDER_DRAFT_KEY);
-        if (raw) {
-          const saved = JSON.parse(raw);
-          const savedContextKey = typeof saved?.contextKey === "string" ? saved.contextKey : "global";
-          if (savedContextKey === builderContextKey) {
-            if (saved?.builder) setBuilder(saved.builder);
-            if (saved?.step) setStep(saved.step);
-            if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
-            if (saved?.customOffersByContext && typeof saved.customOffersByContext === "object") {
-              setCustomOffersByContext(saved.customOffersByContext as Record<string, Offer[]>);
-            }
-          }
-        }
-      } catch {
-        // ignore
-      }
+    const stepParam = sp.get("step") || "";
+    if (stepParam && stepKeys.includes(stepParam as BuilderStep)) {
+      setStep(stepParam as BuilderStep);
     }
+    const assetId = sp.get("assetId") || "";
+    const applyToParam = sp.get("applyTo") || "";
 
-    if (assetId) {
-      try {
-        const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
-        if (pickRaw) {
-          const parsed = JSON.parse(pickRaw);
-          const payload = parsed?.payload || parsed;
-          if (payload?.id === assetId) {
-            const a = coerceAssetFromPickerPayload(payload);
-            if (a) applyPickedAssetToBuilder(a, applyTo || "");
-          }
-        }
-      } catch {
-        // ignore
-      }
-      // Clean query params to prevent re-apply on refresh
+    if (shouldRestore || assetId) {
+      // Clean query params immediately to avoid duplicate picker-apply loops.
       const clean = new URL(window.location.href);
       clean.searchParams.delete("assetId");
       clean.searchParams.delete("applyTo");
@@ -2621,7 +2614,23 @@ export default function AdBuilder({
       clean.searchParams.delete("dealId");
       window.history.replaceState({}, "", clean.pathname + (clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : ""));
     }
-  }, [builderContextKey]);
+
+    if (!assetId) return;
+    void resolvePickerAssetById(assetId).then((asset) => {
+      if (!asset) return;
+      const applyTarget = applyToParam || (asset.kind === "video" ? "hero_video" : "hero_image");
+      applyPickedAssetToBuilder(asset, applyTarget);
+      void persistBuilderToWorkspace({ generated: isGenerated, syncLocalState: true });
+    });
+  }, [
+    activeDealId,
+    applyPickedAssetToBuilder,
+    isGenerated,
+    persistBuilderToWorkspace,
+    pickerContext?.dealId,
+    resolvePickerAssetById,
+    stepKeys,
+  ]);
 
   // Supplier -> campaign resets offers
   function resetScope(nextSupplierId: string, nextCampaignId: string) {

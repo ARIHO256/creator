@@ -355,9 +355,6 @@ const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
 // const LIGHT_GREY = "#f2f2f2";
 
-const STORAGE_KEY = "mldz_creator_onboarding_v2_4";
-const STORAGE_KEY_LEGACY = "mldz_creator_onboarding_v2_3";
-
 const STEPS = [
   { key: "profile", label: "Profile", icon: <User className="h-4 w-4" /> },
   { key: "socials", label: "Socials", icon: <LinkIcon className="h-4 w-4" /> },
@@ -1527,7 +1524,7 @@ export default function CreatorOnboardingWorldClassV25() {
 
   const creatorType = form.profile.creatorType;
 
-  // Load (v2.4+ key, with v2.3 fallback)
+  // Load onboarding form from backend.
   useEffect(() => {
     let cancelled = false;
 
@@ -1538,27 +1535,10 @@ export default function CreatorOnboardingWorldClassV25() {
         if (restored) {
           setForm(deepMerge(defaultForm(), restored as OnboardingForm));
           push("Progress restored.", "success");
-          return;
-        }
-
-        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          setForm(deepMerge(defaultForm(), parsed));
-          push("Progress restored.", "success");
         }
       })
       .catch(() => {
-        try {
-          const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            setForm(deepMerge(defaultForm(), parsed));
-            push("Progress restored.", "success");
-          }
-        } catch {
-          // ignore
-        }
+        // ignore; page will continue with defaults
       });
 
     return () => {
@@ -1597,13 +1577,8 @@ export default function CreatorOnboardingWorldClassV25() {
   useEffect(() => {
     setSaved(false);
     const t = setTimeout(() => {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
-      } catch {
-        // ignore
-      }
       void creatorApi.saveOnboarding(buildBackendOnboardingPayload(form)).catch(() => {
-        // keep local fallback if backend save fails
+        // ignore autosave failures; save/submit actions still report errors.
       });
       setSaved(true);
     }, 350);
@@ -1739,7 +1714,7 @@ export default function CreatorOnboardingWorldClassV25() {
       try {
         await creatorApi.submitOnboarding(buildBackendOnboardingPayload(form, true));
       } catch {
-        push("Saved locally, but backend submission failed.", "error");
+        push("Could not submit onboarding to backend.", "error");
         return;
       }
       push("Onboarding submitted. Updating your account status...", "success");
@@ -1767,16 +1742,7 @@ export default function CreatorOnboardingWorldClassV25() {
 
   const confirmResetNow = () => {
     setConfirmReset(false);
-    void creatorApi.resetOnboarding().catch(() => {
-      // local reset fallback remains in place
-    });
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(STORAGE_KEY_LEGACY);
-      localStorage.removeItem("mldz_creator_approval_status");
-    } catch {
-      // ignore
-    }
+    void creatorApi.resetOnboarding().catch(() => undefined);
     setStepIndex(0);
     setMaxUnlocked(0);
     setForm(defaultForm());

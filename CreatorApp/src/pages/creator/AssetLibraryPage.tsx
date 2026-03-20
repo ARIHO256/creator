@@ -1882,40 +1882,6 @@ export default function AssetLibraryPage() {
       });
     }
   }
-
-
-  const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
-
-  function persistPickedAsset(a: Asset) {
-    try {
-      const payload = {
-        id: a.id,
-        title: a.title,
-        subtitle: a.subtitle,
-        campaignId: a.campaignId,
-        supplierId: a.supplierId,
-        brand: a.brand,
-        tags: a.tags,
-        mediaType: a.mediaType,
-        source: a.source,
-        ownerLabel: a.ownerLabel,
-        status: a.status,
-        previewKind: a.previewKind,
-        previewUrl: a.previewUrl,
-        thumbnailUrl: a.thumbnailUrl,
-        dimensions: a.dimensions,
-        role: a.role,
-        usageNotes: a.usageNotes,
-        restrictions: a.restrictions,
-        desktopMode: a.desktopMode || (a.previewKind === "video" ? "fullscreen" : "modal"),
-        aspect: a.aspect || "vertical",
-      };
-      sessionStorage.setItem(ASSET_PICK_KEY, JSON.stringify({ payload, ts: Date.now() }));
-    } catch {
-      // ignore
-    }
-  }
-
   function navigateReturnTo(extra?: Record<string, string>) {
     if (!returnTo) return;
     try {
@@ -1965,7 +1931,6 @@ export default function AssetLibraryPage() {
         return;
       }
 
-      persistPickedAsset(activeAsset);
       navigateReturnTo({ assetId: activeAsset.id, ...(applyTo ? { applyTo } : {}) });
       return;
     }
@@ -2059,7 +2024,6 @@ export default function AssetLibraryPage() {
 
   function confirmApplyWhere() {
     if (!pendingPickAsset || !returnTo) return;
-    persistPickedAsset(pendingPickAsset);
     navigateReturnTo({ assetId: pendingPickAsset.id, ...(chooseApplyValue ? { applyTo: chooseApplyValue } : {}) });
     setChooseApplyOpen(false);
     setPendingPickAssetId(null);
