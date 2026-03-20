@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
 const EV_ORANGE = "#f77f00";
 
@@ -250,11 +251,54 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const [tipsOpen, setTipsOpen] = useState(false);
   const [, setLanguagePanelOpen] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
+  const [studioId, setStudioId] = useState("default");
+  const [studioHydrated, setStudioHydrated] = useState(false);
 
   const showToast = (msg: string) => {
     setToast({ message: msg });
     setTimeout(() => setToast(null), 3000);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const sessionIdFromQuery = new URLSearchParams(location.search).get("sessionId");
+    const sessionIdFromState = (location.state as { sessionId?: string } | null)?.sessionId;
+    const candidateId = sessionIdFromQuery || sessionIdFromState || "default";
+
+    const load = async () => {
+      try {
+        const studio =
+          candidateId === "default"
+            ? await creatorApi.liveStudioDefault()
+            : await creatorApi.liveStudio(candidateId);
+        if (cancelled) return;
+        setStudioId(String(studio.id || candidateId));
+        const data =
+          studio.data && typeof studio.data === "object" && !Array.isArray(studio.data)
+            ? (studio.data as Record<string, unknown>)
+            : {};
+        if (typeof data.micOn === "boolean") setMicOn(data.micOn);
+        if (typeof data.camOn === "boolean") setCamOn(data.camOn);
+        if (typeof data.screenShareOn === "boolean") setScreenShareOn(data.screenShareOn);
+        if (typeof data.activeSceneId === "string") setActiveSceneId(data.activeSceneId);
+        if (typeof data.highlightedProductId === "string") setHighlightedProductId(data.highlightedProductId);
+        if (typeof data.flashDealzActive === "boolean") setFlashDealzActive(data.flashDealzActive);
+        if (typeof data.flashDealzSeconds === "number") setFlashDealzSeconds(data.flashDealzSeconds);
+        if (studio.status === "live") setMode("live");
+      } catch {
+        // keep local fallback
+      } finally {
+        if (!cancelled) {
+          setStudioHydrated(true);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search, location.state]);
 
   useEffect(() => {
     if (location.state?.smartBundle) {
@@ -328,6 +372,44 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
   const configuredGiveaways = storedLiveDraft?.giveaways || [];
   const configuredProducts = storedLiveDraft?.products || [];
+
+  useEffect(() => {
+    if (!studioHydrated) return;
+    const timeout = window.setTimeout(() => {
+      void creatorApi.updateLiveStudio(studioId, {
+        data: {
+          mode,
+          micOn,
+          camOn,
+          screenShareOn,
+          activeSceneId,
+          highlightedProductId,
+          flashDealzActive,
+          flashDealzSeconds,
+          giveawayActive,
+          giveawayEntries,
+          selectedGiveawayId
+        }
+      });
+    }, 400);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    activeSceneId,
+    camOn,
+    flashDealzActive,
+    flashDealzSeconds,
+    giveawayActive,
+    giveawayEntries,
+    highlightedProductId,
+    micOn,
+    mode,
+    screenShareOn,
+    selectedGiveawayId,
+    studioHydrated,
+    studioId
+  ]);
 
   // Keep remaining quantities in sync when the configured giveaway list changes.
   // We preserve any existing remaining counts where possible (e.g., while live).
@@ -492,7 +574,17 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
   // Handlers
   const toggleLive = () => {
-    setMode((prev) => (prev === "lobby" ? "live" : "lobby"));
+    setMode((prev) => {
+      const next = prev === "lobby" ? "live" : "lobby";
+      if (studioHydrated) {
+        if (next === "live") {
+          void creatorApi.startLiveStudio(studioId);
+        } else {
+          void creatorApi.endLiveStudio(studioId);
+        }
+      }
+      return next;
+    });
   };
 
   const handleOpenFlashConfig = () => setFlashConfigOpen(true);

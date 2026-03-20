@@ -5,28 +5,29 @@
 //  • Performance & Earnings – How this Promo is performing for the creator + guidance.
 // Styling aligned with MyLiveDealz Creator pages, using orange (#f77f00) as the primary color.
 
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useNotification } from "../../contexts/NotificationContext";
 
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
-const DEMO_PROMO: Promo = {
-  id: "PR-101",
-  name: "Autumn Beauty Flash – Serum Promo",
-  seller: "GlowUp Hub",
-  campaign: "Autumn Beauty Flash",
-  status: "Active" as const, // Upcoming | Active | Ended
+const EMPTY_PROMO: Promo = {
+  id: "",
+  name: "Promo",
+  seller: "Seller",
+  campaign: "Campaign",
+  status: "Upcoming",
   compType: "Hybrid",
-  compSummary: "$200 flat + 5% commission",
-  earnings: 820,
-  clicks: 1850,
-  purchases: 96,
-  conversion: 5.2,
-  category: "Beauty",
-  region: "East Africa",
-  hasContract: true,
-  hasLives: true
+  compSummary: "Pending",
+  earnings: 0,
+  clicks: 0,
+  purchases: 0,
+  conversion: 0,
+  category: "General",
+  region: "Global",
+  hasContract: false,
+  hasLives: false
 };
 
 
@@ -36,7 +37,80 @@ function PromoAdDetailPage() {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("share"); // share | performance
 
-  const promo = location.state?.promo || DEMO_PROMO;
+  const [promo, setPromo] = useState<Promo>(() => location.state?.promo || EMPTY_PROMO);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const search = new URLSearchParams(location.search);
+    const queryPromoId = search.get("promoId") || search.get("adId") || search.get("id");
+    const pathTail = location.pathname.split("/").filter(Boolean).pop() || "";
+    const candidateId =
+      location.state?.promo?.id ||
+      queryPromoId ||
+      (pathTail && !pathTail.includes("Shoppable-Adz") ? pathTail : "");
+
+    if (!candidateId) return;
+
+    const normalizeStatus = (value: unknown): Promo["status"] => {
+      const normalized = String(value || "").toLowerCase();
+      if (["ended", "archived", "inactive", "completed"].includes(normalized)) return "Ended";
+      if (["active", "live", "published", "running"].includes(normalized)) return "Active";
+      return "Upcoming";
+    };
+
+    void Promise.all([
+      creatorApi.adzCampaign(candidateId),
+      creatorApi.adzCampaignPerformance(candidateId).catch(() => ({}))
+    ])
+      .then(([campaign, performance]) => {
+        if (cancelled) return;
+        const data =
+          campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
+            ? (campaign.data as Record<string, unknown>)
+            : {};
+        const perf =
+          performance && typeof performance === "object" && !Array.isArray(performance)
+            ? (performance as Record<string, unknown>)
+            : {};
+        const clicks = Number(perf.clicks ?? 0) || 0;
+        const purchases = Number(perf.purchases ?? 0) || 0;
+        const earnings = Number(perf.earnings ?? 0) || 0;
+        const conversion = clicks > 0 ? (purchases / clicks) * 100 : 0;
+
+        const sellerName = String(
+          data.supplierName ||
+            data.sellerName ||
+            data.seller ||
+            (promo.seller || "Seller")
+        );
+
+        setPromo({
+          id: campaign.id,
+          name: String(campaign.title || data.title || data.name || promo.name || "Promo"),
+          seller: sellerName,
+          campaign: String(data.campaignName || data.campaign || campaign.title || "Campaign"),
+          status: normalizeStatus(campaign.status || data.status),
+          compType: String(data.compType || data.compensationType || promo.compType || "Hybrid"),
+          compSummary: String(data.compSummary || data.compensationSummary || promo.compSummary || "Pending"),
+          earnings,
+          clicks,
+          purchases,
+          conversion: Number(conversion.toFixed(1)),
+          category: String(data.category || promo.category || "General"),
+          region: String(data.region || promo.region || "Global"),
+          hasContract: Boolean(data.contractId || data.hasContract),
+          hasLives: Boolean(data.hasLives || data.liveSessionId || data.liveSessionIds)
+        });
+      })
+      .catch(() => {
+        // Keep the current UI payload when API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, location.search, location.state?.promo?.id]);
 
 
   const handleOpenCampaignsBoard = () => {

@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ArrowRight, BadgeCheck, Briefcase, ShoppingBag, Users } from "lucide-react";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi } from "../../lib/creatorApi";
 
 // LiveDealz Feed · Small card component
 // Theme: EVzone Green accents, CTA button is Orange
@@ -64,6 +66,22 @@ export function LiveDealzSuppliersCard({
 }: {
     onExploreSuppliers?: () => void;
 }) {
+    const { data: suppliers } = useApiResource({
+        initialData: [] as Array<Record<string, unknown>>,
+        loader: () => creatorApi.sellers({ limit: 500 }) as Promise<Array<Record<string, unknown>>>
+    });
+    const { sellerCount, providerCount } = useMemo(() => {
+        const sellers = suppliers.filter((entry) => {
+            const type = String((entry.type || entry.kind || "")).toLowerCase();
+            return type.includes("seller");
+        }).length;
+        const providers = suppliers.filter((entry) => {
+            const type = String((entry.type || entry.kind || "")).toLowerCase();
+            return type.includes("provider");
+        }).length;
+        return { sellerCount: sellers, providerCount: providers };
+    }, [suppliers]);
+
     return (
         <section className="w-full">
             <div
@@ -128,12 +146,12 @@ export function LiveDealzSuppliersCard({
                         <MiniTile
                             icon={<ShoppingBag className="h-4 w-4" />}
                             title="Sellers"
-                            desc="Suppliers of products"
+                            desc={`Suppliers of products${sellerCount ? ` (${sellerCount})` : ""}`}
                         />
                         <MiniTile
                             icon={<Briefcase className="h-4 w-4" />}
                             title="Providers"
-                            desc="Service providers"
+                            desc={`Service providers${providerCount ? ` (${providerCount})` : ""}`}
                         />
                     </div>
 

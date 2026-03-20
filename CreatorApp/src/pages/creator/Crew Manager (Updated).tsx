@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   AlertTriangle,
@@ -22,6 +22,7 @@ import {
   Video,
   X
 } from "lucide-react";
+import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * Crew Management (Premium) — aligned with Roles & Permissions.
@@ -947,6 +948,7 @@ export default function CreatorLiveCrewManagementPremium() {
     startISO: string;
     durationMin: number;
   } | null>(null);
+  const [hasHydratedCrew, setHasHydratedCrew] = useState(false);
 
   const activeSession = useMemo(() => sessions.find((s) => s.id === activeSessionId) || sessions[0], [sessions, activeSessionId]);
   const activeAssignments = assignmentsBySession[activeSession.id];
@@ -957,6 +959,123 @@ export default function CreatorLiveCrewManagementPremium() {
   function addAudit(who: string, what: string, meta: string) {
     setAudit((prev) => [{ id: uid("aud"), when: nowLabel(), who, what, meta }, ...prev].slice(0, 40));
   }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([creatorApi.roles(), creatorApi.crew(), creatorApi.liveSessions()])
+      .then(([rolesPayload, crewSessions, liveSessions]) => {
+        if (cancelled) return;
+
+        const backendMembers = Array.isArray(rolesPayload.members) ? rolesPayload.members : [];
+        if (backendMembers.length > 0) {
+          setMembers(
+            backendMembers.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              const status = String(row.status || "Active").toLowerCase();
+              return {
+                id: String(row.id || `member_${index}`),
+                name: String(row.name || row.email || "Member"),
+                email: String(row.email || ""),
+                handle: "",
+                roleId: String(row.roleId || "viewer"),
+                status:
+                  status === "invited"
+                    ? "Invited"
+                    : status === "suspended"
+                      ? "Suspended"
+                      : status === "inactive"
+                        ? "Inactive"
+                        : "Active",
+                tzLabel: "EAT (+3)",
+                tzOffsetHours: 3
+              } as Member;
+            })
+          );
+        }
+
+        if (Array.isArray(liveSessions) && liveSessions.length > 0) {
+          setSessions(
+            liveSessions.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              const data =
+                row.data && typeof row.data === "object" && !Array.isArray(row.data)
+                  ? (row.data as Record<string, unknown>)
+                  : {};
+              const rawStatus = String(row.status || "scheduled").toLowerCase();
+              const status: SessionStatus =
+                rawStatus === "live" ? "Live" : rawStatus === "replay" || rawStatus === "ended" ? "Replay" : "Scheduled";
+              return {
+                id: String(row.id || `S-${index + 1}`),
+                title: String(row.title || data.title || "Live session"),
+                supplierName: String(data.supplierName || data.supplier || "Supplier"),
+                campaign: String(data.campaign || data.campaignName || "Campaign"),
+                status,
+                startISO: String(row.scheduledAt || row.startedAt || new Date().toISOString()),
+                durationMin: Number(data.durationMin || 60),
+                cohostSlots: Number(data.cohostSlots || 2)
+              } as Session;
+            })
+          );
+        }
+
+        if (Array.isArray(crewSessions) && crewSessions.length > 0) {
+          const mapped: Record<string, Assignments> = {};
+          crewSessions.forEach((entry) => {
+            const row = entry as Record<string, unknown>;
+            const items = Array.isArray(row.assignments) ? row.assignments : [];
+            const next: Assignments = { hostId: null, producerId: null, moderatorIds: [], cohostIds: [] };
+            items.forEach((assignment) => {
+              const a = assignment as Record<string, unknown>;
+              const memberId = String(a.memberId || a.id || a.userId || "");
+              const role = String(a.role || a.crewRole || a.type || "").toLowerCase();
+              if (!memberId) return;
+              if (role.includes("host") && !role.includes("co")) {
+                next.hostId = memberId;
+              } else if (role.includes("producer")) {
+                next.producerId = memberId;
+              } else if (role.includes("moderator")) {
+                next.moderatorIds.push(memberId);
+              } else if (role.includes("co")) {
+                next.cohostIds.push(memberId);
+              }
+            });
+            mapped[String(row.id || "")] = next;
+          });
+          if (Object.keys(mapped).length > 0) {
+            setAssignmentsBySession((prev) => ({ ...prev, ...mapped }));
+          }
+        }
+      })
+      .catch(() => {
+        // Keep local fallback in case API is unavailable.
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHasHydratedCrew(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedCrew) return;
+    const active = assignmentsBySession[activeSessionId];
+    if (!active) return;
+    const payloadAssignments = [
+      active.hostId ? { memberId: active.hostId, role: "host" } : null,
+      active.producerId ? { memberId: active.producerId, role: "producer" } : null,
+      ...active.moderatorIds.map((memberId) => ({ memberId, role: "moderator" })),
+      ...active.cohostIds.map((memberId) => ({ memberId, role: "cohost" }))
+    ].filter(Boolean) as Array<Record<string, unknown>>;
+
+    void creatorApi.updateCrewSession(activeSessionId, {
+      assignments: payloadAssignments
+    });
+  }, [activeSessionId, assignmentsBySession, hasHydratedCrew]);
 
 
 

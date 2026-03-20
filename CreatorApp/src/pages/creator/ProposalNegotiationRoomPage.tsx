@@ -6,6 +6,7 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 // import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
 const STATUS_STEPS = [
   "Draft",
@@ -35,8 +36,17 @@ type Message = {
 function ProposalNegotiationRoomPage() {
   const location = useLocation();
   const origin = (location.state as { origin?: string })?.origin || "from-seller";
+  const initialProposalId = (location.state as { proposalId?: string })?.proposalId;
   // const { theme } = useTheme();
   const [status, setStatus] = useState<Status>("Negotiating");
+  const [proposalId, setProposalId] = useState<string | null>(initialProposalId || null);
+  const [sellerName, setSellerName] = useState("GlowUp Hub");
+  const [campaignTitle, setCampaignTitle] = useState("Autumn Beauty Flash · Serum Launch");
+  const [campaignSummary, setCampaignSummary] = useState(
+    "Live + Shoppable Adz campaign to push the new GlowUp serum across East Africa."
+  );
+  const [lastUpdatedLabel, setLastUpdatedLabel] = useState("2h ago");
+  const [regionLabel, setRegionLabel] = useState("East Africa · Online only");
 
   const baseTerms = useMemo(
     () => ({
@@ -125,6 +135,102 @@ function ProposalNegotiationRoomPage() {
 
   const [appliedSuggestions, setAppliedSuggestions] = useState<string[]>([]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const mapStatus = (value: unknown): Status => {
+      const normalized = String(value || "").toUpperCase();
+      if (["APPROVED", "ACCEPTED", "CONTRACTED", "CONTRACT_CREATED"].includes(normalized)) return "Contract created";
+      if (["FINAL_REVIEW", "FINAL REVIEW", "REVIEW"].includes(normalized)) return "Final review";
+      if (["NEGOTIATING", "COUNTERED", "IN_NEGOTIATION"].includes(normalized)) return "Negotiating";
+      return "Draft";
+    };
+
+    const pickDeliverables = (summary: string, metadata: Record<string, unknown>) => {
+      const fromMeta = Array.isArray(metadata.deliverables)
+        ? metadata.deliverables.map((entry) => String(entry))
+        : [];
+      if (fromMeta.length) {
+        return fromMeta.map((entry) => `• ${entry}`).join("\n");
+      }
+      if (summary.trim()) {
+        return `• ${summary.trim()}`;
+      }
+      return baseTerms.deliverables;
+    };
+
+    const load = async () => {
+      try {
+        let resolvedId = proposalId;
+        if (!resolvedId) {
+          const list = await creatorApi.proposals();
+          resolvedId = list[0]?.id || null;
+          if (resolvedId && !cancelled) {
+            setProposalId(resolvedId);
+          }
+        }
+        if (!resolvedId) return;
+
+        const proposal = await creatorApi.proposal(resolvedId);
+        if (cancelled) return;
+
+        const metadata =
+          proposal.metadata && typeof proposal.metadata === "object" && !Array.isArray(proposal.metadata)
+            ? (proposal.metadata as Record<string, unknown>)
+            : {};
+
+        setStatus(mapStatus(proposal.status));
+        setSellerName(String(proposal.sellerName || proposal.seller || "GlowUp Hub"));
+        setCampaignTitle(String(proposal.campaignTitle || proposal.title || "Campaign"));
+        setCampaignSummary(String(proposal.summary || campaignSummary));
+        setLastUpdatedLabel("Synced from workspace");
+        if (metadata.region) {
+          setRegionLabel(String(metadata.region));
+        }
+
+        setTerms({
+          deliverables: pickDeliverables(String(proposal.summary || ""), metadata),
+          schedule: String(metadata.schedule || baseTerms.schedule),
+          compensation: String(
+            metadata.compensation ||
+              (typeof proposal.amount === "number"
+                ? `• Flat fee: ${proposal.currency || "USD"} ${proposal.amount.toLocaleString()}`
+                : baseTerms.compensation)
+          )
+        });
+
+        const nextMessages = Array.isArray(proposal.messages)
+          ? proposal.messages.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              const author = String(row.author || "");
+              const from =
+                /you/i.test(author) || /creator/i.test(author) || author === "" ? ("creator" as const) : ("seller" as const);
+              return {
+                id: index + 1,
+                from,
+                name: author || (from === "creator" ? "You" : sellerName),
+                avatar: from === "creator" ? "RY" : "GH",
+                time: row.createdAt ? new Date(String(row.createdAt)).toLocaleTimeString() : "Now",
+                body: String(row.body || "")
+              };
+            })
+          : [];
+
+        if (nextMessages.length) {
+          setMessages(nextMessages);
+        }
+      } catch {
+        // Keep local UI fallback when API is unavailable.
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [baseTerms.compensation, baseTerms.schedule, proposalId, campaignSummary, sellerName]);
+
   // Filter out applied suggestions
   const visibleSuggestions = clauseSuggestions.filter(s => !appliedSuggestions.includes(s.id));
 
@@ -175,6 +281,13 @@ function ProposalNegotiationRoomPage() {
     setDraftMessage("");
     setAttachedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (proposalId) {
+      void creatorApi.proposalMessage(proposalId, {
+        body: newMsg.body,
+        messageType: attachedFile ? "file" : "text"
+      });
+    }
   };
 
   // const _currentStepIndex = STATUS_STEPS.indexOf(status);
@@ -184,7 +297,9 @@ function ProposalNegotiationRoomPage() {
       <PageHeader
         pageTitle="Proposal & Negotiation Room"
         badge={
-          <span className="text-xs text-slate-500 dark:text-slate-300">Proposal ID: P-101 · Autumn Beauty Flash</span>
+          <span className="text-xs text-slate-500 dark:text-slate-300">
+            Proposal ID: {proposalId || "—"} · {campaignTitle}
+          </span>
         }
       />
 
@@ -199,21 +314,21 @@ function ProposalNegotiationRoomPage() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-md font-semibold dark:font-bold">GlowUp Hub</span>
+                    <span className="text-md font-semibold dark:font-bold">{sellerName}</span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-slate-900 text-white">
                       Top Brand · Beauty & Skincare
                     </span>
                   </div>
                   <p className="text-sm font-medium mb-0.5">
-                    Autumn Beauty Flash · Serum Launch
+                    {campaignTitle}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-300 mb-0.5">
-                    Live + Shoppable Adz campaign to push the new GlowUp serum across East Africa.
+                    {campaignSummary}
                   </p>
                   <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-300 mt-1">
                     <span>Live window: Friday · 20:00–21:30 EAT</span>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
-                    <span>Region: East Africa · Online only</span>
+                    <span>Region: {regionLabel}</span>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
                     <span>Category: Beauty & Skincare</span>
                   </div>
@@ -222,7 +337,7 @@ function ProposalNegotiationRoomPage() {
               <div className="w-full xl:w-64 flex flex-col justify-between gap-2">
                 {origin === "from-seller" && <AgreementStatusBar status={status} />}
                 <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-200 mt-1">
-                  <span>Last updated: 2h ago</span>
+                  <span>Last updated: {lastUpdatedLabel}</span>
                   <span>Owner: You</span>
                 </div>
               </div>
@@ -230,9 +345,13 @@ function ProposalNegotiationRoomPage() {
             <div className="mt-2 border-t border-slate-100 dark:border-slate-700 pt-2">
               <h3 className="text-xs font-semibold dark:font-bold mb-1">Proposed deliverables</h3>
               <ul className="list-disc pl-4 text-sm text-slate-600 dark:text-slate-200 space-y-0.5">
-                <li>1x 60–90 min live session focussed on new GlowUp serum.</li>
-                <li>3x short clips for Shoppable Adz (15–30 seconds each).</li>
-                <li>2x Instagram stories before and after the live.</li>
+                {(terms.deliverables || "")
+                  .split("\n")
+                  .map((line) => line.replace(/^[•\-\s]+/, "").trim())
+                  .filter(Boolean)
+                  .map((line, index) => (
+                    <li key={`${line}-${index}`}>{line}</li>
+                  ))}
               </ul>
             </div>
           </section>

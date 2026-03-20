@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi, type ContentApprovalRecord } from "../../lib/creatorApi";
 
 // MyLiveDealz · Creator Portal
 // Page: Awaiting Approval (Submitted Content)
@@ -325,27 +326,111 @@ function seedSubmissions(): Submission[] {
     }
   ];
 
-  // Load from localStorage
-  const localStr = localStorage.getItem("pendingSubmissions");
-  if (localStr) {
-    try {
-      const local = JSON.parse(localStr) as Submission[];
-      return [...local, ...base];
-    } catch (e) {
-      console.error("Failed to parse local submissions", e);
-    }
-  }
-
   return base;
+}
+
+function normalizeSubmissionStatus(value: unknown): SubmissionStatus {
+  const normalized = String(value || "").toLowerCase();
+  if (["under_review", "in_review", "reviewing"].includes(normalized)) return "Under Review";
+  if (["escalated"].includes(normalized)) return "Escalated";
+  if (["changes_requested", "send_back", "needs_changes"].includes(normalized)) return "Changes Requested";
+  if (["approved", "published"].includes(normalized)) return "Approved";
+  if (["rejected", "withdrawn"].includes(normalized)) return "Rejected";
+  return "Pending";
+}
+
+function mapContentApprovalRecord(record: ContentApprovalRecord): Submission {
+  const payload =
+    record.payload && typeof record.payload === "object" && !Array.isArray(record.payload)
+      ? (record.payload as Record<string, unknown>)
+      : {};
+  const metadata =
+    record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
+      ? (record.metadata as Record<string, unknown>)
+      : {};
+  const assetsRaw = Array.isArray(payload.assets) ? payload.assets : [];
+  const auditRaw = Array.isArray(metadata.audit) ? metadata.audit : [];
+  const deskRaw = String(payload.desk || metadata.desk || "General");
+  const channelRaw = String(payload.channel || "Instagram");
+  const typeRaw = String(record.type || payload.type || "Doc");
+
+  return {
+    id: String(record.id),
+    title: String(record.title || payload.title || "Submission"),
+    campaign: String(payload.campaign || metadata.campaign || "Campaign"),
+    supplier: {
+      name: String(payload.supplierName || metadata.supplierName || "Supplier"),
+      type: String(payload.supplierType || "").toLowerCase() === "provider" ? "Provider" : "Seller"
+    },
+    channel: (["Instagram", "TikTok", "YouTube", "WhatsApp"].includes(channelRaw) ? channelRaw : "Instagram") as Submission["channel"],
+    type: (["Video", "Image", "Caption", "Doc"].includes(typeRaw) ? typeRaw : "Doc") as SubmissionType,
+    desk: (["General", "Faith", "Medical", "Education"].includes(deskRaw) ? deskRaw : "General") as Desk,
+    status: normalizeSubmissionStatus(record.status),
+    riskScore: Number(payload.riskScore || metadata.riskScore || 0),
+    submittedAtISO: String(record.createdAt || payload.submittedAtISO || nowISO()),
+    dueAtISO: String(payload.dueAtISO || metadata.dueAtISO || nowISO()),
+    notesFromCreator: String(payload.notesFromCreator || ""),
+    caption: String(payload.caption || ""),
+    assets: assetsRaw.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      const entryType = String(row.type || "Doc");
+      return {
+        name: String(row.name || `Asset ${index + 1}`),
+        type: (["Video", "Image", "Caption", "Doc"].includes(entryType) ? entryType : "Doc") as SubmissionType,
+        size: String(row.size || row.sizeLabel || "—")
+      };
+    }),
+    flags: {
+      missingDisclosure: Boolean(payload.missingDisclosure),
+      sensitiveClaim: Boolean(payload.sensitiveClaim),
+      brandRestriction: Boolean(payload.brandRestriction)
+    },
+    lastUpdatedISO: String(record.updatedAt || record.createdAt || nowISO()),
+    audit:
+      auditRaw.length > 0
+        ? auditRaw.map((entry, index) => {
+            const row = entry as Record<string, unknown>;
+            return {
+              atISO: String(row.atISO || row.at || record.updatedAt || record.createdAt || nowISO()),
+              msg: String(row.msg || row.message || `Event ${index + 1}`)
+            };
+          })
+        : [{ atISO: String(record.createdAt || nowISO()), msg: "Submitted" }]
+  };
 }
 
 export default function CreatorAwaitingApproval(): JSX.Element {
   const navigate = useNavigate();
-  const [submissions, setSubmissions] = useState<Submission[]>(() => seedSubmissions());
-  const [selectedId, setSelectedId] = useState<string>(() => seedSubmissions()[0].id);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const [filter, setFilter] = useState<CreatorFilter>("Awaiting");
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<ViewState>("list");
+
+  useEffect(() => {
+    let cancelled = false;
+    void creatorApi
+      .contentApprovals()
+      .then((records) => {
+        if (cancelled) return;
+        const mapped = records.map(mapContentApprovalRecord);
+        setSubmissions(mapped);
+        if (mapped.length > 0) {
+          setSelectedId((prev) => (prev ? prev : mapped[0].id));
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        const fallback = seedSubmissions();
+        setSubmissions(fallback);
+        if (fallback.length > 0) {
+          setSelectedId(fallback[0].id);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // On large screens, always detail. On small, depends on state.
   // We handle this via CSS hiding/showing mostly, or conditional rendering.
@@ -507,6 +592,7 @@ export default function CreatorAwaitingApproval(): JSX.Element {
                       active={s.id === selectedId}
                       onSelect={() => handleSelect(s.id)}
                       onNudge={() => {
+                        void creatorApi.nudgeContentApproval(s.id);
                         pushAudit(s.id, "Creator nudged reviewer");
                         toast("Nudge sent");
                       }}
@@ -538,14 +624,23 @@ export default function CreatorAwaitingApproval(): JSX.Element {
                 item={selected}
                 onCopy={() => copyToClipboard(selected.caption)}
                 onNudge={() => {
+                  void creatorApi.nudgeContentApproval(selected.id);
                   pushAudit(selected.id, "Creator nudged reviewer");
                   toast("Nudge sent");
                 }}
                 onWithdraw={() => {
+                  void creatorApi.withdrawContentApproval(selected.id);
                   setStatus(selected.id, "Rejected", "Withdrawn by creator");
                   toast("Withdrawn");
                 }}
                 onResubmit={() => {
+                  void creatorApi.resubmitContentApproval(selected.id, {
+                    status: "resubmitted",
+                    data: {
+                      caption: selected.caption,
+                      notesFromCreator: selected.notesFromCreator
+                    }
+                  });
                   setStatus(selected.id, "Pending", "Resubmitted after changes");
                   toast("Resubmitted");
                 }}

@@ -483,6 +483,16 @@ export type AdzCampaignRecord = {
   [key: string]: unknown;
 };
 
+export type AdzLinkRecord = {
+  id: string;
+  status?: string | null;
+  url?: string | null;
+  data?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
 export type AssetRecord = {
   id: string;
   campaignId?: string | null;
@@ -1023,6 +1033,18 @@ export const creatorApi = {
   },
   adzCampaignPerformance(id: string) {
     return api.get<Record<string, unknown>>(`/adz/campaigns/${encodeURIComponent(id)}/performance`);
+  },
+  adzLinks() {
+    return api.get<AdzLinkRecord[]>("/links");
+  },
+  adzLink(id: string) {
+    return api.get<AdzLinkRecord>(`/links/${encodeURIComponent(id)}`);
+  },
+  createAdzLink(body: Record<string, unknown>) {
+    return api.post<AdzLinkRecord>("/links", body);
+  },
+  updateAdzLink(id: string, body: Record<string, unknown>) {
+    return api.patch<AdzLinkRecord>(`/links/${encodeURIComponent(id)}`, body);
   },
 
   contentApprovals() {

@@ -41,6 +41,7 @@ import {
   Zap
 } from "lucide-react";
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * Roles & Permissions — Premium (Regenerated)
@@ -983,6 +984,7 @@ export default function RolesPermissionsPremium() {
   const [require2FA, setRequire2FA] = useState(true);
   const [allowExternalInvites, setAllowExternalInvites] = useState(false);
   const [supplierGuestExpiryHours, setSupplierGuestExpiryHours] = useState(24);
+  const [hasLoadedBackendRoles, setHasLoadedBackendRoles] = useState(false);
 
   const [activeRole, setActiveRole] = useState<string>(() => {
     if (typeof window !== "undefined") {
@@ -1001,6 +1003,122 @@ export default function RolesPermissionsPremium() {
       // Optional: window.location.reload(); // For standard app flow
     }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    void creatorApi
+      .roles()
+      .then((payload) => {
+        if (cancelled) return;
+
+        const backendRoles = Array.isArray(payload.roles) ? payload.roles : [];
+        if (backendRoles.length > 0) {
+          setRoles(
+            backendRoles.map((entry) => {
+              const roleRow = entry as Record<string, unknown>;
+              return {
+                id: String(roleRow.id || roleRow.key || `role_${Math.random().toString(36).slice(2)}`),
+                name: String(roleRow.name || "Role"),
+                badge: String(roleRow.badge || "Custom") === "System" ? "System" : "Custom",
+                description: String(roleRow.description || "Workspace role"),
+                icon: <User className="h-4 w-4" />,
+                perms:
+                  roleRow.perms && typeof roleRow.perms === "object" && !Array.isArray(roleRow.perms)
+                    ? (roleRow.perms as Record<string, boolean>)
+                    : {}
+              } satisfies Role;
+            })
+          );
+        }
+
+        const backendMembers = Array.isArray(payload.members) ? payload.members : [];
+        if (backendMembers.length > 0) {
+          setMembers(
+            backendMembers.map((entry, index) => {
+              const member = entry as Record<string, unknown>;
+              const statusRaw = String(member.status || "Active");
+              const normalizedStatus =
+                statusRaw.toLowerCase() === "invited"
+                  ? "Invited"
+                  : statusRaw.toLowerCase() === "suspended"
+                    ? "Suspended"
+                    : statusRaw.toLowerCase() === "inactive"
+                      ? "Inactive"
+                      : "Active";
+              return {
+                id: String(member.id || `member_${index}`),
+                name: String(member.name || member.email || "Member"),
+                email: String(member.email || ""),
+                avatarUrl: "",
+                status: normalizedStatus as MemberStatus,
+                seat: String(member.seat || "Manager") as Seat,
+                roleId: String(member.roleId || "owner"),
+                lastActiveLabel: "Synced",
+                twoFA: "On"
+              } satisfies Member;
+            })
+          );
+        }
+
+        const backendInvites = Array.isArray(payload.invites) ? payload.invites : [];
+        if (backendInvites.length > 0) {
+          setInvites(
+            backendInvites.map((entry, index) => {
+              const invite = entry as Record<string, unknown>;
+              const statusRaw = String(invite.status || "Pending");
+              const normalizedStatus =
+                statusRaw.toLowerCase() === "accepted"
+                  ? "Accepted"
+                  : statusRaw.toLowerCase() === "expired"
+                    ? "Expired"
+                    : statusRaw.toLowerCase() === "revoked"
+                      ? "Revoked"
+                      : "Pending";
+              return {
+                id: String(invite.id || `invite_${index}`),
+                email: String(invite.email || ""),
+                roleId: String(invite.roleId || "viewer"),
+                seat: String(invite.seat || "Manager") as Seat,
+                createdAtLabel: "Synced",
+                expiresAtLabel: "—",
+                status: normalizedStatus as Invite["status"]
+              } satisfies Invite;
+            })
+          );
+        }
+
+        const security =
+          payload.workspaceSecurity && typeof payload.workspaceSecurity === "object"
+            ? (payload.workspaceSecurity as Record<string, unknown>)
+            : null;
+        if (security) {
+          if (typeof security.require2FA === "boolean") setRequire2FA(security.require2FA);
+          if (typeof security.allowExternalInvites === "boolean") setAllowExternalInvites(security.allowExternalInvites);
+          if (typeof security.supplierGuestExpiryHours === "number") setSupplierGuestExpiryHours(security.supplierGuestExpiryHours);
+        }
+      })
+      .catch(() => {
+        // Keep local fallback state when API is unavailable.
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHasLoadedBackendRoles(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedBackendRoles) return;
+    void creatorApi.updateRolesSecurity({
+      require2FA,
+      allowExternalInvites,
+      supplierGuestExpiryHours
+    });
+  }, [allowExternalInvites, hasLoadedBackendRoles, require2FA, supplierGuestExpiryHours]);
 
   const permIndex = useMemo(() => {
     const m = new Map<string, Perm>();
@@ -1037,19 +1155,27 @@ export default function RolesPermissionsPremium() {
 
   function saveRoleMeta() {
     if (!selectedRole) return;
+    const nextName = roleNameDraft.trim() || selectedRole.name;
+    const nextDescription = roleDescDraft.trim() || selectedRole.description;
     setRoles((rs) =>
-      rs.map((r) => (r.id === selectedRole.id ? { ...r, name: roleNameDraft.trim() || r.name, description: roleDescDraft.trim() || r.description } : r))
+      rs.map((r) => (r.id === selectedRole.id ? { ...r, name: nextName, description: nextDescription } : r))
     );
+    void creatorApi.updateRole(selectedRole.id, {
+      name: nextName,
+      description: nextDescription
+    });
     setEditRoleOpen(false);
     push("Role updated.", "success");
-    log("Owner", "Updated role metadata", `${selectedRole.name} → ${roleNameDraft.trim() || selectedRole.name}`);
+    log("Owner", "Updated role metadata", `${selectedRole.name} → ${nextName}`);
   }
 
   function setPerm(roleId: string, permId: string, value: boolean) {
     setRoles((rs) =>
       rs.map((r) => {
         if (r.id !== roleId) return r;
-        return { ...r, perms: { ...r.perms, [permId]: value } };
+        const nextPerms = { ...r.perms, [permId]: value };
+        void creatorApi.updateRole(roleId, { perms: nextPerms });
+        return { ...r, perms: nextPerms };
       })
     );
   }
@@ -1064,6 +1190,7 @@ export default function RolesPermissionsPremium() {
         g.perms.forEach((p) => {
           next[p.id] = value;
         });
+        void creatorApi.updateRole(roleId, { perms: next });
         return { ...r, perms: next };
       })
     );
@@ -1079,6 +1206,13 @@ export default function RolesPermissionsPremium() {
       badge: "Custom"
     };
     setRoles((rs) => [copy, ...rs]);
+    void creatorApi.createRole({
+      id: copy.id,
+      name: copy.name,
+      badge: copy.badge,
+      description: copy.description,
+      perms: copy.perms
+    });
     setSelectedRoleId(id);
     push("Role duplicated.", "success");
     log("Owner", "Duplicated role", `${selectedRole.name} → ${copy.name}`);
@@ -1096,6 +1230,13 @@ export default function RolesPermissionsPremium() {
       perms: buildPermMap(ids, false)
     };
     setRoles((rs) => [r, ...rs]);
+    void creatorApi.createRole({
+      id: r.id,
+      name: r.name,
+      badge: r.badge,
+      description: r.description,
+      perms: r.perms
+    });
     setSelectedRoleId(id);
     setCreateRoleOpen(false);
     push("New role created.", "success");
@@ -1110,6 +1251,7 @@ export default function RolesPermissionsPremium() {
     }
     const name = selectedRole.name;
     setRoles((rs) => rs.filter((r) => r.id !== selectedRole.id));
+    void creatorApi.deleteRole(selectedRole.id);
     setSelectedRoleId("owner");
     push("Role deleted.", "success");
     log("Owner", "Deleted role", name, "warn");
@@ -1140,6 +1282,13 @@ export default function RolesPermissionsPremium() {
       status: "Pending"
     };
     setInvites((x) => [inv, ...x]);
+    void creatorApi.createRoleInvite({
+      id: inv.id,
+      name: email.split("@")[0] || "Invite",
+      email: inv.email,
+      roleId: inv.roleId,
+      seat: inv.seat
+    });
     setInviteOpen(false);
     setInviteEmail("");
     push("Invite sent.", "success");
@@ -1160,12 +1309,14 @@ export default function RolesPermissionsPremium() {
 
   function changeMemberRole(memberId: string, roleId: string) {
     setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, roleId } : m)));
+    void creatorApi.updateRoleMember(memberId, { roleId });
     push("Role updated.", "success");
     log("Owner", "Changed member role", `${memberId} → ${roleId}`);
   }
 
   function changeMemberStatus(memberId: string, status: MemberStatus) {
     setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, status } : m)));
+    void creatorApi.updateRoleMember(memberId, { status });
     push(`Member status: ${status}`, "success");
     log("Owner", "Changed member status", `${memberId} → ${status}`, status === "Suspended" ? "critical" : "warn");
   }

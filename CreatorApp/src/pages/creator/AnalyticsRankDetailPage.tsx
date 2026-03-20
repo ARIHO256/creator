@@ -13,6 +13,8 @@ import {
   Users,
 } from "lucide-react";
 import { useCreator } from "../../contexts/CreatorContext";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * AnalyticsRankDetailPage (Creator View)
@@ -131,14 +133,14 @@ function downloadCsv(filename: string, rows: Record<string, string | number>[]) 
 }
 
 // --- Static Data Moved Outside Component ---
-const baseMetrics: Metrics = {
+const DEFAULT_BASE_METRICS: Metrics = {
   avgViewers: 780,
   ctr: 3.2,
   conversion: 4.1,
   salesDriven: 4200,
 };
 
-const campaigns: CampaignRow[] = [
+const DEFAULT_CAMPAIGNS: CampaignRow[] = [
   {
     id: 1,
     name: "Autumn Beauty Flash",
@@ -191,6 +193,65 @@ export default function AnalyticsRankDetailPage() {
   const [timeRange, setTimeRange] = useState<Range>("30");
   const [category, setCategory] = useState<Category>("All");
   const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("sales");
+  const { data: analyticsSeed } = useApiResource({
+    initialData: {
+      baseMetrics: DEFAULT_BASE_METRICS,
+      campaigns: DEFAULT_CAMPAIGNS
+    },
+    loader: async () => {
+      const [adzCampaigns, reviewsDashboard] = await Promise.all([
+        creatorApi.adzCampaigns(),
+        creatorApi.reviewsDashboard().catch(() => ({}))
+      ]);
+
+      const campaigns: CampaignRow[] = adzCampaigns.length
+        ? adzCampaigns.map((campaign, index) => {
+            const data =
+              campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
+                ? (campaign.data as Record<string, unknown>)
+                : {};
+            const sales = Number(data.sales || data.gmv || campaign.budget || 0);
+            const engagements = Number(data.engagements || data.clicks || 0);
+            const convRate = Number(data.conversion || data.conversionPct || 0);
+            const categoryRaw = String(data.category || "Tech");
+            const categoryMapped: Exclude<Category, "All"> =
+              categoryRaw.toLowerCase().includes("beauty")
+                ? "Beauty"
+                : categoryRaw.toLowerCase().includes("faith")
+                  ? "Faith"
+                  : "Tech";
+            return {
+              id: index + 1,
+              name: String(campaign.title || data.title || `Campaign ${index + 1}`),
+              seller: String(data.sellerName || data.seller || "Seller"),
+              category: categoryMapped,
+              sales,
+              engagements,
+              convRate
+            };
+          })
+        : DEFAULT_CAMPAIGNS;
+
+      const totalSales = campaigns.reduce((sum, item) => sum + item.sales, 0);
+      const totalEngagements = campaigns.reduce((sum, item) => sum + item.engagements, 0);
+      const avgConv =
+        campaigns.length > 0
+          ? campaigns.reduce((sum, item) => sum + item.convRate, 0) / campaigns.length
+          : DEFAULT_BASE_METRICS.conversion;
+
+      return {
+        baseMetrics: {
+          avgViewers: Math.max(0, Math.round(Number((reviewsDashboard as { total?: number }).total || 0) * 25)) || DEFAULT_BASE_METRICS.avgViewers,
+          ctr: totalEngagements > 0 ? Number(((totalSales / totalEngagements) * 100).toFixed(2)) : DEFAULT_BASE_METRICS.ctr,
+          conversion: Number(avgConv.toFixed(2)),
+          salesDriven: totalSales || DEFAULT_BASE_METRICS.salesDriven
+        },
+        campaigns
+      };
+    }
+  });
+  const baseMetrics = analyticsSeed.baseMetrics;
+  const campaigns = analyticsSeed.campaigns;
 
   // Rank / tier demo data
   const nextTier: Rank["nextTier"] = rankTier === "Bronze" ? "Silver" : rankTier === "Silver" ? "Gold" : "Platinum";
