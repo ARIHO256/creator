@@ -38,24 +38,26 @@ function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
 
-function safeReadLS(key: string) {
-  try {
-    return typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
-  } catch {
-    return null;
-  }
-}
-
-function safeWriteLS(key: string, value: string) {
-  try {
-    if (typeof window !== "undefined") window.localStorage.setItem(key, value);
-  } catch {
-    // ignore
-  }
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 function fmtMoney(amount: number) {
   return amount === 0 ? "Free" : `$${amount.toLocaleString()}`;
+}
+
+function fmtMoneyByCurrency(amount: number, currency?: string) {
+  const normalized = typeof currency === "string" && currency.trim() ? currency : "USD";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: normalized,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${normalized} ${amount.toLocaleString()}`;
+  }
 }
 
 function fmtDate(d: Date) {
@@ -185,7 +187,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
 };
 
 // -----------------------------------------------------------------------------
-// Toasts (demo) — replace with NotificationContext if you have it
+// Toasts — replace with NotificationContext if you have it
 // -----------------------------------------------------------------------------
 
 type ToastKind = "success" | "info" | "warning" | "error";
@@ -497,9 +499,6 @@ type ComparisonRow = {
   pro: PlanCell;
   enterprise: PlanCell;
 };
-
-const LS_PLAN_KEY = "mldz_creator_subscription_plan_v1";
-const LS_CYCLE_KEY = "mldz_creator_subscription_cycle_v1";
 
 function valueBadge(v: PlanValue) {
   if (v === "included")
@@ -834,6 +833,14 @@ const SPOTLIGHTS: Array<{
   },
 ];
 
+function normalizePlan(value: unknown): PlanKey | null {
+  return value === "basic" || value === "pro" || value === "enterprise" ? value : null;
+}
+
+function normalizeCycle(value: unknown): BillingCycle | null {
+  return value === "monthly" || value === "yearly" ? value : null;
+}
+
 function PlanPill({ plan }: { plan: PlanKey }) {
   const meta = PLAN_META[plan];
   const ring =
@@ -884,10 +891,11 @@ function StatusCell({ cell }: { cell: PlanCell }) {
 
 function MySubscriptionPageInner() {
   const navigate = useNavigate();
-  const { showSuccess, showInfo, showWarning, ToastStack } = useToasts();
+  const { showSuccess, showInfo, showWarning, showError, ToastStack } = useToasts();
 
   const [plan, setPlan] = useState<PlanKey>("basic");
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  const [subscriptionMetadata, setSubscriptionMetadata] = useState<Record<string, unknown>>({});
 
   // Side drawers
   const [drawerBilling, setDrawerBilling] = useState(false);
@@ -895,49 +903,114 @@ function MySubscriptionPageInner() {
   const [drawerSales, setDrawerSales] = useState(false);
   const [drawerGov, setDrawerGov] = useState(false);
 
-  // Demo billing state
+  // Billing and sales state
   const [billingName, setBillingName] = useState("");
   const [billingEmail, setBillingEmail] = useState("");
-  const [billingCard, setBillingCard] = useState("4242 4242 4242 4242");
-  const [billingExpiry, setBillingExpiry] = useState("12/29");
+  const [billingCard, setBillingCard] = useState("");
+  const [billingExpiry, setBillingExpiry] = useState("");
 
-  // Demo sales state
   const [salesContactName, setSalesContactName] = useState("");
   const [salesEmail, setSalesEmail] = useState("");
   const [salesCompany, setSalesCompany] = useState("");
   const [salesTeamSize, setSalesTeamSize] = useState("5");
   const [salesMessage, setSalesMessage] = useState("We'd like Enterprise for our agency team.");
+  const [payoutMethodSummary, setPayoutMethodSummary] = useState("No payout method configured");
+  const [payoutMethodsState, setPayoutMethodsState] = useState<{
+    methods: Array<Record<string, unknown>>;
+    metadata?: Record<string, unknown>;
+  } | null>(null);
+  const [invoiceRows, setInvoiceRows] = useState<Array<{ id: string; date: string; amount: string; status: string }>>([]);
+  const [savingBilling, setSavingBilling] = useState(false);
+  const [sendingSales, setSendingSales] = useState(false);
+  const [loadingBackend, setLoadingBackend] = useState(true);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
   useEffect(() => {
-    const storedPlan = safeReadLS(LS_PLAN_KEY);
-    const storedCycle = safeReadLS(LS_CYCLE_KEY);
-
-    if (storedPlan === "basic" || storedPlan === "pro" || storedPlan === "enterprise") setPlan(storedPlan);
-    if (storedCycle === "monthly" || storedCycle === "yearly") setCycle(storedCycle);
-
-    // seed demo billing fields
-    setBillingName("Creator Admin");
-    setBillingEmail("admin@creator.app");
-
     let cancelled = false;
 
-    void creatorApi.subscription()
-      .then((subscription) => {
+    void Promise.all([
+      creatorApi.subscription().catch(() => null),
+      creatorApi.payoutMethods().catch(() => null),
+      creatorApi.payouts().catch(() => []),
+    ])
+      .then(([subscription, payoutMethods, payouts]) => {
         if (cancelled) return;
-        if (subscription.plan === "basic" || subscription.plan === "pro" || subscription.plan === "enterprise") {
-          setPlan(subscription.plan);
-          safeWriteLS(LS_PLAN_KEY, subscription.plan);
+        if (subscription) {
+          const nextPlan = normalizePlan(subscription.plan);
+          const nextCycle = normalizeCycle(subscription.cycle);
+          if (nextPlan) setPlan(nextPlan);
+          if (nextCycle) setCycle(nextCycle);
+          setSubscriptionMetadata(asRecord(subscription.metadata) || {});
+          setSubscriptionError(null);
+        } else {
+          setSubscriptionError("Subscription backend is unavailable.");
         }
-        if (subscription.cycle === "monthly" || subscription.cycle === "yearly") {
-          setCycle(subscription.cycle);
-          safeWriteLS(LS_CYCLE_KEY, subscription.cycle);
+
+        if (payoutMethods) {
+          const methods = Array.isArray(payoutMethods.methods) ? payoutMethods.methods : [];
+          const metadata = asRecord(payoutMethods.metadata) || {};
+          setPayoutMethodsState({ methods: methods as Array<Record<string, unknown>>, metadata });
+          const defaultMethod =
+            methods.find((method) => Boolean(asRecord(method)?.isDefault)) ||
+            methods[0] ||
+            null;
+          const defaultDetails = asRecord(defaultMethod ? asRecord(defaultMethod)?.details : null);
+          const displayLabel =
+            (typeof asRecord(defaultMethod)?.label === "string" && String(asRecord(defaultMethod)?.label)) ||
+            (typeof asRecord(defaultMethod)?.masked === "string" && String(asRecord(defaultMethod)?.masked)) ||
+            (typeof defaultDetails?.masked === "string" && String(defaultDetails.masked)) ||
+            "";
+          setPayoutMethodSummary(displayLabel || "No payout method configured");
+
+          setBillingName(typeof metadata.billingName === "string" ? metadata.billingName : "");
+          setBillingEmail(typeof metadata.billingEmail === "string" ? metadata.billingEmail : "");
+          setBillingCard(
+            typeof metadata.billingCard === "string"
+              ? metadata.billingCard
+              : (typeof asRecord(defaultMethod)?.masked === "string" ? String(asRecord(defaultMethod)?.masked) : "")
+          );
+          setBillingExpiry(typeof metadata.billingExpiry === "string" ? metadata.billingExpiry : "");
+          setSalesContactName(typeof metadata.salesContactName === "string" ? metadata.salesContactName : "");
+          setSalesEmail(typeof metadata.salesEmail === "string" ? metadata.salesEmail : "");
+          setSalesCompany(typeof metadata.salesCompany === "string" ? metadata.salesCompany : "");
+          if (typeof metadata.salesTeamSize === "string") setSalesTeamSize(metadata.salesTeamSize);
+          if (typeof metadata.salesMessage === "string") setSalesMessage(metadata.salesMessage);
         }
-        setSubscriptionError(null);
+
+        const payoutRows = Array.isArray(payouts)
+          ? payouts
+            .map((entry) => {
+              const row = asRecord(entry) || {};
+              const metadata = asRecord(row.metadata) || {};
+              const amount =
+                typeof row.amount === "number" && Number.isFinite(row.amount) ? row.amount : 0;
+              const currency = typeof row.currency === "string" ? row.currency : "USD";
+              const createdAt = typeof row.createdAt === "string" ? row.createdAt : "";
+              const date = createdAt ? fmtDate(new Date(createdAt)) : "—";
+              const reference =
+                (typeof metadata.invoiceId === "string" && metadata.invoiceId) ||
+                (typeof metadata.reference === "string" && metadata.reference) ||
+                `INV-${String(row.id || "N/A").slice(0, 8).toUpperCase()}`;
+              const statusRaw = typeof row.status === "string" ? row.status : "Unknown";
+              const status = statusRaw.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase());
+              return {
+                id: reference,
+                date,
+                amount: fmtMoneyByCurrency(amount, currency),
+                status,
+                ts: createdAt ? new Date(createdAt).getTime() : 0,
+              };
+            })
+            .sort((a, b) => b.ts - a.ts)
+            .map(({ ts, ...rest }) => rest)
+          : [];
+        setInvoiceRows(payoutRows);
+        setLoadingBackend(false);
       })
       .catch(() => {
         if (!cancelled) {
-          setSubscriptionError("Subscription backend is unavailable. Using saved plan settings.");
+          setSubscriptionError("Failed to load subscription and billing data from backend.");
+          setLoadingBackend(false);
         }
       });
 
@@ -962,33 +1035,131 @@ function MySubscriptionPageInner() {
     return "Multi-seat";
   }, [plan]);
 
+  const latestInvoice = invoiceRows[0] || null;
+
   async function applyPlan(next: PlanKey) {
+    const previous = plan;
     setPlan(next);
-    safeWriteLS(LS_PLAN_KEY, next);
     try {
-      await creatorApi.updateSubscription({ plan: next, cycle, status: next === "basic" ? "inactive" : "active" });
+      const updated = await creatorApi.updateSubscription({
+        plan: next,
+        cycle,
+        status: next === "basic" ? "inactive" : "active",
+      });
+      const nextPlan = normalizePlan(updated.plan);
+      const nextCycle = normalizeCycle(updated.cycle);
+      if (nextPlan) setPlan(nextPlan);
+      if (nextCycle) setCycle(nextCycle);
+      setSubscriptionMetadata(asRecord(updated.metadata) || subscriptionMetadata);
       setSubscriptionError(null);
     } catch {
+      setPlan(previous);
       setSubscriptionError("Failed to save the plan change to the backend.");
+      showError("Failed to update subscription plan.");
+      return;
     }
 
     if (next === "basic") {
-      showWarning("Switched to Basic (Free). Pro tools remain visible in demo but are intended to be gated.");
+      showWarning("Switched to Basic (Free).");
     } else if (next === "pro") {
-      showSuccess("Welcome to Pro. Unlimited Dealz and Pro tools are now unlocked (demo).");
+      showSuccess("Subscription updated to Pro.");
     } else {
-      showInfo("Enterprise is typically provisioned by Sales. Demo mode applied.");
+      showInfo("Subscription updated to Enterprise.");
     }
   }
 
   async function applyCycle(next: BillingCycle) {
+    const previous = cycle;
     setCycle(next);
-    safeWriteLS(LS_CYCLE_KEY, next);
     try {
-      await creatorApi.updateSubscription({ plan, cycle: next, status: plan === "basic" ? "inactive" : "active" });
+      const updated = await creatorApi.updateSubscription({
+        plan,
+        cycle: next,
+        status: plan === "basic" ? "inactive" : "active",
+      });
+      const nextCycle = normalizeCycle(updated.cycle);
+      if (nextCycle) setCycle(nextCycle);
+      setSubscriptionMetadata(asRecord(updated.metadata) || subscriptionMetadata);
       setSubscriptionError(null);
     } catch {
+      setCycle(previous);
       setSubscriptionError("Failed to save the billing cycle to the backend.");
+      showError("Failed to update billing cycle.");
+    }
+  }
+
+  async function saveBillingDetails() {
+    if (plan === "basic") {
+      showWarning("Add billing on Pro/Enterprise. Upgrade to continue.");
+      return;
+    }
+    setSavingBilling(true);
+    try {
+      const nextMetadata = {
+        ...(payoutMethodsState?.metadata || {}),
+        billingName: billingName.trim(),
+        billingEmail: billingEmail.trim(),
+        billingCard: billingCard.trim(),
+        billingExpiry: billingExpiry.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      const updatedMethods = await creatorApi.updatePayoutMethods({
+        methods: payoutMethodsState?.methods || [],
+        metadata: nextMetadata,
+      });
+      const methods = Array.isArray(updatedMethods.methods) ? updatedMethods.methods : [];
+      setPayoutMethodsState({ methods: methods as Array<Record<string, unknown>>, metadata: asRecord(updatedMethods.metadata) || nextMetadata });
+      const defaultMethod =
+        methods.find((method) => Boolean(asRecord(method)?.isDefault)) ||
+        methods[0] ||
+        null;
+      const methodLabel =
+        (typeof asRecord(defaultMethod)?.label === "string" && String(asRecord(defaultMethod)?.label)) ||
+        (typeof asRecord(defaultMethod)?.masked === "string" && String(asRecord(defaultMethod)?.masked)) ||
+        billingCard.trim();
+      setPayoutMethodSummary(methodLabel || "No payout method configured");
+
+      const subscriptionMeta = {
+        ...subscriptionMetadata,
+        billingName: billingName.trim(),
+        billingEmail: billingEmail.trim(),
+        billingUpdatedAt: new Date().toISOString(),
+      };
+      const updatedSubscription = await creatorApi.updateSubscription({ metadata: subscriptionMeta });
+      setSubscriptionMetadata(asRecord(updatedSubscription.metadata) || subscriptionMeta);
+      showSuccess("Billing updated successfully.");
+      setDrawerBilling(false);
+    } catch {
+      showError("Failed to update billing details.");
+    } finally {
+      setSavingBilling(false);
+    }
+  }
+
+  async function sendSalesRequest() {
+    if (!salesEmail.trim()) {
+      showWarning("Please add an email address.");
+      return;
+    }
+    setSendingSales(true);
+    try {
+      const salesRequest = {
+        contactName: salesContactName.trim(),
+        email: salesEmail.trim(),
+        company: salesCompany.trim(),
+        teamSize: salesTeamSize.trim(),
+        message: salesMessage.trim(),
+        requestedAt: new Date().toISOString(),
+      };
+      const metadata = { ...subscriptionMetadata, salesRequest };
+      const updated = await creatorApi.updateSubscription({ metadata });
+      setSubscriptionMetadata(asRecord(updated.metadata) || metadata);
+      showSuccess("Sales request submitted.");
+      setDrawerSales(false);
+    } catch {
+      showError("Failed to submit sales request.");
+    } finally {
+      setSendingSales(false);
     }
   }
 
@@ -1000,15 +1171,6 @@ function MySubscriptionPageInner() {
       "Audience notifications + automation",
     ],
     []
-  );
-
-  const invoiceRows = useMemo(
-    () => [
-      { id: `MLDz-${new Date().getFullYear()}-0007`, date: fmtDate(new Date()), amount: plan === "basic" ? "$0" : fmtMoney(price), status: plan === "basic" ? "—" : "Paid" },
-      { id: `MLDz-${new Date().getFullYear()}-0006`, date: fmtDate(new Date(Date.now() - 1000 * 60 * 60 * 24 * 30)), amount: plan === "basic" ? "$0" : fmtMoney(price), status: plan === "basic" ? "—" : "Paid" },
-      { id: `MLDz-${new Date().getFullYear()}-0005`, date: fmtDate(new Date(Date.now() - 1000 * 60 * 60 * 24 * 60)), amount: plan === "basic" ? "$0" : fmtMoney(price), status: plan === "basic" ? "—" : "Paid" },
-    ],
-    [plan, price]
   );
 
   return (
@@ -1037,6 +1199,11 @@ function MySubscriptionPageInner() {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden bg-[#f2f2f2] dark:bg-slate-950">
         <div className="w-full flex flex-col gap-4">
+          {loadingBackend ? (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
+              Loading subscription, billing and invoice records from backend...
+            </div>
+          ) : null}
           {subscriptionError ? (
             <div className="rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
               {subscriptionError}
@@ -1214,7 +1381,7 @@ function MySubscriptionPageInner() {
               <div className="mt-4 rounded-2xl border border-slate-200 dark:border-slate-800 p-3">
                 <div className="text-xs text-slate-600 dark:text-slate-300">Payment method</div>
                 <div className="mt-1 text-sm font-extrabold text-slate-900 dark:text-slate-50">
-                  {plan === "basic" ? "None (Free plan)" : "Visa •••• 4242"}
+                  {plan === "basic" ? "None (Free plan)" : payoutMethodSummary}
                 </div>
                 <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
                   {plan === "basic" ? "Add a payment method when upgrading." : "Update payment method in Billing settings."}
@@ -1226,10 +1393,10 @@ function MySubscriptionPageInner() {
                   <div>
                     <div className="text-xs text-slate-600 dark:text-slate-300">Latest invoice</div>
                     <div className="mt-1 text-sm font-extrabold text-slate-900 dark:text-slate-50">
-                      {plan === "basic" ? "No invoices on Free plan" : `Invoice #MLDz-${new Date().getFullYear()}-0007`}
+                      {latestInvoice ? latestInvoice.id : "No invoices available yet"}
                     </div>
                     <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                      {plan === "basic" ? "Upgrade to generate invoices." : `Issued ${fmtDate(new Date())}`}
+                      {latestInvoice ? `${latestInvoice.date} • ${latestInvoice.status}` : "Billing records will appear after successful charges or payouts."}
                     </div>
                   </div>
                   <div className="h-10 w-10 rounded-2xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-center">
@@ -1615,9 +1782,6 @@ function MySubscriptionPageInner() {
                 </div>
               </div>
 
-              <div className="mt-4 text-xs text-slate-600 dark:text-slate-300">
-                Note: This page is demo-ready. Wire it to your real billing backend and enforce limits at the API/feature-gate layer.
-              </div>
             </div>
           </div>
         </div>
@@ -1632,21 +1796,12 @@ function MySubscriptionPageInner() {
         footer={
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs text-slate-600 dark:text-slate-300">
-              Changes here are demo-only.
+              Changes are saved to backend billing metadata.
             </div>
             <div className="flex items-center gap-2">
               <GhostButton onClick={() => setDrawerBilling(false)}>Cancel</GhostButton>
-              <PrimaryButton
-                onClick={() => {
-                  if (plan === "basic") {
-                    showWarning("Add billing on Pro/Enterprise. Upgrade to continue.");
-                    return;
-                  }
-                  showSuccess("Billing updated successfully (demo).");
-                  setDrawerBilling(false);
-                }}
-              >
-                Save
+              <PrimaryButton onClick={saveBillingDetails} disabled={savingBilling}>
+                {savingBilling ? "Saving..." : "Save"}
               </PrimaryButton>
             </div>
           </div>
@@ -1679,7 +1834,7 @@ function MySubscriptionPageInner() {
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 p-3">
             <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Payment method</div>
             <div className="mt-3 grid grid-cols-1 gap-3">
-              <Field label="Card number" hint="Demo only. Do not enter real card details.">
+              <Field label="Card number" hint="Store a masked or tokenized value only.">
                 <TextInput value={billingCard} onChange={(e) => setBillingCard(e.target.value)} placeholder="4242 4242 4242 4242" />
               </Field>
               <Field label="Expiry">
@@ -1710,7 +1865,7 @@ function MySubscriptionPageInner() {
         subtitle="View and download invoices"
         footer={
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-slate-600 dark:text-slate-300">Showing demo invoices</div>
+            <div className="text-xs text-slate-600 dark:text-slate-300">Fetched from backend billing records</div>
             <GhostButton onClick={() => setDrawerInvoices(false)}>Close</GhostButton>
           </div>
         }
@@ -1735,31 +1890,37 @@ function MySubscriptionPageInner() {
               <div className="col-span-2 text-right">Amount</div>
               <div className="col-span-1" />
             </div>
-            {invoiceRows.map((inv, idx) => (
-              <div
-                key={inv.id}
-                className={cn(
-                  "grid grid-cols-12 px-3 py-3 items-center",
-                  idx === 0 ? "bg-slate-50 dark:bg-slate-950/40" : "bg-white dark:bg-slate-950"
-                )}
-              >
-                <div className="col-span-6">
-                  <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{inv.id}</div>
-                  <div className="text-xs text-slate-600 dark:text-slate-300">Status: {inv.status}</div>
-                </div>
-                <div className="col-span-3 text-sm text-slate-700 dark:text-slate-200">{inv.date}</div>
-                <div className="col-span-2 text-right text-sm font-extrabold text-slate-900 dark:text-slate-50">{inv.amount}</div>
-                <div className="col-span-1 flex justify-end">
-                  <button
-                    className="h-9 w-9 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors flex items-center justify-center"
-                    onClick={() => showInfo(`Downloading ${inv.id} (demo).`)}
-                    aria-label="Download invoice"
-                  >
-                    <Receipt className="h-4 w-4 text-slate-700 dark:text-slate-200" />
-                  </button>
-                </div>
+            {invoiceRows.length === 0 ? (
+              <div className="px-3 py-6 text-sm text-slate-600 dark:text-slate-300">
+                No invoice records returned by the backend yet.
               </div>
-            ))}
+            ) : (
+              invoiceRows.map((inv, idx) => (
+                <div
+                  key={inv.id}
+                  className={cn(
+                    "grid grid-cols-12 px-3 py-3 items-center",
+                    idx === 0 ? "bg-slate-50 dark:bg-slate-950/40" : "bg-white dark:bg-slate-950"
+                  )}
+                >
+                  <div className="col-span-6">
+                    <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{inv.id}</div>
+                    <div className="text-xs text-slate-600 dark:text-slate-300">Status: {inv.status}</div>
+                  </div>
+                  <div className="col-span-3 text-sm text-slate-700 dark:text-slate-200">{inv.date}</div>
+                  <div className="col-span-2 text-right text-sm font-extrabold text-slate-900 dark:text-slate-50">{inv.amount}</div>
+                  <div className="col-span-1 flex justify-end">
+                    <button
+                      className="h-9 w-9 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors flex items-center justify-center"
+                      onClick={() => showInfo(`Download requested for ${inv.id}.`)}
+                      aria-label="Download invoice"
+                    >
+                      <Receipt className="h-4 w-4 text-slate-700 dark:text-slate-200" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           {plan === "basic" ? (
@@ -1784,20 +1945,11 @@ function MySubscriptionPageInner() {
         subtitle="Tell us about your agency needs — we’ll set you up"
         footer={
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-slate-600 dark:text-slate-300">We reply fast (demo).</div>
+            <div className="text-xs text-slate-600 dark:text-slate-300">Your request is sent to backend subscription metadata.</div>
             <div className="flex items-center gap-2">
               <GhostButton onClick={() => setDrawerSales(false)}>Cancel</GhostButton>
-              <SecondaryButton
-                onClick={() => {
-                  if (!salesEmail.trim()) {
-                    showWarning("Please add an email address.");
-                    return;
-                  }
-                  showSuccess("Sales request sent (demo). We'll reach out soon.");
-                  setDrawerSales(false);
-                }}
-              >
-                Send
+              <SecondaryButton onClick={sendSalesRequest}>
+                {sendingSales ? "Sending..." : "Send"}
               </SecondaryButton>
             </div>
           </div>

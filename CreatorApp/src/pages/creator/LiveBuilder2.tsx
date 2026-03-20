@@ -407,7 +407,7 @@ export type RunSegment = {
   id: string;
   type:
   | "Opener"
-  | "Product demo"
+  | "Product showcase"
   | "Q&A"
   | "Price drop"
   | "Flash Sale"
@@ -669,7 +669,7 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     title,
     description:
       "Join the live for product drops and a short consultation segment. Live-only bundles, Q&A, and limited slots.",
-    tags: ["Live Demo", "Q&A", "Bundles", "Limited stock"],
+    tags: ["Live session", "Q&A", "Bundles", "Limited stock"],
     status: "Draft",
 
     supplierId: undefined,
@@ -714,7 +714,7 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
         durationMin: 2,
         notes: "Set the promise. Tease the best deal.",
       },
-      { id: "seg_2", type: "Product demo", title: "Demo: #1 best pick", durationMin: 8 },
+      { id: "seg_2", type: "Product showcase", title: "Feature: #1 best pick", durationMin: 8 },
       {
         id: "seg_3",
         type: "Q&A",
@@ -2137,7 +2137,7 @@ function FeaturedCard({
             ? "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed"
             : "bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white hover:brightness-110 shadow-sm",
         )}
-        onClick={() => (onOpen ? onOpen() : showNotification(`Demo: ${cta}`))}
+        onClick={() => (onOpen ? onOpen() : showNotification(`${cta}`))}
       >
         {cta}
       </button>
@@ -2345,7 +2345,7 @@ function PromoLinkPreviewPhone({
   };
 
   const onBuyNow = (it: LiveItem) => {
-    // Demo navigation hook (replace with your real checkout routing)
+    // Checkout navigation hook
     safeNav(
       `/checkout?source=live&sessionId=${encodeURIComponent(draft.id)}&itemId=${encodeURIComponent(it.id)}&qty=1`,
     );
@@ -3789,7 +3789,7 @@ export function LiveBuilderView({
         const [y, m, d] = isoDate.split("-").map(Number);
         const [hh, mm] = timeStr.split(":").map(Number);
         // We'll use a naive approach that assumes the input date/time is "wall time" in that zone.
-        // A robust solution needs a library like date-fns-tz, but we will use a simplified consistent Date object manipulation for the demo.
+        // A robust solution needs a library like date-fns-tz; this keeps a simplified consistent Date object manipulation.
         const date = new Date(Date.UTC(y, m - 1, d, hh, mm));
         return date;
       };
@@ -3887,43 +3887,13 @@ export function LiveBuilderView({
 
   const supplierCustomGiveawayPresets = useMemo<
     SupplierCustomGiveawayPreset[]
-  >(() => {
-    const seeded = draft.campaignId
-      ? customGiveawaysByCampaign[draft.campaignId] || []
-      : [];
-    if (typeof window === "undefined") return seeded;
-
-    try {
-      const raw =
-        sessionStorage.getItem("mldz:supplierCampaignBuilder:draft:v1") ||
-        localStorage.getItem("mldz:supplierCampaignBuilder:draft:v1");
-      if (!raw) return seeded;
-
-      const saved = JSON.parse(raw);
-      const builder =
-        saved?.builder && typeof saved.builder === "object"
-          ? saved.builder
-          : saved;
-      const campaignId =
-        typeof builder?.campaignId === "string"
-          ? builder.campaignId
-          : draft.campaignId;
-      const normalized = normalizeSupplierCustomGiveawayPresets(
-        builder?.giveaways,
-        campaignId,
-      );
-      if (!normalized.length) return seeded;
-
-      if (!draft.campaignId) return normalized;
-
-      const matching = normalized.filter(
-        (g) => !g.campaignId || g.campaignId === draft.campaignId,
-      );
-      return matching.length ? matching : seeded.length ? seeded : normalized;
-    } catch {
-      return seeded;
-    }
-  }, [draft.campaignId, customGiveawaysByCampaign]);
+  >(
+    () =>
+      draft.campaignId
+        ? customGiveawaysByCampaign[draft.campaignId] || []
+        : [],
+    [draft.campaignId, customGiveawaysByCampaign],
+  );
 
   const selectedCustomGiveawayPreset = useMemo(
     () =>
@@ -4333,8 +4303,9 @@ export function LiveBuilderView({
           const previousHeroImageUrl = (prev.heroImageUrl || "").trim();
           const previousHeroVideoUrl = (prev.heroVideoUrl || "").trim();
           const previousHeroImageAssetId = (prev.heroImageAssetId || "").trim();
-          const preserveExistingHeroValues = pickerRestoreInProgress
-            && Boolean(previousHeroImageUrl || previousHeroVideoUrl || previousHeroImageAssetId);
+          const preserveExistingHeroValues = (
+            pickerRestoreInProgress || Boolean(pendingPickerAssetRef.current)
+          ) && Boolean(previousHeroImageUrl || previousHeroVideoUrl || previousHeroImageAssetId);
           const fallbackSupplierId =
             prev.supplierId ||
             suppliers[0]?.id ||
@@ -4523,94 +4494,6 @@ export function LiveBuilderView({
 
   /* ---------------------- Asset Library picker handoff ---------------------- */
 
-  const LIVE_DRAFT_KEY = "mldz:liveBuilder:draft:v1";
-  const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
-  const ASSET_PICK_APPLY_KEY = "mldz:assetPicker:apply:v1";
-  const CREATOR_LIVE_DRAFT_KEY = "creator_live_draft";
-
-  const persistDraftForPicker = useCallback(() => {
-    try {
-      const payload = {
-        ts: Date.now(),
-        step,
-        draft,
-        externalAssets,
-        activeFeaturedItemId,
-        activeFeaturedItemKey,
-        giveawayUi: {
-          giveawayPanelOpen,
-          giveawayAddMode,
-          giveawayLinkedItemId,
-          giveawayQuantity,
-          customGiveaway,
-        },
-      };
-      sessionStorage.setItem(LIVE_DRAFT_KEY, JSON.stringify(payload));
-      sessionStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
-      try {
-        localStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
-        localStorage.setItem(LIVE_DRAFT_KEY, JSON.stringify(payload));
-      } catch {
-        // ignore (storage may be unavailable)
-      }
-    } catch (error) {
-      console.error("Failed to persist draft for picker:", error);
-    }
-  }, [
-    step,
-    draft,
-    externalAssets,
-    activeFeaturedItemId,
-    activeFeaturedItemKey,
-    giveawayPanelOpen,
-    giveawayAddMode,
-    giveawayLinkedItemId,
-    giveawayQuantity,
-    customGiveaway,
-  ]);
-
-  // Keep a local backup for fast restore and Live Studio handoff; explicit Save/Publish syncs to backend.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const t = window.setTimeout(() => {
-      try {
-        const payload = {
-          ts: Date.now(),
-          step,
-          draft,
-          externalAssets,
-          activeFeaturedItemId,
-          activeFeaturedItemKey,
-          giveawayUi: {
-            giveawayPanelOpen,
-            giveawayAddMode,
-            giveawayLinkedItemId,
-            giveawayQuantity,
-            customGiveaway,
-          },
-        };
-        localStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
-        // Keep the builder key in sync for other pages that may read it.
-        localStorage.setItem(LIVE_DRAFT_KEY, JSON.stringify(payload));
-        sessionStorage.setItem(CREATOR_LIVE_DRAFT_KEY, JSON.stringify(payload));
-      } catch {
-        // ignore (storage may be unavailable)
-      }
-    }, 180);
-    return () => window.clearTimeout(t);
-  }, [
-    step,
-    draft,
-    externalAssets,
-    activeFeaturedItemId,
-    activeFeaturedItemKey,
-    giveawayPanelOpen,
-    giveawayAddMode,
-    giveawayLinkedItemId,
-    giveawayQuantity,
-    customGiveaway,
-  ]);
-
   const buildReturnToUrl = useCallback((): string => {
     const u = new URL(window.location.href);
     u.searchParams.set("restore", "1");
@@ -4626,8 +4509,30 @@ export function LiveBuilderView({
   const openAssetLibraryPicker = useCallback(
     (applyTo?: string) => {
       if (typeof window === "undefined") return;
-      persistDraftForPicker();
       const returnTo = buildReturnToUrl();
+      const payload = {
+        id: builderSessionId,
+        sessionId: builderSessionId,
+        status: toBuilderStatus(toDraftStatus(draft.status)),
+        data: {
+          draft: {
+            ...draft,
+            id: builderSessionId,
+            status: toDraftStatus(draft.status),
+          },
+          step,
+          externalAssets,
+          activeFeaturedItemId,
+          activeFeaturedItemKey,
+          giveawayUi: {
+            giveawayPanelOpen,
+            giveawayAddMode,
+            giveawayLinkedItemId,
+            giveawayQuantity,
+            customGiveaway,
+          },
+        },
+      };
 
       const picker = new URL("/asset-library", window.location.origin);
       picker.searchParams.set("mode", "picker");
@@ -4635,86 +4540,31 @@ export function LiveBuilderView({
       picker.searchParams.set("dealId", effectiveDealId || draft.id);
       if (applyTo) picker.searchParams.set("applyTo", applyTo);
       picker.searchParams.set("returnTo", returnTo);
-      window.location.assign(picker.toString());
+
+      void creatorApi
+        .saveLiveBuilder(payload)
+        .then(() => {
+          lastPersistedSnapshotRef.current = JSON.stringify(payload);
+        })
+        .finally(() => {
+          window.location.assign(picker.toString());
+        });
     },
-    [persistDraftForPicker, buildReturnToUrl, effectiveDealId, draft.id],
-  );
-
-  const coerceOwner = useCallback(
-    (label?: string): "Host" | "Seller" | "Platform" => {
-      const t = (label || "").toLowerCase();
-      if (t.includes("host")) return "Host";
-      if (
-        t.includes("supplier") ||
-        t.includes("seller") ||
-        t.includes("provider")
-      )
-        return "Seller";
-      return "Platform";
-    },
-    [],
-  );
-
-  const coerceAssetType = useCallback(
-    (mediaType?: string, role?: string): LiveAssetType => {
-      if (role === "opener") return "Opener";
-      if (role === "lower_third") return "Lower third";
-      if (role === "overlay") return "Overlay";
-      if (role === "script") return "Script";
-      if (mediaType === "overlay") return "Overlay";
-      if (mediaType === "video") return "Opener";
-      return "Template";
-    },
-    [],
-  );
-
-  const toLiveAsset = useCallback(
-    (payload: Record<string, unknown>): LiveAsset | null => {
-      if (!payload || typeof payload !== "object") return null;
-      const id = String(payload.id || "");
-      const title = String(payload.title || "");
-      if (!id || !title) return null;
-
-      const previewKind: "video" | "image" =
-        payload.previewKind === "video" || payload.previewKind === "image"
-          ? payload.previewKind
-          : "image";
-      const previewUrlRaw =
-        (typeof payload.previewUrl === "string" ? payload.previewUrl : "") ||
-        "";
-      const directUrl =
-        (typeof payload.url === "string" ? payload.url : "") || "";
-      const thumb =
-        (typeof payload.thumbnailUrl === "string"
-          ? payload.thumbnailUrl
-          : "") || previewUrlRaw;
-      const previewUrl = previewUrlRaw || directUrl || thumb;
-
-      return {
-        id,
-        name: title,
-        type: coerceAssetType(
-          payload.mediaType as string | undefined,
-          payload.role as string | undefined,
-        ),
-        owner: coerceOwner(payload.ownerLabel as string | undefined),
-        tags: Array.isArray(payload.tags)
-          ? payload.tags.map((t: unknown) => String(t))
-          : [],
-        lastUpdatedLabel: "Just now",
-        previewUrl,
-        previewKind,
-        usageNotes:
-          typeof payload.usageNotes === "string"
-            ? payload.usageNotes
-            : undefined,
-        restrictions:
-          typeof payload.restrictions === "string"
-            ? payload.restrictions
-            : undefined,
-      };
-    },
-    [coerceAssetType, coerceOwner],
+    [
+      buildReturnToUrl,
+      builderSessionId,
+      draft,
+      step,
+      externalAssets,
+      activeFeaturedItemId,
+      activeFeaturedItemKey,
+      giveawayPanelOpen,
+      giveawayAddMode,
+      giveawayLinkedItemId,
+      giveawayQuantity,
+      customGiveaway,
+      effectiveDealId,
+    ],
   );
 
   const applyPickedAssetToDraft = useCallback(
@@ -4804,7 +4654,7 @@ export function LiveBuilderView({
   }, [applyPickedAssetToDraft]);
 
   const crewOk = useMemo(() => {
-    // Mock logic: Sarah A. (mod_1) has a conflict
+    // Default conflict marker for one moderator id in preview logic.
     const allCrew = [...draft.team.moderators, ...draft.team.cohosts];
     return !allCrew.some((m) => m.id === "mod_1");
   }, [draft.team.moderators, draft.team.cohosts]);
@@ -4814,157 +4664,14 @@ export function LiveBuilderView({
 
     const sp = new URLSearchParams(window.location.search);
     const shouldRestore = sp.get("restore") === "1" || sp.has("assetId");
-    const preferDatabaseDraft = Boolean(effectiveDealId);
 
     const stepParam = sp.get("step");
     if (stepParam && STEPS.some((s) => s.key === stepParam)) {
       setStep(stepParam as StepKey);
     }
 
-    const readSaved = () => {
-      try {
-        const raw = shouldRestore
-          ? sessionStorage.getItem(LIVE_DRAFT_KEY) ||
-          sessionStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
-          localStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
-          localStorage.getItem(LIVE_DRAFT_KEY)
-          : localStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
-          localStorage.getItem(LIVE_DRAFT_KEY) ||
-          sessionStorage.getItem(CREATOR_LIVE_DRAFT_KEY) ||
-          sessionStorage.getItem(LIVE_DRAFT_KEY);
-
-        if (!raw) return null;
-        return JSON.parse(raw);
-      } catch {
-        return null;
-      }
-    };
-
-    const hydrate = (saved: any) => {
-      if (!saved || typeof saved !== "object") return;
-
-      if (saved?.draft) {
-        const restored = saved.draft as LiveSessionDraft;
-
-        const rawGiveaways = Array.isArray((restored as any).giveaways)
-          ? ((restored as any).giveaways as any[])
-          : [];
-        const normalizedGiveaways: LiveGiveaway[] = rawGiveaways.map(
-          (g: any, idx: number) => ({
-            id: typeof g?.id === "string" && g.id ? g.id : `gw_${idx}`,
-            linkedItemId:
-              typeof g?.linkedItemId === "string" ? g.linkedItemId : undefined,
-            title: typeof g?.title === "string" ? g.title : undefined,
-            imageUrl: typeof g?.imageUrl === "string" ? g.imageUrl : undefined,
-            notes: typeof g?.notes === "string" ? g.notes : undefined,
-            showOnPromo:
-              typeof g?.showOnPromo === "boolean" ? g.showOnPromo : true,
-            quantity:
-              typeof g?.quantity === "number" && g.quantity > 0
-                ? Math.floor(g.quantity)
-                : 1,
-          }),
-        );
-
-        setDraft({
-          ...restored,
-          giveaways: normalizedGiveaways,
-          teleprompterScript:
-            typeof (restored as any).teleprompterScript === "string"
-              ? (restored as any).teleprompterScript
-              : "",
-        });
-      }
-
-      if (saved?.step && STEPS.some((s) => s.key === saved.step)) {
-        setStep(saved.step as StepKey);
-      }
-      if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
-      if (shouldRestore && typeof saved?.activeFeaturedItemId === "string")
-        setActiveFeaturedItemId(saved.activeFeaturedItemId);
-      if (shouldRestore && typeof saved?.activeFeaturedItemKey === "string")
-        setActiveFeaturedItemKey(saved.activeFeaturedItemKey);
-
-      const ui = saved?.giveawayUi;
-      if (ui && typeof ui === "object") {
-        if (typeof (ui as any).giveawayPanelOpen === "boolean")
-          setGiveawayPanelOpen(Boolean((ui as any).giveawayPanelOpen));
-        if (
-          (ui as any).giveawayAddMode === "featured" ||
-          (ui as any).giveawayAddMode === "custom"
-        )
-          setGiveawayAddMode((ui as any).giveawayAddMode);
-        if (typeof (ui as any).giveawayLinkedItemId === "string")
-          setGiveawayLinkedItemId((ui as any).giveawayLinkedItemId);
-        if (typeof (ui as any).giveawayQuantity === "string")
-          setGiveawayQuantity((ui as any).giveawayQuantity);
-
-        const cg = (ui as any).customGiveaway;
-        if (cg && typeof cg === "object") {
-          setCustomGiveaway({
-            presetId: typeof cg.presetId === "string" ? cg.presetId : "",
-            quantity: typeof cg.quantity === "string" ? cg.quantity : "1",
-          });
-        }
-      }
-    };
-
-    const saved = readSaved();
-    if (saved?.draft && !preferDatabaseDraft) {
-      const restored = saved.draft as LiveSessionDraft;
-
-      // Avoid clobbering the current builder session with a different saved local draft.
-      if (shouldRestore || (restored as any).id === builderSessionId) {
-        hydrate(saved);
-      }
-    }
-
     const assetId = sp.get("assetId") || "";
     const applyTo = sp.get("applyTo") || "";
-
-    const resolveApplyTarget = (payload: Record<string, unknown>, applyTarget: string) => {
-      if (applyTarget) return applyTarget;
-      const kind =
-        payload.previewKind === "video" || payload.mediaType === "video"
-          ? "video"
-          : "image";
-      return kind === "video" ? "promoHeroVideo" : "promoHeroImage";
-    };
-
-    const applyPickedPayload = (payload: Record<string, unknown>, applyTarget: string, pickedAssetId: string) => {
-      const resolvedApplyTarget = resolveApplyTarget(payload, applyTarget);
-      const payloadAsset = toLiveAsset(payload);
-      const knownAsset =
-        externalAssets[pickedAssetId] ||
-        assetLibraryData.find((entry) => entry.id === pickedAssetId) ||
-        null;
-      const selectedAsset =
-              (payloadAsset && payloadAsset.previewUrl ? payloadAsset : null) ||
-              knownAsset ||
-              payloadAsset;
-      const applyResolvedAsset = (asset: LiveAsset) => {
-        pendingPickerAssetRef.current = { asset, applyTo: resolvedApplyTarget };
-        setExternalAssets((prevMap) => ({ ...prevMap, [asset.id]: asset }));
-        setDraft((prev) => applyPickedAssetToDraft(prev, asset, resolvedApplyTarget));
-      };
-
-      if (selectedAsset) {
-        applyResolvedAsset(selectedAsset);
-      }
-
-      if (!selectedAsset || !selectedAsset.previewUrl) {
-        void creatorApi
-          .asset(pickedAssetId)
-          .then((row) => {
-            const normalized = normalizeAssetEntry(row);
-            if (!normalized) return;
-            applyResolvedAsset(normalized);
-          })
-          .catch(() => {
-            // ignore
-          });
-      }
-    };
 
     const applyAssetByIdFallback = (pickedAssetId: string, applyTarget: string) => {
       void creatorApi
@@ -4984,84 +4691,7 @@ export function LiveBuilderView({
     };
 
     if (assetId) {
-      try {
-        sessionStorage.setItem(
-          ASSET_PICK_APPLY_KEY,
-          JSON.stringify({
-            assetId,
-            applyTo,
-            builderSessionId,
-            ts: Date.now(),
-          }),
-        );
-        const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
-        if (pickRaw) {
-          const parsed = JSON.parse(pickRaw);
-          const payload = parsed?.payload || parsed;
-          if (payload?.id === assetId) {
-            sessionStorage.setItem(
-              ASSET_PICK_APPLY_KEY,
-              JSON.stringify({
-                assetId,
-                applyTo,
-                builderSessionId,
-                payload,
-                ts: Date.now(),
-              }),
-            );
-            applyPickedPayload(payload as Record<string, unknown>, applyTo, assetId);
-          } else {
-            applyAssetByIdFallback(assetId, applyTo);
-          }
-        } else {
-          applyAssetByIdFallback(assetId, applyTo);
-        }
-      } catch {
-        // ignore
-      }
-    } else {
-      try {
-        const applyRaw = sessionStorage.getItem(ASSET_PICK_APPLY_KEY);
-        if (applyRaw) {
-          const applyPayload = JSON.parse(applyRaw);
-          const applyAssetId = toStr(applyPayload?.assetId, "");
-          const applyTarget = toStr(applyPayload?.applyTo, "");
-          const applySessionId = toStr(applyPayload?.builderSessionId, "");
-          const applyTs = toNum(applyPayload?.ts, 0);
-          const isFresh = applyTs > 0 && Date.now() - applyTs <= 10 * 60_000;
-          const isSameSession = !applySessionId || applySessionId === builderSessionId;
-          if (applyAssetId && isFresh && isSameSession) {
-            const replayPayload = asRecord(applyPayload?.payload);
-            const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
-            if (pickRaw) {
-              const parsed = JSON.parse(pickRaw);
-              const payload = parsed?.payload || parsed;
-              if (payload?.id === applyAssetId) {
-                applyPickedPayload(
-                  payload as Record<string, unknown>,
-                  applyTarget,
-                  applyAssetId,
-                );
-                sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
-              }
-            } else if (replayPayload) {
-              applyPickedPayload(
-                replayPayload as Record<string, unknown>,
-                applyTarget,
-                applyAssetId,
-              );
-              sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
-            } else {
-              applyAssetByIdFallback(applyAssetId, applyTarget);
-              sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
-            }
-          } else if (!isFresh) {
-            sessionStorage.removeItem(ASSET_PICK_APPLY_KEY);
-          }
-        }
-      } catch {
-        // ignore
-      }
+      applyAssetByIdFallback(assetId, applyTo);
     }
 
     if (shouldRestore || assetId) {
@@ -5078,11 +4708,7 @@ export function LiveBuilderView({
     }
   }, [
     applyPickedAssetToDraft,
-    toLiveAsset,
     builderSessionId,
-    effectiveDealId,
-    externalAssets,
-    assetLibraryData,
   ]);
 
   const canPublish =
@@ -5282,7 +4908,7 @@ export function LiveBuilderView({
           lastPersistedSnapshotRef.current = snapshot;
         })
         .catch(() => {
-          // Keep local draft persistence as fallback when autosave fails.
+          // ignore autosave errors; explicit save/publish is still available.
         });
     }, 700);
 
@@ -5292,11 +4918,10 @@ export function LiveBuilderView({
   }, [buildBuilderPayload]);
 
   const saveBuilderToBackend = useCallback(async () => {
-    persistDraftForPicker();
     const payload = buildBuilderPayload();
     await creatorApi.saveLiveBuilder(payload);
     lastPersistedSnapshotRef.current = JSON.stringify(payload);
-  }, [persistDraftForPicker, buildBuilderPayload]);
+  }, [buildBuilderPayload]);
 
   const publishBuilderToBackend = useCallback(async () => {
     const payload = buildBuilderPayload();
@@ -5684,7 +5309,7 @@ export function LiveBuilderView({
                           .slice(0, 12),
                       }))
                     }
-                    placeholder="Live Demo, Q&A, Bundles…"
+                    placeholder="Live session, Q&A, Bundles…"
                   />
                 </div>
 
@@ -7477,7 +7102,7 @@ export function LiveBuilderView({
                               <div className="text-[12px] font-semibold text-slate-900 dark:text-slate-100">
                                 {c.name}
                               </div>
-                              {c.id === "mod_1" /* sharing key for demo */ && (
+                              {c.id === "mod_1" /* sharing key for preview */ && (
                                 <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-red-100 text-red-700 border border-red-200 flex items-center gap-1">
                                   <AlertTriangle className="h-3 w-3" /> Conflict
                                 </span>

@@ -519,7 +519,7 @@ export default function CreatorAuthRedirectNotice() {
                   icon={<User className="h-4 w-4" />}
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Ronald Isabirye"
+                  placeholder="Full name"
                 />
               </Field>
               <Field label="Preferred Handle" hint="Optional. We will generate one if you leave this blank.">
@@ -527,7 +527,7 @@ export default function CreatorAuthRedirectNotice() {
                   icon={<User className="h-4 w-4" />}
                   value={handle}
                   onChange={(event) => setHandle(event.target.value)}
-                  placeholder="ronald.creates"
+                  placeholder="creator.handle"
                 />
               </Field>
             </>

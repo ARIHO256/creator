@@ -43,7 +43,7 @@ import { creatorApi } from '../../lib/creatorApi';
  * • Incident report button to Ops
  *
  * Notes:
- * - Self-contained demo UI (no backend). Replace mock data and actions with API wiring.
+ * - Backed by /tools/safety API for read/write state.
  * - TailwindCSS assumed.
  */
 
@@ -520,7 +520,7 @@ export default function SafetyModerationPage() {
   const addKeyword = () => {
     const phrase = newKeyword.trim();
     if (!phrase) return;
-    const id = `k_${Math.random().toString(16).slice(2)}`;
+    const id = `k_${Date.now().toString(36)}`;
     const destIds =
       newKeywordScope === 'Selected destinations'
         ? Object.entries(newKeywordDestIds)
@@ -605,7 +605,7 @@ export default function SafetyModerationPage() {
               <button
                 className="flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-900 px-3 py-2 text-[10px] sm:text-xs font-bold text-slate-800 dark:text-slate-200 ring-1 ring-slate-200 dark:ring-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800 transition shadow-sm"
                 onClick={() => setPlan((p) => (p === 'Pro' ? 'Standard' : 'Pro'))}
-                title="Demo: toggle plan"
+                title="Toggle subscription plan"
               >
                 <Zap className="h-4 w-4 text-amber-500" />
                 Plan: {plan}
@@ -1193,9 +1193,24 @@ export default function SafetyModerationPage() {
               <Btn
                 tone="primary"
                 onClick={() => {
-                  setIncidentOpen(false);
-                  setIncidentText('');
-                  setToast('Awaiting Ops Response');
+                  const payload = {
+                    category: incidentCategory,
+                    severity: incidentSeverity,
+                    details: incidentText.trim(),
+                    includeLogs,
+                    createdAt: new Date().toISOString(),
+                    sessionId: session.id,
+                  };
+                  void creatorApi
+                    .patchLiveTool("safety", { incident: payload })
+                    .then(() => {
+                      setIncidentOpen(false);
+                      setIncidentText("");
+                      setToast("Incident escalated");
+                    })
+                    .catch(() => {
+                      setToast("Unable to submit escalation");
+                    });
                 }}
                 disabled={!incidentText.trim()}
                 left={<Send className="h-4 w-4" />}

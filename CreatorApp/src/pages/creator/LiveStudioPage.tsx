@@ -924,8 +924,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     timer: mode === "live" ? formatTime(elapsedSeconds) : "–:–",
     viewers: viewerCount,
     sales: salesCount,
-    connection: "Excellent",
-    bitrate: "4.5 Mbps",
+    connection: String(studioData.connection || "—"),
+    bitrate: String(studioData.bitrate || "—"),
   };
 
   const typeLabel = mode === "live" ? "Live" : "Pre-live lobby";

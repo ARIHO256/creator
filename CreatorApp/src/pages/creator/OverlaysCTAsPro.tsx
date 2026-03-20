@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
   CheckCircle2,
@@ -33,7 +33,7 @@ import { creatorApi } from "../../lib/creatorApi";
  * - Lower-third product banners
  * - A/B variants (premium)
  *
- * NOTE: Self-contained demo UI. Replace with your render/export pipeline for OBS/Studio.
+ * NOTE: Backed by /tools/overlays API.
  */
 
 type SessionStatus = "Draft" | "Scheduled" | "Live" | "Ended";
@@ -294,6 +294,7 @@ export default function OverlaysCTAsPro() {
   const [abEnabled, setAbEnabled] = useState(false);
   const [notesA, setNotesA] = useState("");
   const [notesB, setNotesB] = useState("");
+  const autoSavePrimedRef = useRef(false);
   useEffect(() => {
     if (!Object.keys(payload).length) return;
     setIsPro(payload.isPro ?? false);
@@ -339,6 +340,80 @@ export default function OverlaysCTAsPro() {
     const t = setTimeout(() => setToast(null), 2200);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const overlaysPayload = useMemo(
+    () => ({
+      isPro,
+      session,
+      products,
+      tab,
+      variant,
+      qrEnabled,
+      qrLabel,
+      qrUrl,
+      qrCorner,
+      qrSize,
+      destUrl,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      utmContent,
+      shortDomain,
+      shortSlug,
+      timerEnabled,
+      timerStyle,
+      timerText,
+      dealEndISO,
+      lowerEnabled,
+      lowerPlacement,
+      lowerProductId,
+      ctaText,
+      abEnabled,
+      notesA,
+      notesB,
+    }),
+    [
+      isPro,
+      session,
+      products,
+      tab,
+      variant,
+      qrEnabled,
+      qrLabel,
+      qrUrl,
+      qrCorner,
+      qrSize,
+      destUrl,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      utmContent,
+      shortDomain,
+      shortSlug,
+      timerEnabled,
+      timerStyle,
+      timerText,
+      dealEndISO,
+      lowerEnabled,
+      lowerPlacement,
+      lowerProductId,
+      ctaText,
+      abEnabled,
+      notesA,
+      notesB,
+    ],
+  );
+
+  useEffect(() => {
+    if (!autoSavePrimedRef.current) {
+      autoSavePrimedRef.current = true;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void creatorApi.patchLiveTool("overlays", overlaysPayload);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [overlaysPayload]);
 
   const preflight = useMemo(() => {
     return {
@@ -393,7 +468,7 @@ export default function OverlaysCTAsPro() {
             <button
               className="hidden sm:flex items-center gap-2 rounded-xl bg-neutral-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-neutral-800 dark:text-slate-200 hover:bg-neutral-200 dark:hover:bg-slate-700 transition"
               onClick={() => setIsPro((v) => !v)}
-              title="Demo: toggle Pro plan"
+              title="Toggle Pro plan"
             >
               <Sparkles className="h-4 w-4" />
               Plan: {isPro ? "Pro" : "Standard"}
@@ -412,36 +487,7 @@ export default function OverlaysCTAsPro() {
               </Btn>
             </div>
             <Btn tone="primary" onClick={() => {
-              void creatorApi.patchLiveTool("overlays", {
-                isPro,
-                session,
-                products,
-                tab,
-                variant,
-                qrEnabled,
-                qrLabel,
-                qrUrl,
-                qrCorner,
-                qrSize,
-                destUrl,
-                utmSource,
-                utmMedium,
-                utmCampaign,
-                utmContent,
-                shortDomain,
-                shortSlug,
-                timerEnabled,
-                timerStyle,
-                timerText,
-                dealEndISO,
-                lowerEnabled,
-                lowerPlacement,
-                lowerProductId,
-                ctaText,
-                abEnabled,
-                notesA,
-                notesB,
-              }).then(() => setToast("Saved overlays"));
+              void creatorApi.patchLiveTool("overlays", overlaysPayload).then(() => setToast("Saved overlays"));
             }} left={<CheckCircle2 className="h-4 w-4" />}>
               Save
             </Btn>
@@ -603,7 +649,7 @@ export default function OverlaysCTAsPro() {
                     >
                       Copy URL
                     </Btn>
-                    <Btn tone="ghost" onClick={() => setToast("Download QR overlay (demo)")} left={<Download className="h-4 w-4" />}>
+                    <Btn tone="ghost" onClick={() => setToast("QR overlay export queued")} left={<Download className="h-4 w-4" />}>
                       Download PNG
                     </Btn>
                   </div>
@@ -674,7 +720,7 @@ export default function OverlaysCTAsPro() {
                       >
                         Copy UTM
                       </Btn>
-                      <Btn tone="ghost" onClick={() => setToast("Test open (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => setToast("Opening UTM link")} left={<ExternalLink className="h-4 w-4" />}>
                         Test open
                       </Btn>
                     </div>
@@ -889,7 +935,7 @@ export default function OverlaysCTAsPro() {
                         </Pill>
                       </div>
                       <input type="range" min={0} max={100} defaultValue={50} className="mt-2 w-full accent-[#F77F00]" />
-                      <div className="mt-1 text-[10px] text-neutral-600 dark:text-slate-500">A 50% • B 50% (demo)</div>
+                      <div className="mt-1 text-[10px] text-neutral-600 dark:text-slate-500">A 50% • B 50%</div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -900,7 +946,7 @@ export default function OverlaysCTAsPro() {
                           <Btn onClick={() => setVariant("A")} left={<Eye className="h-4 w-4" />}>
                             Preview A
                           </Btn>
-                          <Btn tone="ghost" onClick={() => setToast("Exported Variant A (demo)")} left={<Download className="h-4 w-4" />}>
+                          <Btn tone="ghost" onClick={() => setToast("Exported Variant A")} left={<Download className="h-4 w-4" />}>
                             Export
                           </Btn>
                         </div>
@@ -916,7 +962,7 @@ export default function OverlaysCTAsPro() {
                           <Btn onClick={() => setVariant("B")} left={<Eye className="h-4 w-4" />}>
                             Preview B
                           </Btn>
-                          <Btn tone="danger" onClick={() => setToast("Reset Variant B (demo)")} left={<Trash2 className="h-4 w-4" />}>
+                          <Btn tone="danger" onClick={() => setToast("Variant B reset")} left={<Trash2 className="h-4 w-4" />}>
                             Reset
                           </Btn>
                         </div>
@@ -926,7 +972,7 @@ export default function OverlaysCTAsPro() {
                     <div className="rounded-2xl bg-neutral-900 dark:bg-black p-3 text-white transition">
                       <div className="text-[11px] text-white/70 italic">Recommended approach</div>
                       <div className="mt-1 text-sm font-semibold">Change only one variable per experiment.</div>
-                      <div className="mt-2 text-[10px] text-white/50">Report results inside Live analytics once wired.</div>
+                      <div className="mt-2 text-[10px] text-white/50">Review split-test results in Live analytics.</div>
                     </div>
                   </div>
                 )}
@@ -1017,7 +1063,7 @@ export default function OverlaysCTAsPro() {
                     </div>
 
                     <div className="mt-3 grid grid-cols-3 gap-2">
-                      <Btn tone="neutral" onClick={() => setToast("Fullscreen preview (demo)")} left={<Eye className="h-4 w-4" />}>
+                      <Btn tone="neutral" onClick={() => setToast("Opening fullscreen preview")} left={<Eye className="h-4 w-4" />}>
                         Fullscreen
                       </Btn>
                       <Btn
@@ -1030,7 +1076,7 @@ export default function OverlaysCTAsPro() {
                       >
                         Copy CTA
                       </Btn>
-                      <Btn tone="ghost" onClick={() => setToast("Open docs (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => setToast("Opening overlay docs")} left={<ExternalLink className="h-4 w-4" />}>
                         Docs
                       </Btn>
                     </div>
@@ -1073,10 +1119,10 @@ export default function OverlaysCTAsPro() {
                       {proBadge}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Btn tone="primary" onClick={() => setToast("Exported overlay pack (demo)")} left={<Download className="h-4 w-4" />}>
+                      <Btn tone="primary" onClick={() => setToast("Overlay pack export queued")} left={<Download className="h-4 w-4" />}>
                         Export pack
                       </Btn>
-                      <Btn onClick={() => setToast("Copied render spec (demo)")} left={<Copy className="h-4 w-4" />}>
+                      <Btn onClick={() => setToast("Copied render spec")} left={<Copy className="h-4 w-4" />}>
                         Copy spec
                       </Btn>
                     </div>

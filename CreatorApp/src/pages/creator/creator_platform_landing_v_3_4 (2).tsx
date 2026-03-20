@@ -191,7 +191,7 @@ const FEATURES = [
 // ✅ FIXED: valid objects
 const TESTIMONIALS = [
   {
-    name: "Amina",
+    name: "Creator A",
     title: "Beauty Creator",
     country: "Uganda",
     stat: "+42% conversion",
@@ -200,7 +200,7 @@ const TESTIMONIALS = [
     image: IMAGES.testimonialUganda
   },
   {
-    name: "Jason",
+    name: "Creator B",
     title: "Tech Creator",
     country: "Kenya",
     stat: "2.1× sales per live",
@@ -209,7 +209,7 @@ const TESTIMONIALS = [
     image: IMAGES.testimonialKenya
   },
   {
-    name: "Li Wei",
+    name: "Creator C",
     title: "Cross-border Creator",
     country: "China",
     stat: "Faster collabs",

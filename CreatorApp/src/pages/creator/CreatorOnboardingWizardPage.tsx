@@ -139,8 +139,8 @@ function CreatorOnboardingWizardPage() {
   const [hydrated, setHydrated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
-    name: "Ronald Isabirye",
-    handle: "@ronald.creates",
+    name: "",
+    handle: "",
     tagline: "EV & commerce storyteller",
     bio: "Creator focused on EVs, tech and cross-border commerce stories.",
     timezone: "Africa/Kampala",

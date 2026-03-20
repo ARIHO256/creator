@@ -67,7 +67,7 @@ function ProposalNegotiationRoomPage() {
       avatar: "GH",
       time: "10:14",
       body:
-        "Hi Ronald, we’re excited to do the Autumn Beauty Flash with you. We’ve drafted the terms – feel free to adjust.",
+        "Hi creator, we’re excited to do the Autumn Beauty Flash with you. We’ve drafted the terms – feel free to adjust.",
     },
     {
       id: 2,

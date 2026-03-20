@@ -2204,7 +2204,7 @@ function NewDealzWizard({
                 />
                 <div className="mt-3 text-[11px] text-neutral-600 dark:text-slate-400">
                   Supplier: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
-                  {/* Creator is now implicitly selected as current user, or 0 index for demo */}
+                  {/* Creator is implicitly selected as current user. */}
                   {/* · Creator: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{creator.handle}</span> */}
                 </div>
               </div>
@@ -2236,6 +2236,8 @@ function NewDealzWizard({
 
 export default function DealzMarketplace() {
   const pickerReturnDealIdRef = useRef<string | null>(null);
+  const persistPrimedRef = useRef(false);
+  const lastSavedSnapshotRef = useRef("");
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -2411,6 +2413,44 @@ export default function DealzMarketplace() {
       });
   }, [dealz, segment, query, platformFilter]);
 
+  const marketplaceSavePayload = useMemo(
+    () =>
+      sanitizeMarketplaceSaveValue({
+        deals: dealz,
+        selectedId,
+        cart,
+        liveCart,
+        suppliers,
+        creators,
+      }) as Record<string, unknown>,
+    [dealz, selectedId, cart, liveCart, suppliers, creators],
+  );
+
+  useEffect(() => {
+    const snapshot = JSON.stringify(marketplaceSavePayload);
+    if (!persistPrimedRef.current) {
+      persistPrimedRef.current = true;
+      lastSavedSnapshotRef.current = snapshot;
+      return;
+    }
+    if (snapshot === lastSavedSnapshotRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void creatorApi
+        .updateDealzMarketplace(marketplaceSavePayload)
+        .then(() => {
+          lastSavedSnapshotRef.current = snapshot;
+        })
+        .catch(() => {
+          setToast("Failed to sync marketplace updates.");
+        });
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [marketplaceSavePayload]);
+
   // Viewer state
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerCtx, setViewerCtx] = useState<ViewerCtx | null>(null);
@@ -2550,10 +2590,10 @@ export default function DealzMarketplace() {
     setViewerOpen(true);
   }
 
-  // checkout/cart actions (demo)
+  // checkout/cart actions
   function shoppableBuy(ad: ShoppableAd, offerId: string) {
     const url = `/checkout?source=shoppable&adId=${encodeURIComponent(ad.id)}&offerId=${encodeURIComponent(offerId)}&qty=1`;
-    setToast(`Checkout (demo): ${url}`);
+    setToast(`Checkout link generated: ${url}`);
   }
   function shoppableAdd(ad: ShoppableAd, offerId: string) {
     const o = ad.offers.find((x) => x.id === offerId);
@@ -2564,7 +2604,7 @@ export default function DealzMarketplace() {
   }
   function liveBuy(live: LiveInvite, itemId: string) {
     const url = `/checkout?source=live&sessionId=${encodeURIComponent(live.id)}&itemId=${encodeURIComponent(itemId)}&qty=1`;
-    setToast(`Checkout (demo): ${url}`);
+    setToast(`Checkout link generated: ${url}`);
   }
   function liveAdd(live: LiveInvite, itemId: string) {
     const it = live.featured.find((x) => x.id === itemId);
@@ -2787,7 +2827,7 @@ export default function DealzMarketplace() {
                 </select>
               </div>
 
-              <Btn tone="ghost" onClick={() => setToast("More filters (demo)")} left={<MoreHorizontal className="h-4 w-4" />}>
+              <Btn tone="ghost" onClick={() => setToast("Advanced filters panel coming soon")} left={<MoreHorizontal className="h-4 w-4" />}>
                 More
               </Btn>
             </div>
