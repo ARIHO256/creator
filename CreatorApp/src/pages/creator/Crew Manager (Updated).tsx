@@ -642,275 +642,23 @@ export default function CreatorLiveCrewManagementPremium() {
     "suppliers.invite_guest_cohost": true
   };
 
-  const [sessions, setSessions] = useState<Session[]>(() => [
-    {
-      id: "S-1001",
-      title: "BBS — Flash Dealz Live",
-      supplierName: "BBS",
-      campaign: "Flash Dealz",
-      status: "Scheduled",
-      startISO: "2026-01-27T15:30:00.000Z", // 18:30 EAT
-      durationMin: 60,
-      cohostSlots: 2
-    },
-    {
-      id: "S-1002",
-      title: "Tech Friday Mega",
-      supplierName: "Evzone",
-      campaign: "Tech Friday",
-      status: "Live",
-      startISO: "2026-01-27T16:00:00.000Z", // 19:00 EAT
-      durationMin: 75,
-      cohostSlots: 2
-    },
-    {
-      id: "S-1003",
-      title: "Beauty Drop — Replay",
-      supplierName: "GlowCo",
-      campaign: "Beauty Drop",
-      status: "Replay",
-      startISO: "2026-01-26T16:00:00.000Z", // 19:00 EAT (yesterday)
-      durationMin: 45,
-      cohostSlots: 1
-    }
-  ]);
+  const [sessions, setSessions] = useState<Session[]>([]);
 
-  const [members, setMembers] = useState<Member[]>(() => [
-    {
-      id: "P-me",
-      name: "Ronald Isabirye",
-      email: "owner@creatorstudio.com",
-      handle: "@ronald",
-      roleId: "owner",
-      status: "Active",
-      tzLabel: "EAT (+3)",
-      tzOffsetHours: 3
-    },
-    {
-      id: "P-host-1",
-      name: "Jade Host",
-      email: "host@creatorstudio.com",
-      handle: "@jade",
-      roleId: "host",
-      status: "Active",
-      tzLabel: "EAT (+3)",
-      tzOffsetHours: 3
-    },
-    {
-      id: "P-prod-1",
-      name: "Doreen K.",
-      email: "producer@creatorstudio.com",
-      handle: "@doreen",
-      roleId: "producer",
-      status: "Active",
-      tzLabel: "EAT (+3)",
-      tzOffsetHours: 3
-    },
-    {
-      id: "P-prod-2",
-      name: "Kelvin M.",
-      email: "ops.producer@creatorstudio.com",
-      handle: "@kelvin",
-      roleId: "producer",
-      status: "Active",
-      tzLabel: "EAT (+3)",
-      tzOffsetHours: 3
-    },
-    {
-      id: "P-mod-1",
-      name: "Sarah A.",
-      email: "moderator@creatorstudio.com",
-      handle: "@sarah",
-      roleId: "moderator",
-      status: "Active",
-      tzLabel: "EAT (+3)",
-      tzOffsetHours: 3
-    },
-    {
-      id: "P-mod-2",
-      name: "Aisha N.",
-      email: "mod2@creatorstudio.com",
-      handle: "@aisha",
-      roleId: "moderator",
-      status: "Active",
-      tzLabel: "WAT (+1)",
-      tzOffsetHours: 1
-    },
-    {
-      id: "P-mod-3",
-      name: "Chris P.",
-      email: "mod3@creatorstudio.com",
-      handle: "@chris",
-      roleId: "moderator",
-      status: "Suspended",
-      tzLabel: "EAT (+3)",
-      tzOffsetHours: 3
-    },
-    {
-      id: "P-co-1",
-      name: "Amina S.",
-      email: "cohost@creatorstudio.com",
-      handle: "@amina",
-      roleId: "cohost",
-      status: "Active",
-      tzLabel: "EAT (+3)",
-      tzOffsetHours: 3
-    },
-    {
-      id: "P-co-2",
-      name: "Li Wei (guest)",
-      email: "liwei@guest.com",
-      handle: "@liwei",
-      roleId: "external",
-      status: "External",
-      tzLabel: "SGT (+8)",
-      tzOffsetHours: 8
-    }
-  ]);
+  const [members, setMembers] = useState<Member[]>([]);
 
-  const [availabilityByMember, setAvailabilityByMember] = useState<AvailabilityByMember>(() => ({
-    "P-me": {
-      connected: true,
-      privacy: "details",
-      updatedAt: "Today",
-      events: []
-    },
-    "P-host-1": {
-      connected: true,
-      privacy: "details",
-      updatedAt: "Today",
-      events: [
-        {
-          id: "ev_h1",
-          startISO: "2026-01-27T14:30:00.000Z",
-          endISO: "2026-01-27T15:10:00.000Z",
-          title: "Prep: product rundown"
-        }
-      ]
-    },
-    "P-prod-1": {
-      connected: true,
-      privacy: "details",
-      updatedAt: "Today",
-      events: [
-        {
-          id: "ev_p1",
-          startISO: "2026-01-27T15:45:00.000Z",
-          endISO: "2026-01-27T16:20:00.000Z",
-          title: "Ops standup"
-        }
-      ]
-    },
-    "P-prod-2": {
-      connected: false,
-      privacy: "details",
-      updatedAt: "Not connected",
-      events: []
-    },
-    "P-mod-1": {
-      connected: true,
-      privacy: "details",
-      updatedAt: "Today",
-      events: []
-    },
-    "P-mod-2": {
-      connected: true,
-      privacy: "busy_free",
-      updatedAt: "Yesterday",
-      events: [
-        {
-          id: "ev_m2",
-          startISO: "2026-01-27T15:25:00.000Z",
-          endISO: "2026-01-27T15:50:00.000Z",
-          title: "Busy"
-        }
-      ]
-    },
-    "P-mod-3": {
-      connected: false,
-      privacy: "details",
-      updatedAt: "Not connected",
-      events: []
-    },
-    "P-co-1": {
-      connected: true,
-      privacy: "details",
-      updatedAt: "Today",
-      events: []
-    },
-    "P-co-2": {
-      connected: true,
-      privacy: "busy_free",
-      updatedAt: "Today",
-      events: [
-        {
-          id: "ev_g1",
-          startISO: "2026-01-27T15:20:00.000Z",
-          endISO: "2026-01-27T15:40:00.000Z",
-          title: "Busy"
-        }
-      ]
-    }
-  }));
+  const [availabilityByMember, setAvailabilityByMember] = useState<AvailabilityByMember>({});
 
-  const [activeSessionId, setActiveSessionId] = useState<string>("S-1001");
+  const [activeSessionId, setActiveSessionId] = useState<string>("");
 
-  const [assignmentsBySession, setAssignmentsBySession] = useState<Record<string, Assignments>>(() => ({
-    "S-1001": { hostId: "P-host-1", producerId: "P-prod-1", moderatorIds: ["P-mod-1"], cohostIds: ["P-co-2"] },
-    // Intentionally conflicting: same producer overlaps S-1001
-    "S-1002": { hostId: "P-me", producerId: "P-prod-1", moderatorIds: ["P-mod-1", "P-mod-2"], cohostIds: ["P-co-1"] },
-    "S-1003": { hostId: "P-me", producerId: "P-prod-2", moderatorIds: ["P-mod-2"], cohostIds: [] }
-  }));
+  const [assignmentsBySession, setAssignmentsBySession] = useState<Record<string, Assignments>>({});
 
-  const [locksBySession] = useState<Record<string, SoftLocksBySession>>(() => ({
-    // Example soft locks requested:
-    "S-1002": {
-      producer: {
-        by: "Ops",
-        label: "Producer locked by Ops",
-        reason: "Ops run-of-show is locked 60 minutes before a Live session.",
-        createdAt: "Today"
-      },
-      host: {
-        by: "Policy",
-        label: "Host locked by policy",
-        reason: "Host is locked when session is Live to prevent mid-stream identity changes.",
-        createdAt: "Today"
-      }
-    },
-    "S-1001": {
-      moderators: {
-        "P-mod-1": {
-          by: "Policy",
-          label: "Moderator assigned by policy",
-          reason: "Compliance moderator is required for this supplier.",
-          createdAt: "This week"
-        }
-      },
-      permLocks: {
-        "P-mod-1": {
-          by: "Policy",
-          label: "Permissions locked by policy",
-          reason: "Compliance moderator permissions are locked for this session.",
-          createdAt: "This week"
-        },
-        "P-co-2": {
-          by: "Policy",
-          label: "Guest permissions locked",
-          reason: "Supplier guest permissions are locked to 'Pin dealz' only.",
-          createdAt: "This week"
-        }
-      }
-    }
-  }));
+  const [locksBySession] = useState<Record<string, SoftLocksBySession>>({});
 
   const [sessionPermsBySession, setSessionPermsBySession] = useState<Record<string, SessionPerms>>(() =>
     buildInitialSessionPerms(assignmentsBySession)
   );
 
-  const [audit, setAudit] = useState<AuditEntry[]>(() => [
-    { id: uid("a"), when: nowLabel(), who: "System", what: "Crew module opened", meta: "Crew Management" }
-  ]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteRole, setInviteRole] = useState<CrewRole>("Co-host");
@@ -950,8 +698,24 @@ export default function CreatorLiveCrewManagementPremium() {
   } | null>(null);
   const [hasHydratedCrew, setHasHydratedCrew] = useState(false);
 
-  const activeSession = useMemo(() => sessions.find((s) => s.id === activeSessionId) || sessions[0], [sessions, activeSessionId]);
-  const activeAssignments = assignmentsBySession[activeSession.id];
+  const EMPTY_SESSION: Session = useMemo(
+    () => ({
+      id: "__none__",
+      title: "No live sessions",
+      supplierName: "—",
+      campaign: "—",
+      status: "Scheduled",
+      startISO: new Date().toISOString(),
+      durationMin: 0,
+      cohostSlots: 0
+    }),
+    []
+  );
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId) || sessions[0] || EMPTY_SESSION,
+    [EMPTY_SESSION, sessions, activeSessionId]
+  );
+  const activeAssignments = assignmentsBySession[activeSession.id] || { hostId: null, producerId: null, moderatorIds: [], cohostIds: [] };
 
   const sessionLocks = locksBySession[activeSession.id] || {};
   const sessionPerms = sessionPermsBySession[activeSession.id] || { hosts: {}, producers: {}, moderators: {}, cohosts: {} };
@@ -1048,7 +812,9 @@ export default function CreatorLiveCrewManagementPremium() {
         }
       })
       .catch(() => {
-        // Keep local fallback in case API is unavailable.
+        setMembers([]);
+        setSessions([]);
+        setAssignmentsBySession({});
       })
       .finally(() => {
         if (!cancelled) {
@@ -1062,7 +828,14 @@ export default function CreatorLiveCrewManagementPremium() {
   }, []);
 
   useEffect(() => {
+    if (!activeSessionId && sessions.length > 0) {
+      setActiveSessionId(sessions[0].id);
+    }
+  }, [activeSessionId, sessions]);
+
+  useEffect(() => {
     if (!hasHydratedCrew) return;
+    if (!activeSessionId || activeSessionId === "__none__") return;
     const active = assignmentsBySession[activeSessionId];
     if (!active) return;
     const payloadAssignments = [
