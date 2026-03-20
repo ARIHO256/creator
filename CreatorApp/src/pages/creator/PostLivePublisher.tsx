@@ -51,7 +51,7 @@ import {
 const ORANGE = '#f77f00';
 
 const ROUTES = {
-  liveDashboard: '/live-dashboard',
+  liveDashboard: '/live-dashboard-2',
   liveBuilder: '/live-builder',
   audienceNotifications: '/audience-notifications',
   overlaysCtas: '/overlays-ctas-pro',
@@ -294,19 +294,23 @@ export default function PostLivePublisherPage() {
     loader: () => creatorApi.liveTool("post-live") as Promise<PostLivePayload>,
   });
 
-  const [plan, setPlan] = useState<'Standard' | 'Pro'>('Pro');
+  const replayBaseUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/replay/${encodeURIComponent(sessionId)}`;
+  }, [sessionId]);
+  const [plan, setPlan] = useState<'Standard' | 'Pro'>('Standard');
   const isPro = plan === 'Pro';
 
   const session = useMemo(
     () => ({
       id: payload.session?.id || sessionId,
-      title: payload.session?.title || 'Autumn Beauty Flash',
-      status: payload.session?.status || ('Ended' as SessionStatus),
+      title: payload.session?.title || 'Live session',
+      status: payload.session?.status || ('Draft' as SessionStatus),
       endedISO: payload.session?.endedISO || new Date(Date.now() - 33 * 60 * 1000).toISOString(),
-      replayUrl: payload.session?.replayUrl || `https://mylivedealz.com/replay/${sessionId}`,
-      coverUrl: payload.session?.coverUrl || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=70',
+      replayUrl: payload.session?.replayUrl || replayBaseUrl,
+      coverUrl: payload.session?.coverUrl || '',
     }),
-    [payload.session, sessionId],
+    [payload.session, sessionId, replayBaseUrl],
   );
 
   // Replay/publish state
@@ -337,25 +341,25 @@ export default function PostLivePublisherPage() {
   const channels = useMemo(() => payload.channels || [], [payload.channels]);
 
   const [enabledChannels, setEnabledChannels] = useState<Record<ChannelKey, boolean>>({
-    whatsapp: true,
-    telegram: true,
+    whatsapp: false,
+    telegram: false,
     line: false,
     viber: false,
     rcs: false,
   });
 
   const [audience, setAudience] = useState<AudienceKey>('past_buyers');
-  const [scheduleSends, setScheduleSends] = useState(true);
+  const [scheduleSends, setScheduleSends] = useState(false);
   const [sendNow, setSendNow] = useState(false);
   const [templatePack, setTemplatePack] = useState<'Default' | 'VIP' | 'High intent'>('Default');
 
   // Booster toggles
-  const [cartRecovery, setCartRecovery] = useState(true);
+  const [cartRecovery, setCartRecovery] = useState(false);
   const [priceDrop, setPriceDrop] = useState(false);
-  const [restock, setRestock] = useState(true);
+  const [restock, setRestock] = useState(false);
   useEffect(() => {
     if (!Object.keys(payload).length) return;
-    setPlan(payload.plan || 'Pro');
+    setPlan(payload.plan || 'Standard');
     setPublished(payload.published ?? false);
     setSchedulePublish(payload.schedulePublish ?? false);
     setPublishAt(payload.publishAt || new Date(Date.now() + 30 * 60 * 1000).toISOString());
@@ -364,25 +368,25 @@ export default function PostLivePublisherPage() {
     setClips(payload.clips || []);
     setEnabledChannels((current) => ({ ...current, ...(payload.enabledChannels || {}) }));
     setAudience(payload.audience || 'past_buyers');
-    setScheduleSends(payload.scheduleSends ?? true);
+    setScheduleSends(payload.scheduleSends ?? false);
     setSendNow(payload.sendNow ?? false);
     setTemplatePack(payload.templatePack || 'Default');
-    setCartRecovery(payload.cartRecovery ?? true);
+    setCartRecovery(payload.cartRecovery ?? false);
     setPriceDrop(payload.priceDrop ?? false);
-    setRestock(payload.restock ?? true);
+    setRestock(payload.restock ?? false);
   }, [payload]);
 
   const metrics = useMemo(
     () => ({
-      viewers: payload.metrics?.viewers || 18420,
-      clicks: payload.metrics?.clicks || 3120,
-      orders: payload.metrics?.orders || 284,
-      gmv: payload.metrics?.gmv || 9210,
-      addToCart: payload.metrics?.addToCart || 740,
-      cartAbandon: payload.metrics?.cartAbandon || 310,
-      ctr: payload.metrics?.ctr || 0.169,
-      conv: payload.metrics?.conv || 0.091,
-      ordersSeries: payload.metrics?.ordersSeries || [4, 6, 8, 10, 9, 12, 15, 14, 18, 17, 16, 19, 21, 18, 16],
+      viewers: payload.metrics?.viewers || 0,
+      clicks: payload.metrics?.clicks || 0,
+      orders: payload.metrics?.orders || 0,
+      gmv: payload.metrics?.gmv || 0,
+      addToCart: payload.metrics?.addToCart || 0,
+      cartAbandon: payload.metrics?.cartAbandon || 0,
+      ctr: payload.metrics?.ctr || 0,
+      conv: payload.metrics?.conv || 0,
+      ordersSeries: payload.metrics?.ordersSeries || [],
     }),
     [payload.metrics],
   );

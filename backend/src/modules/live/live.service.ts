@@ -456,21 +456,7 @@ export class LiveService {
   }
 
   private defaultToolPayload(key: string) {
-    if (key === 'overlays') {
-      return this.defaultOverlaysToolPayload();
-    }
-    if (key === 'audience-notifications') {
-      return this.defaultAudienceNotificationsPayload();
-    }
-    if (key === 'live-alerts') {
-      return this.defaultLiveAlertsPayload();
-    }
-    if (key === 'streaming') {
-      return this.defaultStreamingPayload();
-    }
-    if (key === 'post-live') {
-      return this.defaultPostLivePayload();
-    }
+    void key;
     return {};
   }
 

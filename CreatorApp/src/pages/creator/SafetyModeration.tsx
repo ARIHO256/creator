@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BadgeCheck,
@@ -26,6 +26,8 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { useApiResource } from '../../hooks/useApiResource';
+import { creatorApi } from '../../lib/creatorApi';
 
 /**
  * F. Safety & Moderation
@@ -48,7 +50,7 @@ import {
 const ORANGE = '#f77f00';
 
 const ROUTES = {
-  liveDashboard: '/live-dashboard',
+  liveDashboard: '/live-dashboard-2',
   liveBuilder: '/live-builder',
   streamToPlatforms: '/stream-to-platforms',
   audienceNotifications: '/audience-notifications',
@@ -102,6 +104,27 @@ type KeywordRule = {
   scope: 'All destinations' | 'Selected destinations';
   destinationIds?: string[];
   enabled: boolean;
+};
+
+type SafetyPayload = {
+  plan?: 'Standard' | 'Pro';
+  roleMode?: RoleMode;
+  session?: {
+    id?: string;
+    title?: string;
+    status?: SessionStatus;
+    startedISO?: string;
+    endsISO?: string;
+  };
+  destinations?: Destination[];
+  messages?: ChatMessage[];
+  keywordRules?: KeywordRule[];
+  muteChat?: Record<string, boolean>;
+  pauseNotifications?: boolean;
+  autoModeration?: boolean;
+  slowMode?: boolean;
+  linkBlocking?: boolean;
+  handledIds?: Record<string, boolean>;
 };
 
 function Pill({
@@ -308,129 +331,46 @@ function agoLabel(iso: string) {
 }
 
 export default function SafetyModerationPage() {
+  const { data: payload } = useApiResource({
+    initialData: {} as SafetyPayload,
+    loader: () => creatorApi.liveTool('safety') as Promise<SafetyPayload>,
+  });
   const sp = useMemo(() => parseSearch(), []);
-  const sessionId = sp.get('sessionId') ?? 'LS-20418';
+  const sessionId = sp.get('sessionId') ?? 'session';
 
-  const [plan, setPlan] = useState<'Standard' | 'Pro'>('Pro');
+  const [plan, setPlan] = useState<'Standard' | 'Pro'>('Standard');
   const [roleMode, setRoleMode] = useState<RoleMode>('creator'); // Support Ops viewer mode disables actions
 
   const session = useMemo(
     () => ({
-      id: sessionId,
-      title: 'Autumn Beauty Flash',
-      status: 'Live' as SessionStatus,
-      startedISO: new Date(Date.now() - 22 * 60 * 1000).toISOString(),
-      endsISO: new Date(Date.now() + 58 * 60 * 1000).toISOString(),
+      id: payload.session?.id || sessionId,
+      title: payload.session?.title || 'Live session',
+      status: payload.session?.status || ('Draft' as SessionStatus),
+      startedISO: payload.session?.startedISO || new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      endsISO: payload.session?.endsISO || new Date(Date.now() + 50 * 60 * 1000).toISOString(),
     }),
-    [sessionId],
+    [payload.session, sessionId],
   );
 
   const destinations: Destination[] = useMemo(
-    () => [
-      {
-        id: 'yt',
-        name: 'YouTube Live',
-        type: 'Video Live',
-        status: 'Connected',
-        liveState: 'Live',
-        supportsChat: true,
-        supportsMuteChat: true,
-        supportsEmergencyActions: true,
-      },
-      {
-        id: 'tt',
-        name: 'TikTok Live',
-        type: 'Video Live',
-        status: 'Connected',
-        liveState: 'Live',
-        supportsChat: true,
-        supportsMuteChat: false,
-        supportsEmergencyActions: false,
-      },
-      {
-        id: 'ig',
-        name: 'Instagram Live',
-        type: 'Community Live',
-        status: 'Needs re-auth',
-        liveState: 'Not live',
-        supportsChat: true,
-        supportsMuteChat: false,
-        supportsEmergencyActions: false,
-      },
-      {
-        id: 'fb',
-        name: 'Facebook Live',
-        type: 'Video Live',
-        status: 'Connected',
-        liveState: 'Live',
-        supportsChat: true,
-        supportsMuteChat: true,
-        supportsEmergencyActions: true,
-      },
-    ],
-    [],
+    () => (Array.isArray(payload.destinations) ? payload.destinations : []),
+    [payload.destinations],
   );
 
-  const [activeDestId, setActiveDestId] = useState(destinations[0].id);
+  const [activeDestId, setActiveDestId] = useState('');
+  useEffect(() => {
+    if (!destinations.length) {
+      if (activeDestId) setActiveDestId('');
+      return;
+    }
+    if (!activeDestId || !destinations.some((entry) => entry.id === activeDestId)) {
+      setActiveDestId(destinations[0].id);
+    }
+  }, [activeDestId, destinations]);
 
   const allMessages: ChatMessage[] = useMemo(
-    () => [
-      {
-        id: 'm1',
-        destId: 'yt',
-        userName: 'Amara K.',
-        handle: '@amarak',
-        text: 'Is the GlowUp bundle available for delivery today?',
-        atISO: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-        flags: [],
-      },
-      {
-        id: 'm2',
-        destId: 'yt',
-        userName: 'DealHunter',
-        handle: '@dealhunter',
-        text: 'FREE iPhone here 👉 http://bit.ly/scam',
-        atISO: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-        flags: ['Link', 'Spam'],
-      },
-      {
-        id: 'm3',
-        destId: 'tt',
-        userName: 'Kato',
-        handle: '@kato_ug',
-        text: '🔥🔥 price drop please!',
-        atISO: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-        flags: [],
-      },
-      {
-        id: 'm4',
-        destId: 'fb',
-        userName: 'Sarah N.',
-        handle: '@sarahn',
-        text: 'This is fake, you people are thieves 😡',
-        atISO: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-        flags: ['Harassment'],
-      },
-      {
-        id: 'm5',
-        destId: 'fb',
-        userName: 'VIP Buyer',
-        handle: '@vipbuyer',
-        text: 'Added to cart. waiting for checkout link!',
-        atISO: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-        flags: [],
-      },
-      {
-        id: 'm6',
-        destId: 'tt',
-        userName: 'Spammy',
-        handle: '@spammy',
-        text: 'follow me for dealz, follow follow follow',
-        atISO: new Date(Date.now() - 9 * 60 * 1000).toISOString(),
-        flags: ['Spam'],
-      },
-    ],
-    [],
+    () => (Array.isArray(payload.messages) ? payload.messages : []),
+    [payload.messages],
   );
 
   const [search, setSearch] = useState('');
@@ -446,43 +386,47 @@ export default function SafetyModerationPage() {
       .sort((a, b) => new Date(b.atISO).getTime() - new Date(a.atISO).getTime());
   }, [allMessages, activeDestId, search, hideHandled, handledIds]);
 
-  const [keywordRules, setKeywordRules] = useState<KeywordRule[]>([
-    {
-      id: 'k1',
-      phrase: 'http://',
-      match: 'Contains',
-      action: 'Flag',
-      scope: 'All destinations',
-      enabled: true,
-    },
-    {
-      id: 'k2',
-      phrase: 'free iphone',
-      match: 'Contains',
-      action: 'Block',
-      scope: 'All destinations',
-      enabled: true,
-    },
-    {
-      id: 'k3',
-      phrase: 'thieves',
-      match: 'Exact',
-      action: 'Mask',
-      scope: 'Selected destinations',
-      destinationIds: ['fb'],
-      enabled: true,
-    },
-  ]);
-
-  const [muteChat, setMuteChat] = useState<Record<string, boolean>>({ yt: false, tt: false, ig: false, fb: false });
+  const [keywordRules, setKeywordRules] = useState<KeywordRule[]>([]);
+  const [muteChat, setMuteChat] = useState<Record<string, boolean>>({});
   const [pauseNotifications, setPauseNotifications] = useState(false);
 
   // Premium controls
   const isPro = plan === 'Pro';
-  const [autoModeration, setAutoModeration] = useState(true);
+  const [autoModeration, setAutoModeration] = useState(false);
   const [slowMode, setSlowMode] = useState(false); // pro-only
-  const [linkBlocking, setLinkBlocking] = useState(true);
+  const [linkBlocking, setLinkBlocking] = useState(false);
   void autoModeration; void slowMode; void linkBlocking; // Suppress unused
+
+  useEffect(() => {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.plan === 'Pro' || payload.plan === 'Standard') {
+      setPlan(payload.plan);
+    }
+    if (payload.roleMode === 'creator' || payload.roleMode === 'ops_viewer') {
+      setRoleMode(payload.roleMode);
+    }
+    if (Array.isArray(payload.keywordRules)) {
+      setKeywordRules(payload.keywordRules);
+    }
+    if (payload.muteChat && typeof payload.muteChat === 'object' && !Array.isArray(payload.muteChat)) {
+      setMuteChat(payload.muteChat);
+    }
+    if (typeof payload.pauseNotifications === 'boolean') {
+      setPauseNotifications(payload.pauseNotifications);
+    }
+    if (typeof payload.autoModeration === 'boolean') {
+      setAutoModeration(payload.autoModeration);
+    }
+    if (typeof payload.slowMode === 'boolean') {
+      setSlowMode(payload.slowMode);
+    }
+    if (typeof payload.linkBlocking === 'boolean') {
+      setLinkBlocking(payload.linkBlocking);
+    }
+    if (payload.handledIds && typeof payload.handledIds === 'object' && !Array.isArray(payload.handledIds)) {
+      setHandledIds(payload.handledIds);
+    }
+  }, [payload]);
 
   const canAct = roleMode === 'creator';
   const [toast, setToast] = useState<string | null>(null);
@@ -491,6 +435,43 @@ export default function SafetyModerationPage() {
     const t = setTimeout(() => setToast(null), 2400);
     return () => clearTimeout(t);
   }, [toast]);
+  const persistencePrimedRef = useRef(false);
+  useEffect(() => {
+    if (!persistencePrimedRef.current) {
+      persistencePrimedRef.current = true;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void creatorApi.patchLiveTool('safety', {
+        plan,
+        roleMode,
+        session,
+        destinations,
+        messages: allMessages,
+        keywordRules,
+        muteChat,
+        pauseNotifications,
+        autoModeration,
+        slowMode,
+        linkBlocking,
+        handledIds,
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    plan,
+    roleMode,
+    session,
+    destinations,
+    allMessages,
+    keywordRules,
+    muteChat,
+    pauseNotifications,
+    autoModeration,
+    slowMode,
+    linkBlocking,
+    handledIds,
+  ]);
 
   // Actions modal
   const [actionOpen, setActionOpen] = useState(false);
@@ -524,7 +505,17 @@ export default function SafetyModerationPage() {
   const [newKeywordAction, setNewKeywordAction] = useState<'Block' | 'Mask' | 'Flag'>('Flag');
   const [newKeywordMatch, setNewKeywordMatch] = useState<'Contains' | 'Exact'>('Contains');
   const [newKeywordScope, setNewKeywordScope] = useState<'All destinations' | 'Selected destinations'>('All destinations');
-  const [newKeywordDestIds, setNewKeywordDestIds] = useState<Record<string, boolean>>({ yt: true, tt: true, ig: true, fb: true });
+  const [newKeywordDestIds, setNewKeywordDestIds] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!destinations.length) return;
+    setNewKeywordDestIds((prev) => {
+      const next: Record<string, boolean> = {};
+      destinations.forEach((destination) => {
+        next[destination.id] = prev[destination.id] ?? true;
+      });
+      return next;
+    });
+  }, [destinations]);
 
   const addKeyword = () => {
     const phrase = newKeyword.trim();

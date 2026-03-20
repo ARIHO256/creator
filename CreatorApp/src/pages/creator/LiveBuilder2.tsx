@@ -4122,6 +4122,25 @@ export function LiveBuilderView({
     externalAssets,
     assetLibraryData,
   ]);
+  useEffect(() => {
+    const currentHeroImageUrl = (draft.heroImageUrl || "").trim();
+    if (currentHeroImageUrl) return;
+    const trackedAssetId = (draft.heroImageAssetId || "").trim();
+    if (!trackedAssetId) return;
+    const recoveredUrl =
+      (externalAssets[trackedAssetId]?.previewUrl || "").trim() ||
+      (assetLibraryData.find((entry) => entry.id === trackedAssetId)?.previewUrl || "").trim();
+    if (!recoveredUrl) return;
+    setDraft((prev) => {
+      const sameAsset = (prev.heroImageAssetId || "").trim() === trackedAssetId;
+      const hasHero = (prev.heroImageUrl || "").trim();
+      if (!sameAsset || hasHero) return prev;
+      return {
+        ...prev,
+        heroImageUrl: recoveredUrl,
+      };
+    });
+  }, [draft.heroImageUrl, draft.heroImageAssetId, externalAssets, assetLibraryData]);
 
   const openerAsset = useMemo(
     () =>
@@ -4311,6 +4330,11 @@ export function LiveBuilderView({
         );
 
         setDraft((prev) => {
+          const previousHeroImageUrl = (prev.heroImageUrl || "").trim();
+          const previousHeroVideoUrl = (prev.heroVideoUrl || "").trim();
+          const previousHeroImageAssetId = (prev.heroImageAssetId || "").trim();
+          const preserveExistingHeroValues = pickerRestoreInProgress
+            && Boolean(previousHeroImageUrl || previousHeroVideoUrl || previousHeroImageAssetId);
           const fallbackSupplierId =
             prev.supplierId ||
             suppliers[0]?.id ||
@@ -4362,11 +4386,17 @@ export function LiveBuilderView({
               ...base,
               ...dealPrefill,
               heroImageUrl:
-                prefillHeroImageUrl || base.heroImageUrl,
+                preserveExistingHeroValues
+                  ? previousHeroImageUrl || prefillHeroImageUrl || base.heroImageUrl
+                  : prefillHeroImageUrl || base.heroImageUrl,
               heroVideoUrl:
-                prefillHeroVideoUrl || base.heroVideoUrl,
+                preserveExistingHeroValues
+                  ? previousHeroVideoUrl || prefillHeroVideoUrl || base.heroVideoUrl
+                  : prefillHeroVideoUrl || base.heroVideoUrl,
               heroImageAssetId:
-                prefillHeroImageAssetId || base.heroImageAssetId,
+                preserveExistingHeroValues
+                  ? previousHeroImageAssetId || prefillHeroImageAssetId || base.heroImageAssetId
+                  : prefillHeroImageAssetId || base.heroImageAssetId,
               supplierId: nextSupplierId,
               campaignId: nextCampaignId,
               hostId: nextHostId,
@@ -4383,11 +4413,17 @@ export function LiveBuilderView({
               ...snapshotDraft,
               id: builderSessionId,
               heroImageUrl:
-                snapshotHeroImageUrl || withDealPrefill.heroImageUrl,
+                preserveExistingHeroValues
+                  ? previousHeroImageUrl || snapshotHeroImageUrl || withDealPrefill.heroImageUrl
+                  : snapshotHeroImageUrl || withDealPrefill.heroImageUrl,
               heroVideoUrl:
-                snapshotHeroVideoUrl || withDealPrefill.heroVideoUrl,
+                preserveExistingHeroValues
+                  ? previousHeroVideoUrl || snapshotHeroVideoUrl || withDealPrefill.heroVideoUrl
+                  : snapshotHeroVideoUrl || withDealPrefill.heroVideoUrl,
               heroImageAssetId:
-                snapshotHeroImageAssetId || withDealPrefill.heroImageAssetId,
+                preserveExistingHeroValues
+                  ? previousHeroImageAssetId || snapshotHeroImageAssetId || withDealPrefill.heroImageAssetId
+                  : snapshotHeroImageAssetId || withDealPrefill.heroImageAssetId,
               supplierId:
                 snapshotDraft.supplierId ||
                 withDealPrefill.supplierId,

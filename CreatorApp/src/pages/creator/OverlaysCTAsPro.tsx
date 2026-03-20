@@ -210,17 +210,25 @@ export default function OverlaysCTAsPro() {
     initialData: {} as OverlaysPayload,
     loader: () => creatorApi.liveTool("overlays") as Promise<OverlaysPayload>,
   });
-  const [isPro, setIsPro] = useState(true);
+  const sessionId = useMemo(() => {
+    if (typeof window === "undefined") return "session";
+    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+  }, []);
+  const baseJoinUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/live/${encodeURIComponent(sessionId)}`;
+  }, [sessionId]);
+  const [isPro, setIsPro] = useState(false);
 
   const session = useMemo(
     () => ({
-      id: payload.session?.id || "LS-20418",
-      title: payload.session?.title || "Autumn Beauty Flash",
-      status: payload.session?.status || ("Scheduled" as SessionStatus),
+      id: payload.session?.id || sessionId,
+      title: payload.session?.title || "Live session",
+      status: payload.session?.status || ("Draft" as SessionStatus),
       startISO: payload.session?.startISO || new Date(Date.now() + 40 * 60 * 1000).toISOString(),
       endISO: payload.session?.endISO || new Date(Date.now() + 130 * 60 * 1000).toISOString(),
     }),
-    [payload.session],
+    [payload.session, sessionId],
   );
 
   const products: Product[] = useMemo(
@@ -232,27 +240,30 @@ export default function OverlaysCTAsPro() {
   const [variant, setVariant] = useState<VariantKey>("A");
 
   // QR overlay
-  const [qrEnabled, setQrEnabled] = useState(true);
-  const [qrLabel, setQrLabel] = useState("Scan to shop");
-  const [qrUrl, setQrUrl] = useState(`https://mylivedealz.com/live/${session.id}`);
+  const [qrEnabled, setQrEnabled] = useState(false);
+  const [qrLabel, setQrLabel] = useState("");
+  const [qrUrl, setQrUrl] = useState(baseJoinUrl);
   const [qrCorner, setQrCorner] = useState<"tr" | "tl" | "br" | "bl">("tr");
   const [qrSize, setQrSize] = useState(180);
 
   // Using a public QR image generator for preview (replace with internal renderer)
   const qrImg = useMemo(() => {
-    const u = encodeURIComponent(qrUrl || "https://mylivedealz.com");
+    const u = encodeURIComponent(qrUrl || baseJoinUrl || "");
     return `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${u}`;
-  }, [qrUrl, qrSize]);
+  }, [qrUrl, qrSize, baseJoinUrl]);
   void qrImg;
 
   // Links + UTM
-  const [destUrl, setDestUrl] = useState("https://mylivedealz.com/dealz/autumn-flash");
-  const [utmSource, setUtmSource] = useState("whatsapp");
-  const [utmMedium, setUtmMedium] = useState("msg");
-  const [utmCampaign, setUtmCampaign] = useState("autumn_beauty_flash");
-  const [utmContent, setUtmContent] = useState("reminder_t10m");
-  const [shortDomain, setShortDomain] = useState("go.mylivedealz.com");
-  const [shortSlug, setShortSlug] = useState(makeSlug());
+  const [destUrl, setDestUrl] = useState("");
+  const [utmSource, setUtmSource] = useState("");
+  const [utmMedium, setUtmMedium] = useState("");
+  const [utmCampaign, setUtmCampaign] = useState("");
+  const [utmContent, setUtmContent] = useState("");
+  const [shortDomain, setShortDomain] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.location.host || "";
+  });
+  const [shortSlug, setShortSlug] = useState("");
 
   const utmLink = useMemo(
     () =>
@@ -268,50 +279,50 @@ export default function OverlaysCTAsPro() {
   const shortLink = useMemo(() => `https://${shortDomain}/${shortSlug}`, [shortDomain, shortSlug]);
 
   // Countdown
-  const [timerEnabled, setTimerEnabled] = useState(true);
+  const [timerEnabled, setTimerEnabled] = useState(false);
   const [timerStyle, setTimerStyle] = useState<"pill" | "bar">("pill");
-  const [timerText, setTimerText] = useState("Deal ends in");
+  const [timerText, setTimerText] = useState("");
   const [dealEndISO, setDealEndISO] = useState(session.endISO);
 
   // Lower third
-  const [lowerEnabled, setLowerEnabled] = useState(true);
+  const [lowerEnabled, setLowerEnabled] = useState(false);
   const [lowerPlacement, setLowerPlacement] = useState<"bottom" | "top">("bottom");
   const [lowerProductId, setLowerProductId] = useState("");
   const [ctaText, setCtaText] = useState("Buy now");
 
   // A/B
-  const [abEnabled, setAbEnabled] = useState(true);
-  const [notesA, setNotesA] = useState("Variant A: QR top-right + lower-third.");
-  const [notesB, setNotesB] = useState("Variant B: Countdown bar + shorter CTA.");
+  const [abEnabled, setAbEnabled] = useState(false);
+  const [notesA, setNotesA] = useState("");
+  const [notesB, setNotesB] = useState("");
   useEffect(() => {
     if (!Object.keys(payload).length) return;
-    setIsPro(payload.isPro ?? true);
+    setIsPro(payload.isPro ?? false);
     setTab(payload.tab || "qr");
     setVariant(payload.variant || "A");
-    setQrEnabled(payload.qrEnabled ?? true);
-    setQrLabel(payload.qrLabel || "Scan to shop");
-    setQrUrl(payload.qrUrl || `https://mylivedealz.com/live/${session.id}`);
+    setQrEnabled(payload.qrEnabled ?? false);
+    setQrLabel(payload.qrLabel || "");
+    setQrUrl(payload.qrUrl || baseJoinUrl);
     setQrCorner(payload.qrCorner || "tr");
     setQrSize(typeof payload.qrSize === "number" ? payload.qrSize : 180);
-    setDestUrl(payload.destUrl || "https://mylivedealz.com/dealz/autumn-flash");
-    setUtmSource(payload.utmSource || "whatsapp");
-    setUtmMedium(payload.utmMedium || "msg");
-    setUtmCampaign(payload.utmCampaign || "autumn_beauty_flash");
-    setUtmContent(payload.utmContent || "reminder_t10m");
-    setShortDomain(payload.shortDomain || "go.mylivedealz.com");
-    setShortSlug(payload.shortSlug || makeSlug());
-    setTimerEnabled(payload.timerEnabled ?? true);
+    setDestUrl(payload.destUrl || "");
+    setUtmSource(payload.utmSource || "");
+    setUtmMedium(payload.utmMedium || "");
+    setUtmCampaign(payload.utmCampaign || "");
+    setUtmContent(payload.utmContent || "");
+    setShortDomain(payload.shortDomain || (typeof window !== "undefined" ? window.location.host || "" : ""));
+    setShortSlug(payload.shortSlug || "");
+    setTimerEnabled(payload.timerEnabled ?? false);
     setTimerStyle(payload.timerStyle || "pill");
-    setTimerText(payload.timerText || "Deal ends in");
+    setTimerText(payload.timerText || "");
     setDealEndISO(payload.dealEndISO || session.endISO);
-    setLowerEnabled(payload.lowerEnabled ?? true);
+    setLowerEnabled(payload.lowerEnabled ?? false);
     setLowerPlacement(payload.lowerPlacement || "bottom");
-    setLowerProductId(payload.lowerProductId || payload.products?.[0]?.id || "");
+    setLowerProductId(payload.lowerProductId || payload.products?.[0]?.id || lowerProductId);
     setCtaText(payload.ctaText || "Buy now");
-    setAbEnabled(payload.abEnabled ?? true);
-    setNotesA(payload.notesA || "Variant A: QR top-right + lower-third.");
-    setNotesB(payload.notesB || "Variant B: Countdown bar + shorter CTA.");
-  }, [payload, session.endISO, session.id]);
+    setAbEnabled(payload.abEnabled ?? false);
+    setNotesA(payload.notesA || "");
+    setNotesB(payload.notesB || "");
+  }, [payload, session.endISO, baseJoinUrl, lowerProductId]);
 
   const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? products[0], [products, lowerProductId]);
 

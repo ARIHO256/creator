@@ -56,7 +56,7 @@ const ORANGE = '#f77f00';
 const GREEN = '#03CD8C';
 
 const ROUTES = {
-  liveDashboard: '/live-dashboard',
+  liveDashboard: '/live-dashboard-2',
   liveBuilder: '/live-builder',
   dealzMarketplace: '/dealz-marketplace',
 };
@@ -411,7 +411,7 @@ function statusLabel(s: DestinationStatus) {
   return s;
 }
 
-const DEFAULT_TITLE = 'GlowUp Hub: Autumn Beauty Flash Live';
+const DEFAULT_TITLE = 'Live session';
 
 export default function StreamToPlatformsPage() {
   const { showSuccess, showError, showNotification } = useNotification();
@@ -420,54 +420,54 @@ export default function StreamToPlatformsPage() {
     initialData: {} as StreamingPayload,
     loader: () => creatorApi.liveTool("streaming") as Promise<StreamingPayload>,
   });
-  const [isPro, setIsPro] = useState(true);
+  const [isPro, setIsPro] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>('Draft');
   const [selectedDestId, setSelectedDestId] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const [profile, setProfile] = useState<OutputProfile>({
     orientation: 'Auto',
-    quality: 'High',
+    quality: 'Auto',
     advancedOpen: false,
-    resolution: '1080p',
-    bitrateKbps: 4500,
+    resolution: '720p',
+    bitrateKbps: 2500,
     audio: 'Stereo',
     gainDb: 0,
     latency: 'Low',
     adaptiveBitrate: true,
   });
 
-  const [degradeMode, setDegradeMode] = useState<DegradeMode>('Reduce quality, keep all destinations');
+  const [degradeMode, setDegradeMode] = useState<DegradeMode>('Stop failing destinations only');
 
-  const [recordMaster, setRecordMaster] = useState(true);
-  const [autoReplay, setAutoReplay] = useState(true);
+  const [recordMaster, setRecordMaster] = useState(false);
+  const [autoReplay, setAutoReplay] = useState(false);
   const [autoHighlights, setAutoHighlights] = useState(false);
   const [downloadMasterAllowed, setDownloadMasterAllowed] = useState(false);
 
-  const [estimatedUploadMbps, setEstimatedUploadMbps] = useState(12.4);
+  const [estimatedUploadMbps, setEstimatedUploadMbps] = useState(0);
 
   const [destinations, setDestinations] = useState<Destination[]>([]);
   useEffect(() => {
     if (!Object.keys(payload).length) return;
-    setIsPro(payload.isPro ?? true);
+    setIsPro(payload.isPro ?? false);
     setSessionStatus(payload.sessionStatus || 'Draft');
     setProfile(payload.profile || {
       orientation: 'Auto',
-      quality: 'High',
+      quality: 'Auto',
       advancedOpen: false,
-      resolution: '1080p',
-      bitrateKbps: 4500,
+      resolution: '720p',
+      bitrateKbps: 2500,
       audio: 'Stereo',
       gainDb: 0,
       latency: 'Low',
       adaptiveBitrate: true,
     });
-    setDegradeMode(payload.degradeMode || 'Reduce quality, keep all destinations');
-    setRecordMaster(payload.recordMaster ?? true);
-    setAutoReplay(payload.autoReplay ?? true);
+    setDegradeMode(payload.degradeMode || 'Stop failing destinations only');
+    setRecordMaster(payload.recordMaster ?? false);
+    setAutoReplay(payload.autoReplay ?? false);
     setAutoHighlights(payload.autoHighlights ?? false);
     setDownloadMasterAllowed(payload.downloadMasterAllowed ?? false);
-    setEstimatedUploadMbps(typeof payload.estimatedUploadMbps === 'number' ? payload.estimatedUploadMbps : 12.4);
+    setEstimatedUploadMbps(typeof payload.estimatedUploadMbps === 'number' ? payload.estimatedUploadMbps : 0);
     setDestinations(payload.destinations || []);
   }, [payload]);
 

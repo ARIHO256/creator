@@ -472,7 +472,7 @@ function NewLiveSessionDrawer({
     endISO: string;
     desktopMode: "modal" | "fullscreen";
     platforms: LivePlatform[];
-  }) => Promise<void> | void;
+  }) => Promise<boolean> | boolean;
   createPending?: boolean;
 }) {
   const [supplierId, setSupplierId] = useState("");
@@ -608,7 +608,9 @@ function NewLiveSessionDrawer({
                 desktopMode: "modal",
                 platforms,
               }),
-            ).then(() => onClose());
+            ).then((created) => {
+              if (created) onClose();
+            });
           }}
         >
           Create & Open Builder <Zap className="h-4 w-4" />
@@ -647,6 +649,16 @@ function SessionDetailsDrawer({
   }
 
   const statusTone = session.status === "Live" ? "good" : session.status === "Scheduled" ? "warn" : session.status === "Ended" ? "neutral" : "neutral";
+  const startAt = new Date(session.startISO);
+  const endAt = new Date(session.endISO);
+  const hasValidSchedule = !Number.isNaN(startAt.getTime()) && !Number.isNaN(endAt.getTime()) && endAt > startAt;
+  const hasPlatforms = session.platforms.length > 0;
+  const hasMedia = Boolean(session.heroImageUrl || session.heroVideoUrl);
+  const detailsReady = hasValidSchedule && hasPlatforms && hasMedia;
+  const missingReadiness: string[] = [];
+  if (!hasValidSchedule) missingReadiness.push("Set valid schedule");
+  if (!hasPlatforms) missingReadiness.push("Select platforms");
+  if (!hasMedia) missingReadiness.push("Attach hero media");
   return (
     <Drawer open={open} onClose={onClose} title="Live session details" subtitle="Premium: details, readiness, quick actions.">
       <div className="grid lg:grid-cols-3 gap-4">
@@ -751,8 +763,12 @@ function SessionDetailsDrawer({
             <div className="aspect-[16/9] rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 overflow-hidden relative transition-colors">
               {session.heroVideoUrl ? (
                 <video className="absolute inset-0 w-full h-full object-cover" src={session.heroVideoUrl} poster={session.heroImageUrl} controls />
-              ) : (
+              ) : session.heroImageUrl ? (
                 <img className="absolute inset-0 w-full h-full object-cover" src={session.heroImageUrl} alt="Hero" />
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-[12px] font-semibold text-slate-500 dark:text-slate-400">
+                  Hero media not set yet
+                </div>
               )}
               <div className="absolute left-3 top-3 flex items-center gap-2">
                 <span className="px-2 py-1 rounded-full bg-black/55 border border-white/15 text-white text-[10px] font-semibold">LIVE</span>
@@ -784,12 +800,29 @@ function SessionDetailsDrawer({
             </div>
           </Card>
 
-          <Card title="Readiness" subtitle="Premium: preflight checks + lock windows.">
-            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-900/20 p-3 text-[11px] text-emerald-800 dark:text-emerald-200 flex items-start gap-2 transition-colors">
-              <CheckCircle2 className="h-4 w-4 mt-0.5" />
+          <Card title="Readiness" subtitle="Preflight checks + lock windows.">
+            <div
+              className={cx(
+                "rounded-2xl p-3 text-[11px] flex items-start gap-2 transition-colors",
+                detailsReady
+                  ? "border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200"
+                  : "border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200",
+              )}
+            >
+              {detailsReady ? (
+                <CheckCircle2 className="h-4 w-4 mt-0.5" />
+              ) : (
+                <AlertTriangle className="h-4 w-4 mt-0.5" />
+              )}
               <div>
-                <div className="font-semibold text-emerald-900 dark:text-emerald-100">Ops-ready</div>
-                <div>Assets approved. Stream outputs configured. Schedule set.</div>
+                <div className={cx("font-semibold", detailsReady ? "text-emerald-900 dark:text-emerald-100" : "text-amber-900 dark:text-amber-100")}>
+                  {detailsReady ? "Ready" : "Needs attention"}
+                </div>
+                <div>
+                  {detailsReady
+                    ? "Schedule, platforms and hero media are configured."
+                    : missingReadiness.join(" • ")}
+                </div>
               </div>
             </div>
             <div className="mt-2 rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-900/20 p-3 text-[11px] text-amber-800 dark:text-amber-200 flex items-start gap-2 transition-colors">
@@ -813,7 +846,7 @@ function SessionDetailsDrawer({
 export default function LiveDashboardPage() {
   // const { theme } = useTheme();
   const navigate = useNavigate();
-  const { showSuccess, showError, showInfo } = useNotification();
+  const { showError } = useNotification();
   const { run, isPending } = useAsyncAction();
   const {
     data: workspace,
@@ -967,7 +1000,7 @@ export default function LiveDashboardPage() {
       .map((x) => ({ ...x, hint: "Peak viewers (weighted)" }));
   }, [sessions]);
 
-  // Live Sessionz Pro — derived status for the selected toolkit session (demo logic)
+  // Live Sessionz Pro — derived status for the selected toolkit session
   const toolSession = useMemo(() => sessions.find((s) => s.id === toolSessionId) || null, [sessions, toolSessionId]);
   const toolSupplier = useMemo(() => (toolSession ? suppliers.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession, suppliers]);
   const toolHost = useMemo(() => (toolSession ? hosts.find((h) => h.id === toolSession.hostId) : undefined), [toolSession, hosts]);
@@ -1031,11 +1064,9 @@ export default function LiveDashboardPage() {
       { label: "Platforms selected", ok: platformsOk, hint: platformsOk ? toolSession.platforms.join(", ") : "Select destinations in Stream to Platforms" },
       { label: "Hero media attached", ok: heroOk, hint: "Discovery uses hero image/video" },
       { label: "WhatsApp prompt time valid", ok: waOk, hint: waPrompt ? `Computed: ${fmtDT(waPrompt.toISOString())}` : "Compute after end time is set" },
-      { label: "Moderation baseline", ok: true, hint: "Keyword filters + emergency controls (recommended)" },
-      { label: "Post-live plan", ok: true, hint: "Replay publish + clips + replay sends" }
     ];
 
-    const ok = items.slice(0, 5).every((x) => x.ok);
+    const ok = items.every((x) => x.ok);
     return { ok, items };
   }, [toolSession, waPrompt]);
 
@@ -1061,8 +1092,8 @@ export default function LiveDashboardPage() {
     endISO: string;
     desktopMode: "modal" | "fullscreen";
     platforms: LivePlatform[];
-  }) {
-    await run(async () => {
+  }): Promise<boolean> {
+    const createdId = await run(async () => {
       const created = await creatorApi.createLiveSession({
         status: "draft",
         title: payload.title,
@@ -1086,13 +1117,17 @@ export default function LiveDashboardPage() {
         },
       });
       await reloadWorkspace();
-      // Requirement: "+ New Live Session" leads to Live Builder page
-      openBuilderPage(String(created.id || ""));
+      return String(created.id || "");
     }, {
       successMessage: `Session "${payload.title}" created successfully!`,
       errorMessage: "Connection failed. Please check your network and try again.",
       delay: 200
     });
+    if (typeof createdId === "string" && createdId) {
+      openBuilderPage(createdId);
+      return true;
+    }
+    return false;
   }
 
   return (
@@ -1116,6 +1151,18 @@ export default function LiveDashboardPage() {
           <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
             Premium operations view for Live Sessionz (schedule, readiness, performance).
           </div>
+          {workspaceLoading ? (
+            <div className="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1 text-[11px] text-slate-600 dark:text-slate-300">
+              <CircularProgress size={12} />
+              Syncing dashboard data...
+            </div>
+          ) : null}
+          {workspaceError ? (
+            <div className="inline-flex w-fit items-center gap-2 rounded-xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/20 px-2.5 py-1 text-[11px] text-rose-700 dark:text-rose-200">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Some data could not be refreshed.
+            </div>
+          ) : null}
         </div>
 
         {/* Dashboard (compact, premium) */}
@@ -1125,7 +1172,7 @@ export default function LiveDashboardPage() {
             {/* KPIs + charts */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 lg:gap-3">
               <div className="lg:col-span-7 space-y-2.5">
-                <Card title="Viewers trend" subtitle="Last 14 days (demo)">
+                <Card title="Viewers trend" subtitle="Last 14 sessions">
                   <MiniLineChart values={viewersTrend} height={78} />
                   <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-2.5 transition-colors">
@@ -1134,15 +1181,21 @@ export default function LiveDashboardPage() {
                     </div>
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-2.5 transition-colors">
                       <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Peak viewers (avg)</div>
-                      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">12.4k</div>
+                      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+                        {avgPeakViewers > 0 ? Math.round(avgPeakViewers).toLocaleString() : "—"}
+                      </div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 transition-colors">
                       <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Avg watch</div>
-                      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">9.6m</div>
+                      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+                        {avgWatchMinutes > 0 ? `${avgWatchMinutes.toFixed(1)}m` : "—"}
+                      </div>
                     </div>
                     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 transition-colors">
                       <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Ops incidents</div>
-                      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">0</div>
+                      <div className="mt-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+                        {opsIncidents.toLocaleString()}
+                      </div>
                     </div>
                   </div>
                 </Card>
@@ -1277,9 +1330,17 @@ export default function LiveDashboardPage() {
                           Open <LinkIcon className="h-4 w-4" />
                         </PrimaryButton>
                         <SoftButton
-                          onClick={() => run(async () => { }, {
+                          onClick={() => run(async () => {
+                            if (!toolSession) return;
+                            await creatorApi.patchLiveTool("overlays", {
+                              sessionId: toolSession.id,
+                              lastAction: "export_pack",
+                              exportedAt: new Date().toISOString(),
+                            });
+                          }, {
                             successMessage: "Overlays pack exported successfully!",
-                            delay: 800
+                            errorMessage: "Could not export overlays pack.",
+                            delay: 200
                           })}
                           disabled={!toolSession || isPending}
                         >
@@ -1305,9 +1366,17 @@ export default function LiveDashboardPage() {
                           Open <Users className="h-4 w-4" />
                         </PrimaryButton>
                         <SoftButton
-                          onClick={() => run(async () => { throw new Error("Mute failed"); }, {
-                            errorMessage: "Emergency mute activated for all chats!",
-                            delay: 1000
+                          onClick={() => run(async () => {
+                            if (!toolSession) return;
+                            await creatorApi.patchLiveTool("safety", {
+                              sessionId: toolSession.id,
+                              emergencyMute: true,
+                              activatedAt: new Date().toISOString(),
+                            });
+                          }, {
+                            successMessage: "Emergency mute activated for all chats!",
+                            errorMessage: "Could not activate emergency mute.",
+                            delay: 200
                           })}
                           disabled={!toolSession || isPending}
                         >
@@ -1333,9 +1402,17 @@ export default function LiveDashboardPage() {
                           Open <BarChart3 className="h-4 w-4" />
                         </PrimaryButton>
                         <SoftButton
-                          onClick={() => run(async () => { }, {
+                          onClick={() => run(async () => {
+                            if (!toolSession) return;
+                            await creatorApi.patchLiveTool("post-live", {
+                              sessionId: toolSession.id,
+                              lastAction: "generate_share_cards",
+                              generatedAt: new Date().toISOString(),
+                            });
+                          }, {
                             successMessage: "Replay share cards generated!",
-                            delay: 1200
+                            errorMessage: "Could not generate replay cards.",
+                            delay: 200
                           })}
                           disabled={!toolSession || isPending}
                         >
@@ -1543,14 +1620,14 @@ export default function LiveDashboardPage() {
                   </div>
                 </div>
 
-                <Card title="Platforms" subtitle="Where viewers are coming from (demo)">
+                <Card title="Platforms" subtitle="Where viewers are coming from">
                   <BarList items={byPlatform} />
                 </Card>
               </div>
 
               {/* Go-Live readiness (stretched to full width) */}
               <div className="lg:col-span-12">
-                <Card title="Go‑Live readiness" subtitle="Lightweight preflight summary (demo logic).">
+                <Card title="Go‑Live readiness" subtitle="Lightweight preflight summary.">
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                     {readiness.items.map((it) => (
                       <div key={it.label} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 flex items-center justify-between gap-2 transition-colors">
@@ -1641,8 +1718,19 @@ export default function LiveDashboardPage() {
                   ))}
                 </select>
 
-                <SoftButton onClick={() => showInfo("Advanced filters are being configured.")}>
-                  <Filter className="h-4 w-4" /> Filters
+                <SoftButton
+                  onClick={() =>
+                    run(async () => {
+                      await reloadWorkspace();
+                    }, {
+                      successMessage: "Dashboard data refreshed.",
+                      errorMessage: "Could not refresh dashboard.",
+                      delay: 150,
+                    })
+                  }
+                  disabled={isPending}
+                >
+                  <Filter className="h-4 w-4" /> Refresh
                 </SoftButton>
               </div>
             </div>
@@ -1677,7 +1765,13 @@ export default function LiveDashboardPage() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
                               <div className="h-11 w-11 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 overflow-hidden shrink-0">
-                                <img src={s.heroImageUrl} alt={s.title} className="h-full w-full object-cover" />
+                                {s.heroImageUrl ? (
+                                  <img src={s.heroImageUrl} alt={s.title} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="h-full w-full flex items-center justify-center text-slate-400 dark:text-slate-500">
+                                    <Video className="h-4 w-4" />
+                                  </div>
+                                )}
                               </div>
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
@@ -1770,6 +1864,7 @@ export default function LiveDashboardPage() {
           campaigns={campaigns}
           hosts={hosts}
           onCreate={onCreateSession}
+          createPending={isPending}
         />
 
         <SessionDetailsDrawer

@@ -2025,7 +2025,7 @@ function NewDealzWizard({
       creator,
       startISO,
       endISO,
-      notes: "Created from +New Dealz (demo)."
+      notes: "Created from +New Dealz."
     };
 
     const withShoppable =
@@ -3237,7 +3237,7 @@ export default function DealzMarketplace() {
           const nextDeals = [d, ...dealz];
           setDealz(nextDeals);
           setSelectedId(d.id);
-          setToast("Deal created (demo).");
+          setToast("Deal created.");
           void (async () => {
             try {
               const savePayload = sanitizeMarketplaceSaveValue({
