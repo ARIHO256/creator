@@ -2,6 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type DealzMarketplaceWorkspaceResponse, type MediaAssetRecord } from "../../lib/creatorApi";
 import {
   BadgeCheck,
   Check,
@@ -57,11 +59,21 @@ import {
  * - Asset Library wiring: opens /asset-library in picker mode and restores state via sessionStorage
  *
  * Notes:
- * - This file is self-contained UI demo (TailwindCSS + lucide-react).
- * - Wire real APIs, persistence, routing, and Asset Library return payload as needed.
+ * - This page is wired to backend workspace endpoints for hydration + persistence.
+ * - Asset Library picker round-trip still uses sessionStorage to preserve unsaved in-flight edits.
  */
 
 const ORANGE = "#f77f00";
+const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
+  deals: [],
+  suppliers: [],
+  creators: [],
+  selectedId: "",
+  cart: {},
+  liveCart: {},
+  templates: {},
+};
 
 // From your supported sizes list (already used elsewhere)
 const HERO_IMAGE_REQUIRED = { width: 1920, height: 1080 } as const;
@@ -268,6 +280,32 @@ function floorToMinute(input: Date) {
   const d = new Date(input);
   d.setSeconds(0, 0);
   return d;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asBoolean(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function asCurrency(value: unknown, fallback: "UGX" | "USD" = "UGX"): "UGX" | "USD" {
+  const upper = asString(value, fallback).toUpperCase();
+  return upper === "USD" ? "USD" : "UGX";
 }
 
 function toDateInputValue(d: Date) {
