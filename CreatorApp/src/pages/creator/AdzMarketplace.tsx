@@ -1219,7 +1219,7 @@ export default function AdzMarketplace() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [toast, setToast] = useState<string | null>(null);
-  const { data: workspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
+  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
     initialData: EMPTY_MARKETPLACE_STATE,
     loader: () => creatorApi.dealzMarketplace(),
   });
@@ -1273,9 +1273,53 @@ export default function AdzMarketplace() {
     return m;
   }, [selected]);
 
+  const persistDealPatch = useCallback(
+    async (
+      adId: string,
+      mutateShoppable: (current: Record<string, unknown>) => Record<string, unknown>
+    ) => {
+      const nextDeals = asArray(workspaceState?.deals).map((entry) => {
+        const rec = asRecord(entry);
+        if (!rec || asString(rec.id, "") !== adId) {
+          return entry;
+        }
+        const shoppable = asRecord(rec.shoppable) || {};
+        return {
+          ...rec,
+          shoppable: mutateShoppable(shoppable),
+        };
+      });
+      const saved = await creatorApi.updateDealzMarketplace({
+        deals: nextDeals,
+        selectedId: adId,
+      });
+      setWorkspaceState(saved);
+      return saved;
+    },
+    [setWorkspaceState, workspaceState?.deals],
+  );
+
   function setOfferMode(offerId: string, mode: SellingMode) {
     setModeByOffer((prev) => ({ ...prev, [offerId]: mode }));
     const o = offersById.get(offerId);
+    if (selected) {
+      void persistDealPatch(selected.id, (shoppable) => {
+        const offers = asArray(shoppable.offers).map((entry) => {
+          const offer = asRecord(entry);
+          if (!offer || asString(offer.id, "") !== offerId) return entry;
+          return {
+            ...offer,
+            defaultSellingMode: mode,
+          };
+        });
+        return {
+          ...shoppable,
+          offers,
+        };
+      }).catch(() => {
+        setToast("Failed to save default mode.");
+      });
+    }
     if (o?.type === "PRODUCT" && mode === "WHOLESALE") setToast("Wholesale mode enabled (MOQ & tier rules apply).");
   }
 
@@ -1326,7 +1370,7 @@ export default function AdzMarketplace() {
         : 1;
 
     const url = `/checkout?offerId=${encodeURIComponent(offerId)}&mode=${encodeURIComponent(mode)}&qty=${encodeURIComponent(String(qty))}`;
-    setToast(`Checkout → ${offer.name} (${mode}) · qty ${qty} · ${url} (demo)`);
+    setToast(`Checkout → ${offer.name} (${mode}) · qty ${qty} · ${url}`);
   }
 
   function openAdBuilder(ad: Ad) {
@@ -1336,7 +1380,7 @@ export default function AdzMarketplace() {
 
   function shareAd(ad: Ad) {
     const base = `https://mldz.link/${encodeURIComponent(ad.id)}`;
-    setToast(`Share link copied: ${base} (demo)`);
+    setToast(`Share link copied: ${base}`);
     try {
       navigator.clipboard?.writeText(base);
     } catch { /* ignore */ }

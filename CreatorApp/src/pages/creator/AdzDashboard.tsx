@@ -785,7 +785,7 @@ export default function AdzDashboard() {
   const [drawer, setDrawer] = useState<DrawerKey>(null);
   const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
 
-  const { data: workspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
+  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
     initialData: EMPTY_MARKETPLACE_STATE,
     loader: () => creatorApi.dealzMarketplace(),
     onError: () => {
@@ -892,7 +892,6 @@ export default function AdzDashboard() {
       orders: ad.orders7d,
       earnings: ad.revenue7d,
       creator: ad.creator,
-      // map compensation types if necessary, currently structure seems compatible or close enough for demo
       compensation: ad.compensation as Compensation,
       hasBrokenLink: ad.hasBrokenLink,
     }));
@@ -929,6 +928,32 @@ export default function AdzDashboard() {
     nav("/asset-library");
   }
 
+  const persistDealPatch = React.useCallback(
+    async (
+      adId: string,
+      mutateShoppable: (current: Record<string, unknown>) => Record<string, unknown>
+    ) => {
+      const nextDeals = asArray(workspaceState?.deals).map((entry) => {
+        const rec = asRecord(entry);
+        if (!rec || asString(rec.id, "") !== adId) {
+          return entry;
+        }
+        const shoppable = asRecord(rec.shoppable) || {};
+        return {
+          ...rec,
+          shoppable: mutateShoppable(shoppable),
+        };
+      });
+      const saved = await creatorApi.updateDealzMarketplace({
+        deals: nextDeals,
+        selectedId: adId,
+      });
+      setWorkspaceState(saved);
+      return saved;
+    },
+    [setWorkspaceState, workspaceState?.deals],
+  );
+
   function copyShareLink(ad: Ad) {
     if (!ad.generated) {
       showNotification("Generate the ad first to enable share links.", "warning");
@@ -940,15 +965,23 @@ export default function AdzDashboard() {
     } catch (err) {
       // ignore
     }
-    showSuccess("Share link copied (demo).");
+    showSuccess("Share link copied.");
   }
 
   function generateAd(adId: string) {
-    run(async () => {
-      // Simulate API call
-      await new Promise(r => setTimeout(r, 1500));
-      setAds((prev) => prev.map((a) => (a.id === adId ? { ...a, generated: true, status: a.status === "Draft" ? "Scheduled" : a.status } : a)));
-    }, { successMessage: "Ad generated. Share buttons enabled." });
+    void run(
+      async () => {
+        await persistDealPatch(adId, (shoppable) => {
+          const currentStatus = asString(shoppable.status, "");
+          return {
+            ...shoppable,
+            status: currentStatus.toLowerCase() === "draft" ? "Scheduled" : currentStatus || "Scheduled",
+            generated: true,
+          };
+        });
+      },
+      { successMessage: "Ad generated. Share buttons enabled.", errorMessage: "Failed to sync ad status." }
+    );
   }
 
   const topCampaigns = useMemo(() => {
@@ -1051,7 +1084,7 @@ export default function AdzDashboard() {
                 <span className="inline-grid h-9 w-9 place-items-center rounded-2xl border border-neutral-200 dark:border-slate-800 bg-neutral-50 dark:bg-slate-950 transition-colors">{k.icon}</span>
               </div>
               <div className="mt-2 text-2xl font-extrabold text-neutral-900 dark:text-slate-100">{k.value}</div>
-              <div className="mt-1 text-[11px] text-neutral-600 dark:text-slate-400">Premium snapshot (demo)</div>
+              <div className="mt-1 text-[11px] text-neutral-600 dark:text-slate-400">Premium snapshot</div>
             </div>
           ))}
         </div>

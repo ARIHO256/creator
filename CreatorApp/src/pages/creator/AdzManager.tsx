@@ -563,7 +563,7 @@ function mapWorkspaceToManagedAds(payload: DealzMarketplaceWorkspaceResponse): A
 
 export default function AdzManager() {
   const navigate = useNavigate();
-  const { data: workspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
+  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
     initialData: EMPTY_MARKETPLACE_STATE,
     loader: () => creatorApi.dealzMarketplace(),
   });
@@ -705,6 +705,32 @@ export default function AdzManager() {
     setDrawer("performance");
   }
 
+  const persistDealPatch = React.useCallback(
+    async (
+      adId: string,
+      mutateShoppable: (current: Record<string, unknown>) => Record<string, unknown>
+    ) => {
+      const nextDeals = asArray(workspaceState?.deals).map((entry) => {
+        const rec = asRecord(entry);
+        if (!rec || asString(rec.id, "") !== adId) {
+          return entry;
+        }
+        const shoppable = asRecord(rec.shoppable) || {};
+        return {
+          ...rec,
+          shoppable: mutateShoppable(shoppable),
+        };
+      });
+      const saved = await creatorApi.updateDealzMarketplace({
+        deals: nextDeals,
+        selectedId: adId,
+      });
+      setWorkspaceState(saved);
+      return saved;
+    },
+    [setWorkspaceState, workspaceState?.deals],
+  );
+
   function copyShareLink(ad: Ad) {
     const link = `https://mldz.link/${encodeURIComponent(ad.id)}`;
     try {
@@ -712,52 +738,47 @@ export default function AdzManager() {
     } catch (err) {
       // ignore
     }
-    setToast("Share link copied (demo).");
+    setToast("Share link copied.");
   }
 
   async function generateAd(adId: string) {
-    setAds((prev) =>
-      prev.map((a) =>
-        a.id === adId
-          ? {
-            ...a,
-            status: a.status === "Draft" ? "Scheduled" : a.status,
-            generated: true
-          }
-          : a
-      )
-    );
     try {
-      const nextDeals = asArray(workspaceState?.deals).map((entry) => {
-        const rec = asRecord(entry);
-        if (!rec || asString(rec.id, "") !== adId) {
-          return entry;
-        }
-        const shoppable = asRecord(rec.shoppable) || {};
+      await persistDealPatch(adId, (shoppable) => {
         const currentStatus = asString(shoppable.status, "");
         return {
-          ...rec,
-          shoppable: {
-            ...shoppable,
-            status: currentStatus.toLowerCase() === "draft" ? "Scheduled" : currentStatus || "Scheduled",
-            generated: true,
-          },
+          ...shoppable,
+          status: currentStatus.toLowerCase() === "draft" ? "Scheduled" : currentStatus || "Scheduled",
+          generated: true,
         };
-      });
-      await creatorApi.updateDealzMarketplace({
-        deals: nextDeals,
-        selectedId: adId,
       });
       setToast("Ad generated. Share links are now enabled.");
     } catch {
-      setToast("Ad generated locally, but sync to backend failed.");
+      setToast("Failed to sync generated status.");
     }
   }
 
-  function updateOfferDefaultMode(offerId: string, mode: SellingMode) {
+  async function updateOfferDefaultMode(offerId: string, mode: SellingMode) {
+    if (!selected) return;
     setModeByOffer((prev) => ({ ...prev, [offerId]: mode }));
-    // In a real app you would PATCH the offer config.
-    setToast(`Default mode set: ${offerId} → ${mode === "WHOLESALE" ? "Wholesale" : "Retail"} (demo)`);
+    try {
+      await persistDealPatch(selected.id, (shoppable) => {
+        const offers = asArray(shoppable.offers).map((entry) => {
+          const offer = asRecord(entry);
+          if (!offer || asString(offer.id, "") !== offerId) return entry;
+          return {
+            ...offer,
+            defaultSellingMode: mode,
+          };
+        });
+        return {
+          ...shoppable,
+          offers,
+        };
+      });
+      setToast(`Default mode set: ${mode === "WHOLESALE" ? "Wholesale" : "Retail"}.`);
+    } catch {
+      setToast("Failed to save default mode.");
+    }
   }
 
   function statusPillTone(s: AdStatus): "neutral" | "good" | "warn" | "bad" {
@@ -1122,7 +1143,7 @@ export default function AdzManager() {
               </div>
 
               <div className="mt-3 rounded-2xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Funnel (demo)</div>
+                <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Funnel</div>
                 <div className="mt-2 grid grid-cols-4 gap-2 text-[11px]">
                   {[
                     { l: "Impr.", v: selected.impressions },
@@ -1155,15 +1176,15 @@ export default function AdzManager() {
           <div className="mt-3 grid gap-2">
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Pixel status</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Connect Meta/TikTok/Google (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Connect Meta/TikTok/Google</div>
             </div>
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Broken link monitor</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">History + auto-fix (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">History + auto-fix</div>
             </div>
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Attribution notes</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Payout timing reminders (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Payout timing reminders</div>
             </div>
           </div>
         </div>
@@ -1182,11 +1203,11 @@ export default function AdzManager() {
           <div className="mt-3 grid gap-2">
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Start from template</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Create new ad from template (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Create new ad from template</div>
             </div>
             <div className="rounded-2xl bg-white dark:bg-slate-900 border border-neutral-200 dark:border-slate-800 p-3">
               <div className="text-[11px] text-neutral-500 dark:text-slate-500 font-bold">Brand kit rules</div>
-              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Fonts, colors, voice guidelines (demo)</div>
+              <div className="mt-1 text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">Fonts, colors, voice guidelines</div>
             </div>
           </div>
         </div>

@@ -310,18 +310,28 @@ export function AdzPerformance({
   }, [scoped]);
 
   const byCreative = useMemo(() => {
-    // If scoped to a single entity and variants exist, show them.
-    if (scoped.length === 1 && scoped[0]?.variants?.length) return scoped[0].variants!;
-    // Otherwise show a synthetic A/B split (demo).
-    const halfImp = Math.round(totals.impressions * 0.55);
-    const halfClk = Math.round(totals.clicks * 0.55);
-    const halfOrd = Math.round(totals.orders * 0.55);
-    const halfEarn = totals.earnings * 0.55;
-    return [
-      { id: "vA", label: "A", impressions: halfImp, clicks: halfClk, orders: halfOrd, earnings: halfEarn },
-      { id: "vB", label: "B", impressions: totals.impressions - halfImp, clicks: totals.clicks - halfClk, orders: totals.orders - halfOrd, earnings: totals.earnings - halfEarn }
-    ];
-  }, [scoped, totals]);
+    const bucket = new Map<string, PerformanceVariant>();
+    scoped.forEach((entity) => {
+      (entity.variants || []).forEach((variant) => {
+        const key = variant.id || variant.label;
+        const prev =
+          bucket.get(key) || {
+            id: variant.id,
+            label: variant.label || "Variant",
+            impressions: 0,
+            clicks: 0,
+            orders: 0,
+            earnings: 0,
+          };
+        prev.impressions += variant.impressions || 0;
+        prev.clicks += variant.clicks || 0;
+        prev.orders += variant.orders || 0;
+        prev.earnings += variant.earnings || 0;
+        bucket.set(key, prev);
+      });
+    });
+    return Array.from(bucket.values()).sort((a, b) => b.earnings - a.earnings);
+  }, [scoped]);
 
   const insights = useMemo(() => {
     const withCTR = entities.map((e) => ({ e, ctr: e.impressions ? e.clicks / e.impressions : 0, cvr: e.clicks ? e.orders / e.clicks : 0 }));
@@ -534,7 +544,7 @@ export function AdzPerformance({
                 </div>
               </Card>
 
-              <Card title="By item" subtitle="Bundle-aware split attribution (demo).">
+              <Card title="By item" subtitle="Bundle-aware split attribution from workspace metrics.">
                 <div className="space-y-2">
                   {byItem.slice(0, 8).map((r) => (
                     <div key={r.name} className="rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3">
@@ -552,9 +562,9 @@ export function AdzPerformance({
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-              <Card title="By creative version" subtitle="A/B attribution (split model demo).">
+              <Card title="By creative version" subtitle="Creative attribution from recorded variant metrics.">
                 <div className="space-y-2">
-                  {byCreative.map((v) => (
+                  {byCreative.length ? byCreative.map((v) => (
                     <div key={v.id} className="rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Variant {v.label}</div>
@@ -564,10 +574,11 @@ export function AdzPerformance({
                         Imp {money(v.impressions)} · Clk {money(v.clicks)} · Ord {money(v.orders)} · CTR {pct(v.impressions ? v.clicks / v.impressions : 0)}
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div className="mt-3 rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3 text-xs text-slate-700 dark:text-slate-300">
-                  Premium: real split is tracked per creative ID (not inferred).
+                  )) : (
+                    <div className="rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3 text-xs text-slate-700 dark:text-slate-300">
+                      No creative variant metrics found for the selected scope yet.
+                    </div>
+                  )}
                 </div>
               </Card>
 

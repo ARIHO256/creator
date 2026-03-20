@@ -355,6 +355,147 @@ function useCountdown(target: Date | null) {
   return { s, d, h, m, sec, diff };
 }
 
+type WorkspaceDealScope = {
+  dealId: string;
+  supplierEntry: Supplier;
+  campaignEntry: Campaign;
+  offerEntries: Offer[];
+  creator: {
+    name: string;
+    handle: string;
+    avatarUrl: string;
+    verified: boolean;
+  };
+  shoppableRecord: Record<string, unknown> | null;
+  dealRecord: Record<string, unknown>;
+};
+
+function normalizeAssetStatus(value: unknown): AssetStatus {
+  const raw = asString(value, "").toLowerCase();
+  if (raw.includes("reject")) return "rejected";
+  if (raw.includes("approve") || raw.includes("ready") || raw.includes("published")) return "approved";
+  if (!raw) return "approved";
+  return "pending";
+}
+
+function mapWorkspaceMediaAsset(record: MediaAssetRecord): Asset | null {
+  if (!record || !record.id) return null;
+  const metadata = asRecord(record.metadata) || {};
+  const kindRaw = asString(record.kind, asString(metadata.mediaType, "")).toLowerCase();
+  const kind: MediaKind = kindRaw.includes("video") ? "video" : "image";
+  const url = asString(record.url, asString(metadata.previewUrl, ""));
+  if (!url) return null;
+
+  const roleHintRaw = asString(metadata.roleHint, "").toLowerCase();
+  const roleHint: Asset["roleHint"] | undefined =
+    roleHintRaw === "hero_image" ||
+    roleHintRaw === "hero_video" ||
+    roleHintRaw === "item_poster" ||
+    roleHintRaw === "item_video" ||
+    roleHintRaw === "overlay"
+      ? roleHintRaw
+      : undefined;
+
+  const ownerRaw = asString(metadata.ownerLabel, "Host").toLowerCase();
+  const owner: AssetOwner = ownerRaw.includes("supplier") || ownerRaw.includes("seller")
+    ? "Supplier"
+    : ownerRaw.includes("catalog")
+      ? "Catalog"
+      : "Host";
+
+  return {
+    id: record.id,
+    title: asString(record.name, "Asset"),
+    owner,
+    kind,
+    status: normalizeAssetStatus(metadata.status ?? metadata.reviewStatus ?? "approved"),
+    roleHint,
+    width: typeof metadata.width === "number" ? metadata.width : undefined,
+    height: typeof metadata.height === "number" ? metadata.height : undefined,
+    url,
+    posterUrl: kind === "video" ? asString(metadata.thumbnailUrl, asString(metadata.posterUrl, "")) || undefined : undefined,
+    desktopMode: asString(metadata.desktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
+  };
+}
+
+function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
+  const deal = asRecord(rawDeal);
+  if (!deal) return null;
+  const dealId = asString(deal.id, "").trim();
+  if (!dealId) return null;
+
+  const supplier = asRecord(deal.supplier) || {};
+  const creator = asRecord(deal.creator) || {};
+  const shoppable = asRecord(deal.shoppable);
+
+  const startISO = asString(
+    shoppable?.startISO,
+    asString(deal.startISO, new Date(Date.now() + 60 * 60 * 1000).toISOString()),
+  );
+  const endISO = asString(
+    shoppable?.endISO,
+    asString(deal.endISO, new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()),
+  );
+
+  const supplierId = asString(supplier.id, `deal-supplier:${dealId}`);
+  const campaignId = `deal-campaign:${dealId}`;
+  const campaignName = asString(shoppable?.campaignName, asString(deal.title, "Campaign"));
+  const campaignStatusRaw = asString(shoppable?.status, asString(deal.status, ""));
+  const campaignStatus: "Active" | "Paused" = campaignStatusRaw.toLowerCase().includes("pause") ? "Paused" : "Active";
+  const fallbackPoster = asString(shoppable?.heroImageUrl, asString(supplier.logoUrl, BLANK_IMAGE));
+
+  const offerEntries: Offer[] = asArray(shoppable?.offers).map((entry, index) => {
+    const offer = asRecord(entry) || {};
+    const type = asString(offer.type, "PRODUCT").toUpperCase() === "SERVICE" ? "SERVICE" : "PRODUCT";
+    return {
+      id: asString(offer.id, `offer_${index + 1}`),
+      supplierId,
+      campaignId,
+      type,
+      name: asString(offer.name, `Offer ${index + 1}`),
+      price: Math.max(0, asNumber(offer.price, 0)),
+      basePrice: typeof offer.basePrice === "number" ? offer.basePrice : undefined,
+      currency: asCurrency(offer.currency, "UGX"),
+      stockLeft: asNumber(offer.stockLeft, type === "SERVICE" ? -1 : 0),
+      sold: asNumber(offer.sold, 0),
+      catalogPosterUrl: asString(offer.posterUrl, fallbackPoster || BLANK_IMAGE),
+      catalogVideoUrl: asString(offer.videoUrl, "") || undefined,
+    };
+  });
+
+  const creatorHandle = (() => {
+    const raw = asString(creator.handle, "@creator");
+    return raw.startsWith("@") ? raw : `@${raw}`;
+  })();
+
+  return {
+    dealId,
+    supplierEntry: {
+      id: supplierId,
+      name: asString(supplier.name, "Supplier"),
+      avatarUrl: asString(supplier.logoUrl, BLANK_IMAGE),
+      category: asString(supplier.category, "Supplier"),
+    },
+    campaignEntry: {
+      id: campaignId,
+      supplierId,
+      name: campaignName,
+      status: campaignStatus,
+      startsAtISO: startISO,
+      endsAtISO: endISO,
+    },
+    offerEntries,
+    creator: {
+      name: asString(creator.name, "Creator"),
+      handle: creatorHandle,
+      avatarUrl: asString(creator.avatarUrl, BLANK_IMAGE),
+      verified: asBoolean(creator.verified, false),
+    },
+    shoppableRecord: shoppable,
+    dealRecord: deal,
+  };
+}
+
 function Pill({
   tone = "neutral",
   children,
@@ -703,197 +844,9 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 const DEFAULT_CREATOR = {
   name: "Creator",
   handle: "@creator",
-  avatarUrl:
-    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=512&auto=format&fit=crop",
+  avatarUrl: BLANK_IMAGE,
   badge: "Host",
 };
-
-const SUPPLIERS: Supplier[] = [
-  {
-    id: "p1",
-    name: "Kampala Beauty Hub",
-    avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=512&auto=format&fit=crop",
-    category: "Beauty",
-  },
-  {
-    id: "p2",
-    name: "City Fitness Lab",
-    avatarUrl: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=512&auto=format&fit=crop",
-    category: "Wellness",
-  },
-  {
-    id: "p3",
-    name: "Gourmet Basket UG",
-    avatarUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=512&auto=format&fit=crop",
-    category: "Food",
-  },
-];
-
-const CAMPAIGNS: Campaign[] = [
-  {
-    id: "c1",
-    supplierId: "p1",
-    name: "Valentine Glow Week",
-    status: "Active",
-    startsAtISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "c2",
-    supplierId: "p1",
-    name: "Weekend Flash Dealz",
-    status: "Active",
-    startsAtISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "c3",
-    supplierId: "p2",
-    name: "New Year Fitness Push",
-    status: "Paused",
-    startsAtISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
-  },
-  {
-    id: "c4",
-    supplierId: "p3",
-    name: "Basket Bonanza",
-    status: "Active",
-    startsAtISO: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
-    endsAtISO: new Date(Date.now() + 9 * 3600 * 1000).toISOString(),
-  },
-];
-
-const OFFERS: Offer[] = [
-  {
-    id: "o1",
-    supplierId: "p1",
-    campaignId: "c1",
-    type: "PRODUCT",
-    name: "Glow Serum (30ml)",
-    price: 38000,
-    basePrice: 52000,
-    currency: "UGX",
-    stockLeft: 12,
-    sold: 86,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o2",
-    supplierId: "p1",
-    campaignId: "c1",
-    type: "PRODUCT",
-    name: "Hydra Cleanser",
-    price: 24000,
-    basePrice: 32000,
-    currency: "UGX",
-    stockLeft: 3,
-    sold: 44,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1612817152414-857f7b8872d9?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o3",
-    supplierId: "p1",
-    campaignId: "c1",
-    type: "SERVICE",
-    name: "Facial Session (45min)",
-    price: 60000,
-    basePrice: 80000,
-    currency: "UGX",
-    stockLeft: -1,
-    sold: 18,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1582095133179-bfd08e2fc6b3?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o4",
-    supplierId: "p3",
-    campaignId: "c4",
-    type: "PRODUCT",
-    name: "Gourmet Snack Box",
-    price: 95000,
-    basePrice: 120000,
-    currency: "UGX",
-    stockLeft: 0,
-    sold: 31,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-  {
-    id: "o5",
-    supplierId: "p3",
-    campaignId: "c4",
-    type: "PRODUCT",
-    name: "Fruit Basket (Large)",
-    price: 65000,
-    basePrice: 78000,
-    currency: "UGX",
-    stockLeft: 9,
-    sold: 57,
-    catalogPosterUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=800&auto=format&fit=crop",
-    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-  },
-];
-
-const ASSETS: Asset[] = [
-  {
-    id: "a_hero_img_1",
-    title: "Hero (Host Approved) — 1920×1080",
-    owner: "Host",
-    kind: "image",
-    status: "approved",
-    roleHint: "hero_image",
-    width: 1920,
-    height: 1080,
-    url: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-  },
-  {
-    id: "a_hero_vid_1",
-    title: "Intro Opener (Host)",
-    owner: "Host",
-    kind: "video",
-    status: "approved",
-    roleHint: "hero_video",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    posterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    desktopMode: "fullscreen",
-  },
-  {
-    id: "a_item_poster_1",
-    title: "Item Poster — 500×500 (Host)",
-    owner: "Host",
-    kind: "image",
-    status: "approved",
-    roleHint: "item_poster",
-    width: 500,
-    height: 500,
-    url: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-  },
-  {
-    id: "a_item_vid_1",
-    title: "Product Demo Clip (Host)",
-    owner: "Host",
-    kind: "video",
-    status: "approved",
-    roleHint: "item_video",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-    desktopMode: "modal",
-  },
-  {
-    id: "a_pending_1",
-    title: "New Upload — Pending Review",
-    owner: "Host",
-    kind: "video",
-    status: "pending",
-    roleHint: "item_video",
-    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    posterUrl: "https://images.unsplash.com/photo-1582095133179-bfd08e2fc6b3?q=80&w=900&auto=format&fit=crop",
-    desktopMode: "fullscreen",
-  },
-];
 
 /** UTM presets library (premium) */
 const UTM_PRESETS: UTMTemplate[] = [
@@ -1588,7 +1541,7 @@ function ShoppableAdPreview({
 export default function AdBuilder({
   isDrawer = false,
   onClose,
-  initialAdId: _initialAdId,
+  initialAdId,
   pickerContext,
 }: {
   isDrawer?: boolean;
@@ -1626,6 +1579,17 @@ export default function AdBuilder({
   };
 }) {
   const isMobile = useIsMobile();
+  const {
+    data: workspaceState,
+    setData: setWorkspaceState,
+  } = useApiResource<DealzMarketplaceWorkspaceResponse>({
+    initialData: EMPTY_MARKETPLACE_STATE,
+    loader: () => creatorApi.dealzMarketplace(),
+  });
+  const { data: mediaAssets } = useApiResource<MediaAssetRecord[]>({
+    initialData: [],
+    loader: () => creatorApi.mediaAssets(),
+  });
 
   // "Drawer-like route" support (optional)
   const [drawerMode, setDrawerMode] = useState(isDrawer);
@@ -1662,7 +1626,15 @@ export default function AdBuilder({
   const [step, setStep] = useState<BuilderStep>("offer");
 
   const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
-  const builderContextKey = pickerContext?.dealId ? `deal:${pickerContext.dealId}` : "global";
+  const [queryDealId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const sp = new URLSearchParams(window.location.search);
+    return sp.get("dealId") || sp.get("adId") || "";
+  });
+  const builderContextKey = useMemo(() => {
+    const contextDealId = pickerContext?.dealId || queryDealId || initialAdId || asString(workspaceState?.selectedId, "");
+    return contextDealId ? `deal:${contextDealId}` : "global";
+  }, [initialAdId, pickerContext?.dealId, queryDealId, workspaceState?.selectedId]);
 
   const [customOffersByContext, setCustomOffersByContext] = useState<Record<string, Offer[]>>({});
   const contextCustomOffers = useMemo(() => customOffersByContext[builderContextKey] || [], [builderContextKey, customOffersByContext]);
@@ -1702,7 +1674,7 @@ export default function AdBuilder({
   // Preflight is collapsible and collapsed by default (per requirement)
   const [preflightOpen, setPreflightOpen] = useState(false);
 
-  const dealScope = useMemo(() => {
+  const pickerDealScope = useMemo(() => {
     if (!pickerContext?.dealId) return null;
 
     const supplierId = pickerContext.supplierId || `deal-supplier:${pickerContext.dealId}`;
@@ -1745,77 +1717,141 @@ export default function AdBuilder({
         catalogVideoUrl: offer.videoUrl || undefined,
       })) || [];
 
-    return { supplierEntry, campaignEntry, offerEntries };
+    return {
+      dealId: pickerContext.dealId,
+      supplierEntry,
+      campaignEntry,
+      offerEntries,
+      creator: null,
+      shoppableRecord: null,
+      dealRecord: {},
+    } satisfies WorkspaceDealScope;
   }, [pickerContext]);
 
+  const workspaceDealScopes = useMemo(
+    () =>
+      asArray(workspaceState?.deals)
+        .map((deal) => mapWorkspaceDealScope(deal))
+        .filter((deal): deal is WorkspaceDealScope => Boolean(deal)),
+    [workspaceState?.deals],
+  );
+
+  const workspaceDealScope = useMemo(() => {
+    if (!workspaceDealScopes.length) return null;
+    const preferredDealId =
+      pickerContext?.dealId || queryDealId || initialAdId || asString(workspaceState?.selectedId, "");
+    if (preferredDealId) {
+      const matched = workspaceDealScopes.find((deal) => deal.dealId === preferredDealId);
+      if (matched) return matched;
+    }
+    return workspaceDealScopes[0];
+  }, [initialAdId, pickerContext?.dealId, queryDealId, workspaceDealScopes, workspaceState?.selectedId]);
+
+  const effectiveDealScope = useMemo(
+    () => pickerDealScope || workspaceDealScope || null,
+    [pickerDealScope, workspaceDealScope],
+  );
+
+  const activeDealId = effectiveDealScope?.dealId || pickerContext?.dealId || queryDealId || initialAdId || "";
+
   const availableSuppliers = useMemo(
-    () => (dealScope ? [dealScope.supplierEntry] : SUPPLIERS),
-    [dealScope],
+    () =>
+      effectiveDealScope
+        ? [effectiveDealScope.supplierEntry]
+        : [
+            {
+              id: pickerContext?.supplierId || "supplier",
+              name: pickerContext?.supplierName || "Supplier",
+              avatarUrl: BLANK_IMAGE,
+              category: pickerContext?.supplierKind || "Supplier",
+            } satisfies Supplier,
+          ],
+    [effectiveDealScope, pickerContext?.supplierId, pickerContext?.supplierKind, pickerContext?.supplierName],
   );
   const availableCampaigns = useMemo(
-    () => (dealScope ? [dealScope.campaignEntry] : CAMPAIGNS),
-    [dealScope],
+    () =>
+      effectiveDealScope
+        ? [effectiveDealScope.campaignEntry]
+        : [
+            {
+              id: pickerContext?.campaignId || "campaign",
+              supplierId: availableSuppliers[0]?.id || "supplier",
+              name: pickerContext?.campaignName || "Campaign",
+              status: pickerContext?.campaignStatus === "Paused" ? "Paused" : "Active",
+              startsAtISO: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+              endsAtISO: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+            } satisfies Campaign,
+          ],
+    [
+      availableSuppliers,
+      effectiveDealScope,
+      pickerContext?.campaignId,
+      pickerContext?.campaignName,
+      pickerContext?.campaignStatus,
+    ],
   );
   const availableOffers = useMemo(
     () => {
-      const base = dealScope ? dealScope.offerEntries : OFFERS;
+      const base = effectiveDealScope ? effectiveDealScope.offerEntries : [];
       if (!contextCustomOffers.length) return base;
       const byId = new Map<string, Offer>();
       base.forEach((entry) => byId.set(entry.id, entry));
       contextCustomOffers.forEach((entry) => byId.set(entry.id, entry));
       return Array.from(byId.values());
     },
-    [contextCustomOffers, dealScope],
+    [contextCustomOffers, effectiveDealScope],
   );
   const previewCreator = useMemo(() => {
+    const scopedCreator = effectiveDealScope?.creator;
     const rawHandle = (pickerContext?.creatorHandle || "").trim();
-    const handle = rawHandle ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : DEFAULT_CREATOR.handle;
+    const fallbackHandle = scopedCreator?.handle || DEFAULT_CREATOR.handle;
+    const handle = rawHandle ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : fallbackHandle;
     return {
-      name: (pickerContext?.creatorName || "").trim() || DEFAULT_CREATOR.name,
+      name: (pickerContext?.creatorName || "").trim() || scopedCreator?.name || DEFAULT_CREATOR.name,
       handle,
-      avatarUrl: (pickerContext?.creatorAvatarUrl || "").trim() || DEFAULT_CREATOR.avatarUrl,
-      verified: Boolean(pickerContext?.creatorVerified),
+      avatarUrl: (pickerContext?.creatorAvatarUrl || "").trim() || scopedCreator?.avatarUrl || DEFAULT_CREATOR.avatarUrl,
+      verified: Boolean(pickerContext?.creatorVerified ?? scopedCreator?.verified),
     };
-  }, [pickerContext]);
-  const dealScopeLocked = Boolean(dealScope);
+  }, [effectiveDealScope?.creator, pickerContext]);
+  const dealScopeLocked = Boolean(effectiveDealScope?.dealId);
 
-  const defaultSupplierId = availableSuppliers[0]?.id || "p1";
+  const defaultSupplierId = availableSuppliers[0]?.id || "supplier";
   const defaultCampaignId =
     availableCampaigns.find((campaign) => campaign.supplierId === defaultSupplierId)?.id ||
     availableCampaigns[0]?.id ||
-    "c1";
+    "campaign";
 
   // default schedule: tomorrow 18:00-19:00
   const defaultStart = useMemo(() => {
-    if (dealScope?.campaignEntry?.startsAtISO) {
-      const parsed = new Date(dealScope.campaignEntry.startsAtISO);
+    if (effectiveDealScope?.campaignEntry?.startsAtISO) {
+      const parsed = new Date(effectiveDealScope.campaignEntry.startsAtISO);
       if (!Number.isNaN(parsed.getTime())) return parsed;
     }
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(18, 0, 0, 0);
     return d;
-  }, [dealScope]);
+  }, [effectiveDealScope?.campaignEntry?.startsAtISO]);
   const defaultEnd = useMemo(() => {
-    if (dealScope?.campaignEntry?.endsAtISO) {
-      const parsed = new Date(dealScope.campaignEntry.endsAtISO);
+    if (effectiveDealScope?.campaignEntry?.endsAtISO) {
+      const parsed = new Date(effectiveDealScope.campaignEntry.endsAtISO);
       if (!Number.isNaN(parsed.getTime())) return parsed;
     }
     const d = new Date(defaultStart);
     d.setHours(d.getHours() + 1);
     return d;
-  }, [defaultStart, dealScope]);
+  }, [defaultStart, effectiveDealScope?.campaignEntry?.endsAtISO]);
 
   const [builder, setBuilder] = useState<BuilderState>(() => ({
     supplierId: defaultSupplierId,
     campaignId: defaultCampaignId,
-    selectedOfferIds: [availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || "o1"].filter(Boolean),
-    primaryOfferId: availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || "o1",
+    selectedOfferIds: [availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || ""].filter(Boolean),
+    primaryOfferId: availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || "",
     platforms: ["Instagram"],
     platformOtherList: [],
     platformOtherDraft: "",
-    heroImageAssetId: ASSETS.find((a) => a.roleHint === "hero_image" && a.status === "approved")?.id,
-    heroIntroVideoAssetId: ASSETS.find((a) => a.roleHint === "hero_video" && a.status === "approved")?.id,
+    heroImageAssetId: undefined,
+    heroIntroVideoAssetId: undefined,
     itemPosterByOfferId: {},
     itemVideoByOfferId: {},
     ctaText: "Shop the featured dealz before they end.",
@@ -1909,25 +1945,27 @@ export default function AdBuilder({
     });
   }, [selectedOffers]);
 
-  // Approved assets: base + external
-  const approvedAssets = useMemo(() => {
-    const base = ASSETS.filter((a) => a.status === "approved");
-    const ext = Object.values(externalAssets).filter((a) => a.status === "approved");
-    const map = new Map<string, Asset>();
-    [...base, ...ext].forEach((a) => map.set(a.id, a));
-    return Array.from(map.values());
-  }, [externalAssets]);
-  console.log("Approved assets:", approvedAssets.length); // Use it or remove it (using it for now to avoid lint error if needed elsewhere)
+  const workspaceAssets = useMemo(
+    () =>
+      (mediaAssets || [])
+        .map((record) => mapWorkspaceMediaAsset(record))
+        .filter((asset): asset is Asset => Boolean(asset)),
+    [mediaAssets],
+  );
 
   const assetById = useMemo(() => {
     const map = new Map<string, Asset>();
-    [...ASSETS, ...Object.values(externalAssets)].forEach((a) => map.set(a.id, a));
+    [...workspaceAssets, ...Object.values(externalAssets)].forEach((a) => map.set(a.id, a));
     return map;
-  }, [externalAssets]);
+  }, [externalAssets, workspaceAssets]);
 
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);
-  const fallbackHeroImageUrl = ASSETS[0]?.url || "";
+  const fallbackHeroImageUrl =
+    selectedOffers[0]?.catalogPosterUrl ||
+    asString(effectiveDealScope?.shoppableRecord?.heroImageUrl, "") ||
+    supplier?.avatarUrl ||
+    BLANK_IMAGE;
   const resolvedHeroImageUrl = useResolvedMediaUrl(heroImageAsset?.url || fallbackHeroImageUrl);
   const resolvedHeroVideoPosterUrl = useResolvedMediaUrl(
     heroVideoAsset?.posterUrl || heroImageAsset?.url || fallbackHeroImageUrl
@@ -2004,6 +2042,314 @@ export default function AdBuilder({
     });
   }, [effectivePlatforms, mergedUtm, builder.shortDomain, builder.shortSlug, builder.ctaText]);
 
+  const scopeHydratedRef = useRef<string>("");
+  useEffect(() => {
+    if (!effectiveDealScope?.dealId) return;
+    if (scopeHydratedRef.current === effectiveDealScope.dealId) return;
+    scopeHydratedRef.current = effectiveDealScope.dealId;
+
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("restore") === "1" || sp.has("assetId")) {
+        return;
+      }
+    }
+
+    const shoppable = effectiveDealScope.shoppableRecord;
+    if (!shoppable) return;
+
+    const knownPlatforms = new Set(["TikTok", "Instagram", "YouTube", "Facebook"]);
+    const rawPlatforms = asArray(shoppable.platforms)
+      .map((entry) => asString(entry, "").trim())
+      .filter(Boolean);
+    const normalizedPlatforms = rawPlatforms.length ? rawPlatforms : ["Instagram"];
+    const primaryPlatforms = normalizedPlatforms.filter((entry) => knownPlatforms.has(entry)) as BuilderState["platforms"];
+    const platformOtherList = normalizedPlatforms.filter((entry) => !knownPlatforms.has(entry));
+
+    const startISO = asString(shoppable.startISO, effectiveDealScope.campaignEntry.startsAtISO);
+    const endISO = asString(shoppable.endISO, effectiveDealScope.campaignEntry.endsAtISO);
+    const startDate = new Date(startISO);
+    const endDate = new Date(endISO);
+
+    const heroImageUrl = asString(shoppable.heroImageUrl, "");
+    const heroVideoUrl = asString(shoppable.heroIntroVideoUrl, "");
+    const heroImageAssetId = heroImageUrl ? workspaceAssets.find((asset) => asset.url === heroImageUrl)?.id : undefined;
+    const heroVideoAssetId = heroVideoUrl ? workspaceAssets.find((asset) => asset.url === heroVideoUrl)?.id : undefined;
+
+    const shoppableOffers = asArray(shoppable.offers)
+      .map((entry) => asRecord(entry))
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+    const selectedOfferIds = shoppableOffers
+      .map((entry) => asString(entry.id, ""))
+      .filter(Boolean);
+    const offerIds = selectedOfferIds.length
+      ? selectedOfferIds
+      : effectiveDealScope.offerEntries.slice(0, 2).map((offer) => offer.id);
+    const primaryOfferId = asString(shoppable.primaryOfferId, offerIds[0] || "");
+
+    setBuilder((prev) => ({
+      ...prev,
+      supplierId: effectiveDealScope.supplierEntry.id,
+      campaignId: effectiveDealScope.campaignEntry.id,
+      selectedOfferIds: offerIds,
+      primaryOfferId,
+      platforms: primaryPlatforms.length ? primaryPlatforms : ["Instagram"],
+      platformOtherList,
+      heroImageAssetId,
+      heroIntroVideoAssetId: heroVideoAssetId,
+      ctaText: asString(shoppable.campaignSubtitle, prev.ctaText),
+      primaryCtaLabel: asString(shoppable.ctaPrimaryLabel, prev.primaryCtaLabel),
+      secondaryCtaLabel: asString(shoppable.ctaSecondaryLabel, prev.secondaryCtaLabel),
+      landingBehavior:
+        asString(shoppable.landingBehavior, "").toLowerCase() === "product detail"
+          ? "Product detail"
+          : asString(shoppable.landingBehavior, "").toLowerCase() === "external link"
+            ? "External link"
+            : "Checkout",
+      landingUrl: asString(shoppable.landingUrl, prev.landingUrl || ""),
+      shortDomain:
+        asString(shoppable.shortDomain, prev.shortDomain) === "dealz.africa"
+          ? "dealz.africa"
+          : asString(shoppable.shortDomain, prev.shortDomain) === "shp.adz"
+            ? "shp.adz"
+            : "mldz.link",
+      shortSlug: asString(shoppable.shortSlug, prev.shortSlug),
+      utmPresetId: asString(shoppable.utmPresetId, prev.utmPresetId),
+      utmCustom: asRecord(shoppable.utmCustom) || prev.utmCustom,
+      startDate: Number.isNaN(startDate.getTime()) ? prev.startDate : toDateInputValue(startDate),
+      startTime: Number.isNaN(startDate.getTime()) ? prev.startTime : toTimeInputValue(startDate),
+      endDate: Number.isNaN(endDate.getTime()) ? prev.endDate : toDateInputValue(endDate),
+      endTime: Number.isNaN(endDate.getTime()) ? prev.endTime : toTimeInputValue(endDate),
+    }));
+    setIsGenerated(asBoolean(shoppable.generated, asString(shoppable.status, "").toLowerCase().includes("generated")));
+  }, [effectiveDealScope, workspaceAssets]);
+
+  const templateHydratedRef = useRef<string>("");
+  useEffect(() => {
+    if (templateHydratedRef.current === builderContextKey) return;
+    templateHydratedRef.current = builderContextKey;
+
+    const templates = asRecord(workspaceState?.templates);
+    const adBuilderTemplates = asRecord(templates?.adBuilder);
+    const byContext = asRecord(adBuilderTemplates?.byContext);
+    const saved = asRecord(byContext?.[builderContextKey]);
+    if (!saved) return;
+
+    const savedBuilder = asRecord(saved.builder);
+    if (savedBuilder) {
+      setBuilder((prev) => ({ ...prev, ...(savedBuilder as Partial<BuilderState>) }));
+    }
+    const savedStep = asString(saved.step, "");
+    if (savedStep && stepKeys.includes(savedStep as BuilderStep)) {
+      setStep(savedStep as BuilderStep);
+    }
+    const savedExternalAssets = asRecord(saved.externalAssets);
+    if (savedExternalAssets) {
+      setExternalAssets(savedExternalAssets as Record<string, Asset>);
+    }
+    const savedCustomOffers = asRecord(saved.customOffersByContext);
+    if (savedCustomOffers) {
+      setCustomOffersByContext(savedCustomOffers as Record<string, Offer[]>);
+    }
+    setIsGenerated(asBoolean(saved.isGenerated, false));
+  }, [builderContextKey, stepKeys, workspaceState?.templates]);
+
+  const persistBuilderToWorkspace = React.useCallback(
+    async ({
+      generated = isGenerated,
+      successMessage,
+      errorMessage,
+      syncLocalState = false,
+    }: {
+      generated?: boolean;
+      successMessage?: string;
+      errorMessage?: string;
+      syncLocalState?: boolean;
+    } = {}) => {
+      if (!activeDealId) return;
+
+      const existingDeals = asArray(workspaceState?.deals);
+      const existingDeal = existingDeals
+        .map((entry) => asRecord(entry))
+        .find((entry): entry is Record<string, unknown> => Boolean(entry) && asString(entry.id, "") === activeDealId);
+      const existingShoppable = asRecord(existingDeal?.shoppable) || asRecord(effectiveDealScope?.shoppableRecord) || {};
+
+      const shoppableOffers = selectedOffers.map((offer) => {
+        const selectedVideoAssetId = builder.itemVideoByOfferId[offer.id];
+        const selectedVideoAsset = selectedVideoAssetId ? assetById.get(selectedVideoAssetId) : undefined;
+        return {
+          id: offer.id,
+          type: offer.type,
+          name: offer.name,
+          price: offer.price,
+          basePrice: offer.basePrice,
+          currency: offer.currency,
+          stockLeft: offer.stockLeft,
+          sold: offer.sold,
+          posterUrl: perOfferPosterUrl[offer.id] || offer.catalogPosterUrl || "",
+          videoUrl: perOfferVideoUrl[offer.id] || "",
+          desktopMode: selectedVideoAsset?.desktopMode || "modal",
+        };
+      });
+
+      const shoppablePayload: Record<string, unknown> = {
+        ...existingShoppable,
+        campaignName: campaign?.name || asString(existingDeal?.title, "Campaign"),
+        campaignSubtitle: builder.ctaText || asString(existingDeal?.tagline, ""),
+        status: generated ? "Generated" : "Draft",
+        generated,
+        platforms: effectivePlatforms,
+        startISO: startsAt.toISOString(),
+        endISO: endsAt.toISOString(),
+        heroImageUrl: resolvedHeroImageUrl || BLANK_IMAGE,
+        heroIntroVideoUrl: heroVideoAsset?.url || "",
+        heroIntroVideoPosterUrl: resolvedHeroVideoPosterUrl || "",
+        heroDesktopMode: heroVideoAsset?.desktopMode || "modal",
+        ctaPrimaryLabel: builder.primaryCtaLabel || "Buy now",
+        ctaSecondaryLabel: builder.secondaryCtaLabel || "Add to cart",
+        shortDomain: builder.shortDomain,
+        shortSlug: builder.shortSlug,
+        utmPresetId: builder.utmPresetId,
+        utmCustom: builder.utmCustom,
+        shareLink: shortLink,
+        landingBehavior: builder.landingBehavior,
+        landingUrl: builder.landingUrl || "",
+        primaryOfferId: builder.primaryOfferId,
+        offers: shoppableOffers,
+      };
+
+      const nextDeal: Record<string, unknown> = {
+        ...(existingDeal || {}),
+        id: activeDealId,
+        type: asString(existingDeal?.type, "Shoppable Adz"),
+        title: campaign?.name || asString(existingDeal?.title, "Campaign"),
+        tagline: builder.ctaText || asString(existingDeal?.tagline, ""),
+        supplier: {
+          ...asRecord(existingDeal?.supplier),
+          id: supplier?.id || asString(asRecord(existingDeal?.supplier)?.id, `deal-supplier:${activeDealId}`),
+          name: supplier?.name || asString(asRecord(existingDeal?.supplier)?.name, "Supplier"),
+          category: supplier?.category || asString(asRecord(existingDeal?.supplier)?.category, "Supplier"),
+          logoUrl: supplier?.avatarUrl || asString(asRecord(existingDeal?.supplier)?.logoUrl, BLANK_IMAGE),
+        },
+        creator: {
+          ...asRecord(existingDeal?.creator),
+          name: previewCreator.name,
+          handle: previewCreator.handle,
+          avatarUrl: previewCreator.avatarUrl || BLANK_IMAGE,
+          verified: previewCreator.verified,
+        },
+        startISO: startsAt.toISOString(),
+        endISO: endsAt.toISOString(),
+        shoppable: shoppablePayload,
+      };
+
+      const hasDeal = existingDeals.some((entry) => asString(asRecord(entry)?.id, "") === activeDealId);
+      const nextDeals = hasDeal
+        ? existingDeals.map((entry) => {
+            const rec = asRecord(entry);
+            if (!rec || asString(rec.id, "") !== activeDealId) return entry;
+            return nextDeal;
+          })
+        : [nextDeal, ...existingDeals];
+
+      const templates = asRecord(workspaceState?.templates) || {};
+      const adBuilderTemplates = asRecord(templates.adBuilder) || {};
+      const byContext = asRecord(adBuilderTemplates.byContext) || {};
+
+      const payload: Record<string, unknown> = {
+        deals: nextDeals,
+        selectedId: activeDealId,
+        templates: {
+          ...templates,
+          adBuilder: {
+            ...adBuilderTemplates,
+            byContext: {
+              ...byContext,
+              [builderContextKey]: {
+                dealId: activeDealId,
+                step,
+                builder,
+                externalAssets,
+                customOffersByContext,
+                isGenerated: generated,
+                updatedAt: new Date().toISOString(),
+              },
+            },
+          },
+        },
+      };
+
+      try {
+        const saved = await creatorApi.updateDealzMarketplace(payload);
+        if (syncLocalState) {
+          setWorkspaceState(saved);
+        }
+        if (successMessage) {
+          setToast(successMessage);
+        }
+      } catch {
+        if (errorMessage) {
+          setToast(errorMessage);
+        }
+      }
+    },
+    [
+      activeDealId,
+      assetById,
+      builder,
+      builderContextKey,
+      campaign?.name,
+      customOffersByContext,
+      effectiveDealScope?.shoppableRecord,
+      effectivePlatforms,
+      externalAssets,
+      heroVideoAsset?.desktopMode,
+      heroVideoAsset?.url,
+      isGenerated,
+      perOfferPosterUrl,
+      perOfferVideoUrl,
+      previewCreator.avatarUrl,
+      previewCreator.handle,
+      previewCreator.name,
+      previewCreator.verified,
+      resolvedHeroImageUrl,
+      resolvedHeroVideoPosterUrl,
+      selectedOffers,
+      setWorkspaceState,
+      shortLink,
+      startsAt,
+      step,
+      supplier?.avatarUrl,
+      supplier?.category,
+      supplier?.id,
+      supplier?.name,
+      workspaceState?.deals,
+      workspaceState?.templates,
+      endsAt,
+    ],
+  );
+
+  const autosaveReadyRef = useRef(false);
+  useEffect(() => {
+    if (!activeDealId) return;
+    if (!autosaveReadyRef.current) {
+      autosaveReadyRef.current = true;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void persistBuilderToWorkspace({ generated: isGenerated });
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeDealId,
+    builder,
+    customOffersByContext,
+    externalAssets,
+    isGenerated,
+    persistBuilderToWorkspace,
+    step,
+  ]);
+
   // Viewer state
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerCtx, setViewerCtx] = useState<ViewerContext | null>(null);
@@ -2069,7 +2415,7 @@ export default function AdBuilder({
     if (!o) return;
     // In production: route to checkout page with item preloaded
     const url = `/checkout?offerId=${encodeURIComponent(offerId)}&qty=1`;
-    setToast(`Buy now → ${url} (demo)`);
+    setToast(`Buy now → ${url}`);
   }
 
   function addToCart(offerId: string) {
@@ -2131,7 +2477,7 @@ export default function AdBuilder({
     u.searchParams.set("restore", "1");
     u.searchParams.set("step", step);
     u.searchParams.set("pickerSource", "ad-builder");
-    if (pickerContext?.dealId) u.searchParams.set("dealId", pickerContext.dealId);
+    if (activeDealId) u.searchParams.set("dealId", activeDealId);
     // clean old picker params
     u.searchParams.delete("assetId");
     u.searchParams.delete("applyTo");
@@ -2153,7 +2499,7 @@ export default function AdBuilder({
     const campaignNameForPicker = pickerContext?.campaignName || campaign?.name;
     const campaignBrandForPicker = pickerContext?.campaignBrand || campaignNameForPicker || "";
 
-    if (pickerContext?.dealId) picker.searchParams.set("dealId", pickerContext.dealId);
+    if (activeDealId) picker.searchParams.set("dealId", activeDealId);
     if (supplierIdForPicker) picker.searchParams.set("supplierId", supplierIdForPicker);
     if (campaignIdForPicker) picker.searchParams.set("campaignId", campaignIdForPicker);
     if (supplierNameForPicker) picker.searchParams.set("supplierName", supplierNameForPicker);
@@ -2327,7 +2673,8 @@ export default function AdBuilder({
     const fallbackPoster =
       supplier?.avatarUrl ||
       heroImageAsset?.url ||
-      "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop";
+      fallbackHeroImageUrl ||
+      BLANK_IMAGE;
 
     const nextOffer: Offer = {
       id: offerId,
@@ -2340,7 +2687,7 @@ export default function AdBuilder({
       stockLeft,
       sold: 0,
       catalogPosterUrl: fallbackPoster,
-      catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+      catalogVideoUrl: undefined,
     };
 
     setCustomOffersByContext((prev) => {
@@ -2527,7 +2874,18 @@ export default function AdBuilder({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Btn tone="neutral" onClick={() => setToast("Draft saved (demo)")} left={<CheckCircle2 className="h-4 w-4" />}>
+            <Btn
+              tone="neutral"
+              onClick={() =>
+                void persistBuilderToWorkspace({
+                  generated: isGenerated,
+                  successMessage: "Draft saved.",
+                  errorMessage: "Failed to save draft.",
+                  syncLocalState: true,
+                })
+              }
+              left={<CheckCircle2 className="h-4 w-4" />}
+            >
               Save draft
             </Btn>
             <Btn
@@ -2918,7 +3276,7 @@ export default function AdBuilder({
                     </span>
                   </div>
                   <div className="mt-3 overflow-hidden rounded-2xl ring-1 ring-neutral-200 dark:ring-slate-800">
-                    <img src={resolvedHeroImageUrl || "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop"} alt="Hero" className="h-40 w-full object-cover" />
+                    <img src={resolvedHeroImageUrl || fallbackHeroImageUrl || BLANK_IMAGE} alt="Hero" className="h-40 w-full object-cover" />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_image")} left={<Search className="h-4 w-4" />}>
@@ -3184,7 +3542,17 @@ export default function AdBuilder({
                         >
                           Copy
                         </Btn>
-                        <Btn tone="neutral" onClick={() => setToast("Regenerated link (demo)")} left={<Zap className="h-4 w-4" />}>
+                        <Btn
+                          tone="neutral"
+                          onClick={() => {
+                            setBuilder((prev) => ({
+                              ...prev,
+                              shortSlug: `adz-${Math.random().toString(36).slice(2, 7)}`,
+                            }));
+                            setToast("Short link regenerated.");
+                          }}
+                          left={<Zap className="h-4 w-4" />}
+                        >
                           Regenerate
                         </Btn>
                       </div>
@@ -3405,10 +3773,10 @@ export default function AdBuilder({
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Btn tone="neutral" onClick={() => setToast("Exported creative pack (demo)")} left={<Upload className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => setToast("Creative pack export is not connected yet.")} left={<Upload className="h-4 w-4" />}>
                       Export pack
                     </Btn>
-                    <Btn tone="neutral" onClick={() => setToast("Shared preview (demo)")} left={<Share2 className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => copyText(shortLink, "Copied preview link")} left={<Share2 className="h-4 w-4" />}>
                       Share preview
                     </Btn>
                   </div>
@@ -3440,9 +3808,15 @@ export default function AdBuilder({
                       tone="primary"
                       disabled={!preflight.ok}
                       onClick={() => {
+                        const wasGenerated = isGenerated;
                         setIsGenerated(true);
-                        setToast(isGenerated ? "Ad updated" : "Success! Your ad is now visible to followers.");
                         setShowSharePanel(true);
+                        void persistBuilderToWorkspace({
+                          generated: true,
+                          successMessage: wasGenerated ? "Ad updated." : "Ad published.",
+                          errorMessage: "Failed to publish ad.",
+                          syncLocalState: true,
+                        });
                       }}
                       left={<BadgeCheck className="h-4 w-4" />}
                       className="w-full"
@@ -3450,7 +3824,19 @@ export default function AdBuilder({
                     >
                       {isGenerated ? "Update Ad" : "Publish Ad"}
                     </Btn>
-                    <Btn tone="neutral" onClick={() => setToast("Saved as template (demo)")} left={<Sparkles className="h-4 w-4" />} className="w-full">
+                    <Btn
+                      tone="neutral"
+                      onClick={() =>
+                        void persistBuilderToWorkspace({
+                          generated: isGenerated,
+                          successMessage: "Template saved.",
+                          errorMessage: "Failed to save template.",
+                          syncLocalState: true,
+                        })
+                      }
+                      left={<Sparkles className="h-4 w-4" />}
+                      className="w-full"
+                    >
                       Save template
                     </Btn>
                   </div>
@@ -3553,7 +3939,7 @@ export default function AdBuilder({
                 ctaHelperText={builder.ctaText}
                 primaryCtaLabel={builder.primaryCtaLabel}
                 secondaryCtaLabel={builder.secondaryCtaLabel}
-                heroImageUrl={resolvedHeroImageUrl || ASSETS[0].url}
+                heroImageUrl={resolvedHeroImageUrl || fallbackHeroImageUrl}
                 heroIntroVideo={
                   heroVideoAsset?.kind === "video"
                     ? { url: heroVideoAsset.url, poster: resolvedHeroVideoPosterUrl || heroVideoAsset.posterUrl }

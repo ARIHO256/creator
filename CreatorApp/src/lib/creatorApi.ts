@@ -456,6 +456,33 @@ export type CrewSessionRecord = {
   [key: string]: unknown;
 };
 
+export type ContentApprovalRecord = {
+  id: string;
+  title?: string | null;
+  campaignId?: string | null;
+  channel?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  dueAt?: string | null;
+  payload?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type AdzCampaignRecord = {
+  id: string;
+  title?: string | null;
+  status?: string | null;
+  budget?: number | null;
+  currency?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
 export type AssetRecord = {
   id: string;
   campaignId?: string | null;
@@ -868,6 +895,24 @@ export const creatorApi = {
   roles() {
     return api.get<WorkspaceRolesResponse>("/roles");
   },
+  createRole(body: Record<string, unknown>) {
+    return api.post<Record<string, unknown>>("/roles", body);
+  },
+  updateRole(id: string, body: Record<string, unknown>) {
+    return api.patch<Record<string, unknown>>(`/roles/${encodeURIComponent(id)}`, body);
+  },
+  deleteRole(id: string) {
+    return api.delete<Record<string, unknown>>(`/roles/${encodeURIComponent(id)}`);
+  },
+  createRoleInvite(body: Record<string, unknown>) {
+    return api.post<Record<string, unknown>>("/roles/invites", body);
+  },
+  updateRoleMember(id: string, body: Record<string, unknown>) {
+    return api.patch<Record<string, unknown>>(`/roles/members/${encodeURIComponent(id)}`, body);
+  },
+  deleteRoleMember(id: string) {
+    return api.delete<Record<string, unknown>>(`/roles/members/${encodeURIComponent(id)}`);
+  },
   updateRolesSecurity(body: Record<string, unknown>) {
     return api.patch<Record<string, unknown>>("/roles/security", body);
   },
@@ -968,5 +1013,37 @@ export const creatorApi = {
   },
   reviews(params?: { scope?: "received" | "authored"; limit?: number }) {
     return api.get<ReviewRecord[]>(withQuery("/reviews", params));
+  },
+
+  adzCampaigns() {
+    return api.get<AdzCampaignRecord[]>("/adz/campaigns");
+  },
+  adzCampaign(id: string) {
+    return api.get<AdzCampaignRecord>(`/adz/campaigns/${encodeURIComponent(id)}`);
+  },
+  adzCampaignPerformance(id: string) {
+    return api.get<Record<string, unknown>>(`/adz/campaigns/${encodeURIComponent(id)}/performance`);
+  },
+
+  contentApprovals() {
+    return api.get<ContentApprovalRecord[]>("/content-approvals");
+  },
+  contentApproval(id: string) {
+    return api.get<ContentApprovalRecord>(`/content-approvals/${encodeURIComponent(id)}`);
+  },
+  createContentApproval(body: Record<string, unknown>) {
+    return api.post<ContentApprovalRecord>("/content-approvals", body);
+  },
+  updateContentApproval(id: string, body: Record<string, unknown>) {
+    return api.patch<ContentApprovalRecord>(`/content-approvals/${encodeURIComponent(id)}`, body);
+  },
+  nudgeContentApproval(id: string) {
+    return api.post<Record<string, unknown>>(`/content-approvals/${encodeURIComponent(id)}/nudge`);
+  },
+  withdrawContentApproval(id: string) {
+    return api.post<Record<string, unknown>>(`/content-approvals/${encodeURIComponent(id)}/withdraw`);
+  },
+  resubmitContentApproval(id: string, body: Record<string, unknown>) {
+    return api.post<ContentApprovalRecord>(`/content-approvals/${encodeURIComponent(id)}/resubmit`, body);
   }
 };
