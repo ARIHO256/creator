@@ -311,14 +311,21 @@ async function loadNotificationsContent(): Promise<NotificationsContent> {
     ? itemsPayload.map((entry) => {
         const record = entry as Record<string, unknown>;
         const meta = (record.metadata ?? {}) as Record<string, unknown>;
+        const read =
+          typeof record.read === "boolean"
+            ? record.read
+            : Boolean(record.readAt);
         return {
           id: String(record.id ?? ""),
           title: String(record.title ?? ""),
-          message: String(record.body ?? ""),
+          message: String(record.message ?? record.body ?? ""),
           category: inferNotificationCategory(record),
           priority: inferNotificationPriority(record),
           createdAt: String(record.createdAt ?? new Date().toISOString()),
-          unread: !record.readAt,
+          unread:
+            typeof record.unread === "boolean"
+              ? record.unread
+              : !read,
           route:
             typeof meta.link === "string"
               ? meta.link
@@ -330,6 +337,8 @@ async function loadNotificationsContent(): Promise<NotificationsContent> {
               ? meta.actor
               : typeof meta.brand === "string"
                 ? meta.brand
+                : typeof record.brand === "string"
+                  ? record.brand
                 : undefined,
         };
       })

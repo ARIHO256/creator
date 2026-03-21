@@ -16,6 +16,7 @@ type Trend = "up" | "down" | "flat";
 type Seller = {
   id: number;
   apiId: string;
+  handle: string;
   name: string;
   initials: string;
   tagline: string;
@@ -69,6 +70,7 @@ function toSeller(record: PublicSellerRecord): Seller {
   return {
     id: sellerNumericId(String(record.id)),
     apiId: String(record.id),
+    handle: String(record.handle || "").trim(),
     name: String(record.displayName || record.name || "Supplier"),
     initials: sellerInitials(record.displayName || record.name),
     tagline: String(record.description || "Supplier profile"),
@@ -742,11 +744,18 @@ function InviteModal({ seller, onClose }: InviteModalProps) {
 
   const handleSendInvite = () => {
     if (!message.trim()) return;
+    const recipientSellerId = String(seller.apiId || "").trim();
+    const recipientSellerHandle = String(seller.handle || "").trim();
+    if (!recipientSellerId && !recipientSellerHandle) {
+      setSubmitError("Selected seller cannot receive invites yet.");
+      return;
+    }
     setSubmitError("");
     setIsSubmitting(true);
     void creatorApi
       .createInvite({
-        recipientSellerId: seller.apiId,
+        recipientSellerId: recipientSellerId || undefined,
+        recipientSellerHandle: recipientSellerHandle || undefined,
         title: `Invite to collaborate with ${seller.name}`,
         message,
         type: model,
@@ -754,7 +763,9 @@ function InviteModal({ seller, onClose }: InviteModalProps) {
         region: seller.region || "Global",
         messageShort: `Invite from creator workspace for ${seller.name}.`,
         metadata: {
-          source: "creator-sellers-directory"
+          source: "creator-sellers-directory",
+          selectedSellerId: recipientSellerId || null,
+          selectedSellerHandle: recipientSellerHandle || null
         }
       })
       .then(() => {
