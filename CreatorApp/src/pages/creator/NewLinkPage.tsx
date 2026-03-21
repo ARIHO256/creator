@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, ReactNode, ChangeEvent } from "react"
+import { useApiResource } from "../../hooks/useApiResource"
+import { creatorApi, type AdzCampaignRecord, type AdzLinkRecord } from "../../lib/creatorApi"
 /*************************************************
  * Link Tools (Creator) - Previewable (Orange Primary)
  * Base: attached link_tools_creator_previewable.jsx
@@ -351,31 +353,59 @@ function ToolCard({ title, desc, children }: ToolCardProps) {
 /************** Data **************/
 const CREATOR = { handle: "@EVzoneCreator", ref: "CR-7782" }
 
-const ACTIVE_CAMPAIGNS: Campaign[] = [
-  {
-    id: "cmp_1",
-    title: "Holiday EV Dealz",
-    slug: "holiday-ev-dealz",
-    hero: placeholder("Holiday EV Dealz"),
-    seller: { name: "EVzone Store", handle: "@evzone", verified: true },
-    commissionPct: 8,
-    surfaces: ["SHOPPABLE_ADZ", "LIVE_SESSIONZ"],
-    links: [
-      { id: "lnk_default", label: "Default", url: buildCreatorLink("holiday-ev-dealz", CREATOR.ref) },
-      { id: "lnk_tiktok", label: "TikTok", url: buildCreatorLink("holiday-ev-dealz", CREATOR.ref) + "&src=tiktok" },
-    ],
-  },
-  {
-    id: "cmp_2",
-    title: "Install Specials",
-    slug: "install-specials",
-    hero: placeholder("Install Specials"),
-    seller: { name: "ChargePro Services", handle: "@chargepro", verified: false },
-    commissionPct: 10,
-    surfaces: ["SHOPPABLE_ADZ"],
-    links: [{ id: "lnk_default", label: "Default", url: buildCreatorLink("install-specials", CREATOR.ref) }],
-  },
-]
+function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[]): Campaign[] {
+  return campaigns.map((campaign) => {
+    const data =
+      campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
+        ? (campaign.data as Record<string, unknown>)
+        : {}
+    const title = String(campaign.title || data.title || "Campaign")
+    const slug = String(data.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))
+    const sellerName = String(data.sellerName || data.seller || "Seller")
+    const sellerHandle = String(data.sellerHandle || "")
+    const linked = links.filter((link) => {
+      const linkData =
+        link.data && typeof link.data === "object" && !Array.isArray(link.data)
+          ? (link.data as Record<string, unknown>)
+          : {}
+      return (
+        String(linkData.campaignId || "") === campaign.id ||
+        String(linkData.adzCampaignId || "") === campaign.id
+      )
+    })
+
+    const mappedLinks = linked.length
+      ? linked.map((link, index) => ({
+          id: String(link.id || `link_${index}`),
+          label: String(
+            (link.data as Record<string, unknown> | undefined)?.label ||
+              (link.data as Record<string, unknown> | undefined)?.channel ||
+              `Link ${index + 1}`
+          ),
+          url: String(
+            link.url ||
+              (link.data as Record<string, unknown> | undefined)?.url ||
+              buildCreatorLink(slug, CREATOR.ref)
+          )
+        }))
+      : [{ id: `${campaign.id}_default`, label: "Default", url: buildCreatorLink(slug, CREATOR.ref) }]
+
+    return {
+      id: campaign.id,
+      title,
+      slug,
+      hero: String(data.heroImageUrl || data.posterImageUrl || placeholder(title)),
+      seller: {
+        name: sellerName,
+        handle: sellerHandle,
+        verified: Boolean(data.sellerVerified)
+      },
+      commissionPct: Number(data.commissionPct || data.commission || 0),
+      surfaces: Array.isArray(data.surfaces) ? data.surfaces.map((entry) => String(entry)) : ["SHOPPABLE_ADZ"],
+      links: mappedLinks
+    }
+  })
+}
 
 /************** Page **************/
 export function LinkToolsDrawer({ open, onClose, initialCampaignId }: LinkToolsDrawerProps) {
@@ -410,11 +440,25 @@ useEffect(() => {
     }
   }, [])
 
-  // Selection
-  const [campaignId, setCampaignId] = useState(initialCampaignId || ACTIVE_CAMPAIGNS[0]?.id || "")
-  const campaign = useMemo(() => ACTIVE_CAMPAIGNS.find((c) => c.id === campaignId) || null, [campaignId])
+  const { data: campaignOptions } = useApiResource<Campaign[]>({
+    initialData: [],
+    loader: async () => {
+      const [campaigns, links] = await Promise.all([creatorApi.adzCampaigns(), creatorApi.adzLinks()])
+      return mapCampaignsToDrawerData(campaigns, links)
+    }
+  })
 
-  const [linkId, setLinkId] = useState(ACTIVE_CAMPAIGNS[0]?.links?.[0]?.id || "")
+  // Selection
+  const [campaignId, setCampaignId] = useState(initialCampaignId || "")
+  const campaign = useMemo(() => campaignOptions.find((c) => c.id === campaignId) || null, [campaignId, campaignOptions])
+
+  const [linkId, setLinkId] = useState("")
+  useEffect(() => {
+    if (!campaignId && campaignOptions.length > 0) {
+      setCampaignId(initialCampaignId || campaignOptions[0].id)
+    }
+  }, [campaignId, campaignOptions, initialCampaignId])
+
   useEffect(() => {
     const first = campaign?.links?.[0]?.id
     setLinkId((prev) => (campaign?.links?.some((l) => l.id === prev) ? prev : first || ""))
@@ -562,7 +606,7 @@ useEffect(() => {
                   onChange={(e: ChangeEvent<HTMLSelectElement>) => setCampaignId(e.target.value)}
                   className={cx("w-full appearance-none px-3 py-2 text-sm font-extrabold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 transition-colors", TOKENS.btn)}
                 >
-                  {ACTIVE_CAMPAIGNS.map((c) => (
+                  {campaignOptions.map((c) => (
                     <option key={c.id} value={c.id}>{c.title}</option>
                   ))}
                 </select>

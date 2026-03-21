@@ -91,20 +91,42 @@ function toHandle(name: string) {
   return `@${normalized || "creator"}`;
 }
 
-function readStorageValue(keys: string[]) {
-  if (typeof window === "undefined") return "";
-  for (const key of keys) {
-    const raw = window.localStorage.getItem(key);
-    if (typeof raw === "string" && raw.trim()) return raw.trim();
-  }
-  return "";
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
-function resolveCreatorIdentity(params: { queryCreatorId?: string; queryCreatorName?: string }) {
-  const idFromStorage = readStorageValue(["creatorOnb.id", "mldz_creator_id", "creator.id"]);
-  const nameFromStorage = readStorageValue(["creatorOnb.name", "mldz_creator_name", "creator.name"]);
-  const creatorId = (params.queryCreatorId || idFromStorage || "CR-88").trim();
-  const creatorName = (params.queryCreatorName || nameFromStorage || "Creator").trim();
+function toStringValue(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+async function resolveCreatorIdentity(params: { queryCreatorId?: string; queryCreatorName?: string }) {
+  const queryCreatorId = (params.queryCreatorId || "").trim();
+  const queryCreatorName = (params.queryCreatorName || "").trim();
+
+  let onboardingCreatorId = "";
+  let onboardingCreatorName = "";
+  if (!queryCreatorId || !queryCreatorName) {
+    try {
+      const payload = await creatorApi.onboarding();
+      const root = asRecord(payload);
+      const creatorRecord = asRecord(root?.creator);
+      const profileRecord = asRecord(root?.profile);
+      onboardingCreatorId = toStringValue(
+        root?.id ?? creatorRecord?.id ?? root?.creatorId ?? profileRecord?.id,
+        ""
+      ).trim();
+      onboardingCreatorName = toStringValue(
+        profileRecord?.name ?? creatorRecord?.name ?? root?.name,
+        ""
+      ).trim();
+    } catch {
+      // ignore
+    }
+  }
+
+  const creatorId = (queryCreatorId || onboardingCreatorId || "creator").trim();
+  const creatorName = (queryCreatorName || onboardingCreatorName || "Creator").trim();
   const creatorHandle = toHandle(creatorName);
   return { creatorId, creatorName, creatorHandle };
 }
@@ -363,7 +385,7 @@ export default function CreatorReviewsDashboardPage() {
 
     run(
       async () => {
-        const creator = resolveCreatorIdentity({
+        const creator = await resolveCreatorIdentity({
           queryCreatorId: queryCreatorId || undefined,
           queryCreatorName: queryCreatorName || undefined
         });

@@ -3,6 +3,8 @@
 import React, { useState, useMemo } from 'react';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { useApiResource } from '../../hooks/useApiResource';
+import { creatorApi, type DealzMarketplaceWorkspaceResponse } from '../../lib/creatorApi';
 import { CircularProgress } from '@mui/material';
 
 import { AlertTriangle, BarChart3, Copy, ExternalLink, Lock, Share2, X } from "lucide-react";
@@ -308,18 +310,28 @@ export function AdzPerformance({
   }, [scoped]);
 
   const byCreative = useMemo(() => {
-    // If scoped to a single entity and variants exist, show them.
-    if (scoped.length === 1 && scoped[0]?.variants?.length) return scoped[0].variants!;
-    // Otherwise show a synthetic A/B split (demo).
-    const halfImp = Math.round(totals.impressions * 0.55);
-    const halfClk = Math.round(totals.clicks * 0.55);
-    const halfOrd = Math.round(totals.orders * 0.55);
-    const halfEarn = totals.earnings * 0.55;
-    return [
-      { id: "vA", label: "A", impressions: halfImp, clicks: halfClk, orders: halfOrd, earnings: halfEarn },
-      { id: "vB", label: "B", impressions: totals.impressions - halfImp, clicks: totals.clicks - halfClk, orders: totals.orders - halfOrd, earnings: totals.earnings - halfEarn }
-    ];
-  }, [scoped, totals]);
+    const bucket = new Map<string, PerformanceVariant>();
+    scoped.forEach((entity) => {
+      (entity.variants || []).forEach((variant) => {
+        const key = variant.id || variant.label;
+        const prev =
+          bucket.get(key) || {
+            id: variant.id,
+            label: variant.label || "Variant",
+            impressions: 0,
+            clicks: 0,
+            orders: 0,
+            earnings: 0,
+          };
+        prev.impressions += variant.impressions || 0;
+        prev.clicks += variant.clicks || 0;
+        prev.orders += variant.orders || 0;
+        prev.earnings += variant.earnings || 0;
+        bucket.set(key, prev);
+      });
+    });
+    return Array.from(bucket.values()).sort((a, b) => b.earnings - a.earnings);
+  }, [scoped]);
 
   const insights = useMemo(() => {
     const withCTR = entities.map((e) => ({ e, ctr: e.impressions ? e.clicks / e.impressions : 0, cvr: e.clicks ? e.orders / e.clicks : 0 }));
@@ -532,7 +544,7 @@ export function AdzPerformance({
                 </div>
               </Card>
 
-              <Card title="By item" subtitle="Bundle-aware split attribution (demo).">
+              <Card title="By item" subtitle="Bundle-aware split attribution from workspace metrics.">
                 <div className="space-y-2">
                   {byItem.slice(0, 8).map((r) => (
                     <div key={r.name} className="rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3">
@@ -550,9 +562,9 @@ export function AdzPerformance({
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
-              <Card title="By creative version" subtitle="A/B attribution (split model demo).">
+              <Card title="By creative version" subtitle="Creative attribution from recorded variant metrics.">
                 <div className="space-y-2">
-                  {byCreative.map((v) => (
+                  {byCreative.length ? byCreative.map((v) => (
                     <div key={v.id} className="rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3">
                       <div className="flex items-center justify-between gap-2">
                         <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Variant {v.label}</div>
@@ -562,10 +574,11 @@ export function AdzPerformance({
                         Imp {money(v.impressions)} · Clk {money(v.clicks)} · Ord {money(v.orders)} · CTR {pct(v.impressions ? v.clicks / v.impressions : 0)}
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div className="mt-3 rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3 text-xs text-slate-700 dark:text-slate-300">
-                  Premium: real split is tracked per creative ID (not inferred).
+                  )) : (
+                    <div className="rounded-2xl border transition-colors border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700 p-3 text-xs text-slate-700 dark:text-slate-300">
+                      No creative variant metrics found for the selected scope yet.
+                    </div>
+                  )}
                 </div>
               </Card>
 
@@ -666,52 +679,91 @@ export default function AdzPerformancePage() {
   const [dateRange, setDateRange] = useState('7d');
   // For routing: /AdzPerformance?entityId=...
   const entityId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("entityId") || undefined : undefined;
+  const { data: workspace } = useApiResource({
+    initialData: { deals: [] } as Partial<DealzMarketplaceWorkspaceResponse>,
+    loader: () => creatorApi.dealzMarketplace(),
+  });
+  void showSuccess;
+  void showNotification;
+  void dateRange;
+  void setDateRange;
 
-  // NOTE: In production, replace this demo list with server data.
-  const demoEntities: PerformanceEntity[] = useMemo(
-    () => [
-      {
-        id: "AD-10021",
-        kind: "ad",
-        name: "Flash Dealz: Power Bank",
-        status: "Live",
-        platforms: ["TikTok"],
-        primaryItem: "20,000mAh Power Bank",
-        items: [{ id: "p1", kind: "product", name: "20,000mAh Power Bank", price: 29 }],
-        impressions: 182400,
-        clicks: 9720,
-        orders: 412,
-        earnings: 1860,
-        creator: { name: "Kofi Mensah", handle: "kofi_live", avatarUrl: "https://i.pravatar.cc/100?img=11" },
-        compensation: { type: "Commission", commissionRate: 0.12 },
-        hasBrokenLink: false,
-        variants: [
-          { id: "vA", label: "A", impressions: 102000, clicks: 5000, orders: 210, earnings: 980 },
-          { id: "vB", label: "B", impressions: 80400, clicks: 4720, orders: 202, earnings: 880 }
-        ]
-      },
-      {
-        id: "dl_2",
-        kind: "deal",
-        name: "Autumn Beauty Flash",
-        status: "Live",
-        platforms: ["TikTok", "Instagram"],
-        primaryItem: "Vitamin C serum (30ml)",
-        items: [
-          { id: "it_2a", kind: "product", name: "Vitamin C serum (30ml)", price: 24 },
-          { id: "it_2b", kind: "product", name: "Hydrating moisturizer", price: 18 }
-        ],
-        impressions: 290000,
-        clicks: 10150,
-        orders: 420,
-        earnings: 6100,
-        creator: { name: "Amina K", handle: "amina_live", avatarUrl: "https://i.pravatar.cc/100?img=47" },
-        compensation: { type: "Commission", commissionRate: 0.1 },
-        hasBrokenLink: true
+  const marketplaceEntities: PerformanceEntity[] = useMemo(() => {
+    const rows = Array.isArray((workspace as any)?.deals) ? ((workspace as any).deals as Array<Record<string, unknown>>) : [];
+    const toNumber = (value: unknown, fallback = 0) => {
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+      if (typeof value === "string" && value.trim()) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return parsed;
       }
-    ],
-    []
-  );
+      return fallback;
+    };
+    const toPlatform = (value: string): PerfPlatform => {
+      const t = value.toLowerCase();
+      if (t.includes("tiktok")) return "TikTok";
+      if (t.includes("instagram")) return "Instagram";
+      if (t.includes("youtube")) return "YouTube";
+      if (t.includes("facebook")) return "Facebook";
+      return "Other";
+    };
+    return rows.map((deal, index) => {
+      const shoppable = (deal.shoppable && typeof deal.shoppable === "object" ? deal.shoppable : {}) as Record<string, unknown>;
+      const live = (deal.live && typeof deal.live === "object" ? deal.live : {}) as Record<string, unknown>;
+      const creator = (deal.creator && typeof deal.creator === "object" ? deal.creator : {}) as Record<string, unknown>;
+      const offers = Array.isArray(shoppable.offers) ? (shoppable.offers as Array<Record<string, unknown>>) : [];
+      const featured = Array.isArray(live.featured) ? (live.featured as Array<Record<string, unknown>>) : [];
+      const items: PerformanceItem[] = [
+        ...offers.map((item, itemIndex) => {
+          const price = toNumber(item.price, Number.NaN);
+          return {
+            id: String(item.id || `offer_${itemIndex + 1}`),
+            kind: String(item.type || "product").toLowerCase() === "service" ? "service" : "product",
+            name: String(item.name || "Offer"),
+            price: Number.isFinite(price) ? price : undefined,
+            imageUrl: typeof item.posterUrl === "string" ? item.posterUrl : undefined,
+            videoUrl: typeof item.videoUrl === "string" ? item.videoUrl : undefined,
+          };
+        }),
+        ...featured.map((item, itemIndex) => ({
+          id: String(item.id || `featured_${itemIndex + 1}`),
+          kind: String(item.kind || "product").toLowerCase() === "service" ? "service" : "product",
+          name: String(item.name || "Featured item"),
+          imageUrl: typeof item.posterUrl === "string" ? item.posterUrl : undefined,
+          videoUrl: typeof item.videoUrl === "string" ? item.videoUrl : undefined,
+        })),
+      ];
+      const platformsRaw = [
+        ...(Array.isArray(shoppable.platforms) ? shoppable.platforms : []),
+        ...(Array.isArray(live.platforms) ? live.platforms : []),
+      ].map((entry) => String(entry || "").trim()).filter(Boolean);
+      const platforms = Array.from(new Set((platformsRaw.length ? platformsRaw : ["Other"]).map(toPlatform)));
+      const kpis = Array.isArray(shoppable.kpis) ? (shoppable.kpis as Array<Record<string, unknown>>) : [];
+      const findKpi = (keys: string[]) => {
+        const match = kpis.find((kpi) => keys.includes(String(kpi.key || kpi.label || "").toLowerCase()));
+        return toNumber(match?.value, 0);
+      };
+      return {
+        id: String(deal.id || `deal_${index + 1}`),
+        kind: shoppable && Object.keys(shoppable).length > 0 ? "ad" : "deal",
+        name: String(deal.title || live.title || shoppable.campaignName || "Deal"),
+        status: String(shoppable.status || live.status || deal.status || "Draft"),
+        platforms,
+        primaryItem: items[0]?.name,
+        items,
+        impressions: findKpi(["impressions", "views"]),
+        clicks: findKpi(["clicks", "tap through"]),
+        orders: findKpi(["orders", "sales"]),
+        earnings: findKpi(["earnings", "gmv", "revenue"]),
+        creator: {
+          name: String(creator.name || "Creator"),
+          handle: typeof creator.handle === "string" ? creator.handle : undefined,
+          avatarUrl: typeof creator.avatarUrl === "string" ? creator.avatarUrl : undefined,
+        },
+        compensation: { type: "Commission", commissionRate: 0 },
+        hasBrokenLink: false,
+      } satisfies PerformanceEntity;
+    });
+  }, [workspace]);
 
   return (
     <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 overflow-x-hidden transition-colors">
@@ -722,7 +774,7 @@ export default function AdzPerformancePage() {
               <img src="/MyliveDealz PNG Icon 1.png" alt="LiveDealz" className="h-7 w-7 sm:h-8 sm:w-8 object-contain" />
               <div className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-50">Adz Performance</div>
             </div>
-            <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 ml-14">Dedicated deep analytics page (demo data).</div>
+            <div className="text-sm text-slate-500 dark:text-slate-400 mt-1 ml-14">Dedicated deep analytics page backed by Dealz workspace records.</div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => window.history.back()}>
@@ -732,7 +784,7 @@ export default function AdzPerformancePage() {
         </div>
 
         <div className="mt-6">
-          <AdzPerformance entities={demoEntities} selectedId={entityId} canView={true} showOpenFullPage={false} />
+          <AdzPerformance entities={marketplaceEntities} selectedId={entityId} canView={true} showOpenFullPage={false} />
         </div>
       </div>
     </div>

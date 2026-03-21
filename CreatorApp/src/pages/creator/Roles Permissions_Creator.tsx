@@ -41,6 +41,7 @@ import {
   Zap
 } from "lucide-react";
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * Roles & Permissions — Premium (Regenerated)
@@ -59,7 +60,6 @@ import { PageHeader } from "../../components/PageHeader";
  */
 
 const ORANGE = "#f77f00";
-const ROLES_STORAGE_KEY = "mldz:roles:v1";
 
 function cx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
@@ -833,88 +833,6 @@ function defaultRoles(): Role[] {
   return [owner, creatorManager, shoppableManager, liveProducer, moderator, analyst, finance, supportOps, supplierGuest, viewer];
 }
 
-/** ---------------- Demo Data ---------------- */
-
-function initialMembers(): Member[] {
-  return [
-    {
-      id: "m1",
-      name: "Amina K.",
-      email: "amina@creator.com",
-      avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop",
-      status: "Active",
-      seat: "Creator",
-      roleId: "owner",
-      lastActiveLabel: "2m ago",
-      twoFA: "On"
-    },
-    {
-      id: "m2",
-      name: "Chris M.",
-      email: "chris@studio.com",
-      avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=256&auto=format&fit=crop",
-      status: "Active",
-      seat: "Manager",
-      roleId: "creator_manager",
-      lastActiveLabel: "Today",
-      twoFA: "On"
-    },
-    {
-      id: "m3",
-      name: "Nina (Supplier)",
-      email: "nina@supplier.com",
-      avatarUrl: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=256&auto=format&fit=crop",
-      status: "Invited",
-      seat: "Supplier Guest",
-      roleId: "supplier_guest",
-      lastActiveLabel: "—",
-      twoFA: "Off"
-    },
-    {
-      id: "m4",
-      name: "Support Ops",
-      email: "ops@support.com",
-      avatarUrl: "https://images.unsplash.com/photo-1550525811-e5869dd03032?q=80&w=256&auto=format&fit=crop",
-      status: "Active",
-      seat: "Support Ops",
-      roleId: "support_ops",
-      lastActiveLabel: "Yesterday",
-      twoFA: "On"
-    }
-  ];
-}
-
-function initialInvites(): Invite[] {
-  return [
-    {
-      id: "inv1",
-      email: "nina@supplier.com",
-      roleId: "supplier_guest",
-      seat: "Supplier Guest",
-      createdAtLabel: "Today",
-      expiresAtLabel: "In 7 days",
-      status: "Pending"
-    },
-    {
-      id: "inv2",
-      email: "data@agency.com",
-      roleId: "analyst",
-      seat: "Manager",
-      createdAtLabel: "Yesterday",
-      expiresAtLabel: "In 6 days",
-      status: "Pending"
-    }
-  ];
-}
-
-function initialAudit(): AuditEvent[] {
-  return [
-    { id: "a1", at: nowLabel(), actor: "Amina K.", action: "Updated role permissions", detail: "Shoppable Adz Manager → enabled tracking & integrations", severity: "info" },
-    { id: "a2", at: nowLabel(), actor: "Chris M.", action: "Generated a Shoppable Ad", detail: "Valentine Glow Week → share links enabled", severity: "info" },
-    { id: "a3", at: nowLabel(), actor: "Support Ops", action: "Viewed Tracking & Integrations", detail: "Read-only troubleshooting", severity: "warn" }
-  ];
-}
-
 /** ---------------- Main Page ---------------- */
 
 type TabKey = "roles" | "members" | "invites" | "suppliers" | "security";
@@ -924,46 +842,12 @@ export default function RolesPermissionsPremium() {
 
   const [tab, setTab] = useState<TabKey>("roles");
 
-  const [roles, setRoles] = useState<Role[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(ROLES_STORAGE_KEY);
-      if (saved) {
-        try {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            // Re-inject icons for system roles as they are not serializable
-            const defaults = defaultRoles();
-            return parsed.map(r => {
-              const def = defaults.find(d => d.id === r.id);
-              if (def) {
-                r.icon = def.icon;
-              } else {
-                r.icon = <User className="h-4 w-4" />;
-              }
-              return r;
-            });
-          }
-        } catch (e) {
-          console.error("Failed to parse saved roles", e);
-        }
-      }
-    }
-    return defaultRoles();
-  });
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [invites, setInvites] = useState<Invite[]>([]);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      // Strip icons before stringifying as React nodes contain circular structures
-      const serializableRoles = roles.map(({ icon, ...rest }) => rest);
-      localStorage.setItem(ROLES_STORAGE_KEY, JSON.stringify(serializableRoles));
-    }
-  }, [roles]);
-
-  const [members, setMembers] = useState<Member[]>(() => initialMembers());
-  const [invites, setInvites] = useState<Invite[]>(() => initialInvites());
-  const [audit, setAudit] = useState<AuditEvent[]>(() => initialAudit());
-
-  const [selectedRoleId, setSelectedRoleId] = useState<string>(roles[0]?.id || "owner");
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const selectedRole = useMemo(() => roles.find((r) => r.id === selectedRoleId) || roles[0], [roles, selectedRoleId]);
 
   const [permSearch, setPermSearch] = useState("");
@@ -983,24 +867,147 @@ export default function RolesPermissionsPremium() {
   const [require2FA, setRequire2FA] = useState(true);
   const [allowExternalInvites, setAllowExternalInvites] = useState(false);
   const [supplierGuestExpiryHours, setSupplierGuestExpiryHours] = useState(24);
+  const [hasLoadedBackendRoles, setHasLoadedBackendRoles] = useState(false);
 
-  const [activeRole, setActiveRole] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("userRole")?.toLowerCase() || "owner";
-    }
-    return "owner";
-  });
+  const [activeRole, setActiveRole] = useState<string>("owner");
 
   const switchActiveRole = (roleId: string) => {
     const roleIdLower = roleId.toLowerCase();
-    if (typeof window !== "undefined") {
-      localStorage.setItem("userRole", roleIdLower);
-      setActiveRole(roleIdLower);
-      push(`Session switched to ${roleIdLower} role.`, "success");
-      log("Owner", "Switched active session role", roleIdLower, "info");
-      // Optional: window.location.reload(); // For standard app flow
-    }
+    setActiveRole(roleIdLower);
+    push(`Session switched to ${roleIdLower} role.`, "success");
+    log("Owner", "Switched active session role", roleIdLower, "info");
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    void creatorApi
+      .roles()
+      .then(async (payload) => {
+        if (cancelled) return;
+
+        let backendRoles = Array.isArray(payload.roles) ? payload.roles : [];
+        if (backendRoles.length === 0) {
+          const seedRoles = defaultRoles().map(({ icon, ...rest }) => rest);
+          await Promise.all(seedRoles.map((role) => creatorApi.createRole(role).catch(() => null)));
+          const seededPayload = await creatorApi.roles().catch(() => payload);
+          backendRoles = Array.isArray(seededPayload.roles) ? seededPayload.roles : [];
+        }
+        if (backendRoles.length > 0) {
+          setRoles(
+            backendRoles.map((entry) => {
+              const roleRow = entry as Record<string, unknown>;
+              return {
+                id: String(roleRow.id || roleRow.key || `role_${Math.random().toString(36).slice(2)}`),
+                name: String(roleRow.name || "Role"),
+                badge: String(roleRow.badge || "Custom") === "System" ? "System" : "Custom",
+                description: String(roleRow.description || "Workspace role"),
+                icon: <User className="h-4 w-4" />,
+                perms:
+                  roleRow.perms && typeof roleRow.perms === "object" && !Array.isArray(roleRow.perms)
+                    ? (roleRow.perms as Record<string, boolean>)
+                    : {}
+              } satisfies Role;
+            })
+          );
+          setSelectedRoleId((prev) => prev || String((backendRoles[0] as Record<string, unknown>).id || ""));
+        }
+
+        const backendMembers = Array.isArray(payload.members) ? payload.members : [];
+        if (backendMembers.length > 0) {
+          setMembers(
+            backendMembers.map((entry, index) => {
+              const member = entry as Record<string, unknown>;
+              const statusRaw = String(member.status || "Active");
+              const normalizedStatus =
+                statusRaw.toLowerCase() === "invited"
+                  ? "Invited"
+                  : statusRaw.toLowerCase() === "suspended"
+                    ? "Suspended"
+                    : statusRaw.toLowerCase() === "inactive"
+                      ? "Inactive"
+                      : "Active";
+              return {
+                id: String(member.id || `member_${index}`),
+                name: String(member.name || member.email || "Member"),
+                email: String(member.email || ""),
+                avatarUrl: "",
+                status: normalizedStatus as MemberStatus,
+                seat: String(member.seat || "Manager") as Seat,
+                roleId: String(member.roleId || "owner"),
+                lastActiveLabel: "Synced",
+                twoFA: "On"
+              } satisfies Member;
+            })
+          );
+        }
+
+        const backendInvites = Array.isArray(payload.invites) ? payload.invites : [];
+        if (backendInvites.length > 0) {
+          setInvites(
+            backendInvites.map((entry, index) => {
+              const invite = entry as Record<string, unknown>;
+              const statusRaw = String(invite.status || "Pending");
+              const normalizedStatus =
+                statusRaw.toLowerCase() === "accepted"
+                  ? "Accepted"
+                  : statusRaw.toLowerCase() === "expired"
+                    ? "Expired"
+                    : statusRaw.toLowerCase() === "revoked"
+                      ? "Revoked"
+                      : "Pending";
+              return {
+                id: String(invite.id || `invite_${index}`),
+                email: String(invite.email || ""),
+                roleId: String(invite.roleId || "viewer"),
+                seat: String(invite.seat || "Manager") as Seat,
+                createdAtLabel: "Synced",
+                expiresAtLabel: "—",
+                status: normalizedStatus as Invite["status"]
+              } satisfies Invite;
+            })
+          );
+        }
+
+        const security =
+          payload.workspaceSecurity && typeof payload.workspaceSecurity === "object"
+            ? (payload.workspaceSecurity as Record<string, unknown>)
+            : null;
+        if (security) {
+          if (typeof security.require2FA === "boolean") setRequire2FA(security.require2FA);
+          if (typeof security.allowExternalInvites === "boolean") setAllowExternalInvites(security.allowExternalInvites);
+          if (typeof security.supplierGuestExpiryHours === "number") setSupplierGuestExpiryHours(security.supplierGuestExpiryHours);
+        }
+      })
+      .catch(() => {
+        setRoles([]);
+        setMembers([]);
+        setInvites([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHasLoadedBackendRoles(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRoleId && roles.length > 0) {
+      setSelectedRoleId(roles[0].id);
+    }
+  }, [roles, selectedRoleId]);
+
+  useEffect(() => {
+    if (!hasLoadedBackendRoles) return;
+    void creatorApi.updateRolesSecurity({
+      require2FA,
+      allowExternalInvites,
+      supplierGuestExpiryHours
+    });
+  }, [allowExternalInvites, hasLoadedBackendRoles, require2FA, supplierGuestExpiryHours]);
 
   const permIndex = useMemo(() => {
     const m = new Map<string, Perm>();
@@ -1037,19 +1044,27 @@ export default function RolesPermissionsPremium() {
 
   function saveRoleMeta() {
     if (!selectedRole) return;
+    const nextName = roleNameDraft.trim() || selectedRole.name;
+    const nextDescription = roleDescDraft.trim() || selectedRole.description;
     setRoles((rs) =>
-      rs.map((r) => (r.id === selectedRole.id ? { ...r, name: roleNameDraft.trim() || r.name, description: roleDescDraft.trim() || r.description } : r))
+      rs.map((r) => (r.id === selectedRole.id ? { ...r, name: nextName, description: nextDescription } : r))
     );
+    void creatorApi.updateRole(selectedRole.id, {
+      name: nextName,
+      description: nextDescription
+    });
     setEditRoleOpen(false);
     push("Role updated.", "success");
-    log("Owner", "Updated role metadata", `${selectedRole.name} → ${roleNameDraft.trim() || selectedRole.name}`);
+    log("Owner", "Updated role metadata", `${selectedRole.name} → ${nextName}`);
   }
 
   function setPerm(roleId: string, permId: string, value: boolean) {
     setRoles((rs) =>
       rs.map((r) => {
         if (r.id !== roleId) return r;
-        return { ...r, perms: { ...r.perms, [permId]: value } };
+        const nextPerms = { ...r.perms, [permId]: value };
+        void creatorApi.updateRole(roleId, { perms: nextPerms });
+        return { ...r, perms: nextPerms };
       })
     );
   }
@@ -1064,6 +1079,7 @@ export default function RolesPermissionsPremium() {
         g.perms.forEach((p) => {
           next[p.id] = value;
         });
+        void creatorApi.updateRole(roleId, { perms: next });
         return { ...r, perms: next };
       })
     );
@@ -1079,6 +1095,13 @@ export default function RolesPermissionsPremium() {
       badge: "Custom"
     };
     setRoles((rs) => [copy, ...rs]);
+    void creatorApi.createRole({
+      id: copy.id,
+      name: copy.name,
+      badge: copy.badge,
+      description: copy.description,
+      perms: copy.perms
+    });
     setSelectedRoleId(id);
     push("Role duplicated.", "success");
     log("Owner", "Duplicated role", `${selectedRole.name} → ${copy.name}`);
@@ -1096,6 +1119,13 @@ export default function RolesPermissionsPremium() {
       perms: buildPermMap(ids, false)
     };
     setRoles((rs) => [r, ...rs]);
+    void creatorApi.createRole({
+      id: r.id,
+      name: r.name,
+      badge: r.badge,
+      description: r.description,
+      perms: r.perms
+    });
     setSelectedRoleId(id);
     setCreateRoleOpen(false);
     push("New role created.", "success");
@@ -1110,6 +1140,7 @@ export default function RolesPermissionsPremium() {
     }
     const name = selectedRole.name;
     setRoles((rs) => rs.filter((r) => r.id !== selectedRole.id));
+    void creatorApi.deleteRole(selectedRole.id);
     setSelectedRoleId("owner");
     push("Role deleted.", "success");
     log("Owner", "Deleted role", name, "warn");
@@ -1140,6 +1171,13 @@ export default function RolesPermissionsPremium() {
       status: "Pending"
     };
     setInvites((x) => [inv, ...x]);
+    void creatorApi.createRoleInvite({
+      id: inv.id,
+      name: email.split("@")[0] || "Invite",
+      email: inv.email,
+      roleId: inv.roleId,
+      seat: inv.seat
+    });
     setInviteOpen(false);
     setInviteEmail("");
     push("Invite sent.", "success");
@@ -1160,12 +1198,14 @@ export default function RolesPermissionsPremium() {
 
   function changeMemberRole(memberId: string, roleId: string) {
     setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, roleId } : m)));
+    void creatorApi.updateRoleMember(memberId, { roleId });
     push("Role updated.", "success");
     log("Owner", "Changed member role", `${memberId} → ${roleId}`);
   }
 
   function changeMemberStatus(memberId: string, status: MemberStatus) {
     setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, status } : m)));
+    void creatorApi.updateRoleMember(memberId, { status });
     push(`Member status: ${status}`, "success");
     log("Owner", "Changed member status", `${memberId} → ${status}`, status === "Suspended" ? "critical" : "warn");
   }

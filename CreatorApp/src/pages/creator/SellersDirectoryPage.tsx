@@ -16,6 +16,7 @@ type Trend = "up" | "down" | "flat";
 type Seller = {
   id: number;
   apiId: string;
+  handle: string;
   name: string;
   initials: string;
   tagline: string;
@@ -69,6 +70,7 @@ function toSeller(record: PublicSellerRecord): Seller {
   return {
     id: sellerNumericId(String(record.id)),
     apiId: String(record.id),
+    handle: String(record.handle || "").trim(),
     name: String(record.displayName || record.name || "Supplier"),
     initials: sellerInitials(record.displayName || record.name),
     tagline: String(record.description || "Supplier profile"),
@@ -735,22 +737,49 @@ function InviteModal({ seller, onClose }: InviteModalProps) {
   const [model, setModel] = useState("Hybrid");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   // Lock background scroll when drawer is open
   useScrollLock(true);
 
   const handleSendInvite = () => {
     if (!message.trim()) return;
+    const recipientSellerId = String(seller.apiId || "").trim();
+    const recipientSellerHandle = String(seller.handle || "").trim();
+    if (!recipientSellerId && !recipientSellerHandle) {
+      setSubmitError("Selected seller cannot receive invites yet.");
+      return;
+    }
+    setSubmitError("");
     setIsSubmitting(true);
-    // Simulate backend call
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setIsSuccess(true);
-      // Auto close after showing success
-      setTimeout(() => {
-        onClose();
-      }, 1500);
-    }, 1500);
+    void creatorApi
+      .createInvite({
+        recipientSellerId: recipientSellerId || undefined,
+        recipientSellerHandle: recipientSellerHandle || undefined,
+        title: `Invite to collaborate with ${seller.name}`,
+        message,
+        type: model,
+        category: seller.categories?.[0] || "General",
+        region: seller.region || "Global",
+        messageShort: `Invite from creator workspace for ${seller.name}.`,
+        metadata: {
+          source: "creator-sellers-directory",
+          selectedSellerId: recipientSellerId || null,
+          selectedSellerHandle: recipientSellerHandle || null
+        }
+      })
+      .then(() => {
+        setIsSuccess(true);
+        setTimeout(() => {
+          onClose();
+        }, 1500);
+      })
+      .catch((error) => {
+        setSubmitError(error instanceof Error ? error.message : "Failed to send invite.");
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
   };
 
 
@@ -827,6 +856,9 @@ function InviteModal({ seller, onClose }: InviteModalProps) {
             <p className="text-xs text-slate-500 dark:text-slate-300">
               Keep it concise. Sellers can see your Creator profile and performance stats.
             </p>
+            {submitError ? (
+              <p className="text-xs text-red-600 dark:text-red-400">{submitError}</p>
+            ) : null}
           </section>
 
           <button

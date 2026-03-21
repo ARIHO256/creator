@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { LinkToolsDrawer } from "./NewLinkPage";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type AdzCampaignRecord, type AdzLinkRecord } from "../../lib/creatorApi";
 import {
   BarChart3,
   Check,
@@ -96,6 +98,129 @@ type LinkItem = {
   };
 };
 
+function mapCampaignStatusToLinkStatus(value: unknown): LinkStatus {
+  const normalized = String(value || "").toLowerCase();
+  if (["scheduled", "draft", "upcoming"].includes(normalized)) return "Scheduled";
+  if (["paused"].includes(normalized)) return "Paused";
+  if (["ended", "archived", "expired"].includes(normalized)) return "Expired";
+  return "Active";
+}
+
+function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[]): LinkItem[] {
+  return campaigns.flatMap((campaign) => {
+    const data =
+      campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
+        ? (campaign.data as Record<string, unknown>)
+        : {};
+    const sellerName = String(data.supplierName || data.sellerName || data.seller || "Supplier");
+    const supplierType: SupplierType =
+      String(data.supplierType || "").toLowerCase() === "provider" ? "Provider" : "Seller";
+    const titleBase = String(campaign.title || data.title || "Campaign");
+    const status = mapCampaignStatusToLinkStatus(campaign.status || data.status);
+    const clicks = Number(data.clicks || 0);
+    const purchases = Number(data.purchases || 0);
+    const earnings = Number(data.earnings || 0);
+    const conversionPct = clicks > 0 ? Number(((purchases / clicks) * 100).toFixed(1)) : 0;
+
+    const relatedLinks = links.filter((link) => {
+      const linkData =
+        link.data && typeof link.data === "object" && !Array.isArray(link.data)
+          ? (link.data as Record<string, unknown>)
+          : {};
+      return (
+        String(linkData.campaignId || "") === campaign.id ||
+        String(linkData.adzCampaignId || "") === campaign.id
+      );
+    });
+
+    const primaryUrl = String(
+      relatedLinks[0]?.url ||
+        (relatedLinks[0]?.data as Record<string, unknown> | undefined)?.url ||
+        data.shareUrl ||
+        `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`
+    );
+
+    const channels =
+      relatedLinks.length > 0
+        ? relatedLinks.map((link, index) => {
+            const linkData =
+              link.data && typeof link.data === "object" && !Array.isArray(link.data)
+                ? (link.data as Record<string, unknown>)
+                : {};
+            const channel = String(linkData.channel || linkData.label || `Channel ${index + 1}`);
+            return {
+              name: channel,
+              url: String(link.url || linkData.url || primaryUrl),
+              hint: String(linkData.hint || "Tracked")
+            };
+          })
+        : [
+            { name: "Default", url: primaryUrl, hint: "Tracked" },
+            { name: "Instagram", url: `${primaryUrl}&ch=instagram`, hint: "Social" },
+            { name: "TikTok", url: `${primaryUrl}&ch=tiktok`, hint: "Short video" },
+            { name: "WhatsApp", url: `${primaryUrl}&ch=whatsapp`, hint: "Broadcast" }
+          ];
+
+    const baseItem: LinkItem = {
+      id: String(campaign.id),
+      tab: "shoppable",
+      title: `Shoppable Adz · ${titleBase}`,
+      subtitle: String(data.subtitle || "Link pack + QR"),
+      status,
+      createdAt: String(campaign.createdAt || "Recently"),
+      campaign: { id: String(campaign.id), name: titleBase },
+      supplier: { name: sellerName, type: supplierType },
+      primaryUrl,
+      shortUrl: primaryUrl,
+      regionVariants: [
+        { region: "Global", url: primaryUrl },
+        { region: "Africa", url: `${primaryUrl}&rg=af` },
+        { region: "EU/UK", url: `${primaryUrl}&rg=eu` },
+        { region: "Asia", url: `${primaryUrl}&rg=as` },
+        { region: "China", url: `${primaryUrl}&rg=cn` }
+      ],
+      channels,
+      metrics: {
+        clicks,
+        purchases,
+        conversionPct,
+        earnings,
+        currency: String(campaign.currency || data.currency || "USD")
+      },
+      regionMetrics: [
+        { region: "Global", clicks, purchases, earnings, currency: String(campaign.currency || "USD") }
+      ],
+      sharePack: {
+        headline: `${titleBase} link pack`,
+        bullets: ["Tracked link", "Campaign attribution", "Use across social channels"],
+        captions: [
+          {
+            platform: "Instagram",
+            text: `Sharing ${titleBase}. Shop via this tracked link: {LINK}`
+          }
+        ],
+        hashtags: ["#MyLiveDealz", "#ShoppableAdz"]
+      }
+    };
+
+    const surfaces = Array.isArray(data.surfaces) ? data.surfaces.map((entry) => String(entry).toUpperCase()) : [];
+    if (!surfaces.includes("LIVE_SESSIONZ")) {
+      return [baseItem];
+    }
+
+    return [
+      {
+        ...baseItem,
+        id: `LIVE-${campaign.id}`,
+        tab: "live",
+        title: `Live Sessionz · ${titleBase}`,
+        subtitle: String(data.liveSubtitle || data.subtitle || "Live link"),
+      },
+      baseItem
+    ];
+  });
+}
+
 type CreatorLinksHubProps = {
   onChangePage?: (page: string) => void;
   initialOpenNewLinkDrawer?: boolean;
@@ -111,313 +236,19 @@ export default function CreatorLinksHubV3Fixed({
   const [groupBy, setGroupBy] = useState<GroupBy>("Campaign");
   const [supplierTypeFilter, setSupplierTypeFilter] = useState<"All" | SupplierType>("All");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [pinnedIds, setPinnedIds] = useState<string[]>(["LIVE-102", "SHOP-311"]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [newLinkDrawerOpen, setNewLinkDrawerOpen] = useState(initialOpenNewLinkDrawer);
 
   "suppliers include Sellers (suppliers of products) and Providers (service providers).";
 
-  const items: LinkItem[] = useMemo(
-    () => [
-      {
-        id: "LIVE-102",
-        tab: "live",
-        title: "Live Sessionz · Beauty Flash",
-        subtitle: "Today 18:30 · Kampala",
-        status: "Scheduled",
-        createdAt: "Today",
-        expiresAt: "Tomorrow",
-        campaign: { id: "CAMP-11", name: "Beauty Flash Dealz" },
-        supplier: { name: "GlowUp Hub", type: "Seller" },
-        primaryUrl: "https://mylivedealz.com/live/beauty-flash?creator=ronald",
-        shortUrl: "https://mldz.link/LIVE-102",
-        regionVariants: [
-          { region: "Global", url: "https://mldz.link/LIVE-102" },
-          { region: "Africa", url: "https://mldz.link/LIVE-102?rg=af" },
-          { region: "EU/UK", url: "https://mldz.link/LIVE-102?rg=eu" },
-          { region: "Asia", url: "https://mldz.link/LIVE-102?rg=as" },
-          { region: "China", url: "https://mldz.link/LIVE-102?rg=cn" }
-        ],
-        metrics: {
-          clicks: 320,
-          purchases: 0,
-          conversionPct: 0,
-          earnings: 0,
-          currency: "USD"
-        },
-        regionMetrics: [
-          { region: "Global", clicks: 320, purchases: 0, earnings: 0, currency: "USD" },
-          { region: "Africa", clicks: 220, purchases: 0, earnings: 0, currency: "USD" },
-          { region: "Asia", clicks: 60, purchases: 0, earnings: 0, currency: "USD" },
-          { region: "EU/UK", clicks: 25, purchases: 0, earnings: 0, currency: "USD" },
-          { region: "China", clicks: 15, purchases: 0, earnings: 0, currency: "USD" }
-        ],
-        channels: [
-          {
-            name: "Instagram Story",
-            url: "https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=ig_story",
-            hint: "Best for Stories"
-          },
-          {
-            name: "TikTok",
-            url: "https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=tiktok",
-            hint: "Best for short hooks"
-          },
-          {
-            name: "YouTube Shorts",
-            url: "https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=shorts",
-            hint: "Best for replay discovery"
-          },
-          {
-            name: "WhatsApp",
-            url: "https://mylivedealz.com/live/beauty-flash?creator=ronald&ch=whatsapp",
-            hint: "Best for broadcasts"
-          }
-        ],
-        sharePack: {
-          headline: "LIVE TODAY: Beauty Flash Dealz",
-          bullets: [
-            "Limited stock + live-only discounts",
-            "High-quality products from verified Sellers",
-            "Fast checkout and buyer protections"
-          ],
-          captions: [
-            {
-              platform: "Instagram",
-              text: "Going live today at 18:30! Beauty Flash Dealz with limited stock. Tap the link to join and shop live. #MyLiveDealz #LiveSessionz"
-            },
-            {
-              platform: "TikTok",
-              text: "Live at 18:30. Beauty Flash Dealz. Limited stock. Join and shop live. #LiveSessionz #MyLiveDealz"
-            },
-            {
-              platform: "WhatsApp",
-              text: "I’m going live today at 18:30 with Beauty Flash Dealz. Join here: {LINK}"
-            }
-          ],
-          hashtags: ["#MyLiveDealz", "#LiveSessionz", "#BeautyDealz", "#ShopLive"]
-        }
-      },
-      {
-        id: "LIVE-087",
-        tab: "live",
-        title: "Live Sessionz · Tech Friday Mega",
-        subtitle: "Replay available",
-        status: "Active",
-        createdAt: "2 days ago",
-        campaign: { id: "CAMP-07", name: "Tech Friday Mega" },
-        supplier: { name: "GadgetMart Africa", type: "Seller" },
-        primaryUrl: "https://mylivedealz.com/replay/tech-friday?creator=ronald",
-        shortUrl: "https://mldz.link/LIVE-087",
-        regionVariants: [
-          { region: "Global", url: "https://mldz.link/LIVE-087" },
-          { region: "Africa", url: "https://mldz.link/LIVE-087?rg=af" },
-          { region: "EU/UK", url: "https://mldz.link/LIVE-087?rg=eu" },
-          { region: "Asia", url: "https://mldz.link/LIVE-087?rg=as" },
-          { region: "China", url: "https://mldz.link/LIVE-087?rg=cn" }
-        ],
-        metrics: {
-          clicks: 1850,
-          purchases: 96,
-          conversionPct: 5.2,
-          earnings: 820,
-          currency: "USD"
-        },
-        regionMetrics: [
-          { region: "Global", clicks: 1850, purchases: 96, earnings: 820, currency: "USD" },
-          { region: "Africa", clicks: 851, purchases: 44, earnings: 377, currency: "USD" },
-          { region: "Asia", clicks: 518, purchases: 27, earnings: 230, currency: "USD" },
-          { region: "EU/UK", clicks: 296, purchases: 15, earnings: 130, currency: "USD" },
-          { region: "China", clicks: 185, purchases: 10, earnings: 83, currency: "USD" }
-        ],
-        channels: [
-          {
-            name: "Instagram Feed",
-            url: "https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=ig_feed",
-            hint: "Best for evergreen"
-          },
-          {
-            name: "TikTok",
-            url: "https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=tiktok",
-            hint: "Best for reach"
-          },
-          {
-            name: "WhatsApp",
-            url: "https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=whatsapp",
-            hint: "Best for groups"
-          },
-          {
-            name: "Telegram",
-            url: "https://mylivedealz.com/replay/tech-friday?creator=ronald&ch=telegram",
-            hint: "Best for communities"
-          }
-        ],
-        sharePack: {
-          headline: "REPLAY: Tech Friday Mega Live",
-          bullets: [
-            "High-quality gadgets + bundles",
-            "Watch the demo, then shop",
-            "Tracked link supports your earnings"
-          ],
-          captions: [
-            {
-              platform: "Instagram",
-              text: "Replay is up! Tech Friday Mega Live. Watch the demo and shop through this link. #MyLiveDealz #LiveSessionz"
-            },
-            {
-              platform: "YouTube Shorts",
-              text: "Tech Friday replay: best gadgets + bundles. Shop with the link. #MyLiveDealz"
-            },
-            {
-              platform: "WhatsApp",
-              text: "Replay is up (Tech Friday). Watch and shop here: {LINK}"
-            }
-          ],
-          hashtags: ["#MyLiveDealz", "#LiveSessionz", "#TechDealz", "#Gadgets"]
-        }
-      },
-      {
-        id: "SHOP-311",
-        tab: "shoppable",
-        title: "Shoppable Adz · Serum Promo",
-        subtitle: "Link pack + QR",
-        status: "Active",
-        createdAt: "This week",
-        campaign: { id: "CAMP-21", name: "GlowUp Serum Promo" },
-        supplier: { name: "GlowUp Hub", type: "Seller" },
-        primaryUrl: "https://mylivedealz.com/shoppable/serum?creator=ronald",
-        shortUrl: "https://mldz.link/SHOP-311",
-        regionVariants: [
-          { region: "Global", url: "https://mldz.link/SHOP-311" },
-          { region: "Africa", url: "https://mldz.link/SHOP-311?rg=af" },
-          { region: "EU/UK", url: "https://mldz.link/SHOP-311?rg=eu" },
-          { region: "Asia", url: "https://mldz.link/SHOP-311?rg=as" },
-          { region: "China", url: "https://mldz.link/SHOP-311?rg=cn" }
-        ],
-        metrics: {
-          clicks: 980,
-          purchases: 41,
-          conversionPct: 4.2,
-          earnings: 210,
-          currency: "USD"
-        },
-        regionMetrics: [
-          { region: "Global", clicks: 980, purchases: 41, earnings: 210, currency: "USD" },
-          { region: "Africa", clicks: 568, purchases: 24, earnings: 122, currency: "USD" },
-          { region: "Asia", clicks: 196, purchases: 8, earnings: 42, currency: "USD" },
-          { region: "EU/UK", clicks: 137, purchases: 6, earnings: 30, currency: "USD" },
-          { region: "China", clicks: 79, purchases: 3, earnings: 16, currency: "USD" }
-        ],
-        channels: [
-          {
-            name: "Instagram Story",
-            url: "https://mylivedealz.com/shoppable/serum?creator=ronald&ch=ig_story",
-            hint: "Best for Stories"
-          },
-          {
-            name: "TikTok",
-            url: "https://mylivedealz.com/shoppable/serum?creator=ronald&ch=tiktok",
-            hint: "Best for short hooks"
-          },
-          {
-            name: "YouTube Shorts",
-            url: "https://mylivedealz.com/shoppable/serum?creator=ronald&ch=shorts",
-            hint: "Best for replay discovery"
-          },
-          {
-            name: "WhatsApp",
-            url: "https://mylivedealz.com/shoppable/serum?creator=ronald&ch=whatsapp",
-            hint: "Best for broadcasts"
-          }
-        ],
-        sharePack: {
-          headline: "GlowUp Serum Dealz",
-          bullets: ["Verified Seller · buyer protections", "Fast checkout", "Limited stock"],
-          captions: [
-            {
-              platform: "Instagram",
-              text: "GlowUp Serum Dealz now live. Limited stock. Tap to shop. #MyLiveDealz #ShoppableAdz"
-            },
-            {
-              platform: "TikTok",
-              text: "This serum is selling fast. Tap to shop. #ShoppableAdz #MyLiveDealz"
-            },
-            {
-              platform: "WhatsApp",
-              text: "GlowUp Serum deal is live. Shop here: {LINK}"
-            }
-          ],
-          hashtags: ["#MyLiveDealz", "#ShoppableAdz", "#BeautyDealz"]
-        }
-      },
-      {
-        id: "SHOP-402",
-        tab: "shoppable",
-        title: "Shoppable Adz · Mobile Repair Booking",
-        subtitle: "Service booking link",
-        status: "Active",
-        createdAt: "This month",
-        campaign: { id: "CAMP-33", name: "Repair Booking Offer" },
-        supplier: { name: "FixNow Mobile", type: "Provider" },
-        primaryUrl: "https://mylivedealz.com/shoppable/repair?creator=ronald",
-        shortUrl: "https://mldz.link/SHOP-402",
-        regionVariants: [
-          { region: "Global", url: "https://mldz.link/SHOP-402" },
-          { region: "Africa", url: "https://mldz.link/SHOP-402?rg=af" },
-          { region: "EU/UK", url: "https://mldz.link/SHOP-402?rg=eu" },
-          { region: "Asia", url: "https://mldz.link/SHOP-402?rg=as" },
-          { region: "China", url: "https://mldz.link/SHOP-402?rg=cn" }
-        ],
-        metrics: {
-          clicks: 540,
-          purchases: 16,
-          conversionPct: 3.0,
-          earnings: 95,
-          currency: "USD"
-        },
-        regionMetrics: [
-          { region: "Global", clicks: 540, purchases: 16, earnings: 95, currency: "USD" },
-          { region: "Africa", clicks: 384, purchases: 11, earnings: 67, currency: "USD" },
-          { region: "Asia", clicks: 65, purchases: 2, earnings: 11, currency: "USD" },
-          { region: "EU/UK", clicks: 54, purchases: 2, earnings: 10, currency: "USD" },
-          { region: "China", clicks: 37, purchases: 1, earnings: 7, currency: "USD" }
-        ],
-        channels: [
-          {
-            name: "Instagram Feed",
-            url: "https://mylivedealz.com/shoppable/repair?creator=ronald&ch=ig_feed",
-            hint: "Best for evergreen"
-          },
-          {
-            name: "WhatsApp",
-            url: "https://mylivedealz.com/shoppable/repair?creator=ronald&ch=whatsapp",
-            hint: "Best for groups"
-          },
-          {
-            name: "Telegram",
-            url: "https://mylivedealz.com/shoppable/repair?creator=ronald&ch=telegram",
-            hint: "Best for communities"
-          }
-        ],
-        sharePack: {
-          headline: "Book Mobile Repair (Trusted Provider)",
-          bullets: ["Verified Provider", "Clear pricing", "Easy booking"],
-          captions: [
-            {
-              platform: "Instagram",
-              text: "Need a quick mobile repair? Book a trusted Provider here. #MyLiveDealz #ShoppableAdz"
-            },
-            {
-              platform: "WhatsApp",
-              text: "Trusted mobile repair booking: {LINK}"
-            }
-          ],
-          hashtags: ["#MyLiveDealz", "#ShoppableAdz", "#Services"]
-        }
-      }
-    ],
-    []
-  );
+  const { data: items } = useApiResource<LinkItem[]>({
+    initialData: [],
+    loader: async () => {
+      const [campaigns, links] = await Promise.all([creatorApi.adzCampaigns(), creatorApi.adzLinks()]);
+      return buildLinkHubItems(campaigns, links);
+    }
+  });
 
   // Effective supplier filter when groupBy=Provider
   useEffect(() => {

@@ -106,15 +106,18 @@ export class CollaborationService {
     const payload = await this.readDealzMarketplace(userId, 'seller_dealz_marketplace') as Record<string, unknown>;
     const [suppliers, creators, campaigns] = await Promise.all([
       this.loadDealzMarketplaceSuppliers(userId),
-      this.loadDealzMarketplaceCreators(),
+      this.loadDealzMarketplaceCreators(userId),
       this.loadDealzMarketplaceCampaigns(userId)
     ]);
+    const mergedSuppliers = this.mergeMarketplaceActors(payload.suppliers, suppliers, 'name');
+    const mergedCreators = this.mergeMarketplaceActors(payload.creators, creators, 'handle');
+    const mergedDeals = this.mergeMarketplaceDeals(payload.deals, campaigns, mergedCreators);
 
     return {
       ...payload,
-      deals: this.mergeMarketplaceDeals(payload.deals, campaigns),
-      suppliers: this.mergeMarketplaceActors(payload.suppliers, suppliers, 'name'),
-      creators: this.mergeMarketplaceActors(payload.creators, creators, 'handle')
+      deals: mergedDeals,
+      suppliers: mergedSuppliers,
+      creators: mergedCreators
     };
   }
 
@@ -997,6 +1000,7 @@ export class CollaborationService {
 
     const mapped = sellers.map((seller) => ({
       id: seller.id,
+      ownerUserId: seller.userId,
       name: seller.displayName || seller.storefrontName || seller.name,
       category: seller.category || 'Seller',
       logoUrl: seller.storefront?.logoUrl || seller.storefront?.coverUrl || ''
@@ -1011,19 +1015,41 @@ export class CollaborationService {
     return [currentSeller, ...mapped.filter((seller) => seller.id !== currentSeller.id)];
   }
 
-  private async loadDealzMarketplaceCreators() {
-    const profiles = await this.prisma.creatorProfile.findMany({
-      take: 12,
-      orderBy: [{ followers: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
-    });
+  private async loadDealzMarketplaceCreators(userId: string) {
+    const [profiles, currentProfile] = await Promise.all([
+      this.prisma.creatorProfile.findMany({
+        take: 12,
+        orderBy: [{ followers: 'desc' }, { rating: 'desc' }, { updatedAt: 'desc' }]
+      }),
+      this.prisma.creatorProfile.findUnique({
+        where: { userId }
+      })
+    ]);
 
-    return profiles.map((profile) => ({
+    const mapped = profiles.map((profile) => ({
       id: profile.userId,
       name: profile.name || profile.handle || 'Creator',
       handle: profile.handle ? `@${profile.handle.replace(/^@/, '')}` : '@creator',
       avatarUrl: '',
       verified: Boolean(profile.isKycVerified)
     }));
+
+    const currentMapped =
+      currentProfile
+        ? {
+          id: currentProfile.userId,
+          name: currentProfile.name || currentProfile.handle || 'Creator',
+          handle: currentProfile.handle ? `@${currentProfile.handle.replace(/^@/, '')}` : '@creator',
+          avatarUrl: '',
+          verified: Boolean(currentProfile.isKycVerified)
+        }
+        : null;
+
+    if (!currentMapped) {
+      return mapped;
+    }
+
+    return [currentMapped, ...mapped.filter((entry) => entry.id !== currentMapped.id)];
   }
 
   private async loadDealzMarketplaceCampaigns(userId: string) {
@@ -1069,15 +1095,57 @@ export class CollaborationService {
     return [...primary, ...extras];
   }
 
-  private mergeMarketplaceDeals(current: unknown, fallback: Array<Record<string, unknown>>) {
+  private mergeMarketplaceDeals(
+    current: unknown,
+    fallback: Array<Record<string, unknown>>,
+    creators: Array<Record<string, unknown>>
+  ) {
     const primary = Array.isArray(current)
       ? current.filter((entry) => entry && typeof entry === 'object') as Array<Record<string, unknown>>
       : [];
-    const seen = new Set(
-      primary
-        .map((entry) => String(entry.id ?? '').trim())
-        .filter(Boolean)
-    );
+    const fallbackById = new Map<string, Record<string, unknown>>();
+    for (const entry of fallback) {
+      const id = String(entry.id ?? '').trim();
+      if (!id) continue;
+      fallbackById.set(id, entry);
+    }
+
+    const mergedPrimary: Array<Record<string, unknown>> = primary.map((entry) => {
+      const id = String(entry.id ?? '').trim();
+      const fallbackEntry = fallbackById.get(id);
+      const mergedCreator = this.resolveMarketplaceCreator(
+        entry.creator,
+        creators,
+        fallbackEntry?.creator && typeof fallbackEntry.creator === 'object' && !Array.isArray(fallbackEntry.creator)
+          ? fallbackEntry.creator as Record<string, unknown>
+          : null
+      );
+      if (!fallbackEntry) {
+        return {
+          ...entry,
+          creator: mergedCreator
+        } as Record<string, unknown>;
+      }
+      return {
+        ...entry,
+        ...fallbackEntry,
+        creator: mergedCreator,
+        supplier:
+          fallbackEntry.supplier && typeof fallbackEntry.supplier === 'object' && !Array.isArray(fallbackEntry.supplier)
+            ? fallbackEntry.supplier
+            : entry.supplier,
+        shoppable:
+          entry.shoppable && typeof entry.shoppable === 'object' && !Array.isArray(entry.shoppable)
+            ? entry.shoppable
+            : fallbackEntry.shoppable,
+        live:
+          entry.live && typeof entry.live === 'object' && !Array.isArray(entry.live)
+            ? entry.live
+            : fallbackEntry.live
+      } as Record<string, unknown>;
+    });
+
+    const seen = new Set(mergedPrimary.map((entry) => String(entry.id ?? '').trim()).filter(Boolean));
 
     const extras = fallback.filter((entry) => {
       const id = String(entry.id ?? '').trim();
@@ -1088,7 +1156,88 @@ export class CollaborationService {
       return true;
     });
 
-    return [...primary, ...extras];
+    const mergedExtras: Array<Record<string, unknown>> = extras.map((entry) => ({
+      ...entry,
+      creator: this.resolveMarketplaceCreator(entry.creator, creators, null)
+    }));
+
+    return [...mergedPrimary, ...mergedExtras];
+  }
+
+  private resolveMarketplaceCreator(
+    rawCreator: unknown,
+    creators: Array<Record<string, unknown>>,
+    fallbackCreator: Record<string, unknown> | null
+  ): Record<string, unknown> {
+    const creator = rawCreator && typeof rawCreator === 'object' && !Array.isArray(rawCreator)
+      ? rawCreator as Record<string, unknown>
+      : {};
+    const creatorId = String(creator.id ?? creator.userId ?? '').trim();
+    const creatorName = String(creator.name ?? '').trim();
+    const creatorHandle = this.normalizeCreatorHandle(creator.handle);
+    const creatorAvatarUrl = typeof creator.avatarUrl === 'string' ? creator.avatarUrl : '';
+    const creatorVerified = typeof creator.verified === 'boolean' ? creator.verified : false;
+
+    const byId = creatorId
+      ? creators.find((entry) => String(entry.id ?? entry.userId ?? '').trim() === creatorId)
+      : null;
+    const byHandle = creatorHandle
+      ? creators.find((entry) => this.normalizeCreatorHandle(entry.handle).toLowerCase() === creatorHandle.toLowerCase())
+      : null;
+    const byName = creatorName
+      ? creators.find((entry) => String(entry.name ?? '').trim().toLowerCase() === creatorName.toLowerCase())
+      : null;
+
+    const matched = byId ?? byHandle ?? byName ?? null;
+    if (matched) {
+      return {
+        ...matched,
+        avatarUrl: creatorAvatarUrl || (typeof matched.avatarUrl === 'string' ? matched.avatarUrl : ''),
+        verified: typeof matched.verified === 'boolean' ? matched.verified : creatorVerified
+      };
+    }
+
+    const preferredFallback = fallbackCreator
+      ? this.resolveMarketplaceCreator(fallbackCreator, creators, null)
+      : creators[0] ?? null;
+    const looksTemplateBound = this.isTemplateCreator(creatorName, creatorHandle);
+    if (preferredFallback && (looksTemplateBound || !creatorHandle || creatorHandle === '@creator')) {
+      return {
+        ...preferredFallback,
+        avatarUrl: creatorAvatarUrl || (typeof preferredFallback.avatarUrl === 'string' ? preferredFallback.avatarUrl : ''),
+        verified: typeof preferredFallback.verified === 'boolean' ? preferredFallback.verified : creatorVerified
+      };
+    }
+
+    return {
+      id: creatorId || undefined,
+      name: creatorName || (typeof preferredFallback?.name === 'string' ? preferredFallback.name : 'Creator'),
+      handle: creatorHandle || this.normalizeCreatorHandle(preferredFallback?.handle),
+      avatarUrl: creatorAvatarUrl || (typeof preferredFallback?.avatarUrl === 'string' ? preferredFallback.avatarUrl : ''),
+      verified: creatorVerified
+    };
+  }
+
+  private normalizeCreatorHandle(value: unknown) {
+    const raw = typeof value === 'string' ? value.trim() : '';
+    if (!raw) {
+      return '@creator';
+    }
+    return raw.startsWith('@') ? raw : `@${raw}`;
+  }
+
+  private isTemplateCreator(name: string, handle: string) {
+    const normalizedName = name.trim().toLowerCase();
+    const normalizedHandle = handle.trim().toLowerCase();
+    if (!normalizedName && !normalizedHandle) {
+      return true;
+    }
+    const templateHandles = new Set(['@techwithbrian', '@amina', '@creator', '@janedoe', '@noahknows', '@rinavale']);
+    if (templateHandles.has(normalizedHandle)) {
+      return true;
+    }
+    const templateNames = new Set(['tech with brian', 'amina k', 'creator']);
+    return templateNames.has(normalizedName);
   }
 
   private serializeDealzMarketplaceCampaign(campaign: any) {
@@ -1115,9 +1264,22 @@ export class CollaborationService {
       metadata.live && typeof metadata.live === 'object' && !Array.isArray(metadata.live)
         ? metadata.live as Record<string, unknown>
         : null;
+    const relationCreatorName = campaign.creator?.creatorProfile?.name ?? campaign.creator?.email ?? '';
+    const relationCreatorHandle = campaign.creator?.creatorProfile?.handle
+      ? `@${String(campaign.creator.creatorProfile.handle).replace(/^@/, '')}`
+      : '';
+    const payloadCreatorHandle =
+      typeof creatorPayload.handle === 'string' && creatorPayload.handle.trim()
+        ? creatorPayload.handle.trim()
+        : '';
+    const normalizedPayloadCreatorHandle = payloadCreatorHandle
+      ? (payloadCreatorHandle.startsWith('@') ? payloadCreatorHandle : `@${payloadCreatorHandle}`)
+      : '';
 
     return {
       id: campaign.id,
+      supplierId: campaign.sellerId,
+      supplierOwnerUserId: campaign.seller?.userId ?? null,
       type: marketplaceType,
       title: campaign.title,
       tagline:
@@ -1127,6 +1289,8 @@ export class CollaborationService {
             ? campaign.description.trim()
             : 'Deal draft',
       supplier: {
+        id: campaign.sellerId,
+        ownerUserId: campaign.seller?.userId ?? null,
         name:
           typeof supplierPayload.name === 'string' && supplierPayload.name.trim()
             ? supplierPayload.name.trim()
@@ -1142,23 +1306,23 @@ export class CollaborationService {
       },
       creator: {
         name:
-          typeof creatorPayload.name === 'string' && creatorPayload.name.trim()
-            ? creatorPayload.name.trim()
-            : campaign.creator?.creatorProfile?.name ?? campaign.creator?.email ?? 'Creator',
+          relationCreatorName
+            ? relationCreatorName
+            : typeof creatorPayload.name === 'string' && creatorPayload.name.trim()
+              ? creatorPayload.name.trim()
+              : 'Creator',
         handle:
-          typeof creatorPayload.handle === 'string' && creatorPayload.handle.trim()
-            ? creatorPayload.handle.trim()
-            : campaign.creator?.creatorProfile?.handle
-              ? `@${String(campaign.creator.creatorProfile.handle).replace(/^@/, '')}`
-              : '@creator',
+          relationCreatorHandle || normalizedPayloadCreatorHandle || '@creator',
         avatarUrl:
           typeof creatorPayload.avatarUrl === 'string'
             ? creatorPayload.avatarUrl
             : '',
         verified:
-          typeof creatorPayload.verified === 'boolean'
-            ? creatorPayload.verified
-            : Boolean(campaign.creator?.creatorProfile?.isKycVerified)
+          relationCreatorHandle
+            ? Boolean(campaign.creator?.creatorProfile?.isKycVerified)
+            : typeof creatorPayload.verified === 'boolean'
+              ? creatorPayload.verified
+              : false
       },
       startISO: campaign.startAt?.toISOString?.() ?? campaign.startAt ?? new Date().toISOString(),
       endISO: campaign.endAt?.toISOString?.() ?? campaign.endAt ?? new Date().toISOString(),

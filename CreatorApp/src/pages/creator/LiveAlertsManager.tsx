@@ -237,15 +237,19 @@ export default function LiveAlertsManager() {
     initialData: {} as LiveAlertsPayload,
     loader: () => creatorApi.liveTool("live-alerts") as Promise<LiveAlertsPayload>,
   });
+  const sessionId = useMemo(() => {
+    if (typeof window === "undefined") return "session";
+    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+  }, []);
   const session = useMemo(
     () => ({
-      id: payload.session?.id || "LS-20418",
-      title: payload.session?.title || "Autumn Beauty Flash",
-      status: payload.session?.status || ("Live" as SessionStatus),
+      id: payload.session?.id || sessionId,
+      title: payload.session?.title || "Live session",
+      status: payload.session?.status || ("Draft" as SessionStatus),
       startedISO: payload.session?.startedISO || new Date(Date.now() - 9 * 60 * 1000).toISOString(),
       endsISO: payload.session?.endsISO || new Date(Date.now() + 51 * 60 * 1000).toISOString(),
     }),
-    [payload.session],
+    [payload.session, sessionId],
   );
 
   const liveLink = useMemo(() => buildLiveLink(session.id), [session.id]);
@@ -275,8 +279,8 @@ export default function LiveAlertsManager() {
   );
 
   const [enabledDest, setEnabledDest] = useState<Record<ChannelKey, boolean>>({
-    whatsapp: true,
-    telegram: true,
+    whatsapp: false,
+    telegram: false,
     line: false,
     viber: false,
     rcs: false,
@@ -284,20 +288,20 @@ export default function LiveAlertsManager() {
 
   const enabledChannels = useMemo(() => channels.filter((c) => enabledDest[c.key]), [channels, enabledDest]);
 
-  const [dealName, setDealName] = useState("GlowUp Serum Bundle");
-  const [dealEndsMinutes, setDealEndsMinutes] = useState(10);
+  const [dealName, setDealName] = useState("");
+  const [dealEndsMinutes, setDealEndsMinutes] = useState(0);
 
   // cap timestamps (demo)
   const [lastSent, setLastSent] = useState<Record<AlertKey, number>>({
-    were_live: Date.now() - 11 * 60 * 1000,
-    flash_deal: Date.now() - 20 * 60 * 1000,
-    last_chance: Date.now() - 40 * 60 * 1000,
+    were_live: 0,
+    flash_deal: 0,
+    last_chance: 0,
   });
   useEffect(() => {
     if (!Object.keys(payload).length) return;
     setEnabledDest((current) => ({ ...current, ...(payload.enabledDest || {}) }));
-    setDealName(payload.dealName || "GlowUp Serum Bundle");
-    setDealEndsMinutes(typeof payload.dealEndsMinutes === "number" ? payload.dealEndsMinutes : 10);
+    setDealName(payload.dealName || "");
+    setDealEndsMinutes(typeof payload.dealEndsMinutes === "number" ? payload.dealEndsMinutes : 0);
     setLastSent((current) => ({ ...current, ...(payload.lastSent || {}) }));
   }, [payload]);
 

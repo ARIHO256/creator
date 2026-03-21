@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { hasSessionToken, useSession } from "../auth/session";
 import { getCurrentRole } from "../auth/roles";
@@ -15,6 +15,11 @@ export default function Layout({ children }: LayoutProps) {
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const session = useSession();
   const role = getCurrentRole(session);
+
+  useEffect(() => {
+    if (!hasSessionToken(session)) return;
+    void sellerBackendApi.ensureWorkspaceRole(role).catch(() => undefined);
+  }, [role, session?.accessToken, session?.token, session?.userId, session?.email, session?.phone]);
 
   const handleSidebarScroll = (value: number) => {
     if (!hasSessionToken(session)) return;

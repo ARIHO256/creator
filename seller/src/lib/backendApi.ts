@@ -530,10 +530,22 @@ export const sellerBackendApi = {
       method: "POST",
     }),
   getNotifications: () => request<Array<Record<string, unknown>>>("/api/notifications"),
+  getInvites: (query?: { limit?: number; offset?: number }) => {
+    const params = new URLSearchParams();
+    if (typeof query?.limit === "number") params.set("limit", String(query.limit));
+    if (typeof query?.offset === "number") params.set("offset", String(query.offset));
+    const search = params.toString();
+    return request<Array<Record<string, unknown>>>(`/api/invites${search ? `?${search}` : ""}`);
+  },
   createCreatorInvite: (body: Record<string, unknown>) =>
     request<Record<string, unknown>>("/api/invites", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  respondInvite: (id: string, status: "ACCEPTED" | "DECLINED" | "PENDING" | "CANCELLED" | "EXPIRED") =>
+    request<Record<string, unknown>>(`/api/invites/${encodeURIComponent(id)}/respond`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
     }),
   markNotificationRead: (id: string) =>
     request<Record<string, unknown>>(`/api/notifications/${encodeURIComponent(id)}/read`, {

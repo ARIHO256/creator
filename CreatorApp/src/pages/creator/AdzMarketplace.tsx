@@ -3,8 +3,9 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../../contexts/ThemeContext";
 import { PageHeader } from "../../components/PageHeader";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi, type DealzMarketplaceWorkspaceResponse } from "../../lib/creatorApi";
 import AdBuilder from "./AdBuilder";
 import {
   BadgeCheck,
@@ -46,7 +47,6 @@ import {
  * - Viewer (hero + offer) modal/fullscreen with overlays: Buy/Add, stock warnings, countdown, love/share + mode toggle (if applicable)
  *
  * Notes:
- * - This is a premium UI shell with mock data. Wire to your real API + routing as needed.
  * - Supplier naming is used (not Supplier).
  */
 
@@ -1004,240 +1004,225 @@ function ShoppableAdPreview({
   );
 }
 
-/** ------------------------------ Mock data ------------------------------ */
+/** ------------------------------ Data mapping ------------------------------ */
 
-const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
+  deals: [],
+  suppliers: [],
+  creators: [],
+  selectedId: "",
+  cart: {},
+  liveCart: {},
+};
 
-const DEMO_ADS: Ad[] = [
-  {
-    id: "ad_1",
-    rank: 1,
-    status: "Generated",
-    campaignName: "Valentine Glow Week",
-    campaignSubtitle: "GlowUp Hub · Limited-time drops",
+const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asNumber(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function asBool(value: unknown, fallback = false): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function asCurrency(value: unknown, fallback: "UGX" | "USD" = "UGX"): "UGX" | "USD" {
+  const upper = asString(value, fallback).toUpperCase();
+  if (upper === "USD") return "USD";
+  return "UGX";
+}
+
+function compactNum(value: number): string {
+  if (!Number.isFinite(value)) return "0";
+  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return `${Math.round(value)}`;
+}
+
+function parseCompactMetric(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/,/g, "").trim().toLowerCase();
+  const m = cleaned.match(/^(-?\d+(?:\.\d+)?)([kmb])?%?$/);
+  if (!m) return null;
+  const base = Number(m[1]);
+  if (!Number.isFinite(base)) return null;
+  const suffix = m[2] || "";
+  if (suffix === "k") return Math.round(base * 1_000);
+  if (suffix === "m") return Math.round(base * 1_000_000);
+  if (suffix === "b") return Math.round(base * 1_000_000_000);
+  return Math.round(base);
+}
+
+function adzStatus(raw: unknown): AdStatus {
+  const value = asString(raw, "").toLowerCase();
+  if (value.includes("schedule")) return "Scheduled";
+  if (value.includes("generated") || value.includes("live") || value.includes("end") || value.includes("active") || value.includes("publish")) {
+    return "Generated";
+  }
+  return "Draft";
+}
+
+function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
+  const record = asRecord(raw);
+  const type = asString(record?.type, "PRODUCT").toUpperCase() === "SERVICE" ? "SERVICE" : "PRODUCT";
+  const sellingModes = asArray(record?.sellingModes)
+    .map((entry) => asString(entry, "").toUpperCase())
+    .filter((entry): entry is SellingMode => entry === "RETAIL" || entry === "WHOLESALE");
+  const defaultModeRaw = asString(record?.defaultSellingMode, "").toUpperCase();
+  const wholesaleRaw = asRecord(record?.wholesale);
+  return {
+    id: asString(record?.id, `offer_${index + 1}`),
+    type,
+    name: asString(record?.name, "Offer"),
+    price: Math.max(0, asNumber(record?.price, 0)),
+    basePrice: typeof record?.basePrice === "number" ? record.basePrice : undefined,
+    currency: asCurrency(record?.currency, "UGX"),
+    stockLeft: asNumber(record?.stockLeft, type === "SERVICE" ? -1 : 0),
+    sold: asNumber(record?.sold, 0),
+    posterUrl: asString(record?.posterUrl, fallbackPoster),
+    videoUrl: asString(record?.videoUrl, "") || undefined,
+    desktopMode: asString(record?.desktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
+    sellingModes: sellingModes.length ? sellingModes : undefined,
+    defaultSellingMode: defaultModeRaw === "WHOLESALE" ? "WHOLESALE" : defaultModeRaw === "RETAIL" ? "RETAIL" : undefined,
+    wholesale:
+      wholesaleRaw && asArray(wholesaleRaw.tiers).length
+        ? {
+            moq: Math.max(1, asNumber(wholesaleRaw.moq, 1)),
+            step: Math.max(1, asNumber(wholesaleRaw.step, 1)),
+            leadTimeLabel: asString(wholesaleRaw.leadTimeLabel, "") || undefined,
+            businessOnly: asBool(wholesaleRaw.businessOnly, false),
+            tiers: asArray(wholesaleRaw.tiers)
+              .map((tier) => asRecord(tier))
+              .filter((tier): tier is Record<string, unknown> => Boolean(tier))
+              .map((tier) => ({
+                minQty: Math.max(1, asNumber(tier.minQty, 1)),
+                unitPrice: Math.max(0, asNumber(tier.unitPrice, 0)),
+              }))
+              .filter((tier) => tier.unitPrice > 0),
+          }
+        : undefined,
+  };
+}
+
+function mapShoppableDeal(raw: unknown): Ad | null {
+  const deal = asRecord(raw);
+  if (!deal) return null;
+  const shoppable = asRecord(deal.shoppable);
+  if (!shoppable) return null;
+
+  const supplier = asRecord(deal.supplier);
+  const creator = asRecord(deal.creator);
+  const fallbackHero = asString(shoppable.heroImageUrl, asString(supplier?.logoUrl, BLANK_IMAGE));
+  const offers = asArray(shoppable.offers).map((offer, index) => mapOffer(offer, index, fallbackHero));
+
+  const rawKpis = asArray(shoppable.kpis)
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item))
+    .map((item) => ({ label: asString(item.label, ""), value: asString(item.value, "") }))
+    .filter((item) => item.label && item.value);
+
+  const metrics = asRecord(shoppable.metrics);
+  const fallbackViews =
+    asNumber(shoppable.impressions7d, Number.NaN) ||
+    asNumber(metrics?.impressions, Number.NaN) ||
+    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("view") || k.label.toLowerCase().includes("impression"))?.value ?? null) ||
+    0;
+  const fallbackSaves =
+    asNumber(metrics?.saves, Number.NaN) ||
+    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("save"))?.value ?? null) ||
+    0;
+  const fallbackCtrRaw =
+    asNumber(metrics?.ctr, Number.NaN) ||
+    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("ctr"))?.value ?? null) ||
+    0;
+  const fallbackCtr = fallbackCtrRaw > 1 ? fallbackCtrRaw : fallbackCtrRaw * 100;
+
+  const kpis = rawKpis.length
+    ? rawKpis
+    : [
+        { label: "Views", value: compactNum(fallbackViews) },
+        { label: "Saves", value: compactNum(fallbackSaves) },
+        { label: "CTR", value: `${Number.isFinite(fallbackCtr) ? fallbackCtr.toFixed(1) : "0.0"}%` },
+      ];
+
+  const score =
+    Math.max(0, fallbackViews) +
+    Math.max(0, fallbackSaves) * 10 +
+    Math.max(0, asNumber(shoppable.orders7d, asNumber(metrics?.orders, 0))) * 200;
+
+  return {
+    id: asString(deal.id, `ad_${Date.now()}`),
+    rank: 0,
+    status: adzStatus(shoppable.status ?? deal.status),
+    campaignName: asString(shoppable.campaignName, asString(deal.title, "Campaign")),
+    campaignSubtitle: asString(shoppable.campaignSubtitle, asString(deal.tagline, "")),
     supplier: {
-      name: "GlowUp Hub",
-      category: "Beauty",
-      logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=256&auto=format&fit=crop",
+      name: asString(supplier?.name, "Seller"),
+      category: asString(supplier?.category, "Seller"),
+      logoUrl: asString(supplier?.logoUrl, BLANK_IMAGE),
     },
     creator: {
-      name: "Amina K.",
-      handle: "@amina.dealz",
-      avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop",
-      verified: true,
+      name: asString(creator?.name, "Creator"),
+      handle: (() => {
+        const handle = asString(creator?.handle, "@creator");
+        return handle.startsWith("@") ? handle : `@${handle}`;
+      })(),
+      avatarUrl: asString(creator?.avatarUrl, BLANK_IMAGE),
+      verified: asBool(creator?.verified, false),
     },
-    platforms: ["Instagram", "TikTok"],
-    startISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroDesktopMode: "fullscreen",
-    ctaPrimaryLabel: "Buy now",
-    ctaSecondaryLabel: "Add to cart",
-    kpis: [
-      { label: "Views", value: "410K" },
-      { label: "Saves", value: "18K" },
-      { label: "CTR", value: "3.6%" },
-    ],
-    offers: [
-      {
-        id: "o1",
-        type: "PRODUCT",
-        name: "Glow Serum (30ml)",
-        price: 38000,
-        basePrice: 52000,
-        currency: "UGX",
-        stockLeft: 12,
-        sold: 86,
-        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 10,
-          step: 5,
-          leadTimeLabel: "Ships in 3–5 days",
-          tiers: [
-            { minQty: 10, unitPrice: 32000 },
-            { minQty: 25, unitPrice: 29500 },
-            { minQty: 50, unitPrice: 27000 },
-          ],
-        },
-      },
-      {
-        id: "o2",
-        type: "PRODUCT",
-        name: "Hydra Cleanser",
-        price: 24000,
-        basePrice: 32000,
-        currency: "UGX",
-        stockLeft: 5,
-        sold: 123,
-        posterUrl: "https://images.unsplash.com/photo-1601612628452-9e99ced43524?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL",
-      },
-      {
-        id: "o3",
-        type: "SERVICE",
-        name: "Skin consult (30min)",
-        price: 60000,
-        currency: "UGX",
-        stockLeft: -1,
-        sold: 44,
-        posterUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-      },
-      {
-        id: "o4",
-        type: "PRODUCT",
-        name: "Bundle: Glow Kit",
-        price: 120000,
-        basePrice: 160000,
-        currency: "UGX",
-        stockLeft: 0,
-        sold: 210,
-        posterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 6,
-          step: 2,
-          leadTimeLabel: "Ships in 5–7 days",
-          tiers: [
-            { minQty: 6, unitPrice: 98000 },
-            { minQty: 12, unitPrice: 92000 },
-            { minQty: 24, unitPrice: 88000 },
-          ],
-        },
-      },
-    ],
-  },
-  {
-    id: "ad_2",
-    rank: 2,
-    status: "Scheduled",
-    campaignName: "Back-to-Work Essentials",
-    campaignSubtitle: "Urban Supply · Bags & Accessories",
-    supplier: {
-      name: "Urban Supply",
-      category: "Accessories",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop",
-    },
-    creator: {
-      name: "Chris M.",
-      handle: "@chris.finds",
-      avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=256&auto=format&fit=crop",
-      verified: false,
-    },
-    platforms: ["Instagram"],
-    startISO: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 40 * 3600 * 1000).toISOString(),
-    heroImageUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    heroDesktopMode: "modal",
-    ctaPrimaryLabel: "Buy now",
-    ctaSecondaryLabel: "Add to cart",
-    kpis: [
-      { label: "Views", value: "92K" },
-      { label: "Saves", value: "3.2K" },
-      { label: "CTR", value: "2.1%" },
-    ],
-    offers: [
-      {
-        id: "o5",
-        type: "PRODUCT",
-        name: "Laptop Backpack",
-        price: 180000,
-        basePrice: 220000,
-        currency: "UGX",
-        stockLeft: 18,
-        sold: 51,
-        posterUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 5,
-          step: 1,
-          leadTimeLabel: "Ships in 2–4 days",
-          tiers: [
-            { minQty: 5, unitPrice: 155000 },
-            { minQty: 10, unitPrice: 149000 },
-            { minQty: 25, unitPrice: 139000 },
-          ],
-        },
-      },
-      {
-        id: "o6",
-        type: "PRODUCT",
-        name: "Daily Tote",
-        price: 95000,
-        currency: "UGX",
-        stockLeft: 4,
-        sold: 98,
-        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL",
-      },
-      {
-        id: "o7",
-        type: "SERVICE",
-        name: "Personal styling consult",
-        price: 120000,
-        currency: "UGX",
-        stockLeft: -1,
-        sold: 12,
-        posterUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-      },
-      {
-        id: "o8",
-        type: "PRODUCT",
-        name: "Gift Wrap (pack of 10)",
-        price: 25000,
-        currency: "UGX",
-        stockLeft: -1,
-        sold: 210,
-        posterUrl: "https://images.unsplash.com/photo-1543332164-6e82f355bad1?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 10,
-          step: 10,
-          leadTimeLabel: "Ships in 1–2 days",
-          tiers: [
-            { minQty: 10, unitPrice: 2000 },
-            { minQty: 50, unitPrice: 1800 },
-            { minQty: 200, unitPrice: 1600 },
-          ],
-        },
-      },
-    ],
-  },
-];
+    platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
+    startISO: asString(shoppable.startISO, asString(deal.startISO, new Date().toISOString())),
+    endISO: asString(shoppable.endISO, asString(deal.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString())),
+    heroImageUrl: asString(shoppable.heroImageUrl, fallbackHero || BLANK_IMAGE),
+    heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
+    heroIntroVideoPosterUrl: asString(shoppable.heroIntroVideoPosterUrl, "") || undefined,
+    heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
+    ctaPrimaryLabel: asString(shoppable.ctaPrimaryLabel, "Buy now"),
+    ctaSecondaryLabel: asString(shoppable.ctaSecondaryLabel, "Add to cart"),
+    offers,
+    kpis,
+    __score: score,
+  } as Ad & { __score: number };
+}
+
+function mapWorkspaceToAds(payload: DealzMarketplaceWorkspaceResponse): Ad[] {
+  const ranked = asArray(payload.deals)
+    .map((deal) => mapShoppableDeal(deal))
+    .filter((ad): ad is Ad & { __score: number } => Boolean(ad))
+    .sort((a, b) => b.__score - a.__score || a.campaignName.localeCompare(b.campaignName));
+
+  return ranked.map((ad, index) => {
+    const { __score: _score, ...rest } = ad;
+    return {
+      ...rest,
+      rank: index + 1,
+    };
+  });
+}
 
 /** ------------------------------ Page ------------------------------ */
 
 export default function AdzMarketplace() {
-  const { theme } = useTheme();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [toast, setToast] = useState<string | null>(null);
+  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
+    initialData: EMPTY_MARKETPLACE_STATE,
+    loader: () => creatorApi.dealzMarketplace(),
+  });
 
   useEffect(() => {
     if (!toast) return;
@@ -1245,9 +1230,27 @@ export default function AdzMarketplace() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads] = useState<Ad[]>(DEMO_ADS);
-  const [selectedId, setSelectedId] = useState<string>(DEMO_ADS[0]?.id || "");
+  const [ads, setAds] = useState<Ad[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+
+  useEffect(() => {
+    const nextAds = mapWorkspaceToAds(workspaceState || EMPTY_MARKETPLACE_STATE);
+    setAds(nextAds);
+    setSelectedId((current) => {
+      if (current && nextAds.some((ad) => ad.id === current)) return current;
+      const selectedFromPayload = asString(workspaceState?.selectedId, "");
+      if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) return selectedFromPayload;
+      return nextAds[0]?.id || "";
+    });
+  }, [workspaceState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const adId = new URLSearchParams(window.location.search).get("adId");
+    if (!adId) return;
+    setSelectedId((current) => (ads.some((ad) => ad.id === adId) ? adId : current));
+  }, [ads]);
 
   // Per-ad mode selections (Retail/Wholesale) for offers
   const [modeByOffer, setModeByOffer] = useState<Record<string, SellingMode>>({});
@@ -1270,9 +1273,53 @@ export default function AdzMarketplace() {
     return m;
   }, [selected]);
 
+  const persistDealPatch = useCallback(
+    async (
+      adId: string,
+      mutateShoppable: (current: Record<string, unknown>) => Record<string, unknown>
+    ) => {
+      const nextDeals = asArray(workspaceState?.deals).map((entry) => {
+        const rec = asRecord(entry);
+        if (!rec || asString(rec.id, "") !== adId) {
+          return entry;
+        }
+        const shoppable = asRecord(rec.shoppable) || {};
+        return {
+          ...rec,
+          shoppable: mutateShoppable(shoppable),
+        };
+      });
+      const saved = await creatorApi.updateDealzMarketplace({
+        deals: nextDeals,
+        selectedId: adId,
+      });
+      setWorkspaceState(saved);
+      return saved;
+    },
+    [setWorkspaceState, workspaceState?.deals],
+  );
+
   function setOfferMode(offerId: string, mode: SellingMode) {
     setModeByOffer((prev) => ({ ...prev, [offerId]: mode }));
     const o = offersById.get(offerId);
+    if (selected) {
+      void persistDealPatch(selected.id, (shoppable) => {
+        const offers = asArray(shoppable.offers).map((entry) => {
+          const offer = asRecord(entry);
+          if (!offer || asString(offer.id, "") !== offerId) return entry;
+          return {
+            ...offer,
+            defaultSellingMode: mode,
+          };
+        });
+        return {
+          ...shoppable,
+          offers,
+        };
+      }).catch(() => {
+        setToast("Failed to save default mode.");
+      });
+    }
     if (o?.type === "PRODUCT" && mode === "WHOLESALE") setToast("Wholesale mode enabled (MOQ & tier rules apply).");
   }
 
@@ -1323,7 +1370,7 @@ export default function AdzMarketplace() {
         : 1;
 
     const url = `/checkout?offerId=${encodeURIComponent(offerId)}&mode=${encodeURIComponent(mode)}&qty=${encodeURIComponent(String(qty))}`;
-    setToast(`Checkout → ${offer.name} (${mode}) · qty ${qty} · ${url} (demo)`);
+    setToast(`Checkout → ${offer.name} (${mode}) · qty ${qty} · ${url}`);
   }
 
   function openAdBuilder(ad: Ad) {
@@ -1333,7 +1380,7 @@ export default function AdzMarketplace() {
 
   function shareAd(ad: Ad) {
     const base = `https://mldz.link/${encodeURIComponent(ad.id)}`;
-    setToast(`Share link copied: ${base} (demo)`);
+    setToast(`Share link copied: ${base}`);
     try {
       navigator.clipboard?.writeText(base);
     } catch { /* ignore */ }
@@ -1369,6 +1416,10 @@ export default function AdzMarketplace() {
   // drawer state
   const [drawer, setDrawer] = useState<"builder" | null>(null);
   const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
+  const drawerAd = useMemo(
+    () => ads.find((ad) => ad.id === drawerData) || selected,
+    [ads, drawerData, selected],
+  );
 
   // viewer state
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -1378,7 +1429,9 @@ export default function AdzMarketplace() {
 
   useEffect(() => {
     if (!selected) return;
-    if (!selectedHeroOfferId) setSelectedHeroOfferId(selected.offers[0]?.id || "");
+    if (!selectedHeroOfferId || !selected.offers.some((offer) => offer.id === selectedHeroOfferId)) {
+      setSelectedHeroOfferId(selected.offers[0]?.id || "");
+    }
   }, [selected, selectedHeroOfferId]);
 
   const startsAt = useMemo(() => (selected ? new Date(selected.startISO) : new Date()), [selected]);
@@ -1789,7 +1842,45 @@ export default function AdzMarketplace() {
 
       {/* Ad Builder Drawer */}
       {drawer === "builder" ? (
-        <AdBuilder isDrawer={true} onClose={() => setDrawer(null)} initialAdId={drawerData} />
+        <AdBuilder
+          isDrawer={true}
+          onClose={() => setDrawer(null)}
+          initialAdId={drawerData}
+          pickerContext={
+            drawerAd
+              ? {
+                  dealId: drawerAd.id,
+                  creatorName: drawerAd.creator.name,
+                  creatorHandle: drawerAd.creator.handle,
+                  creatorAvatarUrl: drawerAd.creator.avatarUrl,
+                  creatorVerified: drawerAd.creator.verified,
+                  supplierId: `deal-supplier:${drawerAd.id}`,
+                  supplierName: drawerAd.supplier.name,
+                  supplierKind: drawerAd.supplier.category,
+                  supplierBrand: drawerAd.supplier.name,
+                  campaignId: `deal-campaign:${drawerAd.id}`,
+                  campaignName: drawerAd.campaignName,
+                  campaignBrand: drawerAd.supplier.name,
+                  campaignStatus: drawerAd.status === "Scheduled" ? "Paused" : "Active",
+                  startISO: drawerAd.startISO,
+                  endISO: drawerAd.endISO,
+                  offers: drawerAd.offers.map((offer) => ({
+                    id: offer.id,
+                    type: offer.type,
+                    name: offer.name,
+                    price: offer.price,
+                    basePrice: offer.basePrice,
+                    currency: offer.currency,
+                    stockLeft: offer.stockLeft,
+                    sold: offer.sold,
+                    posterUrl: offer.posterUrl,
+                    videoUrl: offer.videoUrl,
+                    desktopMode: offer.desktopMode,
+                  })),
+                }
+              : undefined
+          }
+        />
       ) : null}
     </div>
   );

@@ -82,6 +82,17 @@ const PRIMARY_SIDEBAR_COLLAPSED_WIDTH = 66;
 const PRIMARY_SIDEBAR_WIDTH_FLUID = 'clamp(169px, 16.9vw, 231px)';
 const PRIMARY_SIDEBAR_COLLAPSED_WIDTH_FLUID = 'clamp(68px, 5.2vw, 76px)';
 const SELLER_OPEN_ORDER_STATUSES = new Set(['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD']);
+const NOTIFICATION_CATEGORIES: NotifCategory[] = [
+  'Orders',
+  'RFQs',
+  'Bookings',
+  'Quotes',
+  'Consultations',
+  'Finance',
+  'MyLiveDealz',
+  'Security',
+  'System',
+];
 
 function formatCountBadge(count?: number) {
   if (!count || count <= 0) return undefined;
@@ -109,6 +120,77 @@ function extractSellerOpenOrderIds(payload: unknown) {
     acc.push(id);
     return acc;
   }, []);
+}
+
+function parseNotifCategory(value: unknown, kind: unknown, type: unknown): NotifCategory {
+  const raw = String(value ?? '').trim();
+  if (NOTIFICATION_CATEGORIES.includes(raw as NotifCategory)) {
+    return raw as NotifCategory;
+  }
+
+  const hint = `${String(type ?? '').toLowerCase()} ${String(kind ?? '').toLowerCase()}`;
+  if (hint.includes('order')) return 'Orders';
+  if (hint.includes('rfq')) return 'RFQs';
+  if (hint.includes('booking')) return 'Bookings';
+  if (hint.includes('quote')) return 'Quotes';
+  if (hint.includes('consult')) return 'Consultations';
+  if (hint.includes('finance') || hint.includes('earning') || hint.includes('payout')) return 'Finance';
+  if (hint.includes('security')) return 'Security';
+  if (hint.includes('invite') || hint.includes('proposal') || hint.includes('collab')) return 'MyLiveDealz';
+  return 'System';
+}
+
+function parseNotifPriority(value: unknown, category: NotifCategory): NotifItem['priority'] {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (raw === 'high' || raw === 'medium' || raw === 'low') {
+    return raw;
+  }
+  return category === 'Security' ? 'high' : 'medium';
+}
+
+function normalizeNotifItem(entry: unknown, index: number): NotifItem | null {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return null;
+  }
+  const record = entry as Record<string, unknown>;
+  const metadata =
+    record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata)
+      ? (record.metadata as Record<string, unknown>)
+      : {};
+  const id = String(record.id ?? '').trim() || `notif_${index}`;
+  const category = parseNotifCategory(record.category, record.kind, record.type);
+  const read =
+    typeof record.read === 'boolean'
+      ? record.read
+      : Boolean(record.readAt);
+  return {
+    id,
+    title: String(record.title ?? 'Notification'),
+    message: String(record.message ?? record.body ?? ''),
+    category,
+    priority: parseNotifPriority(metadata.priority ?? record.priority, category),
+    createdAt: String(record.createdAt ?? record.updatedAt ?? new Date().toISOString()),
+    unread:
+      typeof record.unread === 'boolean'
+        ? record.unread
+        : !read,
+    route:
+      typeof metadata.link === 'string'
+        ? metadata.link
+        : typeof metadata.route === 'string'
+          ? metadata.route
+          : undefined,
+    actor:
+      typeof metadata.actor === 'string'
+        ? metadata.actor
+        : typeof record.brand === 'string'
+          ? record.brand
+          : typeof metadata.senderName === 'string'
+            ? metadata.senderName
+            : typeof metadata.sellerName === 'string'
+              ? metadata.sellerName
+              : undefined,
+  };
 }
 
 type NavItemDef = {
@@ -5438,7 +5520,11 @@ export default function EVzoneSupplierHubAppShellV9({
       .getNotifications()
       .then((payload) => {
         if (cancelled) return;
-        const nextItems = Array.isArray(payload) ? (payload as NotifItem[]) : [];
+        const nextItems = Array.isArray(payload)
+          ? payload
+              .map((entry, index) => normalizeNotifItem(entry, index))
+              .filter((entry): entry is NotifItem => Boolean(entry))
+          : [];
         setNotifItems(nextItems);
         const nextCategories = Array.from(
           new Set(nextItems.map((item) => item.category).filter(Boolean))

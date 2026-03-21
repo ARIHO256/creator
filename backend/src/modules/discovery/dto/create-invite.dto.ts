@@ -8,6 +8,18 @@ export class CreateInviteDto {
 
   @IsOptional()
   @IsString()
+  recipientSellerId?: string;
+
+  @IsOptional()
+  @IsString()
+  recipientSellerHandle?: string;
+
+  @IsOptional()
+  @IsString()
+  sellerHandle?: string;
+
+  @IsOptional()
+  @IsString()
   creatorHandle?: string;
 
   @IsOptional()

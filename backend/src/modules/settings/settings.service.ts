@@ -2219,11 +2219,22 @@ export class SettingsService {
   }
 
   private matchesRoleMetadata(metadata: unknown, role: string) {
+    const currentRole = String(role || '').toUpperCase();
     if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
-      return false;
+      return true;
     }
-    const workspaceRole = (metadata as Record<string, unknown>).workspaceRole;
-    return String(workspaceRole || '').toUpperCase() === String(role || '').toUpperCase();
+    const workspaceRole = String((metadata as Record<string, unknown>).workspaceRole || '').toUpperCase();
+    if (!workspaceRole) {
+      return true;
+    }
+    if (workspaceRole === currentRole) {
+      return true;
+    }
+    const isCommerceRole = (value: string) => value === 'SELLER' || value === 'PROVIDER';
+    if (isCommerceRole(workspaceRole) && isCommerceRole(currentRole)) {
+      return true;
+    }
+    return false;
   }
 
   private async ensureWorkspaceSeed(userId: string) {

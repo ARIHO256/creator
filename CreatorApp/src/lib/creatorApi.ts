@@ -456,6 +456,43 @@ export type CrewSessionRecord = {
   [key: string]: unknown;
 };
 
+export type ContentApprovalRecord = {
+  id: string;
+  title?: string | null;
+  campaignId?: string | null;
+  channel?: string | null;
+  status?: string | null;
+  priority?: string | null;
+  dueAt?: string | null;
+  payload?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type AdzCampaignRecord = {
+  id: string;
+  title?: string | null;
+  status?: string | null;
+  budget?: number | null;
+  currency?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type AdzLinkRecord = {
+  id: string;
+  status?: string | null;
+  url?: string | null;
+  data?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
 export type AssetRecord = {
   id: string;
   campaignId?: string | null;
@@ -475,6 +512,35 @@ export type AssetRecord = {
   metadata?: Record<string, unknown>;
   createdAt?: string | null;
   updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type MediaAssetRecord = {
+  id: string;
+  userId?: string;
+  name: string;
+  kind?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  extension?: string | null;
+  checksum?: string | null;
+  storageProvider?: string | null;
+  storageKey?: string | null;
+  url?: string | null;
+  isPublic?: boolean;
+  metadata?: Record<string, unknown>;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  [key: string]: unknown;
+};
+
+export type MediaWorkspaceResponse = {
+  creators?: Array<Record<string, unknown>>;
+  suppliers?: Array<Record<string, unknown>>;
+  campaigns?: Array<Record<string, unknown>>;
+  deliverables?: Array<Record<string, unknown>>;
+  collections?: Record<string, unknown>;
+  activity?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -621,6 +687,9 @@ export const creatorApi = {
   invites(params?: { limit?: number; offset?: number }) {
     return api.get<InviteRecord[]>(withQuery("/invites", params));
   },
+  createInvite(body: Record<string, unknown>) {
+    return api.post<InviteRecord>("/invites", body);
+  },
   respondInvite(id: string, status: string) {
     return api.post<InviteRecord>(`/invites/${id}/respond`, { status });
   },
@@ -700,6 +769,49 @@ export const creatorApi = {
   }) {
     return api.post<UploadSessionRecord>("/uploads", body);
   },
+  mediaWorkspace() {
+    return api.get<MediaWorkspaceResponse>("/media/workspace");
+  },
+  mediaAssets() {
+    return api.get<MediaAssetRecord[]>("/media/assets");
+  },
+  uploadMediaFile(body: {
+    name: string;
+    dataUrl: string;
+    kind?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    extension?: string;
+    visibility?: string;
+    purpose?: string;
+    isPublic?: boolean;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.post<MediaAssetRecord>("/media/files", body);
+  },
+  createMediaAsset(body: {
+    name: string;
+    kind?: string;
+    mimeType?: string;
+    sizeBytes?: number;
+    extension?: string;
+    checksum?: string;
+    storageProvider?: string;
+    storageKey?: string;
+    url?: string;
+    isPublic?: boolean;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.post<MediaAssetRecord>("/media/assets", body);
+  },
+  updateMediaAsset(id: string, body: {
+    name?: string;
+    kind?: string;
+    url?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    return api.patch<MediaAssetRecord>(`/media/assets/${encodeURIComponent(id)}`, body);
+  },
   asset(id: string) {
     return api.get<AssetRecord>(`/assets/${id}`);
   },
@@ -708,6 +820,27 @@ export const creatorApi = {
   },
   liveSessions() {
     return api.get<LiveSessionRecord[]>("/live/sessions");
+  },
+  createLiveSession(body: {
+    id?: string;
+    status?: string;
+    title?: string;
+    scheduledAt?: string;
+    startedAt?: string;
+    endedAt?: string;
+    data?: Record<string, unknown>;
+  }) {
+    return api.post<LiveSessionRecord>("/live/sessions", body);
+  },
+  updateLiveSession(id: string, body: {
+    status?: string;
+    title?: string;
+    scheduledAt?: string;
+    startedAt?: string;
+    endedAt?: string;
+    data?: Record<string, unknown>;
+  }) {
+    return api.patch<LiveSessionRecord>(`/live/sessions/${encodeURIComponent(id)}`, body);
   },
   liveBuilder(id: string) {
     return api.get<LiveBuilderRecord>(`/live/builder/${encodeURIComponent(id)}`);
@@ -774,6 +907,24 @@ export const creatorApi = {
   },
   roles() {
     return api.get<WorkspaceRolesResponse>("/roles");
+  },
+  createRole(body: Record<string, unknown>) {
+    return api.post<Record<string, unknown>>("/roles", body);
+  },
+  updateRole(id: string, body: Record<string, unknown>) {
+    return api.patch<Record<string, unknown>>(`/roles/${encodeURIComponent(id)}`, body);
+  },
+  deleteRole(id: string) {
+    return api.delete<Record<string, unknown>>(`/roles/${encodeURIComponent(id)}`);
+  },
+  createRoleInvite(body: Record<string, unknown>) {
+    return api.post<Record<string, unknown>>("/roles/invites", body);
+  },
+  updateRoleMember(id: string, body: Record<string, unknown>) {
+    return api.patch<Record<string, unknown>>(`/roles/members/${encodeURIComponent(id)}`, body);
+  },
+  deleteRoleMember(id: string) {
+    return api.delete<Record<string, unknown>>(`/roles/members/${encodeURIComponent(id)}`);
   },
   updateRolesSecurity(body: Record<string, unknown>) {
     return api.patch<Record<string, unknown>>("/roles/security", body);
@@ -875,5 +1026,49 @@ export const creatorApi = {
   },
   reviews(params?: { scope?: "received" | "authored"; limit?: number }) {
     return api.get<ReviewRecord[]>(withQuery("/reviews", params));
+  },
+
+  adzCampaigns() {
+    return api.get<AdzCampaignRecord[]>("/adz/campaigns");
+  },
+  adzCampaign(id: string) {
+    return api.get<AdzCampaignRecord>(`/adz/campaigns/${encodeURIComponent(id)}`);
+  },
+  adzCampaignPerformance(id: string) {
+    return api.get<Record<string, unknown>>(`/adz/campaigns/${encodeURIComponent(id)}/performance`);
+  },
+  adzLinks() {
+    return api.get<AdzLinkRecord[]>("/links");
+  },
+  adzLink(id: string) {
+    return api.get<AdzLinkRecord>(`/links/${encodeURIComponent(id)}`);
+  },
+  createAdzLink(body: Record<string, unknown>) {
+    return api.post<AdzLinkRecord>("/links", body);
+  },
+  updateAdzLink(id: string, body: Record<string, unknown>) {
+    return api.patch<AdzLinkRecord>(`/links/${encodeURIComponent(id)}`, body);
+  },
+
+  contentApprovals() {
+    return api.get<ContentApprovalRecord[]>("/content-approvals");
+  },
+  contentApproval(id: string) {
+    return api.get<ContentApprovalRecord>(`/content-approvals/${encodeURIComponent(id)}`);
+  },
+  createContentApproval(body: Record<string, unknown>) {
+    return api.post<ContentApprovalRecord>("/content-approvals", body);
+  },
+  updateContentApproval(id: string, body: Record<string, unknown>) {
+    return api.patch<ContentApprovalRecord>(`/content-approvals/${encodeURIComponent(id)}`, body);
+  },
+  nudgeContentApproval(id: string) {
+    return api.post<Record<string, unknown>>(`/content-approvals/${encodeURIComponent(id)}/nudge`);
+  },
+  withdrawContentApproval(id: string) {
+    return api.post<Record<string, unknown>>(`/content-approvals/${encodeURIComponent(id)}/withdraw`);
+  },
+  resubmitContentApproval(id: string, body: Record<string, unknown>) {
+    return api.post<ContentApprovalRecord>(`/content-approvals/${encodeURIComponent(id)}/resubmit`, body);
   }
 };

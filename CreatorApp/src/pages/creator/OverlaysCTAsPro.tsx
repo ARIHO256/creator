@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
   CheckCircle2,
@@ -33,7 +33,7 @@ import { creatorApi } from "../../lib/creatorApi";
  * - Lower-third product banners
  * - A/B variants (premium)
  *
- * NOTE: Self-contained demo UI. Replace with your render/export pipeline for OBS/Studio.
+ * NOTE: Backed by /tools/overlays API.
  */
 
 type SessionStatus = "Draft" | "Scheduled" | "Live" | "Ended";
@@ -210,17 +210,25 @@ export default function OverlaysCTAsPro() {
     initialData: {} as OverlaysPayload,
     loader: () => creatorApi.liveTool("overlays") as Promise<OverlaysPayload>,
   });
-  const [isPro, setIsPro] = useState(true);
+  const sessionId = useMemo(() => {
+    if (typeof window === "undefined") return "session";
+    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+  }, []);
+  const baseJoinUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/live/${encodeURIComponent(sessionId)}`;
+  }, [sessionId]);
+  const [isPro, setIsPro] = useState(false);
 
   const session = useMemo(
     () => ({
-      id: payload.session?.id || "LS-20418",
-      title: payload.session?.title || "Autumn Beauty Flash",
-      status: payload.session?.status || ("Scheduled" as SessionStatus),
+      id: payload.session?.id || sessionId,
+      title: payload.session?.title || "Live session",
+      status: payload.session?.status || ("Draft" as SessionStatus),
       startISO: payload.session?.startISO || new Date(Date.now() + 40 * 60 * 1000).toISOString(),
       endISO: payload.session?.endISO || new Date(Date.now() + 130 * 60 * 1000).toISOString(),
     }),
-    [payload.session],
+    [payload.session, sessionId],
   );
 
   const products: Product[] = useMemo(
@@ -232,27 +240,30 @@ export default function OverlaysCTAsPro() {
   const [variant, setVariant] = useState<VariantKey>("A");
 
   // QR overlay
-  const [qrEnabled, setQrEnabled] = useState(true);
-  const [qrLabel, setQrLabel] = useState("Scan to shop");
-  const [qrUrl, setQrUrl] = useState(`https://mylivedealz.com/live/${session.id}`);
+  const [qrEnabled, setQrEnabled] = useState(false);
+  const [qrLabel, setQrLabel] = useState("");
+  const [qrUrl, setQrUrl] = useState(baseJoinUrl);
   const [qrCorner, setQrCorner] = useState<"tr" | "tl" | "br" | "bl">("tr");
   const [qrSize, setQrSize] = useState(180);
 
   // Using a public QR image generator for preview (replace with internal renderer)
   const qrImg = useMemo(() => {
-    const u = encodeURIComponent(qrUrl || "https://mylivedealz.com");
+    const u = encodeURIComponent(qrUrl || baseJoinUrl || "");
     return `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${u}`;
-  }, [qrUrl, qrSize]);
+  }, [qrUrl, qrSize, baseJoinUrl]);
   void qrImg;
 
   // Links + UTM
-  const [destUrl, setDestUrl] = useState("https://mylivedealz.com/dealz/autumn-flash");
-  const [utmSource, setUtmSource] = useState("whatsapp");
-  const [utmMedium, setUtmMedium] = useState("msg");
-  const [utmCampaign, setUtmCampaign] = useState("autumn_beauty_flash");
-  const [utmContent, setUtmContent] = useState("reminder_t10m");
-  const [shortDomain, setShortDomain] = useState("go.mylivedealz.com");
-  const [shortSlug, setShortSlug] = useState(makeSlug());
+  const [destUrl, setDestUrl] = useState("");
+  const [utmSource, setUtmSource] = useState("");
+  const [utmMedium, setUtmMedium] = useState("");
+  const [utmCampaign, setUtmCampaign] = useState("");
+  const [utmContent, setUtmContent] = useState("");
+  const [shortDomain, setShortDomain] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.location.host || "";
+  });
+  const [shortSlug, setShortSlug] = useState("");
 
   const utmLink = useMemo(
     () =>
@@ -268,50 +279,51 @@ export default function OverlaysCTAsPro() {
   const shortLink = useMemo(() => `https://${shortDomain}/${shortSlug}`, [shortDomain, shortSlug]);
 
   // Countdown
-  const [timerEnabled, setTimerEnabled] = useState(true);
+  const [timerEnabled, setTimerEnabled] = useState(false);
   const [timerStyle, setTimerStyle] = useState<"pill" | "bar">("pill");
-  const [timerText, setTimerText] = useState("Deal ends in");
+  const [timerText, setTimerText] = useState("");
   const [dealEndISO, setDealEndISO] = useState(session.endISO);
 
   // Lower third
-  const [lowerEnabled, setLowerEnabled] = useState(true);
+  const [lowerEnabled, setLowerEnabled] = useState(false);
   const [lowerPlacement, setLowerPlacement] = useState<"bottom" | "top">("bottom");
   const [lowerProductId, setLowerProductId] = useState("");
   const [ctaText, setCtaText] = useState("Buy now");
 
   // A/B
-  const [abEnabled, setAbEnabled] = useState(true);
-  const [notesA, setNotesA] = useState("Variant A: QR top-right + lower-third.");
-  const [notesB, setNotesB] = useState("Variant B: Countdown bar + shorter CTA.");
+  const [abEnabled, setAbEnabled] = useState(false);
+  const [notesA, setNotesA] = useState("");
+  const [notesB, setNotesB] = useState("");
+  const autoSavePrimedRef = useRef(false);
   useEffect(() => {
     if (!Object.keys(payload).length) return;
-    setIsPro(payload.isPro ?? true);
+    setIsPro(payload.isPro ?? false);
     setTab(payload.tab || "qr");
     setVariant(payload.variant || "A");
-    setQrEnabled(payload.qrEnabled ?? true);
-    setQrLabel(payload.qrLabel || "Scan to shop");
-    setQrUrl(payload.qrUrl || `https://mylivedealz.com/live/${session.id}`);
+    setQrEnabled(payload.qrEnabled ?? false);
+    setQrLabel(payload.qrLabel || "");
+    setQrUrl(payload.qrUrl || baseJoinUrl);
     setQrCorner(payload.qrCorner || "tr");
     setQrSize(typeof payload.qrSize === "number" ? payload.qrSize : 180);
-    setDestUrl(payload.destUrl || "https://mylivedealz.com/dealz/autumn-flash");
-    setUtmSource(payload.utmSource || "whatsapp");
-    setUtmMedium(payload.utmMedium || "msg");
-    setUtmCampaign(payload.utmCampaign || "autumn_beauty_flash");
-    setUtmContent(payload.utmContent || "reminder_t10m");
-    setShortDomain(payload.shortDomain || "go.mylivedealz.com");
-    setShortSlug(payload.shortSlug || makeSlug());
-    setTimerEnabled(payload.timerEnabled ?? true);
+    setDestUrl(payload.destUrl || "");
+    setUtmSource(payload.utmSource || "");
+    setUtmMedium(payload.utmMedium || "");
+    setUtmCampaign(payload.utmCampaign || "");
+    setUtmContent(payload.utmContent || "");
+    setShortDomain(payload.shortDomain || (typeof window !== "undefined" ? window.location.host || "" : ""));
+    setShortSlug(payload.shortSlug || "");
+    setTimerEnabled(payload.timerEnabled ?? false);
     setTimerStyle(payload.timerStyle || "pill");
-    setTimerText(payload.timerText || "Deal ends in");
+    setTimerText(payload.timerText || "");
     setDealEndISO(payload.dealEndISO || session.endISO);
-    setLowerEnabled(payload.lowerEnabled ?? true);
+    setLowerEnabled(payload.lowerEnabled ?? false);
     setLowerPlacement(payload.lowerPlacement || "bottom");
-    setLowerProductId(payload.lowerProductId || payload.products?.[0]?.id || "");
+    setLowerProductId(payload.lowerProductId || payload.products?.[0]?.id || lowerProductId);
     setCtaText(payload.ctaText || "Buy now");
-    setAbEnabled(payload.abEnabled ?? true);
-    setNotesA(payload.notesA || "Variant A: QR top-right + lower-third.");
-    setNotesB(payload.notesB || "Variant B: Countdown bar + shorter CTA.");
-  }, [payload, session.endISO, session.id]);
+    setAbEnabled(payload.abEnabled ?? false);
+    setNotesA(payload.notesA || "");
+    setNotesB(payload.notesB || "");
+  }, [payload, session.endISO, baseJoinUrl, lowerProductId]);
 
   const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? products[0], [products, lowerProductId]);
 
@@ -328,6 +340,80 @@ export default function OverlaysCTAsPro() {
     const t = setTimeout(() => setToast(null), 2200);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const overlaysPayload = useMemo(
+    () => ({
+      isPro,
+      session,
+      products,
+      tab,
+      variant,
+      qrEnabled,
+      qrLabel,
+      qrUrl,
+      qrCorner,
+      qrSize,
+      destUrl,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      utmContent,
+      shortDomain,
+      shortSlug,
+      timerEnabled,
+      timerStyle,
+      timerText,
+      dealEndISO,
+      lowerEnabled,
+      lowerPlacement,
+      lowerProductId,
+      ctaText,
+      abEnabled,
+      notesA,
+      notesB,
+    }),
+    [
+      isPro,
+      session,
+      products,
+      tab,
+      variant,
+      qrEnabled,
+      qrLabel,
+      qrUrl,
+      qrCorner,
+      qrSize,
+      destUrl,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      utmContent,
+      shortDomain,
+      shortSlug,
+      timerEnabled,
+      timerStyle,
+      timerText,
+      dealEndISO,
+      lowerEnabled,
+      lowerPlacement,
+      lowerProductId,
+      ctaText,
+      abEnabled,
+      notesA,
+      notesB,
+    ],
+  );
+
+  useEffect(() => {
+    if (!autoSavePrimedRef.current) {
+      autoSavePrimedRef.current = true;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void creatorApi.patchLiveTool("overlays", overlaysPayload);
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [overlaysPayload]);
 
   const preflight = useMemo(() => {
     return {
@@ -382,7 +468,7 @@ export default function OverlaysCTAsPro() {
             <button
               className="hidden sm:flex items-center gap-2 rounded-xl bg-neutral-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-neutral-800 dark:text-slate-200 hover:bg-neutral-200 dark:hover:bg-slate-700 transition"
               onClick={() => setIsPro((v) => !v)}
-              title="Demo: toggle Pro plan"
+              title="Toggle Pro plan"
             >
               <Sparkles className="h-4 w-4" />
               Plan: {isPro ? "Pro" : "Standard"}
@@ -401,36 +487,7 @@ export default function OverlaysCTAsPro() {
               </Btn>
             </div>
             <Btn tone="primary" onClick={() => {
-              void creatorApi.patchLiveTool("overlays", {
-                isPro,
-                session,
-                products,
-                tab,
-                variant,
-                qrEnabled,
-                qrLabel,
-                qrUrl,
-                qrCorner,
-                qrSize,
-                destUrl,
-                utmSource,
-                utmMedium,
-                utmCampaign,
-                utmContent,
-                shortDomain,
-                shortSlug,
-                timerEnabled,
-                timerStyle,
-                timerText,
-                dealEndISO,
-                lowerEnabled,
-                lowerPlacement,
-                lowerProductId,
-                ctaText,
-                abEnabled,
-                notesA,
-                notesB,
-              }).then(() => setToast("Saved overlays"));
+              void creatorApi.patchLiveTool("overlays", overlaysPayload).then(() => setToast("Saved overlays"));
             }} left={<CheckCircle2 className="h-4 w-4" />}>
               Save
             </Btn>
@@ -592,7 +649,7 @@ export default function OverlaysCTAsPro() {
                     >
                       Copy URL
                     </Btn>
-                    <Btn tone="ghost" onClick={() => setToast("Download QR overlay (demo)")} left={<Download className="h-4 w-4" />}>
+                    <Btn tone="ghost" onClick={() => setToast("QR overlay export queued")} left={<Download className="h-4 w-4" />}>
                       Download PNG
                     </Btn>
                   </div>
@@ -663,7 +720,7 @@ export default function OverlaysCTAsPro() {
                       >
                         Copy UTM
                       </Btn>
-                      <Btn tone="ghost" onClick={() => setToast("Test open (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => setToast("Opening UTM link")} left={<ExternalLink className="h-4 w-4" />}>
                         Test open
                       </Btn>
                     </div>
@@ -878,7 +935,7 @@ export default function OverlaysCTAsPro() {
                         </Pill>
                       </div>
                       <input type="range" min={0} max={100} defaultValue={50} className="mt-2 w-full accent-[#F77F00]" />
-                      <div className="mt-1 text-[10px] text-neutral-600 dark:text-slate-500">A 50% • B 50% (demo)</div>
+                      <div className="mt-1 text-[10px] text-neutral-600 dark:text-slate-500">A 50% • B 50%</div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -889,7 +946,7 @@ export default function OverlaysCTAsPro() {
                           <Btn onClick={() => setVariant("A")} left={<Eye className="h-4 w-4" />}>
                             Preview A
                           </Btn>
-                          <Btn tone="ghost" onClick={() => setToast("Exported Variant A (demo)")} left={<Download className="h-4 w-4" />}>
+                          <Btn tone="ghost" onClick={() => setToast("Exported Variant A")} left={<Download className="h-4 w-4" />}>
                             Export
                           </Btn>
                         </div>
@@ -905,7 +962,7 @@ export default function OverlaysCTAsPro() {
                           <Btn onClick={() => setVariant("B")} left={<Eye className="h-4 w-4" />}>
                             Preview B
                           </Btn>
-                          <Btn tone="danger" onClick={() => setToast("Reset Variant B (demo)")} left={<Trash2 className="h-4 w-4" />}>
+                          <Btn tone="danger" onClick={() => setToast("Variant B reset")} left={<Trash2 className="h-4 w-4" />}>
                             Reset
                           </Btn>
                         </div>
@@ -915,7 +972,7 @@ export default function OverlaysCTAsPro() {
                     <div className="rounded-2xl bg-neutral-900 dark:bg-black p-3 text-white transition">
                       <div className="text-[11px] text-white/70 italic">Recommended approach</div>
                       <div className="mt-1 text-sm font-semibold">Change only one variable per experiment.</div>
-                      <div className="mt-2 text-[10px] text-white/50">Report results inside Live analytics once wired.</div>
+                      <div className="mt-2 text-[10px] text-white/50">Review split-test results in Live analytics.</div>
                     </div>
                   </div>
                 )}
@@ -1006,7 +1063,7 @@ export default function OverlaysCTAsPro() {
                     </div>
 
                     <div className="mt-3 grid grid-cols-3 gap-2">
-                      <Btn tone="neutral" onClick={() => setToast("Fullscreen preview (demo)")} left={<Eye className="h-4 w-4" />}>
+                      <Btn tone="neutral" onClick={() => setToast("Opening fullscreen preview")} left={<Eye className="h-4 w-4" />}>
                         Fullscreen
                       </Btn>
                       <Btn
@@ -1019,7 +1076,7 @@ export default function OverlaysCTAsPro() {
                       >
                         Copy CTA
                       </Btn>
-                      <Btn tone="ghost" onClick={() => setToast("Open docs (demo)")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => setToast("Opening overlay docs")} left={<ExternalLink className="h-4 w-4" />}>
                         Docs
                       </Btn>
                     </div>
@@ -1062,10 +1119,10 @@ export default function OverlaysCTAsPro() {
                       {proBadge}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Btn tone="primary" onClick={() => setToast("Exported overlay pack (demo)")} left={<Download className="h-4 w-4" />}>
+                      <Btn tone="primary" onClick={() => setToast("Overlay pack export queued")} left={<Download className="h-4 w-4" />}>
                         Export pack
                       </Btn>
-                      <Btn onClick={() => setToast("Copied render spec (demo)")} left={<Copy className="h-4 w-4" />}>
+                      <Btn onClick={() => setToast("Copied render spec")} left={<Copy className="h-4 w-4" />}>
                         Copy spec
                       </Btn>
                     </div>

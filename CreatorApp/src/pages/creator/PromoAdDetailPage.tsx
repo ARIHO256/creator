@@ -5,28 +5,29 @@
 //  • Performance & Earnings – How this Promo is performing for the creator + guidance.
 // Styling aligned with MyLiveDealz Creator pages, using orange (#f77f00) as the primary color.
 
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useNotification } from "../../contexts/NotificationContext";
 
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
-const DEMO_PROMO: Promo = {
-  id: "PR-101",
-  name: "Autumn Beauty Flash – Serum Promo",
-  seller: "GlowUp Hub",
-  campaign: "Autumn Beauty Flash",
-  status: "Active" as const, // Upcoming | Active | Ended
+const EMPTY_PROMO: Promo = {
+  id: "",
+  name: "Promo",
+  seller: "Seller",
+  campaign: "Campaign",
+  status: "Upcoming",
   compType: "Hybrid",
-  compSummary: "$200 flat + 5% commission",
-  earnings: 820,
-  clicks: 1850,
-  purchases: 96,
-  conversion: 5.2,
-  category: "Beauty",
-  region: "East Africa",
-  hasContract: true,
-  hasLives: true
+  compSummary: "Pending",
+  earnings: 0,
+  clicks: 0,
+  purchases: 0,
+  conversion: 0,
+  category: "General",
+  region: "Global",
+  hasContract: false,
+  hasLives: false
 };
 
 
@@ -36,7 +37,175 @@ function PromoAdDetailPage() {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("share"); // share | performance
 
-  const promo = location.state?.promo || DEMO_PROMO;
+  const [promo, setPromo] = useState<Promo>(() => location.state?.promo || EMPTY_PROMO);
+  const [promoData, setPromoData] = useState<PromoData>(EMPTY_PROMO_DATA);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const search = new URLSearchParams(location.search);
+    const queryPromoId = search.get("promoId") || search.get("adId") || search.get("id");
+    const pathTail = location.pathname.split("/").filter(Boolean).pop() || "";
+    const candidateId =
+      location.state?.promo?.id ||
+      queryPromoId ||
+      (pathTail && !pathTail.includes("Shoppable-Adz") ? pathTail : "");
+
+    if (!candidateId) return;
+
+    const normalizeStatus = (value: unknown): Promo["status"] => {
+      const normalized = String(value || "").toLowerCase();
+      if (["ended", "archived", "inactive", "completed"].includes(normalized)) return "Ended";
+      if (["active", "live", "published", "running"].includes(normalized)) return "Active";
+      return "Upcoming";
+    };
+
+    void Promise.all([
+      creatorApi.adzCampaign(candidateId),
+      creatorApi.adzCampaignPerformance(candidateId).catch(() => ({}))
+    ])
+      .then(([campaign, performance]) => {
+        if (cancelled) return;
+        const data =
+          campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
+            ? (campaign.data as Record<string, unknown>)
+            : {};
+        const perf =
+          performance && typeof performance === "object" && !Array.isArray(performance)
+            ? (performance as Record<string, unknown>)
+            : {};
+        const clicks = Number(perf.clicks ?? 0) || 0;
+        const purchases = Number(perf.purchases ?? 0) || 0;
+        const earnings = Number(perf.earnings ?? 0) || 0;
+        const conversion = clicks > 0 ? (purchases / clicks) * 100 : 0;
+
+        const sellerName = String(
+          data.supplierName ||
+            data.sellerName ||
+            data.seller ||
+            (promo.seller || "Seller")
+        );
+
+        setPromo({
+          id: campaign.id,
+          name: String(campaign.title || data.title || data.name || promo.name || "Promo"),
+          seller: sellerName,
+          campaign: String(data.campaignName || data.campaign || campaign.title || "Campaign"),
+          status: normalizeStatus(campaign.status || data.status),
+          compType: String(data.compType || data.compensationType || promo.compType || "Hybrid"),
+          compSummary: String(data.compSummary || data.compensationSummary || promo.compSummary || "Pending"),
+          earnings,
+          clicks,
+          purchases,
+          conversion: Number(conversion.toFixed(1)),
+          category: String(data.category || promo.category || "General"),
+          region: String(data.region || promo.region || "Global"),
+          hasContract: Boolean(data.contractId || data.hasContract),
+          hasLives: Boolean(data.hasLives || data.liveSessionId || data.liveSessionIds)
+        });
+
+        const linksRaw = Array.isArray(data.links)
+          ? data.links
+          : Array.isArray(perf.links)
+            ? perf.links
+            : [];
+        const assetsRaw = Array.isArray(data.assets) ? data.assets : [];
+        const captionsRaw = Array.isArray(data.captions) ? data.captions : [];
+        const ctasRaw = Array.isArray(data.ctas) ? data.ctas : [];
+        const liveSplitsRaw = Array.isArray(perf.liveSplits) ? perf.liveSplits : [];
+        const trendRaw = Array.isArray(perf.trend)
+          ? perf.trend
+          : Array.isArray(perf.trends)
+            ? perf.trends
+            : [];
+
+        setPromoData({
+          links: linksRaw
+            .map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                label: String(row.label || row.channel || `Link ${index + 1}`),
+                description: String(row.description || row.hint || ""),
+                url: String(row.url || row.href || "")
+              };
+            })
+            .filter((row) => row.url.trim().length > 0),
+          assets: assetsRaw.map((entry, index) => {
+            const row = entry as Record<string, unknown>;
+            return {
+              label: String(row.label || row.name || `Asset ${index + 1}`),
+              usage: String(row.usage || row.description || "")
+            };
+          }),
+          captions: captionsRaw
+            .map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                platform: String(row.platform || `Caption ${index + 1}`),
+                text: String(row.text || "")
+              };
+            })
+            .filter((row) => row.text.trim().length > 0),
+          ctas: ctasRaw
+            .map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                lang: String(row.lang || row.language || `Lang ${index + 1}`),
+                label: String(row.label || row.text || "")
+              };
+            })
+            .filter((row) => row.label.trim().length > 0),
+          performance: {
+            impressions: Number(perf.impressions || 0) || 0,
+            flatFeePortion: Number(perf.flatFeePortion || 0) || 0,
+            bonuses: Number(perf.bonuses || 0) || 0,
+            expectedTotal: Number(perf.expectedTotal || perf.projectedTotal || 0) || 0,
+            nextPayoutDate: String(perf.nextPayoutDate || "—"),
+            nextPayoutMethod: String(perf.nextPayoutMethod || "—"),
+            avgPromoCTR: Number(perf.avgPromoCTR || 0) || 0,
+            avgPromoConv: Number(perf.avgPromoConv || 0) || 0,
+            avgEPC: Number(perf.avgEPC || 0) || 0,
+            links: linksRaw.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                id: String(row.id || `link_${index + 1}`),
+                channel: String(row.channel || row.label || `Link ${index + 1}`),
+                clicks: Number(row.clicks || 0) || 0,
+                impressions: Number(row.impressions || 0) || 0,
+                purchases: Number(row.purchases || row.conversions || 0) || 0,
+                sales: Number(row.sales || row.gmv || 0) || 0
+              };
+            }),
+            liveSplits: liveSplitsRaw.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                id: String(row.id || `split_${index + 1}`),
+                label: String(row.label || `Split ${index + 1}`),
+                clicks: Number(row.clicks || 0) || 0,
+                purchases: Number(row.purchases || row.conversions || 0) || 0,
+                sales: Number(row.sales || row.gmv || 0) || 0
+              };
+            }),
+            trend: trendRaw.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                label: String(row.label || row.day || row.date || `P${index + 1}`),
+                clicks: Number(row.clicks || 0) || 0,
+                sales: Number(row.sales || row.gmv || 0) || 0,
+                conv: Number(row.conv || row.conversion || row.conversionPct || 0) || 0
+              };
+            })
+          }
+        });
+      })
+      .catch(() => {
+        // Keep the current UI payload when API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, location.search, location.state?.promo?.id]);
 
 
   const handleOpenCampaignsBoard = () => {
@@ -100,9 +269,9 @@ function PromoAdDetailPage() {
 
             <div className="p-3 md:p-4">
               {activeTab === "share" ? (
-                <ShareAssetsTab promo={promo} showToast={showNotification} />
+                <ShareAssetsTab promo={promo} promoData={promoData} showToast={showNotification} />
               ) : (
-                <PerformanceEarningsTab promo={promo} showToast={showNotification} />
+                <PerformanceEarningsTab promo={promo} promoData={promoData} showToast={showNotification} />
               )}
             </div>
           </section>
@@ -129,6 +298,61 @@ type Promo = {
   region: string;
   hasContract: boolean;
   hasLives: boolean;
+};
+
+type PromoData = {
+  links: Array<{ label: string; description?: string; url: string }>;
+  assets: Array<{ label: string; usage?: string }>;
+  captions: Array<{ platform: string; text: string }>;
+  ctas: Array<{ lang: string; label: string }>;
+  performance: {
+    impressions: number;
+    flatFeePortion: number;
+    bonuses: number;
+    expectedTotal: number;
+    nextPayoutDate: string;
+    nextPayoutMethod: string;
+    avgPromoCTR: number;
+    avgPromoConv: number;
+    avgEPC: number;
+    links: Array<{
+      id: string;
+      channel: string;
+      clicks: number;
+      impressions: number;
+      purchases: number;
+      sales: number;
+    }>;
+    liveSplits: Array<{
+      id: string;
+      label: string;
+      clicks: number;
+      purchases: number;
+      sales: number;
+    }>;
+    trend: Array<{ label: string; clicks: number; sales: number; conv: number }>;
+  };
+};
+
+const EMPTY_PROMO_DATA: PromoData = {
+  links: [],
+  assets: [],
+  captions: [],
+  ctas: [],
+  performance: {
+    impressions: 0,
+    flatFeePortion: 0,
+    bonuses: 0,
+    expectedTotal: 0,
+    nextPayoutDate: "—",
+    nextPayoutMethod: "—",
+    avgPromoCTR: 0,
+    avgPromoConv: 0,
+    avgEPC: 0,
+    links: [],
+    liveSplits: [],
+    trend: []
+  }
 };
 
 type PromoHeaderProps = {
@@ -244,11 +468,17 @@ function PromoHeader({ promo, onOpenCampaignsBoard, onOpenContract, onOpenLives 
 
 type ShareAssetsTabProps = {
   promo: Promo;
+  promoData: PromoData;
   showToast: (msg: string) => void;
 };
 
 /* TAB 1 – Share & Assets */
-function ShareAssetsTab({ promo: _promo, showToast }: ShareAssetsTabProps) {
+function ShareAssetsTab({ promo: _promo, promoData, showToast }: ShareAssetsTabProps) {
+  const shareLinks = promoData.links;
+  const shareAssets = promoData.assets;
+  const shareCaptions = promoData.captions;
+  const regionLinks = shareLinks.filter((row) => row.label.toLowerCase().includes("region"));
+
   return (
     <div className="flex flex-col gap-4">
       {/* Section 1 – Creator-specific links */}
@@ -259,42 +489,21 @@ function ShareAssetsTab({ promo: _promo, showToast }: ShareAssetsTabProps) {
           attributed to you and counted towards your earnings.
         </p>
         <div className="space-y-2 text-xs">
-          <LinkRow
-            label="Primary tracking link"
-            description="Best for most platforms. Tracks purchases and earnings for this Promo."
-            url="https://mylivedealz.com/pr/PR-101?creator=ronald"
-            onCopy={() => showToast("Primary link copied")}
-          />
-          <LinkRow
-            label="Instagram Story link"
-            description="Swipe-up / sticker link for stories."
-            url="https://mldz.ly/pr101/ig-story"
-            onCopy={() => showToast("IG Story link copied")}
-          />
-          <LinkRow
-            label="Instagram Feed link"
-            description="Use in your IG feed caption or bio link while this Promo is active."
-            url="https://mldz.ly/pr101/ig-feed"
-            onCopy={() => showToast("IG Feed link copied")}
-          />
-          <LinkRow
-            label="TikTok profile link"
-            description="Add to your TikTok bio during the campaign."
-            url="https://mldz.ly/pr101/tt"
-            onCopy={() => showToast("TikTok link copied")}
-          />
-          <LinkRow
-            label="YouTube Shorts link"
-            description="Use in Shorts descriptions or pinned comments."
-            url="https://mldz.ly/pr101/yt-shorts"
-            onCopy={() => showToast("Shorts link copied")}
-          />
-          <LinkRow
-            label="WhatsApp / Telegram link"
-            description="Use in WhatsApp status, broadcast lists or Telegram channels."
-            url="https://mldz.ly/pr101/wa"
-            onCopy={() => showToast("WhatsApp link copied")}
-          />
+          {shareLinks.length > 0 ? (
+            shareLinks.map((link) => (
+              <LinkRow
+                key={`${link.label}:${link.url}`}
+                label={link.label}
+                description={link.description || "Tracking link for this promo."}
+                url={link.url}
+                onCopy={() => showToast(`${link.label} copied`)}
+              />
+            ))
+          ) : (
+            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-500 dark:text-slate-300">
+              No promo links found in the database for this campaign yet.
+            </div>
+          )}
         </div>
 
         {/* Region-specific variants */}
@@ -307,15 +516,17 @@ function ShareAssetsTab({ promo: _promo, showToast }: ShareAssetsTabProps) {
             most of your audience is.
           </p>
           <div className="flex flex-wrap gap-2">
-            <span className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 font-medium transition-colors">
-              🌍 Africa link: <span className="font-mono">/africa</span>
-            </span>
-            <span className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 font-medium transition-colors">
-              🇬🇧 EU/UK link: <span className="font-mono">/eu-uk</span>
-            </span>
-            <span className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 font-medium transition-colors">
-              🇨🇳 Asia link: <span className="font-mono">/asia</span>
-            </span>
+            {regionLinks.length > 0 ? (
+              regionLinks.map((row) => (
+                <span key={`${row.label}:${row.url}`} className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 font-medium transition-colors">
+                  {row.label}: <span className="font-mono">{row.url}</span>
+                </span>
+              ))
+            ) : (
+              <span className="px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-600 dark:text-slate-300 font-medium transition-colors">
+                No region variants returned by API.
+              </span>
+            )}
           </div>
         </div>
 
@@ -356,54 +567,37 @@ function ShareAssetsTab({ promo: _promo, showToast }: ShareAssetsTabProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="flex flex-col gap-2">
             <h3 className="text-xs font-semibold dark:font-bold">Images & graphics</h3>
-            <AssetTile
-              label="IG Story – Co-branded frame"
-              usage="Best for IG Story (1080×1920). Add your link sticker and mention the timer."
-              onDownload={() => showToast("Download started: IG Story Frame")}
-            />
-            <AssetTile
-              label="Instagram Feed – 1:1/poster"
-              usage="Best for IG Feed (square). Good for before/after or shelf shots."
-              onDownload={() => showToast("Download started: IG Feed Poster")}
-            />
-            <AssetTile
-              label="TikTok / Shorts vertical cover"
-              usage="Best for TikTok & Shorts thumbnails. Use as the first frame or cover."
-              onDownload={() => showToast("Download started: Vertical Cover")}
-            />
-            <AssetTile
-              label="WhatsApp Status banner"
-              usage="Optimised for WhatsApp Status. Short, bold text."
-              onDownload={() => showToast("Download started: WhatsApp Banner")}
-            />
+            {shareAssets.length > 0 ? (
+              shareAssets.map((asset) => (
+                <AssetTile
+                  key={asset.label}
+                  label={asset.label}
+                  usage={asset.usage || "Asset from campaign library"}
+                  onDownload={() => showToast(`Download started: ${asset.label}`)}
+                />
+              ))
+            ) : (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs text-slate-500 dark:text-slate-300">
+                No campaign assets available in the database yet.
+              </div>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <h3 className="text-xs font-semibold dark:font-bold">Caption suggestions</h3>
-            <CaptionBlock
-              platform="Instagram Story caption"
-              text="GlowUp serum is live on MyLiveDealz ✨ Tap my link and grab 20% OFF while the live is on! #ad #GlowUpHub"
-              onCopy={() => showToast("IG Story caption copied")}
-            />
-            <CaptionBlock
-              platform="Instagram Feed caption"
-              text="My everyday glow routine now has a 20% OFF twist on MyLiveDealz. Save this post, then tap the link in my bio before the timer ends. #ad #BeautyFlash"
-              onCopy={() => showToast("IG Feed caption copied")}
-            />
-            <CaptionBlock
-              platform="TikTok script/description"
-              text="POV: your glow routine finally fits your budget 😍 GlowUp serum is 20% OFF on MyLiveDealz – link in bio while stock lasts! #ad #GlowUpHub #BeautyFlash"
-              onCopy={() => showToast("TikTok caption copied")}
-            />
-            <CaptionBlock
-              platform="YouTube Shorts description"
-              text="Quick glow tip ✨ I’m featuring GlowUp serum with 20% OFF on MyLiveDealz. Check the link in the first comment before the offer ends. #ad"
-              onCopy={() => showToast("Shorts description copied")}
-            />
-            <CaptionBlock
-              platform="WhatsApp broadcast snippet"
-              text="Hey fam, I’m featuring GlowUp serum on MyLiveDealz with 20% OFF during today’s live. Tap my link and order before the timer ends. #ad"
-              onCopy={() => showToast("WhatsApp snippet copied")}
-            />
+            {shareCaptions.length > 0 ? (
+              shareCaptions.map((caption) => (
+                <CaptionBlock
+                  key={caption.platform}
+                  platform={caption.platform}
+                  text={caption.text}
+                  onCopy={() => showToast(`${caption.platform} copied`)}
+                />
+              ))
+            ) : (
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-xs text-slate-500 dark:text-slate-300">
+                No caption templates found in the database for this promo.
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -439,7 +633,7 @@ function ShareAssetsTab({ promo: _promo, showToast }: ShareAssetsTabProps) {
       {/* Premium extras – Smart packs, AI helper, multi-language CTAs */}
       <SmartSharePacks showToast={showToast} />
       <AiCaptionHelper showToast={showToast} />
-      <CtaMultilangPanel showToast={showToast} />
+      <CtaMultilangPanel ctas={promoData.ctas} showToast={showToast} />
     </div>
   );
 }
@@ -592,14 +786,7 @@ function AiCaptionHelper({ showToast }: { showToast: (msg: string) => void }) {
   );
 }
 
-function CtaMultilangPanel({ showToast }: { showToast: (msg: string) => void }) {
-  const ctas = [
-    { lang: "English", label: "Tap to shop" },
-    { lang: "Swahili", label: "Bofya ununue" },
-    { lang: "French", label: "Cliquez pour acheter" },
-    { lang: "Arabic", label: "اضغط للشراء" },
-    { lang: "Portuguese", label: "Toque para comprar" }
-  ];
+function CtaMultilangPanel({ ctas, showToast }: { ctas: Array<{ lang: string; label: string }>; showToast: (msg: string) => void }) {
 
   const copyCta = (label: string) => {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -619,23 +806,29 @@ function CtaMultilangPanel({ showToast }: { showToast: (msg: string) => void }) 
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-        {ctas.map((cta) => (
-          <div
-            key={cta.lang}
-            className="border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 flex flex-col gap-0.5 transition-colors"
-          >
-            <span className="text-xs text-slate-500 dark:text-slate-300">{cta.lang}</span>
-            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              {cta.label}
-            </span>
-            <button
-              className="mt-1 self-start px-2.5 py-0.5 rounded-full border border-[#f77f00] text-[#f77f00] bg-white dark:bg-slate-900 hover:bg-[#fff4e5] transition-colors"
-              onClick={() => copyCta(cta.label)}
+        {ctas.length > 0 ? (
+          ctas.map((cta) => (
+            <div
+              key={`${cta.lang}:${cta.label}`}
+              className="border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 bg-slate-50 dark:bg-slate-900 flex flex-col gap-0.5 transition-colors"
             >
-              Copy for overlay
-            </button>
+              <span className="text-xs text-slate-500 dark:text-slate-300">{cta.lang}</span>
+              <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {cta.label}
+              </span>
+              <button
+                className="mt-1 self-start px-2.5 py-0.5 rounded-full border border-[#f77f00] text-[#f77f00] bg-white dark:bg-slate-900 hover:bg-[#fff4e5] transition-colors"
+                onClick={() => copyCta(cta.label)}
+              >
+                Copy for overlay
+              </button>
+            </div>
+          ))
+        ) : (
+          <div className="border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-2 bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-300 col-span-full">
+            No CTA labels available from backend.
           </div>
-        ))}
+        )}
       </div>
     </section>
   );
@@ -737,18 +930,18 @@ function CaptionBlock({ platform, text, onCopy }: CaptionBlockProps) {
 /* TAB 2 – Performance & Earnings */
 type PerformanceEarningsTabProps = {
   promo: Promo;
+  promoData: PromoData;
   showToast: (msg: string) => void;
 };
 
-function PerformanceEarningsTab({ promo, showToast: _showToast }: PerformanceEarningsTabProps) {
+function PerformanceEarningsTab({ promo, promoData, showToast: _showToast }: PerformanceEarningsTabProps) {
   const navigate = useNavigate();
-  // Demo numbers
-  const impressions = 12000;
-  const flatFeePortion = 200;
+  const impressions = promoData.performance.impressions;
+  const flatFeePortion = promoData.performance.flatFeePortion;
   const commissionPortion = promo.earnings - flatFeePortion;
-  const bonuses = 0;
-  const expectedTotal = 1200; // expected earnings for this promo
-  const progress = Math.min(promo.earnings / expectedTotal, 1);
+  const bonuses = promoData.performance.bonuses;
+  const expectedTotal = promoData.performance.expectedTotal;
+  const progress = expectedTotal > 0 ? Math.min(promo.earnings / expectedTotal, 1) : 0;
 
   const earningsPerClick = promo.clicks > 0 ? promo.earnings / promo.clicks : 0;
   const earningsPerPurchase =
@@ -757,85 +950,33 @@ function PerformanceEarningsTab({ promo, showToast: _showToast }: PerformanceEar
   const ctr =
     impressions > 0 ? (promo.clicks / impressions) * 100 : 0;
 
-  const avgPromoCTR = 3.8;
-  const avgPromoConv = 4.0;
-  const avgEPC = 0.25;
+  const avgPromoCTR = promoData.performance.avgPromoCTR;
+  const avgPromoConv = promoData.performance.avgPromoConv;
+  const avgEPC = promoData.performance.avgEPC;
   const currentEPC = earningsPerClick;
 
-  const links = [
-    {
-      id: 1,
-      channel: "Instagram Story",
-      clicks: 820,
-      impressions: 6000,
-      purchases: 48,
-      sales: 2200
-    },
-    {
-      id: 2,
-      channel: "Instagram Feed",
-      clicks: 380,
-      impressions: 2600,
-      purchases: 18,
-      sales: 900
-    },
-    {
-      id: 3,
-      channel: "TikTok",
-      clicks: 540,
-      impressions: 2800,
-      purchases: 26,
-      sales: 1500
-    },
-    {
-      id: 4,
-      channel: "WhatsApp",
-      clicks: 320,
-      impressions: 1600,
-      purchases: 22,
-      sales: 1100
-    }
-  ];
+  const links = promoData.performance.links;
 
-  const bestLink = links.reduce(
-    (best, link) => (link.sales > best.sales ? link : best),
-    links[0]
-  );
+  const bestLink =
+    links.length > 0
+      ? links.reduce(
+          (best, link) => (link.sales > best.sales ? link : best),
+          links[0]
+        )
+      : null;
 
-  const liveSplits = [
-    {
-      id: "live",
-      label: "During live sessions",
-      clicks: 900,
-      purchases: 55,
-      sales: 2600
-    },
-    {
-      id: "replay",
-      label: "Replays",
-      clicks: 550,
-      purchases: 28,
-      sales: 1400
-    },
-    {
-      id: "promo",
-      label: "Promo-only shares (no live)",
-      clicks: 400,
-      purchases: 13,
-      sales: 800
-    }
-  ];
+  const liveSplits = promoData.performance.liveSplits;
 
   const [metric, setMetric] = useState<"clicks" | "sales" | "conv">("clicks");
   const [period, setPeriod] = useState("30d"); // 7d | 30d | full
 
   const trendData: Record<"clicks" | "sales" | "conv", number[]> = {
-    clicks: [200, 260, 310, 280, 340, 390, 370],
-    sales: [80, 90, 120, 110, 140, 160, 150],
-    conv: [3.5, 3.8, 4.2, 3.9, 4.5, 4.8, 4.6]
+    clicks: promoData.performance.trend.map((row) => row.clicks),
+    sales: promoData.performance.trend.map((row) => row.sales),
+    conv: promoData.performance.trend.map((row) => row.conv)
   };
 
-  const trendLabels = ["D1", "D2", "D3", "D4", "D5", "D6", "D7"];
+  const trendLabels = promoData.performance.trend.map((row) => row.label);
   const values = trendData[metric];
   const maxTrend = Math.max(...values, 1);
 
@@ -930,8 +1071,8 @@ function PerformanceEarningsTab({ promo, showToast: _showToast }: PerformanceEar
           </div>
           <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-2 bg-white dark:bg-slate-900 flex flex-col gap-0.5 text-xs text-slate-600 dark:text-slate-200 font-medium transition-colors">
             <span className="font-medium text-slate-800 dark:text-slate-50">Next payout</span>
-            <span>Estimated date: Nov 15, 2025</span>
-            <span>Method: Bank transfer · GlowUp Hub standard schedule</span>
+            <span>Estimated date: {promoData.performance.nextPayoutDate}</span>
+            <span>Method: {promoData.performance.nextPayoutMethod}</span>
             <span className="text-xs text-slate-500 dark:text-slate-300">
               Usually paid 7 days after month-end when minimum payout threshold is reached.
             </span>
@@ -1008,7 +1149,7 @@ function PerformanceEarningsTab({ promo, showToast: _showToast }: PerformanceEar
                     link.impressions > 0
                       ? (link.clicks / link.impressions) * 100
                       : 0;
-                  const isTop = link.id === bestLink.id;
+                  const isTop = bestLink ? link.id === bestLink.id : false;
                   return (
                     <tr
                       key={link.id}

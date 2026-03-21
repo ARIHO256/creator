@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
 const EV_ORANGE = "#f77f00";
 
@@ -120,15 +121,6 @@ type StoredLiveDraft = {
   products: StoredFeaturedItem[];
 };
 
-function safeJsonParse<T = unknown>(raw: string | null): T | null {
-  if (!raw || typeof raw !== "string") return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
 function coercePositiveInt(value: unknown, fallback = 1): number {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   if (!Number.isFinite(n)) return fallback;
@@ -194,33 +186,6 @@ function extractLiveDraftFromStoragePayload(payload: unknown): StoredLiveDraft |
   };
 }
 
-function readStoredLiveDraft(): StoredLiveDraft | null {
-  if (typeof window === "undefined") return null;
-
-  // Try a few reasonable keys without requiring backend changes.
-  // Note: LiveBuilder2 uses sessionStorage for draft handoff in some flows.
-  const candidateKeys = [
-    { storage: "local" as const, key: "mldz:liveBuilder:draft:v1" },
-    { storage: "session" as const, key: "mldz:liveBuilder:draft:v1" },
-    { storage: "local" as const, key: "creator_live_draft" },
-    { storage: "session" as const, key: "creator_live_draft" },
-  ];
-
-  for (const c of candidateKeys) {
-    let raw: string | null = null;
-    try {
-      raw = c.storage === "local" ? window.localStorage.getItem(c.key) : window.sessionStorage.getItem(c.key);
-    } catch {
-      raw = null;
-    }
-    const parsed = safeJsonParse<any>(raw);
-    const extracted = extractLiveDraftFromStoragePayload(parsed);
-    if (extracted) return extracted;
-  }
-
-  return null;
-}
-
 
 function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule" | "home") => void }) {
   // const { theme, toggleTheme } = useTheme();
@@ -239,9 +204,9 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [screenShareOn, setScreenShareOn] = useState(false);
-  const [activeSceneId, setActiveSceneId] = useState("intro");
+  const [activeSceneId, setActiveSceneId] = useState("");
 
-  const [highlightedProductId, setHighlightedProductId] = useState("P-101");
+  const [highlightedProductId, setHighlightedProductId] = useState("");
   const [flashDealzActive, setFlashDealzActive] = useState(false);
   const [flashDealzSeconds, setFlashDealzSeconds] = useState(120);
   const [, setFlashConfigOpen] = useState(false);
@@ -250,11 +215,104 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const [tipsOpen, setTipsOpen] = useState(false);
   const [, setLanguagePanelOpen] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
+  const [studioId, setStudioId] = useState("default");
+  const [studioHydrated, setStudioHydrated] = useState(false);
+  const [studioData, setStudioData] = useState<Record<string, unknown>>({});
 
   const showToast = (msg: string) => {
     setToast({ message: msg });
     setTimeout(() => setToast(null), 3000);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const sessionIdFromQuery = new URLSearchParams(location.search).get("sessionId");
+    const sessionIdFromState = (location.state as { sessionId?: string } | null)?.sessionId;
+    const candidateId = sessionIdFromQuery || sessionIdFromState || "default";
+
+    const load = async () => {
+      try {
+        const studio =
+          candidateId === "default"
+            ? await creatorApi.liveStudioDefault()
+            : await creatorApi.liveStudio(candidateId);
+        if (cancelled) return;
+        setStudioId(String(studio.id || candidateId));
+        const data =
+          studio.data && typeof studio.data === "object" && !Array.isArray(studio.data)
+            ? (studio.data as Record<string, unknown>)
+            : {};
+        setStudioData(data);
+        if (typeof data.micOn === "boolean") setMicOn(data.micOn);
+        if (typeof data.camOn === "boolean") setCamOn(data.camOn);
+        if (typeof data.screenShareOn === "boolean") setScreenShareOn(data.screenShareOn);
+        if (typeof data.activeSceneId === "string") setActiveSceneId(data.activeSceneId);
+        if (typeof data.highlightedProductId === "string") setHighlightedProductId(data.highlightedProductId);
+        if (typeof data.flashDealzActive === "boolean") setFlashDealzActive(data.flashDealzActive);
+        if (typeof data.flashDealzSeconds === "number") setFlashDealzSeconds(data.flashDealzSeconds);
+        if (typeof data.viewerCount === "number") setViewerCount(Math.max(0, Math.round(data.viewerCount)));
+        if (typeof data.salesCount === "number") setSalesCount(Math.max(0, Math.round(data.salesCount)));
+        if (Array.isArray(data.coHosts)) {
+          setCoHosts(
+            data.coHosts.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                id: Number(row.id || index + 1),
+                name: String(row.name || `Co-host ${index + 1}`),
+                status: String(row.status || "Ready")
+              };
+            })
+          );
+        }
+        if (Array.isArray(data.attachments)) {
+          setAttachments(
+            data.attachments.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                id: Number(row.id || index + 1),
+                from: String(row.from || "Viewer"),
+                type: String(row.type || "file"),
+                label: String(row.label || `Attachment ${index + 1}`),
+                status: String(row.status || "Pending")
+              };
+            })
+          );
+        }
+        if (Array.isArray(data.chatMessages)) {
+          setChatMessages(
+            data.chatMessages.map((entry, index) => {
+              const row = entry as Record<string, unknown>;
+              return {
+                id: Number(row.id || index + 1),
+                from: String(row.from || "Viewer"),
+                body: String(row.body || ""),
+                time: String(row.time || "Now"),
+                system: Boolean(row.system),
+                audioUrl: typeof row.audioUrl === "string" ? row.audioUrl : undefined,
+                attachmentUrl: typeof row.attachmentUrl === "string" ? row.attachmentUrl : undefined,
+                attachmentType:
+                  row.attachmentType === "image" || row.attachmentType === "video" || row.attachmentType === "file"
+                    ? row.attachmentType
+                    : undefined
+              } as ChatMessage;
+            })
+          );
+        }
+        if (studio.status === "live") setMode("live");
+      } catch {
+        setStudioData({});
+      } finally {
+        if (!cancelled) {
+          setStudioHydrated(true);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.search, location.state]);
 
   useEffect(() => {
     if (location.state?.smartBundle) {
@@ -275,18 +333,28 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  // Products mock
-  const products: Product[] = [
-    { id: "P-101", name: "Glow Serum", price: "$24.99", stock: "150 left", tag: "Best Seller" },
-    { id: "P-102", name: "Matte Lipstick", price: "$18.50", stock: "85 left", tag: "Low Stock" },
-    { id: "P-103", name: "Setting Spray", price: "$22.00", stock: "200 left", tag: "New" },
-  ];
+  const products = useMemo<Product[]>(() => {
+    const rows = Array.isArray(studioData.products) ? studioData.products : [];
+    return rows.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      return {
+        id: String(row.id || `product_${index + 1}`),
+        name: String(row.name || row.title || `Product ${index + 1}`),
+        price: String(row.price || row.priceLabel || "—"),
+        stock: String(row.stock || row.stockLabel || "—"),
+        tag: String(row.tag || "")
+      };
+    });
+  }, [studioData.products]);
+
+  useEffect(() => {
+    if (!highlightedProductId && products.length > 0) {
+      setHighlightedProductId(products[0].id);
+    }
+  }, [highlightedProductId, products]);
 
   // Co-hosts with proper state management
-  const [coHosts, setCoHosts] = useState<CoHost[]>([
-    { id: 1, name: "Jessica M.", status: "Ready" },
-    { id: 2, name: "David K.", status: "Off-air" },
-  ]);
+  const [coHosts, setCoHosts] = useState<CoHost[]>([]);
 
   // Recording state for voice messages
   const [isRecording, setIsRecording] = useState(false);
@@ -316,18 +384,57 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const [giveawayRemainingById, setGiveawayRemainingById] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    const stored = readStoredLiveDraft();
-    if (stored) {
-      setStoredLiveDraft(stored);
-      // Default to the first configured giveaway (if any)
-      if (stored.giveaways.length) {
-        setSelectedGiveawayId((prev) => (prev ? prev : stored.giveaways[0].id));
-      }
+    const fromStudioData = extractLiveDraftFromStoragePayload(studioData);
+    if (!fromStudioData) {
+      setStoredLiveDraft(null);
+      return;
     }
-  }, []);
+    setStoredLiveDraft(fromStudioData);
+    if (fromStudioData.giveaways.length) {
+      setSelectedGiveawayId((prev) => (prev ? prev : fromStudioData.giveaways[0].id));
+    }
+  }, [studioData]);
 
   const configuredGiveaways = storedLiveDraft?.giveaways || [];
   const configuredProducts = storedLiveDraft?.products || [];
+
+  useEffect(() => {
+    if (!studioHydrated) return;
+    const timeout = window.setTimeout(() => {
+      void creatorApi.updateLiveStudio(studioId, {
+        data: {
+          mode,
+          micOn,
+          camOn,
+          screenShareOn,
+          activeSceneId,
+          highlightedProductId,
+          flashDealzActive,
+          flashDealzSeconds,
+          giveawayActive,
+          giveawayEntries,
+          selectedGiveawayId
+        }
+      });
+    }, 400);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    activeSceneId,
+    camOn,
+    flashDealzActive,
+    flashDealzSeconds,
+    giveawayActive,
+    giveawayEntries,
+    highlightedProductId,
+    micOn,
+    mode,
+    screenShareOn,
+    selectedGiveawayId,
+    studioHydrated,
+    studioId
+  ]);
 
   // Keep remaining quantities in sync when the configured giveaway list changes.
   // We preserve any existing remaining counts where possible (e.g., while live).
@@ -418,81 +525,122 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const [attachDialogOpen, setAttachDialogOpen] = useState(false);
 
   // Attachments mock
-  const [attachments, setAttachments] = useState<Attachment[]>([
-    { id: 1, from: "@Sarah99", type: "image", label: "Viewer Look", status: "Pending" },
-    { id: 2, from: "@MikeD", type: "question", label: "Product Q", status: "Pending" },
-  ]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
 
-  // Scenes mock
-  const scenes: Scene[] = [
-    { id: "intro", label: "Intro Card", desc: "Title + Music" },
-    { id: "main", label: "Main Cam", desc: "Full screen" },
-    { id: "split", label: "Split View", desc: "Cam + Screen" },
-    { id: "product", label: "Product Focus", desc: "Pip Overlay" },
-  ];
+  const scenes = useMemo<Scene[]>(() => {
+    const rows = Array.isArray(studioData.scenes) ? studioData.scenes : [];
+    return rows.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      return {
+        id: String(row.id || `scene_${index + 1}`),
+        label: String(row.label || row.name || `Scene ${index + 1}`),
+        desc: String(row.desc || row.description || "")
+      };
+    });
+  }, [studioData.scenes]);
 
-  // Run of show
-  const runOfShow: Shot[] = [
-    { id: "s1", label: "Welcome", window: "0:00", scene: "intro" },
-    { id: "s2", label: "Product Reveal", window: "2:00", scene: "main" },
-    { id: "s3", label: "Demo", window: "5:00", scene: "split" },
-  ];
+  useEffect(() => {
+    if (!activeSceneId && scenes.length > 0) {
+      setActiveSceneId(scenes[0].id);
+    }
+  }, [activeSceneId, scenes]);
 
-  // Script cues
-  const scriptCues = [
-    "Welcome everyone to the stream!",
-    "Today we are reviewing the new collection.",
-    "Don't forget to use code FLASH20.",
-    "Let's bring in our special guest.",
-  ];
+  const runOfShow = useMemo<Shot[]>(() => {
+    const rows = Array.isArray(studioData.runOfShow) ? studioData.runOfShow : [];
+    return rows.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      return {
+        id: String(row.id || `shot_${index + 1}`),
+        label: String(row.label || row.name || `Shot ${index + 1}`),
+        window: String(row.window || row.time || "—"),
+        scene: String(row.scene || "")
+      };
+    });
+  }, [studioData.runOfShow]);
 
-  // Commerce HUD data
-  const commerceGoal: CommerceGoal = {
-    soldUnits: 42,
-    targetUnits: 100,
-    cartCount: 15,
-    last5MinSales: 8,
-  };
+  const scriptCues = useMemo<string[]>(() => {
+    if (!Array.isArray(studioData.scriptCues)) return [];
+    return studioData.scriptCues.map((row, index) => String(row || `Cue ${index + 1}`));
+  }, [studioData.scriptCues]);
 
-  const salesEvents: SalesEvent[] = [
-    { id: 1, label: "@Sarah purchased Glow Serum", time: "2s ago" },
-    { id: 2, label: "@Mike purchased Lipstick", time: "12s ago" },
-    { id: 3, label: "@Jen purchased Bundle", time: "45s ago" },
-  ];
+  const commerceGoal: CommerceGoal = useMemo(() => {
+    const row =
+      studioData.commerceGoal && typeof studioData.commerceGoal === "object" && !Array.isArray(studioData.commerceGoal)
+        ? (studioData.commerceGoal as Record<string, unknown>)
+        : {};
+    return {
+      soldUnits: Number(row.soldUnits || 0) || 0,
+      targetUnits: Number(row.targetUnits || 0) || 0,
+      cartCount: Number(row.cartCount || 0) || 0,
+      last5MinSales: Number(row.last5MinSales || 0) || 0
+    };
+  }, [studioData.commerceGoal]);
+
+  const salesEvents = useMemo<SalesEvent[]>(() => {
+    const rows = Array.isArray(studioData.salesEvents) ? studioData.salesEvents : [];
+    return rows.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      return {
+        id: Number(row.id || index + 1),
+        label: String(row.label || "Sale event"),
+        time: String(row.time || "Now")
+      };
+    });
+  }, [studioData.salesEvents]);
 
   const momentMarkers: MomentMarker[] = [];
 
   // Chat/QA mock
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    { id: 1, from: "System", body: "Welcome to the stream!", time: "10:00", system: true },
-    { id: 2, from: "Sarah_99", body: "Can't wait to see the new products!", time: "10:01" },
-    { id: 3, from: "MikeDe", body: "Is audio working?", time: "10:02" },
-  ]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatDraft, setChatDraft] = useState("");
   const [audienceTab, setAudienceTab] = useState<AudienceTab>("chat");
 
-  const qaItems: QAItem[] = [
-    { id: 1, question: "Is this vegan?", from: "@VeganGal", status: "pinned" },
-    { id: 2, question: "Shipping to CA?", from: "@MapleLeaf", status: "waiting" },
-  ];
+  const qaItems = useMemo<QAItem[]>(() => {
+    const rows = Array.isArray(studioData.qaItems) ? studioData.qaItems : [];
+    return rows.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      return {
+        id: Number(row.id || index + 1),
+        question: String(row.question || ""),
+        from: String(row.from || "Viewer"),
+        status: String(row.status || "waiting")
+      };
+    });
+  }, [studioData.qaItems]);
 
-  const viewersList: Viewer[] = [
-    { id: 1, name: "Sarah_99", tag: "Super Fan" },
-    { id: 2, name: "MikeDe", tag: "New" },
-  ];
+  const viewersList = useMemo<Viewer[]>(() => {
+    const rows = Array.isArray(studioData.viewersList) ? studioData.viewersList : [];
+    return rows.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      return {
+        id: Number(row.id || index + 1),
+        name: String(row.name || `Viewer ${index + 1}`),
+        tag: String(row.tag || "")
+      };
+    });
+  }, [studioData.viewersList]);
 
-  const aiPrompts = [
-    "Mention the flash deal (ending soon)",
-    "Greet new huge donor @TechGiant",
-    "Ask viewers to share the stream",
-  ];
+  const aiPrompts = useMemo<string[]>(() => {
+    if (!Array.isArray(studioData.aiPrompts)) return [];
+    return studioData.aiPrompts.map((row, index) => String(row || `Prompt ${index + 1}`));
+  }, [studioData.aiPrompts]);
 
   // Mobile state
   const [mobilePanel, setMobilePanel] = useState<"products" | "chat">("chat");
 
   // Handlers
   const toggleLive = () => {
-    setMode((prev) => (prev === "lobby" ? "live" : "lobby"));
+    setMode((prev) => {
+      const next = prev === "lobby" ? "live" : "lobby";
+      if (studioHydrated) {
+        if (next === "live") {
+          void creatorApi.startLiveStudio(studioId);
+        } else {
+          void creatorApi.endLiveStudio(studioId);
+        }
+      }
+      return next;
+    });
   };
 
   const handleOpenFlashConfig = () => setFlashConfigOpen(true);
@@ -615,14 +763,6 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     }
     setPollActive(true);
     setPollResults([0, 0]);
-    // Simulate votes coming in
-    const interval = setInterval(() => {
-      setPollResults(prev => [
-        prev[0] + Math.floor(Math.random() * 3),
-        prev[1] + Math.floor(Math.random() * 2)
-      ]);
-    }, 2000);
-    setTimeout(() => clearInterval(interval), 30000);
     showToast("📊 Poll started!");
   };
 
@@ -650,19 +790,13 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     }
     setGiveawayActive(true);
     setGiveawayEntries(0);
-    // Simulate entries coming in
-    const interval = setInterval(() => {
-      setGiveawayEntries(prev => prev + Math.floor(Math.random() * 5) + 1);
-    }, 1500);
-    setTimeout(() => clearInterval(interval), 60000);
     showToast(`🎁 Giveaway started! Prize: ${giveawayPrizeLabel}. Viewers can enter now.`);
   };
 
   const handlePickWinner = () => {
     const activeGiveawayId = effectiveGiveawayId;
     const activePrizeLabel = giveawayPrizeLabel;
-    const winners = ["Sarah_99", "MikeDe", "VeganGal", "TechGiant", "MapleLeaf"];
-    const winner = winners[Math.floor(Math.random() * winners.length)];
+    const winner = viewersList[0]?.name || "Viewer";
     setGiveawayActive(false);
     showToast(`🎉 Winner: @${winner}! Congratulations!`);
     // Add system message
@@ -745,8 +879,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   };
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [viewerCount, setViewerCount] = useState(842);
-  const [salesCount, setSalesCount] = useState(37);
+  const [viewerCount, setViewerCount] = useState(0);
+  const [salesCount, setSalesCount] = useState(0);
 
   // Timer effect
   useEffect(() => {
@@ -757,17 +891,6 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
     const interval = setInterval(() => {
       setElapsedSeconds((prev) => prev + 1);
-
-      // Randomly fluctuate viewers
-      if (Math.random() > 0.7) {
-        setViewerCount((prev) => prev + Math.floor(Math.random() * 5) - 2);
-      }
-
-      // Randomly make a sale
-      if (Math.random() > 0.95) {
-        setSalesCount((prev) => prev + 1);
-        // Add chat message logic here if needed, but keeping it simple to fix errors first
-      }
     }, 1000);
 
     return () => clearInterval(interval);
@@ -801,11 +924,13 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     timer: mode === "live" ? formatTime(elapsedSeconds) : "–:–",
     viewers: viewerCount,
     sales: salesCount,
-    connection: "Excellent",
-    bitrate: "4.5 Mbps",
+    connection: String(studioData.connection || "—"),
+    bitrate: String(studioData.bitrate || "—"),
   };
 
   const typeLabel = mode === "live" ? "Live" : "Pre-live lobby";
+  const studioTitle = String(studioData.title || studioData.sessionTitle || "Live Studio");
+  const studioSupplier = String(studioData.supplierName || studioData.supplier || "");
 
   const rootClass =
     "min-h-screen w-full flex flex-col bg-gradient-to-br from-slate-50 via-white to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-hidden h-[100dvh]";
@@ -818,7 +943,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
         badge={
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-600 dark:text-slate-300">
-              Autumn Beauty Flash · GlowUp Hub
+              {studioSupplier ? `${studioTitle} · ${studioSupplier}` : studioTitle}
             </span>
             {/* Live stats */}
             <div className="hidden sm:flex items-center gap-2 text-xs mr-2">

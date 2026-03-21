@@ -40,7 +40,7 @@ export const PayoutMethodsDialog: React.FC<PayoutMethodsDialogProps> = ({ isOpen
         if (savedDetails) {
             setAccountDetails(savedDetails);
         } else if (savedMethod === "bank") {
-            setAccountDetails("Standard Chartered Bank • Ronald Isabirye • 0123456789");
+            setAccountDetails("Bank Name • Account Holder • Account Number");
         }
 
         void creatorApi.payoutMethods()

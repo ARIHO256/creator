@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierInvitesFromCreatorsPage.jsx
@@ -139,10 +140,86 @@ const TABS = [
 
 const STATUS_FILTERS = ["All", "New", "In discussion", "Accepted", "Declined", "Expired"];
 
-const CATEGORIES = ["All", "Beauty", "Tech", "Faith-compatible", "EV"];
-
 function currencyFormat(value) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0 });
+}
+
+function mapInviteStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "ACCEPTED") return "Accepted";
+  if (normalized === "DECLINED" || normalized === "REJECTED") return "Declined";
+  if (normalized === "EXPIRED") return "Expired";
+  if (normalized === "NEGOTIATING" || normalized === "COUNTERED" || normalized === "IN_DISCUSSION") {
+    return "In discussion";
+  }
+  return "New";
+}
+
+function formatLastActivity(value) {
+  if (!value) return "Recently updated";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return `Updated · ${date.toLocaleDateString()}`;
+}
+
+function formatExpires(metadata, status) {
+  if (typeof metadata.expiresIn === "string" && metadata.expiresIn.trim()) return metadata.expiresIn;
+  if (typeof metadata.expiresAt === "string" && metadata.expiresAt.trim()) {
+    const date = new Date(metadata.expiresAt);
+    if (!Number.isNaN(date.getTime())) {
+      const days = Math.ceil((date.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+      if (days <= 0) return "Expired";
+      if (days === 1) return "1 day";
+      return `${days} days`;
+    }
+  }
+  if (status === "Accepted") return "Accepted";
+  if (status === "Declined" || status === "Expired") return "Expired";
+  return "Open";
+}
+
+function toInvite(record) {
+  const metadata =
+    record && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata : {};
+  const status = mapInviteStatus(record?.status);
+  const creatorName = String(
+    record?.sender ||
+      metadata.creatorName ||
+      metadata.senderName ||
+      "Creator"
+  );
+  const inviteDirection = String(metadata.inviteDirection || "").toLowerCase();
+  return {
+    id: String(record?.id || ""),
+    creator: creatorName,
+    initials: String(metadata.creatorInitials || "")
+      .trim()
+      .slice(0, 3)
+      .toUpperCase() || creatorName.split(" ").map((s) => s[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "CR",
+    campaign: String(record?.campaign || record?.title || metadata.campaignTitle || "Campaign"),
+    inviteType: String(record?.type || metadata.type || "Collaboration"),
+    category: String(record?.category || metadata.category || "General"),
+    region: String(record?.region || metadata.region || "Global"),
+    baseFee: Number(record?.baseFee || 0),
+    currency: String(record?.currency || "USD"),
+    commissionPct: Number(record?.commissionPct || 0),
+    estimatedValue: Number(record?.estimatedValue || record?.baseFee || 0),
+    status,
+    expiresIn: formatExpires(metadata, status),
+    fitScore: Number(record?.fitScore || 0),
+    fitReason: String(record?.fitReason || metadata.fitReason || "Strong category and audience fit."),
+    messageShort: String(record?.messageShort || record?.message || "Review this creator invite."),
+    lastActivity: formatLastActivity(record?.updatedAt || record?.createdAt || record?.lastActivity),
+    creatorBio: String(
+      metadata.creatorBio ||
+        metadata.senderBio ||
+        record?.message ||
+        "Creator invite details are available in this workspace."
+    ),
+    creatorRating: metadata.creatorRating == null ? undefined : Number(metadata.creatorRating),
+    avatarUrl: typeof metadata.avatarUrl === "string" ? metadata.avatarUrl : undefined,
+    _direction: inviteDirection
+  };
 }
 
 /* ------------------------------ Drawer ---------------------------------- */
@@ -600,8 +677,9 @@ function InviteDetailPanel({ invite, onNegotiate, onAccept, onDecline, isPending
 export default function SupplierInvitesFromCreatorsPage() {
   const navigate = useNavigate();
   const safeNav = (url) => safeNavTo(navigate, url);
-  // In production: fetch from /supplier/collabs/invites-from-creators
   const [invites, setInvites] = useState<Array<Record<string, any>>>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -613,6 +691,33 @@ export default function SupplierInvitesFromCreatorsPage() {
   const [drawerInvite, setDrawerInvite] = useState(null);
 
   const { run, isPending } = useAsyncAction();
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError("");
+    void sellerBackendApi
+      .getInvites()
+      .then((rows) => {
+        if (cancelled) return;
+        const mapped = Array.isArray(rows) ? rows.map((entry) => toInvite(entry)) : [];
+        const creatorIncoming = mapped.filter((entry) => {
+          const direction = String(entry._direction || "").toLowerCase();
+          return direction === "creator_to_seller" || !direction;
+        });
+        setInvites(creatorIncoming);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setInvites([]);
+        setLoadError(error instanceof Error ? error.message : "Failed to load invites.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedInvite = useMemo(() => {
     if (!selectedInviteId) return invites[0] ?? null;
@@ -644,8 +749,9 @@ export default function SupplierInvitesFromCreatorsPage() {
   const handleAccept = (id) => {
     run(
       async () => {
-        await new Promise((r) => setTimeout(r, 900));
-        setInvites((prev) => prev.map((inv) => (inv.id === id ? { ...inv, status: "Accepted", lastActivity: "Accepted · Just now" } : inv)));
+        const updated = await sellerBackendApi.respondInvite(id, "ACCEPTED");
+        const mapped = toInvite(updated);
+        setInvites((prev) => prev.map((inv) => (inv.id === id ? mapped : inv)));
       },
       { successMessage: "Invite accepted! Collaboration started." }
     );
@@ -654,12 +760,18 @@ export default function SupplierInvitesFromCreatorsPage() {
   const handleDecline = (id) => {
     run(
       async () => {
-        await new Promise((r) => setTimeout(r, 900));
-        setInvites((prev) => prev.map((inv) => (inv.id === id ? { ...inv, status: "Declined", lastActivity: "Declined · Just now" } : inv)));
+        const updated = await sellerBackendApi.respondInvite(id, "DECLINED");
+        const mapped = toInvite(updated);
+        setInvites((prev) => prev.map((inv) => (inv.id === id ? mapped : inv)));
       },
       { successMessage: "Invite declined." }
     );
   };
+
+  const categoryOptions = useMemo(() => {
+    const options = Array.from(new Set(invites.map((entry) => String(entry.category || "")).filter(Boolean)));
+    return ["All", ...options];
+  }, [invites]);
 
   const badge = (
     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors">
@@ -768,7 +880,7 @@ export default function SupplierInvitesFromCreatorsPage() {
                   value={categoryFilter}
                   onChange={(e) => setCategoryFilter(e.target.value)}
                 >
-                  {CATEGORIES.map((c) => (
+                  {categoryOptions.map((c) => (
                     <option key={c} value={c} className="bg-white dark:bg-slate-900">
                       {c}
                     </option>
@@ -792,6 +904,8 @@ export default function SupplierInvitesFromCreatorsPage() {
               <span>
                 Showing <span className="font-semibold dark:font-bold">{filteredInvites.length}</span> of {invites.length} invites
               </span>
+              {loading ? <span>Loading…</span> : null}
+              {!loading && loadError ? <span className="text-red-500">{loadError}</span> : null}
               <button
                 type="button"
                 className="px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors"
@@ -822,7 +936,13 @@ export default function SupplierInvitesFromCreatorsPage() {
                 ))}
 
                 {filteredInvites.length === 0 ? (
-                  <div className="py-6 text-sm text-slate-500 dark:text-slate-400 text-center">No invites match these filters yet.</div>
+                  <div className="py-6 text-sm text-slate-500 dark:text-slate-400 text-center">
+                    {loading
+                      ? "Loading invites..."
+                      : loadError
+                        ? "Unable to load invites right now."
+                        : "No invites match these filters yet."}
+                  </div>
                 ) : null}
               </div>
             </div>

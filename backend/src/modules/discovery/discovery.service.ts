@@ -587,32 +587,83 @@ export class DiscoveryService {
   async createInvite(userId: string, payload: CreateInviteDto) {
     const actor = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { sellerProfile: true }
+      include: { sellerProfile: true, creatorProfile: true }
     });
 
     if (!actor) {
       throw new NotFoundException('Sender not found');
     }
 
-    if (!actor.sellerProfile && !['ADMIN', 'SUPPORT'].includes(actor.role ?? '')) {
+    const actorIsAdminOrSupport = ['ADMIN', 'SUPPORT'].includes(actor.role ?? '');
+    const targetsSellerWorkspace = Boolean(
+      payload.recipientSellerId?.trim() || payload.recipientSellerHandle?.trim()
+    );
+
+    if (targetsSellerWorkspace && !actor.creatorProfile && !actorIsAdminOrSupport) {
+      throw new ForbiddenException('Only creator workspaces can send seller invites');
+    }
+
+    if (!targetsSellerWorkspace && !actor.sellerProfile && !actorIsAdminOrSupport) {
       throw new ForbiddenException('Only seller or provider workspaces can send creator invites');
     }
 
-    const recipient = await this.resolveInviteRecipient(payload);
+    const creatorRecipient = targetsSellerWorkspace ? null : await this.resolveCreatorInviteRecipient(payload);
+    const sellerRecipient = targetsSellerWorkspace ? await this.resolveSellerInviteRecipient(payload) : null;
+    if (targetsSellerWorkspace && !sellerRecipient?.userId) {
+      throw new BadRequestException('Selected seller workspace cannot receive invites yet');
+    }
+    const recipientUserId = targetsSellerWorkspace
+      ? String(sellerRecipient?.userId || '')
+      : String(creatorRecipient?.userId || '');
+    if (!recipientUserId) {
+      throw new BadRequestException('Invite recipient is required');
+    }
+
     const campaign = payload.campaignId
       ? await this.prisma.campaign.findFirst({
-          where: actor.sellerProfile
-            ? {
-                id: payload.campaignId,
-                sellerId: actor.sellerProfile.id
-              }
-            : { id: payload.campaignId }
+          where: targetsSellerWorkspace
+            ? actorIsAdminOrSupport
+              ? { id: payload.campaignId }
+              : {
+                  id: payload.campaignId,
+                  OR: [{ creatorId: userId }, { createdByUserId: userId }]
+                }
+            : actor.sellerProfile
+              ? {
+                  id: payload.campaignId,
+                  sellerId: actor.sellerProfile.id
+                }
+              : { id: payload.campaignId }
         })
       : null;
 
-    const seller = actor.sellerProfile;
-    const sellerName = seller?.displayName ?? actor.email;
-    const sellerHandle = seller?.handle ? `@${seller.handle}` : null;
+    const senderName = targetsSellerWorkspace
+      ? actor.creatorProfile?.name ?? actor.sellerProfile?.displayName ?? actor.email
+      : actor.sellerProfile?.displayName ?? actor.creatorProfile?.name ?? actor.email;
+    const senderHandle = targetsSellerWorkspace
+      ? actor.creatorProfile?.handle
+        ? `@${actor.creatorProfile.handle}`
+        : actor.sellerProfile?.handle
+          ? `@${actor.sellerProfile.handle}`
+          : null
+      : actor.sellerProfile?.handle
+        ? `@${actor.sellerProfile.handle}`
+        : actor.creatorProfile?.handle
+          ? `@${actor.creatorProfile.handle}`
+          : null;
+    const recipientName = targetsSellerWorkspace
+      ? String(sellerRecipient?.displayName || sellerRecipient?.name || 'Seller')
+      : String(creatorRecipient?.name || 'Creator');
+    const recipientHandle = targetsSellerWorkspace
+      ? sellerRecipient?.handle
+        ? `@${sellerRecipient.handle}`
+        : null
+      : creatorRecipient?.handle
+        ? `@${creatorRecipient.handle}`
+        : null;
+    const senderInitials = this.buildInitials(senderName, targetsSellerWorkspace ? 'CR' : 'SP');
+    const recipientInitials = this.buildInitials(recipientName, targetsSellerWorkspace ? 'SP' : 'CR');
+    const senderSeller = actor.sellerProfile;
     const campaignTitle = campaign?.title || payload.campaignTitle || payload.title || 'MyLiveDealz collaboration';
     const estimatedValue =
       payload.estimatedValue ??
@@ -622,7 +673,7 @@ export class DiscoveryService {
     const messageShort =
       payload.messageShort ??
       (typeof payload.message === 'string' ? payload.message.trim().slice(0, 160) : undefined) ??
-      `You have a new invite from ${sellerName}.`;
+      `You have a new invite from ${senderName}.`;
 
     const metadata = sanitizePayload(
       {
@@ -639,25 +690,40 @@ export class DiscoveryService {
         fitScore: payload.fitScore ?? null,
         fitReason: payload.fitReason ?? null,
         messageShort,
-        supplierDescription: payload.supplierDescription ?? seller?.description ?? null,
-        supplierRating: payload.supplierRating ?? seller?.rating ?? null,
-        sellerName,
-        sellerHandle,
-        sellerInitials: this.buildInitials(sellerName, 'SP'),
-        creatorName: recipient.name,
-        creatorHandle: `@${recipient.handle}`,
-        creatorUserId: recipient.userId,
-        creatorProfileId: recipient.id
+        supplierDescription: payload.supplierDescription ?? senderSeller?.description ?? null,
+        supplierRating: payload.supplierRating ?? senderSeller?.rating ?? null,
+        inviteDirection: targetsSellerWorkspace ? 'creator_to_seller' : 'seller_to_creator',
+        senderName,
+        senderHandle,
+        senderInitials,
+        senderUserId: userId,
+        senderRole: this.resolveNotificationRole({
+          role: actor.role ?? undefined,
+          creatorProfileId: actor.creatorProfile?.id ?? null,
+          sellerKind: actor.sellerProfile?.kind ?? null
+        }),
+        recipientName,
+        recipientHandle,
+        recipientInitials,
+        recipientUserId,
+        recipientSellerId: sellerRecipient?.id ?? null,
+        sellerName: targetsSellerWorkspace ? recipientName : senderName,
+        sellerHandle: targetsSellerWorkspace ? recipientHandle : senderHandle,
+        sellerInitials: targetsSellerWorkspace ? recipientInitials : senderInitials,
+        creatorName: targetsSellerWorkspace ? senderName : recipientName,
+        creatorHandle: targetsSellerWorkspace ? senderHandle : recipientHandle,
+        creatorUserId: targetsSellerWorkspace ? userId : creatorRecipient?.userId ?? null,
+        creatorProfileId: targetsSellerWorkspace ? actor.creatorProfile?.id ?? null : creatorRecipient?.id ?? null
       },
       { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
     ) as Prisma.InputJsonValue;
 
     const invite = await this.prisma.collaborationInvite.create({
       data: {
-        sellerId: seller?.id ?? null,
+        sellerId: targetsSellerWorkspace ? sellerRecipient?.id ?? null : senderSeller?.id ?? null,
         campaignId: campaign?.id ?? null,
         senderUserId: userId,
-        recipientUserId: recipient.userId,
+        recipientUserId,
         title: payload.title || `Invite to collaborate on ${campaignTitle}`,
         message: payload.message ?? null,
         metadata
@@ -677,13 +743,18 @@ export class DiscoveryService {
 
     await this.prisma.notification.create({
       data: {
-        userId: recipient.userId,
+        userId: recipientUserId,
         kind: 'collaboration_invite',
-        title: `New invite from ${sellerName}`,
-        body: `${sellerName} invited you to collaborate on ${campaignTitle}.`,
+        title: `New invite from ${senderName}`,
+        body: `${senderName} invited you to collaborate on ${campaignTitle}.`,
         metadata: {
           ...(metadata as Record<string, unknown>),
-          workspaceRole: 'CREATOR'
+          workspaceRole: targetsSellerWorkspace
+            ? this.resolveNotificationRole({
+                role: sellerRecipient?.user?.role ?? undefined,
+                sellerKind: sellerRecipient?.kind ?? null
+              })
+            : 'CREATOR'
         } as Prisma.InputJsonValue
       }
     });
@@ -718,9 +789,14 @@ export class DiscoveryService {
 
     const nextStatus = this.normalizeInviteStatus(status);
     const inviteMetadata = this.normalizeInviteMetadata(invite.metadata);
+    const proposalCreatorUserId = invite.sender.creatorProfile?.id
+      ? invite.senderUserId
+      : invite.recipient.creatorProfile?.id
+        ? invite.recipientUserId
+        : invite.senderUserId;
     const proposal =
       nextStatus === 'ACCEPTED'
-        ? await this.ensureProposalForInvite(invite, inviteMetadata, userId)
+        ? await this.ensureProposalForInvite(invite, inviteMetadata, proposalCreatorUserId)
         : null;
     const updatedMetadata = sanitizePayload(
       {
@@ -751,13 +827,20 @@ export class DiscoveryService {
       }
     });
 
-    const creatorName =
+    const responderName =
       invite.recipient.creatorProfile?.name ??
       invite.recipient.sellerProfile?.displayName ??
       invite.recipient.email;
-    const sellerName =
+    const responderHandle =
+      invite.recipient.creatorProfile?.handle
+        ? `@${invite.recipient.creatorProfile.handle}`
+        : invite.recipient.sellerProfile?.handle
+          ? `@${invite.recipient.sellerProfile.handle}`
+          : null;
+    const senderName =
       invite.seller?.displayName ??
       invite.sender.sellerProfile?.displayName ??
+      invite.sender.creatorProfile?.name ??
       invite.sender.email;
     const campaignTitle = String(
       inviteMetadata.campaignTitle || invite.campaign?.title || invite.title || 'MyLiveDealz collaboration'
@@ -769,21 +852,23 @@ export class DiscoveryService {
         kind: 'collaboration_invite_response',
         title:
           nextStatus === 'ACCEPTED'
-            ? `${creatorName} accepted your invite`
-            : `${creatorName} declined your invite`,
+            ? `${responderName} accepted your invite`
+            : `${responderName} declined your invite`,
         body:
           nextStatus === 'ACCEPTED'
-            ? `${creatorName} accepted ${campaignTitle}. Negotiation is ready to continue.`
-            : `${creatorName} declined ${campaignTitle}.`,
+            ? `${responderName} accepted ${campaignTitle}. Negotiation is ready to continue.`
+            : `${responderName} declined ${campaignTitle}.`,
         metadata: sanitizePayload(
           {
             inviteId: invite.id,
             proposalId: proposal?.id ?? null,
             campaignId: invite.campaignId,
             campaignTitle,
-            creatorName,
-            creatorHandle:
-              invite.recipient.creatorProfile?.handle ? `@${invite.recipient.creatorProfile.handle}` : null,
+            senderName,
+            responderName,
+            responderHandle,
+            creatorName: responderName,
+            creatorHandle: responderHandle,
             status: nextStatus,
             workspaceRole: this.resolveNotificationRole({
               role: invite.sender.role ?? undefined,
@@ -1010,7 +1095,7 @@ export class DiscoveryService {
     return 'PENDING';
   }
 
-  private async resolveInviteRecipient(payload: CreateInviteDto) {
+  private async resolveCreatorInviteRecipient(payload: CreateInviteDto) {
     if (payload.recipientUserId?.trim()) {
       const direct = await this.prisma.creatorProfile.findUnique({
         where: { userId: payload.recipientUserId.trim() }
@@ -1041,6 +1126,48 @@ export class DiscoveryService {
     }
 
     throw new NotFoundException(`Creator ${rawHandle} was not found`);
+  }
+
+  private async resolveSellerInviteRecipient(payload: CreateInviteDto) {
+    if (payload.recipientUserId?.trim()) {
+      const directByUser = await this.prisma.seller.findFirst({
+        where: { userId: payload.recipientUserId.trim() },
+        include: { user: { select: { role: true } } }
+      });
+      if (directByUser) {
+        return directByUser;
+      }
+    }
+
+    if (payload.recipientSellerId?.trim()) {
+      const directById = await this.prisma.seller.findUnique({
+        where: { id: payload.recipientSellerId.trim() },
+        include: { user: { select: { role: true } } }
+      });
+      if (directById) {
+        return directById;
+      }
+    }
+
+    const rawHandle = String(payload.recipientSellerHandle || payload.sellerHandle || '').trim();
+    if (!rawHandle) {
+      throw new BadRequestException('Invite recipient seller id or handle is required');
+    }
+
+    const normalized = rawHandle.replace(/^@/, '').trim().toLowerCase();
+    const candidates = await this.prisma.seller.findMany({
+      where: {
+        OR: [{ handle: normalized }, { handle: rawHandle.trim() }]
+      },
+      include: { user: { select: { role: true } } },
+      take: 1
+    });
+
+    if (candidates[0]) {
+      return candidates[0];
+    }
+
+    throw new NotFoundException(`Seller ${rawHandle} was not found`);
   }
 
   private normalizeInviteMetadata(value: unknown) {

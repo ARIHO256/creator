@@ -2,10 +2,11 @@
 // Multi-step onboarding: Profile → Socials → KYC → Payout → Preferences → Review
 // EVzone colours: Orange #f77f00, Green #03cd8c, Light Grey #f2f2f2
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi } from "../../lib/creatorApi";
 
 const STEPS = ["Profile", "Socials", "KYC", "Payout", "Preferences", "Review"];
 
@@ -42,6 +43,62 @@ type FormData = {
   models: string[];
 };
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function mapOnboardingToFormData(payload: unknown): Partial<FormData> {
+  const root = asRecord(payload);
+  if (!root) return {};
+  const metadata = asRecord(root.metadata);
+  const wizard = asRecord(metadata?.creatorWizard);
+
+  if (wizard) {
+    return wizard as Partial<FormData>;
+  }
+
+  const payout = asRecord(root.payout);
+  const support = asRecord(root.support);
+  return {
+    name: typeof root.owner === "string" ? root.owner : undefined,
+    handle: typeof root.storeSlug === "string" ? `@${root.storeSlug.replace(/^@+/, "")}` : undefined,
+    bio: typeof root.about === "string" ? root.about : undefined,
+    currency: typeof payout?.currency === "string" ? payout.currency : undefined,
+    socials: {
+      instagram: "",
+      tiktok: "",
+      youtube: ""
+    },
+    payoutMethod: typeof payout?.method === "string" ? payout.method : "",
+    payoutAccount: typeof support?.email === "string" ? support.email : "",
+    contentLanguages: Array.isArray(root.languages) ? root.languages.map((entry) => String(entry)) : undefined
+  };
+}
+
+function buildOnboardingPayload(formData: FormData, submitted = false) {
+  return {
+    profileType: "CREATOR",
+    status: submitted ? "submitted" : "in_progress",
+    owner: formData.name,
+    storeName: formData.name,
+    storeSlug: String(formData.handle || "").replace(/^@+/, ""),
+    about: formData.bio,
+    languages: formData.contentLanguages,
+    payout: {
+      method: formData.payoutMethod || null,
+      currency: formData.currency || "USD",
+      details: {
+        account: formData.payoutAccount || null
+      }
+    },
+    metadata: {
+      creatorWizard: formData
+    }
+  };
+}
+
 function isStepValid(stepIndex: number, formData: FormData): boolean {
   const trim = (v: string | undefined): string => (v || "").trim();
 
@@ -76,11 +133,14 @@ function isStepValid(stepIndex: number, formData: FormData): boolean {
 
 function CreatorOnboardingWizardPage() {
   const navigate = useNavigate();
+  const autoSaveTimerRef = useRef<number | null>(null);
 
   const [stepIndex, setStepIndex] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
-    name: "Ronald Isabirye",
-    handle: "@ronald.creates",
+    name: "",
+    handle: "",
     tagline: "EV & commerce storyteller",
     bio: "Creator focused on EVs, tech and cross-border commerce stories.",
     timezone: "Africa/Kampala",
@@ -107,22 +167,66 @@ function CreatorOnboardingWizardPage() {
   const isLastStep = stepIndex === STEPS.length - 1;
   const canContinue = isStepValid(stepIndex, formData);
 
+  useEffect(() => {
+    let cancelled = false;
+    void creatorApi
+      .onboarding()
+      .then((payload) => {
+        if (cancelled) return;
+        const mapped = mapOnboardingToFormData(payload);
+        setFormData((prev) => ({
+          ...prev,
+          ...mapped,
+          socials: {
+            ...prev.socials,
+            ...(mapped.socials || {})
+          }
+        }));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHydrated(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (autoSaveTimerRef.current) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      setIsSaving(true);
+      void creatorApi
+        .saveOnboarding(buildOnboardingPayload(formData))
+        .catch(() => {
+          // Keep UI responsive even when autosave fails.
+        })
+        .finally(() => {
+          setIsSaving(false);
+        });
+    }, 700);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        window.clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [formData, hydrated]);
+
   const goNext = () => {
     if (isLastStep && canContinue) {
-      // Save form data to localStorage for the approval page
-      try {
-        localStorage.setItem('creatorOnb.name', formData.name);
-        localStorage.setItem('creatorOnb.niche', formData.categories.join(', ') || 'Not set');
-        localStorage.setItem('creatorOnb.id', formData.handle || 'pending');
-        localStorage.setItem('creatorOnb.status', 'Submitted');
-        localStorage.setItem('signup.role', 'creator');
-      } catch (e) {
-        console.error('Failed to save onboarding data:', e);
-      }
-
-      // In a real system, we'd clear any guest flags and redirect to Sign In
-      // so the user has to deliberately log in with their new credentials.
-      navigate("/auth");
+      setIsSaving(true);
+      void creatorApi
+        .submitOnboarding(buildOnboardingPayload(formData, true))
+        .then(() => navigate("/auth"))
+        .finally(() => {
+          setIsSaving(false);
+        });
     } else if (!isLastStep && canContinue) {
       setStepIndex((i) => i + 1);
     }
@@ -225,9 +329,17 @@ function CreatorOnboardingWizardPage() {
             </button>
             <button
               className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-sm text-slate-600 dark:text-slate-200 font-medium"
-              onClick={() => navigate("/home")}
+              onClick={() => {
+                setIsSaving(true);
+                void creatorApi
+                  .saveOnboarding(buildOnboardingPayload(formData))
+                  .then(() => navigate("/home"))
+                  .finally(() => {
+                    setIsSaving(false);
+                  });
+              }}
             >
-              Save & exit
+              {isSaving ? "Saving..." : "Save & exit"}
             </button>
             <button
               className={`px-4 py-1.5 rounded-full text-sm font-semibold dark:font-bold ${canContinue

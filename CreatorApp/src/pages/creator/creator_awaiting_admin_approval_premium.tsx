@@ -30,20 +30,12 @@ import { useTheme } from "../../contexts/ThemeContext";
 // - Statuses: Submitted → Under review → Action required → Resubmitted → Approved
 // - Shows what to expect, ETA, notifications, and next steps
 // - If Action required: shows admin feedback + checklist + attachments + resubmit
-// - Uses localStorage to restore creator onboarding summary and to keep drafts
+// - Uses backend onboarding/account-approval/workflow-state as the single source of truth.
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
 
-const STORAGE_STATUS_KEY = "mldz_creator_approval_status";
-const STORAGE_DRAFT_KEY = "mldz_creator_approval_draft";
-
-const ONBOARDING_KEYS_TO_TRY = [
-  "mldz_creator_onboarding_v2_3",
-  "mldz_creator_onboarding_v2",
-  "mldz_creator_onboarding_v2_2",
-  "mldz_creator_onboarding_v2_1"
-];
+const WORKFLOW_STATE_KEY = "creator-awaiting-admin-approval";
 
 const STATUS_STEPS: StatusStep[] = [
   {
@@ -114,13 +106,9 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-function safeJsonParse<T>(s: string | null, fallback: T): T {
-  if (!s) return fallback;
-  try {
-    return JSON.parse(s);
-  } catch {
-    return fallback;
-  }
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 function formatEta(mins: number): string {
@@ -414,80 +402,56 @@ interface OnboardingData {
 export default function CreatorAwaitingApprovalPremium() {
   const { toasts, push } = useToasts();
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const [apiOnboarding, setApiOnboarding] = useState<OnboardingData | null>(null);
+  const [approvalMetadata, setApprovalMetadata] = useState<Record<string, unknown>>({});
+  const workflowReadyRef = useRef(false);
+  const workflowPrimedRef = useRef(false);
+  const workflowSnapshotRef = useRef("");
 
   const qp = useMemo<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
     return Object.fromEntries(new URLSearchParams(window.location.search).entries());
   }, []);
 
-  // Pull onboarding summary if available
-  const onboarding = useMemo<OnboardingData | null>(() => {
-    if (apiOnboarding) return apiOnboarding;
-    if (typeof window === "undefined") return null;
-    for (const k of ONBOARDING_KEYS_TO_TRY) {
-      const raw = localStorage.getItem(k);
-      if (raw) {
-        const parsed = safeJsonParse<OnboardingData | null>(raw, null);
-        if (parsed && typeof parsed === "object") return parsed;
-      }
-    }
-    return null;
-  }, [apiOnboarding]);
+  const onboarding = apiOnboarding;
 
   const displayName =
-    qp.name || onboarding?.profile?.name || localStorage.getItem("creatorOnb.name") || "New Creator";
+    qp.name || onboarding?.profile?.name || "New Creator";
 
   const creatorHandle = qp.handle || onboarding?.profile?.handle || "";
 
   const creatorId =
-    qp.creatorId || localStorage.getItem("creatorOnb.id") || "pending";
+    qp.creatorId || String(approvalMetadata.creatorId || "pending");
 
   const primaryLine =
-    qp.niche || onboarding?.preferences?.lines?.[0] || localStorage.getItem("creatorOnb.niche") || "Not set";
+    qp.niche || onboarding?.preferences?.lines?.[0] || "Not set";
 
   // status
-  const [status, setStatus] = useState<string>(() => {
-    if (typeof window === "undefined") return "UnderReview";
-    return qp.status || localStorage.getItem(STORAGE_STATUS_KEY) || "UnderReview";
-  });
+  const [status, setStatus] = useState<string>(() => qp.status || "UnderReview");
 
   const [etaMin, setEtaMin] = useState(() => {
-    const v = Number(qp.etaMin || localStorage.getItem("creatorOnb.etaMin") || 90);
+    const v = Number(qp.etaMin || 90);
     return Number.isFinite(v) ? v : 90;
   });
 
-  const [submittedAt] = useState(() => {
-    if (typeof window === "undefined") return nowIso();
-    return localStorage.getItem("creatorOnb.submittedAt") || nowIso();
-  });
+  const [submittedAt, setSubmittedAt] = useState(nowIso());
 
   // Admin feedback and checklist (used for SendBack)
-  const [adminReason, setAdminReason] = useState(() => {
-    return qp.reason || localStorage.getItem("creatorOnb.adminReason") || "";
-  });
+  const [adminReason, setAdminReason] = useState(() => qp.reason || "");
 
-  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(() => {
-    if (typeof window === "undefined") return [];
-    return safeJsonParse<AdminDoc[]>(localStorage.getItem("creatorOnb.adminDocs") || "[]", []);
-  });
+  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>([]);
 
-  const [items, setItems] = useState<ChecklistItem[]>(() => {
-    if (typeof window === "undefined") return [];
-    const cached = safeJsonParse<ChecklistItem[]>(localStorage.getItem("creatorOnb.items") || "[]", []);
-    if (Array.isArray(cached) && cached.length) return cached;
-
-    const itemsFromQ = (qp.items || "")
+  const [items, setItems] = useState<ChecklistItem[]>(() =>
+    (qp.items || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
-      .map((t, i) => ({ id: `item-${i}`, text: t, done: false }));
-
-    return itemsFromQ;
-  });
+      .map((t, i) => ({ id: `item-${i}`, text: t, done: false }))
+  );
 
   const [newItem, setNewItem] = useState("");
-  const [note, setNote] = useState(() => localStorage.getItem("creatorOnb.note") || "");
+  const [note, setNote] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
 
@@ -501,54 +465,90 @@ export default function CreatorAwaitingApprovalPremium() {
   useEffect(() => {
     let cancelled = false;
 
-    void Promise.all([creatorApi.onboarding(), creatorApi.accountApproval()])
-      .then(([onboardingPayload, approval]) => {
+    void Promise.all([
+      creatorApi.onboarding().catch(() => null),
+      creatorApi.accountApproval().catch(() => null),
+      creatorApi.workflowScreenState(WORKFLOW_STATE_KEY).catch(() => null),
+    ])
+      .then(([onboardingPayload, approval, workflowState]) => {
         if (cancelled) return;
+        const onboardingRecord = asRecord(onboardingPayload);
         const creatorForm =
-          onboardingPayload &&
-          typeof onboardingPayload === "object" &&
-          (onboardingPayload as { metadata?: { creatorForm?: OnboardingData } }).metadata?.creatorForm
-            ? (onboardingPayload as { metadata: { creatorForm: OnboardingData } }).metadata.creatorForm
+          onboardingRecord &&
+          asRecord(onboardingRecord.metadata)?.creatorForm
+            ? (asRecord(onboardingRecord.metadata)?.creatorForm as OnboardingData)
             : null;
         if (creatorForm) {
           setApiOnboarding(creatorForm);
         }
-        setStatus(mapApprovalStatus(approval.status));
-        if (approval.submittedAt) {
-          localStorage.setItem("creatorOnb.submittedAt", approval.submittedAt);
+
+        if (approval) {
+          setStatus(mapApprovalStatus(approval.status));
+          if (approval.submittedAt) {
+            setSubmittedAt(approval.submittedAt);
+          }
+          if (Array.isArray(approval.requiredActions) && approval.requiredActions.length > 0) {
+            setItems(
+              approval.requiredActions.map((item, index) => ({
+                id: String(item.id || `item-${index}`),
+                text: String(item.label || item.description || `Action ${index + 1}`),
+                done: Boolean(item.completed)
+              }))
+            );
+          }
+          if (Array.isArray(approval.documents) && approval.documents.length > 0) {
+            setAdminDocs(
+              approval.documents.map((doc, index) => ({
+                name: String(doc.type || `Document ${index + 1}`),
+                url: "#",
+                type: String(doc.status || "file")
+              }))
+            );
+          }
+          const metadata = asRecord(approval.metadata) || {};
+          setApprovalMetadata(metadata);
+          const metadataEta = Number(metadata.etaMin);
+          if (Number.isFinite(metadataEta) && metadataEta > 0) {
+            setEtaMin(metadataEta);
+          }
+          if (typeof metadata.note === "string") {
+            setNote(metadata.note);
+          }
+          if (typeof approval.reviewNotes === "string" && approval.reviewNotes.trim()) {
+            setAdminReason(approval.reviewNotes);
+          }
+          if (mapApprovalStatus(approval.status) === "Approved") {
+            push("Approved. Opening your creator workspace.", "success");
+            navigate("/auth", { replace: true });
+          }
         }
-        if (Array.isArray(approval.requiredActions) && approval.requiredActions.length > 0) {
-          setItems(
-            approval.requiredActions.map((item, index) => ({
-              id: String(item.id || `item-${index}`),
-              text: String(item.label || item.description || `Action ${index + 1}`),
-              done: Boolean(item.completed)
-            }))
-          );
+
+        const workflowRecord = asRecord(workflowState);
+        const workflowPayload = asRecord(workflowRecord?.payload) || workflowRecord;
+        if (workflowPayload) {
+          if (typeof workflowPayload.prefEmail === "boolean") setPrefEmail(workflowPayload.prefEmail);
+          if (typeof workflowPayload.prefInApp === "boolean") setPrefInApp(workflowPayload.prefInApp);
+          if (typeof workflowPayload.note === "string") setNote(workflowPayload.note);
+          if (typeof workflowPayload.submittedAt === "string") setSubmittedAt(workflowPayload.submittedAt);
+          const workflowItems = Array.isArray(workflowPayload.items) ? workflowPayload.items : [];
+          if (workflowItems.length) {
+            setItems(
+              workflowItems.map((item, index) => {
+                const row = asRecord(item);
+                return {
+                  id: String(row?.id || `item-${index}`),
+                  text: String(row?.text || `Action ${index + 1}`),
+                  done: Boolean(row?.done),
+                };
+              }),
+            );
+          }
         }
-        if (Array.isArray(approval.documents) && approval.documents.length > 0) {
-          setAdminDocs(
-            approval.documents.map((doc, index) => ({
-              name: String(doc.type || `Document ${index + 1}`),
-              url: "#",
-              type: String(doc.status || "file")
-            }))
-          );
-        }
-        const metadata = approval.metadata && typeof approval.metadata === "object" ? approval.metadata : {};
-        if (typeof (metadata as { note?: unknown }).note === "string") {
-          setNote((metadata as { note: string }).note);
-        }
-        if (typeof approval.reviewNotes === "string" && approval.reviewNotes.trim()) {
-          setAdminReason(approval.reviewNotes);
-        }
-        if (mapApprovalStatus(approval.status) === "Approved") {
-          push("Approved. Opening your creator workspace.", "success");
-          navigate("/auth", { replace: true });
-        }
+
+        workflowReadyRef.current = true;
       })
       .catch(() => {
-        // local fallback remains active
+        workflowReadyRef.current = true;
       });
 
     return () => {
@@ -571,48 +571,64 @@ export default function CreatorAwaitingApprovalPremium() {
   const hasAttachmentOrNote = files.length > 0 || note.trim().length > 0;
   const canResubmit = status === "SendBack" && allChecked && hasAttachmentOrNote;
 
-  // Seed sample admin feedback if Action required
   useEffect(() => {
     if (status !== "SendBack") return;
 
     if (!adminReason) {
-      setAdminReason(
-        "Please refine your profile bio, upload at least 3 sample videos or images, and confirm the categories you will create for."
-      );
+      setAdminReason("Please review and complete the required actions from the review team.");
     }
+  }, [status, adminReason]);
 
-    if (!items.length) {
-      setItems([
-        { id: "item-1", text: "Refine your profile bio to clearly describe your content style", done: false },
-        { id: "item-2", text: "Upload at least 3 sample contents (video or image)", done: false },
-        { id: "item-3", text: "Confirm your primary content categories and regions", done: false }
-      ]);
-    }
-
-    if (!adminDocs.length) {
-      setAdminDocs([{ name: "Creator guidelines (PDF)", url: "#", type: "pdf" }]);
-    }
-  }, [status, adminReason, items.length, adminDocs.length]);
-
-  // Persist
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      localStorage.setItem(STORAGE_STATUS_KEY, status);
-      localStorage.setItem("creatorOnb.etaMin", String(etaMin));
-      localStorage.setItem("creatorOnb.submittedAt", submittedAt);
-      localStorage.setItem("creatorOnb.adminReason", adminReason || "");
-      localStorage.setItem("creatorOnb.adminDocs", JSON.stringify(adminDocs || []));
-      localStorage.setItem("creatorOnb.items", JSON.stringify(items || []));
-      localStorage.setItem("creatorOnb.note", note || "");
-      localStorage.setItem(
-        STORAGE_DRAFT_KEY,
-        JSON.stringify({ adminReason, adminDocs, items, note })
-      );
-    } catch {
-      // ignore
+    if (!workflowReadyRef.current) return;
+
+    const payload = {
+      status,
+      etaMin,
+      submittedAt,
+      adminReason,
+      adminDocs,
+      items,
+      note,
+      prefEmail,
+      prefInApp,
+      creatorId,
+      updatedAt: nowIso(),
+    };
+    const snapshot = JSON.stringify(payload);
+    if (!workflowPrimedRef.current) {
+      workflowPrimedRef.current = true;
+      workflowSnapshotRef.current = snapshot;
+      return;
     }
-  }, [status, etaMin, submittedAt, adminReason, adminDocs, items, note]);
+    if (snapshot === workflowSnapshotRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void creatorApi
+        .patchWorkflowScreenState(WORKFLOW_STATE_KEY, { payload })
+        .then(() => {
+          workflowSnapshotRef.current = snapshot;
+        })
+        .catch(() => {
+          // ignore
+        });
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    status,
+    etaMin,
+    submittedAt,
+    adminReason,
+    adminDocs,
+    items,
+    note,
+    prefEmail,
+    prefInApp,
+    creatorId,
+  ]);
 
   function toggleItem(id: string) {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, done: !it.done } : it)));
@@ -635,6 +651,12 @@ export default function CreatorAwaitingApprovalPremium() {
       const approval = await creatorApi.refreshAccountApproval();
       const nextStatus = mapApprovalStatus(approval.status);
       setStatus(nextStatus);
+      if (approval.submittedAt) setSubmittedAt(approval.submittedAt);
+      const metadata = asRecord(approval.metadata);
+      const metadataEta = Number(metadata?.etaMin);
+      if (Number.isFinite(metadataEta) && metadataEta > 0) {
+        setEtaMin(metadataEta);
+      }
       if (typeof approval.reviewNotes === "string" && approval.reviewNotes.trim()) {
         setAdminReason(approval.reviewNotes);
       }
@@ -691,6 +713,7 @@ export default function CreatorAwaitingApprovalPremium() {
       });
 
       setStatus(mapApprovalStatus(approval.status));
+      if (approval.submittedAt) setSubmittedAt(approval.submittedAt);
       setEtaMin(60);
       setFiles([]);
       push("Resubmitted. Back in review.", "success");
@@ -732,7 +755,7 @@ export default function CreatorAwaitingApprovalPremium() {
         onClose={() => setShowSubmission(false)}
       >
         <div className="text-[12px] text-slate-600 dark:text-slate-400">
-          This preview is loaded from the backend when available, with local draft fallback if the API is offline.
+          This preview is loaded from backend onboarding and approval endpoints.
         </div>
         <pre className="mt-3 text-[11px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 overflow-auto max-h-[420px] text-slate-700 dark:text-slate-300">
           {JSON.stringify(onboarding || { note: "No onboarding data found" }, null, 2)}
@@ -800,11 +823,11 @@ export default function CreatorAwaitingApprovalPremium() {
 
           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
             <button
-              onClick={useTheme().toggleTheme}
+              onClick={toggleTheme}
               className="p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               title="Toggle Theme"
             >
-              {useTheme().theme === "light" ? "🌙" : "☀️"}
+              {theme === "light" ? "🌙" : "☀️"}
             </button>
             <Button onClick={() => setShowSupport(true)}>
               <HelpCircle className="h-4 w-4" /> Support
@@ -957,7 +980,7 @@ export default function CreatorAwaitingApprovalPremium() {
                       <MiniAction
                         icon={<Rocket className="h-4 w-4" />}
                         title="Prepare your first Live Sessionz plan"
-                        desc="Outline your intro, demo, FAQs and offer timing."
+                        desc="Outline your intro, run-of-show, FAQs and offer timing."
                         onClick={() => push("Live plan template opened.", "success")}
                       />
                       <MiniAction
@@ -1109,7 +1132,7 @@ export default function CreatorAwaitingApprovalPremium() {
         </section>
 
         <div className="text-[11px] text-slate-400">
-          If you close this page, you can return any time. Your application status is saved. You will also get an email when your status changes.
+          If you close this page, you can return any time. Your application status remains synced and you will also get an email when status changes.
         </div>
       </main>
 

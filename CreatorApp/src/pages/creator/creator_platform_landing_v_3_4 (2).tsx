@@ -26,6 +26,7 @@ import { useMobile } from "../../hooks/useMobile";
 import { formatCurrencyValue } from "../../utils/formatUtils";
 import { motion } from "framer-motion";
 import { getLandingPageTarget, IS_EVZONE_ACCOUNTS_CONNECTED } from "../../utils/accessControl";
+import { creatorApi } from "../../lib/creatorApi";
 
 // Creator Platform Website Landing - v3.4.2 (Previewable Canvas)
 // ✅ Fixes the syntax error (Unexpected token, expected ",") by restoring valid objects
@@ -39,6 +40,7 @@ import { getLandingPageTarget, IS_EVZONE_ACCOUNTS_CONNECTED } from "../../utils/
 
 const ORANGE = "#f77f00";
 // const ORANGE_DARK = "#e26f00";
+const LANDING_SCREEN_STATE_KEY = "creator-platform-landing-v3-4";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
@@ -76,6 +78,23 @@ function scrollToId(id: string) {
   const el = document.getElementById(id);
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((entry) => String(entry)).filter(Boolean) : [];
 }
 
 /* ------------------------------ Data ------------------------------ */
@@ -191,7 +210,7 @@ const FEATURES = [
 // ✅ FIXED: valid objects
 const TESTIMONIALS = [
   {
-    name: "Amina",
+    name: "Creator A",
     title: "Beauty Creator",
     country: "Uganda",
     stat: "+42% conversion",
@@ -200,7 +219,7 @@ const TESTIMONIALS = [
     image: IMAGES.testimonialUganda
   },
   {
-    name: "Jason",
+    name: "Creator B",
     title: "Tech Creator",
     country: "Kenya",
     stat: "2.1× sales per live",
@@ -209,7 +228,7 @@ const TESTIMONIALS = [
     image: IMAGES.testimonialKenya
   },
   {
-    name: "Li Wei",
+    name: "Creator C",
     title: "Cross-border Creator",
     country: "China",
     stat: "Faster collabs",
@@ -281,6 +300,155 @@ const FAQS = [
     a: "Yes. Assign Producer and Moderator roles to manage scenes, products, chat moderation and attachments while you focus on camera and storytelling."
   }
 ];
+
+type LandingNavItem = { id: string; label: string };
+type LandingFeatureSeed = { tag: string; title: string; desc: string; bullets: string[] };
+type LandingTestimonial = { name: string; title: string; country: string; stat: string; quote: string; image: string };
+type LandingFaq = { q: string; a: string };
+type LandingContent = {
+  nav: LandingNavItem[];
+  features: LandingFeatureSeed[];
+  testimonials: LandingTestimonial[];
+  creativeItems: CreativeCenterItem[];
+  faqs: LandingFaq[];
+  integrationPlatforms: string[];
+  educationLessons: string[];
+  creatorChecklistItems: string[];
+};
+
+const DEFAULT_LANDING_CONTENT: LandingContent = {
+  nav: NAV.map((item) => ({ id: item.id, label: item.label })),
+  features: FEATURES.map((item) => ({
+    tag: item.tag,
+    title: item.title,
+    desc: item.desc,
+    bullets: [...item.bullets]
+  })),
+  testimonials: TESTIMONIALS.map((item) => ({ ...item })),
+  creativeItems: CREATIVE_ITEMS.map((item) => ({ ...item, metrics: [...item.metrics] })),
+  faqs: FAQS.map((item) => ({ ...item })),
+  integrationPlatforms: [
+    "Instagram",
+    "TikTok",
+    "YouTube",
+    "Facebook",
+    "Snapchat",
+    "X (Twitter)",
+    "Telegram",
+    "WhatsApp",
+    "WeChat",
+    "Any platform"
+  ],
+  educationLessons: [
+    "How to run a flash deal",
+    "How to structure a live shopping show",
+    "How to write a converting caption",
+    "Cross-border basics for creators",
+    "Negotiation playbook for commission"
+  ],
+  creatorChecklistItems: [
+    "Set your niche categories",
+    "Connect your socials",
+    "Complete KYC",
+    "Add payout method",
+    "Start pitching campaigns"
+  ]
+};
+
+function iconForFeatureTag(tag: string) {
+  const normalized = tag.trim().toLowerCase();
+  if (normalized.includes("live")) return <Video className="h-5 w-5" />;
+  if (normalized.includes("shoppable")) return <Megaphone className="h-5 w-5" />;
+  if (normalized === "ai") return <Wand2 className="h-5 w-5" />;
+  if (normalized.includes("pipeline")) return <Layers className="h-5 w-5" />;
+  if (normalized.includes("revenue")) return <DollarSign className="h-5 w-5" />;
+  if (normalized.includes("trust")) return <ShieldCheck className="h-5 w-5" />;
+  return <Sparkles className="h-5 w-5" />;
+}
+
+function normalizeLandingContent(value: unknown): LandingContent | null {
+  const root = asRecord(value);
+  if (!root) return null;
+  const nestedPayload = asRecord(root.payload);
+  const source =
+    asRecord(nestedPayload?.content) ||
+    asRecord(root.content) ||
+    asRecord(nestedPayload) ||
+    root;
+  if (!source) return null;
+
+  const nav = asArray(source.nav)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      id: asString(entry.id, "").trim(),
+      label: asString(entry.label, "").trim()
+    }))
+    .filter((entry) => entry.id && entry.label);
+
+  const features = asArray(source.features)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      tag: asString(entry.tag, "").trim(),
+      title: asString(entry.title, "").trim(),
+      desc: asString(entry.desc, "").trim(),
+      bullets: asStringList(entry.bullets)
+    }))
+    .filter((entry) => entry.tag && entry.title && entry.desc);
+
+  const testimonials = asArray(source.testimonials)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      name: asString(entry.name, "").trim(),
+      title: asString(entry.title, "").trim(),
+      country: asString(entry.country, "").trim(),
+      stat: asString(entry.stat, "").trim(),
+      quote: asString(entry.quote, "").trim(),
+      image: asString(entry.image, "").trim()
+    }))
+    .filter((entry) => entry.name && entry.title && entry.country && entry.stat && entry.quote && entry.image);
+
+  const creativeItems = asArray(source.creativeItems)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      id: asString(entry.id, "").trim(),
+      kind: asString(entry.kind, "").trim(),
+      line: asString(entry.line, "").trim(),
+      title: asString(entry.title, "").trim(),
+      hook: asString(entry.hook, "").trim(),
+      metrics: asStringList(entry.metrics),
+      image: asString(entry.image, "").trim()
+    }))
+    .filter((entry) => entry.id && entry.kind && entry.line && entry.title && entry.hook && entry.image);
+
+  const faqs = asArray(source.faqs)
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+    .map((entry) => ({
+      q: asString(entry.q, "").trim(),
+      a: asString(entry.a, "").trim()
+    }))
+    .filter((entry) => entry.q && entry.a);
+
+  const integrationPlatforms = asStringList(source.integrationPlatforms);
+  const educationLessons = asStringList(source.educationLessons);
+  const creatorChecklistItems = asStringList(source.creatorChecklistItems);
+
+  if (!nav.length || !features.length || !testimonials.length || !creativeItems.length || !faqs.length) return null;
+  return {
+    nav,
+    features,
+    testimonials,
+    creativeItems,
+    faqs,
+    integrationPlatforms: integrationPlatforms.length ? integrationPlatforms : DEFAULT_LANDING_CONTENT.integrationPlatforms,
+    educationLessons: educationLessons.length ? educationLessons : DEFAULT_LANDING_CONTENT.educationLessons,
+    creatorChecklistItems: creatorChecklistItems.length ? creatorChecklistItems : DEFAULT_LANDING_CONTENT.creatorChecklistItems
+  };
+}
 
 /* ------------------------------ Workflow ------------------------------ */
 
@@ -832,9 +1000,7 @@ function BreakdownRow({ k, v, highlight }: { k: string; v: string; highlight?: b
 
 /* ------------------------------ Added key sections ------------------------------ */
 
-function IntegrationCard() {
-  const integrations = ["Instagram", "TikTok", "YouTube", "Facebook", "Snapchat", "X (Twitter)", "Telegram", "WhatsApp", "WeChat", "Any platform"];
-
+function IntegrationCard({ platforms }: { platforms: string[] }) {
   return (
     <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-5 h-full transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -851,7 +1017,7 @@ function IntegrationCard() {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {integrations.map((x) => (
+        {platforms.map((x) => (
           <span key={x} className="px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[12px] text-slate-700 dark:text-slate-300 transition-colors">{x}</span>
         ))}
       </div>
@@ -864,15 +1030,7 @@ function IntegrationCard() {
   );
 }
 
-function EducationCard({ onNav }: { onNav: (p: string) => void }) {
-  const lessons = [
-    "How to run a flash deal",
-    "How to structure a live shopping show",
-    "How to write a converting caption",
-    "Cross-border basics for creators",
-    "Negotiation playbook for commission"
-  ];
-
+function EducationCard({ onNav, lessons }: { onNav: (p: string) => void; lessons: string[] }) {
   return (
     <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-5 h-full transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -967,9 +1125,7 @@ function TierCardRank({ tier, desc, perks, featured, onNav }: { tier: string; de
 
 // FooterCol removed (unused)
 
-function CreatorChecklist({ onNav }: { onNav: (p: string) => void }) {
-  const items = ["Set your niche categories", "Connect your socials", "Complete KYC", "Add payout method", "Start pitching campaigns"];
-
+function CreatorChecklist({ onNav, items }: { onNav: (p: string) => void; items: string[] }) {
   return (
     <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm transition-colors">
       <div className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">Creator checklist</div>
@@ -995,6 +1151,33 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
   const isMobile = useMobile();
   const { theme, toggleTheme } = useTheme();
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [landingContent, setLandingContent] = useState<LandingContent>(DEFAULT_LANDING_CONTENT);
+
+  useEffect(() => {
+    let active = true;
+    void creatorApi
+      .workflowScreenState(LANDING_SCREEN_STATE_KEY)
+      .then((screenState) => {
+        if (!active) return;
+        const normalized = normalizeLandingContent(screenState);
+        if (normalized) {
+          setLandingContent(normalized);
+          return;
+        }
+        setLandingContent(DEFAULT_LANDING_CONTENT);
+        void creatorApi.patchWorkflowScreenState(LANDING_SCREEN_STATE_KEY, {
+          content: DEFAULT_LANDING_CONTENT,
+          seededAt: new Date().toISOString()
+        }).catch(() => undefined);
+      })
+      .catch(() => {
+        if (!active) return;
+        setLandingContent(DEFAULT_LANDING_CONTENT);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleNav = (path: string) => {
     // Keep guest users on the auth gate, but preserve whether they chose sign-in or registration.
@@ -1033,13 +1216,25 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
   const creators = useCountUp(12000);
   const countries = useCountUp(28);
   const lift = useCountUp(31);
+  const navItems = landingContent.nav;
+  const featureCards = useMemo(
+    () =>
+      landingContent.features.map((feature) => ({
+        ...feature,
+        icon: iconForFeatureTag(feature.tag)
+      })),
+    [landingContent.features]
+  );
+  const testimonials = landingContent.testimonials;
+  const creativeItems = landingContent.creativeItems;
+  const faqItems = landingContent.faqs;
 
   const workflow = useMemo(() => getWorkflow(workflowTrack, workflowMode), [workflowTrack, workflowMode]);
 
   const creativeFiltered = useMemo(() => {
-    if (creativeLine === "All") return CREATIVE_ITEMS;
-    return CREATIVE_ITEMS.filter((x) => x.line === creativeLine);
-  }, [creativeLine]);
+    if (creativeLine === "All") return creativeItems;
+    return creativeItems.filter((x) => x.line === creativeLine);
+  }, [creativeItems, creativeLine]);
 
   // const savedCount = useMemo(() => Object.values(creativeSaved).filter(Boolean).length, [creativeSaved]);
 
@@ -1063,7 +1258,7 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
           </button>
 
           <div className="hidden md:flex items-center gap-6">
-            {NAV.map((n) => (
+            {navItems.map((n) => (
               <button key={n.id} onClick={() => scrollToId(n.id)} className="px-3 py-2 rounded-2xl text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                 {n.label}
               </button>
@@ -1095,7 +1290,7 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
         {mobileMenu ? (
           <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-colors">
             <div className="max-w-[1600px] mx-auto px-4 py-3 grid grid-cols-2 gap-2">
-              {NAV.map((n) => (
+              {navItems.map((n) => (
                 <button key={n.id} onClick={() => { scrollToId(n.id); setMobileMenu(false); }} className="px-3 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[12px] font-semibold text-slate-700 dark:text-slate-300 transition-all active:scale-[0.98] active:bg-slate-100 dark:active:bg-slate-700">
                   {n.label}
                 </button>
@@ -1219,14 +1414,14 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
         </motion.div>
 
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {FEATURES.map((f) => (
+          {featureCards.map((f) => (
             <FeatureCard key={f.title} f={f} />
           ))}
         </div>
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <IntegrationCard />
-          <EducationCard onNav={handleNav} />
+          <IntegrationCard platforms={landingContent.integrationPlatforms} />
+          <EducationCard onNav={handleNav} lessons={landingContent.educationLessons} />
         </div>
       </div>
 
@@ -1503,7 +1698,7 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
           <p className="mt-2 text-slate-600 dark:text-slate-400 max-w-2xl">Real outcomes: stronger conversion, faster collaborations, clearer earnings.</p>
 
           <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {TESTIMONIALS.map((t) => (
+            {testimonials.map((t) => (
               <TestimonialCard key={t.name} t={t} />
             ))}
           </div>
@@ -1533,8 +1728,8 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
         </div>
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-4 items-start">
-          <div className="space-y-3"><FaqList items={FAQS} /></div>
-          <CreatorChecklist onNav={handleNav} />
+          <div className="space-y-3"><FaqList items={faqItems} /></div>
+          <CreatorChecklist onNav={handleNav} items={landingContent.creatorChecklistItems} />
         </div>
       </div>
 

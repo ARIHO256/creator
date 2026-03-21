@@ -475,9 +475,17 @@ export default function AudienceNotifications() {
     initialData: {} as AudienceNotificationsPayload,
     loader: () => creatorApi.liveTool("audience-notifications") as Promise<AudienceNotificationsPayload>,
   });
-  const [plan, setPlan] = useState<Plan>("Pro");
-  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("Scheduled");
-  const [sessionTitle, setSessionTitle] = useState("Autumn Beauty Flash");
+  const sessionId = useMemo(() => {
+    if (typeof window === "undefined") return "session";
+    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+  }, []);
+  const baseSessionUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/live/${encodeURIComponent(sessionId)}`;
+  }, [sessionId]);
+  const [plan, setPlan] = useState<Plan>("Standard");
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("Draft");
+  const [sessionTitle, setSessionTitle] = useState("Live session");
 
   // Scheduling inputs
   const [startLocal, setStartLocal] = useState(() => {
@@ -495,14 +503,14 @@ export default function AudienceNotifications() {
   });
 
   const [bufferMinutes, setBufferMinutes] = useState(15); // default per requirement
-  const [waNumber, setWaNumber] = useState("+256 700 000 000"); // placeholder
-  const [sessionUrl, setSessionUrl] = useState("https://mylivedealz.com/live/LS-20418");
+  const [waNumber, setWaNumber] = useState("");
+  const [sessionUrl, setSessionUrl] = useState(baseSessionUrl);
   const templatePacks = useMemo(() => payload.templatePacks || [], [payload.templatePacks]);
   const channels = useMemo(() => payload.channels || [], [payload.channels]);
 
   const [enabledChannels, setEnabledChannels] = useState<Record<ChannelKey, boolean>>({
-    whatsapp: true,
-    telegram: true,
+    whatsapp: false,
+    telegram: false,
     line: false,
     viber: false,
     rcs: false,
@@ -513,17 +521,17 @@ export default function AudienceNotifications() {
   );
 
   const [enabledReminders, setEnabledReminders] = useState<Record<ReminderKey, boolean>>({
-    t24h: true,
-    t1h: true,
-    t10m: true,
-    live_now: true,
+    t24h: false,
+    t1h: false,
+    t10m: false,
+    live_now: false,
     deal_drop: false,
-    replay_ready: true,
+    replay_ready: false,
   });
 
-  const [replayDelayMinutes, setReplayDelayMinutes] = useState(20);
+  const [replayDelayMinutes, setReplayDelayMinutes] = useState(0);
   const [dealDropMode, setDealDropMode] = useState<"manual" | "scheduled">("manual");
-  const [dealDropAtOffsetMin, setDealDropAtOffsetMin] = useState(12); // if scheduled: minutes after start
+  const [dealDropAtOffsetMin, setDealDropAtOffsetMin] = useState(0); // if scheduled: minutes after start
   const [selectedPackId, setSelectedPackId] = useState("");
   const selectedPack = useMemo(
     () => templatePacks.find((p) => p.id === selectedPackId) ?? templatePacks[0] ?? EMPTY_PACK,
@@ -532,21 +540,21 @@ export default function AudienceNotifications() {
 
   useEffect(() => {
     if (!Object.keys(payload).length) return;
-    setPlan(payload.plan || "Pro");
-    setSessionStatus(payload.sessionStatus || "Scheduled");
-    setSessionTitle(payload.sessionTitle || "Autumn Beauty Flash");
+    setPlan(payload.plan || "Standard");
+    setSessionStatus(payload.sessionStatus || "Draft");
+    setSessionTitle(payload.sessionTitle || "Live session");
     setStartLocal((current) => payload.startLocal || current);
     setEndLocal((current) => payload.endLocal || current);
     setBufferMinutes(typeof payload.bufferMinutes === "number" ? payload.bufferMinutes : 15);
-    setWaNumber(payload.waNumber || "+256 700 000 000");
-    setSessionUrl(payload.sessionUrl || "https://mylivedealz.com/live/LS-20418");
+    setWaNumber(payload.waNumber || "");
+    setSessionUrl(payload.sessionUrl || baseSessionUrl);
     setSelectedPackId(payload.selectedPackId || payload.templatePacks?.[0]?.id || "");
     setEnabledChannels((current) => ({ ...current, ...(payload.enabledChannels || {}) }));
     setEnabledReminders((current) => ({ ...current, ...(payload.enabledReminders || {}) }));
-    setReplayDelayMinutes(typeof payload.replayDelayMinutes === "number" ? payload.replayDelayMinutes : 20);
+    setReplayDelayMinutes(typeof payload.replayDelayMinutes === "number" ? payload.replayDelayMinutes : 0);
     setDealDropMode(payload.dealDropMode === "scheduled" ? "scheduled" : "manual");
-    setDealDropAtOffsetMin(typeof payload.dealDropAtOffsetMin === "number" ? payload.dealDropAtOffsetMin : 12);
-  }, [payload]);
+    setDealDropAtOffsetMin(typeof payload.dealDropAtOffsetMin === "number" ? payload.dealDropAtOffsetMin : 0);
+  }, [payload, baseSessionUrl]);
 
   const start = useMemo(() => fromLocalInputValue(startLocal), [startLocal]);
   const end = useMemo(() => fromLocalInputValue(endLocal), [endLocal]);

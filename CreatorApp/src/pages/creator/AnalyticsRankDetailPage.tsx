@@ -13,6 +13,8 @@ import {
   Users,
 } from "lucide-react";
 import { useCreator } from "../../contexts/CreatorContext";
+import { useApiResource } from "../../hooks/useApiResource";
+import { creatorApi } from "../../lib/creatorApi";
 
 /**
  * AnalyticsRankDetailPage (Creator View)
@@ -63,11 +65,13 @@ type Benchmarks = {
 
 type CampaignRow = {
   id: number;
+  campaignId: string;
   name: string;
   seller: string;
   category: Exclude<Category, "All">;
   sales: number;
   engagements: number;
+  conversions: number;
   convRate: number;
 };
 
@@ -85,6 +89,13 @@ type TrendPoint = {
   clicks: number;
   conversions: number;
   sales: number;
+};
+
+type AnalyticsSeed = {
+  baseMetrics: Metrics;
+  campaigns: CampaignRow[];
+  benchmarks: Benchmarks;
+  trend: TrendPoint[];
 };
 
 function money(n: number, currency: "USD" | "UGX" = "USD") {
@@ -130,67 +141,217 @@ function downloadCsv(filename: string, rows: Record<string, string | number>[]) 
   URL.revokeObjectURL(a.href);
 }
 
-// --- Static Data Moved Outside Component ---
-const baseMetrics: Metrics = {
-  avgViewers: 780,
-  ctr: 3.2,
-  conversion: 4.1,
-  salesDriven: 4200,
-};
-
-const campaigns: CampaignRow[] = [
-  {
-    id: 1,
-    name: "Autumn Beauty Flash",
-    seller: "GlowUp Hub",
-    category: "Beauty",
-    sales: 2600,
-    engagements: 4300,
-    convRate: 4.8,
-  },
-  {
-    id: 2,
-    name: "Tech Friday Mega Live",
-    seller: "GadgetMart Africa",
-    category: "Tech",
-    sales: 3100,
-    engagements: 5200,
-    convRate: 4.2,
-  },
-  {
-    id: 3,
-    name: "Faith & Wellness Morning Dealz",
-    seller: "Grace Living Store",
-    category: "Faith",
-    sales: 1200,
-    engagements: 2100,
-    convRate: 3.9,
-  },
-  {
-    id: 4,
-    name: "Gadget Unboxing Marathon",
-    seller: "GadgetMart Africa",
-    category: "Tech",
-    sales: 1800,
-    engagements: 4800,
-    convRate: 3.1,
-  },
-  {
-    id: 5,
-    name: "Beauty Flash + Night Care",
-    seller: "GlowUp Hub",
-    category: "Beauty",
-    sales: 900,
-    engagements: 1600,
-    convRate: 4.5,
-  },
-];
-
 export default function AnalyticsRankDetailPage() {
   const { rankTier } = useCreator();
   const [timeRange, setTimeRange] = useState<Range>("30");
   const [category, setCategory] = useState<Category>("All");
   const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("sales");
+  const { data: analyticsSeed } = useApiResource<AnalyticsSeed>({
+    initialData: {
+      baseMetrics: {
+        avgViewers: 0,
+        ctr: 0,
+        conversion: 0,
+        salesDriven: 0
+      },
+      campaigns: [],
+      benchmarks: {
+        viewersPercentile: 0,
+        ctrPercentile: 0,
+        conversionPercentile: 0,
+        salesPercentile: 0
+      },
+      trend: []
+    },
+    loader: async () => {
+      const [adzCampaigns, reviewsDashboard] = await Promise.all([
+        creatorApi.adzCampaigns(),
+        creatorApi.reviewsDashboard().catch(() => ({}))
+      ]);
+
+      const campaignPerfPairs = await Promise.all(
+        adzCampaigns.map(async (campaign) => {
+          const performance = await creatorApi
+            .adzCampaignPerformance(campaign.id)
+            .catch(() => ({} as Record<string, unknown>));
+          return [campaign.id, performance] as const;
+        })
+      );
+      const perfByCampaignId = new Map<string, Record<string, unknown>>(
+        campaignPerfPairs.map(([id, perf]) => {
+          const normalized =
+            perf && typeof perf === "object" && !Array.isArray(perf)
+              ? (perf as Record<string, unknown>)
+              : {};
+          return [id, normalized];
+        })
+      );
+
+      const campaigns: CampaignRow[] = adzCampaigns.map((campaign, index) => {
+        const data =
+          campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
+            ? (campaign.data as Record<string, unknown>)
+            : {};
+        const perf = perfByCampaignId.get(campaign.id) || {};
+        const sales = Number(
+          perf.sales ??
+            perf.gmv ??
+            data.sales ??
+            data.gmv ??
+            campaign.budget ??
+            0
+        ) || 0;
+        const engagements = Number(
+          perf.engagements ??
+            perf.clicks ??
+            data.engagements ??
+            data.clicks ??
+            0
+        ) || 0;
+        const conversions = Number(
+          perf.conversions ??
+            perf.purchases ??
+            data.conversions ??
+            data.purchases ??
+            0
+        ) || 0;
+        const convRateRaw = Number(
+          perf.conversion ??
+            perf.conversionPct ??
+            data.conversion ??
+            data.conversionPct ??
+            0
+        );
+        const convRate =
+          Number.isFinite(convRateRaw) && convRateRaw > 0
+            ? convRateRaw
+            : engagements > 0
+              ? (conversions / engagements) * 100
+              : 0;
+        const categoryRaw = String(data.category || perf.category || "Tech");
+        const categoryMapped: Exclude<Category, "All"> =
+          categoryRaw.toLowerCase().includes("beauty")
+            ? "Beauty"
+            : categoryRaw.toLowerCase().includes("faith")
+              ? "Faith"
+              : "Tech";
+        return {
+          id: index + 1,
+          campaignId: campaign.id,
+          name: String(campaign.title || data.title || `Campaign ${index + 1}`),
+          seller: String(data.sellerName || data.seller || "Seller"),
+          category: categoryMapped,
+          sales,
+          engagements,
+          conversions,
+          convRate: Number(convRate.toFixed(2))
+        };
+      });
+
+      const totalSales = campaigns.reduce((sum, item) => sum + item.sales, 0);
+      const totalEngagements = campaigns.reduce((sum, item) => sum + item.engagements, 0);
+      const avgConv =
+        campaigns.length > 0
+          ? campaigns.reduce((sum, item) => sum + item.convRate, 0) / campaigns.length
+          : 0;
+
+      const totalConversions = campaigns.reduce((sum, item) => sum + item.conversions, 0);
+      const aggregateViews = Number(
+        (reviewsDashboard as { trends?: Array<Record<string, unknown>> })?.trends
+          ?.reduce((sum, row) => sum + (Number((row as Record<string, unknown>).views || 0) || 0), 0) || 0
+      );
+
+      const trendMap = new Map<string, TrendPoint>();
+      const addTrendRow = (labelRaw: unknown, viewsRaw: unknown, clicksRaw: unknown, conversionsRaw: unknown, salesRaw: unknown) => {
+        const label = String(labelRaw || "").trim() || "Now";
+        const views = Number(viewsRaw || 0) || 0;
+        const clicks = Number(clicksRaw || 0) || 0;
+        const conversions = Number(conversionsRaw || 0) || 0;
+        const sales = Number(salesRaw || 0) || 0;
+        const prev = trendMap.get(label);
+        if (!prev) {
+          trendMap.set(label, { label, views, clicks, conversions, sales });
+          return;
+        }
+        trendMap.set(label, {
+          label,
+          views: prev.views + views,
+          clicks: prev.clicks + clicks,
+          conversions: prev.conversions + conversions,
+          sales: prev.sales + sales
+        });
+      };
+
+      campaignPerfPairs.forEach(([campaignId, performance]) => {
+        const perf =
+          performance && typeof performance === "object" && !Array.isArray(performance)
+            ? (performance as Record<string, unknown>)
+            : {};
+        const rows =
+          Array.isArray(perf.trend) ? perf.trend :
+          Array.isArray(perf.trends) ? perf.trends :
+          Array.isArray(perf.series) ? perf.series :
+          [];
+        rows.forEach((row, index) => {
+          const point = row as Record<string, unknown>;
+          addTrendRow(
+            point.label || point.day || point.date || `${campaignId}-${index + 1}`,
+            point.views,
+            point.clicks,
+            point.conversions ?? point.purchases,
+            point.sales ?? point.gmv
+          );
+        });
+      });
+
+      if (trendMap.size === 0 && Array.isArray((reviewsDashboard as { trends?: unknown[] }).trends)) {
+        (reviewsDashboard as { trends: Array<Record<string, unknown>> }).trends.forEach((row, index) => {
+          addTrendRow(
+            row.label || row.day || row.date || `P-${index + 1}`,
+            row.views,
+            row.clicks,
+            row.conversions ?? row.purchases,
+            row.sales ?? row.gmv
+          );
+        });
+      }
+
+      if (trendMap.size === 0) {
+        addTrendRow("Now", aggregateViews, totalEngagements, totalConversions, totalSales);
+      }
+      const trend = Array.from(trendMap.values());
+
+      const dashboardBench =
+        (reviewsDashboard as { benchmarks?: Record<string, unknown> })?.benchmarks &&
+        typeof (reviewsDashboard as { benchmarks?: Record<string, unknown> }).benchmarks === "object"
+          ? ((reviewsDashboard as { benchmarks: Record<string, unknown> }).benchmarks)
+          : {};
+
+      return {
+        baseMetrics: {
+          avgViewers:
+            trend.length > 0
+              ? Math.round(trend.reduce((sum, row) => sum + row.views, 0) / trend.length)
+              : 0,
+          ctr: totalEngagements > 0 ? Number(((totalConversions / totalEngagements) * 100).toFixed(2)) : 0,
+          conversion: Number(avgConv.toFixed(2)),
+          salesDriven: totalSales
+        },
+        campaigns,
+        benchmarks: {
+          viewersPercentile: Number(dashboardBench.viewersPercentile || dashboardBench.viewers || 0) || 0,
+          ctrPercentile: Number(dashboardBench.ctrPercentile || dashboardBench.ctr || 0) || 0,
+          conversionPercentile: Number(dashboardBench.conversionPercentile || dashboardBench.conversion || 0) || 0,
+          salesPercentile: Number(dashboardBench.salesPercentile || dashboardBench.sales || 0) || 0
+        },
+        trend
+      };
+    }
+  });
+  const baseMetrics = analyticsSeed.baseMetrics;
+  const campaigns = analyticsSeed.campaigns;
+  const seedTrend = analyticsSeed.trend;
+  const benchmarks = analyticsSeed.benchmarks;
 
   // Rank / tier demo data
   const nextTier: Rank["nextTier"] = rankTier === "Bronze" ? "Silver" : rankTier === "Silver" ? "Gold" : "Platinum";
@@ -218,30 +379,22 @@ export default function AnalyticsRankDetailPage() {
 
 
   const metrics: Metrics = useMemo(() => {
-    let factor = 1;
-    if (timeRange === "7") factor = 1.05;
-    if (timeRange === "90") factor = 0.95;
-
-    let categoryBoost = 1;
-    if (category === "Beauty") categoryBoost = 1.2;
-    if (category === "Tech") categoryBoost = 1.1;
-    if (category === "Faith") categoryBoost = 1.05;
+    const scopedCampaigns = category === "All" ? campaigns : campaigns.filter((c) => c.category === category);
+    const salesDriven = scopedCampaigns.reduce((sum, c) => sum + c.sales, 0);
+    const totalEngagements = scopedCampaigns.reduce((sum, c) => sum + c.engagements, 0);
+    const totalConversions = scopedCampaigns.reduce((sum, c) => sum + c.conversions, 0);
+    const avgViewersFromTrend =
+      seedTrend.length > 0
+        ? Math.round(seedTrend.reduce((sum, row) => sum + row.views, 0) / seedTrend.length)
+        : baseMetrics.avgViewers;
 
     return {
-      avgViewers: Math.round(baseMetrics.avgViewers * factor * categoryBoost),
-      ctr: Number((baseMetrics.ctr * factor * (category === "Tech" ? 1.05 : 1)).toFixed(2)),
-      conversion: Number((baseMetrics.conversion * categoryBoost).toFixed(2)),
-      salesDriven: Math.round(baseMetrics.salesDriven * factor * categoryBoost),
+      avgViewers: avgViewersFromTrend,
+      ctr: totalEngagements > 0 ? Number(((totalConversions / totalEngagements) * 100).toFixed(2)) : baseMetrics.ctr,
+      conversion: totalEngagements > 0 ? Number(((totalConversions / totalEngagements) * 100).toFixed(2)) : baseMetrics.conversion,
+      salesDriven
     };
-  }, [timeRange, category]);
-
-  // Benchmarks vs similar creators (percentiles)
-  const benchmarks: Benchmarks = {
-    viewersPercentile: 78,
-    ctrPercentile: 72,
-    conversionPercentile: 83,
-    salesPercentile: 80,
-  };
+  }, [baseMetrics.avgViewers, baseMetrics.conversion, baseMetrics.ctr, campaigns, category, seedTrend]);
 
 
 
@@ -256,47 +409,18 @@ export default function AnalyticsRankDetailPage() {
   }, [category, leaderboardMode]);
 
   const trend = useMemo<TrendPoint[]>(() => {
-    const days = timeRange === "7" ? 7 : timeRange === "30" ? 30 : 90;
-    const now = new Date();
-
-    const cat = category;
-    const categoryBoost = cat === "Beauty" ? 1.2 : cat === "Tech" ? 1.1 : cat === "Faith" ? 1.05 : 1;
-    const factor = timeRange === "7" ? 1.05 : timeRange === "90" ? 0.95 : 1;
-
-    // Sine-ish curve with gentle noise, deterministic by day index.
-    const points: TrendPoint[] = [];
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const label = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-
-      const t = (days - i) / Math.max(1, days);
-      const wave = Math.sin(t * Math.PI * 2) * 0.12;
-      const drift = (t - 0.5) * 0.1;
-      const seed = (i * 9301 + 49297) % 233280;
-      const noise = (seed / 233280 - 0.5) * 0.08;
-      const k = (1 + wave + drift + noise) * categoryBoost * factor;
-
-      const views = Math.round(900 * k + 320 * k * Math.sin(t * Math.PI * 3));
-      const clicks = Math.round(views * clamp(metrics.ctr / 100, 0.01, 0.2) * (0.85 + 0.3 * Math.sin(t * Math.PI * 2)));
-      const conversions = Math.round(clicks * clamp(metrics.conversion / 100, 0.01, 0.2) * (0.85 + 0.25 * Math.cos(t * Math.PI * 2)));
-      const sales = Math.round(conversions * (32 + 18 * categoryBoost));
-
-      points.push({ label, views, clicks, conversions, sales });
-    }
-    return points;
-  }, [timeRange, category, metrics.ctr, metrics.conversion]);
+    const needed = timeRange === "7" ? 7 : timeRange === "30" ? 30 : 90;
+    if (!seedTrend.length) return [];
+    if (seedTrend.length <= needed) return seedTrend;
+    return seedTrend.slice(seedTrend.length - needed);
+  }, [seedTrend, timeRange]);
 
   const rankMomentum = useMemo(() => {
-    // Use trend length to build a gentle upward XP series.
-    const base = 520;
-    const pts = trend.map((p, idx) => {
-      const t = idx / Math.max(1, trend.length - 1);
-      const wave = Math.sin(t * Math.PI * 2) * 18;
-      const up = t * 160;
-      return Math.round(base + up + wave);
+    let runningXp = 0;
+    return trend.map((point) => {
+      runningXp += point.conversions + point.sales / 20;
+      return Math.round(runningXp);
     });
-    return pts;
   }, [trend]);
 
   const goals: GoalRow[] = useMemo(
@@ -392,6 +516,7 @@ export default function AnalyticsRankDetailPage() {
           <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1.4fr)] gap-3 items-start">
             <PerformanceMetricsPanel
               metrics={metrics}
+              trend={trend}
               timeRange={timeRange}
               onChangeTimeRange={setTimeRange}
               category={category}
@@ -949,12 +1074,14 @@ function PercentileRow({ label, pct, hint }: { label: string; pct: number; hint?
 
 function PerformanceMetricsPanel({
   metrics,
+  trend,
   timeRange,
   onChangeTimeRange,
   category,
   onChangeCategory,
 }: {
   metrics: Metrics;
+  trend: TrendPoint[];
   timeRange: Range;
   onChangeTimeRange: (v: Range) => void;
   category: Category;
@@ -1039,7 +1166,7 @@ function PerformanceMetricsPanel({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
         {cards.map((card) => (
-          <MetricCard key={card.id} card={card} />
+          <MetricCard key={card.id} card={card} trend={trend} />
         ))}
       </div>
     </div>
@@ -1048,6 +1175,7 @@ function PerformanceMetricsPanel({
 
 function MetricCard({
   card,
+  trend,
 }: {
   card: {
     id: string;
@@ -1057,6 +1185,7 @@ function MetricCard({
     tagline: string;
     series: "views" | "clicks" | "conversions" | "sales";
   };
+  trend: TrendPoint[];
 }) {
   const isMoney = card.unit === "USD";
   const valueLabel = isMoney
@@ -1066,14 +1195,9 @@ function MetricCard({
       : card.value.toLocaleString();
 
   const sparkValues = useMemo(() => {
-    // Lightweight spark values (demo). In real use, pass series points.
-    const base = card.series === "views" ? 22 : card.series === "clicks" ? 10 : card.series === "conversions" ? 8 : 14;
-    return Array.from({ length: 10 }).map((_, i) => {
-      const t = i / 9;
-      const wave = Math.sin(t * Math.PI * 2) * 0.22;
-      return base * (1 + wave + (t - 0.5) * 0.12);
-    });
-  }, [card.series]);
+    if (!trend.length) return [0];
+    return trend.map((point) => point[card.series]);
+  }, [card.series, trend]);
 
   return (
     <div className="border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-2 bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-2">
@@ -1166,12 +1290,11 @@ function ConversionsByCampaignPanel({ campaigns, mode }: { campaigns: CampaignRo
   // Convert to a chart-friendly series.
   const items = useMemo(() => {
     return campaigns.map((c) => {
-      // Approx conversions: sales / avg basket (demo). In real, use real conversions.
-      const conversions = Math.max(1, Math.round(c.sales / 120));
+      const conversions = Math.max(0, c.conversions);
       return {
         label: c.name,
         value: mode === "sales" ? c.sales : c.engagements,
-        hint: mode === "sales" ? `${conversions} conv (est.)` : `${conversions} conv (est.)`,
+        hint: `${conversions.toLocaleString()} conversions`,
       };
     });
   }, [campaigns, mode]);

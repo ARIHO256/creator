@@ -93,7 +93,7 @@ export class DiscoveryController {
   }
 
   @Post('invites')
-  @Roles('SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
+  @Roles('CREATOR', 'SELLER', 'PROVIDER', 'ADMIN', 'SUPPORT')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   createInvite(@CurrentUser() user: RequestUser, @Body() body: CreateInviteDto) {
     return this.discoveryService.createInvite(user.sub, body);

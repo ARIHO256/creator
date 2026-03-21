@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
+import { creatorApi, type ContentApprovalRecord } from "../../lib/creatorApi";
 
 // MyLiveDealz · Creator Portal
 // Page: Awaiting Approval (Submitted Content)
@@ -191,161 +192,105 @@ function nextStepCopy(status: SubmissionStatus, desk: Desk) {
   return "";
 }
 
-function seedSubmissions(): Submission[] {
-  const now = new Date();
-  const iso = (d: Date) => d.toISOString();
+function normalizeSubmissionStatus(value: unknown): SubmissionStatus {
+  const normalized = String(value || "").toLowerCase();
+  if (["under_review", "in_review", "reviewing"].includes(normalized)) return "Under Review";
+  if (["escalated"].includes(normalized)) return "Escalated";
+  if (["changes_requested", "send_back", "needs_changes"].includes(normalized)) return "Changes Requested";
+  if (["approved", "published"].includes(normalized)) return "Approved";
+  if (["rejected", "withdrawn"].includes(normalized)) return "Rejected";
+  return "Pending";
+}
 
-  const mk = (minsAgo: number, dueMinsFromNow: number) => {
-    const s = new Date(now.getTime() - minsAgo * 60000);
-    const due = new Date(now.getTime() + dueMinsFromNow * 60000);
-    return { submitted: iso(s), due: iso(due) };
+function mapContentApprovalRecord(record: ContentApprovalRecord): Submission {
+  const payload =
+    record.payload && typeof record.payload === "object" && !Array.isArray(record.payload)
+      ? (record.payload as Record<string, unknown>)
+      : {};
+  const metadata =
+    record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
+      ? (record.metadata as Record<string, unknown>)
+      : {};
+  const assetsRaw = Array.isArray(payload.assets) ? payload.assets : [];
+  const auditRaw = Array.isArray(metadata.audit) ? metadata.audit : [];
+  const deskRaw = String(payload.desk || metadata.desk || "General");
+  const channelRaw = String(payload.channel || "Instagram");
+  const typeRaw = String(record.type || payload.type || "Doc");
+
+  return {
+    id: String(record.id),
+    title: String(record.title || payload.title || "Submission"),
+    campaign: String(payload.campaign || metadata.campaign || "Campaign"),
+    supplier: {
+      name: String(payload.supplierName || metadata.supplierName || "Supplier"),
+      type: String(payload.supplierType || "").toLowerCase() === "provider" ? "Provider" : "Seller"
+    },
+    channel: (["Instagram", "TikTok", "YouTube", "WhatsApp"].includes(channelRaw) ? channelRaw : "Instagram") as Submission["channel"],
+    type: (["Video", "Image", "Caption", "Doc"].includes(typeRaw) ? typeRaw : "Doc") as SubmissionType,
+    desk: (["General", "Faith", "Medical", "Education"].includes(deskRaw) ? deskRaw : "General") as Desk,
+    status: normalizeSubmissionStatus(record.status),
+    riskScore: Number(payload.riskScore || metadata.riskScore || 0),
+    submittedAtISO: String(record.createdAt || payload.submittedAtISO || nowISO()),
+    dueAtISO: String(payload.dueAtISO || metadata.dueAtISO || nowISO()),
+    notesFromCreator: String(payload.notesFromCreator || ""),
+    caption: String(payload.caption || ""),
+    assets: assetsRaw.map((entry, index) => {
+      const row = entry as Record<string, unknown>;
+      const entryType = String(row.type || "Doc");
+      return {
+        name: String(row.name || `Asset ${index + 1}`),
+        type: (["Video", "Image", "Caption", "Doc"].includes(entryType) ? entryType : "Doc") as SubmissionType,
+        size: String(row.size || row.sizeLabel || "—")
+      };
+    }),
+    flags: {
+      missingDisclosure: Boolean(payload.missingDisclosure),
+      sensitiveClaim: Boolean(payload.sensitiveClaim),
+      brandRestriction: Boolean(payload.brandRestriction)
+    },
+    lastUpdatedISO: String(record.updatedAt || record.createdAt || nowISO()),
+    audit:
+      auditRaw.length > 0
+        ? auditRaw.map((entry, index) => {
+            const row = entry as Record<string, unknown>;
+            return {
+              atISO: String(row.atISO || row.at || record.updatedAt || record.createdAt || nowISO()),
+              msg: String(row.msg || row.message || `Event ${index + 1}`)
+            };
+          })
+        : [{ atISO: String(record.createdAt || nowISO()), msg: "Submitted" }]
   };
-
-  const a1 = mk(140, 980);
-  const a2 = mk(980, -120);
-  const a3 = mk(60, 420);
-  const a4 = mk(3100, 0);
-  const a5 = mk(220, 240);
-
-  const base: Submission[] = [
-    {
-      id: "SUB-001",
-      title: "IG Reel Draft — Serum Promo",
-      campaign: "GlowUp Serum Promo",
-      supplier: { name: "GlowUp Hub", type: "Seller" },
-      channel: "Instagram",
-      type: "Video",
-      desk: "General",
-      status: "Under Review",
-      riskScore: 28,
-      submittedAtISO: a1.submitted,
-      dueAtISO: a1.due,
-      notesFromCreator: "Short 15s hook + benefits + CTA. Please confirm compliance wording.",
-      caption:
-        "GlowUp Serum Dealz now live. Limited stock. Tap to shop with my link. #MyLiveDealz #ShoppableAdz #ad",
-      assets: [
-        { name: "ig-reel-draft.mp4", type: "Video", size: "14.8 MB" },
-        { name: "cover-4x5.png", type: "Image", size: "1.2 MB" }
-      ],
-      flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
-      lastUpdatedISO: a1.submitted,
-      audit: [
-        { atISO: a1.submitted, msg: "Submitted" },
-        { atISO: new Date(new Date(a1.submitted).getTime() + 18 * 60000).toISOString(), msg: "Moved to Under Review" }
-      ]
-    },
-    {
-      id: "SUB-002",
-      title: "TikTok Script — Tech Friday Mega",
-      campaign: "Tech Friday Mega",
-      supplier: { name: "GadgetMart Africa", type: "Seller" },
-      channel: "TikTok",
-      type: "Caption",
-      desk: "General",
-      status: "Changes Requested",
-      riskScore: 52,
-      submittedAtISO: a2.submitted,
-      dueAtISO: a2.due,
-      notesFromCreator: "Script focuses on unboxing + quick price anchor + bundle CTA.",
-      caption:
-        "Tech Friday Mega Live: gadgets bundles + fast checkout. Join live and shop. {LINK}",
-      assets: [{ name: "tiktok-script.txt", type: "Doc", size: "12 KB" }],
-      flags: { missingDisclosure: true, sensitiveClaim: false, brandRestriction: false },
-      lastUpdatedISO: a2.due,
-      audit: [
-        { atISO: a2.submitted, msg: "Submitted" },
-        { atISO: new Date(new Date(a2.submitted).getTime() + 65 * 60000).toISOString(), msg: "Changes requested: add #ad disclosure" }
-      ]
-    },
-    {
-      id: "SUB-003",
-      title: "YouTube Shorts Cut — Gadget Unboxing",
-      campaign: "Gadget Unboxing Marathon",
-      supplier: { name: "GadgetMart Africa", type: "Seller" },
-      channel: "YouTube",
-      type: "Video",
-      desk: "General",
-      status: "Pending",
-      riskScore: 35,
-      submittedAtISO: a3.submitted,
-      dueAtISO: a3.due,
-      notesFromCreator: "45s cut, includes pricing overlay and CTA.",
-      caption:
-        "New unboxing. Watch and shop with my link. #MyLiveDealz #LiveSessionz",
-      assets: [{ name: "shorts-cut.mp4", type: "Video", size: "38.4 MB" }],
-      flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
-      lastUpdatedISO: a3.submitted,
-      audit: [{ atISO: a3.submitted, msg: "Submitted" }]
-    },
-    {
-      id: "SUB-004",
-      title: "WhatsApp Broadcast Copy — Repair Booking",
-      campaign: "Repair Booking Offer",
-      supplier: { name: "FixNow Mobile", type: "Provider" },
-      channel: "WhatsApp",
-      type: "Caption",
-      desk: "General",
-      status: "Approved",
-      riskScore: 12,
-      submittedAtISO: a4.submitted,
-      dueAtISO: a4.due,
-      notesFromCreator: "Simple broadcast message and CTA to book.",
-      caption:
-        "Need a trusted mobile repair? Book here: {LINK} (Fast, clear pricing). #MyLiveDealz",
-      assets: [{ name: "whatsapp-broadcast.txt", type: "Doc", size: "8 KB" }],
-      flags: { missingDisclosure: false, sensitiveClaim: false, brandRestriction: false },
-      lastUpdatedISO: a4.due,
-      audit: [
-        { atISO: a4.submitted, msg: "Submitted" },
-        { atISO: new Date(new Date(a4.submitted).getTime() + 90 * 60000).toISOString(), msg: "Approved" }
-      ]
-    },
-    {
-      id: "SUB-005",
-      title: "Faith-compatible Caption — Wellness",
-      campaign: "Faith & Wellness",
-      supplier: { name: "Grace Living Store", type: "Seller" },
-      channel: "Instagram",
-      type: "Caption",
-      desk: "Faith",
-      status: "Escalated",
-      riskScore: 79,
-      submittedAtISO: a5.submitted,
-      dueAtISO: a5.due,
-      notesFromCreator: "Please validate tone and desk guidelines.",
-      caption:
-        "Wellness picks for your routine. Shop responsibly with my link. #MyLiveDealz",
-      assets: [{ name: "caption-faith.txt", type: "Doc", size: "6 KB" }],
-      flags: { missingDisclosure: true, sensitiveClaim: true, brandRestriction: true },
-      lastUpdatedISO: a5.submitted,
-      audit: [
-        { atISO: a5.submitted, msg: "Submitted" },
-        { atISO: new Date(new Date(a5.submitted).getTime() + 22 * 60000).toISOString(), msg: "Escalated to Faith Desk" }
-      ]
-    }
-  ];
-
-  // Load from localStorage
-  const localStr = localStorage.getItem("pendingSubmissions");
-  if (localStr) {
-    try {
-      const local = JSON.parse(localStr) as Submission[];
-      return [...local, ...base];
-    } catch (e) {
-      console.error("Failed to parse local submissions", e);
-    }
-  }
-
-  return base;
 }
 
 export default function CreatorAwaitingApproval(): JSX.Element {
   const navigate = useNavigate();
-  const [submissions, setSubmissions] = useState<Submission[]>(() => seedSubmissions());
-  const [selectedId, setSelectedId] = useState<string>(() => seedSubmissions()[0].id);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
   const [filter, setFilter] = useState<CreatorFilter>("Awaiting");
   const [query, setQuery] = useState("");
   const [mobileView, setMobileView] = useState<ViewState>("list");
+
+  useEffect(() => {
+    let cancelled = false;
+    void creatorApi
+      .contentApprovals()
+      .then((records) => {
+        if (cancelled) return;
+        const mapped = records.map(mapContentApprovalRecord);
+        setSubmissions(mapped);
+        if (mapped.length > 0) {
+          setSelectedId((prev) => (prev ? prev : mapped[0].id));
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSubmissions([]);
+        setSelectedId("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // On large screens, always detail. On small, depends on state.
   // We handle this via CSS hiding/showing mostly, or conditional rendering.
@@ -507,6 +452,7 @@ export default function CreatorAwaitingApproval(): JSX.Element {
                       active={s.id === selectedId}
                       onSelect={() => handleSelect(s.id)}
                       onNudge={() => {
+                        void creatorApi.nudgeContentApproval(s.id);
                         pushAudit(s.id, "Creator nudged reviewer");
                         toast("Nudge sent");
                       }}
@@ -538,14 +484,23 @@ export default function CreatorAwaitingApproval(): JSX.Element {
                 item={selected}
                 onCopy={() => copyToClipboard(selected.caption)}
                 onNudge={() => {
+                  void creatorApi.nudgeContentApproval(selected.id);
                   pushAudit(selected.id, "Creator nudged reviewer");
                   toast("Nudge sent");
                 }}
                 onWithdraw={() => {
+                  void creatorApi.withdrawContentApproval(selected.id);
                   setStatus(selected.id, "Rejected", "Withdrawn by creator");
                   toast("Withdrawn");
                 }}
                 onResubmit={() => {
+                  void creatorApi.resubmitContentApproval(selected.id, {
+                    status: "resubmitted",
+                    data: {
+                      caption: selected.caption,
+                      notesFromCreator: selected.notesFromCreator
+                    }
+                  });
                   setStatus(selected.id, "Pending", "Resubmitted after changes");
                   toast("Resubmitted");
                 }}
