@@ -18,6 +18,7 @@ import { creatorApi, type OpportunityRecord } from "../../lib/creatorApi";
 type Campaign = {
   id: number;
   apiId: string;
+  title: string;
   sellerId: string;
   seller: string;
   sellerInitials: string;
@@ -123,6 +124,7 @@ function toCampaign(record: OpportunityRecord): Campaign {
   return {
     id: numericIdFromString(String(record.id)),
     apiId: String(record.id),
+    title: String(record.title || "").trim(),
     sellerId: String(seller?.id || ""),
     seller: sellerName,
     sellerInitials: opportunityInitials(sellerName),
@@ -839,7 +841,7 @@ function CampaignRow({
             />
             <Tooltip content={`${campaign.seller} - ${campaign.category}`}>
               <h3 className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-100 cursor-help line-clamp-1">
-                {campaign.seller} - {campaign.category}
+                {campaign.title || `${campaign.seller} - ${campaign.category}`}
               </h3>
             </Tooltip>
           </div>
