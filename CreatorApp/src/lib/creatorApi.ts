@@ -647,6 +647,57 @@ export type MyDayDashboardResponse = {
   lastUpdatedAt?: string;
 };
 
+export type AnalyticsRankDetailResponse = {
+  range?: string;
+  category?: string;
+  rank?: {
+    currentTier?: "Bronze" | "Silver" | "Gold";
+    nextTier?: "Silver" | "Gold" | "Platinum";
+    progressPercent?: number;
+    pointsCurrent?: number;
+    pointsToNext?: number;
+    benefits?: Record<string, string[]>;
+  };
+  metrics?: {
+    avgViewers?: number;
+    ctr?: number;
+    conversion?: number;
+    salesDriven?: number;
+  };
+  benchmarks?: {
+    viewersPercentile?: number;
+    ctrPercentile?: number;
+    conversionPercentile?: number;
+    salesPercentile?: number;
+  };
+  campaigns?: Array<{
+    id?: number;
+    campaignId?: string;
+    name?: string;
+    seller?: string;
+    category?: string;
+    sales?: number;
+    engagements?: number;
+    conversions?: number;
+    convRate?: number;
+  }>;
+  goals?: Array<{
+    id?: string;
+    label?: string;
+    current?: number;
+    target?: number;
+    unit?: "viewers" | "%" | "USD";
+  }>;
+  trend?: Array<{
+    label?: string;
+    views?: number;
+    clicks?: number;
+    conversions?: number;
+    sales?: number;
+  }>;
+  [key: string]: unknown;
+};
+
 export const creatorApi = {
   dashboardFeed() {
     return api.get<Record<string, unknown>>("/dashboard/feed");
@@ -656,6 +707,9 @@ export const creatorApi = {
   },
   myDay() {
     return api.get<MyDayDashboardResponse>("/dashboard/my-day");
+  },
+  analyticsRankDetail(params?: { range?: "7" | "30" | "90"; category?: string }) {
+    return api.get<AnalyticsRankDetailResponse>(withQuery("/analytics/rank-detail", params));
   },
   sellers(params?: { limit?: number; offset?: number }) {
     return api.get<PublicSellerRecord[]>(withQuery("/sellers", params));

@@ -454,6 +454,9 @@ export class AnalyticsService {
         || this.readNumber(metadata, 'clicks')
         || 0;
       const convRate = this.readNumber(metadata, 'conversionRate') || conversion;
+      const conversions = this.readNumber(metadata, 'conversions')
+        || this.readNumber(metadata, 'purchases')
+        || Math.round((Math.max(engagements, 0) * Math.max(convRate, 0)) / 100);
       const categoryLabel = this.readString(metadata, 'category') || this.readStringList(metadata, 'categories')[0] || seller?.category || 'Beauty';
       return {
         id: index + 1,
@@ -463,6 +466,7 @@ export class AnalyticsService {
         category: this.normalizeRankCategory(categoryLabel),
         sales: Number(sales.toFixed(2)),
         engagements: Math.round(engagements),
+        conversions: Math.round(conversions),
         convRate: Number(convRate.toFixed(2))
       };
     });
@@ -598,6 +602,7 @@ export class AnalyticsService {
         category: 'Tech',
         sales: Number(quote.amount ?? 0),
         engagements: 30 + index * 8,
+        conversions: Math.round(((30 + index * 8) * conversion) / 100),
         convRate: conversion
       })),
       goals: [
