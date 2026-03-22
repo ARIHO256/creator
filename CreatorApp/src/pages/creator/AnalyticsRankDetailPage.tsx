@@ -248,33 +248,6 @@ export default function AnalyticsRankDetailPage() {
     });
   }, [trend]);
 
-  const goals: GoalRow[] = useMemo(
-    () => [
-      {
-        id: "goal-1",
-        label: "Average viewers per live",
-        current: metrics.avgViewers,
-        target: 950,
-        unit: "viewers",
-      },
-      {
-        id: "goal-2",
-        label: "Conversion rate",
-        current: metrics.conversion,
-        target: 4.8,
-        unit: "%",
-      },
-      {
-        id: "goal-3",
-        label: "Monthly sales driven",
-        current: metrics.salesDriven,
-        target: 6000,
-        unit: "USD",
-      },
-    ],
-    [metrics]
-  );
-
   function onExport() {
     const rows: Record<string, string | number>[] = trend.map((t) => ({
       day: t.label,
