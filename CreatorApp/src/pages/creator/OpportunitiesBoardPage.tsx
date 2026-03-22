@@ -21,16 +21,17 @@ type Campaign = {
   sellerId: string;
   seller: string;
   sellerInitials: string;
-  rating: number;
+  rating: number | null;
   category: string;
   categories: string[];
   region: string;
   language: string;
+  currency: string;
   payBand: string;
-  budgetMin: number;
-  budgetMax: number;
-  commission: number;
-  matchScore: string;
+  budgetMin: number | null;
+  budgetMax: number | null;
+  commission: number | null;
+  matchScore: "High" | "Medium" | "Low" | "Unknown";
   matchReason: string;
   deliverables: string[];
   liveWindow: string;
@@ -73,11 +74,12 @@ function numericIdFromString(value: string) {
   return Array.from(value).reduce((sum, char, index) => sum + char.charCodeAt(0) * (index + 1), 0);
 }
 
-function mapMatchScore(value?: unknown) {
+function mapMatchScore(value?: unknown): Campaign["matchScore"] {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "high" || normalized === "strong") return "High";
   if (normalized === "medium" || normalized === "mid") return "Medium";
-  return "Low";
+  if (normalized === "low" || normalized === "weak") return "Low";
+  return "Unknown";
 }
 
 function mapCollaborationStatus(value?: unknown): Campaign["collaborationStatus"] {
@@ -90,15 +92,33 @@ function mapCollaborationStatus(value?: unknown): Campaign["collaborationStatus"
 function toCampaign(record: OpportunityRecord): Campaign {
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
   const seller = record.seller && typeof record.seller === "object" ? record.seller : null;
+  const readNumber = (value: unknown) => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
   const categories = Array.isArray(record.categories) && record.categories.length > 0
     ? record.categories
     : Array.isArray(seller?.categories) && seller.categories.length > 0
       ? seller.categories
-      : [String(record.category || seller?.category || "General")];
-  const budgetMin = Number(record.budgetMin || 0);
-  const budgetMax = Number(record.budgetMax || record.budget || budgetMin || 0);
-  const commission = Number((metadata as { commissionPct?: unknown }).commissionPct || 0);
-  const sellerName = String(seller?.displayName || seller?.name || "Supplier");
+      : Array.isArray((metadata as { categories?: unknown[] }).categories)
+        ? ((metadata as { categories?: unknown[] }).categories as unknown[]).map((item) => String(item)).filter(Boolean)
+        : [];
+  const metadataBudgetMin = readNumber((metadata as { budgetMin?: unknown }).budgetMin);
+  const metadataBudgetMax = readNumber((metadata as { budgetMax?: unknown }).budgetMax);
+  const metadataBudget = readNumber((metadata as { budget?: unknown }).budget);
+  const budgetMin = readNumber(record.budgetMin ?? metadataBudgetMin);
+  const budgetMax = readNumber(record.budgetMax ?? record.budget ?? metadataBudgetMax ?? metadataBudget ?? budgetMin);
+  const commission = readNumber((metadata as { commissionPct?: unknown }).commissionPct);
+  const sellerName = String(seller?.displayName || seller?.name || "").trim();
+  const currency = String(record.currency || (metadata as { currency?: unknown }).currency || "").trim();
+  const hasBudgetBand = (budgetMin ?? 0) > 0 || (budgetMax ?? 0) > 0;
+  const bandMin = budgetMin ?? budgetMax;
+  const bandMax = budgetMax ?? budgetMin;
+  const payBandFromRecord = String((record as { payBand?: unknown }).payBand || "").trim();
+  const payBand = payBandFromRecord || (hasBudgetBand && currency
+    ? `${currency} ${(bandMin ?? 0).toLocaleString()}–${(bandMax ?? 0).toLocaleString()}${commission ? ` + ${commission}%` : ""}`
+    : "");
 
   return {
     id: numericIdFromString(String(record.id)),
@@ -106,28 +126,31 @@ function toCampaign(record: OpportunityRecord): Campaign {
     sellerId: String(seller?.id || ""),
     seller: sellerName,
     sellerInitials: opportunityInitials(sellerName),
-    rating: Number(seller?.rating || 0),
-    category: String(record.category || seller?.category || categories[0] || "General"),
+    rating: readNumber(seller?.rating ?? (metadata as { sellerRating?: unknown }).sellerRating),
+    category: String(record.category || seller?.category || categories[0] || "").trim(),
     categories,
-    region: String(record.region || seller?.region || "Global"),
-    language: String(record.language || seller?.languages?.[0] || "Any"),
-    payBand: `${String(record.currency || "USD")} ${budgetMin.toLocaleString()}–${budgetMax.toLocaleString()}${commission ? ` + ${commission}%` : ""}`,
+    region: String(record.region || seller?.region || (metadata as { region?: unknown }).region || "").trim(),
+    language: String(record.language || seller?.languages?.[0] || (metadata as { language?: unknown }).language || "").trim(),
+    currency,
+    payBand,
     budgetMin,
     budgetMax,
     commission,
-    matchScore: mapMatchScore((metadata as { matchScore?: unknown }).matchScore),
-    matchReason: String((metadata as { matchReason?: unknown }).matchReason || "Opportunity aligned to your creator profile."),
+    matchScore: mapMatchScore((metadata as { matchScore?: unknown }).matchScore ?? (record as { matchScore?: unknown }).matchScore),
+    matchReason: String((metadata as { matchReason?: unknown }).matchReason || (record as { matchReason?: unknown }).matchReason || "").trim(),
     deliverables: Array.isArray((metadata as { deliverables?: unknown[] }).deliverables)
-      ? ((metadata as { deliverables?: unknown[] }).deliverables as unknown[]).map((item) => String(item))
-      : ["Live"],
-    liveWindow: String((metadata as { liveWindow?: unknown }).liveWindow || "Flexible schedule"),
+      ? ((metadata as { deliverables?: unknown[] }).deliverables as unknown[])
+        .map((item) => String(item).trim())
+        .filter(Boolean)
+      : [],
+    liveWindow: String((metadata as { liveWindow?: unknown }).liveWindow || "").trim(),
     timeline: Array.isArray((metadata as { timeline?: unknown[] }).timeline)
       ? ((metadata as { timeline?: unknown[] }).timeline as unknown[]).map((item) => String(item))
-      : ["Review brief", "Confirm terms", "Go live"],
-    summary: String(record.description || "Open opportunity available for creator collaboration."),
+      : [],
+    summary: String(record.description || (metadata as { summary?: unknown }).summary || "").trim(),
     tags: Array.isArray((metadata as { tags?: unknown[] }).tags)
       ? ((metadata as { tags?: unknown[] }).tags as unknown[]).map((item) => String(item))
-      : categories,
+      : [],
     supplierType: String(seller?.type || seller?.kind || "Seller").toLowerCase() === "provider" ? "Provider" : "Seller",
     collaborationStatus: mapCollaborationStatus((record as { collaborationStatus?: unknown }).collaborationStatus ?? (metadata as { collaborationStatus?: unknown }).collaborationStatus),
     opportunityStatus: String(record.status || "OPEN").trim().toUpperCase() === "CLOSED" ? "Closed" : "Open",
@@ -192,6 +215,30 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
     [baseCampaigns, localStatuses]
   );
 
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(new Set(campaigns.map((campaign) => campaign.category).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [campaigns]
+  );
+
+  const regionOptions = useMemo(
+    () =>
+      Array.from(new Set(campaigns.map((campaign) => campaign.region).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [campaigns]
+  );
+
+  const languageOptions = useMemo(
+    () =>
+      Array.from(new Set(campaigns.map((campaign) => campaign.language).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [campaigns]
+  );
+
   const scopedCampaigns = useMemo(() => {
     return campaigns.filter((c) => {
       // "View New Opportunities" must only return currently available opportunities.
@@ -209,16 +256,21 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
       if (filters.region !== "All" && c.region !== filters.region) return false;
       if (filters.language !== "Any" && c.language !== filters.language) return false;
 
+      if ((filters.minBudget || filters.maxBudget) && c.budgetMin === null && c.budgetMax === null) {
+        return false;
+      }
+
       if (filters.minBudget) {
         const min = Number(filters.minBudget) || 0;
-        if (c.budgetMax < min) return false;
+        if ((c.budgetMax ?? c.budgetMin ?? 0) < min) return false;
       }
       if (filters.maxBudget) {
         const max = Number(filters.maxBudget) || 0;
-        if (c.budgetMin > max) return false;
+        if ((c.budgetMin ?? c.budgetMax ?? Number.MAX_SAFE_INTEGER) > max) return false;
       }
 
       if (filters.commission !== "Any") {
+        if (c.commission === null) return false;
         if (filters.commission === "0-5" && c.commission > 5) return false;
         if (
           filters.commission === "5-10" &&
@@ -230,7 +282,7 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
 
       if (filters.minRating !== "Any") {
         const min = Number(filters.minRating);
-        if (c.rating < min) return false;
+        if (c.rating === null || c.rating < min) return false;
       }
 
       // For now, liveDate filter is informational only; in a real app we'd use campaign dates
@@ -293,9 +345,9 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
         message: `I'd like to collaborate on this opportunity.`,
         category: campaign.category,
         region: campaign.region,
-        currency: "USD",
-        commissionPct: campaign.commission,
-        estimatedValue: campaign.budgetMax || campaign.budgetMin || undefined,
+        currency: campaign.currency || undefined,
+        commissionPct: campaign.commission ?? undefined,
+        estimatedValue: campaign.budgetMax ?? campaign.budgetMin ?? undefined,
         metadata: {
           source: "opportunities-board",
           opportunityId: campaign.apiId,
@@ -336,10 +388,11 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
               onChange={(e) => setFilters({ ...filters, category: e.target.value })}
             >
               <option value="All">All categories</option>
-              <option value="Beauty & Skincare">Beauty & Skincare</option>
-              <option value="Tech & Gadgets">Tech & Gadgets</option>
-              <option value="Faith-compatible wellness">Faith-compatible wellness</option>
-              <option value="EV & Mobility">EV & Mobility</option>
+              {categoryOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </FilterSection>
 
@@ -382,9 +435,11 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
               onChange={(e) => setFilters({ ...filters, region: e.target.value })}
             >
               <option value="All">All regions</option>
-              <option value="Africa">Africa</option>
-              <option value="Africa / Asia">Africa / Asia</option>
-              <option value="Global">Global</option>
+              {regionOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </FilterSection>
 
@@ -395,7 +450,11 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
               onChange={(e) => setFilters({ ...filters, language: e.target.value })}
             >
               <option value="Any">Any</option>
-              <option value="English">English</option>
+              {languageOptions.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </FilterSection>
 
@@ -469,10 +528,11 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
                   onChange={(e) => setFilters({ ...filters, category: e.target.value })}
                 >
                   <option value="All">All categories</option>
-                  <option value="Beauty & Skincare">Beauty & Skincare</option>
-                  <option value="Tech & Gadgets">Tech & Gadgets</option>
-                  <option value="Faith-compatible wellness">Faith-compatible wellness</option>
-                  <option value="EV & Mobility">EV & Mobility</option>
+                  {categoryOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </FilterSection>
 
@@ -515,9 +575,11 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
                   onChange={(e) => setFilters({ ...filters, region: e.target.value })}
                 >
                   <option value="All">All regions</option>
-                  <option value="Africa">Africa</option>
-                  <option value="Africa / Asia">Africa / Asia</option>
-                  <option value="Global">Global</option>
+                  {regionOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </FilterSection>
 
@@ -528,7 +590,11 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
                   onChange={(e) => setFilters({ ...filters, language: e.target.value })}
                 >
                   <option value="Any">Any</option>
-                  <option value="English">English</option>
+                  {languageOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
                 </select>
               </FilterSection>
 
@@ -754,12 +820,10 @@ function CampaignRow({
   onSendPitch,
   onInvite
 }: CampaignRowProps) {
-  const matchColor =
-    campaign.matchScore === "High"
+  const statusColor =
+    campaign.opportunityStatus === "Open"
       ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700"
-      : campaign.matchScore === "Medium"
-        ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700"
-        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700";
+      : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700";
 
   return (
     <tr className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
@@ -809,7 +873,7 @@ function CampaignRow({
                 {campaign.seller}
               </div>
               <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-                <span className="text-amber-500">★ {campaign.rating.toFixed(1)}</span>
+                <span className="text-amber-500">★ {campaign.rating !== null ? campaign.rating.toFixed(1) : "N/A"}</span>
               </div>
             </div>
           </div>
@@ -838,10 +902,10 @@ function CampaignRow({
       }>
         <div className="flex flex-col gap-1">
           <span
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs w-fit ${matchColor}`}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-xs w-fit ${statusColor}`}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            <span>{campaign.matchScore === "High" ? "Active" : campaign.matchScore === "Medium" ? "Upcoming" : "Ended"}</span>
+            <span>{campaign.opportunityStatus === "Open" ? "Active" : "Ended"}</span>
           </span>
         </div>
       </td >
@@ -850,9 +914,9 @@ function CampaignRow({
       < td className="py-3 px-3 align-top" style={{ width: '140px' }}>
         <div className="flex flex-col gap-1">
           <div className="text-xs text-slate-600 dark:text-slate-300">
-            <div className="font-medium">{campaign.commission}% commission</div>
+            <div className="font-medium">{campaign.commission !== null ? `${campaign.commission}% commission` : "Commission not set"}</div>
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {campaign.deliverables.join(", ")}
+              {campaign.deliverables.length > 0 ? campaign.deliverables.join(", ") : "Deliverables not set"}
             </div>
           </div>
         </div>
@@ -862,29 +926,22 @@ function CampaignRow({
       < td className="py-3 px-3 align-top" style={{ width: '280px' }}>
         <div className="flex flex-col gap-1">
           <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-100">
-            {campaign.payBand}
+            {campaign.payBand || "Compensation not set"}
           </div>
           <Tooltip content={campaign.matchReason}>
             <div className="text-xs text-slate-600 dark:text-slate-300 cursor-help line-clamp-2">
-              {campaign.matchReason}
+              {campaign.matchReason || "Match context not provided."}
             </div>
           </Tooltip>
           <div className="flex flex-wrap gap-1 mt-1">
-            {campaign.deliverables.includes("Live") && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-xs">
-                🔴 Live
+            {campaign.deliverables.map((deliverable) => (
+              <span
+                key={deliverable}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs"
+              >
+                {deliverable}
               </span>
-            )}
-            {campaign.deliverables.includes("VOD") && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 text-xs">
-                🎬 VOD
-              </span>
-            )}
-            {campaign.deliverables.includes("Posts") && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-xs">
-                📝 Posts
-              </span>
-            )}
+            ))}
           </div>
         </div>
       </td >
@@ -1001,7 +1058,7 @@ function CampaignDetailSlideOver({
               <div className="flex items-center gap-1">
                 <span className="text-xs font-semibold dark:font-bold">{campaign.seller}</span>
                 <span className="text-xs text-amber-500">
-                  ★ {campaign.rating.toFixed(1)}
+                  ★ {campaign.rating !== null ? campaign.rating.toFixed(1) : "N/A"}
                 </span>
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-300">
@@ -1034,11 +1091,11 @@ function CampaignDetailSlideOver({
               ))}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-300 mb-1">
-              Live window: <span className="font-medium">{campaign.liveWindow}</span>
+              Live window: <span className="font-medium">{campaign.liveWindow || "—"}</span>
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-300">
-              Pay band: <span className="font-medium">{campaign.payBand}</span> · Commission:{" "}
-              <span className="font-medium">{campaign.commission}%</span>
+              Pay band: <span className="font-medium">{campaign.payBand || "—"}</span> · Commission:{" "}
+              <span className="font-medium">{campaign.commission !== null ? `${campaign.commission}%` : "—"}</span>
             </p>
           </section>
 
@@ -1046,14 +1103,11 @@ function CampaignDetailSlideOver({
           <section>
             <h3 className="text-xs font-semibold mb-1">Expected deliverables</h3>
             <div className="flex flex-wrap gap-1">
-              {campaign.deliverables.includes("Live") && (
-                <DeliverableChip icon="🔴" label="1–2 Live sessions" />
-              )}
-              {campaign.deliverables.includes("VOD") && (
-                <DeliverableChip icon="🎬" label="Replay / VOD" />
-              )}
-              {campaign.deliverables.includes("Posts") && (
-                <DeliverableChip icon="📝" label="Social posts" />
+              {campaign.deliverables.map((deliverable) => (
+                <DeliverableChip key={deliverable} icon="•" label={deliverable} />
+              ))}
+              {campaign.deliverables.length === 0 && (
+                <span className="text-xs text-slate-500 dark:text-slate-300">No deliverables specified yet.</span>
               )}
             </div>
           </section>
@@ -1095,9 +1149,9 @@ function BatchApplyPanel({ campaigns, onClose }: { campaigns: Campaign[]; onClos
             message: `I'd like to collaborate on this opportunity.`,
             category: campaign.category,
             region: campaign.region,
-            currency: "USD",
-            commissionPct: campaign.commission,
-            estimatedValue: campaign.budgetMax || campaign.budgetMin || undefined,
+            currency: campaign.currency || undefined,
+            commissionPct: campaign.commission ?? undefined,
+            estimatedValue: campaign.budgetMax ?? campaign.budgetMin ?? undefined,
             metadata: {
               source: "opportunities-board-batch",
               opportunityId: campaign.apiId,
@@ -1169,7 +1223,7 @@ function BatchApplyPanel({ campaigns, onClose }: { campaigns: Campaign[]; onClos
             <textarea
               rows={4}
               className="w-full border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-900 focus:outline-none focus:border-slate-400 transition-colors"
-              defaultValue="Hi, I’d love to collaborate on this campaign. I’ll bring an engaged audience, strong storytelling, and clear CTAs around your current promo structure."
+              placeholder="Write your pitch template for these selected campaigns."
             />
           </div>
 
