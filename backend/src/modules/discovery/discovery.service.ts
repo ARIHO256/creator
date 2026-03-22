@@ -446,7 +446,7 @@ export class DiscoveryService {
     };
   }
 
-  async opportunities(query?: ListQueryDto) {
+  async opportunities(userId: string, query?: ListQueryDto) {
     const { skip, take } = normalizeListQuery(query);
     const opportunities = await this.prisma.opportunity.findMany({
       skip,
@@ -458,13 +458,14 @@ export class DiscoveryService {
       .map((opportunity) => opportunity.seller)
       .filter(Boolean) as Array<(typeof opportunities)[number]['seller']>;
     const enrichedSellerMap = await this.buildEnrichedSellerMap(opportunitySellers as any[], this.prisma);
-    return opportunities.map((opportunity) => ({
+    const base = opportunities.map((opportunity) => ({
       ...opportunity,
       seller: opportunity.seller ? enrichedSellerMap.get(opportunity.seller.id) ?? serializePublicSeller(opportunity.seller as any) : null
     }));
+    return this.attachOpportunityUserState(userId, base);
   }
 
-  async opportunity(id: string) {
+  async opportunity(userId: string, id: string) {
     const opportunity = await this.prisma.opportunity.findUnique({
       where: { id },
       include: { seller: true }
@@ -478,10 +479,12 @@ export class DiscoveryService {
       opportunity.seller ? [opportunity.seller as any] : [],
       this.prisma
     );
-    return {
+    const base = {
       ...opportunity,
       seller: opportunity.seller ? enrichedSellerMap.get(opportunity.seller.id) ?? serializePublicSeller(opportunity.seller as any) : null
     };
+    const [withState] = await this.attachOpportunityUserState(userId, [base]);
+    return withState;
   }
 
   async saveOpportunity(userId: string, opportunityId: string, save: boolean) {
@@ -636,6 +639,18 @@ export class DiscoveryService {
               : { id: payload.campaignId }
         })
       : null;
+    const opportunity = payload.opportunityId
+      ? await this.prisma.opportunity.findUnique({ where: { id: payload.opportunityId } })
+      : null;
+    if (payload.opportunityId && !opportunity) {
+      throw new NotFoundException('Opportunity not found');
+    }
+    if (targetsSellerWorkspace && opportunity && sellerRecipient?.id && opportunity.sellerId !== sellerRecipient.id) {
+      throw new BadRequestException('Opportunity does not belong to the selected seller workspace');
+    }
+    if (!targetsSellerWorkspace && actor.sellerProfile?.id && opportunity && opportunity.sellerId !== actor.sellerProfile.id) {
+      throw new ForbiddenException('You can only invite from opportunities in your own seller workspace');
+    }
 
     const senderName = targetsSellerWorkspace
       ? actor.creatorProfile?.name ?? actor.sellerProfile?.displayName ?? actor.email
@@ -664,7 +679,7 @@ export class DiscoveryService {
     const senderInitials = this.buildInitials(senderName, targetsSellerWorkspace ? 'CR' : 'SP');
     const recipientInitials = this.buildInitials(recipientName, targetsSellerWorkspace ? 'SP' : 'CR');
     const senderSeller = actor.sellerProfile;
-    const campaignTitle = campaign?.title || payload.campaignTitle || payload.title || 'MyLiveDealz collaboration';
+    const campaignTitle = campaign?.title || payload.campaignTitle || payload.title || opportunity?.title || 'MyLiveDealz collaboration';
     const estimatedValue =
       payload.estimatedValue ??
       payload.baseFee ??
@@ -680,6 +695,8 @@ export class DiscoveryService {
         ...(payload.metadata ?? {}),
         campaignId: campaign?.id ?? null,
         campaignTitle,
+        opportunityId: opportunity?.id ?? null,
+        opportunityTitle: opportunity?.title ?? null,
         type: payload.type ?? null,
         category: payload.category ?? null,
         region: payload.region ?? null,
@@ -721,6 +738,7 @@ export class DiscoveryService {
     const invite = await this.prisma.collaborationInvite.create({
       data: {
         sellerId: targetsSellerWorkspace ? sellerRecipient?.id ?? null : senderSeller?.id ?? null,
+        opportunityId: opportunity?.id ?? null,
         campaignId: campaign?.id ?? null,
         senderUserId: userId,
         recipientUserId,
@@ -1093,6 +1111,87 @@ export class DiscoveryService {
       return normalized as 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED' | 'EXPIRED';
     }
     return 'PENDING';
+  }
+
+  private toOpportunityCollaborationStatus(status: string | null | undefined) {
+    const normalized = this.normalizeInviteStatus(status || 'PENDING');
+    if (normalized === 'ACCEPTED') {
+      return 'Collaborating';
+    }
+    if (normalized === 'PENDING') {
+      return 'Invited';
+    }
+    return 'Not invited';
+  }
+
+  private async attachOpportunityUserState<T extends { id: string; sellerId: string | null }>(
+    userId: string,
+    opportunities: T[]
+  ) {
+    if (!opportunities.length) {
+      return opportunities.map((entry) => ({
+        ...entry,
+        isSaved: false,
+        isFollowing: false,
+        collaborationStatus: 'Not invited'
+      }));
+    }
+
+    const opportunityIds = opportunities.map((entry) => entry.id).filter(Boolean);
+    const sellerIds = opportunities.map((entry) => entry.sellerId).filter((entry): entry is string => Boolean(entry));
+
+    const [savedRows, followedRows, sentInvites] = await Promise.all([
+      opportunityIds.length
+        ? this.prisma.savedOpportunity.findMany({
+            where: {
+              userId,
+              opportunityId: { in: opportunityIds }
+            },
+            select: { opportunityId: true }
+          })
+        : Promise.resolve([]),
+      sellerIds.length
+        ? this.prisma.sellerFollow.findMany({
+            where: {
+              userId,
+              sellerId: { in: sellerIds }
+            },
+            select: { sellerId: true }
+          })
+        : Promise.resolve([]),
+      opportunityIds.length
+        ? this.prisma.collaborationInvite.findMany({
+            where: {
+              senderUserId: userId,
+              opportunityId: { in: opportunityIds }
+            },
+            select: {
+              opportunityId: true,
+              status: true,
+              updatedAt: true
+            },
+            orderBy: { updatedAt: 'desc' }
+          })
+        : Promise.resolve([])
+    ]);
+
+    const savedSet = new Set(savedRows.map((entry) => entry.opportunityId));
+    const followedSet = new Set(followedRows.map((entry) => entry.sellerId));
+    const inviteStatusByOpportunity = new Map<string, string>();
+    for (const invite of sentInvites) {
+      const opportunityId = String(invite.opportunityId || '').trim();
+      if (!opportunityId || inviteStatusByOpportunity.has(opportunityId)) {
+        continue;
+      }
+      inviteStatusByOpportunity.set(opportunityId, String(invite.status || '').trim());
+    }
+
+    return opportunities.map((entry) => ({
+      ...entry,
+      isSaved: savedSet.has(entry.id),
+      isFollowing: entry.sellerId ? followedSet.has(entry.sellerId) : false,
+      collaborationStatus: this.toOpportunityCollaborationStatus(inviteStatusByOpportunity.get(entry.id))
+    }));
   }
 
   private async resolveCreatorInviteRecipient(payload: CreateInviteDto) {

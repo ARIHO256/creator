@@ -12,7 +12,6 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
-import { useCreator } from "../../contexts/CreatorContext";
 import { useApiResource } from "../../hooks/useApiResource";
 import { creatorApi } from "../../lib/creatorApi";
 
@@ -92,10 +91,42 @@ type TrendPoint = {
 };
 
 type AnalyticsSeed = {
-  baseMetrics: Metrics;
+  rank: Rank;
+  metrics: Metrics;
   campaigns: CampaignRow[];
+  goals: GoalRow[];
   benchmarks: Benchmarks;
   trend: TrendPoint[];
+};
+
+const EMPTY_ANALYTICS_SEED: AnalyticsSeed = {
+  rank: {
+    currentTier: "Bronze",
+    nextTier: "Silver",
+    progressPercent: 0,
+    pointsCurrent: 0,
+    pointsToNext: 1000,
+    benefits: {
+      Bronze: [],
+      Silver: [],
+      Gold: []
+    }
+  },
+  metrics: {
+    avgViewers: 0,
+    ctr: 0,
+    conversion: 0,
+    salesDriven: 0
+  },
+  campaigns: [],
+  goals: [],
+  benchmarks: {
+    viewersPercentile: 0,
+    ctrPercentile: 0,
+    conversionPercentile: 0,
+    salesPercentile: 0
+  },
+  trend: []
 };
 
 function money(n: number, currency: "USD" | "UGX" = "USD") {
@@ -142,261 +173,55 @@ function downloadCsv(filename: string, rows: Record<string, string | number>[]) 
 }
 
 export default function AnalyticsRankDetailPage() {
-  const { rankTier } = useCreator();
   const [timeRange, setTimeRange] = useState<Range>("30");
   const [category, setCategory] = useState<Category>("All");
   const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("sales");
-  const { data: analyticsSeed } = useApiResource<AnalyticsSeed>({
-    initialData: {
-      baseMetrics: {
-        avgViewers: 0,
-        ctr: 0,
-        conversion: 0,
-        salesDriven: 0
-      },
-      campaigns: [],
-      benchmarks: {
-        viewersPercentile: 0,
-        ctrPercentile: 0,
-        conversionPercentile: 0,
-        salesPercentile: 0
-      },
-      trend: []
-    },
+  const { data: analyticsSeed, reload } = useApiResource<AnalyticsSeed>({
+    initialData: EMPTY_ANALYTICS_SEED,
     loader: async () => {
-      const [adzCampaigns, reviewsDashboard] = await Promise.all([
-        creatorApi.adzCampaigns(),
-        creatorApi.reviewsDashboard().catch(() => ({}))
-      ]);
-
-      const campaignPerfPairs = await Promise.all(
-        adzCampaigns.map(async (campaign) => {
-          const performance = await creatorApi
-            .adzCampaignPerformance(campaign.id)
-            .catch(() => ({} as Record<string, unknown>));
-          return [campaign.id, performance] as const;
-        })
-      );
-      const perfByCampaignId = new Map<string, Record<string, unknown>>(
-        campaignPerfPairs.map(([id, perf]) => {
-          const normalized =
-            perf && typeof perf === "object" && !Array.isArray(perf)
-              ? (perf as Record<string, unknown>)
-              : {};
-          return [id, normalized];
-        })
-      );
-
-      const campaigns: CampaignRow[] = adzCampaigns.map((campaign, index) => {
-        const data =
-          campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
-            ? (campaign.data as Record<string, unknown>)
-            : {};
-        const perf = perfByCampaignId.get(campaign.id) || {};
-        const sales = Number(
-          perf.sales ??
-            perf.gmv ??
-            data.sales ??
-            data.gmv ??
-            campaign.budget ??
-            0
-        ) || 0;
-        const engagements = Number(
-          perf.engagements ??
-            perf.clicks ??
-            data.engagements ??
-            data.clicks ??
-            0
-        ) || 0;
-        const conversions = Number(
-          perf.conversions ??
-            perf.purchases ??
-            data.conversions ??
-            data.purchases ??
-            0
-        ) || 0;
-        const convRateRaw = Number(
-          perf.conversion ??
-            perf.conversionPct ??
-            data.conversion ??
-            data.conversionPct ??
-            0
-        );
-        const convRate =
-          Number.isFinite(convRateRaw) && convRateRaw > 0
-            ? convRateRaw
-            : engagements > 0
-              ? (conversions / engagements) * 100
-              : 0;
-        const categoryRaw = String(data.category || perf.category || "Tech");
-        const categoryMapped: Exclude<Category, "All"> =
-          categoryRaw.toLowerCase().includes("beauty")
-            ? "Beauty"
-            : categoryRaw.toLowerCase().includes("faith")
-              ? "Faith"
-              : "Tech";
-        return {
-          id: index + 1,
-          campaignId: campaign.id,
-          name: String(campaign.title || data.title || `Campaign ${index + 1}`),
-          seller: String(data.sellerName || data.seller || "Seller"),
-          category: categoryMapped,
-          sales,
-          engagements,
-          conversions,
-          convRate: Number(convRate.toFixed(2))
-        };
+      const payload = await creatorApi.analyticsRankDetail({
+        range: timeRange,
+        category
       });
-
-      const totalSales = campaigns.reduce((sum, item) => sum + item.sales, 0);
-      const totalEngagements = campaigns.reduce((sum, item) => sum + item.engagements, 0);
-      const avgConv =
-        campaigns.length > 0
-          ? campaigns.reduce((sum, item) => sum + item.convRate, 0) / campaigns.length
-          : 0;
-
-      const totalConversions = campaigns.reduce((sum, item) => sum + item.conversions, 0);
-      const aggregateViews = Number(
-        (reviewsDashboard as { trends?: Array<Record<string, unknown>> })?.trends
-          ?.reduce((sum, row) => sum + (Number((row as Record<string, unknown>).views || 0) || 0), 0) || 0
-      );
-
-      const trendMap = new Map<string, TrendPoint>();
-      const addTrendRow = (labelRaw: unknown, viewsRaw: unknown, clicksRaw: unknown, conversionsRaw: unknown, salesRaw: unknown) => {
-        const label = String(labelRaw || "").trim() || "Now";
-        const views = Number(viewsRaw || 0) || 0;
-        const clicks = Number(clicksRaw || 0) || 0;
-        const conversions = Number(conversionsRaw || 0) || 0;
-        const sales = Number(salesRaw || 0) || 0;
-        const prev = trendMap.get(label);
-        if (!prev) {
-          trendMap.set(label, { label, views, clicks, conversions, sales });
-          return;
-        }
-        trendMap.set(label, {
-          label,
-          views: prev.views + views,
-          clicks: prev.clicks + clicks,
-          conversions: prev.conversions + conversions,
-          sales: prev.sales + sales
-        });
-      };
-
-      campaignPerfPairs.forEach(([campaignId, performance]) => {
-        const perf =
-          performance && typeof performance === "object" && !Array.isArray(performance)
-            ? (performance as Record<string, unknown>)
-            : {};
-        const rows =
-          Array.isArray(perf.trend) ? perf.trend :
-          Array.isArray(perf.trends) ? perf.trends :
-          Array.isArray(perf.series) ? perf.series :
-          [];
-        rows.forEach((row, index) => {
-          const point = row as Record<string, unknown>;
-          addTrendRow(
-            point.label || point.day || point.date || `${campaignId}-${index + 1}`,
-            point.views,
-            point.clicks,
-            point.conversions ?? point.purchases,
-            point.sales ?? point.gmv
-          );
-        });
-      });
-
-      if (trendMap.size === 0 && Array.isArray((reviewsDashboard as { trends?: unknown[] }).trends)) {
-        (reviewsDashboard as { trends: Array<Record<string, unknown>> }).trends.forEach((row, index) => {
-          addTrendRow(
-            row.label || row.day || row.date || `P-${index + 1}`,
-            row.views,
-            row.clicks,
-            row.conversions ?? row.purchases,
-            row.sales ?? row.gmv
-          );
-        });
-      }
-
-      if (trendMap.size === 0) {
-        addTrendRow("Now", aggregateViews, totalEngagements, totalConversions, totalSales);
-      }
-      const trend = Array.from(trendMap.values());
-
-      const dashboardBench =
-        (reviewsDashboard as { benchmarks?: Record<string, unknown> })?.benchmarks &&
-        typeof (reviewsDashboard as { benchmarks?: Record<string, unknown> }).benchmarks === "object"
-          ? ((reviewsDashboard as { benchmarks: Record<string, unknown> }).benchmarks)
-          : {};
-
+      const normalizedCampaigns: CampaignRow[] = Array.isArray(payload.campaigns)
+        ? payload.campaigns.map((campaign, index) => {
+            const engagements = Number(campaign.engagements || 0) || 0;
+            const convRate = Number(campaign.convRate || 0) || 0;
+            const backendConversions = Number(campaign.conversions || 0) || 0;
+            const conversions = backendConversions > 0 ? backendConversions : Math.round((engagements * convRate) / 100);
+            return {
+              id: Number(campaign.id || index + 1) || index + 1,
+              campaignId: String(campaign.campaignId || `campaign-${index + 1}`),
+              name: String(campaign.name || `Campaign ${index + 1}`),
+              seller: String(campaign.seller || "Seller"),
+              category: (String(campaign.category || "Tech") as Exclude<Category, "All">),
+              sales: Number(campaign.sales || 0) || 0,
+              engagements,
+              conversions,
+              convRate
+            };
+          })
+        : [];
       return {
-        baseMetrics: {
-          avgViewers:
-            trend.length > 0
-              ? Math.round(trend.reduce((sum, row) => sum + row.views, 0) / trend.length)
-              : 0,
-          ctr: totalEngagements > 0 ? Number(((totalConversions / totalEngagements) * 100).toFixed(2)) : 0,
-          conversion: Number(avgConv.toFixed(2)),
-          salesDriven: totalSales
-        },
-        campaigns,
-        benchmarks: {
-          viewersPercentile: Number(dashboardBench.viewersPercentile || dashboardBench.viewers || 0) || 0,
-          ctrPercentile: Number(dashboardBench.ctrPercentile || dashboardBench.ctr || 0) || 0,
-          conversionPercentile: Number(dashboardBench.conversionPercentile || dashboardBench.conversion || 0) || 0,
-          salesPercentile: Number(dashboardBench.salesPercentile || dashboardBench.sales || 0) || 0
-        },
-        trend
+        rank: payload.rank || EMPTY_ANALYTICS_SEED.rank,
+        metrics: payload.metrics || EMPTY_ANALYTICS_SEED.metrics,
+        campaigns: normalizedCampaigns,
+        goals: Array.isArray(payload.goals) ? payload.goals : EMPTY_ANALYTICS_SEED.goals,
+        benchmarks: payload.benchmarks || EMPTY_ANALYTICS_SEED.benchmarks,
+        trend: Array.isArray(payload.trend) ? payload.trend : EMPTY_ANALYTICS_SEED.trend
       };
     }
   });
-  const baseMetrics = analyticsSeed.baseMetrics;
+  React.useEffect(() => {
+    void reload();
+  }, [timeRange, category, reload]);
+
+  const rank = analyticsSeed.rank;
+  const metrics = analyticsSeed.metrics;
   const campaigns = analyticsSeed.campaigns;
+  const goals = analyticsSeed.goals;
   const seedTrend = analyticsSeed.trend;
   const benchmarks = analyticsSeed.benchmarks;
-
-  // Rank / tier demo data
-  const nextTier: Rank["nextTier"] = rankTier === "Bronze" ? "Silver" : rankTier === "Silver" ? "Gold" : "Platinum";
-  const rank: Rank = {
-    currentTier: rankTier,
-    nextTier,
-    progressPercent: 68,
-    pointsCurrent: 680,
-    pointsToNext: 1000,
-    benefits: {
-      Bronze: ["Basic access to campaigns", "Standard support"],
-      Silver: [
-        "Priority placement in campaign searches",
-        "Access to mid-tier budgets",
-        "Basic analytics & reporting",
-      ],
-      Gold: [
-        "Priority support",
-        "High-budget campaigns & early invites",
-        "Deeper analytics & training",
-      ],
-    },
-  };
-
-
-
-  const metrics: Metrics = useMemo(() => {
-    const scopedCampaigns = category === "All" ? campaigns : campaigns.filter((c) => c.category === category);
-    const salesDriven = scopedCampaigns.reduce((sum, c) => sum + c.sales, 0);
-    const totalEngagements = scopedCampaigns.reduce((sum, c) => sum + c.engagements, 0);
-    const totalConversions = scopedCampaigns.reduce((sum, c) => sum + c.conversions, 0);
-    const avgViewersFromTrend =
-      seedTrend.length > 0
-        ? Math.round(seedTrend.reduce((sum, row) => sum + row.views, 0) / seedTrend.length)
-        : baseMetrics.avgViewers;
-
-    return {
-      avgViewers: avgViewersFromTrend,
-      ctr: totalEngagements > 0 ? Number(((totalConversions / totalEngagements) * 100).toFixed(2)) : baseMetrics.ctr,
-      conversion: totalEngagements > 0 ? Number(((totalConversions / totalEngagements) * 100).toFixed(2)) : baseMetrics.conversion,
-      salesDriven
-    };
-  }, [baseMetrics.avgViewers, baseMetrics.conversion, baseMetrics.ctr, campaigns, category, seedTrend]);
-
-
 
   const filteredCampaigns = useMemo(() => {
     const arr = [...campaigns];
@@ -422,33 +247,6 @@ export default function AnalyticsRankDetailPage() {
       return Math.round(runningXp);
     });
   }, [trend]);
-
-  const goals: GoalRow[] = useMemo(
-    () => [
-      {
-        id: "goal-1",
-        label: "Average viewers per live",
-        current: metrics.avgViewers,
-        target: 950,
-        unit: "viewers",
-      },
-      {
-        id: "goal-2",
-        label: "Conversion rate",
-        current: metrics.conversion,
-        target: 4.8,
-        unit: "%",
-      },
-      {
-        id: "goal-3",
-        label: "Monthly sales driven",
-        current: metrics.salesDriven,
-        target: 6000,
-        unit: "USD",
-      },
-    ],
-    [metrics]
-  );
 
   function onExport() {
     const rows: Record<string, string | number>[] = trend.map((t) => ({
