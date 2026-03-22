@@ -62,13 +62,13 @@ export class DiscoveryController {
   }
 
   @Get('opportunities')
-  opportunities(@Query() query: ListQueryDto) {
-    return this.discoveryService.opportunities(query);
+  opportunities(@CurrentUser() user: RequestUser, @Query() query: ListQueryDto) {
+    return this.discoveryService.opportunities(user.sub, query);
   }
 
   @Get('opportunities/:id')
-  opportunity(@Param('id') id: string) {
-    return this.discoveryService.opportunity(id);
+  opportunity(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.discoveryService.opportunity(user.sub, id);
   }
 
   @Post('opportunities/:id/save')

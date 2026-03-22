@@ -28,6 +28,10 @@ export class CreateInviteDto {
 
   @IsOptional()
   @IsString()
+  opportunityId?: string;
+
+  @IsOptional()
+  @IsString()
   campaignTitle?: string;
 
   @IsOptional()

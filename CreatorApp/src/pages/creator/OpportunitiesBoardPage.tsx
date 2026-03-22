@@ -8,7 +8,6 @@ import React, { useState, useMemo } from "react";
 import { PageHeader } from "../../components/PageHeader";
 import { Tooltip } from "../../components/Tooltip";
 import { PitchForm } from "../../components/PitchForm";
-import { useNotification } from "../../contexts/NotificationContext";
 import { useApiResource } from "../../hooks/useApiResource";
 import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { CircularProgress } from "@mui/material";
@@ -42,6 +41,8 @@ type Campaign = {
   supplierType: "Seller" | "Provider";
   collaborationStatus: "Not invited" | "Invited" | "Collaborating";
   opportunityStatus: "Open" | "Closed";
+  isSaved: boolean;
+  isFollowing: boolean;
 };
 
 type OpportunitiesBoardPageProps = {
@@ -77,6 +78,13 @@ function mapMatchScore(value?: unknown) {
   if (normalized === "high" || normalized === "strong") return "High";
   if (normalized === "medium" || normalized === "mid") return "Medium";
   return "Low";
+}
+
+function mapCollaborationStatus(value?: unknown): Campaign["collaborationStatus"] {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "collaborating" || normalized === "accepted") return "Collaborating";
+  if (normalized === "invited" || normalized === "pending") return "Invited";
+  return "Not invited";
 }
 
 function toCampaign(record: OpportunityRecord): Campaign {
@@ -121,14 +129,15 @@ function toCampaign(record: OpportunityRecord): Campaign {
       ? ((metadata as { tags?: unknown[] }).tags as unknown[]).map((item) => String(item))
       : categories,
     supplierType: String(seller?.type || seller?.kind || "Seller").toLowerCase() === "provider" ? "Provider" : "Seller",
-    collaborationStatus: String((metadata as { collaborationStatus?: unknown }).collaborationStatus || "Not invited") as Campaign["collaborationStatus"],
-    opportunityStatus: String(record.status || "OPEN").trim().toUpperCase() === "CLOSED" ? "Closed" : "Open"
+    collaborationStatus: mapCollaborationStatus((record as { collaborationStatus?: unknown }).collaborationStatus ?? (metadata as { collaborationStatus?: unknown }).collaborationStatus),
+    opportunityStatus: String(record.status || "OPEN").trim().toUpperCase() === "CLOSED" ? "Closed" : "Open",
+    isSaved: Boolean((record as { isSaved?: unknown }).isSaved),
+    isFollowing: Boolean((record as { isFollowing?: unknown }).isFollowing)
   };
 }
 
 function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBoardPageProps) {
-  const { showSuccess, showNotification, showError } = useNotification();
-  const { run, isPending } = useAsyncAction();
+  const { run } = useAsyncAction();
   const location = useLocation();
   const locationState = (location.state ?? {}) as OpportunitiesLocationState;
   const scopedSupplierName =
@@ -150,22 +159,37 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
   const [showDetails, setShowDetails] = useState(false);
   const [pitchMode, setPitchMode] = useState(false);
   const [aiSuggestion, setAiSuggestion] = useState("");
-  const [savedCampaignIds, setSavedCampaignIds] = useState<number[]>([]);
+  const [savedOpportunityIds, setSavedOpportunityIds] = useState<string[]>([]);
   const [batchSelection, setBatchSelection] = useState<number[]>([]);
   const [showBatchPanel, setShowBatchPanel] = useState(false);
-  const [followedSellers, setFollowedSellers] = useState<string[]>([]);
+  const [followedSellerIds, setFollowedSellerIds] = useState<string[]>([]);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const { data: opportunityRecords } = useApiResource({
+  const { data: opportunityRecords, reload: reloadOpportunities } = useApiResource({
     initialData: [] as OpportunityRecord[],
     loader: () => creatorApi.opportunities()
   });
   const [localStatuses, setLocalStatuses] = useState<Record<number, Campaign["collaborationStatus"]>>({});
+  const baseCampaigns = useMemo(() => opportunityRecords.map(toCampaign), [opportunityRecords]);
+
+  React.useEffect(() => {
+    const saved = baseCampaigns.filter((campaign) => campaign.isSaved).map((campaign) => campaign.apiId);
+    const followed = Array.from(
+      new Set(
+        baseCampaigns
+          .filter((campaign) => campaign.isFollowing && campaign.sellerId)
+          .map((campaign) => campaign.sellerId)
+      )
+    );
+    setSavedOpportunityIds(saved);
+    setFollowedSellerIds(followed);
+  }, [baseCampaigns]);
+
   const campaigns = useMemo(
-    () => opportunityRecords.map(toCampaign).map((campaign) => ({
+    () => baseCampaigns.map((campaign) => ({
       ...campaign,
       collaborationStatus: localStatuses[campaign.id] || campaign.collaborationStatus
     })),
-    [localStatuses, opportunityRecords]
+    [baseCampaigns, localStatuses]
   );
 
   const scopedCampaigns = useMemo(() => {
@@ -214,14 +238,12 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
     });
   }, [scopedCampaigns, filters]);
 
-  const toggleSaved = (id: number): void => {
+  const toggleSaved = (campaign: Campaign): void => {
     run(async () => {
-      const isSaved = savedCampaignIds.includes(id);
-      const campaign = campaigns.find((item) => item.id === id);
-      if (!campaign) return;
+      const isSaved = savedOpportunityIds.includes(campaign.apiId);
       await creatorApi.saveOpportunity(campaign.apiId, !isSaved);
-      setSavedCampaignIds((prev) => (isSaved ? prev.filter((x) => x !== id) : [...prev, id]));
-    }, { successMessage: savedCampaignIds.includes(id) ? "Removed from saved opportunities" : "Opportunity saved!" });
+      setSavedOpportunityIds((prev) => (isSaved ? prev.filter((id) => id !== campaign.apiId) : [...prev, campaign.apiId]));
+    }, { successMessage: savedOpportunityIds.includes(campaign.apiId) ? "Removed from saved opportunities" : "Opportunity saved!" });
   };
 
   const toggleBatchSelection = (id: number): void => {
@@ -230,15 +252,13 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
     );
   };
 
-  const toggleFollowSeller = (seller: string): void => {
-    const campaign = campaigns.find((item) => item.seller === seller);
-    if (!campaign) return;
+  const toggleFollowSeller = (campaign: Campaign): void => {
     run(async () => {
-      const isFollowing = followedSellers.includes(seller);
+      const isFollowing = followedSellerIds.includes(campaign.sellerId);
       if (!campaign.sellerId) return;
       await creatorApi.followSeller(campaign.sellerId, !isFollowing);
-      setFollowedSellers((prev) => (isFollowing ? prev.filter((item) => item !== seller) : [...prev, seller]));
-    }, { successMessage: followedSellers.includes(seller) ? `Unfollowed ${seller}` : `Now following ${seller}` });
+      setFollowedSellerIds((prev) => (isFollowing ? prev.filter((id) => id !== campaign.sellerId) : [...prev, campaign.sellerId]));
+    }, { successMessage: followedSellerIds.includes(campaign.sellerId) ? `Unfollowed ${campaign.seller}` : `Now following ${campaign.seller}` });
   };
 
   const openDetails = (campaign: Campaign, pitch = false): void => {
@@ -261,9 +281,33 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
     );
   };
 
-  const handleInviteToCollaborate = (id: number) => {
-    setLocalStatuses((prev) => ({ ...prev, [id]: "Invited" }));
-    showSuccess("Invitation sent successfully!");
+  const handleInviteToCollaborate = (campaign: Campaign) => {
+    run(async () => {
+      if (!campaign.sellerId) {
+        throw new Error("Seller workspace not available.");
+      }
+      await creatorApi.createInvite({
+        recipientSellerId: campaign.sellerId,
+        opportunityId: campaign.apiId,
+        title: `Invite to collaborate on ${campaign.seller} opportunity`,
+        message: `I'd like to collaborate on this opportunity.`,
+        category: campaign.category,
+        region: campaign.region,
+        currency: "USD",
+        commissionPct: campaign.commission,
+        estimatedValue: campaign.budgetMax || campaign.budgetMin || undefined,
+        metadata: {
+          source: "opportunities-board",
+          opportunityId: campaign.apiId,
+          opportunityStatus: campaign.opportunityStatus
+        }
+      });
+      setLocalStatuses((prev) => ({ ...prev, [campaign.id]: "Invited" }));
+      await reloadOpportunities();
+    }, {
+      successMessage: "Invitation sent successfully!",
+      errorMessage: "Failed to send invitation."
+    });
   };
 
   const batchCampaigns = scopedCampaigns.filter((c) => batchSelection.includes(c.id));
@@ -625,15 +669,15 @@ function OpportunitiesBoardPage({ onChangePage: _onChangePage }: OpportunitiesBo
                         <CampaignRow
                           key={c.id}
                           campaign={c}
-                          saved={savedCampaignIds.includes(c.id)}
+                          saved={savedOpportunityIds.includes(c.apiId)}
                           selected={batchSelection.includes(c.id)}
-                          onToggleSave={() => toggleSaved(c.id)}
+                          onToggleSave={() => toggleSaved(c)}
                           onToggleSelect={() => toggleBatchSelection(c.id)}
                           onViewDetails={() => openDetails(c, false)}
                           onSendPitch={() => openDetails(c, true)}
-                          followed={followedSellers.includes(c.seller)}
-                          onToggleFollow={() => toggleFollowSeller(c.seller)}
-                          onInvite={() => handleInviteToCollaborate(c.id)}
+                          followed={Boolean(c.sellerId) && followedSellerIds.includes(c.sellerId)}
+                          onToggleFollow={() => toggleFollowSeller(c)}
+                          onInvite={() => handleInviteToCollaborate(c)}
                         />
                       ))}
                     </tbody>
@@ -1038,12 +1082,38 @@ function BatchApplyPanel({ campaigns, onClose }: { campaigns: Campaign[]; onClos
 
   const handleBatchSubmit = () => {
     run(async () => {
-      await new Promise(r => setTimeout(r, 1500));
+      const eligible = campaigns.filter((campaign) => Boolean(campaign.sellerId));
+      if (!eligible.length) {
+        throw new Error("No eligible opportunities selected.");
+      }
+      await Promise.all(
+        eligible.map((campaign) =>
+          creatorApi.createInvite({
+            recipientSellerId: campaign.sellerId,
+            opportunityId: campaign.apiId,
+            title: `Invite to collaborate on ${campaign.seller} opportunity`,
+            message: `I'd like to collaborate on this opportunity.`,
+            category: campaign.category,
+            region: campaign.region,
+            currency: "USD",
+            commissionPct: campaign.commission,
+            estimatedValue: campaign.budgetMax || campaign.budgetMin || undefined,
+            metadata: {
+              source: "opportunities-board-batch",
+              opportunityId: campaign.apiId,
+              opportunityStatus: campaign.opportunityStatus
+            }
+          })
+        )
+      );
       setIsSuccess(true);
       setTimeout(() => {
         onClose();
       }, 1500);
-    }, { successMessage: "All pitches sent!" });
+    }, {
+      successMessage: "All pitches sent!",
+      errorMessage: "Failed to queue all pitches."
+    });
   };
 
   return (

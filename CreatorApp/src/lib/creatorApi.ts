@@ -97,6 +97,9 @@ export type OpportunityRecord = {
   title?: string | null;
   description?: string | null;
   status?: string | null;
+  collaborationStatus?: string | null;
+  isSaved?: boolean;
+  isFollowing?: boolean;
   budgetMin?: number | null;
   budgetMax?: number | null;
   budget?: number | null;
