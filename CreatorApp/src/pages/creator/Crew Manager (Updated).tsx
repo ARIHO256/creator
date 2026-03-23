@@ -739,7 +739,7 @@ export default function CreatorLiveCrewManagementPremium() {
               const status = String(row.status || "Active").toLowerCase();
               return {
                 id: String(row.id || `member_${index}`),
-                name: String(row.name || row.email || "Member"),
+                name: String(row.name || row.email || ""),
                 email: String(row.email || ""),
                 handle: "",
                 roleId: String(row.roleId || "viewer"),
@@ -771,9 +771,9 @@ export default function CreatorLiveCrewManagementPremium() {
                 rawStatus === "live" ? "Live" : rawStatus === "replay" || rawStatus === "ended" ? "Replay" : "Scheduled";
               return {
                 id: String(row.id || `S-${index + 1}`),
-                title: String(row.title || data.title || "Live session"),
-                supplierName: String(data.supplierName || data.supplier || "Supplier"),
-                campaign: String(data.campaign || data.campaignName || "Campaign"),
+                title: String(row.title || data.title || ""),
+                supplierName: String(data.supplierName || data.supplier || ""),
+                campaign: String(data.campaign || data.campaignName || ""),
                 status,
                 startISO: String(row.scheduledAt || row.startedAt || new Date().toISOString()),
                 durationMin: Number(data.durationMin || 60),

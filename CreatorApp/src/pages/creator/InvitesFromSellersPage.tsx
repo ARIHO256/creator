@@ -121,11 +121,11 @@ function toInvite(record: InviteRecord): Invite {
 
   return {
     id: record.id,
-    brand: String(record.seller || record.sender || "Supplier"),
+    brand: String(record.seller || record.sender || ""),
     initials: sellerInitials(record.seller, record.sellerInitials),
-    campaign: String(record.campaign || record.title || "Campaign"),
+    campaign: String(record.campaign || record.title || ""),
     inviteType: String(record.type || (metadata as { inviteType?: unknown }).inviteType || "Collaboration"),
-    category: String(record.category || (metadata as { category?: unknown }).category || "General"),
+    category: String(record.category || (metadata as { category?: unknown }).category || ""),
     region: String(record.region || (metadata as { region?: unknown }).region || "Global"),
     baseFee: Number(record.baseFee || 0),
     currency: String(record.currency || "USD"),

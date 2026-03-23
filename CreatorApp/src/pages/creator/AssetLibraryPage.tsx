@@ -1331,7 +1331,7 @@ export default function AssetLibraryPage() {
     if (!pickerSupplierId && !pickerSupplierName) return null;
     const id = pickerSupplierId || "picker-supplier";
     const kind = /^provider$/i.test(pickerSupplierKind || "") ? "Provider" : "Seller";
-    const name = pickerSupplierName || "Supplier";
+    const name = pickerSupplierName || "";
     return {
       id,
       name,
@@ -1348,8 +1348,8 @@ export default function AssetLibraryPage() {
     return {
       id: pickerCampaignId || "picker-campaign",
       supplierId: fallbackSupplierId,
-      name: pickerCampaignName || "Campaign",
-      brand: pickerCampaignBrand || pickerSupplierBrand || pickerSupplierFallback?.brand || "Seller",
+      name: pickerCampaignName || "",
+      brand: pickerCampaignBrand || pickerSupplierBrand || pickerSupplierFallback?.brand || "",
       status: "Active",
     };
   }, [
@@ -1427,7 +1427,7 @@ export default function AssetLibraryPage() {
             id: `sp-${campaignId}`,
             name: "Show pack",
             campaignId,
-            brand: campaign?.name || "Campaign",
+            brand: campaign?.name || "",
             autoGrouped: true,
             items: campaignAssets.slice(0, 5).map((asset) => ({
               title: asset.title,

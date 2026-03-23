@@ -180,8 +180,8 @@ function ProposalNegotiationRoomPage() {
             : {};
 
         setStatus(mapStatus(proposal.status));
-        setSellerName(String(proposal.sellerName || proposal.seller || "GlowUp Hub"));
-        setCampaignTitle(String(proposal.campaignTitle || proposal.title || "Campaign"));
+        setSellerName(String(proposal.sellerName || proposal.seller || ""));
+        setCampaignTitle(String(proposal.campaignTitle || proposal.title || ""));
         setCampaignSummary(String(proposal.summary || campaignSummary));
         setLastUpdatedLabel("Synced from workspace");
         if (metadata.region) {

@@ -66,22 +66,22 @@ function toMySeller(record: PublicSellerRecord): MySeller {
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
   const categories = Array.isArray(record.categories) && record.categories.length > 0
     ? record.categories
-    : [String(record.category || "General")];
+    : [String(record.category || "")].filter(Boolean);
   const activeContracts = Number((metadata as { activeContracts?: unknown }).activeContracts || 0);
 
   return {
     id: mySellerNumericId(String(record.id)),
     apiId: String(record.id),
-    name: String(record.displayName || record.name || "Supplier"),
+    name: String(record.displayName || record.name || ""),
     initials: mySellerInitials(record.displayName || record.name),
-    tagline: String(record.description || "Supplier profile"),
+    tagline: String(record.description || ""),
     categories,
     relationship: activeContracts > 0 ? "Active collab" : "Past collab",
     lifetimeRevenue: Number((metadata as { lifetimeRevenue?: unknown }).lifetimeRevenue || 0),
     currentValue: Number((metadata as { currentValue?: unknown }).currentValue || 0),
     avgConversion: Number((metadata as { avgConversion?: unknown }).avgConversion || 0),
     campaignsCount: Number((metadata as { campaignsCount?: unknown }).campaignsCount || 0),
-    lastCampaign: String((metadata as { lastCampaign?: unknown }).lastCampaign || "Campaign"),
+    lastCampaign: String((metadata as { lastCampaign?: unknown }).lastCampaign || ""),
     lastResult: String((metadata as { lastResult?: unknown }).lastResult || "No campaign summary yet"),
     openProposals: Number((metadata as { openProposals?: unknown }).openProposals || 0),
     activeContracts,

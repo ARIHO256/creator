@@ -342,8 +342,8 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
         const record = toRecord(entry);
         if (!record) return null;
 
-        const supplier = normalizeSupplier(record.supplier, suppliers[0]?.name || "Seller");
-        const creator = normalizeCreator(record.creator, creators[0]?.name || "Creator");
+        const supplier = normalizeSupplier(record.supplier, suppliers[0]?.name || "");
+        const creator = normalizeCreator(record.creator, creators[0]?.name || "");
         const nowISO = new Date().toISOString();
         const startISO = normalizeISO(record.startISO, nowISO);
         const endISO = normalizeISO(record.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString());
@@ -2644,7 +2644,7 @@ export default function DealzMarketplace() {
     const details = live.description ? `${live.description}\n\n${live.promoLink}` : live.promoLink;
     const params = new URLSearchParams({
       action: "TEMPLATE",
-      text: live.title || "Live session",
+      text: live.title || "",
       dates: `${toGoogleDate(live.startISO)}/${toGoogleDate(live.endISO)}`,
       details
     });

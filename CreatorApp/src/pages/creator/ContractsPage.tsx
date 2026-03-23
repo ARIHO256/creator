@@ -125,8 +125,8 @@ function toContract(record: ContractRecord): Contract {
 
   return {
     id: record.id,
-    brand: String(record.brand || record.sellerName || record.seller || "Supplier"),
-    campaign: String(record.campaignName || record.campaign || "Campaign"),
+    brand: String(record.brand || record.sellerName || record.seller || ""),
+    campaign: String(record.campaignName || record.campaign || ""),
     period:
       String((metadata as { period?: unknown }).period || "").trim() ||
       [formatContractDate(record.createdAt), formatContractDate(record.updatedAt)].filter(Boolean).join(" – ") ||

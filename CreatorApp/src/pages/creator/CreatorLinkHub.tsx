@@ -112,10 +112,10 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
         ? (campaign.data as Record<string, unknown>)
         : {};
-    const sellerName = String(data.supplierName || data.sellerName || data.seller || "Supplier");
+    const sellerName = String(data.supplierName || data.sellerName || data.seller || "");
     const supplierType: SupplierType =
       String(data.supplierType || "").toLowerCase() === "provider" ? "Provider" : "Seller";
-    const titleBase = String(campaign.title || data.title || "Campaign");
+    const titleBase = String(campaign.title || data.title || "");
     const status = mapCampaignStatusToLinkStatus(campaign.status || data.status);
     const clicks = Number(data.clicks || 0);
     const purchases = Number(data.purchases || 0);

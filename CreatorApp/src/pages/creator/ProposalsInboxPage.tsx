@@ -123,12 +123,12 @@ function toProposal(record: ProposalRecord): Proposal {
 
   return {
     id: record.id,
-    brand: String(record.sellerName || "Supplier"),
+    brand: String(record.sellerName || ""),
     initials: proposalInitials(record.sellerName),
-    campaign: String(record.campaignTitle || record.title || "Campaign"),
+    campaign: String(record.campaignTitle || record.title || ""),
     origin: mapProposalOrigin(metadata),
     offerType: String((metadata as { offerType?: unknown }).offerType || "Collaboration offer"),
-    category: String((metadata as { category?: unknown }).category || "General"),
+    category: String((metadata as { category?: unknown }).category || ""),
     region: String((metadata as { region?: unknown }).region || "Global"),
     baseFeeMin: feeMin,
     baseFeeMax: feeMax,

@@ -220,13 +220,13 @@ function toBoardContract(record: ContractRecord): Contract {
   return {
     id: record.id,
     status: mapContractStatus(String(record.status || "ACTIVE")),
-    campaign: String(record.campaignName || record.campaign || "Campaign"),
-    brand: String(record.brand || record.sellerName || record.seller || "Supplier"),
-    supplier: String(record.sellerName || record.seller || record.brand || "Supplier"),
+    campaign: String(record.campaignName || record.campaign || ""),
+    brand: String(record.brand || record.sellerName || record.seller || ""),
+    supplier: String(record.sellerName || record.seller || record.brand || ""),
     currency: String(record.currency || "USD"),
     value: Number(record.value || 0),
     totalTasks: Number(record.totalTasks || deliverables.length || 0),
-    creator: { name: String(record.creatorName || "Creator"), handle: "@creator", avatarUrl: "" },
+    creator: { name: String(record.creatorName || ""), handle: "", avatarUrl: "" },
     deliverables
   };
 }
@@ -303,7 +303,7 @@ function toBoardTask(record: TaskRecord): { column: ColumnId; task: Task } {
       contract?.sellerName ||
       contract?.seller ||
       contract?.brand ||
-      "Supplier"
+      ""
     );
   const dueDaysFromNow = dueOffset(record.dueAt);
 
@@ -311,8 +311,8 @@ function toBoardTask(record: TaskRecord): { column: ColumnId; task: Task } {
     column: taskColumnForStatus(record.status),
     task: {
       id: record.id,
-      title: String(record.title || "Task"),
-      campaign: String(contract?.campaignName || contract?.campaign || (metadata as { campaign?: unknown }).campaign || "Campaign"),
+      title: String(record.title || ""),
+      campaign: String(contract?.campaignName || contract?.campaign || (metadata as { campaign?: unknown }).campaign || ""),
       supplier,
       supplierInitials: seedInitials(supplier),
       brand: String(contract?.brand || contract?.sellerName || contract?.seller || supplier),
