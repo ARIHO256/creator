@@ -1231,7 +1231,7 @@ function NewTaskDrawer({
   onClose: () => void;
   contracts: Contract[];
   existingTasks: Task[];
-  onCreate: (payload: NewTaskPayload) => void;
+  onCreate: (payload: NewTaskPayload) => Promise<void> | void;
   setToast: (s: string) => void;
   onOpenAssetLibrary: () => void;
 }) {
@@ -1416,7 +1416,7 @@ function NewTaskDrawer({
     setToast(`Attached ${next.length} file(s)`);
   }
 
-  function create(openAfterCreate: boolean) {
+  async function create(openAfterCreate: boolean) {
     // Compute due label from chosen date/time (simple, UI-only)
     const d = new Date(`${dueDate}T${dueTime}:00`);
     const diffDays = Math.round((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -1453,8 +1453,12 @@ function NewTaskDrawer({
       linkedContractId: scope === "Linked" ? selectedContract?.id : undefined,
     };
 
-    onCreate({ task, column: initialColumn, openAfterCreate });
-    onClose();
+    try {
+      await onCreate({ task, column: initialColumn, openAfterCreate });
+      onClose();
+    } catch {
+      // Parent handles toast messaging for API failures.
+    }
   }
 
   return (
@@ -1825,7 +1829,7 @@ function NewTaskDrawer({
                     <option value="24h">24 hours before</option>
                   </select>
                   <div className="mt-1 text-[11px] text-slate-500">
-                    Demo reminder only — connect to notifications system later.
+                    Reminder preferences are saved with this task for follow-up workflows.
                   </div>
                 </div>
               </div>
@@ -1972,7 +1976,7 @@ function NewTaskDrawer({
               <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-900 dark:text-amber-200">
                 <div className="font-semibold dark:font-bold">Premium guardrail</div>
                 <div className="mt-1">
-                  This demo doesn't send real notifications. Hook reminders to your Notifications service when integrating.
+                  Review due time, dependencies, and links before creating the task.
                 </div>
               </div>
             </div>
@@ -1992,10 +1996,10 @@ function NewTaskDrawer({
               </Btn>
             ) : (
               <>
-                <Btn tone="neutral" onClick={() => create(false)}>
+                <Btn tone="neutral" onClick={() => void create(false)}>
                   Create
                 </Btn>
-                <Btn tone="brand" onClick={() => create(true)}>
+                <Btn tone="brand" onClick={() => void create(true)}>
                   Create & open
                 </Btn>
               </>

@@ -191,10 +191,10 @@ export default function AnalyticsRankDetailPage() {
             const conversions = backendConversions > 0 ? backendConversions : Math.round((engagements * convRate) / 100);
             return {
               id: Number(campaign.id || index + 1) || index + 1,
-              campaignId: String(campaign.campaignId || `campaign-${index + 1}`),
-              name: String(campaign.name || `Campaign ${index + 1}`),
-              seller: String(campaign.seller || "Seller"),
-              category: (String(campaign.category || "Tech") as Exclude<Category, "All">),
+              campaignId: String(campaign.campaignId || ""),
+              name: String(campaign.name || ""),
+              seller: String(campaign.seller || ""),
+              category: (String(campaign.category || "") as Exclude<Category, "All">),
               sales: Number(campaign.sales || 0) || 0,
               engagements,
               conversions,

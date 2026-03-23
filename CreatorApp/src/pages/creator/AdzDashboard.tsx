@@ -717,17 +717,18 @@ function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
 
   return {
     id: asString(record.id, `adz_${index + 1}`),
-    campaignName: asString(shoppable.campaignName, asString(record.title, `Campaign ${index + 1}`)),
+    campaignName: asString(shoppable.campaignName, asString(record.title, "")),
     campaignSubtitle: asString(shoppable.campaignSubtitle, asString(record.tagline, "")),
     supplier: {
-      name: asString(supplierRecord?.name, "Seller"),
-      category: asString(supplierRecord?.category, "Seller"),
+      name: asString(supplierRecord?.name, ""),
+      category: asString(supplierRecord?.category, ""),
       logoUrl: asString(supplierRecord?.logoUrl, BLANK_IMAGE) || BLANK_IMAGE,
     },
     creator: {
-      name: asString(creatorRecord?.name, "Creator"),
+      name: asString(creatorRecord?.name, ""),
       handle: (() => {
-        const handle = asString(creatorRecord?.handle, "@creator");
+        const handle = asString(creatorRecord?.handle, "");
+        if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
       avatarUrl: asString(creatorRecord?.avatarUrl, BLANK_IMAGE) || BLANK_IMAGE,

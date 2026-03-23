@@ -1167,17 +1167,18 @@ function mapShoppableDeal(raw: unknown): Ad | null {
     id: asString(deal.id, `ad_${Date.now()}`),
     rank: 0,
     status: adzStatus(shoppable.status ?? deal.status),
-    campaignName: asString(shoppable.campaignName, asString(deal.title, "Campaign")),
+    campaignName: asString(shoppable.campaignName, asString(deal.title, "")),
     campaignSubtitle: asString(shoppable.campaignSubtitle, asString(deal.tagline, "")),
     supplier: {
-      name: asString(supplier?.name, "Seller"),
-      category: asString(supplier?.category, "Seller"),
+      name: asString(supplier?.name, ""),
+      category: asString(supplier?.category, ""),
       logoUrl: asString(supplier?.logoUrl, BLANK_IMAGE),
     },
     creator: {
-      name: asString(creator?.name, "Creator"),
+      name: asString(creator?.name, ""),
       handle: (() => {
-        const handle = asString(creator?.handle, "@creator");
+        const handle = asString(creator?.handle, "");
+        if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
       avatarUrl: asString(creator?.avatarUrl, BLANK_IMAGE),
