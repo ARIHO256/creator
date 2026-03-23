@@ -1348,14 +1348,11 @@ export default function AssetLibraryPage() {
 
   const pickerSupplierFallback = useMemo<Supplier | null>(() => {
     if (!pickerMode) return null;
-    if (!pickerSupplierId && !pickerSupplierName) return null;
-    const normalizedName = (pickerSupplierName || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const id = pickerSupplierId || (normalizedName ? `supplier:${normalizedName}` : "");
-    if (!id) return null;
+    if (!pickerSupplierId) return null;
     const kind = /^provider$/i.test(pickerSupplierKind || "") ? "Provider" : "Seller";
     const name = pickerSupplierName || "";
     return {
-      id,
+      id: pickerSupplierId,
       name,
       kind,
       brand: pickerSupplierBrand || name,
@@ -1364,14 +1361,11 @@ export default function AssetLibraryPage() {
 
   const pickerCampaignFallback = useMemo<Campaign | null>(() => {
     if (!pickerMode) return null;
-    if (!pickerCampaignId && !pickerCampaignName) return null;
-    const fallbackSupplierId = pickerSupplierFallback?.id || pickerSupplierId || "";
+    if (!pickerCampaignId) return null;
+    const fallbackSupplierId = pickerSupplierId || "";
     if (!fallbackSupplierId) return null;
-    const normalizedName = (pickerCampaignName || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const id = pickerCampaignId || (normalizedName ? `campaign:${normalizedName}` : "");
-    if (!id) return null;
     return {
-      id,
+      id: pickerCampaignId,
       supplierId: fallbackSupplierId,
       name: pickerCampaignName || "",
       brand: pickerCampaignBrand || pickerSupplierBrand || pickerSupplierFallback?.brand || "",
@@ -1669,8 +1663,7 @@ export default function AssetLibraryPage() {
   useEffect(() => {
     const allowed = new Set(submitRoleOptions.map((x) => x.value));
     if (!allowed.has(submitDraft.role)) {
-      const next = submitRoleOptions[0]?.value ?? "";
-      setSubmitDraft((d) => ({ ...d, role: next as SubmitDraft["role"] }));
+      setSubmitDraft((d) => ({ ...d, role: "" as SubmitDraft["role"] }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitRoleOptions]);
@@ -1730,12 +1723,11 @@ export default function AssetLibraryPage() {
   }
 
   function resetSubmitDraft() {
-    const firstDeliverable = deliverables.find((d) => d.campaignId === selectedCampaignId)?.id ?? "";
     setSubmitStatus("draft");
     setSubmitImageMeta(null);
     setSubmitDraft({
       campaignId: selectedCampaignId,
-      deliverableId: firstDeliverable,
+      deliverableId: "",
       title: "",
       caption: "",
       notes: "",

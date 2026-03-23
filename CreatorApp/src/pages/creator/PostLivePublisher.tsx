@@ -288,7 +288,7 @@ export default function PostLivePublisherPage() {
   const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
   const sp = useMemo(() => parseSearch(), []);
-  const sessionId = sp.get('sessionId') ?? 'LS-20418';
+  const sessionId = sp.get('sessionId') ?? '';
   const { data: payload } = useApiResource({
     initialData: {} as PostLivePayload,
     loader: () => creatorApi.liveTool("post-live") as Promise<PostLivePayload>,
@@ -395,9 +395,8 @@ export default function PostLivePublisherPage() {
   const enabledChannelList = useMemo(() => channels.filter((c) => enabledChannels[c.key]), [channels, enabledChannels]);
 
   const estimatedReach = useMemo(() => {
-    // demo reach: depends on audience segment
-    return audience === 'past_buyers' ? 3400 : audience === 'attendees' ? 5200 : audience === 'vip_list' ? 420 : 1800;
-  }, [audience]);
+    return Math.max(0, metrics.viewers);
+  }, [metrics.viewers]);
 
   const estimatedCost = useMemo(() => {
     const costPer = enabledChannelList.reduce((sum, c) => sum + c.costPerMessageUSD, 0);

@@ -464,11 +464,9 @@ export default function CreatorReviewsDashboardPage() {
   const creatorName =
     creatorIdentity?.creatorName ||
     queryCreatorName ||
-    filteredReviews[0]?.creatorName ||
-    creatorScopedReviews[0]?.creatorName ||
-    "Creator";
+    "";
   const creatorHandle =
-    creatorIdentity?.creatorHandle || filteredReviews[0]?.creatorHandle || creatorScopedReviews[0]?.creatorHandle || "@creator";
+    creatorIdentity?.creatorHandle || (creatorName ? toHandle(creatorName) : "");
 
   const availableCreators = useMemo(() => {
     const map = new Map<string, string>();
@@ -578,7 +576,7 @@ export default function CreatorReviewsDashboardPage() {
     [filteredReviews]
   );
 
-  const latestReviewDate = recentReviews[0]?.createdAt || filteredReviews[0]?.createdAt;
+  const latestReviewDate = recentReviews[0]?.createdAt;
 
   function onExportCsv() {
     downloadCsv(

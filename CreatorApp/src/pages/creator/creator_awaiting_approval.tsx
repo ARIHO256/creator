@@ -278,9 +278,7 @@ export default function CreatorAwaitingApproval(): JSX.Element {
         if (cancelled) return;
         const mapped = records.map(mapContentApprovalRecord);
         setSubmissions(mapped);
-        if (mapped.length > 0) {
-          setSelectedId((prev) => (prev ? prev : mapped[0].id));
-        }
+        setSelectedId((prev) => (prev && mapped.some((entry) => entry.id === prev) ? prev : ""));
       })
       .catch(() => {
         if (cancelled) return;
@@ -296,7 +294,7 @@ export default function CreatorAwaitingApproval(): JSX.Element {
   // We handle this via CSS hiding/showing mostly, or conditional rendering.
 
   const selected = useMemo(
-    () => submissions.find((s) => s.id === selectedId) || submissions[0] || null,
+    () => submissions.find((s) => s.id === selectedId) || null,
     [submissions, selectedId]
   );
 

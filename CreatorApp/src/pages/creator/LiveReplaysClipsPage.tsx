@@ -552,8 +552,16 @@ function ClipEditorPanel({
   onChangeCta,
   secondsToTime
 }: ClipEditorPanelProps) {
-  const totalDurationSec = 1200; // pretend 20 min timeline for demo
-  const clamp = (val: number): number => Math.min(Math.max(val, 0), totalDurationSec);
+  const totalDurationSec = useMemo(() => {
+    if (!replay?.duration) return 0;
+    const parts = replay.duration.split(":").map((part) => Number(part));
+    if (parts.some((part) => !Number.isFinite(part))) return 0;
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parts.length === 1 ? parts[0] : 0;
+  }, [replay?.duration]);
+  const safeDurationSec = Math.max(1, totalDurationSec);
+  const clamp = (val: number): number => Math.min(Math.max(val, 0), safeDurationSec);
 
   const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const v = clamp(Number(e.target.value) || 0);
@@ -567,8 +575,8 @@ function ClipEditorPanel({
     onChangeEnd(v);
   };
 
-  const startPercent = (clipStart / totalDurationSec) * 100;
-  const endPercent = (clipEnd / totalDurationSec) * 100;
+  const startPercent = (clipStart / safeDurationSec) * 100;
+  const endPercent = (clipEnd / safeDurationSec) * 100;
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-3 text-sm">

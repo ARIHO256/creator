@@ -238,8 +238,8 @@ export default function LiveAlertsManager() {
     loader: () => creatorApi.liveTool("live-alerts") as Promise<LiveAlertsPayload>,
   });
   const sessionId = useMemo(() => {
-    if (typeof window === "undefined") return "session";
-    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("sessionId") || "";
   }, []);
   const session = useMemo(
     () => ({
@@ -475,7 +475,7 @@ export default function LiveAlertsManager() {
 
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <Btn tone="primary" disabled={!ok || isPending} onClick={() => openConfirm(t)} left={<Send className="h-4 w-4" />}>
-                          {isPending && active.key === t.key ? "Sending..." : "Send"}
+                          {isPending && active?.key === t.key ? "Sending..." : "Send"}
                         </Btn>
                         <button className="text-xs font-semibold text-neutral-700 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-slate-100 transition" onClick={() => setActive(t)}>
                           Select

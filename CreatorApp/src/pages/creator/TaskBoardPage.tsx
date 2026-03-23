@@ -1432,7 +1432,7 @@ function NewTaskDrawer({
               : `In ${diffDays}d`;
     const newId = `T-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
 
-    const supplierInitials = seedInitials(supplierName === "—" ? "Supplier" : supplierName);
+    const supplierInitials = seedInitials(supplierName === "—" ? "" : supplierName);
 
     const task: Task = {
       id: newId,

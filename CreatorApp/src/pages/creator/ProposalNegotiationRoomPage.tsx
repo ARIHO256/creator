@@ -39,7 +39,7 @@ function ProposalNegotiationRoomPage() {
   const initialProposalId = (location.state as { proposalId?: string })?.proposalId;
   // const { theme } = useTheme();
   const [status, setStatus] = useState<Status>("Negotiating");
-  const [proposalId, setProposalId] = useState<string | null>(initialProposalId || null);
+  const [proposalId] = useState<string | null>(initialProposalId || null);
   const [sellerName, setSellerName] = useState("");
   const [campaignTitle, setCampaignTitle] = useState("");
   const [campaignSummary, setCampaignSummary] = useState("");
@@ -132,13 +132,6 @@ function ProposalNegotiationRoomPage() {
     const load = async () => {
       try {
         let resolvedId = proposalId;
-        if (!resolvedId) {
-          const list = await creatorApi.proposals();
-          resolvedId = list[0]?.id || null;
-          if (resolvedId && !cancelled) {
-            setProposalId(resolvedId);
-          }
-        }
         if (!resolvedId) return;
 
         const proposal = await creatorApi.proposal(resolvedId);

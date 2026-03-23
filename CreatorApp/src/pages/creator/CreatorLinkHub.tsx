@@ -133,12 +133,7 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       );
     });
 
-    const primaryUrl = String(
-      relatedLinks[0]?.url ||
-        (relatedLinks[0]?.data as Record<string, unknown> | undefined)?.url ||
-        data.shareUrl ||
-        `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`
-    );
+    const primaryUrl = String(data.shareUrl || `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`);
 
     const channels =
       relatedLinks.length > 0
@@ -502,7 +497,7 @@ export default function CreatorLinksHubV3Fixed({
                           <span className="mx-2">·</span>
                           Clicks: <span className="font-bold text-slate-700 dark:text-slate-200">{fmtInt(sum(g.items.map((x) => x.metrics.clicks)))}</span>
                           <span className="mx-2">·</span>
-                          Earn: <span className="font-bold" style={{ color: ORANGE }}>{g.items[0]?.metrics.currency} {fmtInt(sum(g.items.map((x) => x.metrics.earnings)))}</span>
+                          Earn: <span className="font-bold" style={{ color: ORANGE }}>{g.items.find((item) => item.metrics.currency)?.metrics.currency || ""} {fmtInt(sum(g.items.map((x) => x.metrics.earnings)))}</span>
                         </div>
                       </div>
 

@@ -4577,7 +4577,7 @@ export function LiveBuilderView({
         };
       }
 
-      const resolvedActiveItemId = activeFeaturedItemId || prev.products[0]?.id;
+      const resolvedActiveItemId = activeFeaturedItemId;
 
       if (
         applyTo === "featuredItemPoster" ||
@@ -6616,11 +6616,7 @@ export function LiveBuilderView({
                             durationMin: 3,
                             notes:
                               "Launch a limited-time offer, confirm the timer, pin the featured item, and remind viewers how to claim before stock or slots run out.",
-                            pinnedItemIds: activeFeaturedItemId
-                              ? [activeFeaturedItemId]
-                              : d.products[0]?.id
-                                ? [d.products[0].id]
-                                : [],
+                            pinnedItemIds: activeFeaturedItemId ? [activeFeaturedItemId] : [],
                           },
                         ],
                       }))

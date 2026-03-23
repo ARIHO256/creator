@@ -476,8 +476,8 @@ export default function AudienceNotifications() {
     loader: () => creatorApi.liveTool("audience-notifications") as Promise<AudienceNotificationsPayload>,
   });
   const sessionId = useMemo(() => {
-    if (typeof window === "undefined") return "session";
-    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("sessionId") || "";
   }, []);
   const baseSessionUrl = useMemo(() => {
     if (typeof window === "undefined") return "";

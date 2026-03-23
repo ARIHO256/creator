@@ -848,7 +848,7 @@ export default function RolesPermissionsPremium() {
   const [audit, setAudit] = useState<AuditEvent[]>([]);
 
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
-  const selectedRole = useMemo(() => roles.find((r) => r.id === selectedRoleId) || roles[0], [roles, selectedRoleId]);
+  const selectedRole = useMemo(() => roles.find((r) => r.id === selectedRoleId) || null, [roles, selectedRoleId]);
 
   const [permSearch, setPermSearch] = useState("");
   const [roleNameDraft, setRoleNameDraft] = useState("");
@@ -885,13 +885,7 @@ export default function RolesPermissionsPremium() {
       .then(async (payload) => {
         if (cancelled) return;
 
-        let backendRoles = Array.isArray(payload.roles) ? payload.roles : [];
-        if (backendRoles.length === 0) {
-          const seedRoles = defaultRoles().map(({ icon, ...rest }) => rest);
-          await Promise.all(seedRoles.map((role) => creatorApi.createRole(role).catch(() => null)));
-          const seededPayload = await creatorApi.roles().catch(() => payload);
-          backendRoles = Array.isArray(seededPayload.roles) ? seededPayload.roles : [];
-        }
+        const backendRoles = Array.isArray(payload.roles) ? payload.roles : [];
         if (backendRoles.length > 0) {
           setRoles(
             backendRoles.map((entry) => {
@@ -909,7 +903,15 @@ export default function RolesPermissionsPremium() {
               } satisfies Role;
             })
           );
-          setSelectedRoleId((prev) => prev || String((backendRoles[0] as Record<string, unknown>).id || ""));
+          setSelectedRoleId((prev) => {
+            if (prev && backendRoles.some((entry) => String((entry as Record<string, unknown>).id || "") === prev)) {
+              return prev;
+            }
+            return "";
+          });
+        } else {
+          setRoles([]);
+          setSelectedRoleId("");
         }
 
         const backendMembers = Array.isArray(payload.members) ? payload.members : [];
@@ -995,8 +997,9 @@ export default function RolesPermissionsPremium() {
   }, []);
 
   useEffect(() => {
-    if (!selectedRoleId && roles.length > 0) {
-      setSelectedRoleId(roles[0].id);
+    if (!selectedRoleId) return;
+    if (!roles.some((role) => role.id === selectedRoleId)) {
+      setSelectedRoleId("");
     }
   }, [roles, selectedRoleId]);
 
@@ -1141,7 +1144,7 @@ export default function RolesPermissionsPremium() {
     const name = selectedRole.name;
     setRoles((rs) => rs.filter((r) => r.id !== selectedRole.id));
     void creatorApi.deleteRole(selectedRole.id);
-    setSelectedRoleId("owner");
+    setSelectedRoleId("");
     push("Role deleted.", "success");
     log("Owner", "Deleted role", name, "warn");
   }

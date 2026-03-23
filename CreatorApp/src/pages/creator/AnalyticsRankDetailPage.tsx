@@ -993,7 +993,7 @@ function MetricCard({
       : card.value.toLocaleString();
 
   const sparkValues = useMemo(() => {
-    if (!trend.length) return [0];
+    if (!trend.length) return [];
     return trend.map((point) => point[card.series]);
   }, [card.series, trend]);
 

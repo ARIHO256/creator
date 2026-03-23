@@ -796,7 +796,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const handlePickWinner = () => {
     const activeGiveawayId = effectiveGiveawayId;
     const activePrizeLabel = giveawayPrizeLabel;
-    const winner = viewersList[0]?.name || "";
+    const winnerIndex = viewersList.length > 0 ? Math.floor(Math.random() * viewersList.length) : -1;
+    const winner = winnerIndex >= 0 ? viewersList[winnerIndex]?.name || "" : "";
     setGiveawayActive(false);
     showToast(`🎉 Winner: @${winner}! Congratulations!`);
     // Add system message

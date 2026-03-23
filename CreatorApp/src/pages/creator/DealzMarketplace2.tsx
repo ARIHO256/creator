@@ -445,7 +445,7 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
 
   const selectedId = typeof payload.selectedId === "string" && deals.some((deal) => deal.id === payload.selectedId)
     ? payload.selectedId
-    : deals[0]?.id || "";
+    : "";
 
   return {
     suppliers,
@@ -969,7 +969,7 @@ function ShoppableAdPreview({
   const countdownLabel = state === "upcoming" ? "Starts in" : state === "live" ? "Ends in" : "Session ended";
 
   const offers = ad.offers || [];
-  const primaryOfferId = offers[0]?.id;
+  const primaryOfferId = "";
 
   const productsCount = offers.filter((o) => o.type === "PRODUCT").length;
   const servicesCount = offers.filter((o) => o.type === "SERVICE").length;
@@ -1003,7 +1003,7 @@ function ShoppableAdPreview({
   const cartCount = useMemo(() => cartLines.reduce((sum, l) => sum + l.qty, 0), [cartLines]);
   const currencies = useMemo(() => new Set(cartLines.map((l) => l.offer.currency)), [cartLines]);
   const multiCurrency = currencies.size > 1;
-  const currency = cartLines[0]?.offer.currency || "USD";
+  const currency = cartLines.find((line) => line.offer.currency)?.offer.currency || "USD";
   const cartTotal = cartLines.reduce((sum, l) => sum + l.offer.price * l.qty, 0);
 
   return (
@@ -1977,7 +1977,7 @@ function NewDealzWizard({
 }) {
   const [step, setStep] = useState(0);
   const [type, setType] = useState<WizardType>("");
-  const [supplierIdx, setSupplierIdx] = useState(0);
+  const [supplierIdx, setSupplierIdx] = useState(-1);
   // Default to first creator since selection is removed
   const [creatorIdx] = useState(0);
   const [campaignName, setCampaignName] = useState("");
@@ -1991,7 +1991,7 @@ function NewDealzWizard({
     if (!open) return;
     setStep(0);
     setType("");
-    setSupplierIdx(0);
+    setSupplierIdx(-1);
     setCampaignName("");
   }, [open]);
 
@@ -2012,8 +2012,9 @@ function NewDealzWizard({
   function create(behavior: "open-builder" | "stay") {
     if (!type || !hasSuppliers) return;
 
-    const supplier = suppliers[supplierIdx] || suppliers[0];
-    const creator = creators[creatorIdx] || creators[0] || { name: "", handle: "", avatarUrl: "", verified: false };
+    const supplier = suppliers[supplierIdx];
+    const creator = creators[creatorIdx];
+    if (!supplier || !creator) return;
     const id = `dz_${Math.floor(Date.now() / 1000)}`;
     const heroImage = supplier?.logoUrl || creator.avatarUrl || "";
 
@@ -2078,7 +2079,7 @@ function NewDealzWizard({
     onClose();
   }
 
-  const supplier = suppliers[supplierIdx] || suppliers[0] || { name: "", category: "", logoUrl: "" };
+  const supplier = suppliers[supplierIdx] || null;
 
   return (
     <Drawer
@@ -2204,7 +2205,7 @@ function NewDealzWizard({
                   placeholder="e.g., Valentine Glow Week"
                 />
                 <div className="mt-3 text-[11px] text-neutral-600 dark:text-slate-400">
-                  Supplier: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
+                  Supplier: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier?.name || "—"}</span>
                   {/* Creator is implicitly selected as current user. */}
                   {/* · Creator: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{creator.handle}</span> */}
                 </div>
@@ -2214,7 +2215,7 @@ function NewDealzWizard({
                 <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Create</div>
                 <div className="mt-2 text-sm text-neutral-700 dark:text-slate-300">
                   Deal type: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{type || "—"}</span> · Supplier:{" "}
-                  <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
+                  <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier?.name || "—"}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Btn tone="primary" onClick={() => create("open-builder")} left={<Sparkles className="h-4 w-4" />}>
@@ -2462,7 +2463,9 @@ export default function DealzMarketplace() {
   useEffect(() => {
     const ad = selected?.shoppable;
     if (!ad) return;
-    if (!selectedHeroOfferId) setSelectedHeroOfferId(ad.offers[0]?.id || "");
+    if (selectedHeroOfferId && !ad.offers.some((offer) => offer.id === selectedHeroOfferId)) {
+      setSelectedHeroOfferId("");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
@@ -2667,7 +2670,7 @@ export default function DealzMarketplace() {
     } else {
       const live = selected.live;
       if (!live) return "";
-      const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId;
+      const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId;
       const it = live.featured.find((x) => x.id === itemId);
       return it ? `${it.name} · ${it.priceLabel}` : "";
     }
@@ -2683,7 +2686,7 @@ export default function DealzMarketplace() {
     } else {
       const live = selected.live;
       if (!live) return null;
-      const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId || "";
+      const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId || "";
       return stockLabelForLive(live, itemId);
     }
   }, [viewerCtx, selected?.id, selectedHeroOfferId, countdownState]);
@@ -2736,7 +2739,7 @@ export default function DealzMarketplace() {
 
     const live = selected.live;
     if (!live) return;
-    const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId;
+    const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId;
     if (!itemId) return setToast("Choose an item first.");
     liveBuy(live, itemId);
   };
@@ -2755,7 +2758,7 @@ export default function DealzMarketplace() {
 
     const live = selected.live;
     if (!live) return;
-    const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId;
+    const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId;
     if (!itemId) return setToast("Choose an item first.");
     liveAdd(live, itemId);
   };

@@ -1779,7 +1779,7 @@ export default function AdBuilder({
           ? [
             {
               id: pickerContext?.campaignId || "",
-              supplierId: availableSuppliers[0]?.id || "",
+              supplierId: pickerContext?.supplierId || "",
               name: pickerContext?.campaignName || "",
               status: pickerContext?.campaignStatus === "Paused" ? "Paused" : "Active",
               startsAtISO: typeof pickerContext?.startISO === "string" ? pickerContext.startISO : "",
@@ -1820,11 +1820,8 @@ export default function AdBuilder({
   }, [effectiveDealScope?.creator, pickerContext]);
   const dealScopeLocked = Boolean(effectiveDealScope?.dealId);
 
-  const defaultSupplierId = availableSuppliers[0]?.id || "";
-  const defaultCampaignId =
-    availableCampaigns.find((campaign) => campaign.supplierId === defaultSupplierId)?.id ||
-    availableCampaigns[0]?.id ||
-    "";
+  const defaultSupplierId = effectiveDealScope?.supplierEntry.id || pickerContext?.supplierId || "";
+  const defaultCampaignId = effectiveDealScope?.campaignEntry.id || pickerContext?.campaignId || "";
 
   // default schedule: tomorrow 18:00-19:00
   const defaultStart = useMemo(() => {
@@ -1850,8 +1847,8 @@ export default function AdBuilder({
   const [builder, setBuilder] = useState<BuilderState>(() => ({
     supplierId: defaultSupplierId,
     campaignId: defaultCampaignId,
-    selectedOfferIds: [availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || ""].filter(Boolean),
-    primaryOfferId: availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || "",
+    selectedOfferIds: [],
+    primaryOfferId: "",
     platforms: ["Instagram"],
     platformOtherList: [],
     platformOtherDraft: "",
@@ -1866,7 +1863,7 @@ export default function AdBuilder({
     landingUrl: "",
     shortDomain: "mldz.link",
     shortSlug: "adz-" + Math.random().toString(36).slice(2, 7),
-    utmPresetId: UTM_PRESETS[0].id,
+    utmPresetId: UTM_PRESETS.find((preset) => Boolean(preset.id))?.id || "",
     utmCustom: {},
     startDate: toDateInputValue(defaultStart),
     startTime: toTimeInputValue(defaultStart),
@@ -1901,7 +1898,7 @@ export default function AdBuilder({
         .filter(Boolean) as Offer[],
     [builder.selectedOfferIds, scopedOffers, availableOffers],
   );
-  const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
+  const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId), [selectedOffers, builder.primaryOfferId]);
 
   useEffect(() => {
     if (!dealScopeLocked) return;
@@ -1910,11 +1907,11 @@ export default function AdBuilder({
       .map((entry) => entry.id);
     setBuilder((prev) => {
       const selectedOfferIds = prev.selectedOfferIds.filter((id) => scopedOfferIds.includes(id));
-      const normalizedSelectedOfferIds = selectedOfferIds.length ? selectedOfferIds : scopedOfferIds.slice(0, 2);
+      const normalizedSelectedOfferIds = selectedOfferIds;
       const primaryOfferId =
         normalizedSelectedOfferIds.includes(prev.primaryOfferId)
           ? prev.primaryOfferId
-          : normalizedSelectedOfferIds[0] || "";
+          : "";
 
       if (
         prev.supplierId === defaultSupplierId &&
@@ -1967,7 +1964,7 @@ export default function AdBuilder({
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);
   const fallbackHeroImageUrl =
-    selectedOffers[0]?.catalogPosterUrl ||
+    primaryOffer?.catalogPosterUrl ||
     asString(effectiveDealScope?.shoppableRecord?.heroImageUrl, "") ||
     supplier?.avatarUrl ||
     BLANK_IMAGE;
@@ -2027,8 +2024,8 @@ export default function AdBuilder({
   const countdownLabel = useMemo(() => (countdownState === "upcoming" ? "Starts in" : countdownState === "live" ? "Ends in" : "Session ended"), [countdownState]);
 
   // Tracking URL
-  const utmPreset = useMemo(() => UTM_PRESETS.find((p) => p.id === builder.utmPresetId) || UTM_PRESETS[0], [builder.utmPresetId]);
-  const mergedUtm = useMemo(() => ({ ...utmPreset.params, ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
+  const utmPreset = useMemo(() => UTM_PRESETS.find((p) => p.id === builder.utmPresetId) ?? null, [builder.utmPresetId]);
+  const mergedUtm = useMemo(() => ({ ...(utmPreset?.params ?? {}), ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
   const shortLink = useMemo(() => buildShortLink(builder.shortDomain, builder.shortSlug, mergedUtm), [builder.shortDomain, builder.shortSlug, mergedUtm]);
 
   const effectivePlatforms = useMemo(() => {
@@ -2087,10 +2084,8 @@ export default function AdBuilder({
     const selectedOfferIds = shoppableOffers
       .map((entry) => asString(entry.id, ""))
       .filter(Boolean);
-    const offerIds = selectedOfferIds.length
-      ? selectedOfferIds
-      : effectiveDealScope.offerEntries.slice(0, 2).map((offer) => offer.id);
-    const primaryOfferId = asString(shoppable.primaryOfferId, offerIds[0] || "");
+    const offerIds = selectedOfferIds;
+    const primaryOfferId = asString(shoppable.primaryOfferId, "");
 
     setBuilder((prev) => ({
       ...prev,
@@ -2362,8 +2357,10 @@ export default function AdBuilder({
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 
   useEffect(() => {
-    if (!selectedHeroOfferId && primaryOffer?.id) setSelectedHeroOfferId(primaryOffer.id);
-  }, [primaryOffer?.id, selectedHeroOfferId]);
+    if (selectedHeroOfferId && !selectedOffers.some((offer) => offer.id === selectedHeroOfferId)) {
+      setSelectedHeroOfferId("");
+    }
+  }, [selectedHeroOfferId, selectedOffers]);
 
   function openHeroViewer() {
     if (!heroVideoAsset?.url) {
@@ -2645,7 +2642,7 @@ export default function AdBuilder({
   function resetScope(nextSupplierId: string, nextCampaignId: string) {
     const offers = availableOffers.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
     const ids = offers.slice(0, 2).map((o) => o.id);
-    const primary = ids[0] || "";
+    const primary = "";
     setBuilder((prev) => ({
       ...prev,
       supplierId: nextSupplierId,
@@ -2667,7 +2664,7 @@ export default function AdBuilder({
           ? prev.selectedOfferIds
           : [...prev.selectedOfferIds, offerId];
 
-      const nextPrimary = nextIds.includes(prev.primaryOfferId) ? prev.primaryOfferId : nextIds[0] || "";
+      const nextPrimary = nextIds.includes(prev.primaryOfferId) ? prev.primaryOfferId : "";
       return { ...prev, selectedOfferIds: nextIds, primaryOfferId: nextPrimary };
     });
   }
@@ -2963,7 +2960,7 @@ export default function AdBuilder({
               <Card>
                 <div className="text-xs font-bold text-neutral-600 dark:text-slate-400">Link</div>
                 <div className="mt-1 truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{builder.shortDomain}/{builder.shortSlug}</div>
-                <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">UTM preset: {utmPreset.name}</div>
+                <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">UTM preset: {utmPreset?.name || "Custom"}</div>
               </Card>
               <Card>
                 <div className="text-xs font-bold text-neutral-600 dark:text-slate-400">Schedule</div>
@@ -3030,8 +3027,7 @@ export default function AdBuilder({
                       onChange={(e) => {
                         const nextSupplier = e.target.value;
                         const nextCampaign =
-                          availableCampaigns.find((c) => c.supplierId === nextSupplier)?.id ||
-                          availableCampaigns[0]?.id;
+                          availableCampaigns.find((c) => c.supplierId === nextSupplier)?.id || "";
                         resetScope(nextSupplier, nextCampaign);
                       }}
                     >

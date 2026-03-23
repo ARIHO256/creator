@@ -639,7 +639,7 @@ function ShoppableAdPreview({
 
   const currencySet = useMemo(() => new Set(cartLines.map((l) => l.offer.currency)), [cartLines]);
   const multiCurrency = currencySet.size > 1;
-  const currency = cartLines[0]?.offer.currency || "USD";
+  const currency = cartLines.find((line) => line.offer.currency)?.offer.currency || "USD";
   const cartTotal = useMemo(() => {
     if (multiCurrency) return 0;
     return cartLines.reduce((s, l) => s + lineTotalFor(l.offer, l.mode, l.qty), 0);
@@ -1412,8 +1412,8 @@ export default function AdzMarketplace() {
 
   useEffect(() => {
     if (!selected) return;
-    if (!selectedHeroOfferId || !selected.offers.some((offer) => offer.id === selectedHeroOfferId)) {
-      setSelectedHeroOfferId(selected.offers[0]?.id || "");
+    if (selectedHeroOfferId && !selected.offers.some((offer) => offer.id === selectedHeroOfferId)) {
+      setSelectedHeroOfferId("");
     }
   }, [selected, selectedHeroOfferId]);
 

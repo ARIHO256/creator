@@ -742,13 +742,15 @@ export default function AdzPerformancePage() {
         const match = kpis.find((kpi) => keys.includes(String(kpi.key || kpi.label || "").toLowerCase()));
         return toNumber(match?.value, 0);
       };
+      const primaryOfferId = String(shoppable.primaryOfferId || "");
+      const primaryItem = items.find((item) => item.id === primaryOfferId)?.name;
       return {
         id: String(deal.id || `deal_${index + 1}`),
         kind: shoppable && Object.keys(shoppable).length > 0 ? "ad" : "deal",
         name: String(deal.title || live.title || shoppable.campaignName || "Deal"),
         status: String(shoppable.status || live.status || deal.status || "Draft"),
         platforms,
-        primaryItem: items[0]?.name,
+        primaryItem,
         items,
         impressions: findKpi(["impressions", "views"]),
         clicks: findKpi(["clicks", "tap through"]),
