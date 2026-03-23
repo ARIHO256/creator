@@ -139,9 +139,9 @@ function combineDateTime(dateISO: string, timeHHMM: string) {
 }
 
 /**
- * Mock backend validation call.
+ * Validate schedule against selected campaign window.
  */
-function mockValidateSchedule(
+function validateSchedule(
   campaigns: Campaign[],
   campaignId: string | undefined,
   startISO: string,
@@ -885,13 +885,6 @@ function campaignBelongsToSupplier(
       supplier.ownerUserId &&
       campaign.supplierOwnerUserId === supplier.ownerUserId,
   );
-}
-
-function firstCampaignForSupplier(
-  campaigns: Campaign[],
-  supplier: Supplier | null | undefined,
-): Campaign | undefined {
-  return campaigns.find((entry) => campaignBelongsToSupplier(entry, supplier));
 }
 
 function normalizeHostEntry(value: unknown): Host | null {
@@ -4032,7 +4025,6 @@ export function LiveBuilderView({
       byId(draft.id) ||
       byCampaign(effectiveDealId) ||
       byCampaign(draft.campaignId) ||
-      dashboardSessionsData[0] ||
       null
     );
   }, [
@@ -4288,22 +4280,22 @@ export function LiveBuilderView({
             pickerRestoreInProgress || Boolean(pendingPickerAssetRef.current)
           ) && Boolean(previousHeroImageUrl || previousHeroVideoUrl || previousHeroImageAssetId);
           const fallbackSupplierId =
-            prev.supplierId ||
-            suppliers[0]?.id ||
-            undefined;
-          const fallbackSupplier = fallbackSupplierId
-            ? suppliers.find((entry) => entry.id === fallbackSupplierId)
-            : undefined;
+            prev.supplierId && suppliers.some((entry) => entry.id === prev.supplierId)
+              ? prev.supplierId
+              : undefined;
           const fallbackCampaignId =
             prev.campaignId && campaigns.some((entry) => entry.id === prev.campaignId)
               ? prev.campaignId
-              : firstCampaignForSupplier(campaigns, fallbackSupplier)?.id;
+              : undefined;
           const fallback = {
             ...prev,
             id: builderSessionId,
             supplierId: fallbackSupplierId,
             campaignId: fallbackCampaignId,
-            hostId: prev.hostId || hosts[0]?.id || undefined
+            hostId:
+              prev.hostId && hosts.some((entry) => entry.id === prev.hostId)
+                ? prev.hostId
+                : undefined
           };
           const picked = pendingPickerAssetRef.current;
           const applyPickedSelection = (base: LiveSessionDraft) => {
@@ -4320,13 +4312,10 @@ export function LiveBuilderView({
               dealPrefill.supplierId && suppliers.some((entry) => entry.id === dealPrefill.supplierId)
                 ? dealPrefill.supplierId
                 : base.supplierId;
-            const nextSupplier = nextSupplierId
-              ? suppliers.find((entry) => entry.id === nextSupplierId)
-              : undefined;
             const nextCampaignId =
               dealPrefill.campaignId && campaigns.some((entry) => entry.id === dealPrefill.campaignId)
                 ? dealPrefill.campaignId
-                : firstCampaignForSupplier(campaigns, nextSupplier)?.id || base.campaignId;
+                : base.campaignId;
             const nextHostId =
               dealPrefill.hostId && hosts.some((entry) => entry.id === dealPrefill.hostId)
                 ? dealPrefill.hostId
@@ -4458,7 +4447,7 @@ export function LiveBuilderView({
       draft.endDateISO &&
       draft.endTime,
     ) &&
-    mockValidateSchedule(
+    validateSchedule(
       campaignsData,
       draft.campaignId,
       draft.startDateISO,
@@ -7524,7 +7513,7 @@ export function LiveBuilderView({
                   </div>
 
                   {(() => {
-                    const val = mockValidateSchedule(
+                    const val = validateSchedule(
                       campaignsData,
                       draft.campaignId,
                       draft.startDateISO,

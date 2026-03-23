@@ -1683,8 +1683,8 @@ export default function AdBuilder({
     const supplierName = pickerContext.supplierName || "";
     const campaignName = pickerContext.campaignName || "";
     const campaignStatus = pickerContext.campaignStatus === "Paused" ? "Paused" : "Active";
-    const startISO = pickerContext.startISO || new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const endISO = pickerContext.endISO || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const startISO = typeof pickerContext.startISO === "string" ? pickerContext.startISO : "";
+    const endISO = typeof pickerContext.endISO === "string" ? pickerContext.endISO : "";
 
     const supplierEntry: Supplier = {
       id: supplierId,
@@ -1745,7 +1745,7 @@ export default function AdBuilder({
       const matched = workspaceDealScopes.find((deal) => deal.dealId === preferredDealId);
       if (matched) return matched;
     }
-    return workspaceDealScopes[0];
+    return null;
   }, [initialAdId, pickerContext?.dealId, queryDealId, workspaceDealScopes, workspaceState?.selectedId]);
 
   const effectiveDealScope = useMemo(
@@ -1782,8 +1782,8 @@ export default function AdBuilder({
               supplierId: availableSuppliers[0]?.id || "",
               name: pickerContext?.campaignName || "",
               status: pickerContext?.campaignStatus === "Paused" ? "Paused" : "Active",
-              startsAtISO: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-              endsAtISO: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+              startsAtISO: typeof pickerContext?.startISO === "string" ? pickerContext.startISO : "",
+              endsAtISO: typeof pickerContext?.endISO === "string" ? pickerContext.endISO : "",
             } satisfies Campaign,
           ]
           : [],
@@ -1878,7 +1878,7 @@ export default function AdBuilder({
   const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>({});
 
   const supplier = useMemo(
-    () => availableSuppliers.find((entry) => entry.id === builder.supplierId) || availableSuppliers[0],
+    () => availableSuppliers.find((entry) => entry.id === builder.supplierId),
     [availableSuppliers, builder.supplierId],
   );
   const campaignOptions = useMemo(
@@ -1886,7 +1886,7 @@ export default function AdBuilder({
     [availableCampaigns, builder.supplierId],
   );
   const campaign = useMemo(
-    () => availableCampaigns.find((entry) => entry.id === builder.campaignId) || campaignOptions[0],
+    () => availableCampaigns.find((entry) => entry.id === builder.campaignId),
     [availableCampaigns, builder.campaignId, campaignOptions],
   );
 
