@@ -796,7 +796,7 @@ export default function AdzDashboard() {
 
   const [ads, setAds] = useState<Ad[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  const selected = useMemo(() => ads.find((a) => a.id === selectedId), [ads, selectedId]);
   const drawerAd = useMemo(
     () => ads.find((ad) => ad.id === drawerData) || selected,
     [ads, drawerData, selected],
@@ -813,7 +813,7 @@ export default function AdzDashboard() {
       if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) {
         return selectedFromPayload;
       }
-      return nextAds[0]?.id || "";
+      return "";
     });
   }, [workspaceState]);
 

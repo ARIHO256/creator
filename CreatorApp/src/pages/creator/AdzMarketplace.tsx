@@ -1214,7 +1214,7 @@ export default function AdzMarketplace() {
 
   const [ads, setAds] = useState<Ad[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  const selected = useMemo(() => ads.find((a) => a.id === selectedId), [ads, selectedId]);
 
   useEffect(() => {
     const nextAds = mapWorkspaceToAds(workspaceState || EMPTY_MARKETPLACE_STATE);
@@ -1223,15 +1223,16 @@ export default function AdzMarketplace() {
       if (current && nextAds.some((ad) => ad.id === current)) return current;
       const selectedFromPayload = asString(workspaceState?.selectedId, "");
       if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) return selectedFromPayload;
-      return nextAds[0]?.id || "";
+      return "";
     });
   }, [workspaceState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const adId = new URLSearchParams(window.location.search).get("adId");
-    if (!adId) return;
-    setSelectedId((current) => (ads.some((ad) => ad.id === adId) ? adId : current));
+    const params = new URLSearchParams(window.location.search);
+    const contextId = params.get("adId") || params.get("dealId") || "";
+    if (!contextId) return;
+    setSelectedId((current) => (ads.some((ad) => ad.id === contextId) ? contextId : current));
   }, [ads]);
 
   // Per-ad mode selections (Retail/Wholesale) for offers

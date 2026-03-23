@@ -577,7 +577,7 @@ export default function AdzManager() {
 
   const [ads, setAds] = useState<Ad[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  const selected = useMemo(() => ads.find((a) => a.id === selectedId), [ads, selectedId]);
   // drawers
   const [drawer, setDrawer] = useState<DrawerKey>(null);
   const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
@@ -593,15 +593,16 @@ export default function AdzManager() {
     setSelectedId((current) => {
       if (current && nextAds.some((ad) => ad.id === current)) return current;
       if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) return selectedFromPayload;
-      return nextAds[0]?.id || "";
+      return "";
     });
   }, [workspaceState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const adId = new URLSearchParams(window.location.search).get("adId");
-    if (!adId) return;
-    setSelectedId((current) => (ads.some((ad) => ad.id === adId) ? adId : current));
+    const params = new URLSearchParams(window.location.search);
+    const contextId = params.get("adId") || params.get("dealId") || "";
+    if (!contextId) return;
+    setSelectedId((current) => (ads.some((ad) => ad.id === contextId) ? contextId : current));
   }, [ads]);
 
   // filters
