@@ -326,9 +326,15 @@ export default function LiveAlertsManager() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
   useEffect(() => {
-    if (!templates.length) return;
-    setActive((current) => current && templates.some((item) => item.key === current.key) ? templates.find((item) => item.key === current.key) || templates[0] : templates[0]);
+    setActive((current) => {
+      if (!current) return null;
+      return templates.find((item) => item.key === current.key) || null;
+    });
   }, [templates]);
+  const quickLiveTemplate = useMemo(
+    () => templates.find((item) => item.key === "were_live") || null,
+    [templates]
+  );
 
 
   const openConfirm = (t: AlertTemplate) => {
@@ -413,7 +419,7 @@ export default function LiveAlertsManager() {
                 Copy link
               </Btn>
             </div>
-            <Btn tone="primary" onClick={() => templates[0] && openConfirm(templates[0])} disabled={!templates[0] || !canSend(templates[0])} left={<Zap className="h-4 w-4" />}>
+            <Btn tone="primary" onClick={() => quickLiveTemplate && openConfirm(quickLiveTemplate)} disabled={!quickLiveTemplate || !canSend(quickLiveTemplate)} left={<Zap className="h-4 w-4" />}>
               <span className="hidden sm:inline">Quick “We’re live”</span>
               <span className="sm:hidden">Alert</span>
             </Btn>

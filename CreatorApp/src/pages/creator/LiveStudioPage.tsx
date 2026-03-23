@@ -348,8 +348,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   }, [studioData.products]);
 
   useEffect(() => {
-    if (!highlightedProductId && products.length > 0) {
-      setHighlightedProductId(products[0].id);
+    if (highlightedProductId && !products.some((product) => product.id === highlightedProductId)) {
+      setHighlightedProductId("");
     }
   }, [highlightedProductId, products]);
 
@@ -390,10 +390,10 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       return;
     }
     setStoredLiveDraft(fromStudioData);
-    if (fromStudioData.giveaways.length) {
-      setSelectedGiveawayId((prev) => (prev ? prev : fromStudioData.giveaways[0].id));
+    if (!fromStudioData.giveaways.some((entry) => entry.id === selectedGiveawayId)) {
+      setSelectedGiveawayId("");
     }
-  }, [studioData]);
+  }, [selectedGiveawayId, studioData]);
 
   const configuredGiveaways = storedLiveDraft?.giveaways || [];
   const configuredProducts = storedLiveDraft?.products || [];
@@ -540,8 +540,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   }, [studioData.scenes]);
 
   useEffect(() => {
-    if (!activeSceneId && scenes.length > 0) {
-      setActiveSceneId(scenes[0].id);
+    if (activeSceneId && !scenes.some((scene) => scene.id === activeSceneId)) {
+      setActiveSceneId("");
     }
   }, [activeSceneId, scenes]);
 
@@ -1299,7 +1299,7 @@ function ProductPanel({
         <div className="flex items-center gap-1 text-xs">
           <button
             className="px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-            onClick={() => onHighlight(products[0]?.id || "")}
+            onClick={() => onHighlight(highlightedProductId || "")}
           >
             Highlight now
           </button>
@@ -1469,7 +1469,7 @@ function LiveVideoPanel({
   scenes,
   setActiveSceneId,
 }: LiveVideoPanelProps) {
-  const activeScene = scenes.find((s: Scene) => s.id === activeSceneId) || scenes[0];
+  const activeScene = scenes.find((s: Scene) => s.id === activeSceneId) || null;
 
   if (mode === "lobby") {
     return (
@@ -1491,7 +1491,7 @@ function LiveVideoPanel({
       <div className="relative flex-1 rounded-2xl bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 flex items-center justify-center transition-colors">
         <span className="text-sm text-slate-600 dark:text-slate-400">
           Live video preview · Scene:{" "}
-          <span className="font-medium text-slate-900 dark:text-slate-100">{activeScene.label}</span>
+          <span className="font-medium text-slate-900 dark:text-slate-100">{activeScene?.label || "—"}</span>
         </span>
         {screenShareOn && (
           <span className="absolute top-2 right-2 text-xs px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-900 border border-slate-700 dark:border-slate-700 text-slate-100 transition-colors">

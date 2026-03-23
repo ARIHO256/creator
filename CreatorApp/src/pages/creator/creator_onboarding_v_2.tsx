@@ -1681,9 +1681,9 @@ export default function CreatorOnboardingWorldClassV25() {
   };
 
   const makeAiProfile = () => {
-    const region = (form.profile.audienceRegions || ["Global"])[0] || "Global";
-    const langs = (form.profile.contentLanguages || ["English"]).join(", ");
-    const line = (form.preferences.lines || ["Electronics"])[0] || "Electronics";
+    const region = (form.profile.audienceRegions || []).find((entry) => String(entry).trim()) || "";
+    const langs = (form.profile.contentLanguages || []).filter((entry) => String(entry).trim()).join(", ");
+    const line = (form.preferences.lines || []).find((entry) => String(entry).trim()) || "";
 
     update("profile.tagline", `${line} creator for ${region}`);
     update(

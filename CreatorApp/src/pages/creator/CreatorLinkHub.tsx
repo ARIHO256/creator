@@ -274,7 +274,7 @@ export default function CreatorLinksHubV3Fixed({
 
   const selected = useMemo(() => {
     const inView = selectedId ? visible.find((x) => x.id === selectedId) : null;
-    return inView ?? pinnedForTab[0] ?? visible[0] ?? null;
+    return inView ?? null;
   }, [visible, selectedId, pinnedForTab]);
 
   const togglePin = (id: string) => {

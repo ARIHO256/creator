@@ -534,7 +534,7 @@ export default function AudienceNotifications() {
   const [dealDropAtOffsetMin, setDealDropAtOffsetMin] = useState(0); // if scheduled: minutes after start
   const [selectedPackId, setSelectedPackId] = useState("");
   const selectedPack = useMemo(
-    () => templatePacks.find((p) => p.id === selectedPackId) ?? templatePacks[0] ?? EMPTY_PACK,
+    () => templatePacks.find((p) => p.id === selectedPackId) ?? EMPTY_PACK,
     [templatePacks, selectedPackId],
   );
 
@@ -548,7 +548,7 @@ export default function AudienceNotifications() {
     setBufferMinutes(typeof payload.bufferMinutes === "number" ? payload.bufferMinutes : 15);
     setWaNumber(payload.waNumber || "");
     setSessionUrl(payload.sessionUrl || baseSessionUrl);
-    setSelectedPackId(payload.selectedPackId || payload.templatePacks?.[0]?.id || "");
+    setSelectedPackId(payload.selectedPackId || "");
     setEnabledChannels((current) => ({ ...current, ...(payload.enabledChannels || {}) }));
     setEnabledReminders((current) => ({ ...current, ...(payload.enabledReminders || {}) }));
     setReplayDelayMinutes(typeof payload.replayDelayMinutes === "number" ? payload.replayDelayMinutes : 0);

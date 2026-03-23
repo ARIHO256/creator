@@ -102,57 +102,42 @@ function LiveReplaysClipsPage() {
 
   const aiClipSuggestions = useMemo(() => {
     if (!selectedReplay) return [];
-    // Simple demo: different suggestions depending on replay
-    if (selectedReplay.id === "R-101") {
-      return [
-        {
-          id: 1,
-          label: "Hook + first serum demo",
-          start: 15,
-          end: 75,
-          tags: ["Hook within first 3 seconds", "Texture demo"]
-        },
-        {
-          id: 2,
-          label: "Before/after reveal",
-          start: 420,
-          end: 465,
-          tags: ["Visual proof", "High comment volume"]
-        },
-        {
-          id: 3,
-          label: "Flash deal countdown",
-          start: 900,
-          end: 945,
-          tags: ["Urgency", "Sales spike"]
-        }
-      ];
-    }
-    if (selectedReplay.id === "R-102") {
-      return [
-        {
-          id: 1,
-          label: "Gadget unboxing moment",
-          start: 120,
-          end: 180,
-          tags: ["Unboxing", "Reactions spike"]
-        },
-        {
-          id: 2,
-          label: "Top 3 gadgets summary",
-          start: 2100,
-          end: 2160,
-          tags: ["Summary", "Shareable"]
-        }
-      ];
-    }
+    const seconds = selectedReplay.duration
+      .split(":")
+      .map((part) => Number(part))
+      .filter((part) => Number.isFinite(part));
+    const totalSeconds =
+      seconds.length === 3
+        ? seconds[0] * 3600 + seconds[1] * 60 + seconds[2]
+        : seconds.length === 2
+          ? seconds[0] * 60 + seconds[1]
+          : 0;
+    if (totalSeconds <= 0) return [];
+    const safeStart = Math.max(0, Math.floor(totalSeconds * 0.1));
+    const safeMid = Math.max(0, Math.floor(totalSeconds * 0.45));
+    const safeEnd = Math.max(0, Math.floor(totalSeconds * 0.75));
+    const makeEnd = (start: number, desired: number) => Math.min(totalSeconds, Math.max(start + 10, desired));
     return [
       {
         id: 1,
-        label: "Warm welcome + show outline",
-        start: 30,
-        end: 90,
-        tags: ["Warm opener", "Faith-compatible tone"]
+        label: "Opening highlight",
+        start: safeStart,
+        end: makeEnd(safeStart, safeStart + 60),
+        tags: selectedReplay.performanceTags.slice(0, 2)
+      },
+      {
+        id: 2,
+        label: "Mid-session highlight",
+        start: safeMid,
+        end: makeEnd(safeMid, safeMid + 60),
+        tags: selectedReplay.performanceTags.slice(0, 2)
+      },
+      {
+        id: 3,
+        label: "Closing highlight",
+        start: safeEnd,
+        end: makeEnd(safeEnd, safeEnd + 45),
+        tags: selectedReplay.performanceTags.slice(0, 2)
       }
     ];
   }, [selectedReplay]);

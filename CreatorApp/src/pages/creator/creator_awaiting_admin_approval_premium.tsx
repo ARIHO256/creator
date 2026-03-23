@@ -425,7 +425,7 @@ export default function CreatorAwaitingApprovalPremium() {
     qp.creatorId || String(approvalMetadata.creatorId || "pending");
 
   const primaryLine =
-    qp.niche || onboarding?.preferences?.lines?.[0] || "Not set";
+    qp.niche || onboarding?.preferences?.lines?.find((entry) => String(entry).trim()) || "Not set";
 
   // status
   const [status, setStatus] = useState<string>(() => qp.status || "UnderReview");

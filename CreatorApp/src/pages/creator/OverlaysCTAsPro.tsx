@@ -84,6 +84,14 @@ type OverlaysPayload = {
   notesB?: string;
 };
 
+const EMPTY_PRODUCT: Product = {
+  id: "",
+  name: "",
+  price: "",
+  stock: 0,
+  posterUrl: "",
+};
+
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -318,14 +326,14 @@ export default function OverlaysCTAsPro() {
     setDealEndISO(payload.dealEndISO || session.endISO);
     setLowerEnabled(payload.lowerEnabled ?? false);
     setLowerPlacement(payload.lowerPlacement || "bottom");
-    setLowerProductId(payload.lowerProductId || payload.products?.[0]?.id || lowerProductId);
+    setLowerProductId(payload.lowerProductId || lowerProductId);
     setCtaText(payload.ctaText || "Buy now");
     setAbEnabled(payload.abEnabled ?? false);
     setNotesA(payload.notesA || "");
     setNotesB(payload.notesB || "");
   }, [payload, session.endISO, baseJoinUrl, lowerProductId]);
 
-  const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? products[0], [products, lowerProductId]);
+  const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? EMPTY_PRODUCT, [products, lowerProductId]);
 
   const [now, setNow] = useState(Date.now());
   useEffect(() => {

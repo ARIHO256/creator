@@ -454,14 +454,13 @@ useEffect(() => {
 
   const [linkId, setLinkId] = useState("")
   useEffect(() => {
-    if (!campaignId && campaignOptions.length > 0) {
-      setCampaignId(initialCampaignId || campaignOptions[0].id)
+    if (!campaignId && initialCampaignId && campaignOptions.some((campaignOption) => campaignOption.id === initialCampaignId)) {
+      setCampaignId(initialCampaignId)
     }
   }, [campaignId, campaignOptions, initialCampaignId])
 
   useEffect(() => {
-    const first = campaign?.links?.[0]?.id
-    setLinkId((prev) => (campaign?.links?.some((l) => l.id === prev) ? prev : first || ""))
+    setLinkId((prev) => (campaign?.links?.some((l) => l.id === prev) ? prev : ""))
   }, [campaign])
 
   const linkItem = useMemo(() => (campaign?.links || []).find((l) => l.id === linkId) || null, [campaign, linkId])
