@@ -2280,7 +2280,9 @@ export default function DealzMarketplace() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
-    const isPickerReturn = sp.get("restore") === "1" || sp.has("assetId");
+    const source = (sp.get("pickerSource") || "").toLowerCase();
+    const hasPickerSource = source === "live-builder" || source === "ad-builder";
+    const isPickerReturn = sp.get("restore") === "1" || sp.has("assetId") || hasPickerSource;
     if (!isPickerReturn) return;
     const returnDealId = sp.get("dealId") || "";
     if (returnDealId) {
@@ -2288,7 +2290,6 @@ export default function DealzMarketplace() {
       setSelectedId(returnDealId);
     }
 
-    const source = (sp.get("pickerSource") || "").toLowerCase();
     if (source === "live-builder") {
       setLiveBuilderOpen(true);
       return;
