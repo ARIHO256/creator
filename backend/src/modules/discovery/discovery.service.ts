@@ -40,6 +40,9 @@ export class DiscoveryService {
       this.publicReadCache.publicReadTtlMs(),
       async () => {
         const sellers = await this.prismaRead.seller.findMany({
+          where: {
+            NOT: [{ id: { startsWith: 'seller_' } }, { id: { startsWith: 'provider_' } }]
+          },
           skip,
           take,
           orderBy: [{ isVerified: 'desc' }, { rating: 'desc' }, { createdAt: 'desc' }]
@@ -84,7 +87,12 @@ export class DiscoveryService {
       orderBy: { createdAt: 'desc' }
     });
     const ids = follows.map((entry) => entry.sellerId);
-    const sellers = await this.prisma.seller.findMany({ where: { id: { in: ids } } });
+    const sellers = await this.prisma.seller.findMany({
+      where: {
+        id: { in: ids },
+        NOT: [{ id: { startsWith: 'seller_' } }, { id: { startsWith: 'provider_' } }]
+      }
+    });
     return this.enrichPublicSellers(sellers, this.prisma);
   }
 

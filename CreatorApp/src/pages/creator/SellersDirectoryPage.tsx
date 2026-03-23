@@ -21,16 +21,16 @@ type Seller = {
   initials: string;
   tagline: string;
   categories: string[];
-  followers: number;
-  livesCompleted: number;
-  avgOrderValue: number;
+  followers: number | null;
+  livesCompleted: number | null;
+  avgOrderValue: number | null;
   badge: string;
   collabStatus: string;
-  rating: number;
+  rating: number | null;
   region: string;
   similarTo: string[];
   relationship: string;
-  fitScore: number;
+  fitScore: number | null;
   fitReason: string;
   followersTrend: Trend;
   livesTrend: Trend;
@@ -63,34 +63,42 @@ function sellerInitials(name?: string | null) {
 
 function toSeller(record: PublicSellerRecord): Seller {
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const numberOrNull = (value: unknown) => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
   const categories = Array.isArray(record.categories) && record.categories.length > 0
     ? record.categories
-    : [String(record.category || "General")];
+    : record.category
+      ? [String(record.category)]
+      : [];
+  const name = String(record.displayName || record.name || record.handle || "").trim();
 
   return {
     id: sellerNumericId(String(record.id)),
     apiId: String(record.id),
     handle: String(record.handle || "").trim(),
-    name: String(record.displayName || record.name || "Supplier"),
-    initials: sellerInitials(record.displayName || record.name),
-    tagline: String(record.description || "Supplier profile"),
+    name,
+    initials: sellerInitials(name),
+    tagline: String(record.description || "").trim(),
     categories,
-    followers: Number((metadata as { followers?: unknown }).followers || 0),
-    livesCompleted: Number((metadata as { livesCompleted?: unknown }).livesCompleted || 0),
-    avgOrderValue: Number((metadata as { avgOrderValue?: unknown }).avgOrderValue || 0),
-    badge: String((metadata as { badge?: unknown }).badge || (record.isVerified ? "Verified" : "Supplier")),
-    collabStatus: String((metadata as { collabStatus?: unknown }).collabStatus || "Open to collabs"),
-    rating: Number(record.rating || 0),
-    region: String(record.region || "Global"),
+    followers: numberOrNull((metadata as { followers?: unknown }).followers),
+    livesCompleted: numberOrNull((metadata as { livesCompleted?: unknown }).livesCompleted),
+    avgOrderValue: numberOrNull((metadata as { avgOrderValue?: unknown }).avgOrderValue),
+    badge: String((metadata as { badge?: unknown }).badge || (record.isVerified ? "Verified" : "")).trim(),
+    collabStatus: String((metadata as { collabStatus?: unknown }).collabStatus || "").trim(),
+    rating: numberOrNull(record.rating),
+    region: String(record.region || "").trim(),
     similarTo: Array.isArray((metadata as { similarTo?: unknown[] }).similarTo) ? ((metadata as { similarTo?: unknown[] }).similarTo as unknown[]).map((item) => String(item)) : [],
-    relationship: String((metadata as { relationship?: unknown }).relationship || "New"),
-    fitScore: Number((metadata as { fitScore?: unknown }).fitScore || 0),
-    fitReason: String((metadata as { fitReason?: unknown }).fitReason || "Potential supplier match."),
+    relationship: String((metadata as { relationship?: unknown }).relationship || "").trim(),
+    fitScore: numberOrNull((metadata as { fitScore?: unknown }).fitScore),
+    fitReason: String((metadata as { fitReason?: unknown }).fitReason || "").trim(),
     followersTrend: "flat",
     livesTrend: "flat",
     orderTrend: "flat",
     trustBadges: Array.isArray((metadata as { trustBadges?: unknown[] }).trustBadges) ? ((metadata as { trustBadges?: unknown[] }).trustBadges as unknown[]).map((item) => String(item)) : [],
-    lastActive: String((metadata as { lastActive?: unknown }).lastActive || "Recently active"),
+    lastActive: String((metadata as { lastActive?: unknown }).lastActive || "").trim(),
     supplierType: String(record.type || record.kind || "Seller").toLowerCase() === "provider" ? "Provider" : "Seller",
     isActivelyCollaborating: Boolean((metadata as { isActivelyCollaborating?: unknown }).isActivelyCollaborating),
     hasActiveCampaigns: Boolean((metadata as { hasActiveCampaigns?: unknown }).hasActiveCampaigns)
@@ -105,10 +113,14 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
   const [minFollowers, setMinFollowers] = useState<string>("");
   const [minRating, setMinRating] = useState<string>("Any");
 
-  const [followedSellers, setFollowedSellers] = useState<number[]>([]);
+  const [followedSellers, setFollowedSellers] = useState<string[]>([]);
   const { data: sellerRecords } = useApiResource({
     initialData: [] as PublicSellerRecord[],
     loader: () => creatorApi.sellers()
+  });
+  const { data: mySellerRecords } = useApiResource({
+    initialData: [] as PublicSellerRecord[],
+    loader: () => creatorApi.mySellers()
   });
 
   const [selectedSeller, setSelectedSeller] = useState<Seller | null>(null);
@@ -132,6 +144,17 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
   };
 
   const sellers = useMemo(() => sellerRecords.map(toSeller), [sellerRecords]);
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(new Set(sellers.flatMap((seller) => seller.categories).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [sellers]
+  );
+
+  React.useEffect(() => {
+    setFollowedSellers(Array.from(new Set(mySellerRecords.map((seller) => String(seller.id)))));
+  }, [mySellerRecords]);
 
 
 
@@ -146,10 +169,10 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
   };
 
   const toggleSellerFollow = (seller: Seller) => {
-    const isFollowing = followedSellers.includes(seller.id);
+    const isFollowing = followedSellers.includes(seller.apiId);
     void creatorApi.followSeller(seller.apiId, !isFollowing);
     setFollowedSellers((prev) =>
-      isFollowing ? prev.filter((id) => id !== seller.id) : [...prev, seller.id]
+      isFollowing ? prev.filter((id) => id !== seller.apiId) : [...prev, seller.apiId]
     );
   };
 
@@ -179,7 +202,11 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
       // Creators should only see opportunities from suppliers they can actually collab with.
       // Requirements: Hide opportunities from suppliers that are not open for collaboration or not linked to the creator.
       // Invite-only suppliers should not appear and request invite does not also apply here.
-      if (s.collabStatus === "Invite only" || s.collabStatus === "Not seeking") return false;
+      if (
+        s.collabStatus &&
+        (s.collabStatus === "Invite only" || s.collabStatus === "Not seeking")
+      )
+        return false;
 
       return true;
     });
@@ -205,7 +232,7 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
   const tabFilteredSellers = useMemo(() => {
     let result = presetFilteredSellers;
     if (viewTab === "followed") {
-      result = result.filter((s) => followedSellers.includes(s.id));
+      result = result.filter((s) => followedSellers.includes(s.apiId));
     } else if (viewTab === "new") {
       result = result.filter(
         (s) => s.badge === "New Seller" || s.relationship === "New"
@@ -219,29 +246,24 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
     const arr = [...tabFilteredSellers];
     arr.sort((a, b) => {
       if (sortBy === "followers") {
-        return b.followers - a.followers;
+        return (b.followers ?? -1) - (a.followers ?? -1);
       }
       if (sortBy === "rating") {
-        return b.rating - a.rating;
+        return (b.rating ?? -1) - (a.rating ?? -1);
       }
       if (sortBy === "lives") {
-        return b.livesCompleted - a.livesCompleted;
+        return (b.livesCompleted ?? -1) - (a.livesCompleted ?? -1);
       }
       // relevance – approximate by fitScore, then rating, then followers
       if (sortBy === "relevance") {
-        if (b.fitScore !== a.fitScore) return b.fitScore - a.fitScore;
-        if (b.rating !== a.rating) return b.rating - a.rating;
-        return b.followers - a.followers;
+        if ((b.fitScore ?? -1) !== (a.fitScore ?? -1)) return (b.fitScore ?? -1) - (a.fitScore ?? -1);
+        if ((b.rating ?? -1) !== (a.rating ?? -1)) return (b.rating ?? -1) - (a.rating ?? -1);
+        return (b.followers ?? -1) - (a.followers ?? -1);
       }
       return 0;
     });
     return arr;
   }, [tabFilteredSellers, sortBy]);
-
-  const recommended = useMemo(() => sortedSellers.filter((s) => s.badge === "Top Brand"), [sortedSellers]);
-  const similarBrands = useMemo(() => sortedSellers.filter((s) =>
-    s.similarTo.includes("GlowUp Hub") || s.similarTo.includes("GadgetMart Africa")
-  ), [sortedSellers]);
 
   const handleAiSuggest = () => {
     setIsAiDialogOpen(true);
@@ -289,16 +311,11 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
                   onChange={(e) => handleFilterChange(setCategoryFilter, e.target.value)}
                 >
                   <option value="All" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">All Categories</option>
-                  <option value="Beauty" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Beauty</option>
-                  <option value="Skincare" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Skincare</option>
-                  <option value="Tech" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Tech</option>
-                  <option value="Gadgets" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Gadgets</option>
-                  <option value="Faith" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Faith</option>
-                  <option value="Wellness" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Wellness</option>
-                  <option value="EV" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">EV</option>
-                  <option value="Mobility" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Mobility</option>
-                  <option value="Food" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Food</option>
-                  <option value="Groceries" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">Groceries</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category} className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200">
+                      {category}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -440,12 +457,12 @@ function SellersDirectoryPage({ onChangePage }: { onChangePage?: (page: PageId) 
                 <SellerCard
                   key={s.id}
                   seller={s}
-                  followed={followedSellers.includes(s.id)}
+                  followed={followedSellers.includes(s.apiId)}
                   onToggleFollow={() => toggleSellerFollow(s)}
                   onInvite={openInvite}
                   onChangePage={onChangePage}
                   isRecommended={s.badge === "Top Brand"}
-                  isSimilar={s.similarTo.includes("GlowUp Hub") || s.similarTo.includes("GadgetMart Africa")}
+                  isSimilar={s.similarTo.length > 0}
                 />
               ))}
             </div>
@@ -530,10 +547,15 @@ type SellerCardProps = {
 
 function SellerCard({ seller, followed, onToggleFollow, onInvite, onChangePage: _onChangePage, isRecommended, isSimilar }: SellerCardProps) {
   const navigate = useNavigate();
+  const collabStatusLabel = seller.collabStatus || (seller.hasActiveCampaigns ? "Open to collabs" : "Status unavailable");
   const statusColor =
-    seller.collabStatus === "Open to collabs"
+    collabStatusLabel === "Open to collabs"
       ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700"
       : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700";
+  const followersLabel =
+    seller.followers !== null ? `${(seller.followers / 1000).toFixed(1)} k` : "—";
+  const livesLabel = seller.livesCompleted !== null ? seller.livesCompleted : "—";
+  const avgOrderLabel = seller.avgOrderValue !== null ? `$${seller.avgOrderValue}` : "—";
   // Future-ready visibility gate for opportunity CTA.
   const canViewOpportunity = seller.hasActiveCampaigns || seller.isActivelyCollaborating;
 
@@ -597,17 +619,17 @@ function SellerCard({ seller, followed, onToggleFollow, onInvite, onChangePage: 
       <div className="grid grid-cols-3 gap-4 mb-5">
         <StatItem
           label="Followers"
-          value={`${(seller.followers / 1000).toFixed(1)} k`}
+          value={followersLabel}
           trend={seller.followersTrend}
         />
         <StatItem
           label="Live sessions"
-          value={seller.livesCompleted}
+          value={livesLabel}
           trend={seller.livesTrend}
         />
         <StatItem
           label="Avg order"
-          value={`$${seller.avgOrderValue} `}
+          value={avgOrderLabel}
           trend={seller.orderTrend}
         />
       </div>
@@ -620,18 +642,18 @@ function SellerCard({ seller, followed, onToggleFollow, onInvite, onChangePage: 
             <span className="text-[11px] font-semibold text-[#f77f00]">AI Compatibility Note</span>
           </div>
           <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-3">
-            {seller.fitReason}
+            {seller.fitReason || "No compatibility note available."}
           </p>
         </div>
 
         <div className="flex flex-col gap-1.5 px-1 shrink-0">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 font-medium">Relationship</span>
-            <span className="text-slate-900 dark:text-slate-100 font-semibold">{seller.relationship}</span>
+            <span className="text-slate-900 dark:text-slate-100 font-semibold">{seller.relationship || "—"}</span>
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-500 font-medium">Last Active</span>
-            <span className="text-slate-900 dark:text-slate-100 font-semibold">{seller.lastActive}</span>
+            <span className="text-slate-900 dark:text-slate-100 font-semibold">{seller.lastActive || "—"}</span>
           </div>
         </div>
       </div>
@@ -641,7 +663,7 @@ function SellerCard({ seller, followed, onToggleFollow, onInvite, onChangePage: 
         <div className="flex items-center justify-between mb-1">
           <div className={`px-3 py-1 rounded-xl border text-xs font-medium flex items-center gap-1.5 ${statusColor}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {seller.collabStatus}
+            {collabStatusLabel}
           </div>
           <button
             onClick={(e) => {
@@ -759,8 +781,8 @@ function InviteModal({ seller, onClose }: InviteModalProps) {
         title: `Invite to collaborate with ${seller.name}`,
         message,
         type: model,
-        category: seller.categories?.[0] || "General",
-        region: seller.region || "Global",
+        category: seller.categories?.[0] || undefined,
+        region: seller.region || undefined,
         messageShort: `Invite from creator workspace for ${seller.name}.`,
         metadata: {
           source: "creator-sellers-directory",
@@ -894,8 +916,13 @@ function AiDiscoveryDialog({ sellers, onClose, onViewSeller }: { sellers: Seller
   useScrollLock(true);
 
   const recommendedSellers = React.useMemo(() => {
-    // Simple mock logic: pick top 3 from the passed list (or defaults if list empty)
-    return sellers.slice(0, 3);
+    return [...sellers]
+      .sort((a, b) => {
+        if ((b.fitScore ?? -1) !== (a.fitScore ?? -1)) return (b.fitScore ?? -1) - (a.fitScore ?? -1);
+        if ((b.rating ?? -1) !== (a.rating ?? -1)) return (b.rating ?? -1) - (a.rating ?? -1);
+        return (b.followers ?? -1) - (a.followers ?? -1);
+      })
+      .slice(0, 3);
   }, [sellers]);
 
   return (
