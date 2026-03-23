@@ -244,7 +244,7 @@ export default function LiveAlertsManager() {
   const session = useMemo(
     () => ({
       id: payload.session?.id || sessionId,
-      title: payload.session?.title || "Live session",
+      title: payload.session?.title || "",
       status: payload.session?.status || ("Draft" as SessionStatus),
       startedISO: payload.session?.startedISO || new Date(Date.now() - 9 * 60 * 1000).toISOString(),
       endsISO: payload.session?.endsISO || new Date(Date.now() + 51 * 60 * 1000).toISOString(),

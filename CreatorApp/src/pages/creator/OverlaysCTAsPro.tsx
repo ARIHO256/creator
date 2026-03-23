@@ -223,7 +223,7 @@ export default function OverlaysCTAsPro() {
   const session = useMemo(
     () => ({
       id: payload.session?.id || sessionId,
-      title: payload.session?.title || "Live session",
+      title: payload.session?.title || "",
       status: payload.session?.status || ("Draft" as SessionStatus),
       startISO: payload.session?.startISO || new Date(Date.now() + 40 * 60 * 1000).toISOString(),
       endISO: payload.session?.endISO || new Date(Date.now() + 130 * 60 * 1000).toISOString(),

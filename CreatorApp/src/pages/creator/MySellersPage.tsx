@@ -408,7 +408,7 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
         onClose={() => setIsPitchDrawerOpen(false)}
         recipientName={pitchRecipient?.name || ""}
         recipientInitials={pitchRecipient?.initials || ""}
-        defaultCategory={pitchRecipient?.categories?.[0] || "General"}
+        defaultCategory={pitchRecipient?.categories?.[0] || ""}
       />
     </div>
   );

@@ -382,7 +382,7 @@ export function InvitesFromSellersPage() {
         onClose={() => setIsPitchDrawerOpen(false)}
         recipientName={pitchRecipient?.brand || ""}
         recipientInitials={pitchRecipient?.initials || ""}
-        defaultCategory={pitchRecipient?.category || "General"}
+        defaultCategory={pitchRecipient?.category || ""}
         aiSuggestion={
           pitchRecipient
             ? `Hi ${pitchRecipient.brand}, thanks for the invite to ${pitchRecipient.campaign}. I’d love to propose a hybrid model...`

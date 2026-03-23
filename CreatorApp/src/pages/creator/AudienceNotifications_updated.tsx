@@ -542,7 +542,7 @@ export default function AudienceNotifications() {
     if (!Object.keys(payload).length) return;
     setPlan(payload.plan || "Standard");
     setSessionStatus(payload.sessionStatus || "Draft");
-    setSessionTitle(payload.sessionTitle || "Live session");
+    setSessionTitle(payload.sessionTitle || "");
     setStartLocal((current) => payload.startLocal || current);
     setEndLocal((current) => payload.endLocal || current);
     setBufferMinutes(typeof payload.bufferMinutes === "number" ? payload.bufferMinutes : 15);
