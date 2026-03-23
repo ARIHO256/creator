@@ -51,15 +51,13 @@ function mySellerNumericId(value: string) {
 }
 
 function mySellerInitials(name?: string | null) {
-  return (
-    String(name || "SP")
-      .split(" ")
-      .map((part) => part.trim()[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "SP"
-  );
+  return String(name ?? "")
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
 function toMySeller(record: PublicSellerRecord): MySeller {
@@ -82,14 +80,14 @@ function toMySeller(record: PublicSellerRecord): MySeller {
     avgConversion: Number((metadata as { avgConversion?: unknown }).avgConversion || 0),
     campaignsCount: Number((metadata as { campaignsCount?: unknown }).campaignsCount || 0),
     lastCampaign: String((metadata as { lastCampaign?: unknown }).lastCampaign || ""),
-    lastResult: String((metadata as { lastResult?: unknown }).lastResult || "No campaign summary yet"),
+    lastResult: String((metadata as { lastResult?: unknown }).lastResult || ""),
     openProposals: Number((metadata as { openProposals?: unknown }).openProposals || 0),
     activeContracts,
     rating: Number(record.rating || 0),
     trustBadges: Array.isArray((metadata as { trustBadges?: unknown[] }).trustBadges) ? ((metadata as { trustBadges?: unknown[] }).trustBadges as unknown[]).map((item) => String(item)) : [],
-    primaryContact: String((metadata as { primaryContact?: unknown }).primaryContact || "Brand team"),
-    nextLive: String((metadata as { nextLive?: unknown }).nextLive || "Not scheduled"),
-    nextAction: String((metadata as { nextAction?: unknown }).nextAction || "Review supplier workspace"),
+    primaryContact: String((metadata as { primaryContact?: unknown }).primaryContact || ""),
+    nextLive: String((metadata as { nextLive?: unknown }).nextLive || ""),
+    nextAction: String((metadata as { nextAction?: unknown }).nextAction || ""),
     following: Boolean((metadata as { following?: unknown }).following),
     favourite: Boolean((metadata as { favourite?: unknown }).favourite)
   };

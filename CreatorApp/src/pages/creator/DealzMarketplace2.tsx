@@ -260,7 +260,7 @@ function normalizeHandle(value: unknown): string {
   return base.startsWith("@") ? base : `@${base}`;
 }
 
-function normalizeISO(value: unknown, fallback = new Date().toISOString()): string {
+function normalizeISO(value: unknown, fallback = ""): string {
   const raw = toString(value, "");
   if (!raw) return fallback;
   const parsed = new Date(raw);
@@ -346,9 +346,8 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
 
         const supplier = normalizeSupplier(record.supplier);
         const creator = normalizeCreator(record.creator);
-        const nowISO = new Date().toISOString();
-        const startISO = normalizeISO(record.startISO, nowISO);
-        const endISO = normalizeISO(record.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString());
+        const startISO = normalizeISO(record.startISO, "");
+        const endISO = normalizeISO(record.endISO, startISO);
 
         const shoppableRecord = toRecord(record.shoppable);
         const liveRecord = toRecord(record.live);
@@ -374,8 +373,8 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
                 normalizeOffer(offer, offerIndex, toString(shoppableRecord.heroImageUrl, supplier.logoUrl || creator.avatarUrl || ""))
               )
               : [],
-            ctaPrimaryLabel: toString(shoppableRecord.ctaPrimaryLabel, "Buy now"),
-            ctaSecondaryLabel: toString(shoppableRecord.ctaSecondaryLabel, "Add to cart"),
+            ctaPrimaryLabel: toString(shoppableRecord.ctaPrimaryLabel, ""),
+            ctaSecondaryLabel: toString(shoppableRecord.ctaSecondaryLabel, ""),
             kpis: Array.isArray(shoppableRecord.kpis)
               ? shoppableRecord.kpis
                 .map((kpi) => toRecord(kpi))
@@ -400,7 +399,7 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
             platforms: Array.isArray(liveRecord.platforms) ? liveRecord.platforms.map((p) => toString(p, "")).filter(Boolean) : [],
             startISO: normalizeISO(liveRecord.startISO, startISO),
             endISO: normalizeISO(liveRecord.endISO, endISO),
-            timezoneLabel: toString(liveRecord.timezoneLabel, "Local time"),
+            timezoneLabel: toString(liveRecord.timezoneLabel, ""),
             promoLink: toString(liveRecord.promoLink, ""),
             heroImageUrl: toString(liveRecord.heroImageUrl, supplier.logoUrl || creator.avatarUrl || ""),
             heroVideoUrl: toString(liveRecord.heroVideoUrl, "") || undefined,
@@ -1545,7 +1544,7 @@ function LiveInvitePreviewPhone({
           <div className="h-[760px] overflow-y-auto">
             {/* Top bar */}
             <div className="sticky top-0 z-20 flex items-center justify-between bg-white/90 dark:bg-slate-950/90 px-3 py-2 backdrop-blur shadow-sm transition-colors ring-1 ring-slate-100 dark:ring-slate-800">
-              <div className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{live.title || "Untitled session"}</div>
+              <div className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{live.title}</div>
               <button
                 onClick={onSharePromo}
                 aria-label="Share"

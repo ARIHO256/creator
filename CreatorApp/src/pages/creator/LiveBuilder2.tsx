@@ -644,7 +644,7 @@ function normalizeSupplierCustomGiveawayPresets(
     .map((g) => ({
       id: String(g.id),
       campaignId: String(g.campaignId || ""),
-      title: String(g.title || "Untitled"),
+      title: String(g.title || ""),
       imageUrl: String(g.imageUrl || ""),
       notes: String(g.notes || ""),
       quantity: Number(g.quantity || 0),
@@ -660,29 +660,24 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
   const endDateISO = startDateISO;
   const endTime = `${pad2(Math.min(23, now.getHours() + 2))}:30`;
 
-  const title = dealId
-    ? `Live session for dealz`
-    : "Mega Live Dealz — Products + Consultation";
+  const title = "";
 
   return {
     id: seedId,
     title,
-    description:
-      "Join the live for product drops and a short consultation segment. Live-only bundles, Q&A, and limited slots.",
-    tags: ["Live session", "Q&A", "Bundles", "Limited stock"],
+    description: "",
+    tags: [],
     status: "Draft",
 
     supplierId: undefined,
     campaignId: undefined,
     hostId: undefined,
 
-    platforms: ["TikTok Live", "Instagram Live"],
+    platforms: [],
     platformOther: "",
 
-    locationLabel: "Online",
-    publicJoinUrl: dealId
-      ? `https://mylivedealz.com/live/${encodeURIComponent(dealId)}`
-      : `https://mylivedealz.com/live/${seedId}`,
+    locationLabel: "",
+    publicJoinUrl: "",
     heroAspect: "16:9",
 
     heroImageUrl: "",
@@ -706,24 +701,7 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
 
     teleprompterScript: "",
 
-    runOfShow: [
-      {
-        id: "seg_1",
-        type: "Opener",
-        title: "Opener + hook",
-        durationMin: 2,
-        notes: "Set the promise. Tease the best deal.",
-      },
-      { id: "seg_2", type: "Product showcase", title: "Feature: #1 best pick", durationMin: 8 },
-      {
-        id: "seg_3",
-        type: "Q&A",
-        title: "Answer top objections",
-        durationMin: 6,
-      },
-      { id: "seg_4", type: "Price drop", title: "Limited price drop + bonus", durationMin: 3 },
-      { id: "seg_5", type: "Closing", title: "Closing + CTA", durationMin: 3 },
-    ],
+    runOfShow: [],
 
     creatives: {
       openerAssetId: undefined,
@@ -735,8 +713,8 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
       ingestUrl: "",
       streamKey: "",
       simulcast: {
-        "TikTok Live": true,
-        "Instagram Live": true,
+        "TikTok Live": false,
+        "Instagram Live": false,
         "YouTube Live": false,
         "Facebook Live": false,
       },
@@ -748,13 +726,13 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     team: {
       moderators: [],
       cohosts: [],
-      blockedTerms: ["guaranteed", "miracle", "cure"],
+      blockedTerms: [],
       pinnedGuidelines: true,
     },
 
     compliance: {
       requiresDisclosure: true,
-      disclosureText: "Paid partnership. Some links may earn commission.",
+      disclosureText: "",
       restrictedTermsCheck: true,
       musicRightsConfirmed: false,
     },
@@ -2388,7 +2366,7 @@ function PromoLinkPreviewPhone({
               {/* Top bar */}
               <div className="sticky top-0 z-20 flex items-center justify-between bg-white/90 dark:bg-slate-950/90 px-3 py-2 backdrop-blur shadow-sm transition-colors ring-1 ring-slate-100 dark:ring-slate-800">
                 <div className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {draft.title || "Untitled session"}
+                  {draft.title || ""}
                 </div>
                 <button
                   onClick={() => {

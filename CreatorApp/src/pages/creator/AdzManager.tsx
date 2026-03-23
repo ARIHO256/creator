@@ -415,7 +415,7 @@ function mapOffer(raw: unknown, index: number, fallbackPosterUrl: string): Offer
   return {
     id: asString(rec?.id, `offer_${index + 1}`),
     type,
-    name: asString(rec?.name, "Offer"),
+    name: asString(rec?.name, ""),
     currency: asCurrency(rec?.currency, "UGX"),
     price: Math.max(0, asNumber(rec?.price, 0)),
     basePrice: typeof rec?.basePrice === "number" ? rec.basePrice : undefined,
@@ -452,7 +452,7 @@ function mapOffer(raw: unknown, index: number, fallbackPosterUrl: string): Offer
   };
 }
 
-function mapDealToManagedAd(raw: unknown): Ad | null {
+function mapDealToManagedAd(raw: unknown, index: number): Ad | null {
   const deal = asRecord(raw);
   if (!deal) return null;
   const shoppable = asRecord(deal.shoppable);
@@ -511,7 +511,7 @@ function mapDealToManagedAd(raw: unknown): Ad | null {
         : undefined;
 
   return {
-    id: asString(deal.id, campaignName || `ad_${Date.now()}`),
+    id: asString(deal.id, campaignName || `ad_${index + 1}`),
     name: campaignName,
     status,
     platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
@@ -524,9 +524,9 @@ function mapDealToManagedAd(raw: unknown): Ad | null {
       name: campaignName,
       subtitle: campaignSubtitle,
     },
-    startISO: asString(shoppable.startISO, asString(deal.startISO, new Date().toISOString())),
-    endISO: asString(shoppable.endISO, asString(deal.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString())),
-    timezone: asString(shoppable.timezone, Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+    startISO: asString(shoppable.startISO, asString(deal.startISO, "")),
+    endISO: asString(shoppable.endISO, asString(deal.endISO, "")),
+    timezone: asString(shoppable.timezone, asString(deal.timezone, "")),
     heroImageUrl: asString(shoppable.heroImageUrl, fallbackPoster || BLANK_IMAGE),
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
@@ -557,7 +557,7 @@ function mapDealToManagedAd(raw: unknown): Ad | null {
 
 function mapWorkspaceToManagedAds(payload: DealzMarketplaceWorkspaceResponse): Ad[] {
   return asArray(payload.deals)
-    .map((deal) => mapDealToManagedAd(deal))
+    .map((deal, index) => mapDealToManagedAd(deal, index))
     .filter((deal): deal is Ad => Boolean(deal))
     .sort((a, b) => new Date(b.startISO).getTime() - new Date(a.startISO).getTime());
 }
@@ -790,7 +790,7 @@ export default function AdzManager() {
   }
 
   const startsAt = useMemo(() => (selected ? new Date(selected.startISO) : new Date()), [selected?.startISO]);
-  const endsAt = useMemo(() => (selected ? new Date(selected.endISO) : new Date(Date.now() + 3600 * 1000)), [selected?.endISO]);
+  const endsAt = useMemo(() => (selected ? new Date(selected.endISO) : new Date()), [selected?.endISO]);
   // The countdown variable was unused, so it's removed to fix the warning.
   // const countdown = useMemo(() => countdownLabel(Date.now(), startsAt.getTime(), endsAt.getTime()), [startsAt, endsAt]);
 

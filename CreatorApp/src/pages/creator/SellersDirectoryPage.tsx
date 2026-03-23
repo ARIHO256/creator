@@ -50,15 +50,13 @@ function sellerNumericId(value: string) {
 }
 
 function sellerInitials(name?: string | null) {
-  return (
-    String(name || "SP")
-      .split(" ")
-      .map((part) => part.trim()[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "SP"
-  );
+  return String(name ?? "")
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
 function toSeller(record: PublicSellerRecord): Seller {
@@ -74,6 +72,7 @@ function toSeller(record: PublicSellerRecord): Seller {
       ? [String(record.category)]
       : [];
   const name = String(record.displayName || record.name || record.handle || "").trim();
+  const supplierKind = String(record.type || record.kind || "").trim().toLowerCase();
 
   return {
     id: sellerNumericId(String(record.id)),
@@ -99,7 +98,7 @@ function toSeller(record: PublicSellerRecord): Seller {
     orderTrend: "flat",
     trustBadges: Array.isArray((metadata as { trustBadges?: unknown[] }).trustBadges) ? ((metadata as { trustBadges?: unknown[] }).trustBadges as unknown[]).map((item) => String(item)) : [],
     lastActive: String((metadata as { lastActive?: unknown }).lastActive || "").trim(),
-    supplierType: String(record.type || record.kind || "Seller").toLowerCase() === "provider" ? "Provider" : "Seller",
+    supplierType: supplierKind === "provider" ? "Provider" : "Seller",
     isActivelyCollaborating: Boolean((metadata as { isActivelyCollaborating?: unknown }).isActivelyCollaborating),
     hasActiveCampaigns: Boolean((metadata as { hasActiveCampaigns?: unknown }).hasActiveCampaigns)
   };

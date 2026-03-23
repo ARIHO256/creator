@@ -1044,13 +1044,6 @@ function asCurrency(value: unknown, fallback: "UGX" | "USD" = "UGX"): "UGX" | "U
   return "UGX";
 }
 
-function compactNum(value: number): string {
-  if (!Number.isFinite(value)) return "0";
-  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  return `${Math.round(value)}`;
-}
-
 function parseCompactMetric(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string") return null;
@@ -1086,7 +1079,7 @@ function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
   return {
     id: asString(record?.id, `offer_${index + 1}`),
     type,
-    name: asString(record?.name, "Offer"),
+    name: asString(record?.name, ""),
     price: Math.max(0, asNumber(record?.price, 0)),
     basePrice: typeof record?.basePrice === "number" ? record.basePrice : undefined,
     currency: asCurrency(record?.currency, "UGX"),
@@ -1117,7 +1110,7 @@ function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
   };
 }
 
-function mapShoppableDeal(raw: unknown): Ad | null {
+function mapShoppableDeal(raw: unknown, index: number): Ad | null {
   const deal = asRecord(raw);
   if (!deal) return null;
   const shoppable = asRecord(deal.shoppable);
@@ -1144,19 +1137,7 @@ function mapShoppableDeal(raw: unknown): Ad | null {
     asNumber(metrics?.saves, Number.NaN) ||
     parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("save"))?.value ?? null) ||
     0;
-  const fallbackCtrRaw =
-    asNumber(metrics?.ctr, Number.NaN) ||
-    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("ctr"))?.value ?? null) ||
-    0;
-  const fallbackCtr = fallbackCtrRaw > 1 ? fallbackCtrRaw : fallbackCtrRaw * 100;
-
-  const kpis = rawKpis.length
-    ? rawKpis
-    : [
-        { label: "Views", value: compactNum(fallbackViews) },
-        { label: "Saves", value: compactNum(fallbackSaves) },
-        { label: "CTR", value: `${Number.isFinite(fallbackCtr) ? fallbackCtr.toFixed(1) : "0.0"}%` },
-      ];
+  const kpis = rawKpis;
 
   const score =
     Math.max(0, fallbackViews) +
@@ -1164,7 +1145,7 @@ function mapShoppableDeal(raw: unknown): Ad | null {
     Math.max(0, asNumber(shoppable.orders7d, asNumber(metrics?.orders, 0))) * 200;
 
   return {
-    id: asString(deal.id, `ad_${Date.now()}`),
+    id: asString(deal.id, `ad_${index + 1}`),
     rank: 0,
     status: adzStatus(shoppable.status ?? deal.status),
     campaignName: asString(shoppable.campaignName, asString(deal.title, "")),
@@ -1185,14 +1166,14 @@ function mapShoppableDeal(raw: unknown): Ad | null {
       verified: asBool(creator?.verified, false),
     },
     platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
-    startISO: asString(shoppable.startISO, asString(deal.startISO, new Date().toISOString())),
-    endISO: asString(shoppable.endISO, asString(deal.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString())),
+    startISO: asString(shoppable.startISO, asString(deal.startISO, "")),
+    endISO: asString(shoppable.endISO, asString(deal.endISO, "")),
     heroImageUrl: asString(shoppable.heroImageUrl, fallbackHero || BLANK_IMAGE),
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     heroIntroVideoPosterUrl: asString(shoppable.heroIntroVideoPosterUrl, "") || undefined,
     heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
-    ctaPrimaryLabel: asString(shoppable.ctaPrimaryLabel, "Buy now"),
-    ctaSecondaryLabel: asString(shoppable.ctaSecondaryLabel, "Add to cart"),
+    ctaPrimaryLabel: asString(shoppable.ctaPrimaryLabel, ""),
+    ctaSecondaryLabel: asString(shoppable.ctaSecondaryLabel, ""),
     offers,
     kpis,
     __score: score,
@@ -1201,7 +1182,7 @@ function mapShoppableDeal(raw: unknown): Ad | null {
 
 function mapWorkspaceToAds(payload: DealzMarketplaceWorkspaceResponse): Ad[] {
   const ranked = asArray(payload.deals)
-    .map((deal) => mapShoppableDeal(deal))
+    .map((deal, index) => mapShoppableDeal(deal, index))
     .filter((ad): ad is Ad & { __score: number } => Boolean(ad))
     .sort((a, b) => b.__score - a.__score || a.campaignName.localeCompare(b.campaignName));
 
@@ -1436,7 +1417,7 @@ export default function AdzMarketplace() {
   }, [selected, selectedHeroOfferId]);
 
   const startsAt = useMemo(() => (selected ? new Date(selected.startISO) : new Date()), [selected]);
-  const endsAt = useMemo(() => (selected ? new Date(selected.endISO) : new Date(Date.now() + 3600 * 1000)), [selected]);
+  const endsAt = useMemo(() => (selected ? new Date(selected.endISO) : new Date()), [selected]);
   const countdownState = useMemo(() => computeCountdownState(Date.now(), startsAt.getTime(), endsAt.getTime()), [startsAt, endsAt]);
   const countdownLabel = useMemo(
     () => (countdownState === "upcoming" ? "Starts in" : countdownState === "live" ? "Ends in" : "Session ended"),

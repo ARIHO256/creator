@@ -287,7 +287,7 @@ type LiveDashboardWorkspace = {
 function toLiveSession(record: Record<string, unknown>): LiveSession {
   return {
     id: String(record.id || ""),
-    title: String(record.title || "Untitled live session"),
+    title: String(record.title || ""),
     status: String(record.status || "Draft") as LiveStatus,
     supplierId: String(record.supplierId || ""),
     campaignId: typeof record.campaignId === "string" ? record.campaignId : undefined,
@@ -296,8 +296,8 @@ function toLiveSession(record: Record<string, unknown>): LiveSession {
     heroImageUrl: String(record.heroImageUrl || ""),
     heroVideoUrl: typeof record.heroVideoUrl === "string" ? record.heroVideoUrl : undefined,
     desktopMode: record.desktopMode === "fullscreen" ? "fullscreen" : "modal",
-    startISO: String(record.startISO || new Date().toISOString()),
-    endISO: String(record.endISO || new Date().toISOString()),
+    startISO: String(record.startISO || ""),
+    endISO: String(record.endISO || ""),
     peakViewers: Number(record.peakViewers || 0),
     avgWatchMin: Number(record.avgWatchMin || 0),
     chatRate: Number(record.chatRate || 0),
