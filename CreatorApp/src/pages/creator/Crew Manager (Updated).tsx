@@ -164,6 +164,67 @@ type PermissionId =
   | "availability.request_update"
   | "suppliers.invite_guest_cohost";
 
+const PERMISSION_IDS: PermissionId[] = [
+  "crew.manage_assignments",
+  "crew.override_conflicts",
+  "crew.manage_session_permissions",
+  "availability.view_team",
+  "availability.view_details",
+  "availability.request_update",
+  "suppliers.invite_guest_cohost"
+];
+
+function baseViewerPerms(roleId: WorkspaceRoleId): Record<PermissionId, boolean> {
+  const normalized = String(roleId || "").trim().toLowerCase();
+  if (normalized === "owner" || normalized === "manager" || normalized === "admin") {
+    return PERMISSION_IDS.reduce((acc, id) => ({ ...acc, [id]: true }), {} as Record<PermissionId, boolean>);
+  }
+
+  const perms: Record<PermissionId, boolean> = {
+    "crew.manage_assignments": normalized === "host" || normalized === "producer" || normalized === "moderator" || normalized === "cohost",
+    "crew.override_conflicts": false,
+    "crew.manage_session_permissions": normalized === "host" || normalized === "producer",
+    "availability.view_team": true,
+    "availability.view_details": normalized !== "external",
+    "availability.request_update": true,
+    "suppliers.invite_guest_cohost": false
+  };
+
+  return perms;
+}
+
+function resolveViewerPerms(
+  roleId: WorkspaceRoleId,
+  raw: unknown
+): Record<PermissionId, boolean> {
+  const base = baseViewerPerms(roleId);
+  if (!raw) return base;
+
+  if (Array.isArray(raw)) {
+    const set = new Set(raw.map((item) => String(item)));
+    const next = { ...base };
+    PERMISSION_IDS.forEach((id) => {
+      if (set.has(id)) {
+        next[id] = true;
+      }
+    });
+    return next;
+  }
+
+  if (raw && typeof raw === "object") {
+    const record = raw as Record<string, unknown>;
+    const next = { ...base };
+    PERMISSION_IDS.forEach((id) => {
+      if (typeof record[id] === "boolean") {
+        next[id] = record[id] as boolean;
+      }
+    });
+    return next;
+  }
+
+  return base;
+}
+
 /* ------------------------- Utils ------------------------- */
 
 function cx(...xs: Array<string | false | null | undefined>) {
@@ -628,19 +689,11 @@ function TinySwitch({
 export default function CreatorLiveCrewManagementPremium() {
   const navigate = useNavigate();
   const { toasts, push } = useToasts();
-  const currentUser = "Owner";
-  const currentUserRoleId: WorkspaceRoleId = "owner";
-
-  // Premium gating: these IDs should match the Roles & Permissions page.
-  const viewerPerms: Record<PermissionId, boolean> = {
-    "crew.manage_assignments": true,
-    "crew.override_conflicts": true,
-    "crew.manage_session_permissions": true,
-    "availability.view_team": true,
-    "availability.view_details": true,
-    "availability.request_update": true,
-    "suppliers.invite_guest_cohost": true
-  };
+  const [currentUser, setCurrentUser] = useState("User");
+  const [currentUserRoleId, setCurrentUserRoleId] = useState<WorkspaceRoleId>("viewer");
+  const [viewerPerms, setViewerPerms] = useState<Record<PermissionId, boolean>>(() =>
+    baseViewerPerms("viewer")
+  );
 
   const [sessions, setSessions] = useState<Session[]>([]);
 
@@ -731,6 +784,21 @@ export default function CreatorLiveCrewManagementPremium() {
       .then(([rolesPayload, crewSessions, liveSessions]) => {
         if (cancelled) return;
 
+        const currentMember =
+          rolesPayload.currentMember && typeof rolesPayload.currentMember === "object"
+            ? (rolesPayload.currentMember as Record<string, unknown>)
+            : {};
+        const resolvedRoleId = String(currentMember.roleId || currentMember.role || "viewer");
+        const resolvedName = String(currentMember.name || currentMember.email || "User");
+        setCurrentUser(resolvedName);
+        setCurrentUserRoleId(resolvedRoleId);
+        setViewerPerms(
+          resolveViewerPerms(
+            resolvedRoleId,
+            currentMember.permissions ?? currentMember.permissionIds ?? currentMember.capabilities
+          )
+        );
+
         const backendMembers = Array.isArray(rolesPayload.members) ? rolesPayload.members : [];
         if (backendMembers.length > 0) {
           setMembers(
@@ -812,6 +880,9 @@ export default function CreatorLiveCrewManagementPremium() {
         }
       })
       .catch(() => {
+        setCurrentUser("User");
+        setCurrentUserRoleId("viewer");
+        setViewerPerms(baseViewerPerms("viewer"));
         setMembers([]);
         setSessions([]);
         setAssignmentsBySession({});
