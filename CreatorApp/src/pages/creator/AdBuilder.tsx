@@ -433,9 +433,13 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
     asString(deal.endISO, new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()),
   );
 
-  const supplierId = asString(supplier.id, `deal-supplier:${dealId}`);
-  const campaignId = `deal-campaign:${dealId}`;
-  const campaignName = asString(shoppable?.campaignName, asString(deal.title, "Campaign"));
+  const supplierId = asString(
+    supplier.id,
+    asString(supplier.supplierId, asString(deal.supplierId, asString(deal.sellerId, ""))),
+  ).trim();
+  if (!supplierId) return null;
+  const campaignId = asString(shoppable?.campaignId, asString(deal.campaignId, dealId)).trim();
+  const campaignName = asString(shoppable?.campaignName, asString(deal.title, ""));
   const campaignStatusRaw = asString(shoppable?.status, asString(deal.status, ""));
   const campaignStatus: "Active" | "Paused" = campaignStatusRaw.toLowerCase().includes("pause") ? "Paused" : "Active";
   const fallbackPoster = asString(shoppable?.heroImageUrl, asString(supplier.logoUrl, BLANK_IMAGE));
@@ -448,7 +452,7 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
       supplierId,
       campaignId,
       type,
-      name: asString(offer.name, `Offer ${index + 1}`),
+      name: asString(offer.name, ""),
       price: Math.max(0, asNumber(offer.price, 0)),
       basePrice: typeof offer.basePrice === "number" ? offer.basePrice : undefined,
       currency: asCurrency(offer.currency, "UGX"),
@@ -460,7 +464,8 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
   });
 
   const creatorHandle = (() => {
-    const raw = asString(creator.handle, "@creator");
+    const raw = asString(creator.handle, "");
+    if (!raw) return "";
     return raw.startsWith("@") ? raw : `@${raw}`;
   })();
 
@@ -468,9 +473,9 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
     dealId,
     supplierEntry: {
       id: supplierId,
-      name: asString(supplier.name, "Supplier"),
-      avatarUrl: asString(supplier.logoUrl, BLANK_IMAGE),
-      category: asString(supplier.category, "Supplier"),
+      name: asString(supplier.name, ""),
+      avatarUrl: asString(supplier.logoUrl, ""),
+      category: asString(supplier.category, ""),
     },
     campaignEntry: {
       id: campaignId,
@@ -482,9 +487,9 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
     },
     offerEntries,
     creator: {
-      name: asString(creator.name, "Creator"),
+      name: asString(creator.name, ""),
       handle: creatorHandle,
-      avatarUrl: asString(creator.avatarUrl, BLANK_IMAGE),
+      avatarUrl: asString(creator.avatarUrl, ""),
       verified: asBoolean(creator.verified, false),
     },
     shoppableRecord: shoppable,
@@ -838,8 +843,8 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 /** ------------------------------ Demo Data ------------------------------ */
 
 const DEFAULT_CREATOR = {
-  name: "Creator",
-  handle: "@creator",
+  name: "",
+  handle: "",
   avatarUrl: BLANK_IMAGE,
   badge: "Host",
 };
@@ -1673,10 +1678,10 @@ export default function AdBuilder({
   const pickerDealScope = useMemo(() => {
     if (!pickerContext?.dealId) return null;
 
-    const supplierId = pickerContext.supplierId || `deal-supplier:${pickerContext.dealId}`;
-    const campaignId = pickerContext.campaignId || `deal-campaign:${pickerContext.dealId}`;
-    const supplierName = pickerContext.supplierName || "Supplier";
-    const campaignName = pickerContext.campaignName || "Campaign";
+    const supplierId = pickerContext.supplierId || "";
+    const campaignId = pickerContext.campaignId || "";
+    const supplierName = pickerContext.supplierName || "";
+    const campaignName = pickerContext.campaignName || "";
     const campaignStatus = pickerContext.campaignStatus === "Paused" ? "Paused" : "Active";
     const startISO = pickerContext.startISO || new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const endISO = pickerContext.endISO || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
@@ -1684,7 +1689,7 @@ export default function AdBuilder({
     const supplierEntry: Supplier = {
       id: supplierId,
       name: supplierName,
-      category: pickerContext.supplierKind || "Seller",
+      category: pickerContext.supplierKind || "",
       avatarUrl: "",
     };
 
@@ -1703,7 +1708,7 @@ export default function AdBuilder({
         supplierId,
         campaignId,
         type: offer.type === "SERVICE" ? "SERVICE" : "PRODUCT",
-        name: offer.name || `Offer ${index + 1}`,
+        name: offer.name || "",
         price: typeof offer.price === "number" ? offer.price : 0,
         basePrice: typeof offer.basePrice === "number" ? offer.basePrice : undefined,
         currency: offer.currency === "UGX" ? "UGX" : "USD",
@@ -1754,30 +1759,34 @@ export default function AdBuilder({
     () =>
       effectiveDealScope
         ? [effectiveDealScope.supplierEntry]
-        : [
+        : (pickerContext?.supplierId || pickerContext?.supplierName)
+          ? [
             {
-              id: pickerContext?.supplierId || "supplier",
-              name: pickerContext?.supplierName || "Supplier",
-              avatarUrl: BLANK_IMAGE,
-              category: pickerContext?.supplierKind || "Supplier",
+              id: pickerContext?.supplierId || "",
+              name: pickerContext?.supplierName || "",
+              avatarUrl: "",
+              category: pickerContext?.supplierKind || "",
             } satisfies Supplier,
-          ],
+          ]
+          : [],
     [effectiveDealScope, pickerContext?.supplierId, pickerContext?.supplierKind, pickerContext?.supplierName],
   );
   const availableCampaigns = useMemo(
     () =>
       effectiveDealScope
         ? [effectiveDealScope.campaignEntry]
-        : [
+        : pickerContext?.campaignId
+          ? [
             {
-              id: pickerContext?.campaignId || "campaign",
-              supplierId: availableSuppliers[0]?.id || "supplier",
-              name: pickerContext?.campaignName || "Campaign",
+              id: pickerContext?.campaignId || "",
+              supplierId: availableSuppliers[0]?.id || "",
+              name: pickerContext?.campaignName || "",
               status: pickerContext?.campaignStatus === "Paused" ? "Paused" : "Active",
               startsAtISO: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
               endsAtISO: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
             } satisfies Campaign,
-          ],
+          ]
+          : [],
     [
       availableSuppliers,
       effectiveDealScope,
@@ -1811,11 +1820,11 @@ export default function AdBuilder({
   }, [effectiveDealScope?.creator, pickerContext]);
   const dealScopeLocked = Boolean(effectiveDealScope?.dealId);
 
-  const defaultSupplierId = availableSuppliers[0]?.id || "supplier";
+  const defaultSupplierId = availableSuppliers[0]?.id || "";
   const defaultCampaignId =
     availableCampaigns.find((campaign) => campaign.supplierId === defaultSupplierId)?.id ||
     availableCampaigns[0]?.id ||
-    "campaign";
+    "";
 
   // default schedule: tomorrow 18:00-19:00
   const defaultStart = useMemo(() => {
@@ -2190,7 +2199,7 @@ export default function AdBuilder({
 
       const shoppablePayload: Record<string, unknown> = {
         ...existingShoppable,
-        campaignName: campaign?.name || asString(existingDeal?.title, "Campaign"),
+        campaignName: campaign?.name || asString(existingDeal?.title, ""),
         campaignSubtitle: builder.ctaText || asString(existingDeal?.tagline, ""),
         status: generated ? "Generated" : "Draft",
         generated,
@@ -2218,13 +2227,13 @@ export default function AdBuilder({
         ...(existingDeal || {}),
         id: activeDealId,
         type: asString(existingDeal?.type, "Shoppable Adz"),
-        title: campaign?.name || asString(existingDeal?.title, "Campaign"),
+        title: campaign?.name || asString(existingDeal?.title, ""),
         tagline: builder.ctaText || asString(existingDeal?.tagline, ""),
         supplier: {
           ...asRecord(existingDeal?.supplier),
-          id: supplier?.id || asString(asRecord(existingDeal?.supplier)?.id, `deal-supplier:${activeDealId}`),
-          name: supplier?.name || asString(asRecord(existingDeal?.supplier)?.name, "Supplier"),
-          category: supplier?.category || asString(asRecord(existingDeal?.supplier)?.category, "Supplier"),
+          id: supplier?.id || asString(asRecord(existingDeal?.supplier)?.id, ""),
+          name: supplier?.name || asString(asRecord(existingDeal?.supplier)?.name, ""),
+          category: supplier?.category || asString(asRecord(existingDeal?.supplier)?.category, ""),
           logoUrl: supplier?.avatarUrl || asString(asRecord(existingDeal?.supplier)?.logoUrl, BLANK_IMAGE),
         },
         creator: {

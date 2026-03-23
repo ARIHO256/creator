@@ -767,7 +767,7 @@ function normalizeSupplierEntry(value: unknown): Supplier | null {
   const id = toStr(record.id, "").trim();
   const name = toStr(record.name, "").trim();
   if (!id || !name) return null;
-  const category = toStr(record.kind, toStr(record.category, "Seller"));
+  const category = toStr(record.kind, toStr(record.category, ""));
   const kind = category.toLowerCase() === "provider" ? "Provider" : "Seller";
   return {
     id,
@@ -871,7 +871,7 @@ function normalizeCampaignsFromMarketplaceDeals(
       const live = asRecord(record.live);
       const title = toStr(
         record.title,
-        toStr(live?.title, `Deal campaign ${index + 1}`),
+        toStr(live?.title, ""),
       ).trim();
       const startsAtRaw = toStr(live?.startISO, toStr(record.startISO, ""));
       const endsAtRaw = toStr(live?.endISO, toStr(record.endISO, ""));
@@ -922,11 +922,12 @@ function normalizeHostEntry(value: unknown): Host | null {
   const id = toStr(record.id, "").trim();
   const name = toStr(record.name, "").trim();
   if (!id || !name) return null;
-  const rawHandle = toStr(record.handle, "@creator").trim();
+  const rawHandle = toStr(record.handle, "").trim();
+  const handle = rawHandle ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : "";
   return {
     id,
     name,
-    handle: rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`,
+    handle,
     avatarUrl: toStr(record.avatarUrl, ""),
     verified: toBool(record.verified, false),
     niche: toStr(record.niche, toStr(record.role, "")),
@@ -941,7 +942,8 @@ function normalizeCatalogFromMarketplace(value: unknown): LiveItem[] {
   deals.forEach((deal, dealIndex) => {
     const dealRecord = asRecord(deal);
     if (!dealRecord) return;
-    const campaignId = toStr(dealRecord.id, `deal_${dealIndex + 1}`);
+    const campaignId = toStr(dealRecord.id, "").trim();
+    if (!campaignId) return;
     const fallbackImage =
       toStr(asRecord(dealRecord.live)?.heroImageUrl, "") ||
       toStr(asRecord(dealRecord.shoppable)?.heroImageUrl, "") ||
@@ -959,7 +961,7 @@ function normalizeCatalogFromMarketplace(value: unknown): LiveItem[] {
         id: itemId,
         campaignId,
         kind,
-        name: toStr(record.name, "Offer"),
+        name: toStr(record.name, ""),
         imageUrl: toStr(record.posterUrl, fallbackImage),
         videoUrl: toStr(record.videoUrl, "") || undefined,
         badge: toStr(record.badge, ""),
@@ -985,7 +987,7 @@ function normalizeCatalogFromMarketplace(value: unknown): LiveItem[] {
         id: itemId,
         campaignId,
         kind,
-        name: toStr(record.name, "Featured item"),
+        name: toStr(record.name, ""),
         imageUrl: toStr(record.posterUrl, fallbackImage),
         videoUrl: toStr(record.videoUrl, "") || undefined,
         badge: toStr(record.badge, ""),

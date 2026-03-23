@@ -256,7 +256,7 @@ function toBoolean(value: unknown, fallback = false): boolean {
 
 function normalizeHandle(value: unknown): string {
   const base = toString(value, "").trim();
-  if (!base) return "@creator";
+  if (!base) return "";
   return base.startsWith("@") ? base : `@${base}`;
 }
 
@@ -267,19 +267,19 @@ function normalizeISO(value: unknown, fallback = new Date().toISOString()): stri
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
 }
 
-function normalizeSupplier(value: unknown, fallbackName = "Seller"): Supplier {
+function normalizeSupplier(value: unknown): Supplier {
   const record = toRecord(value);
   return {
-    name: toString(record?.name, fallbackName),
-    category: toString(record?.category, "Seller"),
+    name: toString(record?.name, ""),
+    category: toString(record?.category, ""),
     logoUrl: toString(record?.logoUrl, "")
   };
 }
 
-function normalizeCreator(value: unknown, fallbackName = "Creator"): Creator {
+function normalizeCreator(value: unknown): Creator {
   const record = toRecord(value);
   return {
-    name: toString(record?.name, fallbackName),
+    name: toString(record?.name, ""),
     handle: normalizeHandle(record?.handle),
     avatarUrl: toString(record?.avatarUrl, ""),
     verified: toBoolean(record?.verified, false)
@@ -293,7 +293,7 @@ function normalizeOffer(value: unknown, index: number, fallbackPosterUrl: string
   return {
     id: toString(record?.id, `offer_${index + 1}`),
     type,
-    name: toString(record?.name, "Offer"),
+    name: toString(record?.name, ""),
     price: toNumber(record?.price, 0),
     basePrice: typeof record?.basePrice === "number" ? record.basePrice : undefined,
     currency,
@@ -311,7 +311,7 @@ function normalizeLiveItem(value: unknown, index: number, fallbackPosterUrl: str
   return {
     id: toString(record?.id, `live_item_${index + 1}`),
     kind,
-    name: toString(record?.name, "Item"),
+    name: toString(record?.name, ""),
     priceLabel: toString(record?.priceLabel, ""),
     stockLeft: toNumber(record?.stockLeft, 0),
     posterUrl: toString(record?.posterUrl, fallbackPosterUrl),
@@ -330,10 +330,10 @@ function resolveDealType(raw: unknown, hasShoppable: boolean, hasLive: boolean):
 
 function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse) {
   const suppliers = Array.isArray(payload.suppliers)
-    ? payload.suppliers.map((entry, index) => normalizeSupplier(entry, `Seller ${index + 1}`))
+    ? payload.suppliers.map((entry) => normalizeSupplier(entry))
     : [];
   const creators = Array.isArray(payload.creators)
-    ? payload.creators.map((entry, index) => normalizeCreator(entry, `Creator ${index + 1}`))
+    ? payload.creators.map((entry) => normalizeCreator(entry))
     : [];
 
   const deals: Deal[] = Array.isArray(payload.deals)
@@ -341,9 +341,11 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
       .map((entry, index) => {
         const record = toRecord(entry);
         if (!record) return null;
+        const dealId = toString(record.id, "").trim();
+        if (!dealId) return null;
 
-        const supplier = normalizeSupplier(record.supplier, suppliers[0]?.name || "");
-        const creator = normalizeCreator(record.creator, creators[0]?.name || "");
+        const supplier = normalizeSupplier(record.supplier);
+        const creator = normalizeCreator(record.creator);
         const nowISO = new Date().toISOString();
         const startISO = normalizeISO(record.startISO, nowISO);
         const endISO = normalizeISO(record.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString());
@@ -356,7 +358,7 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
           ? {
             id: toString(shoppableRecord.id, `ad_${toString(record.id, index + 1)}`),
             status: toString(shoppableRecord.status, "Draft") === "Generated" ? "Generated" : "Draft",
-            campaignName: toString(shoppableRecord.campaignName, toString(record.title, "Campaign")),
+            campaignName: toString(shoppableRecord.campaignName, toString(record.title, "")),
             campaignSubtitle: toString(shoppableRecord.campaignSubtitle, toString(record.tagline, "")),
             supplier,
             creator,
@@ -391,10 +393,10 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
               if (status === "Scheduled" || status === "Live" || status === "Ended") return status;
               return "Draft";
             })(),
-            title: toString(liveRecord.title, toString(record.title, "Live Session")),
+            title: toString(liveRecord.title, toString(record.title, "")),
             description: toString(liveRecord.description, ""),
-            host: normalizeCreator(liveRecord.host, creator.name),
-            supplier: normalizeSupplier(liveRecord.supplier, supplier.name),
+            host: normalizeCreator(liveRecord.host),
+            supplier: normalizeSupplier(liveRecord.supplier),
             platforms: Array.isArray(liveRecord.platforms) ? liveRecord.platforms.map((p) => toString(p, "")).filter(Boolean) : [],
             startISO: normalizeISO(liveRecord.startISO, startISO),
             endISO: normalizeISO(liveRecord.endISO, endISO),
@@ -412,9 +414,9 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
           : undefined;
 
         return {
-          id: toString(record.id, `deal_${index + 1}`),
+          id: dealId,
           type,
-          title: toString(record.title, "Untitled deal"),
+          title: toString(record.title, ""),
           tagline: toString(record.tagline, ""),
           supplier,
           creator,
