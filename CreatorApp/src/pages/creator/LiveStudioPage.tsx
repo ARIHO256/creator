@@ -258,8 +258,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
               const row = entry as Record<string, unknown>;
               return {
                 id: Number(row.id || index + 1),
-                name: String(row.name || `Co-host ${index + 1}`),
-                status: String(row.status || "Ready")
+                name: String(row.name || ""),
+                status: String(row.status || "")
               };
             })
           );
@@ -270,10 +270,10 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
               const row = entry as Record<string, unknown>;
               return {
                 id: Number(row.id || index + 1),
-                from: String(row.from || "Viewer"),
-                type: String(row.type || "file"),
-                label: String(row.label || `Attachment ${index + 1}`),
-                status: String(row.status || "Pending")
+                from: String(row.from || ""),
+                type: String(row.type || ""),
+                label: String(row.label || ""),
+                status: String(row.status || "")
               };
             })
           );
@@ -284,9 +284,9 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
               const row = entry as Record<string, unknown>;
               return {
                 id: Number(row.id || index + 1),
-                from: String(row.from || "Viewer"),
+                from: String(row.from || ""),
                 body: String(row.body || ""),
-                time: String(row.time || "Now"),
+                time: String(row.time || ""),
                 system: Boolean(row.system),
                 audioUrl: typeof row.audioUrl === "string" ? row.audioUrl : undefined,
                 attachmentUrl: typeof row.attachmentUrl === "string" ? row.attachmentUrl : undefined,
@@ -339,9 +339,9 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       const row = entry as Record<string, unknown>;
       return {
         id: String(row.id || `product_${index + 1}`),
-        name: String(row.name || row.title || `Product ${index + 1}`),
-        price: String(row.price || row.priceLabel || "—"),
-        stock: String(row.stock || row.stockLabel || "—"),
+        name: String(row.name || row.title || ""),
+        price: String(row.price || row.priceLabel || ""),
+        stock: String(row.stock || row.stockLabel || ""),
         tag: String(row.tag || "")
       };
     });
@@ -463,20 +463,20 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [giveawaysSignature]);
 
-  const giveawayPrizeOptions = configuredGiveaways.map((g, idx) => {
+  const giveawayPrizeOptions = configuredGiveaways.map((g) => {
     const linkedItem = g.linkedItemId
       ? configuredProducts.find((p) => p.id === g.linkedItemId)
       : undefined;
-    const label = coerceItemTitle(linkedItem) || g.title || `Giveaway ${idx + 1}`;
+    const label = coerceItemTitle(linkedItem) || g.title || "";
     return { id: g.id, label };
   });
 
   const giveawayControlItems = useMemo(() => {
-    return configuredGiveaways.map((g, idx) => {
+    return configuredGiveaways.map((g) => {
       const linkedItem = g.linkedItemId
         ? configuredProducts.find((p) => p.id === g.linkedItemId)
         : undefined;
-      const label = coerceItemTitle(linkedItem) || g.title || `Giveaway ${idx + 1}`;
+      const label = coerceItemTitle(linkedItem) || g.title || "";
       const imageUrl = coerceItemImageUrl(linkedItem) || g.imageUrl || "";
       const totalQty = coercePositiveInt((g as any)?.quantity, 1);
       const remaining =
@@ -513,7 +513,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
     ? configuredProducts.find((p) => p.id === selectedGiveaway.linkedItemId)
     : undefined;
 
-  const giveawayPrizeLabel = coerceItemTitle(linkedPrizeItem) || selectedGiveaway?.title || "Mystery Gift Box";
+  const giveawayPrizeLabel = coerceItemTitle(linkedPrizeItem) || selectedGiveaway?.title || "";
   const giveawayPrizeImageUrl = coerceItemImageUrl(linkedPrizeItem) || selectedGiveaway?.imageUrl || "";
   const giveawayPrizeRemainingQty =
     typeof effectiveGiveawayMeta?.remaining === "number" && Number.isFinite(effectiveGiveawayMeta.remaining)
@@ -551,8 +551,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       const row = entry as Record<string, unknown>;
       return {
         id: String(row.id || `shot_${index + 1}`),
-        label: String(row.label || row.name || `Shot ${index + 1}`),
-        window: String(row.window || row.time || "—"),
+        label: String(row.label || row.name || ""),
+        window: String(row.window || row.time || ""),
         scene: String(row.scene || "")
       };
     });
@@ -582,8 +582,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       const row = entry as Record<string, unknown>;
       return {
         id: Number(row.id || index + 1),
-        label: String(row.label || "Sale event"),
-        time: String(row.time || "Now")
+        label: String(row.label || ""),
+        time: String(row.time || "")
       };
     });
   }, [studioData.salesEvents]);
@@ -602,8 +602,8 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       return {
         id: Number(row.id || index + 1),
         question: String(row.question || ""),
-        from: String(row.from || "Viewer"),
-        status: String(row.status || "waiting")
+        from: String(row.from || ""),
+        status: String(row.status || "")
       };
     });
   }, [studioData.qaItems]);
@@ -614,7 +614,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       const row = entry as Record<string, unknown>;
       return {
         id: Number(row.id || index + 1),
-        name: String(row.name || `Viewer ${index + 1}`),
+        name: String(row.name || ""),
         tag: String(row.tag || "")
       };
     });
@@ -622,7 +622,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
   const aiPrompts = useMemo<string[]>(() => {
     if (!Array.isArray(studioData.aiPrompts)) return [];
-    return studioData.aiPrompts.map((row, index) => String(row || `Prompt ${index + 1}`));
+    return studioData.aiPrompts.map((row) => String(row || ""));
   }, [studioData.aiPrompts]);
 
   // Mobile state
@@ -796,7 +796,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const handlePickWinner = () => {
     const activeGiveawayId = effectiveGiveawayId;
     const activePrizeLabel = giveawayPrizeLabel;
-    const winner = viewersList[0]?.name || "Viewer";
+    const winner = viewersList[0]?.name || "";
     setGiveawayActive(false);
     showToast(`🎉 Winner: @${winner}! Congratulations!`);
     // Add system message
@@ -854,8 +854,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
       setChatDraft("");
       showToast("📌 Message pinned to stream!");
     } else {
-      setPinnedMessage("🔥 Don't forget to use code FLASH20 for 20% off!");
-      showToast("📌 Default message pinned!");
+      showToast("Type a message to pin.");
     }
   };
 
