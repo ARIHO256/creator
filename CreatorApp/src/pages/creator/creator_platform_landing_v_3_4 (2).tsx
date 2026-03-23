@@ -27,6 +27,7 @@ import { formatCurrencyValue } from "../../utils/formatUtils";
 import { motion } from "framer-motion";
 import { getLandingPageTarget, IS_EVZONE_ACCOUNTS_CONNECTED } from "../../utils/accessControl";
 import { creatorApi } from "../../lib/creatorApi";
+import { hasStoredAuthState } from "../../lib/authSession";
 
 // Creator Platform Website Landing - v3.4.2 (Previewable Canvas)
 // ✅ Fixes the syntax error (Unexpected token, expected ",") by restoring valid objects
@@ -1155,6 +1156,12 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
 
   useEffect(() => {
     let active = true;
+    if (!hasStoredAuthState()) {
+      setLandingContent(DEFAULT_LANDING_CONTENT);
+      return () => {
+        active = false;
+      };
+    }
     void creatorApi
       .workflowScreenState(LANDING_SCREEN_STATE_KEY)
       .then((screenState) => {
@@ -1305,7 +1312,7 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
       {/* Hero */}
       <div id="top" className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-[#fff4e5] via-white to-white dark:from-slate-950 dark:via-slate-950 dark:to-slate-950 transition-colors" />
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 dark:opacity-10 mix-blend-soft-light pointer-events-none" />
+        <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-20 dark:opacity-10 mix-blend-soft-light pointer-events-none" />
         <div className="relative max-w-[1600px] mx-auto px-4 md:px-6 pt-24 md:pt-32 pb-8 md:pb-12">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)] gap-8 items-center">
             <motion.div initial="hidden" animate="show" variants={fadeUp} transition={{ duration: 0.5 }}>

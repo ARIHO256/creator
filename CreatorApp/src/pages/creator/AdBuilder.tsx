@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApiResource } from "../../hooks/useApiResource";
 import { creatorApi, type DealzMarketplaceWorkspaceResponse, type MediaAssetRecord } from "../../lib/creatorApi";
+import { hasStoredAuthState } from "../../lib/authSession";
 import {
   BadgeCheck,
   Check,
@@ -238,7 +239,7 @@ function useResolvedMediaUrl(rawUrl?: string) {
         });
 
       let response = await fetchAsset();
-      if (response.status === 401) {
+      if (response.status === 401 && hasStoredAuthState()) {
         const refresh = await fetch("/api/auth/refresh", {
           method: "POST",
           credentials: "include",

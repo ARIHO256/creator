@@ -31,6 +31,7 @@ const RAW_API_BASE =
 const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
 const pendingGetRequests = new Map<string, Promise<unknown>>();
 let pendingAuthRefresh: Promise<boolean> | null = null;
+let refreshBackoffUntil = 0;
 
 function buildUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
@@ -69,6 +70,7 @@ function shouldInvalidateSession(path: string, status: number) {
   if (normalizedPath.startsWith("/auth/register")) return false;
   if (normalizedPath.startsWith("/auth/logout")) return false;
   if (normalizedPath.startsWith("/auth/refresh")) return false;
+  if (normalizedPath.startsWith("/workflow/screen-state/")) return false;
   return true;
 }
 
@@ -79,10 +81,15 @@ function shouldTryRefresh(path: string, status: number) {
   if (normalizedPath.startsWith("/auth/register")) return false;
   if (normalizedPath.startsWith("/auth/logout")) return false;
   if (normalizedPath.startsWith("/auth/refresh")) return false;
+  if (normalizedPath.startsWith("/workflow/screen-state/")) return false;
   return true;
 }
 
 async function refreshAuthSession() {
+  if (Date.now() < refreshBackoffUntil) {
+    return false;
+  }
+
   if (pendingAuthRefresh) {
     return pendingAuthRefresh;
   }
@@ -95,7 +102,16 @@ async function refreshAuthSession() {
     },
     body: JSON.stringify({})
   })
-    .then((response) => response.ok)
+    .then((response) => {
+      if (response.ok) {
+        refreshBackoffUntil = 0;
+        return true;
+      }
+      if (response.status === 401 || response.status === 403) {
+        refreshBackoffUntil = Date.now() + 30_000;
+      }
+      return false;
+    })
     .catch(() => false)
     .finally(() => {
       pendingAuthRefresh = null;

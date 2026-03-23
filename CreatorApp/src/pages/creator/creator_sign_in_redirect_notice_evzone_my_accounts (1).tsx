@@ -366,6 +366,12 @@ export default function CreatorAuthRedirectNotice() {
 
   useEffect(() => {
     let active = true;
+    if (!hasStoredAuthState()) {
+      setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
+      return () => {
+        active = false;
+      };
+    }
     void creatorApi
       .workflowScreenState(AUTH_NOTICE_SCREEN_STATE_KEY)
       .then((screenState) => {
