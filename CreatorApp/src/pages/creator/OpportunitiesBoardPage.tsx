@@ -111,6 +111,8 @@ function toCampaign(record: OpportunityRecord): Campaign {
   const commission = readNumber((metadata as { commissionPct?: unknown }).commissionPct);
   const sellerName = String(seller?.displayName || seller?.name || "").trim();
   const sellerType = String(seller?.type || seller?.kind || "").trim().toLowerCase();
+  const metadataCategory = String((metadata as { category?: unknown }).category || "").trim();
+  const metadataLanguage = String((metadata as { language?: unknown }).language || "").trim();
   const statusRaw = String(record.status ?? "").trim().toUpperCase();
   const currency = String(record.currency || (metadata as { currency?: unknown }).currency || "").trim();
   const hasBudgetBand = (budgetMin ?? 0) > 0 || (budgetMax ?? 0) > 0;
@@ -129,10 +131,10 @@ function toCampaign(record: OpportunityRecord): Campaign {
     seller: sellerName,
     sellerInitials: opportunityInitials(sellerName),
     rating: readNumber(seller?.rating ?? (metadata as { sellerRating?: unknown }).sellerRating),
-    category: String(record.category || seller?.category || categories[0] || "").trim(),
+    category: String(record.category || seller?.category || metadataCategory || "").trim(),
     categories,
     region: String(record.region || seller?.region || (metadata as { region?: unknown }).region || "").trim(),
-    language: String(record.language || seller?.languages?.[0] || (metadata as { language?: unknown }).language || "").trim(),
+    language: String(record.language || metadataLanguage || "").trim(),
     currency,
     payBand,
     budgetMin,

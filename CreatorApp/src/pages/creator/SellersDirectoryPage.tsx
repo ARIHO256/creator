@@ -780,7 +780,7 @@ function InviteModal({ seller, onClose }: InviteModalProps) {
         title: `Invite to collaborate with ${seller.name}`,
         message,
         type: model,
-        category: seller.categories?.[0] || undefined,
+        category: seller.categories.filter(Boolean).join(", ") || undefined,
         region: seller.region || undefined,
         messageShort: `Invite from creator workspace for ${seller.name}.`,
         metadata: {

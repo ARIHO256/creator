@@ -1492,16 +1492,19 @@ export default function AssetLibraryPage() {
       setSelectedCreatorId((prev) => {
         if (prev && nextCreators.some((c) => c.id === prev)) return prev;
         if (sessionCreator?.id && nextCreators.some((c) => c.id === sessionCreator.id)) return sessionCreator.id;
-        return nextCreators[0]?.id || sessionCreator?.id || "";
+        return sessionCreator?.id || "";
       });
-      setSelectedSupplierId((prev) => (prev && nextSuppliers.some((p) => p.id === prev) ? prev : (nextSuppliers[0]?.id || "")));
+      setSelectedSupplierId((prev) => {
+        if (prev && nextSuppliers.some((p) => p.id === prev)) return prev;
+        if (pickerSupplierId && nextSuppliers.some((p) => p.id === pickerSupplierId)) return pickerSupplierId;
+        return "";
+      });
       setSelectedCampaignId((prev) => {
         if (prev && nextCampaigns.some((c) => c.id === prev)) return prev;
-        const supplierId = nextSuppliers[0]?.id || "";
-        const firstForSupplier = nextCampaigns.find((c) => c.supplierId === supplierId);
-        return firstForSupplier?.id || nextCampaigns[0]?.id || "";
+        if (pickerCampaignId && nextCampaigns.some((c) => c.id === pickerCampaignId)) return pickerCampaignId;
+        return "";
       });
-      setActiveAssetId((prev) => (prev && mergedAssets.some((asset) => asset.id === prev) ? prev : (mergedAssets[0]?.id || null)));
+      setActiveAssetId((prev) => (prev && mergedAssets.some((asset) => asset.id === prev) ? prev : null));
     } catch (error) {
       setToast({
         title: "Failed to load asset library",
@@ -1510,7 +1513,7 @@ export default function AssetLibraryPage() {
     } finally {
       setIsLoadingLibrary(false);
     }
-  }, [sessionCreator]);
+  }, [pickerCampaignId, pickerSupplierId, sessionCreator]);
 
   useEffect(() => {
     void loadLibraryFromBackend();
@@ -1539,11 +1542,6 @@ export default function AssetLibraryPage() {
             setSelectedCampaignId(campaignMatch.id);
             return;
           }
-        }
-
-        const firstSupplierCampaign = campaigns.find((campaign) => campaign.supplierId === pickerSupplierId);
-        if (firstSupplierCampaign) {
-          setSelectedCampaignId(firstSupplierCampaign.id);
         }
         return;
       }
@@ -1604,14 +1602,13 @@ export default function AssetLibraryPage() {
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) ?? null, [assets, activeAssetId]);
 
   const selectedCreator = useMemo(
-    () => creators.find((c) => c.id === selectedCreatorId) ?? creators[0] ?? sessionCreator ?? EMPTY_CREATOR,
+    () => creators.find((c) => c.id === selectedCreatorId) ?? sessionCreator ?? EMPTY_CREATOR,
     [creators, selectedCreatorId, sessionCreator],
   );
   const selectedSupplier = useMemo(
     () =>
       suppliers.find((p) => p.id === selectedSupplierId) ??
       (pickerSupplierFallback && pickerSupplierFallback.id === selectedSupplierId ? pickerSupplierFallback : null) ??
-      suppliers[0] ??
       pickerSupplierFallback ??
       { id: "", name: "", kind: "Seller" as const, brand: "" },
     [pickerSupplierFallback, selectedSupplierId, suppliers],
@@ -1621,14 +1618,20 @@ export default function AssetLibraryPage() {
     const contextSupplier = suppliers.find((supplier) => supplier.id === pickerSupplierFallback.id) || pickerSupplierFallback;
     return contextSupplier ? [contextSupplier] : suppliers;
   }, [pickerMode, pickerSupplierFallback, suppliers]);
-  const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) ?? campaignsForSupplier[0], [selectedCampaignId, campaignsForSupplier]);
+  const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) ?? null, [campaigns, selectedCampaignId]);
 
-  // If supplier changes, auto-select first campaign under supplier
+  // If supplier changes, clear campaign when it no longer belongs to the selected supplier.
   useEffect(() => {
-    const first = campaigns.find((c) => c.supplierId === selectedSupplierId);
-    if (first && first.id !== selectedCampaignId) setSelectedCampaignId(first.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSupplierId]);
+    if (!selectedCampaignId) return;
+    const selectedCampaignRecord = campaigns.find((campaign) => campaign.id === selectedCampaignId);
+    if (!selectedCampaignRecord) {
+      setSelectedCampaignId("");
+      return;
+    }
+    if (selectedCampaignRecord.supplierId !== selectedSupplierId) {
+      setSelectedCampaignId("");
+    }
+  }, [campaigns, selectedCampaignId, selectedSupplierId]);
 
   const submitRoleOptions = useMemo(() => {
     const mt = submitDraft.mediaType;

@@ -1850,8 +1850,8 @@ export default function AdBuilder({
   const [builder, setBuilder] = useState<BuilderState>(() => ({
     supplierId: defaultSupplierId,
     campaignId: defaultCampaignId,
-    selectedOfferIds: [availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || ""].filter(Boolean),
-    primaryOfferId: availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || "",
+    selectedOfferIds: [availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || ""].filter(Boolean),
+    primaryOfferId: availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || "",
     platforms: ["Instagram"],
     platformOtherList: [],
     platformOtherDraft: "",
@@ -2645,7 +2645,7 @@ export default function AdBuilder({
   function resetScope(nextSupplierId: string, nextCampaignId: string) {
     const offers = availableOffers.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
     const ids = offers.slice(0, 2).map((o) => o.id);
-    const primary = ids[0] || offers[0]?.id || "";
+    const primary = ids[0] || "";
     setBuilder((prev) => ({
       ...prev,
       supplierId: nextSupplierId,

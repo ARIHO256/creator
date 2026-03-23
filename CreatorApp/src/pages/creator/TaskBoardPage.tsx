@@ -110,7 +110,7 @@ const PRIORITY: Array<{ k: Priority; pill: string }> = [
 function seedInitials(name: string) {
   const parts = name.split(" ").filter(Boolean);
   const a = parts[0]?.[0] || "S";
-  const b = parts[1]?.[0] || (parts[0]?.[1] || "U");
+  const b = parts[1]?.[0] || parts[0]?.[1] || "";
   return (a + b).toUpperCase();
 }
 
@@ -508,7 +508,7 @@ export function TaskBoardPage() {
             const sizeBytes = Number(record.sizeBytes || 0);
             return {
               name: String(record.name || `File ${index + 1}`),
-              sizeLabel: sizeBytes > 0 ? `${Math.max(1, Math.round(sizeBytes / 1024))} KB` : "Unknown size"
+              sizeLabel: sizeBytes > 0 ? `${Math.max(1, Math.round(sizeBytes / 1024))} KB` : "—"
             };
           })
         : [],
@@ -525,7 +525,7 @@ export function TaskBoardPage() {
             return {
               id: index + 1,
               from: commentFromActorRole(typeof author.role === "string" ? author.role : null),
-              name: String(author.name || "User"),
+              name: String(author.name || "—"),
               body: String(record.body || ""),
               time: fmtTimeAgo(createdAt)
             };
@@ -1242,7 +1242,7 @@ function NewTaskDrawer({
 
   // Scope
   const [scope, setScope] = useState<"Linked" | "Internal">("Linked");
-  const [contractId, setContractId] = useState<string>(contracts?.[0]?.id || "");
+  const [contractId, setContractId] = useState<string>("");
 
   // Task core
   const [title, setTitle] = useState<string>("");
@@ -1294,8 +1294,7 @@ function NewTaskDrawer({
     setStep(1);
     setScope("Linked");
 
-    const first = contracts?.[0]?.id || "";
-    setContractId(first);
+    setContractId("");
 
     setTitle("");
     setType("vod");
@@ -1306,7 +1305,7 @@ function NewTaskDrawer({
     setSupplierOverride("");
     setBrandOverride("");
 
-    const sc = (contracts || []).find((c) => c.id === first) || null;
+    const sc = null;
     setCurrency(sc?.currency || "UGX");
     setPayout("");
 

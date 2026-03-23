@@ -416,8 +416,6 @@ function MonthView({ sessions, onSelectSession }: { sessions: Session[], onSelec
       const parsed = new Date(session.startISO);
       if (!Number.isNaN(parsed.getTime())) return parsed;
     }
-    const fallback = new Date(session.dateLabel);
-    if (!Number.isNaN(fallback.getTime())) return fallback;
     return null;
   };
 

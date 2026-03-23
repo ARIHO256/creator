@@ -193,9 +193,8 @@ export function InvitesFromSellersPage() {
   };
 
   const selectedInvite = useMemo<Invite | null>(() => {
-    // Look up in the updated 'invites' state
-    if (!selectedInviteId) return invites[0] ?? null;
-    return invites.find((i) => i.id === selectedInviteId) ?? invites[0] ?? null;
+    if (!selectedInviteId) return null;
+    return invites.find((i) => i.id === selectedInviteId) ?? null;
   }, [selectedInviteId, invites]);
 
   const filteredInvites = useMemo<Invite[]>(() => {

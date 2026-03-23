@@ -98,7 +98,7 @@ function LiveReplaysClipsPage() {
   const replays = useMemo(() => replayRecords.map(toReplay), [replayRecords]);
 
   const selectedReplay =
-    replays.find((r) => r.id === selectedReplayId) || replays[0] || null;
+    replays.find((r) => r.id === selectedReplayId) || null;
 
   const aiClipSuggestions = useMemo(() => {
     if (!selectedReplay) return [];

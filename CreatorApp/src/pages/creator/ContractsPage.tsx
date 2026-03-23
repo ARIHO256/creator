@@ -141,13 +141,7 @@ function toContract(record: ContractRecord): Contract {
     healthScore: Number((metadata as { healthScore?: unknown }).healthScore || (status === "Completed" ? 95 : status === "Terminated" ? 25 : 80)),
     schedule,
     deliverables,
-    timeline:
-      timeline.length > 0
-        ? timeline
-        : [
-            { date: formatContractDate(record.createdAt) || "—", label: "Contract created" },
-            { date: formatContractDate(record.updatedAt || record.createdAt) || "—", label: "Last updated" }
-          ]
+    timeline
   };
 }
 
@@ -169,7 +163,7 @@ function ContractsPage() {
     });
   }, [contracts, activeFilter]);
 
-  const selectedContract = contracts.find((c) => c.id === selectedContractId) || filteredContracts[0] || null;
+  const selectedContract = contracts.find((c) => c.id === selectedContractId) || null;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors">
@@ -434,7 +428,7 @@ function ContractDetail({ contract, onTerminationRequested }: ContractDetailProp
     doc.text(`Signed by ${contract.brand}`, 20, yPos);
     doc.text("Signed by Creator", 120, yPos);
 
-    const dateStr = contract.timeline[0]?.date || new Date().toLocaleDateString();
+    const dateStr = contract.timeline[0]?.date || "—";
     yPos += 5;
     doc.text(`Date: ${dateStr}`, 20, yPos);
     doc.text(`Date: ${dateStr}`, 120, yPos);

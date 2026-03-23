@@ -184,8 +184,8 @@ export function ProposalsInboxPage(): JSX.Element {
 
 
   const selectedProposal = useMemo<Proposal | null>(() => {
-    if (!selectedProposalId) return proposals[0] ?? null;
-    return proposals.find((p) => p.id === selectedProposalId) ?? proposals[0] ?? null;
+    if (!selectedProposalId) return null;
+    return proposals.find((p) => p.id === selectedProposalId) ?? null;
   }, [selectedProposalId, proposals]);
 
   const filteredProposals = useMemo<Proposal[]>(() => {

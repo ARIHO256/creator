@@ -485,10 +485,8 @@ function NewLiveSessionDrawer({
 
   useEffect(() => {
     if (!open) return;
-    const firstSupplierId = suppliers[0]?.id || "";
-    const firstHostId = hosts[0]?.id || "";
-    setSupplierId((prev) => (prev && suppliers.some((entry) => entry.id === prev) ? prev : firstSupplierId));
-    setHostId((prev) => (prev && hosts.some((entry) => entry.id === prev) ? prev : firstHostId));
+    setSupplierId((prev) => (prev && suppliers.some((entry) => entry.id === prev) ? prev : ""));
+    setHostId((prev) => (prev && hosts.some((entry) => entry.id === prev) ? prev : ""));
     setTitle("New Live Session");
     setPlatforms(["TikTok Live", "Instagram Live"]);
   }, [open, suppliers, hosts]);
@@ -496,7 +494,7 @@ function NewLiveSessionDrawer({
   useEffect(() => {
     // reset campaign if not in scoped list
     if (!open) return;
-    if (!scopedCampaigns.find((c) => c.id === campaignId)) setCampaignId(scopedCampaigns[0]?.id || "");
+    if (!scopedCampaigns.find((c) => c.id === campaignId)) setCampaignId("");
   }, [open, scopedCampaigns, campaignId]);
 
   const canCreate = Boolean(
@@ -919,9 +917,12 @@ export default function LiveDashboardPage() {
 
   useEffect(() => {
     // Ensure selection remains valid after creating/removing sessions
-    if (!sessions.length) return;
-    if (!toolSessionId || !sessions.find((s) => s.id === toolSessionId)) {
-      setToolSessionId(sessions[0].id);
+    if (!sessions.length) {
+      if (toolSessionId) setToolSessionId("");
+      return;
+    }
+    if (toolSessionId && !sessions.find((s) => s.id === toolSessionId)) {
+      setToolSessionId("");
     }
   }, [sessions, toolSessionId]);
 

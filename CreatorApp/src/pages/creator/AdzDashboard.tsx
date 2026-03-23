@@ -817,6 +817,14 @@ export default function AdzDashboard() {
     });
   }, [workspaceState]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const contextId = params.get("adId") || params.get("dealId") || "";
+    if (!contextId) return;
+    setSelectedId((current) => (ads.some((ad) => ad.id === contextId) ? contextId : current));
+  }, [ads]);
+
   // Search/filter
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<AdStatus | "All">("All");

@@ -191,7 +191,7 @@ function EarningsDashboardPage() {
     const rows = Array.from(grouped.values())
       .sort((left, right) => left.sortAt - right.sortAt)
       .map((entry) => ({ label: entry.label, total: Number(entry.total.toFixed(2)) }));
-    return rows.length > 0 ? rows : [{ label: "No records", total: 0 }];
+    return rows;
   }, [rangedContracts]);
 
   const campaignEarnings = useMemo(() => {
@@ -203,7 +203,7 @@ function EarningsDashboardPage() {
       .map(([label, total]) => ({ label, total: Number(total.toFixed(2)) }))
       .sort((left, right) => right.total - left.total)
       .slice(0, 8);
-    return rows.length > 0 ? rows : [{ label: "No records", total: 0 }];
+    return rows;
   }, [rangedContracts]);
 
   const sellerEarnings = useMemo(() => {
@@ -215,7 +215,7 @@ function EarningsDashboardPage() {
       .map(([label, total]) => ({ label, total: Number(total.toFixed(2)) }))
       .sort((left, right) => right.total - left.total)
       .slice(0, 8);
-    return rows.length > 0 ? rows : [{ label: "No records", total: 0 }];
+    return rows;
   }, [rangedContracts]);
 
   const earningsComposition = useMemo(() => {
@@ -256,7 +256,6 @@ function EarningsDashboardPage() {
         payout.metadata && typeof payout.metadata === "object" && !Array.isArray(payout.metadata)
           ? (payout.metadata as Record<string, unknown>)
           : undefined;
-      const fallbackReference = payout.id.slice(0, 12).toUpperCase();
       return {
         id: payout.id,
         date: formatPayoutDate(payout.createdAt),
@@ -272,17 +271,17 @@ function EarningsDashboardPage() {
           readStringMetadata(metadata, "reference")
           || readStringMetadata(metadata, "transactionRef")
           || readStringMetadata(metadata, "payoutRef")
-          || fallbackReference
+          || ""
       } satisfies Payout;
     });
   }, [dataset.payouts]);
 
   // Forecast: simple extrapolation based on monthly data
   const forecast = useMemo(() => {
-    const thisMonth = monthlyEarnings[monthlyEarnings.length - 1];
-    const lastMonth = monthlyEarnings[monthlyEarnings.length - 2];
+    const thisMonth = monthlyEarnings.length > 0 ? monthlyEarnings[monthlyEarnings.length - 1] : null;
+    const lastMonth = monthlyEarnings.length > 1 ? monthlyEarnings[monthlyEarnings.length - 2] : null;
     const growth = thisMonth && lastMonth ? thisMonth.total - lastMonth.total : 0;
-    const projected = thisMonth.total + Math.max(0, growth * 0.5);
+    const projected = (thisMonth?.total || 0) + Math.max(0, growth * 0.5);
     return {
       month: thisMonth?.label || "This month",
       current: thisMonth?.total || 0,

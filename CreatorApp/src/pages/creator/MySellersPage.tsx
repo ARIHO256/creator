@@ -122,8 +122,8 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
     if (seller) {
       setPitchRecipient(seller);
     } else {
-      // If global "Pitch Suppliers" is clicked, maybe pick selected or default
-      setPitchRecipient(selectedSeller || mySellers[0] || null);
+      // If global "Pitch Suppliers" is clicked, use explicit current selection only.
+      setPitchRecipient(selectedSeller || null);
     }
     setIsPitchDrawerOpen(true);
   };
@@ -159,8 +159,8 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
   }, [mySellers, search, relationshipFilter, viewTab]);
 
   const selectedSeller = useMemo<MySeller | null>(() => {
-    if (selectedSellerId == null) return filteredSellers[0] ?? null;
-    return filteredSellers.find((s) => s.id === selectedSellerId) ?? filteredSellers[0] ?? null;
+    if (selectedSellerId == null) return null;
+    return filteredSellers.find((s) => s.id === selectedSellerId) ?? null;
   }, [filteredSellers, selectedSellerId]);
 
   const toggleFollow = (id: number) => {
