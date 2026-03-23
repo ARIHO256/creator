@@ -1981,7 +1981,7 @@ function NewDealzWizard({
   const [supplierIdx, setSupplierIdx] = useState(0);
   // Default to first creator since selection is removed
   const [creatorIdx] = useState(0);
-  const [campaignName, setCampaignName] = useState("New Campaign");
+  const [campaignName, setCampaignName] = useState("");
 
   // Default timing (next 24h) since selection is removed
   const [startISO] = useState(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
@@ -1993,7 +1993,7 @@ function NewDealzWizard({
     setStep(0);
     setType("");
     setSupplierIdx(0);
-    setCampaignName("New Campaign");
+    setCampaignName("");
   }, [open]);
 
   // Updated steps: 0=Type, 1=Supplier, 2=Campaign
@@ -2014,7 +2014,7 @@ function NewDealzWizard({
     if (!type || !hasSuppliers) return;
 
     const supplier = suppliers[supplierIdx] || suppliers[0];
-    const creator = creators[creatorIdx] || creators[0] || { name: "Creator", handle: "@creator", avatarUrl: "", verified: false };
+    const creator = creators[creatorIdx] || creators[0] || { name: "", handle: "", avatarUrl: "", verified: false };
     const id = `dz_${Math.floor(Date.now() / 1000)}`;
     const heroImage = supplier?.logoUrl || creator.avatarUrl || "";
 
@@ -2022,12 +2022,12 @@ function NewDealzWizard({
       id,
       type,
       title: type === "Shoppable Adz" ? campaignName : type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
-      tagline: type === "Shoppable Adz" ? "Creator-first shoppable clips" : type === "Live Sessionz" ? "Live run-of-show + drops" : "Live session + shoppable clips",
+      tagline: "",
       supplier,
       creator,
       startISO,
       endISO,
-      notes: "Created from +New Dealz."
+      notes: ""
     };
 
     const withShoppable =
@@ -2038,12 +2038,12 @@ function NewDealzWizard({
             id: `ad_${id}`,
             status: "Draft",
             campaignName,
-            campaignSubtitle: "New deal draft",
+            campaignSubtitle: "",
             supplier,
             creator,
             startISO,
             endISO,
-            platforms: ["Instagram", "TikTok"],
+            platforms: [],
             heroImageUrl: heroImage,
             offers: [],
             ctaPrimaryLabel: "Buy now",
@@ -2061,14 +2061,14 @@ function NewDealzWizard({
             id: `live_${id}`,
             status: "Draft",
             title: type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
-            description: "Draft live session created from Dealz Marketplace. Add run-of-show, featured items, and destinations in Live Builder.",
+            description: "",
             supplier,
             host: creator,
-            platforms: ["Instagram"],
+            platforms: [],
             startISO,
             endISO,
-            timezoneLabel: Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time",
-            promoLink: `https://mldz.link/live_${id}`,
+            timezoneLabel: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+            promoLink: "",
             heroImageUrl: heroImage,
             featured: []
           }
@@ -2079,7 +2079,7 @@ function NewDealzWizard({
     onClose();
   }
 
-  const supplier = suppliers[supplierIdx] || suppliers[0] || { name: "Supplier", category: "Seller", logoUrl: "" };
+  const supplier = suppliers[supplierIdx] || suppliers[0] || { name: "", category: "", logoUrl: "" };
 
   return (
     <Drawer

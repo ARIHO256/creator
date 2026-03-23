@@ -4260,10 +4260,11 @@ export function LiveBuilderView({
 
         const marketplaceDeals = asArray(marketplace.deals);
         const giveawaysByCampaign: Record<string, SupplierCustomGiveawayPreset[]> = {};
-        marketplaceDeals.forEach((deal, index) => {
+        marketplaceDeals.forEach((deal) => {
           const dealRecord = asRecord(deal);
           if (!dealRecord) return;
-          const campaignId = toStr(dealRecord.id, `campaign_${index + 1}`);
+          const campaignId = toStr(dealRecord.id, "").trim();
+          if (!campaignId) return;
           const live = asRecord(dealRecord.live);
           const rawGiveaways = asArray(live?.giveaways);
           const presets = normalizeSupplierCustomGiveawayPresets(rawGiveaways, campaignId);
