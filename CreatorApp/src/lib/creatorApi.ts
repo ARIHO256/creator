@@ -233,6 +233,35 @@ export type TaskRecord = {
   [key: string]: unknown;
 };
 
+export type CreateTaskPayload = {
+  campaignId?: string;
+  contractId?: string;
+  assigneeUserId?: string;
+  title: string;
+  description?: string;
+  priority?: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  status?: "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "APPROVED" | "BLOCKED" | "COMPLETED";
+  dueAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type CreateTaskCommentPayload = {
+  body: string;
+};
+
+export type CreateTaskAttachmentPayload = {
+  name: string;
+  kind: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  extension?: string;
+  checksum?: string;
+  storageProvider?: string;
+  storageKey?: string;
+  url?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type AuditLogRecord = {
   id: string;
   action?: string | null;
@@ -796,8 +825,17 @@ export const creatorApi = {
   task(id: string) {
     return api.get<TaskRecord>(`/tasks/${id}`);
   },
+  createTask(body: CreateTaskPayload) {
+    return api.post<TaskRecord>("/tasks", body);
+  },
   updateTask(id: string, body: Record<string, unknown>) {
     return api.patch<TaskRecord>(`/tasks/${id}`, body);
+  },
+  taskComment(id: string, body: CreateTaskCommentPayload) {
+    return api.post<Record<string, unknown>>(`/tasks/${id}/comments`, body);
+  },
+  taskAttachment(id: string, body: CreateTaskAttachmentPayload) {
+    return api.post<Record<string, unknown>>(`/tasks/${id}/attachments`, body);
   },
   assets() {
     return api.get<AssetRecord[]>("/assets");

@@ -18,6 +18,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApiResource } from "../../hooks/useApiResource";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { creatorApi, type ContractRecord, type TaskRecord } from "../../lib/creatorApi";
 
 const ORANGE = "#f77f00";
@@ -256,6 +257,43 @@ function dueOffset(date?: string | null) {
   return Math.ceil((parsed.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
+function taskStatusFromColumn(column: ColumnId): "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "APPROVED" | "BLOCKED" {
+  if (column === "in-progress") return "IN_PROGRESS";
+  if (column === "submitted") return "IN_REVIEW";
+  if (column === "approved") return "APPROVED";
+  if (column === "needs-changes") return "BLOCKED";
+  return "TODO";
+}
+
+function taskPriorityToApi(priority: Priority): "LOW" | "MEDIUM" | "HIGH" | "URGENT" {
+  if (priority === "Low") return "LOW";
+  if (priority === "High") return "HIGH";
+  if (priority === "Critical") return "URGENT";
+  return "MEDIUM";
+}
+
+function attachmentKindForFile(file: File): "IMAGE" | "VIDEO" | "DOCUMENT" {
+  const mime = String(file.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "IMAGE";
+  if (mime.startsWith("video/")) return "VIDEO";
+  return "DOCUMENT";
+}
+
+function extensionFromFileName(name: string): string | undefined {
+  const parts = name.split(".");
+  if (parts.length < 2) return undefined;
+  const ext = parts[parts.length - 1].trim().toLowerCase();
+  return ext || undefined;
+}
+
+function commentFromActorRole(role?: string | null): Comment["from"] {
+  const normalized = String(role || "").trim().toUpperCase();
+  if (normalized === "ADMIN") return "Admin";
+  if (normalized === "SUPPORT" || normalized === "OPS") return "Ops";
+  if (normalized === "SELLER" || normalized === "PROVIDER") return "Supplier";
+  return "Creator";
+}
+
 function toBoardTask(record: TaskRecord): { column: ColumnId; task: Task } {
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
   const contract = record.contract;
@@ -387,12 +425,13 @@ function Toast({ text, onClose }: { text: string | null; onClose: () => void }) 
 
 export function TaskBoardPage() {
   const navigate = useNavigate();
+  const { run } = useAsyncAction();
   const [toast, setToast] = useState<string | null>(null);
   const { data: contractRecords } = useApiResource({
     initialData: [] as ContractRecord[],
     loader: () => creatorApi.contracts()
   });
-  const { data: taskRecords } = useApiResource({
+  const { data: taskRecords, reload: reloadTasks } = useApiResource({
     initialData: [] as TaskRecord[],
     loader: () => creatorApi.tasks()
   });
@@ -444,27 +483,64 @@ export function TaskBoardPage() {
 
   // Selected task side panel
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const selectedTaskRecord = useMemo(
+    () => taskRecords.find((record) => record.id === selectedTask?.id) || null,
+    [taskRecords, selectedTask?.id]
+  );
 
-  // Side panel state (uploads/comments demo)
+  // Side panel state
   const [uploadNote, setUploadNote] = useState("");
   const [contentLink, setContentLink] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState<FileStub[]>([]);
-  const [comments, setComments] = useState<Comment[]>([
-    {
-      id: 1,
-      from: "Supplier",
-      name: "Supplier Manager",
-      body: "Please keep the first 3 seconds hook-heavy and include the CTA verbatim.",
-      time: "Yesterday",
-    },
-  ]);
   const [commentDraft, setCommentDraft] = useState("");
+  const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(null);
 
   // ✅ New Task drawer
   const [newTaskOpen, setNewTaskOpen] = useState(false);
 
   // Drag & drop
   const dragRef = useRef<{ taskId: string; fromCol: ColumnId } | null>(null);
+
+  const uploadedFiles = useMemo<FileStub[]>(
+    () =>
+      Array.isArray(selectedTaskRecord?.attachments)
+        ? selectedTaskRecord.attachments.map((attachment, index) => {
+            const record = attachment && typeof attachment === "object" ? (attachment as Record<string, unknown>) : {};
+            const sizeBytes = Number(record.sizeBytes || 0);
+            return {
+              name: String(record.name || `File ${index + 1}`),
+              sizeLabel: sizeBytes > 0 ? `${Math.max(1, Math.round(sizeBytes / 1024))} KB` : "Unknown size"
+            };
+          })
+        : [],
+    [selectedTaskRecord?.attachments]
+  );
+
+  const comments = useMemo<Comment[]>(
+    () =>
+      Array.isArray(selectedTaskRecord?.comments)
+        ? selectedTaskRecord.comments.map((comment, index) => {
+            const record = comment && typeof comment === "object" ? (comment as Record<string, unknown>) : {};
+            const author = record.author && typeof record.author === "object" ? (record.author as Record<string, unknown>) : {};
+            const createdAt = typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString();
+            return {
+              id: index + 1,
+              from: commentFromActorRole(typeof author.role === "string" ? author.role : null),
+              name: String(author.name || "User"),
+              body: String(record.body || ""),
+              time: fmtTimeAgo(createdAt)
+            };
+          })
+        : [],
+    [selectedTaskRecord?.comments]
+  );
+
+  useEffect(() => {
+    if (!pendingOpenTaskId) return;
+    const task = allTasksFlat.find((entry) => entry.id === pendingOpenTaskId);
+    if (!task) return;
+    setSelectedTask(task);
+    setPendingOpenTaskId(null);
+  }, [allTasksFlat, pendingOpenTaskId]);
 
   function moveTask(taskId: string, toCol: ColumnId) {
     const from = taskToColumn.get(taskId);
@@ -482,6 +558,13 @@ export function TaskBoardPage() {
         [toCol]: [task, ...prev[toCol]],
       };
     });
+
+    void creatorApi
+      .updateTask(taskId, { status: taskStatusFromColumn(toCol) })
+      .catch(() => {
+        setToast("Failed to move task.");
+        void reloadTasks();
+      });
   }
 
   function handleDragStart(taskId: string, fromCol: ColumnId) {
@@ -499,38 +582,75 @@ export function TaskBoardPage() {
     setSelectedTask(task);
     setUploadNote("");
     setContentLink("");
-    setUploadedFiles([]);
     setCommentDraft("");
   }
 
   function handleFileUpload(files: FileList | null) {
-    if (!files) return;
-    const next: FileStub[] = Array.from(files).map((f) => ({
-      name: f.name,
-      sizeLabel: `${Math.max(1, Math.round(f.size / 1024))} KB`,
-    }));
-    setUploadedFiles((prev) => [...prev, ...next]);
-    setToast(`Added ${next.length} file(s)`);
+    if (!files || !selectedTask) return;
+    const list = Array.from(files);
+    run(
+      async () => {
+        await Promise.all(
+          list.map((file) =>
+            creatorApi.taskAttachment(selectedTask.id, {
+              name: file.name,
+              kind: attachmentKindForFile(file),
+              mimeType: file.type || undefined,
+              sizeBytes: file.size > 0 ? file.size : undefined,
+              extension: extensionFromFileName(file.name),
+              metadata: {
+                source: "task-board",
+                note: uploadNote || undefined
+              }
+            })
+          )
+        );
+        await reloadTasks();
+        setToast(`Added ${list.length} file(s)`);
+      },
+      {
+        errorMessage: "Failed to upload files."
+      }
+    );
   }
 
   function handleAddComment() {
     const text = commentDraft.trim();
-    if (!text) return;
-    setComments((prev) => [
-      ...prev,
-      { id: prev.length + 1, from: "Creator", name: "You", body: text, time: "Just now" },
-    ]);
-    setCommentDraft("");
+    if (!text || !selectedTask) return;
+    run(
+      async () => {
+        await creatorApi.taskComment(selectedTask.id, { body: text });
+        setCommentDraft("");
+        await reloadTasks();
+      },
+      {
+        errorMessage: "Failed to send comment."
+      }
+    );
   }
 
-  function addNewTaskToBoard(payload: NewTaskPayload) {
+  async function addNewTaskToBoard(payload: NewTaskPayload) {
     const { task, column, openAfterCreate } = payload;
-
-    setColumns((prev) => ({ ...prev, [column]: [task, ...prev[column]] }));
+    const dueAt = new Date(Date.now() + task.dueDaysFromNow * 24 * 60 * 60 * 1000);
+    const created = await creatorApi.createTask({
+      contractId: task.linkedContractId,
+      title: task.title,
+      priority: taskPriorityToApi(task.priority),
+      status: taskStatusFromColumn(column),
+      dueAt: Number.isNaN(dueAt.getTime()) ? undefined : dueAt.toISOString(),
+      metadata: {
+        type: task.type,
+        earnings: task.earnings,
+        campaign: task.campaign,
+        supplier: task.supplier,
+        brand: task.brand,
+        currency: task.currency
+      }
+    });
+    await reloadTasks();
     setToast("Task created");
-
     if (openAfterCreate) {
-      setSelectedTask(task);
+      setPendingOpenTaskId(created.id);
     }
   }
 
@@ -1026,9 +1146,14 @@ function TaskSidePanel({
             <div className="flex items-center justify-end">
               <Btn
                 tone="neutral"
-                onClick={() => {
+                onClick={async () => {
                   if (!contentLink.trim()) return setToast("Add a link first.");
-                  setToast("Link copied (demo).");
+                  try {
+                    await navigator.clipboard.writeText(contentLink.trim());
+                    setToast("Link copied.");
+                  } catch {
+                    setToast("Copy failed.");
+                  }
                 }}
               >
                 Copy link
@@ -1040,6 +1165,9 @@ function TaskSidePanel({
             <h3 className="text-xs font-semibold dark:font-bold">Comments</h3>
 
             <div className="space-y-2">
+              {!comments.length ? (
+                <div className="text-xs text-slate-500 dark:text-slate-300">No comments yet.</div>
+              ) : null}
               {comments.map((c) => (
                 <div key={c.id} className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-2">
                   <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-300">
