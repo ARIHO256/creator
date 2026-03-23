@@ -1457,7 +1457,7 @@ function NewTaskDrawer({
       await onCreate({ task, column: initialColumn, openAfterCreate });
       onClose();
     } catch {
-      // Parent handles toast messaging for API failures.
+      setToast("Failed to create task.");
     }
   }
 

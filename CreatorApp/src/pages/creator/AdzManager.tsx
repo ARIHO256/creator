@@ -487,7 +487,7 @@ function mapDealToManagedAd(raw: unknown): Ad | null {
     metricFromKpis(shoppable.kpis, ["earning", "revenue", "gmv"]) ||
     0;
 
-  const campaignName = asString(shoppable.campaignName, asString(deal.title, "Campaign"));
+  const campaignName = asString(shoppable.campaignName, asString(deal.title, ""));
   const campaignSubtitle = asString(shoppable.campaignSubtitle, asString(deal.tagline, ""));
   const generatedRaw = asString(shoppable.status, "").toLowerCase();
   const generated =
@@ -516,8 +516,8 @@ function mapDealToManagedAd(raw: unknown): Ad | null {
     status,
     platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
     supplier: {
-      name: asString(supplier?.name, "Supplier"),
-      category: asString(supplier?.category, "Supplier"),
+      name: asString(supplier?.name, ""),
+      category: asString(supplier?.category, ""),
       logoUrl: asString(supplier?.logoUrl, BLANK_IMAGE),
     },
     campaign: {
@@ -531,15 +531,16 @@ function mapDealToManagedAd(raw: unknown): Ad | null {
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
     creator: {
-      name: asString(creator?.name, "Creator"),
+      name: asString(creator?.name, ""),
       handle: (() => {
-        const handle = asString(creator?.handle, "@creator");
+        const handle = asString(creator?.handle, "");
+        if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
       avatarUrl: asString(creator?.avatarUrl, BLANK_IMAGE),
       verified: asBoolean(creator?.verified, false),
     },
-    owner: asString(shoppable.owner, "Owner"),
+    owner: asString(shoppable.owner, ""),
     compensation: mapCompensation(shoppable.compensation ?? deal.compensation, asCurrency(shoppable.currency, "USD")),
     offers,
     hasBrokenLink: asBoolean(shoppable.hasBrokenLink, false),
