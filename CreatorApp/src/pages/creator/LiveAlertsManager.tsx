@@ -233,8 +233,8 @@ function Modal({
 export default function LiveAlertsManager() {
   const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
-  const { data: payload } = useApiResource({
-    initialData: {} as LiveAlertsPayload,
+  const { data: payload, loading, error } = useApiResource<LiveAlertsPayload | null>({
+    initialData: null,
     loader: () => creatorApi.liveTool("live-alerts") as Promise<LiveAlertsPayload>,
   });
   const sessionId = useMemo(() => {
@@ -242,26 +242,29 @@ export default function LiveAlertsManager() {
     return new URLSearchParams(window.location.search).get("sessionId") || "";
   }, []);
   const session = useMemo(
-    () => ({
-      id: payload.session?.id || sessionId,
-      title: payload.session?.title || "",
-      status: payload.session?.status || ("Draft" as SessionStatus),
-      startedISO: payload.session?.startedISO || new Date(Date.now() - 9 * 60 * 1000).toISOString(),
-      endsISO: payload.session?.endsISO || new Date(Date.now() + 51 * 60 * 1000).toISOString(),
-    }),
-    [payload.session, sessionId],
+    () =>
+      payload?.session
+        ? {
+            id: payload.session.id || sessionId,
+            title: payload.session.title || "",
+            status: payload.session.status || ("Draft" as SessionStatus),
+            startedISO: payload.session.startedISO || "",
+            endsISO: payload.session.endsISO || "",
+          }
+        : null,
+    [payload?.session, sessionId],
   );
 
-  const liveLink = useMemo(() => buildLiveLink(session.id), [session.id]);
+  const liveLink = useMemo(() => buildLiveLink(session?.id || ""), [session?.id]);
 
   const channels: Channel[] = useMemo(
-    () => payload.channels || [],
-    [payload.channels],
+      () => payload?.channels || [],
+    [payload?.channels],
   );
 
   const templates: AlertTemplate[] = useMemo(
     () =>
-      (payload.templates || []).map((template) => ({
+      ((payload?.templates || [])).map((template) => ({
         key: template.key,
         title: template.title,
         subtitle: template.subtitle,
@@ -275,7 +278,7 @@ export default function LiveAlertsManager() {
             .replaceAll("{{dealName}}", dealName)
             .replaceAll("{{endsIn}}", endsIn),
       })),
-    [payload.templates],
+    [payload?.templates],
   );
 
   const [enabledDest, setEnabledDest] = useState<Record<ChannelKey, boolean>>({
@@ -298,12 +301,30 @@ export default function LiveAlertsManager() {
     last_chance: 0,
   });
   useEffect(() => {
-    if (!Object.keys(payload).length) return;
+    if (!payload) return;
     setEnabledDest((current) => ({ ...current, ...(payload.enabledDest || {}) }));
     setDealName(payload.dealName || "");
     setDealEndsMinutes(typeof payload.dealEndsMinutes === "number" ? payload.dealEndsMinutes : 0);
     setLastSent((current) => ({ ...current, ...(payload.lastSent || {}) }));
   }, [payload]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading live alerts…
+      </div>
+    );
+  }
+
+  if (error || !payload || !session || !session.startedISO || !session.endsISO) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Live alerts data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
