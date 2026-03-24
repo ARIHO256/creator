@@ -229,15 +229,6 @@ function useCountdown(targetISO: string) {
   return { d, h, m, sec, diff };
 }
 
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {}
-};
-
 function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -1982,9 +1973,8 @@ function NewDealzWizard({
   const [creatorIdx] = useState(0);
   const [campaignName, setCampaignName] = useState("");
 
-  // Default timing (next 24h) since selection is removed
-  const [startISO] = useState(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
-  const [endISO] = useState(new Date(Date.now() + 25 * 3600 * 1000).toISOString());
+  const [startISO] = useState("");
+  const [endISO] = useState("");
   const hasSuppliers = suppliers.length > 0;
 
   useEffect(() => {
@@ -2509,7 +2499,7 @@ export default function DealzMarketplace() {
 
   // compute countdown for viewer
   const startISO = selected?.startISO || new Date().toISOString();
-  const endISO = selected?.endISO || new Date(Date.now() + 3600 * 1000).toISOString();
+  const endISO = selected?.endISO || "";
   const startMs = new Date(startISO).getTime();
   const endMs = new Date(endISO).getTime();
   const countdownState = computeCountdownState(Date.now(), startMs, endMs);

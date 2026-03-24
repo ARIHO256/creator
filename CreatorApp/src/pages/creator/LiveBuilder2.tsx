@@ -654,12 +654,6 @@ function normalizeSupplierCustomGiveawayPresets(
 }
 
 function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
-  const now = new Date();
-  const startDateISO = toISODate(now);
-  const startTime = `${pad2(Math.min(23, now.getHours() + 1))}:00`;
-  const endDateISO = startDateISO;
-  const endTime = `${pad2(Math.min(23, now.getHours() + 2))}:30`;
-
   const title = "";
 
   return {
@@ -690,10 +684,10 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     durationMinutes: 60,
     timezoneLabel: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
 
-    startDateISO,
-    startTime,
-    endDateISO,
-    endTime,
+    startDateISO: "",
+    startTime: "",
+    endDateISO: "",
+    endTime: "",
 
     products: [],
 

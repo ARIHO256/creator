@@ -35,7 +35,6 @@ import {
  * - Safeguardrails: frequency cap indicator, preview + confirm modal
  * - “Pin link to chat” helper per destination
  *
- * NOTE: Self-contained demo UI. Wire to backend for real sends, caps, and channel policies.
  */
 
 type SessionStatus = "Draft" | "Scheduled" | "Live" | "Ended";

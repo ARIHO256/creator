@@ -57,7 +57,6 @@ import { creatorApi } from "../../lib/creatorApi";
  * - Phone mockups per channel in a drawer (WhatsApp, Telegram, RCS, Initiation Prompt).
  *
  * Notes:
- * - Self-contained demo UI (no backend). Wire scheduling, template packs, and QR generation internally as needed.
  * - TailwindCSS assumed.
  */
 

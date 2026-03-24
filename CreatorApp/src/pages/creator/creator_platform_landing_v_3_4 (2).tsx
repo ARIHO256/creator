@@ -115,17 +115,6 @@ type LandingContent = {
   creatorChecklistItems: string[];
 };
 
-const EMPTY_LANDING_CONTENT: LandingContent = {
-  nav: [],
-  features: [],
-  testimonials: [],
-  creativeItems: [],
-  faqs: [],
-  integrationPlatforms: [],
-  educationLessons: [],
-  creatorChecklistItems: []
-};
-
 function iconForFeatureTag(tag: string) {
   const normalized = tag.trim().toLowerCase();
   if (normalized.includes("live")) return <Video className="h-5 w-5" />;
@@ -921,12 +910,12 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
   const isMobile = useMobile();
   const { theme, toggleTheme } = useTheme();
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [landingContent, setLandingContent] = useState<LandingContent>(EMPTY_LANDING_CONTENT);
+  const [landingContent, setLandingContent] = useState<LandingContent | null>(null);
 
   useEffect(() => {
     let active = true;
     if (!hasStoredAuthState()) {
-      setLandingContent(EMPTY_LANDING_CONTENT);
+      setLandingContent(null);
       return () => {
         active = false;
       };
@@ -940,11 +929,11 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
           setLandingContent(normalized);
           return;
         }
-        setLandingContent(EMPTY_LANDING_CONTENT);
+        setLandingContent(null);
       })
       .catch(() => {
         if (!active) return;
-        setLandingContent(EMPTY_LANDING_CONTENT);
+        setLandingContent(null);
       });
     return () => {
       active = false;
@@ -988,18 +977,18 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
   const creators = useCountUp(12000);
   const countries = useCountUp(28);
   const lift = useCountUp(31);
-  const navItems = landingContent.nav;
+  const navItems = landingContent?.nav || [];
   const featureCards = useMemo(
     () =>
-      landingContent.features.map((feature) => ({
+      (landingContent?.features || []).map((feature) => ({
         ...feature,
         icon: iconForFeatureTag(feature.tag)
       })),
-    [landingContent.features]
+    [landingContent?.features]
   );
-  const testimonials = landingContent.testimonials;
-  const creativeItems = landingContent.creativeItems;
-  const faqItems = landingContent.faqs;
+  const testimonials = landingContent?.testimonials || [];
+  const creativeItems = landingContent?.creativeItems || [];
+  const faqItems = landingContent?.faqs || [];
 
   const workflow = useMemo(() => getWorkflow(workflowTrack, workflowMode), [workflowTrack, workflowMode]);
 
@@ -1192,8 +1181,8 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
         </div>
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <IntegrationCard platforms={landingContent.integrationPlatforms} />
-          <EducationCard onNav={handleNav} lessons={landingContent.educationLessons} />
+          <IntegrationCard platforms={landingContent?.integrationPlatforms || []} />
+          <EducationCard onNav={handleNav} lessons={landingContent?.educationLessons || []} />
         </div>
       </div>
 
@@ -1501,7 +1490,7 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-4 items-start">
           <div className="space-y-3"><FaqList items={faqItems} /></div>
-          <CreatorChecklist onNav={handleNav} items={landingContent.creatorChecklistItems} />
+          <CreatorChecklist onNav={handleNav} items={landingContent?.creatorChecklistItems || []} />
         </div>
       </div>
 

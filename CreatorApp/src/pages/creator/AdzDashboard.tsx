@@ -516,17 +516,6 @@ function BarList({
   );
 }
 
-/** ------------------------------ Mock data ------------------------------ */
-
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {},
-};
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;

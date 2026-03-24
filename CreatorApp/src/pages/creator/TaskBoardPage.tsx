@@ -437,8 +437,7 @@ export function TaskBoardPage() {
   });
   const contracts = useMemo(() => contractRecords.map(toBoardContract), [contractRecords]);
 
-  // Seed tasks from backend tasks
-  const seededColumns = useMemo<ColumnsState>(() => {
+  const columnsFromTasks = useMemo<ColumnsState>(() => {
     const col: ColumnsState = {
       todo: [],
       "in-progress": [],
@@ -453,11 +452,11 @@ export function TaskBoardPage() {
     return col;
   }, [taskRecords]);
 
-  const [columns, setColumns] = useState<ColumnsState>(seededColumns);
+  const [columns, setColumns] = useState<ColumnsState>(columnsFromTasks);
 
   useEffect(() => {
-    setColumns(seededColumns);
-  }, [seededColumns]);
+    setColumns(columnsFromTasks);
+  }, [columnsFromTasks]);
 
   const taskToColumn = useMemo(() => {
     const map = new Map<string, ColumnId>();

@@ -65,12 +65,6 @@ type AuthNoticeContent = {
   quickAnswers: AuthNoticeFaq[];
 };
 
-const EMPTY_AUTH_NOTICE_CONTENT: AuthNoticeContent = {
-  nextSteps: [],
-  readyItems: [],
-  quickAnswers: []
-};
-
 function normalizeAuthNoticeContent(value: unknown): AuthNoticeContent | null {
   const root = asRecord(value);
   if (!root) return null;
@@ -326,7 +320,7 @@ export default function CreatorAuthRedirectNotice() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [noticeContent, setNoticeContent] = useState<AuthNoticeContent>(EMPTY_AUTH_NOTICE_CONTENT);
+  const [noticeContent, setNoticeContent] = useState<AuthNoticeContent | null>(null);
 
   useEffect(() => {
     const nextMode = new URLSearchParams(location.search).get("mode");
@@ -342,7 +336,7 @@ export default function CreatorAuthRedirectNotice() {
   useEffect(() => {
     let active = true;
     if (!hasStoredAuthState()) {
-      setNoticeContent(EMPTY_AUTH_NOTICE_CONTENT);
+      setNoticeContent(null);
       return () => {
         active = false;
       };
@@ -356,11 +350,11 @@ export default function CreatorAuthRedirectNotice() {
           setNoticeContent(normalized);
           return;
         }
-        setNoticeContent(EMPTY_AUTH_NOTICE_CONTENT);
+        setNoticeContent(null);
       })
       .catch(() => {
         if (!active) return;
-        setNoticeContent(EMPTY_AUTH_NOTICE_CONTENT);
+        setNoticeContent(null);
       });
     return () => {
       active = false;
@@ -873,7 +867,7 @@ export default function CreatorAuthRedirectNotice() {
                   What happens next
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {noticeContent.nextSteps.map((s) => (
+                  {(noticeContent?.nextSteps || []).map((s) => (
                     <div
                       key={s.n}
                       className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm hover:shadow"
@@ -917,7 +911,7 @@ export default function CreatorAuthRedirectNotice() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Have these ready</div>
                 <div className="mt-3 space-y-2">
-                  {noticeContent.readyItems.map((x) => (
+                  {(noticeContent?.readyItems || []).map((x) => (
                     <div key={x} className="flex items-start gap-2">
                       <span className="mt-0.5 h-5 w-5 rounded-full bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-center">
                         <Check className="h-3 w-3" />
@@ -931,7 +925,7 @@ export default function CreatorAuthRedirectNotice() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Quick answers</div>
                 <div className="mt-3 space-y-2">
-                  {noticeContent.quickAnswers.map((item) => (
+                  {(noticeContent?.quickAnswers || []).map((item) => (
                     <Accordion key={item.q} q={item.q} a={item.a} />
                   ))}
                 </div>

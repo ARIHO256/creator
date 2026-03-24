@@ -307,17 +307,6 @@ function Avatar({ src, alt }: { src: string; alt: string }) {
   return <img src={src} alt={alt} className="h-10 w-10 rounded-2xl object-cover ring-1 ring-neutral-200 dark:ring-slate-700" />;
 }
 
-/** ------------------------------ Page ------------------------------ */
-
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {},
-};
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;

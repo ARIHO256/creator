@@ -44,7 +44,6 @@ import {
  *    - restock alerts
  *
  * Notes:
- * - Self-contained demo UI (no backend).
  * - TailwindCSS assumed.
  */
 
