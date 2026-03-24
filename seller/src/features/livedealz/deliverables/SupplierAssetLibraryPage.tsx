@@ -911,6 +911,7 @@ export default function SupplierAssetLibraryPage() {
 
   const [assets, setAssets] = useState([]);
   const [workspace, setWorkspace] = useState(EMPTY_ASSET_LIBRARY_CONTEXT);
+  const [loadError, setLoadError] = useState(null);
 
   const creators = Array.isArray(workspace.creators) ? workspace.creators : [];
   const suppliers = Array.isArray(workspace.suppliers) ? workspace.suppliers : [];
@@ -970,10 +971,10 @@ export default function SupplierAssetLibraryPage() {
           activity: workspacePayload?.activity && typeof workspacePayload.activity === "object" ? workspacePayload.activity : EMPTY_ASSET_LIBRARY_CONTEXT.activity
         });
         setAssets(rows.map(mapBackendAsset));
+        setLoadError(null);
       } catch {
         if (!cancelled) {
-          setWorkspace(EMPTY_ASSET_LIBRARY_CONTEXT);
-          setAssets([]);
+          setLoadError("Asset library data is unavailable from the backend right now.");
         }
       }
     };
@@ -1441,6 +1442,11 @@ export default function SupplierAssetLibraryPage() {
       ) : null}
 
       <div className="w-full px-[0.55%] py-6">
+        {loadError ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            {loadError}
+          </div>
+        ) : null}
         {/* Controls */}
         <div className="rounded-2xl border bg-white dark:bg-slate-900 p-4">
           <div className="grid gap-3 lg:grid-cols-12 lg:items-center">

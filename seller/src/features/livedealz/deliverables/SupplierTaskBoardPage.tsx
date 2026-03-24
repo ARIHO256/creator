@@ -506,6 +506,7 @@ function Toast({ text, onClose }) {
 export default function SupplierTaskBoardPage() {
   const [contracts, setContracts] = useState<Array<Record<string, any>>>([]);
   const [columns, setColumns] = useState(EMPTY_COLUMNS);
+  const [loadError, setLoadError] = useState(null);
 
   const [dragging, setDragging] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -533,11 +534,11 @@ export default function SupplierTaskBoardPage() {
         const normalizedTasks = Array.isArray(taskRecords) ? taskRecords.map(normalizeTaskRecord) : [];
         setContracts(nextContracts);
         setColumns(buildColumnsFromTasks(normalizedTasks));
+        setLoadError(null);
       })
       .catch(() => {
         if (cancelled) return;
-        setContracts([]);
-        setColumns(EMPTY_COLUMNS);
+        setLoadError("Task board data is unavailable from the backend right now.");
       });
 
     return () => {
@@ -794,6 +795,11 @@ export default function SupplierTaskBoardPage() {
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
+          {loadError ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              {loadError}
+            </div>
+          ) : null}
           <div className="flex items-center justify-between text-sm">
             <div>
               <p className="text-xs text-slate-500 dark:text-slate-300">

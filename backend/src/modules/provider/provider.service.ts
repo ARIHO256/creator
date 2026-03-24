@@ -438,8 +438,18 @@ export class ProviderService {
       return { templates };
     }
 
+    const defaultsRecord = await this.prisma.systemContent.findUnique({
+      where: { key: 'provider_quote_templates_default' }
+    });
+    const defaultTemplates =
+      defaultsRecord?.payload &&
+      typeof defaultsRecord.payload === 'object' &&
+      !Array.isArray(defaultsRecord.payload) &&
+      Array.isArray((defaultsRecord.payload as Record<string, unknown>).templates)
+        ? (((defaultsRecord.payload as Record<string, unknown>).templates as unknown[]) ?? [])
+        : [];
     const payload = {
-      templates: this.defaultQuoteTemplates()
+      templates: defaultTemplates
     };
     await this.upsertSetting(userId, 'provider_quote_templates', payload);
     return payload;
@@ -807,112 +817,15 @@ export class ProviderService {
           .map((tag) => String(tag || '').trim().toLowerCase())
           .filter(Boolean)
       : [];
-    const fallbackHandle = 'provider-portfolio';
-    const handleSource = typeof payload.handle === 'string' && payload.handle.trim() ? payload.handle : fallbackHandle;
-    const handle = handleSource
+    const handle = (typeof payload.handle === 'string' ? payload.handle : '')
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'provider-portfolio';
+      .replace(/^-+|-+$/g, '');
     return {
       customTags: Array.from(new Set(customTags)),
       isPublic: payload.isPublic === undefined ? true : Boolean(payload.isPublic),
       handle
     };
-  }
-
-  private defaultQuoteTemplates() {
-    return [
-      {
-        id: 'tpl_standard',
-        name: 'Standard Service Proposal',
-        badge: 'Most used',
-        desc: 'Balanced scope, milestones, and standard terms.',
-        draftPatch: {
-          meta: { title: 'Standard service quote' },
-          timeline: { durationDays: 14 },
-          terms: { payment: { model: 'milestones' }, revisions: { included: 2 } },
-          pricingPolicy: { minMarginPct: 18 }
-        }
-      },
-      {
-        id: 'tpl_install',
-        name: 'Installation Quote',
-        badge: 'Field work',
-        desc: 'Site survey, install, testing, handover.',
-        draftPatch: {
-          meta: { title: 'Installation quote' },
-          scope: {
-            deliverables: [
-              { title: 'Site survey', detail: 'Assess site, safety, routing, and materials.' },
-              { title: 'Installation', detail: 'Install equipment and verify compliance.' },
-              { title: 'Testing and handover', detail: 'Functional tests and handover documents.' }
-            ]
-          },
-          lines: [
-            { name: 'Survey', qty: 1, unitCost: 80, priceMode: 'markup', markupPct: 60, unitPrice: 0, notes: '' },
-            { name: 'Installation labor', qty: 1, unitCost: 260, priceMode: 'markup', markupPct: 35, unitPrice: 0, notes: '' },
-            { name: 'Testing and commissioning', qty: 1, unitCost: 120, priceMode: 'markup', markupPct: 35, unitPrice: 0, notes: '' }
-          ],
-          timeline: {
-            durationDays: 7,
-            milestones: [
-              { title: 'Survey', dueInDays: 1, percent: 25 },
-              { title: 'Install', dueInDays: 5, percent: 50 },
-              { title: 'Handover', dueInDays: 7, percent: 25 }
-            ]
-          },
-          pricingPolicy: { minMarginPct: 20 },
-          terms: { revisions: { included: 1 } }
-        }
-      },
-      {
-        id: 'tpl_consult',
-        name: 'Consultation Quote',
-        badge: 'Calls',
-        desc: 'Fixed price consultation with clear boundaries.',
-        draftPatch: {
-          meta: { title: 'Consultation quote' },
-          scope: {
-            deliverables: [
-              { title: 'Consultation call', detail: '60-90 minutes deep dive with summary.' },
-              { title: 'Follow-up', detail: 'One follow-up Q&A within 7 days.' }
-            ]
-          },
-          lines: [{ name: 'Consultation', qty: 1, unitCost: 40, priceMode: 'fixed', markupPct: 0, unitPrice: 120, notes: '' }],
-          timeline: {
-            durationDays: 3,
-            milestones: [
-              { title: 'Call', dueInDays: 2, percent: 70 },
-              { title: 'Summary', dueInDays: 3, percent: 30 }
-            ]
-          },
-          pricingPolicy: { minMarginPct: 15 },
-          terms: { payment: { model: 'upfront', upfrontPct: 100 } }
-        }
-      },
-      {
-        id: 'tpl_retainer',
-        name: 'Monthly Retainer',
-        badge: 'Premium',
-        desc: 'Recurring support with SLA and monthly billing.',
-        draftPatch: {
-          meta: { title: 'Monthly retainer quote' },
-          scope: {
-            deliverables: [
-              { title: 'Monthly support', detail: 'Up to 20 hours support monthly.' },
-              { title: 'SLA', detail: 'Response within 4 business hours.' }
-            ]
-          },
-          lines: [{ name: 'Retainer (monthly)', qty: 1, unitCost: 600, priceMode: 'markup', markupPct: 35, unitPrice: 0, notes: 'Billed monthly' }],
-          timeline: {
-            durationDays: 30,
-            milestones: [{ title: 'Month start', dueInDays: 1, percent: 100 }]
-          },
-          pricingPolicy: { minMarginPct: 22 },
-          terms: { payment: { model: 'upfront', upfrontPct: 100 }, support: { windowDays: 30 } }
-        }
-      }
-    ];
   }
 
   private normalizeStatus(status: string) {

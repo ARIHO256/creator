@@ -56,175 +56,6 @@ type FinanceStatementRecord = {
   }>;
 };
 
-const DEFAULT_SELLER_LISTING_WIZARD_CONFIG = {
-  markets: [
-    { id: 'market-ug', name: 'Uganda' },
-    { id: 'market-ke', name: 'Kenya' },
-    { id: 'market-rw', name: 'Rwanda' },
-    { id: 'market-tz', name: 'Tanzania' }
-  ],
-  steps: [
-    { id: 'core', label: 'Core Features', type: 'form' },
-    { id: 'preOwned', label: 'Pre-Owned Info', type: 'form', conditional: true },
-    { id: 'bev', label: 'BEV Data', type: 'form', conditional: true },
-    { id: 'extras', label: 'Extras', type: 'form' },
-    { id: 'gallery', label: 'Gallery', type: 'form' },
-    { id: 'pricing', label: 'Pricing', type: 'pricing' },
-    { id: 'warranty', label: 'Warranty', type: 'warranty', conditional: true },
-    { id: 'inventory', label: 'Inventory', type: 'inventory' },
-    { id: 'delivery', label: 'Markets & Delivery', type: 'delivery' },
-    { id: 'seo', label: 'Search & Discovery', type: 'seo' }
-  ],
-  variantOptions: {
-    colors: [
-      { value: 'white', label: 'White' },
-      { value: 'black', label: 'Black' },
-      { value: 'red', label: 'Red' },
-      { value: 'blue', label: 'Blue' },
-      { value: 'silver', label: 'Silver' }
-    ],
-    trims: [
-      { value: 'standard', label: 'Standard' },
-      { value: 'long_range', label: 'Long Range' },
-      { value: 'performance', label: 'Performance' }
-    ],
-    batteries: [
-      { value: '60', label: '60 kWh' },
-      { value: '75', label: '75 kWh' },
-      { value: '90', label: '90 kWh' }
-    ],
-    wheelSizes: [
-      { value: '17', label: '17"' },
-      { value: '18', label: '18"' },
-      { value: '19', label: '19"' }
-    ],
-    interiorColors: [
-      { value: 'black', label: 'Black' },
-      { value: 'beige', label: 'Beige' },
-      { value: 'white', label: 'White' }
-    ]
-  },
-  initialForm: {
-    title: '',
-    brand: '',
-    model: '',
-    bodyType: '',
-    keySellingPoint: '',
-    isUsed: false,
-    mileage: '',
-    owners: '',
-    serviceHistory: '',
-    powertrainType: 'BEV',
-    batteryCapacity: '',
-    range: '',
-    connectorType: '',
-    numPorts: '',
-    extras: {
-      fastCharger: false,
-      floorMats: false,
-      roofRack: false,
-      extendedWarranty: false
-    },
-    heroImageUploaded: false,
-    price: '',
-    currency: 'USD',
-    enableWholesale: false,
-    hasWarranty: false,
-    warrantyMonths: '',
-    warrantyDetails: '',
-    markets: {
-      allActive: true,
-      selectedIds: ['market-ug', 'market-ke', 'market-rw', 'market-tz']
-    },
-    allowPickup: true,
-    allowDelivery: true,
-    deliveryRegions: {
-      local: true,
-      upcountry: false,
-      crossBorder: false
-    },
-    deliverToBuyerWarehouse: false,
-    seoTitle: '',
-    seoDescription: '',
-    seoAudience: '',
-    seoKeywords: '',
-    variants: [
-      {
-        id: 'v1',
-        name: 'Standard Range',
-        color: 'White',
-        trim: 'Standard',
-        batteryPack: '60 kWh',
-        wheelSize: '17"',
-        interiorColor: 'Black',
-        description: 'Base configuration for daily city driving.',
-        specs: '60 kWh · 350 km range · Color: White · Trim: Standard',
-        price: '',
-        stockQty: '',
-        sku: '',
-        warrantyMonths: '',
-        wholesaleTiers: [
-          {
-            id: 'v1-t1',
-            minQty: '1',
-            maxQty: '',
-            price: '',
-            isFinal: false
-          }
-        ]
-      },
-      {
-        id: 'v2',
-        name: 'Long Range',
-        color: 'Black',
-        trim: 'Long Range',
-        batteryPack: '75 kWh',
-        wheelSize: '18"',
-        interiorColor: 'Beige',
-        description: 'Larger battery for longer trips.',
-        specs: '75 kWh · 450 km range · Color: Black · Trim: Long Range',
-        price: '',
-        stockQty: '',
-        sku: '',
-        warrantyMonths: '',
-        wholesaleTiers: [
-          {
-            id: 'v2-t1',
-            minQty: '1',
-            maxQty: '',
-            price: '',
-            isFinal: false
-          }
-        ]
-      },
-      {
-        id: 'v3',
-        name: 'Performance',
-        color: 'Red',
-        trim: 'Performance',
-        batteryPack: '90 kWh',
-        wheelSize: '19"',
-        interiorColor: 'Black',
-        description: 'High performance with stronger acceleration.',
-        specs: '90 kWh · Sport mode · Color: Red · Trim: Performance',
-        price: '',
-        stockQty: '',
-        sku: '',
-        warrantyMonths: '',
-        wholesaleTiers: [
-          {
-            id: 'v3-t1',
-            minQty: '1',
-            maxQty: '',
-            price: '',
-            isFinal: false
-          }
-        ]
-      }
-    ]
-  }
-};
-
 @Injectable()
 export class CommerceService {
   constructor(
@@ -1989,33 +1820,6 @@ export class CommerceService {
     };
   }
 
-  private hashString(value: string) {
-    let hash = 0;
-    for (let index = 0; index < value.length; index += 1) {
-      hash = (hash << 5) - hash + value.charCodeAt(index);
-      hash |= 0;
-    }
-    return Math.abs(hash);
-  }
-
-  private buildSyntheticBuyerRoute(orderId: string, buyer: { email?: string | null } | null) {
-    const streets = ['Market Street', 'Riverside Drive', 'Palm Avenue', 'Transport Close'];
-    const cities = ['Kampala, Uganda', 'Nairobi, Kenya', 'Kigali, Rwanda', 'Dar es Salaam, Tanzania'];
-    const seed = this.hashString(`${orderId}:${buyer?.email ?? 'buyer'}`);
-    const street = streets[seed % streets.length];
-    const city = cities[seed % cities.length];
-    const phone = `+2567${String(seed % 100000000).padStart(8, '0')}`;
-    const localPart = this.readString(buyer?.email).split('@')[0] || `Buyer ${String((seed % 900) + 100)}`;
-    const name = localPart
-      .replace(/[._-]+/g, ' ')
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-    return {
-      name,
-      address: `${(seed % 800) + 100} ${street}, ${city}`,
-      phone
-    };
-  }
-
   private buildPrintMetadata(params: {
     orderId: string;
     metadata: Record<string, unknown>;
@@ -2037,7 +1841,6 @@ export class CommerceService {
     const profileSeller = this.pickDefaultProfileAddress(params.sellerProfile ?? {});
     const profileBuyer = this.pickDefaultProfileAddress(params.buyerProfile ?? {});
     const warehouse = this.describeWarehouse(params.defaultWarehouse);
-    const fallbackBuyer = this.buildSyntheticBuyerRoute(params.orderId, params.buyer);
     const sellerName =
       this.readString(params.metadata.sellerName) ||
       this.readString(params.seller.storefrontName) ||
@@ -2059,17 +1862,14 @@ export class CommerceService {
     const shippingName =
       this.readString(params.metadata.shippingName) ||
       this.readString(params.metadata.customer) ||
-      profileBuyer.displayName ||
-      fallbackBuyer.name;
+      profileBuyer.displayName;
     const shippingAddress =
       this.readString(params.metadata.shippingAddress) ||
       this.readString(params.metadata.billingAddress) ||
-      profileBuyer.address ||
-      fallbackBuyer.address;
+      profileBuyer.address;
     const buyerPhone =
       this.readString(params.metadata.buyerPhone) ||
-      profileBuyer.phone ||
-      fallbackBuyer.phone;
+      profileBuyer.phone;
     const buyerEmail =
       this.readString(params.metadata.buyerEmail) ||
       profileBuyer.email ||
@@ -2189,7 +1989,7 @@ export class CommerceService {
     const created = await this.prisma.systemContent.create({
       data: {
         key: 'seller_listing_wizard_config',
-        payload: DEFAULT_SELLER_LISTING_WIZARD_CONFIG as Prisma.InputJsonValue
+        payload: {} as Prisma.InputJsonValue
       }
     });
     return created.payload;
