@@ -100,208 +100,6 @@ function asStringList(value: unknown): string[] {
 
 /* ------------------------------ Data ------------------------------ */
 
-const IMAGES = {
-  // Unique images: no repeats across the whole page
-  // Includes Chinese + Black African portraits
-  testimonialUganda:
-    "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=1200&q=70", // Black African
-  testimonialKenya:
-    "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=1200&q=70", // Black African
-  testimonialChina:
-    "https://images.unsplash.com/photo-1544168190-79c17527004f?auto=format&fit=crop&w=1200&q=70", // Chinese/Asian
-
-  creative01:
-    "https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=70", // Chinese/Asian
-  creative02:
-    "https://images.unsplash.com/photo-1530785602389-07594beb8b73?auto=format&fit=crop&w=1200&q=70", // Black African
-  creative03:
-    "https://images.unsplash.com/photo-1550525811-e5869dd03032?auto=format&fit=crop&w=1200&q=70", // Chinese/Asian
-  creative04:
-    "https://images.unsplash.com/photo-1532076904124-d4e8fe7fbbec?auto=format&fit=crop&w=1200&q=70" // Black African
-};
-
-const NAV = [
-  { id: "features", label: "Features" },
-  { id: "workflow", label: "Workflow" },
-  { id: "studio", label: "Studio" },
-  { id: "creative", label: "Creative Center" },
-  { id: "money", label: "Money" },
-  { id: "tiers", label: "Tiers" },
-  { id: "trust", label: "Trust" },
-  { id: "stories", label: "Stories" },
-  { id: "faq", label: "FAQ" }
-];
-
-const FEATURES = [
-  {
-    tag: "Live Sessionz",
-    icon: <Video className="h-5 w-5" />,
-    title: "Live Sessionz Studio (best-in-class)",
-    desc: "Creators make live shopping a premium experience for everyone: fun, trusted and conversion-ready.",
-    bullets: [
-      "Scenes and overlays presets (intro, deep-dive, countdown, Q&A)",
-      "Live sales feed, stock counters, flash deal triggers",
-      "Co-host and team roles: Creator, Producer, Moderator",
-      "Private viewer attachments queue (approve before showing)",
-      "Moment markers while live for instant clipping"
-    ]
-  },
-  {
-    tag: "Shoppable Adz",
-    icon: <Megaphone className="h-5 w-5" />,
-    title: "Shoppable Adz Toolkit",
-    desc: "Everything you need to share high-quality products and services properly: links, assets, captions, compliance and performance.",
-    bullets: [
-      "Per-channel tracking links and short links (unlimited socials)",
-      "Co-branded assets in all formats (Story, Feed, Shorts, WhatsApp)",
-      "Compliance acknowledgements for sensitive categories",
-      "Performance and earnings by link plus live vs replay split"
-    ]
-  },
-  {
-    tag: "AI",
-    icon: <Wand2 className="h-5 w-5" />,
-    title: "Creator AI Assistant (AI)",
-    desc: "Daily plan, scripts, timing and performance hints that feel like a coach.",
-    bullets: [
-      "Today’s best move suggestions by fit and category",
-      "Live prompts: objections to address, when to trigger dealz",
-      "Caption helper plus multilingual CTAs for overlays",
-      "What-if earnings projections and next-tier guidance"
-    ]
-  },
-  {
-    tag: "Pipeline",
-    icon: <Layers className="h-5 w-5" />,
-    title: "Campaigns Board (creator pipeline)",
-    desc: "Creators need a pipeline, not scattered lists.",
-    bullets: [
-      "Leads → Pitches → Negotiating → Active contracts → Completed",
-      "Value per stage plus quick filters and templates",
-      "Relationship memory per supplier (seller/provider): notes, payout speed, outcomes",
-      "Stage clicks jump into negotiation room"
-    ]
-  },
-  {
-    tag: "Revenue",
-    icon: <DollarSign className="h-5 w-5" />,
-    title: "Money-first earnings",
-    desc: "Creators care about predictable payouts. We design for money clarity.",
-    bullets: [
-      "Global money bar: Available · Pending · Projected",
-      "Payout schedule per supplier (seller/provider) plus statements and exports",
-      "Multi-currency clarity with FX tooltips",
-      "Commission leverage hints for smarter negotiations"
-    ]
-  },
-  {
-    tag: "Trust",
-    icon: <ShieldCheck className="h-5 w-5" />,
-    title: "Trust, safety and quality guardrails",
-    desc: "Professional protection so creators, suppliers (sellers + providers) and buyers feel safe.",
-    bullets: [
-      "KYC verified badge plus dispute workflows",
-      "Quality-first rules for products and services",
-      "Contract audit trail and policy versioning",
-      "Brand safety dashboard (warnings, guidelines, strikes)"
-    ]
-  }
-];
-
-// ✅ FIXED: valid objects
-const TESTIMONIALS = [
-  {
-    name: "Creator A",
-    title: "Beauty Creator",
-    country: "Uganda",
-    stat: "+42% conversion",
-    quote:
-      "It feels like a real studio. The live sales feed and flash deal timing made my show cleaner and more profitable.",
-    image: IMAGES.testimonialUganda
-  },
-  {
-    name: "Creator B",
-    title: "Tech Creator",
-    country: "Kenya",
-    stat: "2.1× sales per live",
-    quote:
-      "The pipeline and negotiation flow keeps everything professional. I can forecast earnings before I accept.",
-    image: IMAGES.testimonialKenya
-  },
-  {
-    name: "Creator C",
-    title: "Cross-border Creator",
-    country: "China",
-    stat: "Faster collabs",
-    quote:
-      "Shoppable Adz makes attribution and sharing simple. suppliers trust the process and creators look premium.",
-    image: IMAGES.testimonialChina
-  }
-];
-
-// ✅ FIXED: valid objects
-const CREATIVE_ITEMS = [
-  {
-    id: "CC-001",
-    kind: "Top Live",
-    line: "Products",
-    title: "Unbox + proof + CTA in 60 seconds",
-    hook: "Stop scrolling. Here is why this bundle is the best deal today.",
-    metrics: ["Views 680k", "Watch 11m", "CTR 4.1%"],
-    image: IMAGES.creative01
-  },
-  {
-    id: "CC-002",
-    kind: "Top Shoppable Adz",
-    line: "Products",
-    title: "Fit check + size guide + instant buy",
-    hook: "If you wear 39, this is your perfect match.",
-    metrics: ["Views 410k", "Saves 18k", "Shares 9k"],
-    image: IMAGES.creative02
-  },
-  {
-    id: "CC-003",
-    kind: "Top Shoppable Adz",
-    line: "Services",
-    title: "Service booking: before/after + book now",
-    hook: "Book in 10 seconds. Here is exactly what you get.",
-    metrics: ["Views 220k", "Bookings 1.3k", "Conv 2.9%"],
-    image: IMAGES.creative03
-  },
-  {
-    id: "CC-004",
-    kind: "Top Live",
-    line: "Mixed",
-    title: "Price breakdown + honest Q&A",
-    hook: "Here is the real price breakdown and why it wins.",
-    metrics: ["Views 1.2M", "CTR 3.6%", "Conv 2.2%"],
-    image: IMAGES.creative04
-  }
-];
-
-const FAQS = [
-  {
-    q: "What do creators do on MyLiveDealz?",
-    a: "Creators work in two main areas: Live Sessionz (live shopping shows) and Shoppable Adz (shareable, trackable shoppable campaigns). Together, creators make live shopping a great experience for everyone and drive measurable results."
-  },
-  {
-    q: "What does “Supplier” mean on MyLiveDealz?",
-    a: "Supplier is the umbrella term for Sellers and Providers. Sellers supply products. Providers deliver services. Creators can collaborate with both depending on niche, audience and quality standards."
-  },
-  {
-    q: "How do creators earn?",
-    a: "Creators can earn through flat fees, commission, or hybrid. The platform shows money-first clarity: available, pending, projected, plus schedules and downloadable statements."
-  },
-  {
-    q: "How is attribution tracked for Shoppable Adz?",
-    a: "Shoppable Adz provides creator-specific tracking links per channel. Performance includes clicks, purchases, sales, and live vs replay splits."
-  },
-  {
-    q: "Can creators use a team?",
-    a: "Yes. Assign Producer and Moderator roles to manage scenes, products, chat moderation and attachments while you focus on camera and storytelling."
-  }
-];
-
 type LandingNavItem = { id: string; label: string };
 type LandingFeatureSeed = { tag: string; title: string; desc: string; bullets: string[] };
 type LandingTestimonial = { name: string; title: string; country: string; stat: string; quote: string; image: string };
@@ -317,43 +115,15 @@ type LandingContent = {
   creatorChecklistItems: string[];
 };
 
-const DEFAULT_LANDING_CONTENT: LandingContent = {
-  nav: NAV.map((item) => ({ id: item.id, label: item.label })),
-  features: FEATURES.map((item) => ({
-    tag: item.tag,
-    title: item.title,
-    desc: item.desc,
-    bullets: [...item.bullets]
-  })),
-  testimonials: TESTIMONIALS.map((item) => ({ ...item })),
-  creativeItems: CREATIVE_ITEMS.map((item) => ({ ...item, metrics: [...item.metrics] })),
-  faqs: FAQS.map((item) => ({ ...item })),
-  integrationPlatforms: [
-    "Instagram",
-    "TikTok",
-    "YouTube",
-    "Facebook",
-    "Snapchat",
-    "X (Twitter)",
-    "Telegram",
-    "WhatsApp",
-    "WeChat",
-    "Any platform"
-  ],
-  educationLessons: [
-    "How to run a flash deal",
-    "How to structure a live shopping show",
-    "How to write a converting caption",
-    "Cross-border basics for creators",
-    "Negotiation playbook for commission"
-  ],
-  creatorChecklistItems: [
-    "Set your niche categories",
-    "Connect your socials",
-    "Complete KYC",
-    "Add payout method",
-    "Start pitching campaigns"
-  ]
+const EMPTY_LANDING_CONTENT: LandingContent = {
+  nav: [],
+  features: [],
+  testimonials: [],
+  creativeItems: [],
+  faqs: [],
+  integrationPlatforms: [],
+  educationLessons: [],
+  creatorChecklistItems: []
 };
 
 function iconForFeatureTag(tag: string) {
@@ -438,16 +208,15 @@ function normalizeLandingContent(value: unknown): LandingContent | null {
   const educationLessons = asStringList(source.educationLessons);
   const creatorChecklistItems = asStringList(source.creatorChecklistItems);
 
-  if (!nav.length || !features.length || !testimonials.length || !creativeItems.length || !faqs.length) return null;
   return {
     nav,
     features,
     testimonials,
     creativeItems,
     faqs,
-    integrationPlatforms: integrationPlatforms.length ? integrationPlatforms : DEFAULT_LANDING_CONTENT.integrationPlatforms,
-    educationLessons: educationLessons.length ? educationLessons : DEFAULT_LANDING_CONTENT.educationLessons,
-    creatorChecklistItems: creatorChecklistItems.length ? creatorChecklistItems : DEFAULT_LANDING_CONTENT.creatorChecklistItems
+    integrationPlatforms,
+    educationLessons,
+    creatorChecklistItems
   };
 }
 
@@ -1152,12 +921,12 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
   const isMobile = useMobile();
   const { theme, toggleTheme } = useTheme();
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [landingContent, setLandingContent] = useState<LandingContent>(DEFAULT_LANDING_CONTENT);
+  const [landingContent, setLandingContent] = useState<LandingContent>(EMPTY_LANDING_CONTENT);
 
   useEffect(() => {
     let active = true;
     if (!hasStoredAuthState()) {
-      setLandingContent(DEFAULT_LANDING_CONTENT);
+      setLandingContent(EMPTY_LANDING_CONTENT);
       return () => {
         active = false;
       };
@@ -1171,15 +940,11 @@ export default function CreatorPlatformLanding({ onEnter: _onEnter }: { onEnter:
           setLandingContent(normalized);
           return;
         }
-        setLandingContent(DEFAULT_LANDING_CONTENT);
-        void creatorApi.patchWorkflowScreenState(LANDING_SCREEN_STATE_KEY, {
-          content: DEFAULT_LANDING_CONTENT,
-          seededAt: new Date().toISOString()
-        }).catch(() => undefined);
+        setLandingContent(EMPTY_LANDING_CONTENT);
       })
       .catch(() => {
         if (!active) return;
-        setLandingContent(DEFAULT_LANDING_CONTENT);
+        setLandingContent(EMPTY_LANDING_CONTENT);
       });
     return () => {
       active = false;

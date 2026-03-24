@@ -1091,13 +1091,6 @@ function MiniChart({ points, height = 54 }: { points: number[]; height?: number 
   );
 }
 
-const EMPTY_CREATOR: Creator = {
-  id: "",
-  name: "",
-  handle: "",
-  avatarUrl: "",
-};
-
 function creatorFromSession(): Creator | null {
   const session = readAuthSession();
   if (!session) return null;
@@ -1596,7 +1589,7 @@ export default function AssetLibraryPage() {
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) ?? null, [assets, activeAssetId]);
 
   const selectedCreator = useMemo(
-    () => creators.find((c) => c.id === selectedCreatorId) ?? sessionCreator ?? EMPTY_CREATOR,
+    () => creators.find((c) => c.id === selectedCreatorId) ?? sessionCreator ?? null,
     [creators, selectedCreatorId, sessionCreator],
   );
   const selectedSupplier = useMemo(
@@ -2197,7 +2190,15 @@ export default function AssetLibraryPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Creator selector */}
                   <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
-                    <img src={selectedCreator.avatarUrl} alt={selectedCreator.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                    {selectedCreator?.avatarUrl ? (
+                      <img
+                        src={selectedCreator.avatarUrl}
+                        alt={selectedCreator.name}
+                        className="h-6 w-6 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="h-6 w-6 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0" aria-hidden="true" />
+                    )}
                     <select
                       value={selectedCreatorId}
                       onChange={(e) => setSelectedCreatorId(e.target.value)}

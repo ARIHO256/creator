@@ -12,24 +12,6 @@ import { useNotification } from "../../contexts/NotificationContext";
 import { PageHeader } from "../../components/PageHeader";
 import { creatorApi } from "../../lib/creatorApi";
 
-const EMPTY_PROMO: Promo = {
-  id: "",
-  name: "Promo",
-  seller: "Seller",
-  campaign: "Campaign",
-  status: "Upcoming",
-  compType: "Hybrid",
-  compSummary: "Pending",
-  earnings: 0,
-  clicks: 0,
-  purchases: 0,
-  conversion: 0,
-  category: "General",
-  region: "Global",
-  hasContract: false,
-  hasLives: false
-};
-
 
 function PromoAdDetailPage() {
 
@@ -37,8 +19,8 @@ function PromoAdDetailPage() {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState("share"); // share | performance
 
-  const [promo, setPromo] = useState<Promo>(() => location.state?.promo || EMPTY_PROMO);
-  const [promoData, setPromoData] = useState<PromoData>(EMPTY_PROMO_DATA);
+  const [promo, setPromo] = useState<Promo | null>(() => location.state?.promo || null);
+  const [promoData, setPromoData] = useState<PromoData | null>(() => location.state?.promoData || null);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,23 +65,24 @@ function PromoAdDetailPage() {
           data.supplierName ||
             data.sellerName ||
             data.seller ||
-            (promo.seller || "Seller")
+            promo?.seller ||
+            ""
         );
 
         setPromo({
           id: campaign.id,
-          name: String(campaign.title || data.title || data.name || promo.name || "Promo"),
+          name: String(campaign.title || data.title || data.name || promo?.name || ""),
           seller: sellerName,
-          campaign: String(data.campaignName || data.campaign || campaign.title || "Campaign"),
+          campaign: String(data.campaignName || data.campaign || campaign.title || ""),
           status: normalizeStatus(campaign.status || data.status),
-          compType: String(data.compType || data.compensationType || promo.compType || "Hybrid"),
-          compSummary: String(data.compSummary || data.compensationSummary || promo.compSummary || "Pending"),
+          compType: String(data.compType || data.compensationType || promo?.compType || ""),
+          compSummary: String(data.compSummary || data.compensationSummary || promo?.compSummary || ""),
           earnings,
           clicks,
           purchases,
           conversion: Number(conversion.toFixed(1)),
-          category: String(data.category || promo.category || "General"),
-          region: String(data.region || promo.region || "Global"),
+          category: String(data.category || promo?.category || ""),
+          region: String(data.region || promo?.region || ""),
           hasContract: Boolean(data.contractId || data.hasContract),
           hasLives: Boolean(data.hasLives || data.liveSessionId || data.liveSessionIds)
         });
@@ -220,6 +203,19 @@ function PromoAdDetailPage() {
     showNotification("Viewing live sessions...");
   };
 
+  if (!promo) {
+    return (
+      <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
+        <PageHeader pageTitle="Shoppable Ad Detail" />
+        <main className="flex-1 flex items-center justify-center p-6">
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+            No promo data is available.
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <PageHeader
@@ -269,9 +265,17 @@ function PromoAdDetailPage() {
 
             <div className="p-3 md:p-4">
               {activeTab === "share" ? (
-                <ShareAssetsTab promo={promo} promoData={promoData} showToast={showNotification} />
+                promoData ? (
+                  <ShareAssetsTab promo={promo} promoData={promoData} showToast={showNotification} />
+                ) : (
+                  <TabUnavailableState message="Share toolkit data is not available for this promo." />
+                )
               ) : (
-                <PerformanceEarningsTab promo={promo} promoData={promoData} showToast={showNotification} />
+                promoData ? (
+                  <PerformanceEarningsTab promo={promo} promoData={promoData} showToast={showNotification} />
+                ) : (
+                  <TabUnavailableState message="Performance data is not available for this promo." />
+                )
               )}
             </div>
           </section>
@@ -334,26 +338,13 @@ type PromoData = {
   };
 };
 
-const EMPTY_PROMO_DATA: PromoData = {
-  links: [],
-  assets: [],
-  captions: [],
-  ctas: [],
-  performance: {
-    impressions: 0,
-    flatFeePortion: 0,
-    bonuses: 0,
-    expectedTotal: 0,
-    nextPayoutDate: "—",
-    nextPayoutMethod: "—",
-    avgPromoCTR: 0,
-    avgPromoConv: 0,
-    avgEPC: 0,
-    links: [],
-    liveSplits: [],
-    trend: []
-  }
-};
+function TabUnavailableState({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 p-4 text-sm text-slate-600 dark:text-slate-300">
+      {message}
+    </div>
+  );
+}
 
 type PromoHeaderProps = {
   promo: Promo;

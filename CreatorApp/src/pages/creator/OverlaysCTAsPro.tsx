@@ -84,14 +84,6 @@ type OverlaysPayload = {
   notesB?: string;
 };
 
-const EMPTY_PRODUCT: Product = {
-  id: "",
-  name: "",
-  price: "",
-  stock: 0,
-  posterUrl: "",
-};
-
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -214,34 +206,37 @@ function toCountdown(now: number, startISO: string, endISO: string) {
 }
 
 export default function OverlaysCTAsPro() {
-  const { data: payload } = useApiResource({
-    initialData: {} as OverlaysPayload,
+  const { data: payload, loading, error } = useApiResource<OverlaysPayload | null>({
+    initialData: null,
     loader: () => creatorApi.liveTool("overlays") as Promise<OverlaysPayload>,
   });
   const sessionId = useMemo(() => {
-    if (typeof window === "undefined") return "session";
-    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("sessionId") || "";
   }, []);
   const baseJoinUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     return `${window.location.origin}/live/${encodeURIComponent(sessionId)}`;
   }, [sessionId]);
-  const [isPro, setIsPro] = useState(false);
+  const [isPro, setIsPro] = useState<boolean | null>(null);
 
   const session = useMemo(
-    () => ({
-      id: payload.session?.id || sessionId,
-      title: payload.session?.title || "",
-      status: payload.session?.status || ("Draft" as SessionStatus),
-      startISO: payload.session?.startISO || new Date(Date.now() + 40 * 60 * 1000).toISOString(),
-      endISO: payload.session?.endISO || new Date(Date.now() + 130 * 60 * 1000).toISOString(),
-    }),
-    [payload.session, sessionId],
+    () =>
+      payload?.session
+        ? {
+            id: payload.session.id || sessionId,
+            title: payload.session.title || "",
+            status: payload.session.status || ("Draft" as SessionStatus),
+            startISO: payload.session.startISO || "",
+            endISO: payload.session.endISO || "",
+          }
+        : null,
+    [payload?.session, sessionId],
   );
 
   const products: Product[] = useMemo(
-    () => payload.products || [],
-    [payload.products],
+    () => payload?.products || [],
+    [payload?.products],
   );
 
   const [tab, setTab] = useState<"qr" | "links" | "timer" | "lower" | "ab">("qr");
@@ -250,7 +245,7 @@ export default function OverlaysCTAsPro() {
   // QR overlay
   const [qrEnabled, setQrEnabled] = useState(false);
   const [qrLabel, setQrLabel] = useState("");
-  const [qrUrl, setQrUrl] = useState(baseJoinUrl);
+  const [qrUrl, setQrUrl] = useState("");
   const [qrCorner, setQrCorner] = useState<"tr" | "tl" | "br" | "bl">("tr");
   const [qrSize, setQrSize] = useState(180);
 
@@ -304,13 +299,13 @@ export default function OverlaysCTAsPro() {
   const [notesB, setNotesB] = useState("");
   const autoSavePrimedRef = useRef(false);
   useEffect(() => {
-    if (!Object.keys(payload).length) return;
-    setIsPro(payload.isPro ?? false);
+    if (!payload || !session) return;
+    setIsPro(typeof payload.isPro === "boolean" ? payload.isPro : null);
     setTab(payload.tab || "qr");
     setVariant(payload.variant || "A");
     setQrEnabled(payload.qrEnabled ?? false);
     setQrLabel(payload.qrLabel || "");
-    setQrUrl(payload.qrUrl || baseJoinUrl);
+    setQrUrl(payload.qrUrl || "");
     setQrCorner(payload.qrCorner || "tr");
     setQrSize(typeof payload.qrSize === "number" ? payload.qrSize : 180);
     setDestUrl(payload.destUrl || "");
@@ -318,12 +313,12 @@ export default function OverlaysCTAsPro() {
     setUtmMedium(payload.utmMedium || "");
     setUtmCampaign(payload.utmCampaign || "");
     setUtmContent(payload.utmContent || "");
-    setShortDomain(payload.shortDomain || (typeof window !== "undefined" ? window.location.host || "" : ""));
+    setShortDomain(payload.shortDomain || "");
     setShortSlug(payload.shortSlug || "");
     setTimerEnabled(payload.timerEnabled ?? false);
     setTimerStyle(payload.timerStyle || "pill");
     setTimerText(payload.timerText || "");
-    setDealEndISO(payload.dealEndISO || session.endISO);
+    setDealEndISO(payload.dealEndISO || session.endISO || "");
     setLowerEnabled(payload.lowerEnabled ?? false);
     setLowerPlacement(payload.lowerPlacement || "bottom");
     setLowerProductId(payload.lowerProductId || lowerProductId);
@@ -331,16 +326,19 @@ export default function OverlaysCTAsPro() {
     setAbEnabled(payload.abEnabled ?? false);
     setNotesA(payload.notesA || "");
     setNotesB(payload.notesB || "");
-  }, [payload, session.endISO, baseJoinUrl, lowerProductId]);
+  }, [payload, session, lowerProductId]);
 
-  const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? EMPTY_PRODUCT, [products, lowerProductId]);
+  const selected = useMemo(() => products.find((p) => p.id === lowerProductId) ?? null, [products, lowerProductId]);
 
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  const countdown = useMemo(() => toCountdown(now, session.startISO, dealEndISO), [now, session.startISO, dealEndISO]);
+  const countdown = useMemo(
+    () => (session?.startISO && dealEndISO ? toCountdown(now, session.startISO, dealEndISO) : { mode: "Session ended", value: "" }),
+    [now, session?.startISO, dealEndISO],
+  );
 
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
@@ -444,6 +442,24 @@ export default function OverlaysCTAsPro() {
     </Pill>
   );
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading overlays…
+      </div>
+    );
+  }
+
+  if (error || !payload || !session || !session.startISO || !session.endISO || isPro === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Overlay tool data is unavailable.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       {/* Header */}
@@ -474,9 +490,8 @@ export default function OverlaysCTAsPro() {
 
           <div className="flex items-center gap-2">
             <button
-              className="hidden sm:flex items-center gap-2 rounded-xl bg-neutral-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-neutral-800 dark:text-slate-200 hover:bg-neutral-200 dark:hover:bg-slate-700 transition"
-              onClick={() => setIsPro((v) => !v)}
-              title="Toggle Pro plan"
+              className="hidden sm:flex items-center gap-2 rounded-xl bg-neutral-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-neutral-800 dark:text-slate-200 transition"
+              type="button"
             >
               <Sparkles className="h-4 w-4" />
               Plan: {isPro ? "Pro" : "Standard"}
@@ -857,11 +872,15 @@ export default function OverlaysCTAsPro() {
                       onChange={(e) => setLowerProductId(e.target.value)}
                       className="mt-2 w-full rounded-xl bg-neutral-50 dark:bg-slate-800 px-3 py-2 text-sm text-neutral-900 dark:text-slate-50 ring-1 ring-neutral-200 dark:ring-slate-700 outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition"
                     >
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} • {p.stock === 0 ? "Sold out" : `Stock ${p.stock}`}
-                        </option>
-                      ))}
+                      {products.length ? (
+                        products.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} • {p.stock === 0 ? "Sold out" : `Stock ${p.stock}`}
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No products available</option>
+                      )}
                     </select>
                   </div>
 
@@ -886,27 +905,40 @@ export default function OverlaysCTAsPro() {
                   <div className="rounded-2xl bg-neutral-50 dark:bg-slate-800/50 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition">
                     <div className="text-xs font-semibold text-neutral-900 dark:text-slate-300">Banner preview</div>
                     <div className="mt-2 rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 shadow-sm transition">
-                      <div className="flex items-center gap-3">
-                        <img src={selected.posterUrl} alt="" className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl object-cover ring-1 ring-neutral-200 dark:ring-slate-800" />
-                        <div className="min-w-0">
-                          <div className="truncate text-xs sm:text-sm font-semibold text-neutral-900 dark:text-slate-50">{selected.name}</div>
-                          <div className="text-[10px] sm:text-xs text-neutral-700 dark:text-slate-400">
-                            {selected.price} •{" "}
-                            {selected.stock === 0 ? (
-                              <span className="font-semibold text-rose-700 dark:text-rose-400">Sold out</span>
-                            ) : selected.stock <= 8 ? (
-                              <span className="font-semibold text-amber-800 dark:text-amber-400">Low stock</span>
-                            ) : (
-                              <span className="font-semibold text-emerald-700 dark:text-emerald-400">In stock</span>
-                            )}
+                      {selected ? (
+                        <div className="flex items-center gap-3">
+                          {selected.posterUrl ? (
+                            <img src={selected.posterUrl} alt="" className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl object-cover ring-1 ring-neutral-200 dark:ring-slate-800" />
+                          ) : (
+                            <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-neutral-100 dark:bg-slate-800 ring-1 ring-neutral-200 dark:ring-slate-800" aria-hidden="true" />
+                          )}
+                          <div className="min-w-0">
+                            <div className="truncate text-xs sm:text-sm font-semibold text-neutral-900 dark:text-slate-50">{selected.name}</div>
+                            <div className="text-[10px] sm:text-xs text-neutral-700 dark:text-slate-400">
+                              {selected.price} •{" "}
+                              {selected.stock === 0 ? (
+                                <span className="font-semibold text-rose-700 dark:text-rose-400">Sold out</span>
+                              ) : selected.stock <= 8 ? (
+                                <span className="font-semibold text-amber-800 dark:text-amber-400">Low stock</span>
+                              ) : (
+                                <span className="font-semibold text-emerald-700 dark:text-emerald-400">In stock</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="ml-auto">
+                            <button className={cn("rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm transition active:scale-95", variant === "B" ? "bg-[#F77F00]" : "bg-neutral-900 dark:bg-slate-100 dark:text-slate-900")}>
+                              {ctaText}
+                            </button>
                           </div>
                         </div>
-                        <div className="ml-auto">
+                      ) : (
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-xs text-neutral-500 dark:text-slate-400">Choose a product to preview the lower-third banner.</div>
                           <button className={cn("rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-white shadow-sm transition active:scale-95", variant === "B" ? "bg-[#F77F00]" : "bg-neutral-900 dark:bg-slate-100 dark:text-slate-900")}>
                             {ctaText}
                           </button>
                         </div>
-                      </div>
+                      )}
                     </div>
                     <div className="mt-2 text-[10px] text-neutral-600 dark:text-slate-500">Tip: avoid covering faces; keep safe margins.</div>
                   </div>
@@ -1040,10 +1072,14 @@ export default function OverlaysCTAsPro() {
                         ) : null}
 
                         {/* Lower third */}
-                        {lowerEnabled ? (
+                        {lowerEnabled && selected ? (
                           <div className={cn("absolute inset-x-3 transition-all duration-300", lowerPlacement === "bottom" ? "bottom-3" : "top-14")}>
                             <div className={cn("flex items-center gap-2.5 sm:gap-3 rounded-2xl bg-white/95 dark:bg-slate-900/95 p-2 sm:p-2.5 shadow-xl ring-1 ring-black/10 dark:ring-white/20 transition-all", variant === "B" ? "p-3" : "")}>
-                              <img src={selected.posterUrl} alt="" className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl object-cover ring-1 ring-neutral-200 dark:ring-slate-800" />
+                              {selected.posterUrl ? (
+                                <img src={selected.posterUrl} alt="" className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl object-cover ring-1 ring-neutral-200 dark:ring-slate-800" />
+                              ) : (
+                                <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-neutral-100 dark:bg-slate-800 ring-1 ring-neutral-200 dark:ring-slate-800" aria-hidden="true" />
+                              )}
                               <div className="min-w-0">
                                 <div className="truncate text-xs sm:text-sm font-semibold text-neutral-900 dark:text-slate-50">{selected.name}</div>
                                 <div className="text-[10px] sm:text-xs text-neutral-700 dark:text-slate-400">

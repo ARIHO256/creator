@@ -65,34 +65,10 @@ type AuthNoticeContent = {
   quickAnswers: AuthNoticeFaq[];
 };
 
-const DEFAULT_AUTH_NOTICE_CONTENT: AuthNoticeContent = {
-  nextSteps: [
-    { n: 1, t: "Choose Sign in / Sign up", d: "Go to EVzone My Accounts" },
-    { n: 2, t: "Verify your identity", d: "Email/phone confirmation" },
-    { n: 3, t: "Return to MyLiveDealz", d: "Auto redirect back" },
-    { n: 4, t: "Finish Creator setup", d: "KYC, payouts, preferences" }
-  ],
-  readyItems: [
-    "Email or phone number",
-    "Access to verification codes",
-    "A short creator bio",
-    "ID for KYC (later)",
-    "Preferred payout method"
-  ],
-  quickAnswers: [
-    {
-      q: "Can I use the same account for EVzone Marketplace and MyLiveDealz?",
-      a: "Yes. EVzone My Accounts is shared across EVzone services. One account helps you manage your identity, security, and payouts in one place."
-    },
-    {
-      q: "Will I come back to MyLiveDealz after signing in?",
-      a: "Yes. After signing in or signing up, you will be redirected back to MyLiveDealz to continue onboarding or access creator tools."
-    },
-    {
-      q: "What if I already created an EVzone account before?",
-      a: "Sign in using that account. Do not create another one. This helps keep your identity and payouts consistent."
-    }
-  ]
+const EMPTY_AUTH_NOTICE_CONTENT: AuthNoticeContent = {
+  nextSteps: [],
+  readyItems: [],
+  quickAnswers: []
 };
 
 function normalizeAuthNoticeContent(value: unknown): AuthNoticeContent | null {
@@ -129,7 +105,6 @@ function normalizeAuthNoticeContent(value: unknown): AuthNoticeContent | null {
     }))
     .filter((entry) => entry.q && entry.a);
 
-  if (!nextSteps.length || !readyItems.length || !quickAnswers.length) return null;
   return { nextSteps, readyItems, quickAnswers };
 }
 
@@ -351,7 +326,7 @@ export default function CreatorAuthRedirectNotice() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [noticeContent, setNoticeContent] = useState<AuthNoticeContent>(DEFAULT_AUTH_NOTICE_CONTENT);
+  const [noticeContent, setNoticeContent] = useState<AuthNoticeContent>(EMPTY_AUTH_NOTICE_CONTENT);
 
   useEffect(() => {
     const nextMode = new URLSearchParams(location.search).get("mode");
@@ -367,7 +342,7 @@ export default function CreatorAuthRedirectNotice() {
   useEffect(() => {
     let active = true;
     if (!hasStoredAuthState()) {
-      setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
+      setNoticeContent(EMPTY_AUTH_NOTICE_CONTENT);
       return () => {
         active = false;
       };
@@ -381,15 +356,11 @@ export default function CreatorAuthRedirectNotice() {
           setNoticeContent(normalized);
           return;
         }
-        setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
-        void creatorApi.patchWorkflowScreenState(AUTH_NOTICE_SCREEN_STATE_KEY, {
-          content: DEFAULT_AUTH_NOTICE_CONTENT,
-          seededAt: new Date().toISOString()
-        }).catch(() => undefined);
+        setNoticeContent(EMPTY_AUTH_NOTICE_CONTENT);
       })
       .catch(() => {
         if (!active) return;
-        setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
+        setNoticeContent(EMPTY_AUTH_NOTICE_CONTENT);
       });
     return () => {
       active = false;

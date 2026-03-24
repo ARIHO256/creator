@@ -1015,8 +1015,6 @@ const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
   liveCart: {},
 };
 
-const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -1068,7 +1066,7 @@ function adzStatus(raw: unknown): AdStatus {
   return "Draft";
 }
 
-function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
+function mapOffer(raw: unknown, index: number): Offer {
   const record = asRecord(raw);
   const type = asString(record?.type, "PRODUCT").toUpperCase() === "SERVICE" ? "SERVICE" : "PRODUCT";
   const sellingModes = asArray(record?.sellingModes)
@@ -1085,7 +1083,7 @@ function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
     currency: asCurrency(record?.currency, "UGX"),
     stockLeft: asNumber(record?.stockLeft, type === "SERVICE" ? -1 : 0),
     sold: asNumber(record?.sold, 0),
-    posterUrl: asString(record?.posterUrl, fallbackPoster),
+    posterUrl: asString(record?.posterUrl, ""),
     videoUrl: asString(record?.videoUrl, "") || undefined,
     desktopMode: asString(record?.desktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
     sellingModes: sellingModes.length ? sellingModes : undefined,
@@ -1118,8 +1116,7 @@ function mapShoppableDeal(raw: unknown, index: number): Ad | null {
 
   const supplier = asRecord(deal.supplier);
   const creator = asRecord(deal.creator);
-  const fallbackHero = asString(shoppable.heroImageUrl, asString(supplier?.logoUrl, BLANK_IMAGE));
-  const offers = asArray(shoppable.offers).map((offer, index) => mapOffer(offer, index, fallbackHero));
+  const offers = asArray(shoppable.offers).map((offer, offerIndex) => mapOffer(offer, offerIndex));
 
   const rawKpis = asArray(shoppable.kpis)
     .map((item) => asRecord(item))
@@ -1128,21 +1125,15 @@ function mapShoppableDeal(raw: unknown, index: number): Ad | null {
     .filter((item) => item.label && item.value);
 
   const metrics = asRecord(shoppable.metrics);
-  const fallbackViews =
-    asNumber(shoppable.impressions7d, Number.NaN) ||
-    asNumber(metrics?.impressions, Number.NaN) ||
-    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("view") || k.label.toLowerCase().includes("impression"))?.value ?? null) ||
-    0;
-  const fallbackSaves =
-    asNumber(metrics?.saves, Number.NaN) ||
-    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("save"))?.value ?? null) ||
-    0;
+  const impressions7d = asNumber(shoppable.impressions7d, 0);
+  const saves = asNumber(metrics?.saves, 0);
+  const orders7d = asNumber(shoppable.orders7d, asNumber(metrics?.orders, 0));
   const kpis = rawKpis;
 
   const score =
-    Math.max(0, fallbackViews) +
-    Math.max(0, fallbackSaves) * 10 +
-    Math.max(0, asNumber(shoppable.orders7d, asNumber(metrics?.orders, 0))) * 200;
+    Math.max(0, impressions7d) +
+    Math.max(0, saves) * 10 +
+    Math.max(0, orders7d) * 200;
 
   return {
     id: asString(deal.id, `ad_${index + 1}`),
@@ -1153,7 +1144,7 @@ function mapShoppableDeal(raw: unknown, index: number): Ad | null {
     supplier: {
       name: asString(supplier?.name, ""),
       category: asString(supplier?.category, ""),
-      logoUrl: asString(supplier?.logoUrl, BLANK_IMAGE),
+      logoUrl: asString(supplier?.logoUrl, ""),
     },
     creator: {
       name: asString(creator?.name, ""),
@@ -1162,13 +1153,13 @@ function mapShoppableDeal(raw: unknown, index: number): Ad | null {
         if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
-      avatarUrl: asString(creator?.avatarUrl, BLANK_IMAGE),
+      avatarUrl: asString(creator?.avatarUrl, ""),
       verified: asBool(creator?.verified, false),
     },
     platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
     startISO: asString(shoppable.startISO, asString(deal.startISO, "")),
     endISO: asString(shoppable.endISO, asString(deal.endISO, "")),
-    heroImageUrl: asString(shoppable.heroImageUrl, fallbackHero || BLANK_IMAGE),
+    heroImageUrl: asString(shoppable.heroImageUrl, ""),
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     heroIntroVideoPosterUrl: asString(shoppable.heroIntroVideoPosterUrl, "") || undefined,
     heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",

@@ -264,7 +264,7 @@ export function CreatorMyDayDashboardPage() {
   const [isOffline, setIsOffline] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const { run: runTaskAction, isPending: taskActionPending } = useAsyncAction();
-  const { data: shellData } = useApiResource({
+  const { data: shellData, loading, error } = useApiResource({
     initialData: INITIAL_SHELL_DATA,
     loader: async () => {
       const payload = await creatorApi.myDay();
@@ -307,6 +307,24 @@ export function CreatorMyDayDashboardPage() {
   useEffect(() => {
     setTasks(shellData.tasks);
   }, [shellData.tasks]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading creator dashboard…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Creator dashboard data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   const isLiveRunning = Boolean(shellData.header.isLiveRunning);
   const liveViewers = Number(shellData.header.liveViewers || 0);

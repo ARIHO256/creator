@@ -56,15 +56,6 @@ type PerformanceItem = {
   sub: string;
 };
 
-const EMPTY_PERFORMANCE: PerformanceItem[] = [
-  { label: "Total sales driven", value: "—", sub: "No data yet" },
-  { label: "Avg live viewers", value: "—", sub: "No data yet" },
-  { label: "Conversion rate", value: "—", sub: "No data yet" },
-  { label: "Completed collabs", value: "—", sub: "No data yet" },
-  { label: "Average rating", value: "—", sub: "No data yet" },
-  { label: "Return customer rate", value: "—", sub: "No data yet" }
-];
-
 function CreatorPublicProfilePage() {
   const navigate = useNavigate();
   const { showNotification } = useNotification();
@@ -103,12 +94,12 @@ function CreatorPublicProfilePage() {
   const performance = useMemo<PerformanceItem[]>(
     () =>
       data.performance?.length
-        ? data.performance.map((item, index) => ({
-            label: item.label || EMPTY_PERFORMANCE[index % EMPTY_PERFORMANCE.length]?.label || "",
-            value: item.value || EMPTY_PERFORMANCE[index % EMPTY_PERFORMANCE.length]?.value || "—",
-            sub: item.sub || EMPTY_PERFORMANCE[index % EMPTY_PERFORMANCE.length]?.sub || ""
+        ? data.performance.map((item) => ({
+            label: item.label || "",
+            value: item.value || "",
+            sub: item.sub || ""
           }))
-        : EMPTY_PERFORMANCE,
+        : [],
     [data.performance]
   );
 

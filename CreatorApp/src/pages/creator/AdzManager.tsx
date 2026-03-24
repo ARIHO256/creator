@@ -318,8 +318,6 @@ const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
   liveCart: {},
 };
 
-const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -460,8 +458,7 @@ function mapDealToManagedAd(raw: unknown, index: number): Ad | null {
 
   const supplier = asRecord(deal.supplier);
   const creator = asRecord(deal.creator);
-  const fallbackPoster = asString(shoppable.heroImageUrl, asString(supplier?.logoUrl, BLANK_IMAGE));
-  const offers = asArray(shoppable.offers).map((offer, index) => mapOffer(offer, index, fallbackPoster));
+  const offers = asArray(shoppable.offers).map((offer, index) => mapOffer(offer, index, ""));
   const metrics = asRecord(shoppable.metrics);
 
   const status = normalizeManagerStatus(shoppable.status ?? deal.status);
@@ -518,7 +515,7 @@ function mapDealToManagedAd(raw: unknown, index: number): Ad | null {
     supplier: {
       name: asString(supplier?.name, ""),
       category: asString(supplier?.category, ""),
-      logoUrl: asString(supplier?.logoUrl, BLANK_IMAGE),
+      logoUrl: asString(supplier?.logoUrl, ""),
     },
     campaign: {
       name: campaignName,
@@ -527,7 +524,7 @@ function mapDealToManagedAd(raw: unknown, index: number): Ad | null {
     startISO: asString(shoppable.startISO, asString(deal.startISO, "")),
     endISO: asString(shoppable.endISO, asString(deal.endISO, "")),
     timezone: asString(shoppable.timezone, asString(deal.timezone, "")),
-    heroImageUrl: asString(shoppable.heroImageUrl, fallbackPoster || BLANK_IMAGE),
+    heroImageUrl: asString(shoppable.heroImageUrl, ""),
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
     creator: {
@@ -537,7 +534,7 @@ function mapDealToManagedAd(raw: unknown, index: number): Ad | null {
         if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
-      avatarUrl: asString(creator?.avatarUrl, BLANK_IMAGE),
+      avatarUrl: asString(creator?.avatarUrl, ""),
       verified: asBoolean(creator?.verified, false),
     },
     owner: asString(shoppable.owner, ""),

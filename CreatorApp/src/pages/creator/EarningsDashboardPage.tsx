@@ -129,7 +129,7 @@ function EarningsDashboardPage() {
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
   const [payoutStatusFilter, setPayoutStatusFilter] = useState("All");
 
-  const { data: dataset } = useApiResource<EarningsDataset>({
+  const { data: dataset, loading, error } = useApiResource<EarningsDataset>({
     initialData: INITIAL_EARNINGS_DATASET,
     loader: async () => {
       const [summary, payouts, contracts] = await Promise.all([
@@ -148,6 +148,25 @@ function EarningsDashboardPage() {
       };
     }
   });
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950">
+        <CircularProgress size={28} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <PageHeader pageTitle="Earnings Dashboard" />
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Earnings data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   const summary = dataset.summary;
   const rangeStart = useMemo(() => getRangeStart(dateRange), [dateRange]);

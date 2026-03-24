@@ -125,24 +125,6 @@ type AudienceNotificationsPayload = {
   dealDropAtOffsetMin?: number;
 };
 
-const EMPTY_PACK: TemplatePack = {
-  id: "default",
-  name: "Default Reminders",
-  version: "",
-  approved: false,
-  channels: [],
-  notes: "",
-  templates: {
-    initiationPrompt: "",
-    t24h: "",
-    t1h: "",
-    t10m: "",
-    live_now: "",
-    deal_drop: "",
-    replay_ready: "",
-  },
-};
-
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -157,11 +139,15 @@ function toLocalInputValue(d: Date) {
 }
 
 function fromLocalInputValue(v: string) {
+  if (!v || !v.includes("T")) return null;
   // v = YYYY-MM-DDTHH:mm
   const [datePart, timePart] = v.split("T");
+  if (!datePart || !timePart) return null;
   const [y, m, d] = datePart.split("-").map((x) => Number(x));
   const [hh, mm] = timePart.split(":").map((x) => Number(x));
-  return new Date(y, m - 1, d, hh, mm, 0, 0);
+  if ([y, m, d, hh, mm].some((value) => !Number.isFinite(value))) return null;
+  const parsed = new Date(y, m - 1, d, hh, mm, 0, 0);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function fmtLocal(d: Date) {
@@ -471,8 +457,8 @@ function buildClickToChatLink(channel: ChannelKey, args: { waNumber: string; tex
 type PreviewTabKey = 'init' | 'whatsapp' | 'telegram' | 'rcs';
 
 export default function AudienceNotifications() {
-  const { data: payload } = useApiResource({
-    initialData: {} as AudienceNotificationsPayload,
+  const { data: payload, loading, error } = useApiResource<AudienceNotificationsPayload | null>({
+    initialData: null,
     loader: () => creatorApi.liveTool("audience-notifications") as Promise<AudienceNotificationsPayload>,
   });
   const sessionId = useMemo(() => {
@@ -483,26 +469,14 @@ export default function AudienceNotifications() {
     if (typeof window === "undefined") return "";
     return `${window.location.origin}/live/${encodeURIComponent(sessionId)}`;
   }, [sessionId]);
-  const [plan, setPlan] = useState<Plan>("Standard");
-  const [sessionStatus, setSessionStatus] = useState<SessionStatus>("Draft");
-  const [sessionTitle, setSessionTitle] = useState("Live session");
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<SessionStatus | null>(null);
+  const [sessionTitle, setSessionTitle] = useState("");
 
   // Scheduling inputs
-  const [startLocal, setStartLocal] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(18, 0, 0, 0);
-    return toLocalInputValue(d);
-  });
-
-  const [endLocal, setEndLocal] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    d.setHours(19, 0, 0, 0);
-    return toLocalInputValue(d);
-  });
-
-  const [bufferMinutes, setBufferMinutes] = useState(15); // default per requirement
+  const [startLocal, setStartLocal] = useState("");
+  const [endLocal, setEndLocal] = useState("");
+  const [bufferMinutes, setBufferMinutes] = useState(0);
   const [waNumber, setWaNumber] = useState("");
   const [sessionUrl, setSessionUrl] = useState(baseSessionUrl);
   const templatePacks = useMemo(() => payload.templatePacks || [], [payload.templatePacks]);
@@ -534,20 +508,21 @@ export default function AudienceNotifications() {
   const [dealDropAtOffsetMin, setDealDropAtOffsetMin] = useState(0); // if scheduled: minutes after start
   const [selectedPackId, setSelectedPackId] = useState("");
   const selectedPack = useMemo(
-    () => templatePacks.find((p) => p.id === selectedPackId) ?? EMPTY_PACK,
+    () => templatePacks.find((p) => p.id === selectedPackId) ?? null,
     [templatePacks, selectedPackId],
   );
+  const selectedTemplates = selectedPack?.templates;
 
   useEffect(() => {
-    if (!Object.keys(payload).length) return;
-    setPlan(payload.plan || "Standard");
-    setSessionStatus(payload.sessionStatus || "Draft");
+    if (!payload) return;
+    setPlan(payload.plan ?? null);
+    setSessionStatus(payload.sessionStatus ?? null);
     setSessionTitle(payload.sessionTitle || "");
-    setStartLocal((current) => payload.startLocal || current);
-    setEndLocal((current) => payload.endLocal || current);
-    setBufferMinutes(typeof payload.bufferMinutes === "number" ? payload.bufferMinutes : 15);
+    setStartLocal(payload.startLocal || "");
+    setEndLocal(payload.endLocal || "");
+    setBufferMinutes(typeof payload.bufferMinutes === "number" ? payload.bufferMinutes : 0);
     setWaNumber(payload.waNumber || "");
-    setSessionUrl(payload.sessionUrl || baseSessionUrl);
+    setSessionUrl(payload.sessionUrl || "");
     setSelectedPackId(payload.selectedPackId || "");
     setEnabledChannels((current) => ({ ...current, ...(payload.enabledChannels || {}) }));
     setEnabledReminders((current) => ({ ...current, ...(payload.enabledReminders || {}) }));
@@ -559,13 +534,14 @@ export default function AudienceNotifications() {
   const start = useMemo(() => fromLocalInputValue(startLocal), [startLocal]);
   const end = useMemo(() => fromLocalInputValue(endLocal), [endLocal]);
 
-  const durationMs = useMemo(() => Math.max(0, end.getTime() - start.getTime()), [start, end]);
+  const durationMs = useMemo(() => (start && end ? Math.max(0, end.getTime() - start.getTime()) : 0), [start, end]);
   const bufferMs = useMemo(() => bufferMinutes * 60 * 1000, [bufferMinutes]);
 
-  const waWindowEnd = useMemo(() => new Date(end.getTime() + bufferMs), [end, bufferMs]);
-  const waPromptTime = useMemo(() => new Date(waWindowEnd.getTime() - 24 * 60 * 60 * 1000), [waWindowEnd]);
+  const waWindowEnd = useMemo(() => (end ? new Date(end.getTime() + bufferMs) : null), [end, bufferMs]);
+  const waPromptTime = useMemo(() => (waWindowEnd ? new Date(waWindowEnd.getTime() - 24 * 60 * 60 * 1000) : null), [waWindowEnd]);
 
   const computedTimes = useMemo(() => {
+    if (!start || !end || !waPromptTime) return null;
     const t24h = waPromptTime;
     const t1h = new Date(start.getTime() - 60 * 60 * 1000);
     const t10m = new Date(start.getTime() - 10 * 60 * 1000);
@@ -582,8 +558,9 @@ export default function AudienceNotifications() {
     } as const;
   }, [waPromptTime, start, end, replayDelayMinutes, dealDropMode, dealDropAtOffsetMin]);
 
-  const waLeadTime = useMemo(() => fmtDuration(msUntil(waPromptTime, start)), [waPromptTime, start]);
+  const waLeadTime = useMemo(() => (waPromptTime && start ? fmtDuration(msUntil(waPromptTime, start)) : ""), [waPromptTime, start]);
   const waCoverage = useMemo(() => {
+    if (!waPromptTime || !waWindowEnd) return null;
     const windowEndIfInitiatedAtPrompt = new Date(waPromptTime.getTime() + 24 * 60 * 60 * 1000);
     const ok = Math.abs(windowEndIfInitiatedAtPrompt.getTime() - waWindowEnd.getTime()) < 60 * 1000;
     return { windowEndIfInitiatedAtPrompt, ok };
@@ -601,7 +578,7 @@ export default function AudienceNotifications() {
       .replaceAll("{{title}}", sessionTitle)
       .replaceAll("{{link}}", sessionUrl);
 
-  const initiationPromptText = useMemo(() => templateFill(selectedPack.templates.initiationPrompt), [selectedPack, sessionTitle, sessionUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  const initiationPromptText = useMemo(() => templateFill(selectedTemplates?.initiationPrompt || ""), [selectedTemplates, sessionTitle, sessionUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const clickToChatLink = (channel: ChannelKey) =>
     buildClickToChatLink(channel, {
@@ -628,19 +605,38 @@ export default function AudienceNotifications() {
   const enabledChannelList = useMemo(() => channels.filter((c) => enabledChannels[c.key]), [channels, enabledChannels]);
   const scheduleOk = useMemo(() => {
     const issues: string[] = [];
-    if (end.getTime() <= start.getTime()) issues.push("End time must be after start time.");
+    if (!plan || !sessionStatus || !sessionTitle || !start || !end) issues.push("Core audience notification data is missing.");
+    if (start && end && end.getTime() <= start.getTime()) issues.push("End time must be after start time.");
     if (enabledChannelList.length === 0) issues.push("Enable at least one channel.");
-    if (selectedPack.proOnly && !isPro) issues.push("Selected template pack is Pro.");
+    if (selectedPack?.proOnly && !isPro) issues.push("Selected template pack is Pro.");
     // WhatsApp logic checks:
     const waOn = enabledChannels.whatsapp;
-    if (waOn) {
+    if (waOn && waPromptTime && start) {
       if (waPromptTime.getTime() >= start.getTime()) issues.push("WhatsApp prompt time is not before session start. Reduce duration/buffer or split session.");
     }
     return { ok: issues.length === 0, issues };
-  }, [end, start, enabledChannelList.length, selectedPack, isPro, enabledChannels.whatsapp, waPromptTime]);
+  }, [end, start, enabledChannelList.length, selectedPack, isPro, enabledChannels.whatsapp, waPromptTime, plan, sessionStatus, sessionTitle]);
 
   const proLockReason = "Upgrade to Pro to enable this channel/feature.";
   void proLockReason;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading audience notifications…
+      </div>
+    );
+  }
+
+  if (error || !payload || !plan || !sessionStatus || !sessionTitle || !start || !end || !computedTimes) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Audience notification data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
@@ -685,9 +681,8 @@ export default function AudienceNotifications() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button
-              className="hidden lg:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 transition ring-1 ring-slate-200/50 dark:ring-slate-700/50"
-              onClick={() => setPlan((p) => (p === 'Pro' ? 'Standard' : 'Pro'))}
-              title="Demo: Toggle Plan Tier"
+              className="hidden lg:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-bold text-slate-900 dark:text-slate-100 transition ring-1 ring-slate-200/50 dark:ring-slate-700/50"
+              type="button"
             >
               <Sparkles className="h-4 w-4 text-orange-500" />
               Tier: {plan}
@@ -1334,13 +1329,13 @@ export default function AudienceNotifications() {
               <div className="mt-5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 p-5 ring-1 ring-slate-200 dark:ring-slate-700">
                 <div className="text-[10px] font-black text-slate-500 dark:text-slate-500 uppercase tracking-widest mb-3">Active Blueprint Preview</div>
                 <div className="whitespace-pre-wrap rounded-xl bg-white dark:bg-slate-900 p-4 text-[13px] font-bold text-slate-800 dark:text-slate-200 ring-1 ring-slate-200 dark:ring-slate-800 leading-relaxed shadow-inner">
-                  {templateFill(selectedPack.templates.t1h)}
+                  {templateFill(selectedTemplates?.t1h || "")}
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Btn
                     tone="primary"
                     onClick={() => {
-                      navigator.clipboard?.writeText(templateFill(selectedPack.templates.t1h)).catch(() => { });
+                      navigator.clipboard?.writeText(templateFill(selectedTemplates?.t1h || "")).catch(() => { });
                       setToast('Template Copy Verified');
                     }}
                     left={<Copy className="h-4 w-4" />}
@@ -1608,16 +1603,16 @@ export default function AudienceNotifications() {
                         <div className="whitespace-pre-wrap text-[13px] font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
                           {templateFill(
                             previewScenario === 't24h'
-                              ? selectedPack.templates.t24h
+                              ? selectedTemplates?.t24h || ""
                               : previewScenario === 't1h'
-                                ? selectedPack.templates.t1h
+                                ? selectedTemplates?.t1h || ""
                                 : previewScenario === 't10m'
-                                  ? selectedPack.templates.t10m
+                                  ? selectedTemplates?.t10m || ""
                                   : previewScenario === 'live_now'
-                                    ? selectedPack.templates.live_now
+                                    ? selectedTemplates?.live_now || ""
                                     : previewScenario === 'deal_drop'
-                                      ? selectedPack.templates.deal_drop
-                                      : selectedPack.templates.replay_ready,
+                                      ? selectedTemplates?.deal_drop || ""
+                                      : selectedTemplates?.replay_ready || "",
                           )}
                         </div>
                         <div className="rounded-xl bg-slate-50 dark:bg-slate-800/80 p-3 text-[10px] font-bold text-slate-600 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700 transition">
@@ -1653,16 +1648,16 @@ export default function AudienceNotifications() {
                         <div className="whitespace-pre-wrap text-[13px] font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
                           {templateFill(
                             previewScenario === 't24h'
-                              ? selectedPack.templates.t24h
+                              ? selectedTemplates?.t24h || ""
                               : previewScenario === 't1h'
-                                ? selectedPack.templates.t1h
+                                ? selectedTemplates?.t1h || ""
                                 : previewScenario === 't10m'
-                                  ? selectedPack.templates.t10m
+                                  ? selectedTemplates?.t10m || ""
                                   : previewScenario === 'live_now'
-                                    ? selectedPack.templates.live_now
+                                    ? selectedTemplates?.live_now || ""
                                     : previewScenario === 'deal_drop'
-                                      ? selectedPack.templates.deal_drop
-                                      : selectedPack.templates.replay_ready,
+                                      ? selectedTemplates?.deal_drop || ""
+                                      : selectedTemplates?.replay_ready || "",
                           )}
                         </div>
                         <div className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-black px-4 py-2.5 text-xs font-black text-white uppercase tracking-widest shadow-lg">
@@ -1683,16 +1678,16 @@ export default function AudienceNotifications() {
                         <div className="whitespace-pre-wrap text-[13px] font-bold text-slate-800 dark:text-slate-200 leading-relaxed">
                           {templateFill(
                             previewScenario === 't24h'
-                              ? selectedPack.templates.t24h
+                              ? selectedTemplates?.t24h || ""
                               : previewScenario === 't1h'
-                                ? selectedPack.templates.t1h
+                                ? selectedTemplates?.t1h || ""
                                 : previewScenario === 't10m'
-                                  ? selectedPack.templates.t10m
+                                  ? selectedTemplates?.t10m || ""
                                   : previewScenario === 'live_now'
-                                    ? selectedPack.templates.live_now
+                                    ? selectedTemplates?.live_now || ""
                                     : previewScenario === 'deal_drop'
-                                      ? selectedPack.templates.deal_drop
-                                      : selectedPack.templates.replay_ready,
+                                      ? selectedTemplates?.deal_drop || ""
+                                      : selectedTemplates?.replay_ready || "",
                           )}
                         </div>
                         <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 ring-1 ring-slate-200 dark:ring-slate-700 italic">
@@ -1711,7 +1706,7 @@ export default function AudienceNotifications() {
                     {[
                       { label: 'Lifecycle Continuity', ok: end.getTime() > start.getTime() },
                       { label: 'Network Synchronization', ok: enabledChannelList.length > 0 },
-                      { label: 'Blueprint Compatibility', ok: !(selectedPack.proOnly && !isPro) },
+                      { label: 'Blueprint Compatibility', ok: !(selectedPack?.proOnly && !isPro) },
                       { label: 'WABA Delivery Sync', ok: !enabledChannels.whatsapp || waPromptTime.getTime() < start.getTime() },
                     ].map((i) => (
                       <div key={i.label} className="flex items-center justify-between rounded-2xl bg-slate-50 dark:bg-slate-800/40 p-4 ring-1 ring-slate-200 dark:ring-slate-700 transition">

@@ -527,8 +527,6 @@ const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
   liveCart: {},
 };
 
-const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -683,8 +681,7 @@ function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
   const creatorRecord = asRecord(record.creator);
 
   const offersRaw = asArray(shoppable.offers);
-  const fallbackHero = asString(shoppable.heroImageUrl, asString(supplierRecord?.logoUrl, BLANK_IMAGE) || BLANK_IMAGE);
-  const offers = offersRaw.map((offer, offerIndex) => mapOffer(offer, offerIndex, fallbackHero));
+  const offers = offersRaw.map((offer, offerIndex) => mapOffer(offer, offerIndex, ""));
 
   const inferredCurrency = offers[0]?.currency || asCurrency(shoppable.currency, "UGX");
   const metricsRecord = asRecord(shoppable.metrics);
@@ -722,7 +719,7 @@ function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
     supplier: {
       name: asString(supplierRecord?.name, ""),
       category: asString(supplierRecord?.category, ""),
-      logoUrl: asString(supplierRecord?.logoUrl, BLANK_IMAGE) || BLANK_IMAGE,
+      logoUrl: asString(supplierRecord?.logoUrl, ""),
     },
     creator: {
       name: asString(creatorRecord?.name, ""),
@@ -731,7 +728,7 @@ function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
         if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
-      avatarUrl: asString(creatorRecord?.avatarUrl, BLANK_IMAGE) || BLANK_IMAGE,
+      avatarUrl: asString(creatorRecord?.avatarUrl, ""),
       verified: asBoolean(creatorRecord?.verified, false),
     },
     status,
@@ -739,7 +736,7 @@ function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
     startISO: asString(shoppable.startISO, asString(record.startISO, "")),
     endISO: asString(shoppable.endISO, asString(record.endISO, "")),
     timezone: asString(shoppable.timezone, asString(record.timezone, "")),
-    heroImageUrl: asString(shoppable.heroImageUrl, offers[0]?.posterUrl || BLANK_IMAGE),
+    heroImageUrl: asString(shoppable.heroImageUrl, ""),
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     compensation: mapCompensation(shoppable.compensation ?? record.compensation, inferredCurrency),
     offers,

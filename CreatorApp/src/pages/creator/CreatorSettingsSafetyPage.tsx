@@ -60,6 +60,37 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function lookupLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const record = entry as Record<string, unknown>;
+        return String(record.label || record.title || record.value || "").trim();
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
+
+function lookupPayoutMethodCards(
+  value: unknown
+): Array<{ key: string; title: string; desc: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const record = entry as Record<string, unknown>;
+      const key = String(record.key || record.value || "").trim();
+      const title = String(record.title || record.label || key).trim();
+      const desc = String(record.desc || record.helper || "").trim();
+      if (!key || !title) return null;
+      return { key, title, desc };
+    })
+    .filter((entry): entry is { key: string; title: string; desc: string } => Boolean(entry));
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function deepMerge(base: any, patch: any): any {
   if (patch === undefined || patch === null) return base;
@@ -839,41 +870,13 @@ function UploadedFilesPanel({
 
 /* ---------- Options (mirrors Onboarding v2.5) ---------- */
 
-const LANGUAGE_OPTIONS = ["English", "Swahili", "French", "Arabic", "Chinese", "Portuguese"];
-const REGION_OPTIONS = ["East Africa", "Southern Africa", "West Africa", "North Africa", "Asia", "Europe", "North America"];
-
 const TEAM_TYPES = ["Seller team", "Provider team", "Production crew", "Brand team", "Other"];
 const AGENCY_TYPES = ["Talent / influencer agency", "Marketing agency", "Seller network", "Provider network", "Other"];
 const ORG_SIZES = ["1–5", "6–15", "16–50", "51–200", "200+"];
 
 const OTHER_SOCIAL_OPTIONS = ["Facebook", "X (Twitter)", "Snapchat", "Kwai", "LinkedIn", "Twitch", "Pinterest", "Other"];
 
-const PRODUCT_SERVICE_LINES = [
-  "Services",
-  "Electronics",
-  "Fashion & Beauty",
-  "Food & Groceries",
-  "General Supplies",
-  "Home & Living",
-  "Properties & Supplies",
-  "EV & Mobility",
-  "Medical & Health",
-  "Education",
-  "Faith",
-  "Travel & Tourism"
-];
-
 const COLLAB_MODELS = ["Flat fee", "Commission", "Hybrid"];
-
-const CONTENT_FORMATS = ["Live Sessionz", "Shoppable Adz", "Short-form (Reels/Shorts)", "Long-form (YouTube)", "UGC (brand content)", "Livestream co-hosting"];
-
-const PAYOUT_METHODS = [
-  { key: "Bank", title: "Bank", desc: "Best for high volume and stable settlements." },
-  { key: "Mobile Money", title: "Mobile Money", desc: "Fast and popular across Africa." },
-  { key: "PayPal / Wallet", title: "PayPal / Wallet", desc: "Use existing wallets in supported regions." },
-  { key: "AliPay", title: "AliPay", desc: "China payment method for creators and cross-border payments." },
-  { key: "WeChat Pay", title: "WeChat Pay", desc: "China payment method for creators and cross-border payments." }
-];
 
 interface PolicySection {
   h: string;
@@ -1777,6 +1780,7 @@ export default function CreatorSettingsSafetyPremium() {
   const navigate = useNavigate();
   const { toasts, push } = useToasts();
 
+  const [lookups, setLookups] = useState<Record<string, unknown>>({});
   const [form, setForm] = useState<SettingsForm>(() => defaultForm());
   const [saved, setSaved] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -1797,6 +1801,18 @@ export default function CreatorSettingsSafetyPremium() {
   const selectedSocialPlatforms = useMemo(
     () => getSelectedSocialPlatforms(form.socials),
     [form.socials]
+  );
+  const languageOptions = useMemo(() => lookupLabels(lookups.languages), [lookups.languages]);
+  const regionOptions = useMemo(() => lookupLabels(lookups.supplierTargetRegions), [lookups.supplierTargetRegions]);
+  const productServiceLines = useMemo(() => {
+    const serviceCategories = lookupLabels(lookups.serviceCategories);
+    const productCategories = lookupLabels(lookups.productCategories);
+    return Array.from(new Set([...serviceCategories, ...productCategories]));
+  }, [lookups.productCategories, lookups.serviceCategories]);
+  const contentFormats = useMemo(() => lookupLabels(lookups.contentFormats), [lookups.contentFormats]);
+  const payoutMethods = useMemo(
+    () => lookupPayoutMethodCards(lookups.payoutMethodCards),
+    [lookups.payoutMethodCards]
   );
   const normalizedPrimaryPlatform = useMemo(
     () => normalizePrimaryPlatform(form.socials.primaryPlatform),
@@ -1827,6 +1843,12 @@ export default function CreatorSettingsSafetyPremium() {
   useEffect(() => {
     let cancelled = false;
     try {
+      void creatorApi.onboardingLookups().then((payload) => {
+        if (!cancelled && payload && typeof payload === "object" && !Array.isArray(payload)) {
+          setLookups(payload as Record<string, unknown>);
+        }
+      }).catch(() => undefined);
+
       void creatorApi
         .onboarding()
         .then(async (payload) => {
@@ -2664,7 +2686,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <Badge tone="neutral">{(form.profile.contentLanguages || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {LANGUAGE_OPTIONS.map((l) => (
+                  {languageOptions.map((l) => (
                     <Chip key={l} label={l} active={(form.profile.contentLanguages || []).includes(l)} onClick={() => toggleInArray("profile.contentLanguages", l)} />
                   ))}
                 </div>
@@ -2679,7 +2701,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <Badge tone="neutral">{(form.profile.audienceRegions || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {REGION_OPTIONS.map((r) => (
+                  {regionOptions.map((r) => (
                     <Chip key={r} label={r} active={(form.profile.audienceRegions || []).includes(r)} onClick={() => toggleInArray("profile.audienceRegions", r)} />
                   ))}
                 </div>
@@ -3132,7 +3154,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <Badge tone="neutral">{(form.preferences.lines || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {PRODUCT_SERVICE_LINES.map((x) => (
+                  {productServiceLines.map((x) => (
                     <Chip key={x} label={x} active={(form.preferences.lines || []).includes(x)} onClick={() => toggleInArray("preferences.lines", x)} />
                   ))}
                 </div>
@@ -3163,7 +3185,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <Badge tone="neutral">{(form.preferences.formats || []).length}</Badge>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {CONTENT_FORMATS.map((x) => (
+                {contentFormats.map((x) => (
                   <Chip key={x} label={x} active={(form.preferences.formats || []).includes(x)} onClick={() => toggleInArray("preferences.formats", x)} />
                 ))}
               </div>
@@ -3495,7 +3517,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="text-sm">Payout method</div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">Choose where your earnings should go.</div>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {PAYOUT_METHODS.map((m) => {
+                  {payoutMethods.map((m) => {
                     const active = form.payout.method === m.key;
                     return (
                       <button

@@ -221,7 +221,7 @@ export function CreatorLiveDealzFeedPage() {
   /* Shared Friend/Follow State */
   const { toggleFollowSeller } = useCreator();
   const hasSession = Boolean(readAuthSession());
-  const { data: homeData } = useApiResource({
+  const { data: homeData, loading, error } = useApiResource({
     enabled: hasSession,
     initialData: {
       hero: {
@@ -245,6 +245,24 @@ export function CreatorLiveDealzFeedPage() {
   const [activeTab, setActiveTab] = useState<string>("For You");
   const [reminders, setReminders] = useState<Record<string, boolean>>({});
   const [joinedStreams, setJoinedStreams] = useState<Record<string, boolean>>({});
+
+  if (hasSession && loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading feed…
+      </div>
+    );
+  }
+
+  if (hasSession && error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Creator feed data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   // Interaction State
 
