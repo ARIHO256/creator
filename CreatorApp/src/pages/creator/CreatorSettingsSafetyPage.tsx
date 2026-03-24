@@ -984,7 +984,7 @@ function defaultSettings(): Settings {
   return {
     calendar: {
       shareAvailability: true,
-      visibility: "Admins only",
+      visibility: "",
       googleConnected: false
     },
     notifications: {
@@ -996,18 +996,13 @@ function defaultSettings(): Settings {
       platformNews: false
     },
     privacy: {
-      profileVisibility: "Public",
-      allowDMsFrom: "All suppliers",
+      profileVisibility: "",
+      allowDMsFrom: "",
       allowExternalGuests: true,
-      blockedSellers: ["Fake Dealz Ltd"]
+      blockedSellers: []
     },
-    devices: [
-      { id: "d1", name: "iPhone 14 • Kampala", lastActive: "2m ago" },
-      { id: "d2", name: "Chrome • MacBook Pro", lastActive: "Yesterday" }
-    ],
-    audit: [
-      { id: "s1", when: nowLabel(), what: "Settings initialized", meta: "Premium Settings & Safety" }
-    ]
+    devices: [],
+    audit: []
   };
 }
 
@@ -1024,16 +1019,16 @@ function defaultForm(): SettingsForm {
       phone: "",
       whatsapp: "",
       country: "",
-      timezone: "Africa/Kampala",
-      currency: "UGX",
-      contentLanguages: ["English"],
-      audienceRegions: ["East Africa"],
+      timezone: "",
+      currency: "",
+      contentLanguages: [],
+      audienceRegions: [],
       profilePhotoName: "",
       mediaKitName: "",
       team: {
         name: "",
         type: "",
-        size: "1–5",
+        size: "",
         website: "",
         logoName: ""
       },
@@ -1049,7 +1044,7 @@ function defaultForm(): SettingsForm {
       tiktok: "",
       youtube: "",
       primaryPlatform: "",
-      primaryOtherPlatform: "Facebook",
+      primaryOtherPlatform: "",
       primaryOtherCustomName: "",
       primaryOtherHandle: "",
       primaryOtherFollowers: "",
@@ -1057,7 +1052,7 @@ function defaultForm(): SettingsForm {
     },
     kyc: {
       status: "unverified", // unverified | in_review | verified | rejected
-      documentType: "National ID",
+      documentType: "",
       idFileName: "",
       selfieFileName: "",
       addressFileName: "",
@@ -1075,32 +1070,32 @@ function defaultForm(): SettingsForm {
     },
     payout: {
       method: "",
-      currency: "UGX",
-      schedule: "Weekly",
-      minThreshold: 100000,
+      currency: "",
+      schedule: "",
+      minThreshold: "",
       acceptPayoutPolicy: false,
       verification: {
         status: "unverified", // unverified | code_sent | verified
         lastSentTo: ""
       },
       bank: { bankName: "", accountName: "", accountNumber: "", swift: "" },
-      mobile: { provider: "MTN", number: "" },
-      wallet: { provider: "PayPal", email: "" },
+      mobile: { provider: "", number: "" },
+      wallet: { provider: "", email: "" },
       alipay: { name: "", accountId: "" },
       wechat: { name: "", accountId: "", phone: "" },
       tax: { residency: "", taxId: "" }
     },
     preferences: {
-      lines: ["Electronics"],
-      formats: ["Live Sessionz"],
-      models: ["Commission"],
+      lines: [],
+      formats: [],
+      models: [],
       availability: {
-        days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-        timeWindow: "18:00–22:00"
+        days: [],
+        timeWindow: ""
       },
-      rateCard: { flatFee: 0, commissionPct: 10 },
-      inviteRules: "All",
-      supplierType: "Sellers + Providers"
+      rateCard: { flatFee: "", commissionPct: "" },
+      inviteRules: "",
+      supplierType: ""
     },
     review: {
       seenPolicies: { platform: false, content: false, payout: false },
@@ -1357,7 +1352,7 @@ function payoutRhythmFromApi(rhythm: string) {
   if (rhythm === "weekly") return "Weekly";
   if (rhythm === "biweekly") return "Bi-weekly";
   if (rhythm === "monthly") return "Monthly";
-  return "Weekly";
+  return "";
 }
 
 function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | null {
@@ -1381,8 +1376,8 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
       handle: String(root.storeSlug || ""),
       bio: String(root.about || ""),
       country: String(asRecord(root.shipFrom)?.country || ""),
-      timezone: "Africa/Kampala",
-      currency: String(payout?.currency || "UGX"),
+      timezone: String(asRecord(metadata)?.timezone || ""),
+      currency: String(payout?.currency || ""),
       tagline: "",
       contentLanguages: Array.isArray(root.languages) ? root.languages.map((entry) => String(entry)) : [],
       audienceRegions: [],
@@ -1392,7 +1387,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
       whatsapp: String(asRecord(root.support)?.whatsapp || ""),
       profilePhotoName: "",
       mediaKitName: "",
-      team: { name: "", type: "", size: "1–5", website: "", logoName: "" },
+      team: { name: "", type: "", size: "", website: "", logoName: "" },
       agency: { name: "", type: "", website: "", logoName: "" }
     },
     kyc: {
@@ -1404,7 +1399,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
             : String(verification?.kycStatus || "").toUpperCase() === "REJECTED"
               ? "rejected"
               : "unverified",
-      documentType: "National ID",
+      documentType: "",
       idUploaded: false,
       selfieUploaded: false,
       addressUploaded: false,
@@ -1416,7 +1411,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
     },
     payout: {
       method: payoutMethodFromApi(method),
-      currency: String(payout?.currency || "UGX"),
+      currency: String(payout?.currency || ""),
       schedule: payoutRhythmFromApi(rhythm),
       minThreshold: Number(payout?.thresholdAmount || 0),
       bank: {
@@ -1430,7 +1425,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
         number: String(payout?.mobileNo || "")
       },
       wallet: {
-        provider: "PayPal",
+        provider: "",
         email: String(payout?.otherDetails || "")
       },
       alipay: {
@@ -2643,6 +2638,7 @@ export default function CreatorSettingsSafetyPremium() {
               </Field>
               <Field label="Currency">
                 <Select value={form.profile.currency} onChange={(e) => update("profile.currency", e.target.value)}>
+                  <option value="">Select currency</option>
                   {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -2788,6 +2784,7 @@ export default function CreatorSettingsSafetyPremium() {
                     </Field>
                     <Field label="Team size">
                       <Select value={form.profile.team.size} onChange={(e) => update("profile.team.size", e.target.value)}>
+                        <option value="">Select size</option>
                         {ORG_SIZES.map((x) => (
                           <option key={x} value={x}>
                             {x}
@@ -2996,6 +2993,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <div className="mt-3 space-y-2">
                     <Field label="Select platform">
                       <Select value={form.socials.primaryOtherPlatform} onChange={(e) => update("socials.primaryOtherPlatform", e.target.value)}>
+                        <option value="">Select platform</option>
                         {OTHER_SOCIAL_OPTIONS.map((o) => (
                           <option key={o} value={o}>
                             {o}
@@ -3066,7 +3064,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <SoftButton
                   onClick={() => {
                     const extra = Array.isArray(form.socials.extra) ? form.socials.extra : [];
-                    update("socials.extra", [...extra, { platform: "Facebook", handle: "" }]);
+                    update("socials.extra", [...extra, { platform: "", handle: "" }]);
                     push("Extra account added.", "success");
                   }}
                 >
@@ -3088,6 +3086,7 @@ export default function CreatorSettingsSafetyPremium() {
                           update("socials.extra", extra);
                         }}
                       >
+                        <option value="">Select platform</option>
                         {OTHER_SOCIAL_OPTIONS.map((o) => (
                           <option key={o} value={o}>
                             {o}
@@ -3200,6 +3199,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-2 grid grid-cols-1 gap-2">
                   <Field label="Who can invite you?">
                     <Select value={form.preferences.inviteRules} onChange={(e) => update("preferences.inviteRules", e.target.value)}>
+                      <option value="">Select rule</option>
                       {["All", "Verified suppliers only", "Invite-only"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3209,6 +3209,7 @@ export default function CreatorSettingsSafetyPremium() {
                   </Field>
                   <Field label="Supplier type">
                     <Select value={form.preferences.supplierType} onChange={(e) => update("preferences.supplierType", e.target.value)}>
+                      <option value="">Select type</option>
                       {["Sellers + Providers", "Sellers only", "Providers only"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3260,6 +3261,7 @@ export default function CreatorSettingsSafetyPremium() {
                   />
                   <Field label="Visibility">
                     <Select value={form.settings.calendar.visibility} onChange={(e) => update("settings.calendar.visibility", e.target.value)}>
+                      <option value="">Select visibility</option>
                       {["Admins only", "Admins + Producers", "Anyone with permission"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3325,6 +3327,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Document type">
                     <Select value={form.kyc.documentType} onChange={(e) => update("kyc.documentType", e.target.value)}>
+                      <option value="">Select document type</option>
                       {["National ID", "Passport", "Driver’s license"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3519,6 +3522,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Field label="Currency">
                     <Select value={form.payout.currency} onChange={(e) => update("payout.currency", e.target.value)}>
+                      <option value="">Select currency</option>
                       {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
                         <option key={c} value={c}>
                           {c}
@@ -3528,6 +3532,7 @@ export default function CreatorSettingsSafetyPremium() {
                   </Field>
                   <Field label="Schedule">
                     <Select value={form.payout.schedule} onChange={(e) => update("payout.schedule", e.target.value)}>
+                      <option value="">Select schedule</option>
                       {["Weekly", "Bi-weekly", "Monthly"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3573,6 +3578,7 @@ export default function CreatorSettingsSafetyPremium() {
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                       <Field label="Provider">
                         <Select value={form.payout.mobile.provider} onChange={(e) => update("payout.mobile.provider", e.target.value)}>
+                          <option value="">Select provider</option>
                           {["MTN", "Airtel", "Vodacom", "Safaricom"].map((x) => (
                             <option key={x} value={x}>
                               {x}
@@ -3590,6 +3596,7 @@ export default function CreatorSettingsSafetyPremium() {
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                       <Field label="Provider">
                         <Select value={form.payout.wallet.provider} onChange={(e) => update("payout.wallet.provider", e.target.value)}>
+                          <option value="">Select provider</option>
                           {["PayPal", "Wise", "Payoneer"].map((x) => (
                             <option key={x} value={x}>
                               {x}
@@ -3798,6 +3805,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-3 space-y-2">
                   <Field label="Profile visibility">
                     <Select value={form.settings.privacy.profileVisibility} onChange={(e) => update("settings.privacy.profileVisibility", e.target.value)}>
+                      <option value="">Select visibility</option>
                       {["Public", "suppliers only", "Private"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3807,6 +3815,7 @@ export default function CreatorSettingsSafetyPremium() {
                   </Field>
                   <Field label="Direct messages">
                     <Select value={form.settings.privacy.allowDMsFrom} onChange={(e) => update("settings.privacy.allowDMsFrom", e.target.value)}>
+                      <option value="">Select direct-message rule</option>
                       {["All suppliers", "Verified only", "None"].map((x) => (
                         <option key={x} value={x}>
                           {x}

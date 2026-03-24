@@ -1009,7 +1009,7 @@ export default function RolesPermissionsPremium() {
       require2FA,
       allowExternalInvites,
       supplierGuestExpiryHours
-    });
+    }).catch(() => undefined);
   }, [allowExternalInvites, hasLoadedBackendRoles, require2FA, supplierGuestExpiryHours]);
 
   const permIndex = useMemo(() => {
@@ -1055,7 +1055,7 @@ export default function RolesPermissionsPremium() {
     void creatorApi.updateRole(selectedRole.id, {
       name: nextName,
       description: nextDescription
-    });
+    }).catch(() => undefined);
     setEditRoleOpen(false);
     push("Role updated.", "success");
     log("Owner", "Updated role metadata", `${selectedRole.name} → ${nextName}`);
@@ -1066,7 +1066,7 @@ export default function RolesPermissionsPremium() {
       rs.map((r) => {
         if (r.id !== roleId) return r;
         const nextPerms = { ...r.perms, [permId]: value };
-        void creatorApi.updateRole(roleId, { perms: nextPerms });
+        void creatorApi.updateRole(roleId, { perms: nextPerms }).catch(() => undefined);
         return { ...r, perms: nextPerms };
       })
     );
@@ -1082,7 +1082,7 @@ export default function RolesPermissionsPremium() {
         g.perms.forEach((p) => {
           next[p.id] = value;
         });
-        void creatorApi.updateRole(roleId, { perms: next });
+        void creatorApi.updateRole(roleId, { perms: next }).catch(() => undefined);
         return { ...r, perms: next };
       })
     );
@@ -1104,7 +1104,7 @@ export default function RolesPermissionsPremium() {
       badge: copy.badge,
       description: copy.description,
       perms: copy.perms
-    });
+    }).catch(() => undefined);
     setSelectedRoleId(id);
     push("Role duplicated.", "success");
     log("Owner", "Duplicated role", `${selectedRole.name} → ${copy.name}`);
@@ -1128,7 +1128,7 @@ export default function RolesPermissionsPremium() {
       badge: r.badge,
       description: r.description,
       perms: r.perms
-    });
+    }).catch(() => undefined);
     setSelectedRoleId(id);
     setCreateRoleOpen(false);
     push("New role created.", "success");
@@ -1143,7 +1143,7 @@ export default function RolesPermissionsPremium() {
     }
     const name = selectedRole.name;
     setRoles((rs) => rs.filter((r) => r.id !== selectedRole.id));
-    void creatorApi.deleteRole(selectedRole.id);
+    void creatorApi.deleteRole(selectedRole.id).catch(() => undefined);
     setSelectedRoleId("");
     push("Role deleted.", "success");
     log("Owner", "Deleted role", name, "warn");
@@ -1180,7 +1180,7 @@ export default function RolesPermissionsPremium() {
       email: inv.email,
       roleId: inv.roleId,
       seat: inv.seat
-    });
+    }).catch(() => undefined);
     setInviteOpen(false);
     setInviteEmail("");
     push("Invite sent.", "success");
@@ -1201,14 +1201,14 @@ export default function RolesPermissionsPremium() {
 
   function changeMemberRole(memberId: string, roleId: string) {
     setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, roleId } : m)));
-    void creatorApi.updateRoleMember(memberId, { roleId });
+    void creatorApi.updateRoleMember(memberId, { roleId }).catch(() => undefined);
     push("Role updated.", "success");
     log("Owner", "Changed member role", `${memberId} → ${roleId}`);
   }
 
   function changeMemberStatus(memberId: string, status: MemberStatus) {
     setMembers((ms) => ms.map((m) => (m.id === memberId ? { ...m, status } : m)));
-    void creatorApi.updateRoleMember(memberId, { status });
+    void creatorApi.updateRoleMember(memberId, { status }).catch(() => undefined);
     push(`Member status: ${status}`, "success");
     log("Owner", "Changed member status", `${memberId} → ${status}`, status === "Suspended" ? "critical" : "warn");
   }

@@ -232,10 +232,15 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
 
     const load = async () => {
       try {
-        const studio =
-          candidateId === "default"
-            ? await creatorApi.liveStudioDefault()
-            : await creatorApi.liveStudio(candidateId);
+        let studio;
+        try {
+          studio =
+            candidateId === "default"
+              ? await creatorApi.liveStudioDefault()
+              : await creatorApi.liveStudio(candidateId);
+        } catch {
+          studio = await creatorApi.liveStudioDefault();
+        }
         if (cancelled) return;
         setStudioId(String(studio.id || candidateId));
         const data =

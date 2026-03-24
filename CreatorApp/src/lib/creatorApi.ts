@@ -744,7 +744,20 @@ export const creatorApi = {
     return api.get<AnalyticsRankDetailResponse>(withQuery("/analytics/rank-detail", params));
   },
   sellers(params?: { limit?: number; offset?: number }) {
-    return api.get<PublicSellerRecord[]>(withQuery("/sellers", params));
+    const limit =
+      typeof params?.limit === "number" && Number.isFinite(params.limit)
+        ? Math.max(1, Math.min(100, Math.floor(params.limit)))
+        : undefined;
+    const offset =
+      typeof params?.offset === "number" && Number.isFinite(params.offset)
+        ? Math.max(0, Math.floor(params.offset))
+        : undefined;
+    return api.get<PublicSellerRecord[]>(
+      withQuery("/sellers", {
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {})
+      })
+    );
   },
   followSeller(id: string, follow = true) {
     return api.post(`/sellers/${id}/follow`, { follow });
@@ -959,16 +972,16 @@ export const creatorApi = {
     return api.get<LiveStudioRecord>("/live/studio/default");
   },
   liveStudio(id: string) {
-    return api.get<LiveStudioRecord>(`/live/studio/${id}`);
+    return api.get<LiveStudioRecord>(`/live/studio/${encodeURIComponent(id)}`);
   },
   updateLiveStudio(id: string, body: Record<string, unknown>) {
-    return api.patch<LiveStudioRecord>(`/live/studio/${id}`, body);
+    return api.patch<LiveStudioRecord>(`/live/studio/${encodeURIComponent(id)}`, body);
   },
   startLiveStudio(id: string) {
-    return api.post<Record<string, unknown>>(`/live/studio/${id}/start`);
+    return api.post<Record<string, unknown>>(`/live/studio/${encodeURIComponent(id)}/start`);
   },
   endLiveStudio(id: string) {
-    return api.post<Record<string, unknown>>(`/live/studio/${id}/end`);
+    return api.post<Record<string, unknown>>(`/live/studio/${encodeURIComponent(id)}/end`);
   },
   liveReplays() {
     return api.get<LiveReplayRecord[]>("/live/replays");
@@ -1034,10 +1047,10 @@ export const creatorApi = {
     return api.get<CreatorNotification[]>("/notifications");
   },
   markNotificationRead(id: string) {
-    return api.patch(`/notifications/${id}/read`);
+    return api.patch(`/notifications/${id}/read`, {});
   },
   markNotificationUnread(id: string) {
-    return api.patch(`/notifications/${id}/unread`);
+    return api.patch(`/notifications/${id}/unread`, {});
   },
   markAllNotificationsRead() {
     return api.post("/notifications/read-all");
