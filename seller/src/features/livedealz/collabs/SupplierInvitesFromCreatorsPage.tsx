@@ -191,6 +191,8 @@ function toInvite(record) {
   const inviteDirection = String(metadata.inviteDirection || "").toLowerCase();
   return {
     id: String(record?.id || ""),
+    campaignId: String(record?.campaignId || metadata.campaignId || ""),
+    creatorUserId: String(metadata.creatorUserId || metadata.senderUserId || ""),
     creator: creatorName,
     initials: String(metadata.creatorInitials || "")
       .trim()
@@ -218,6 +220,7 @@ function toInvite(record) {
     ),
     creatorRating: metadata.creatorRating == null ? undefined : Number(metadata.creatorRating),
     avatarUrl: typeof metadata.avatarUrl === "string" ? metadata.avatarUrl : undefined,
+    _raw: record,
     _direction: inviteDirection
   };
 }
@@ -235,7 +238,7 @@ function useScrollLock(locked) {
   }, [locked]);
 }
 
-function NegotiationDrawer({ isOpen, onClose, recipientName, recipientInitials, defaultCategory, aiSuggestion }) {
+function NegotiationDrawer({ isOpen, onClose, recipientName, recipientInitials, defaultCategory, aiSuggestion, onSubmit }) {
   useScrollLock(isOpen);
 
   const [message, setMessage] = useState(aiSuggestion || "");
@@ -399,10 +402,16 @@ function NegotiationDrawer({ isOpen, onClose, recipientName, recipientInitials, 
           <button
             type="button"
             className="w-full py-2.5 rounded-full bg-[#f77f00] text-white text-sm font-extrabold hover:bg-[#e26f00]"
-            onClick={() => {
-              toast(`Counter sent to ${recipientName || "Creator"} · ${model} · ${currency}${budget} · ${approvalMode}`);
-              onClose();
-            }}
+            onClick={() =>
+              onSubmit({
+                message,
+                model,
+                approvalMode,
+                budget,
+                currency,
+                timeline
+              })
+            }
             disabled={!message.trim()}
           >
             Send counter
@@ -746,6 +755,67 @@ export default function SupplierInvitesFromCreatorsPage() {
     setDrawerOpen(true);
   };
 
+  const submitCounter = (payload) => {
+    if (!drawerInvite) return;
+    run(
+      async () => {
+        if (!drawerInvite.creatorUserId) {
+          throw new Error("Invite is missing the creator user relationship.");
+        }
+
+        const budgetValue = Number(payload.budget || 0);
+        const proposal = await sellerBackendApi.createCollaborationProposal({
+          creatorId: drawerInvite.creatorUserId,
+          campaignId: drawerInvite.campaignId || undefined,
+          title: drawerInvite.campaign || "Collaboration proposal",
+          summary: payload.message,
+          amount: budgetValue || drawerInvite.estimatedValue || drawerInvite.baseFee || 0,
+          currency: payload.currency || drawerInvite.currency || "USD",
+          status: "NEGOTIATING",
+          metadata: {
+            inviteId: drawerInvite.id,
+            origin: "my-proposal",
+            proposalSource: "invite-counter",
+            inviteDirection: drawerInvite._direction || "creator_to_seller",
+            creatorUsageDecision: "I will use a Creator",
+            collabMode: "Invite-Only",
+            approvalMode: payload.approvalMode,
+            category: drawerInvite.category || "General",
+            region: drawerInvite.region || "Global",
+            estimatedValue: budgetValue || drawerInvite.estimatedValue || 0,
+            baseFeeMin: budgetValue || drawerInvite.baseFee || 0,
+            baseFeeMax: budgetValue || drawerInvite.baseFee || 0,
+            feeMin: budgetValue || drawerInvite.baseFee || 0,
+            feeMax: budgetValue || drawerInvite.baseFee || 0,
+            offerType: payload.model || "Hybrid",
+            scheduleHint: `${payload.timeline} days`,
+            liveWindow: `${payload.timeline} days`,
+            deliverablesList: []
+          }
+        });
+
+        await sellerBackendApi.createCollaborationProposalMessage(String(proposal.id), {
+          body: payload.message,
+          messageType: "COMMENT"
+        });
+
+        setInvites((prev) =>
+          prev.map((invite) =>
+            invite.id === drawerInvite.id
+              ? {
+                  ...invite,
+                  status: "In discussion",
+                  lastActivity: "Counter sent · Just now"
+                }
+              : invite
+          )
+        );
+        setDrawerOpen(false);
+      },
+      { successMessage: `Counter sent to ${drawerInvite.creator || "Creator"}.` }
+    );
+  };
+
   const handleAccept = (id) => {
     run(
       async () => {
@@ -972,6 +1042,7 @@ export default function SupplierInvitesFromCreatorsPage() {
             ? `Hi ${drawerInvite.creator}, thanks for reaching out about ${drawerInvite.campaign}. I’m interested. Here’s a counter proposal that aligns budget, deliverables, and approval workflow…`
             : undefined
         }
+        onSubmit={submitCounter}
       />
 
       <ToastArea />

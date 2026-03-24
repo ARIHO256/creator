@@ -382,6 +382,26 @@ export class CollaborationService {
       }
     });
 
+    const counterpartUserIds = [proposal.creatorId, proposal.seller?.userId].filter(
+      (candidate, index, list): candidate is string => Boolean(candidate) && candidate !== userId && list.indexOf(candidate) === index
+    );
+    if (counterpartUserIds.length) {
+      await this.createNotifications(
+        counterpartUserIds,
+        `New proposal for ${proposal.title}`,
+        `A new collaboration proposal was created for ${proposal.title}.`,
+        'proposal_created',
+        sanitizePayload(
+          {
+            proposalId: proposal.id,
+            campaignId: proposal.campaignId ?? null,
+            campaignTitle: proposal.campaign?.title ?? proposal.title
+          },
+          { maxDepth: 6, maxArrayLength: 50, maxKeys: 50 }
+        ) as Prisma.InputJsonValue
+      );
+    }
+
     return this.serializeProposal(proposal);
   }
 
@@ -452,7 +472,7 @@ export class CollaborationService {
 
   async proposalMessage(userId: string, id: string, payload: CreateProposalMessageDto) {
     const proposal = await this.ensureProposal(userId, id);
-    return this.prisma.proposalMessage.create({
+    const message = await this.prisma.proposalMessage.create({
       data: {
         proposalId: proposal.id,
         authorUserId: userId,
@@ -460,6 +480,36 @@ export class CollaborationService {
         messageType: payload.messageType ?? 'COMMENT'
       }
     });
+
+    const proposalRecord = await this.prisma.proposal.findUnique({
+      where: { id: proposal.id },
+      include: {
+        seller: true,
+        campaign: true
+      }
+    });
+    const counterpartUserIds = [proposalRecord?.creatorId, proposalRecord?.seller?.userId].filter(
+      (candidate, index, list): candidate is string => Boolean(candidate) && candidate !== userId && list.indexOf(candidate) === index
+    );
+    if (proposalRecord && counterpartUserIds.length) {
+      await this.createNotifications(
+        counterpartUserIds,
+        `New negotiation message for ${proposalRecord.title}`,
+        payload.body,
+        'proposal_message',
+        sanitizePayload(
+          {
+            proposalId: proposalRecord.id,
+            campaignId: proposalRecord.campaignId ?? null,
+            campaignTitle: proposalRecord.campaign?.title ?? proposalRecord.title,
+            messageType: payload.messageType ?? 'COMMENT'
+          },
+          { maxDepth: 6, maxArrayLength: 50, maxKeys: 50 }
+        ) as Prisma.InputJsonValue
+      );
+    }
+
+    return message;
   }
 
   async proposalTransition(userId: string, id: string, payload: TransitionProposalDto) {
@@ -876,7 +926,7 @@ export class CollaborationService {
 
   async createTask(userId: string, payload: CreateTaskDto) {
     await this.assertTaskScope(userId, payload);
-    return this.prisma.task.create({
+    const created = await this.prisma.task.create({
       data: {
         campaignId: payload.campaignId,
         contractId: payload.contractId,
@@ -890,11 +940,14 @@ export class CollaborationService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+
+    await this.notifyTaskParticipants(created.id, userId, 'task_created', `New task: ${created.title}`, `A new task was created: ${created.title}.`);
+    return created;
   }
 
   async updateTask(userId: string, id: string, payload: UpdateTaskDto) {
     const task = await this.ensureTask(userId, id);
-    return this.prisma.task.update({
+    const updated = await this.prisma.task.update({
       where: { id: task.id },
       data: {
         ...payload,
@@ -902,23 +955,29 @@ export class CollaborationService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       }
     });
+
+    await this.notifyTaskParticipants(updated.id, userId, 'task_updated', `Task updated: ${updated.title}`, `Task ${updated.title} was updated.`);
+    return updated;
   }
 
   async taskComment(userId: string, id: string, payload: CreateTaskCommentDto) {
     const task = await this.ensureTask(userId, id);
-    return this.prisma.taskComment.create({
+    const comment = await this.prisma.taskComment.create({
       data: {
         taskId: task.id,
         authorUserId: userId,
         body: payload.body
       }
     });
+
+    await this.notifyTaskParticipants(task.id, userId, 'task_comment', `New comment on ${task.title}`, payload.body);
+    return comment;
   }
 
   async taskAttachment(userId: string, id: string, payload: CreateTaskAttachmentDto) {
     const task = await this.ensureTask(userId, id);
     const file = normalizeFileIntake(payload);
-    return this.prisma.taskAttachment.create({
+    const attachment = await this.prisma.taskAttachment.create({
       data: {
         taskId: task.id,
         addedByUserId: userId,
@@ -937,6 +996,9 @@ export class CollaborationService {
         } as Prisma.InputJsonValue
       }
     });
+
+    await this.notifyTaskParticipants(task.id, userId, 'task_attachment', `New attachment on ${task.title}`, `${file.name} was attached to ${task.title}.`);
+    return attachment;
   }
 
   async assets(userId: string) {
@@ -968,7 +1030,7 @@ export class CollaborationService {
       kind: payload.assetType
     });
 
-    return this.prisma.deliverableAsset.create({
+    const asset = await this.prisma.deliverableAsset.create({
       data: {
         campaignId: payload.campaignId,
         contractId: payload.contractId,
@@ -989,11 +1051,14 @@ export class CollaborationService {
         } as Prisma.InputJsonValue
       }
     });
+
+    await this.notifyAssetParticipants(asset.id, userId, 'asset_submitted', `New asset submitted: ${asset.title}`, `${asset.title} was submitted for review.`);
+    return asset;
   }
 
   async reviewAsset(userId: string, id: string, payload: ReviewAssetDto) {
     const asset = await this.ensureAsset(userId, id);
-    return this.prisma.deliverableAsset.update({
+    const updated = await this.prisma.deliverableAsset.update({
       where: { id: asset.id },
       data: {
         reviewerUserId: userId,
@@ -1001,6 +1066,15 @@ export class CollaborationService {
         status: payload.status ?? 'IN_REVIEW'
       }
     });
+
+    await this.notifyAssetParticipants(
+      updated.id,
+      userId,
+      'asset_reviewed',
+      `Asset reviewed: ${updated.title}`,
+      payload.reviewNotes || `${updated.title} status changed to ${payload.status ?? 'IN_REVIEW'}.`
+    );
+    return updated;
   }
 
   private workspaceAccessClause(userId: string) {
@@ -1268,6 +1342,119 @@ export class CollaborationService {
           }
         })
       )
+    );
+  }
+
+  private async notifyTaskParticipants(
+    taskId: string,
+    actorUserId: string,
+    kind: string,
+    title: string,
+    body: string
+  ) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        campaign: {
+          include: {
+            seller: true
+          }
+        },
+        contract: {
+          include: {
+            seller: true
+          }
+        }
+      }
+    });
+
+    if (!task) {
+      return;
+    }
+
+    const recipients = [
+      task.createdByUserId,
+      task.assigneeUserId,
+      task.campaign?.creatorId,
+      task.campaign?.seller?.userId,
+      task.contract?.creatorId,
+      task.contract?.seller?.userId
+    ].filter((candidate, index, list): candidate is string => Boolean(candidate) && candidate !== actorUserId && list.indexOf(candidate) === index);
+
+    if (!recipients.length) {
+      return;
+    }
+
+    await this.createNotifications(
+      recipients,
+      title,
+      body,
+      kind,
+      sanitizePayload(
+        {
+          taskId: task.id,
+          contractId: task.contractId ?? null,
+          campaignId: task.campaignId ?? task.contract?.campaignId ?? null
+        },
+        { maxDepth: 4, maxArrayLength: 25, maxKeys: 25 }
+      ) as Prisma.InputJsonValue
+    );
+  }
+
+  private async notifyAssetParticipants(
+    assetId: string,
+    actorUserId: string,
+    kind: string,
+    title: string,
+    body: string
+  ) {
+    const asset = await this.prisma.deliverableAsset.findUnique({
+      where: { id: assetId },
+      include: {
+        campaign: {
+          include: {
+            seller: true
+          }
+        },
+        contract: {
+          include: {
+            seller: true
+          }
+        }
+      }
+    });
+
+    if (!asset) {
+      return;
+    }
+
+    const recipients = [
+      asset.ownerUserId,
+      asset.reviewerUserId,
+      asset.campaign?.creatorId,
+      asset.campaign?.seller?.userId,
+      asset.contract?.creatorId,
+      asset.contract?.seller?.userId
+    ].filter((candidate, index, list): candidate is string => Boolean(candidate) && candidate !== actorUserId && list.indexOf(candidate) === index);
+
+    if (!recipients.length) {
+      return;
+    }
+
+    await this.createNotifications(
+      recipients,
+      title,
+      body,
+      kind,
+      sanitizePayload(
+        {
+          assetId: asset.id,
+          contractId: asset.contractId ?? null,
+          campaignId: asset.campaignId ?? asset.contract?.campaignId ?? null,
+          status: asset.status
+        },
+        { maxDepth: 4, maxArrayLength: 25, maxKeys: 25 }
+      ) as Prisma.InputJsonValue
     );
   }
 

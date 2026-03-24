@@ -1121,6 +1121,11 @@ export const sellerBackendApi = {
     }),
   getMyCreatorsWorkspace: () => request<Record<string, unknown>>("/api/my-creators/workspace"),
   getCollaborationProposals: () => request<Array<Record<string, unknown>>>("/api/proposals"),
+  createCollaborationProposal: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/proposals", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getCollaborationProposal: (id: string) =>
     request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}`),
   updateCollaborationProposal: (id: string, body: Record<string, unknown>) =>

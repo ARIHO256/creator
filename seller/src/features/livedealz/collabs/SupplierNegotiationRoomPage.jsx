@@ -40,6 +40,34 @@ function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
 
+function mapProposalStatusToRoomStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "ACCEPTED") return "Contract created";
+  if (normalized === "IN_REVIEW") return "Final review";
+  if (normalized === "NEGOTIATING") return "Negotiating";
+  return "Draft";
+}
+
+function mapProposalMessages(messages, fallbackName) {
+  return (Array.isArray(messages) ? messages : []).map((entry, index) => {
+    const author = String(entry?.author || "");
+    const lower = author.toLowerCase();
+    const from =
+      lower.includes("system")
+        ? "system"
+        : lower.includes("supplier") || lower.includes("seller")
+          ? "supplier"
+          : "creator";
+    return {
+      id: index + 1,
+      from,
+      name: author || (from === "creator" ? fallbackName || "Creator" : from === "supplier" ? "You (Supplier)" : "System"),
+      time: entry?.createdAt ? new Date(String(entry.createdAt)).toLocaleTimeString() : "Now",
+      body: String(entry?.body || "")
+    };
+  });
+}
+
 function PageHeader({ pageTitle, badge, right }) {
   return (
     <header className="sticky top-0 z-40 w-full bg-white dark:bg-slate-900/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
@@ -147,6 +175,12 @@ export default function SupplierNegotiationRoomPage() {
 
   const [status, setStatus] = useState("Negotiating");
   const [closedReason, setClosedReason] = useState(null);
+  const [proposalId, setProposalId] = useState(null);
+  const [creatorName, setCreatorName] = useState("Ronald (Creator)");
+  const [campaignTitle, setCampaignTitle] = useState("Autumn Beauty Flash · Serum Launch");
+  const [campaignSummary, setCampaignSummary] = useState("Live + Shoppable Adz campaign to push the new serum across East Africa.");
+  const [regionLabel, setRegionLabel] = useState("East Africa · Online only");
+  const [lastUpdatedLabel, setLastUpdatedLabel] = useState("2h ago");
 
   const baseTerms = useMemo(
     () => ({
@@ -245,6 +279,79 @@ export default function SupplierNegotiationRoomPage() {
   const [attachedFile, setAttachedFile] = useState(null);
   const fileInputRef = useRef(null);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const searchParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    const requestedProposalId = searchParams.get("proposalId");
+    const requestedCampaignId = searchParams.get("campaignId");
+    const requestedCreator = searchParams.get("creator");
+
+    const load = async () => {
+      try {
+        let proposal = null;
+        if (requestedProposalId) {
+          proposal = await sellerBackendApi.getCollaborationProposal(requestedProposalId);
+        } else {
+          const proposals = await sellerBackendApi.getCollaborationProposals();
+          const rows = Array.isArray(proposals) ? proposals : [];
+          proposal =
+            rows.find((entry) => String(entry?.campaignId || "") === String(requestedCampaignId || "")) ||
+            rows.find((entry) => {
+              const creator = String(entry?.creatorName || entry?.creator || "").toLowerCase();
+              const creatorHandle = String(entry?.metadata?.creatorHandle || "").toLowerCase();
+              const target = String(requestedCreator || "").toLowerCase();
+              return target && (creator.includes(target.replace(/^@/, "")) || creatorHandle === target);
+            }) ||
+            rows[0] ||
+            null;
+        }
+
+        if (!proposal || cancelled) return;
+
+        const metadata = proposal.metadata && typeof proposal.metadata === "object" && !Array.isArray(proposal.metadata)
+          ? proposal.metadata
+          : {};
+
+        setProposalId(String(proposal.id || ""));
+        setStatus(mapProposalStatusToRoomStatus(proposal.status));
+        setCreatorName(String(proposal.creatorName || proposal.creator || "Creator"));
+        setCampaignTitle(String(proposal.campaignTitle || proposal.title || "Negotiation"));
+        setCampaignSummary(String(proposal.summary || "Shared proposal loaded from collaboration workspace."));
+        setRegionLabel(String(metadata.region || "East Africa · Online only"));
+        setLastUpdatedLabel(proposal.updatedAt ? `Updated · ${new Date(String(proposal.updatedAt)).toLocaleDateString()}` : "Synced from workspace");
+        setCreatorUsageDecision(String(metadata.creatorUsageDecision || "I will use a Creator"));
+        setCollabMode(String(metadata.collabMode || "Invite-only"));
+        setApprovalMode(String(metadata.approvalMode || "Manual"));
+        setTerms({
+          deliverables: Array.isArray(metadata.deliverablesList) && metadata.deliverablesList.length
+            ? metadata.deliverablesList.map((entry) => `• ${String(entry?.label || entry?.title || entry)}`).join("\n")
+            : Array.isArray(metadata.deliverables) && metadata.deliverables.length
+              ? metadata.deliverables.map((entry) => `• ${String(entry?.label || entry?.title || entry)}`).join("\n")
+              : String(metadata.deliverables || proposal.summary || baseTerms.deliverables),
+          schedule: String(metadata.schedule || metadata.liveWindow || metadata.scheduleHint || baseTerms.schedule),
+          compensation: String(
+            metadata.compensation ||
+            (typeof proposal.amount === "number"
+              ? `• Flat fee: ${proposal.currency || "USD"} ${proposal.amount.toLocaleString()}`
+              : baseTerms.compensation)
+          )
+        });
+        const nextMessages = mapProposalMessages(proposal.messages, String(proposal.creatorName || proposal.creator || ""));
+        if (nextMessages.length) {
+          setMessages(nextMessages);
+        }
+      } catch {
+        // keep room usable even when no backend match is found
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [baseTerms.compensation, baseTerms.deliverables, baseTerms.schedule]);
+
   const messagesEndRef = useRef(null);
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -255,6 +362,8 @@ export default function SupplierNegotiationRoomPage() {
     const trimmed = String(draftMessage || "").trim();
     if (!trimmed && !attachedFile) return;
 
+    const body = attachedFile ? `${trimmed}\n\n📎 Attached: ${attachedFile.name}` : trimmed;
+
     setMessages((prev) => [
       ...prev,
       {
@@ -262,12 +371,19 @@ export default function SupplierNegotiationRoomPage() {
         from: "supplier",
         name: "You (Supplier)",
         time: "Now",
-        body: attachedFile ? `${trimmed}\n\n📎 Attached: ${attachedFile.name}` : trimmed
+        body
       }
     ]);
     setDraftMessage("");
     setAttachedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (proposalId) {
+      void sellerBackendApi.createCollaborationProposalMessage(proposalId, {
+        body,
+        messageType: attachedFile ? "FILE" : "COMMENT"
+      });
+    }
   };
 
   const pushSystem = (body) => {
@@ -290,41 +406,117 @@ export default function SupplierNegotiationRoomPage() {
 
   const saveTermUpdates = () => {
     if (!canEditTerms) return;
-    pushSystem("Supplier updated terms. Creator notified. (Demo)");
-    toastIt("Terms update saved", "success");
+    if (!proposalId) {
+      pushSystem("Supplier updated terms. Creator notified.");
+      toastIt("Terms update saved", "success");
+      return;
+    }
+    void sellerBackendApi
+      .updateCollaborationProposal(proposalId, {
+        summary: terms.deliverables,
+        metadata: {
+          creatorUsageDecision,
+          collabMode,
+          approvalMode,
+          region: regionLabel,
+          deliverables: terms.deliverables,
+          schedule: terms.schedule,
+          compensation: terms.compensation
+        }
+      })
+      .then(() => sellerBackendApi.createCollaborationProposalMessage(proposalId, {
+        body: "Supplier updated the proposal terms.",
+        messageType: "SYSTEM"
+      }))
+      .then(() => {
+        pushSystem("Supplier updated terms. Creator notified.");
+        toastIt("Terms update saved", "success");
+      })
+      .catch(() => {
+        toastIt("Unable to save terms", "error");
+      });
   };
 
   const moveToFinalReview = () => {
     if (closedReason) return;
-    setStatus("Final review");
-    pushSystem("Supplier moved negotiation to Final review. (Demo)");
-    toastIt("Moved to Final review", "success");
+    const complete = () => {
+      setStatus("Final review");
+      pushSystem("Supplier moved negotiation to Final review.");
+      toastIt("Moved to Final review", "success");
+    };
+    if (!proposalId) {
+      complete();
+      return;
+    }
+    void sellerBackendApi.transitionCollaborationProposal(proposalId, { status: "IN_REVIEW" })
+      .then(() => sellerBackendApi.createCollaborationProposalMessage(proposalId, {
+        body: "Supplier moved the proposal to final review.",
+        messageType: "SYSTEM"
+      }))
+      .then(complete)
+      .catch(() => toastIt("Unable to move to Final review", "error"));
   };
 
   const createContract = () => {
     if (closedReason) return;
-    setStatus("Contract created");
-    pushSystem(
-      `Contract created. Next steps: ${approvalMode === "Manual" ? "Supplier approves content before Admin review." : "Content goes to Admin directly."} (Demo)`
-    );
-    toastIt("Contract created", "success");
+    const complete = () => {
+      setStatus("Contract created");
+      pushSystem(
+        `Contract created. Next steps: ${approvalMode === "Manual" ? "Supplier approves content before Admin review." : "Content goes to Admin directly."}`
+      );
+      toastIt("Contract created", "success");
+    };
+    if (!proposalId) {
+      complete();
+      return;
+    }
+    void sellerBackendApi.transitionCollaborationProposal(proposalId, { status: "ACCEPTED" })
+      .then(complete)
+      .catch(() => toastIt("Unable to create contract", "error"));
   };
 
   const endNegotiation = (reason) => {
-    setClosedReason(reason);
-    pushSystem(`Negotiation ended by Supplier. Reason: ${reason}. (Demo)`);
-    toastIt("Negotiation closed", "warn");
+    const complete = () => {
+      setClosedReason(reason);
+      pushSystem(`Negotiation ended by Supplier. Reason: ${reason}.`);
+      toastIt("Negotiation closed", "warn");
+    };
+    if (!proposalId) {
+      complete();
+      return;
+    }
+    void sellerBackendApi.transitionCollaborationProposal(proposalId, { status: "REJECTED" })
+      .then(() => sellerBackendApi.createCollaborationProposalMessage(proposalId, {
+        body: `Negotiation closed by supplier. Reason: ${reason}.`,
+        messageType: "SYSTEM"
+      }))
+      .then(complete)
+      .catch(() => toastIt("Unable to close negotiation", "error"));
   };
 
   const reopenNegotiation = () => {
-    setClosedReason(null);
-    pushSystem("Negotiation reopened (renegotiation). (Demo)");
-    toastIt("Renegotiation reopened", "success");
+    const complete = () => {
+      setClosedReason(null);
+      setStatus("Negotiating");
+      pushSystem("Negotiation reopened.");
+      toastIt("Renegotiation reopened", "success");
+    };
+    if (!proposalId) {
+      complete();
+      return;
+    }
+    void sellerBackendApi.transitionCollaborationProposal(proposalId, { status: "NEGOTIATING" })
+      .then(() => sellerBackendApi.createCollaborationProposalMessage(proposalId, {
+        body: "Negotiation reopened by supplier.",
+        messageType: "SYSTEM"
+      }))
+      .then(complete)
+      .catch(() => toastIt("Unable to reopen negotiation", "error"));
   };
 
   const pageBadge = (
     <span className="text-xs text-slate-500 dark:text-slate-300">
-      Negotiation ID: N-221 · Autumn Beauty Flash · Invite-only collaboration
+      Negotiation ID: {proposalId || "N-221"} · {campaignTitle} · Invite-only collaboration
     </span>
   );
 
@@ -373,17 +565,17 @@ export default function SupplierNegotiationRoomPage() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-md font-semibold dark:font-bold">Ronald (Creator)</span>
+                    <span className="text-md font-semibold dark:font-bold">{creatorName}</span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-slate-900 text-white">Verified Creator</span>
                   </div>
-                  <p className="text-sm font-medium mb-0.5">Autumn Beauty Flash · Serum Launch</p>
+                  <p className="text-sm font-medium mb-0.5">{campaignTitle}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-300 mb-0.5">
-                    Live + Shoppable Adz campaign to push the new serum across East Africa.
+                    {campaignSummary}
                   </p>
                   <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-300 mt-1">
                     <span>Live window: Friday · 20:00–21:30 EAT</span>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
-                    <span>Region: East Africa · Online only</span>
+                    <span>Region: {regionLabel}</span>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
                     <span>Category: Beauty & Skincare</span>
                   </div>
@@ -405,7 +597,7 @@ export default function SupplierNegotiationRoomPage() {
                 <AgreementStatusBar status={status} onStep={(s) => !closedReason && setStatus(s)} />
 
                 <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-200 mt-1">
-                  <span>Last updated: 2h ago</span>
+                  <span>Last updated: {lastUpdatedLabel}</span>
                   <span>Owner: Supplier</span>
                 </div>
 
