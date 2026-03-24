@@ -5,6 +5,7 @@ import ProfileSellerView from "./Profile.SellerView";
 
 import { sellerBackendApi } from "../../lib/backendApi";
 
+
 void sellerBackendApi.getWorkflowScreenState("seller-feature:settings/Profile").catch(() => undefined);
 
 export default function ProfilePage() {

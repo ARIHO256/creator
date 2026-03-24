@@ -6,6 +6,7 @@ import SupportChangelogPage from './SupportChangelog';
 
 import { sellerBackendApi } from "../../lib/backendApi";
 
+
 void sellerBackendApi.getWorkflowScreenState("seller-feature:misc/HelpSupport").catch(() => undefined);
 
 export default function HelpSupport() {

@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { sellerBackendApi } from '../../../lib/backendApi';
 import { sellerBackendApi as backendApi } from '../../../lib/backendApi';
 import {
+
   buildCampaignBuilderPayload,
   buildCampaignPayload,
   mapCampaignBuilderRecord,
   mapCampaignWorkspace,
 } from './runtime';
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/overview/SupplierMyCampaignsPage").catch(() => undefined);
+
 const ORANGE = '#f77f00';
 
 declare global {

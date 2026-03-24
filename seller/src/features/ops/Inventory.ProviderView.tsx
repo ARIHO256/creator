@@ -3,6 +3,7 @@ import { useLocalization } from "../../localization/LocalizationProvider";
 
 import { sellerBackendApi } from "../../lib/backendApi";
 
+
 void sellerBackendApi.getWorkflowScreenState("seller-feature:ops/Inventory.ProviderView").catch(() => undefined);
 
 // Provider — Capacity & Asset Inventory

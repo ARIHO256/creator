@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -14,6 +15,8 @@ import {
   Users,
 } from "lucide-react";
 import { sellerBackendApi } from "../../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/analytics/SupplierAnalyticsStatusPage").catch(() => undefined);
 
 /**
  * AnalyticsRankDetailPage (Supplier View)

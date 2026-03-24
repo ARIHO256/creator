@@ -1,11 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useThemeMode as useAppThemeMode, type ThemeMode as AppThemeMode } from "../../theme/themeMode";
-import {
 import { sellerBackendApi } from "../../lib/backendApi";
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:landing/Landing").catch(() => undefined);
-
+import {
   ArrowRight,
   BadgeCheck,
   BarChart3,
@@ -41,6 +38,8 @@ void sellerBackendApi.getWorkflowScreenState("seller-feature:landing/Landing").c
   Menu,
   X,
 } from "lucide-react";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:landing/Landing").catch(() => undefined);
 
 /**
  * EVzone + MyLiveDealz Seller Landing Page (Enterprise v3 Full)

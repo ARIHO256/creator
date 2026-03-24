@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { sellerBackendApi } from "../../../lib/backendApi";
 
+
 void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/collabs/SupplierContractsPage").catch(() => undefined);
 
 /**

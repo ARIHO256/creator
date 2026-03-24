@@ -1,7 +1,9 @@
+
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import { sellerBackendApi as backendApi } from "../../../lib/backendApi";
 import type { ListingAdzPrefill } from "../../listings/adzPrefill";
 import {
@@ -11,6 +13,8 @@ import {
   mapBackendAdzBuilder,
   mapMediaAssetToAdBuilderAsset,
 } from "./runtime";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/adz/SupplierAdBuilderPage").catch(() => undefined);
 
 /**
  * Dependency-free stubs for China-CDN safety and simple drop-in.

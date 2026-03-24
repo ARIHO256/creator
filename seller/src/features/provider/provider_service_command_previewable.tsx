@@ -4,6 +4,7 @@ import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import { useNavigate } from "react-router-dom";
 import {
+
   AlarmClock,
   AlertTriangle,
   ArrowRight,
@@ -31,6 +32,8 @@ import {
   Wand2,
   X,
 } from "lucide-react";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:provider/provider_service_command_previewable").catch(() => undefined);
 
 /**
  * Service Command (Provider)

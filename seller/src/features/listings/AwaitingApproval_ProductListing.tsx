@@ -5,6 +5,7 @@ import { useLocalization } from "../../localization/LocalizationProvider";
 
 import { sellerBackendApi } from "../../lib/backendApi";
 
+
 void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/AwaitingApproval_ProductListing").catch(() => undefined);
 
 // Awaiting approval screen shown after a seller publishes a product listing

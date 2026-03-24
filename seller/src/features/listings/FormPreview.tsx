@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+
   AppBar,
   Toolbar,
   IconButton,
@@ -18,6 +19,8 @@ import {
 } from "@mui/material";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/FormPreview").catch(() => undefined);
 
 // -----------------------------------------------------------------------------
 // EVzone brand palette (light mode)

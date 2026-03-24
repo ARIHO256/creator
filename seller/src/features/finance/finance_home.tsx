@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
+
   AlertTriangle,
   BarChart3,
   Check,
@@ -25,6 +26,8 @@ import {
   X,
   Clock,
 } from "lucide-react";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:finance/finance_home").catch(() => undefined);
 
 /**
  * Finance Home (Overview)
