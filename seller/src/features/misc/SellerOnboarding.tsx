@@ -711,43 +711,18 @@ const DEFAULT_POLICY_PRESETS: PolicyPresetOption[] = [
 ];
 
 const DEFAULT_ONBOARDING_LOOKUPS: OnboardingLookups = {
-  languages: LANGUAGE_OPTIONS,
-  taxpayerTypes: [
-    { value: "business", label: "Business / company" },
-    { value: "individual", label: "Individual" },
-  ],
-  payoutMethods: DEFAULT_PAYOUT_METHODS,
-  payoutCurrencies: DEFAULT_PAYOUT_CURRENCIES,
-  payoutRhythms: DEFAULT_PAYOUT_RHYTHMS,
-  mobileMoneyProviders: [
-    { value: "MTN Mobile Money", label: "MTN Mobile Money" },
-    { value: "Airtel Money", label: "Airtel Money" },
-    { value: "M-Pesa", label: "M-Pesa" },
-    { value: "Safaricom", label: "Safaricom" },
-    { value: "Orange Money", label: "Orange Money" },
-    { value: "Wave", label: "Wave" },
-  ],
-  mobileIdTypes: [
-    { value: "national_id", label: "National ID" },
-    { value: "passport", label: "Passport" },
-    { value: "drivers_license", label: "Driver's License" },
-    { value: "tax_id", label: "Tax ID" },
-    { value: "residence_permit", label: "Residence Permit" },
-    { value: "voter_id", label: "Voter ID" },
-  ],
+  languages: [],
+  taxpayerTypes: [],
+  payoutMethods: [],
+  payoutCurrencies: [],
+  payoutRhythms: [],
+  mobileMoneyProviders: [],
+  mobileIdTypes: [],
   payoutRegions: {
-    alipay: [
-      { value: "mainland", label: "Mainland China" },
-      { value: "hong_kong", label: "Hong Kong SAR" },
-      { value: "other", label: "Other region" },
-    ],
-    wechat: [
-      { value: "mainland", label: "Mainland China" },
-      { value: "hong_kong", label: "Hong Kong SAR" },
-      { value: "other", label: "Other region" },
-    ],
+    alipay: [],
+    wechat: [],
   },
-  policyPresets: DEFAULT_POLICY_PRESETS,
+  policyPresets: [],
 };
 
 function clamp(n, a, b) {

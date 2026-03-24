@@ -27,194 +27,29 @@ import {
   sellerSlugToHandle
 } from './onboarding-state.js';
 
-const DEFAULT_ONBOARDING_LOOKUPS = {
-  languages: [
-    { code: 'en', label: 'English' },
-    { code: 'sw', label: 'Swahili' },
-    { code: 'fr', label: 'French' },
-    { code: 'ar', label: 'Arabic' },
-    { code: 'pt', label: 'Portuguese' },
-    { code: 'es', label: 'Spanish' },
-    { code: 'de', label: 'German' },
-    { code: 'zh-CN', label: 'Chinese (Simplified)' }
-  ],
-  taxpayerTypes: [
-    { value: 'business', label: 'Business / company' },
-    { value: 'individual', label: 'Individual' }
-  ],
-  payoutMethods: [
-    {
-      value: 'bank_account',
-      label: 'Bank account',
-      helper: 'Local or international bank settlement.'
-    },
-    {
-      value: 'mobile_money',
-      label: 'Mobile money',
-      helper: 'MTN, Airtel and other wallet providers.'
-    },
-    {
-      value: 'alipay',
-      label: 'Alipay',
-      helper: 'For payouts to Mainland China or Hong Kong.'
-    },
-    {
-      value: 'wechat_pay',
-      label: 'WeChat Pay (Weixin Pay)',
-      helper: 'For payouts to WeChat wallets.'
-    },
-    {
-      value: 'other_local',
-      label: 'Other payout method',
-      helper: 'Cheque, local wallet or regional solution.'
-    }
-  ],
-  payoutCurrencies: ['USD', 'EUR', 'CNY', 'UGX', 'KES', 'TZS', 'RWF', 'ZAR'],
-  payoutRhythms: [
-    { value: 'daily', label: 'Daily', helper: 'Payouts generated every business day.' },
-    { value: 'weekly', label: 'Weekly', helper: 'Payouts grouped once per week.' },
-    { value: 'biweekly', label: 'Biweekly', helper: 'Payouts grouped every two weeks.' },
-    { value: 'monthly', label: 'Monthly', helper: 'Payouts grouped at month end.' },
-    {
-      value: 'on_threshold',
-      label: 'When balance reaches a threshold',
-      helper: 'We pay out once your balance reaches a minimum amount.'
-    }
-  ],
-  mobileMoneyProviders: [
-    { value: 'MTN Mobile Money', label: 'MTN Mobile Money' },
-    { value: 'Airtel Money', label: 'Airtel Money' },
-    { value: 'M-Pesa', label: 'M-Pesa' },
-    { value: 'Safaricom', label: 'Safaricom' },
-    { value: 'Orange Money', label: 'Orange Money' },
-    { value: 'Wave', label: 'Wave' }
-  ],
-  mobileIdTypes: [
-    { value: 'national_id', label: 'National ID' },
-    { value: 'passport', label: 'Passport' },
-    { value: 'drivers_license', label: "Driver's License" },
-    { value: 'tax_id', label: 'Tax ID' },
-    { value: 'residence_permit', label: 'Residence Permit' },
-    { value: 'voter_id', label: 'Voter ID' }
-  ],
+const EMPTY_ONBOARDING_LOOKUPS = {
+  languages: [],
+  taxpayerTypes: [],
+  payoutMethods: [],
+  payoutCurrencies: [],
+  payoutRhythms: [],
+  mobileMoneyProviders: [],
+  mobileIdTypes: [],
   payoutRegions: {
-    alipay: [
-      { value: 'mainland', label: 'Mainland China' },
-      { value: 'hong_kong', label: 'Hong Kong SAR' },
-      { value: 'other', label: 'Other region' }
-    ],
-    wechat: [
-      { value: 'mainland', label: 'Mainland China' },
-      { value: 'hong_kong', label: 'Hong Kong SAR' },
-      { value: 'other', label: 'Other region' }
-    ]
+    alipay: [],
+    wechat: []
   },
-  providerRegions: [
-    { value: 'UG', label: 'Uganda' },
-    { value: 'KE', label: 'Kenya' },
-    { value: 'TZ', label: 'Tanzania' },
-    { value: 'RW', label: 'Rwanda' },
-    { value: 'NG', label: 'Nigeria' },
-    { value: 'GH', label: 'Ghana' },
-    { value: 'ZA', label: 'Southern Africa' },
-    { value: 'AE', label: 'UAE' },
-    { value: 'GB', label: 'United Kingdom' },
-    { value: 'US', label: 'United States' }
-  ],
-  supplierModels: ['Seller', 'Provider', 'Seller + Provider'],
-  supplierTargetRegions: [
-    'East Africa',
-    'Southern Africa',
-    'West Africa',
-    'North Africa',
-    'Asia',
-    'Europe',
-    'North America'
-  ],
-  productCategories: [
-    'Electronics',
-    'Fashion & Beauty',
-    'Food & Groceries',
-    'Home & Living',
-    'General Supplies',
-    'EV & Mobility',
-    'Medical & Health',
-    'Education',
-    'Travel & Tourism',
-    'Properties & Supplies'
-  ],
-  serviceCategories: [
-    'Consultations',
-    'Installation Services',
-    'Maintenance',
-    'Digital Marketing',
-    'Construction & Engineering',
-    'Creative & Design',
-    'Education & Training',
-    'Freelance & On-Demand'
-  ],
-  contentFormats: [
-    'Live Sessionz',
-    'Shoppable Adz',
-    'Replays & Clips',
-    'UGC (Brand Content)',
-    'Short-form (Reels/Shorts)',
-    'Long-form (YouTube)'
-  ],
-  creatorUsageDecisions: [
-    'I will use a Creator',
-    'I will NOT use a Creator',
-    'I am NOT SURE yet'
-  ],
-  collabModes: ['Open for Collabs', 'Invite-only'],
-  approvalModes: ['Manual Content Approval', 'Auto Approval'],
-  payoutMethodCards: [
-    {
-      key: 'Bank',
-      title: 'Bank',
-      desc: 'Best for stable settlements and high volume.'
-    },
-    {
-      key: 'Mobile Money',
-      title: 'Mobile Money',
-      desc: 'Fast and popular across Africa.'
-    },
-    {
-      key: 'PayPal / Wallet',
-      title: 'PayPal / Wallet',
-      desc: 'Use existing wallets in supported regions.'
-    },
-    {
-      key: 'AliPay',
-      title: 'AliPay',
-      desc: 'China payment method for cross-border payments.'
-    },
-    {
-      key: 'WeChat Pay',
-      title: 'WeChat Pay',
-      desc: 'China payment method for cross-border payments.'
-    }
-  ],
-  policyPresets: [
-    {
-      id: 'standard',
-      label: 'Standard',
-      desc: 'Balanced defaults for most sellers.',
-      patch: { returnsDays: '7', warrantyDays: '90', handlingTimeDays: '2' }
-    },
-    {
-      id: 'fast',
-      label: 'Fast',
-      desc: 'Optimized for high conversion (quick dispatch).',
-      patch: { returnsDays: '7', warrantyDays: '30', handlingTimeDays: '1' }
-    },
-    {
-      id: 'strict',
-      label: 'Strict',
-      desc: 'Lower returns risk (use carefully by category).',
-      patch: { returnsDays: '3', warrantyDays: '0', handlingTimeDays: '3' }
-    }
-  ]
+  providerRegions: [],
+  supplierModels: [],
+  supplierTargetRegions: [],
+  productCategories: [],
+  serviceCategories: [],
+  contentFormats: [],
+  creatorUsageDecisions: [],
+  collabModes: [],
+  approvalModes: [],
+  payoutMethodCards: [],
+  policyPresets: []
 };
 
 @Injectable()
@@ -275,18 +110,28 @@ export class WorkflowService {
   async onboarding(userId: string) {
     const profileType = await this.resolveOnboardingProfileType(userId);
     const payload = await this.getOnboardingPayload(userId, profileType);
-    return payload
-      ? normalizeStoredOnboardingState(payload, profileType)
-      : createDefaultOnboardingState(profileType);
+    if (payload) {
+      return normalizeStoredOnboardingState(payload, profileType);
+    }
+    const initial = createDefaultOnboardingState(profileType);
+    await this.upsertOnboardingPayload(userId, profileType, initial);
+    return initial;
   }
 
   async onboardingLookups() {
-    const existing = await this.prisma.systemContent.findUnique({
-      where: { key: 'onboarding_lookups' }
-    });
+    const key = 'onboarding_lookups';
+    const existing = await this.prisma.systemContent.findUnique({ where: { key } });
+    const record =
+      existing ??
+      (await this.prisma.systemContent.create({
+        data: {
+          key,
+          payload: {} as Prisma.InputJsonValue
+        }
+      }));
     const payload =
-      existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
-        ? (existing.payload as Record<string, unknown>)
+      record.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+        ? (record.payload as Record<string, unknown>)
         : {};
     const payoutRegions =
       payload.payoutRegions && typeof payload.payoutRegions === 'object' && !Array.isArray(payload.payoutRegions)
@@ -294,34 +139,34 @@ export class WorkflowService {
         : {};
 
     return {
-      ...DEFAULT_ONBOARDING_LOOKUPS,
+      ...EMPTY_ONBOARDING_LOOKUPS,
       ...payload,
       payoutMethods: Array.isArray(payload.payoutMethods)
         ? payload.payoutMethods
-        : DEFAULT_ONBOARDING_LOOKUPS.payoutMethods,
+        : EMPTY_ONBOARDING_LOOKUPS.payoutMethods,
       payoutCurrencies: Array.isArray(payload.payoutCurrencies)
         ? payload.payoutCurrencies
-        : DEFAULT_ONBOARDING_LOOKUPS.payoutCurrencies,
+        : EMPTY_ONBOARDING_LOOKUPS.payoutCurrencies,
       payoutRhythms: Array.isArray(payload.payoutRhythms)
         ? payload.payoutRhythms
-        : DEFAULT_ONBOARDING_LOOKUPS.payoutRhythms,
+        : EMPTY_ONBOARDING_LOOKUPS.payoutRhythms,
       mobileMoneyProviders: Array.isArray(payload.mobileMoneyProviders)
         ? payload.mobileMoneyProviders
-        : DEFAULT_ONBOARDING_LOOKUPS.mobileMoneyProviders,
+        : EMPTY_ONBOARDING_LOOKUPS.mobileMoneyProviders,
       mobileIdTypes: Array.isArray(payload.mobileIdTypes)
         ? payload.mobileIdTypes
-        : DEFAULT_ONBOARDING_LOOKUPS.mobileIdTypes,
+        : EMPTY_ONBOARDING_LOOKUPS.mobileIdTypes,
       payoutRegions: {
         alipay: Array.isArray(payoutRegions.alipay)
           ? payoutRegions.alipay
-          : DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.alipay,
+          : EMPTY_ONBOARDING_LOOKUPS.payoutRegions.alipay,
         wechat: Array.isArray(payoutRegions.wechat)
           ? payoutRegions.wechat
-          : DEFAULT_ONBOARDING_LOOKUPS.payoutRegions.wechat
+          : EMPTY_ONBOARDING_LOOKUPS.payoutRegions.wechat
       },
       policyPresets: Array.isArray(payload.policyPresets)
         ? payload.policyPresets
-        : DEFAULT_ONBOARDING_LOOKUPS.policyPresets
+        : EMPTY_ONBOARDING_LOOKUPS.policyPresets
     };
   }
 

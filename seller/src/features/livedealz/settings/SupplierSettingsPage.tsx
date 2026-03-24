@@ -656,18 +656,18 @@ const PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "RWF", "ZAR
 const PAYOUT_RHYTHMS = ["Daily", "Weekly", "Biweekly", "Monthly", "When balance reaches a threshold"];
 
 const DEFAULT_SUPPLIER_SETTINGS_LOOKUPS = {
-  languages: LANGUAGE_OPTIONS,
-  supplierModels: SUPPLIER_MODELS,
-  supplierTargetRegions: REGION_OPTIONS,
-  productCategories: PRODUCT_CATEGORIES,
-  serviceCategories: SERVICE_CATEGORIES,
-  contentFormats: CONTENT_FORMATS,
-  creatorUsageDecisions: CREATOR_USAGE_DECISIONS,
-  collabModes: COLLAB_MODES,
-  approvalModes: APPROVAL_MODES,
-  payoutMethodCards: PAYOUT_METHODS,
-  payoutCurrencies: PAYOUT_CURRENCIES,
-  payoutRhythms: PAYOUT_RHYTHMS
+  languages: [],
+  supplierModels: [],
+  supplierTargetRegions: [],
+  productCategories: [],
+  serviceCategories: [],
+  contentFormats: [],
+  creatorUsageDecisions: [],
+  collabModes: [],
+  approvalModes: [],
+  payoutMethodCards: [],
+  payoutCurrencies: [],
+  payoutRhythms: []
 };
 
 function normalizeStringOptions(value, fallback) {

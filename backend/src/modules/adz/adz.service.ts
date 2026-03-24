@@ -19,16 +19,15 @@ export class AdzService {
     if (existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)) {
       return existing.payload as Record<string, unknown>;
     }
-    const payload = { utmPresets: [] };
     const record = await this.prisma.systemContent.upsert({
       where: { key },
-      update: { payload: payload as Prisma.InputJsonValue },
+      update: { payload: {} as Prisma.InputJsonValue },
       create: {
         key,
-        payload: payload as Prisma.InputJsonValue
+        payload: {} as Prisma.InputJsonValue
       }
     });
-    return (record.payload as Record<string, unknown>) ?? payload;
+    return (record.payload as Record<string, unknown>) ?? {};
   }
 
   async builder(id: string, userId: string) {

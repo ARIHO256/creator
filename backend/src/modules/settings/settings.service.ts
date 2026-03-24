@@ -1397,9 +1397,6 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : defaultValue;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return defaultValue;
-      }
       throw error;
     }
   }
@@ -1411,9 +1408,6 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : null;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return null;
-      }
       throw error;
     }
   }
@@ -1425,39 +1419,21 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : null;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return null;
-      }
       throw error;
     }
   }
 
   private async upsertWorkspaceSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    try {
-      return await this.prisma.workspaceSetting.upsert({
-        where: { userId_key: { userId, key } },
-        update: { payload: sanitized as Prisma.InputJsonValue },
-        create: {
-          userId,
-          key,
-          payload: sanitized as Prisma.InputJsonValue
-        }
-      });
-    } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        const now = new Date();
-        return {
-          id: `workspace-setting-fallback:${userId}:${key}`,
-          userId,
-          key,
-          payload: sanitized,
-          createdAt: now,
-          updatedAt: now
-        };
+    return await this.prisma.workspaceSetting.upsert({
+      where: { userId_key: { userId, key } },
+      update: { payload: sanitized as Prisma.InputJsonValue },
+      create: {
+        userId,
+        key,
+        payload: sanitized as Prisma.InputJsonValue
       }
-      throw error;
-    }
+    });
   }
 
   private async getUserSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
@@ -1467,39 +1443,21 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : defaultValue;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return defaultValue;
-      }
       throw error;
     }
   }
 
   private async upsertUserSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    try {
-      return await this.prisma.userSetting.upsert({
-        where: { userId_key: { userId, key } },
-        update: { payload: sanitized as Prisma.InputJsonValue },
-        create: {
-          userId,
-          key,
-          payload: sanitized as Prisma.InputJsonValue
-        }
-      });
-    } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        const now = new Date();
-        return {
-          id: `user-setting-fallback:${userId}:${key}`,
-          userId,
-          key,
-          payload: sanitized,
-          createdAt: now,
-          updatedAt: now
-        };
+    return await this.prisma.userSetting.upsert({
+      where: { userId_key: { userId, key } },
+      update: { payload: sanitized as Prisma.InputJsonValue },
+      create: {
+        userId,
+        key,
+        payload: sanitized as Prisma.InputJsonValue
       }
-      throw error;
-    }
+    });
   }
 
   private ensurePayload(payload: unknown) {

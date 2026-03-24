@@ -385,6 +385,49 @@ export class CommunicationsService {
     return this.serializeSupportTicket(updated);
   }
 
+  async updateOwnSupportTicket(userId: string, role: string, id: string, body: UpdateSupportTicketDto) {
+    const ticket = await this.prisma.supportTicket.findFirst({
+      where: { id, userId }
+    });
+    if (!ticket || !this.matchesRoleMetadata(ticket.metadata, role)) {
+      throw new NotFoundException('Support ticket not found');
+    }
+
+    const nextStatus = body.status ? this.normalizeSupportStatus(body.status) : ticket.status;
+    if (body.status) {
+      this.assertSupportTransition(ticket.status, nextStatus);
+    }
+
+    const updated = await this.prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: {
+        status: nextStatus,
+        category: body.category ?? undefined,
+        subject: body.subject ?? undefined,
+        severity: body.severity ?? undefined,
+        ref: body.ref ?? undefined,
+        closedAt: nextStatus === 'CLOSED' ? new Date() : nextStatus === 'RESOLVED' ? ticket.closedAt : null
+      }
+    });
+    await this.audit.log({
+      userId,
+      action: 'support.ticket_updated_by_owner',
+      entityType: 'support_ticket',
+      entityId: id,
+      route: `/api/help-support/tickets/${id}`,
+      method: 'PATCH',
+      statusCode: 200,
+      metadata: { status: updated.status }
+    });
+    await this.realtime.publishUserEvent(userId, {
+      type: 'support.ticket.updated',
+      ticketId: updated.id,
+      status: updated.status,
+      updatedAt: updated.updatedAt.toISOString()
+    });
+    return this.serializeSupportTicket(updated);
+  }
+
   async assignSupportTicket(userId: string, id: string, body: AssignSupportTicketDto) {
     const ticket = await this.prisma.supportTicket.findUnique({ where: { id } });
     if (!ticket) {
