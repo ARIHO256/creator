@@ -480,8 +480,18 @@ function NewLiveSessionDrawer({
   const [hostId, setHostId] = useState("");
   const [title, setTitle] = useState("New Live Session");
   const [platforms, setPlatforms] = useState<LivePlatform[]>(["TikTok Live", "Instagram Live"]);
+  const [startDateISO, setStartDateISO] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endDateISO, setEndDateISO] = useState("");
+  const [endTime, setEndTime] = useState("");
 
   const scopedCampaigns = useMemo(() => campaigns.filter((c) => c.supplierId === supplierId), [campaigns, supplierId]);
+  const scheduleReady = useMemo(() => {
+    if (!startDateISO || !startTime || !endDateISO || !endTime) return false;
+    const start = new Date(`${startDateISO}T${startTime}`);
+    const end = new Date(`${endDateISO}T${endTime}`);
+    return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end.getTime() > start.getTime();
+  }, [startDateISO, startTime, endDateISO, endTime]);
 
   useEffect(() => {
     if (!open) return;
@@ -489,6 +499,10 @@ function NewLiveSessionDrawer({
     setHostId((prev) => (prev && hosts.some((entry) => entry.id === prev) ? prev : ""));
     setTitle("New Live Session");
     setPlatforms(["TikTok Live", "Instagram Live"]);
+    setStartDateISO("");
+    setStartTime("");
+    setEndDateISO("");
+    setEndTime("");
   }, [open, suppliers, hosts]);
 
   useEffect(() => {
@@ -501,7 +515,8 @@ function NewLiveSessionDrawer({
     supplierId &&
       hostId &&
       title.trim() &&
-      platforms.length,
+      platforms.length &&
+      scheduleReady,
   );
 
   return (
@@ -546,6 +561,25 @@ function NewLiveSessionDrawer({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Start date</div>
+                <input type="date" value={startDateISO} onChange={(e) => setStartDateISO(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Start time</div>
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">End date</div>
+                <input type="date" value={endDateISO} onChange={(e) => setEndDateISO(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">End time</div>
+                <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
             </div>
           </div>
         </Card>
@@ -592,9 +626,8 @@ function NewLiveSessionDrawer({
         <PrimaryButton
           disabled={!canCreate || createPending}
           onClick={() => {
-            // Default to now + 1hr (unscheduled)
-            const startISO = new Date(Date.now() + 3600 * 1000).toISOString();
-            const endISO = new Date(Date.now() + 7200 * 1000).toISOString();
+            const startISO = combineDateTime(startDateISO, startTime);
+            const endISO = combineDateTime(endDateISO, endTime);
             void Promise.resolve(
               onCreate({
                 title: title.trim(),

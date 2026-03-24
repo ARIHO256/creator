@@ -187,7 +187,7 @@ function ContentSubmissionReviewPage({ onChangePage: _onChangePage }: ContentSub
       status: "Pending" as const,
       riskScore: 25,
       submittedAtISO: new Date().toISOString(),
-      dueAtISO: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      dueAtISO: "",
       notesFromCreator: notes,
       caption: caption,
       assets: selectedFiles.map(f => ({
