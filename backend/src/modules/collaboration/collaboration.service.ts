@@ -319,6 +319,7 @@ export class CollaborationService {
     const proposals = await this.prisma.proposal.findMany({
       where: this.proposalAccessClause(userId),
       include: {
+        campaign: true,
         seller: true,
         creator: {
           include: {
@@ -356,7 +357,7 @@ export class CollaborationService {
       throw new ForbiddenException('Cannot submit proposal for another creator');
     }
 
-    return this.prisma.proposal.create({
+    const proposal = await this.prisma.proposal.create({
       data: {
         campaignId: payload.campaignId,
         sellerId,
@@ -370,6 +371,7 @@ export class CollaborationService {
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
       },
       include: {
+        campaign: true,
         seller: true,
         creator: {
           include: {
@@ -379,12 +381,15 @@ export class CollaborationService {
         messages: true
       }
     });
+
+    return this.serializeProposal(proposal);
   }
 
   async proposal(userId: string, id: string) {
     const proposal = await this.prisma.proposal.findFirst({
       where: { id, ...this.proposalAccessClause(userId) },
       include: {
+        campaign: true,
         seller: true,
         creator: {
           include: {
@@ -414,13 +419,35 @@ export class CollaborationService {
 
   async updateProposal(userId: string, id: string, payload: UpdateProposalDto) {
     const proposal = await this.ensureProposal(userId, id);
-    return this.prisma.proposal.update({
+    const updated = await this.prisma.proposal.update({
       where: { id: proposal.id },
       data: {
         ...payload,
         metadata: payload.metadata as Prisma.InputJsonValue | undefined
+      },
+      include: {
+        campaign: true,
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        },
+        messages: {
+          include: {
+            author: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'asc' }
+        }
       }
     });
+
+    return this.serializeProposal(updated);
   }
 
   async proposalMessage(userId: string, id: string, payload: CreateProposalMessageDto) {
@@ -436,11 +463,152 @@ export class CollaborationService {
   }
 
   async proposalTransition(userId: string, id: string, payload: TransitionProposalDto) {
-    const proposal = await this.ensureProposal(userId, id);
-    return this.prisma.proposal.update({
-      where: { id: proposal.id },
-      data: { status: payload.status }
+    const proposal = await this.prisma.proposal.findFirst({
+      where: { id, ...this.proposalAccessClause(userId) },
+      include: {
+        campaign: true,
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        },
+        messages: {
+          include: {
+            author: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'asc' }
+        }
+      }
     });
+
+    if (!proposal) {
+      throw new NotFoundException('Proposal not found');
+    }
+
+    const nextStatus = this.normalizeProposalTransitionStatus(payload.status);
+    const proposalMetadata = this.normalizeCampaignMetadata(proposal.metadata);
+    const transitionAt = new Date().toISOString();
+    let nextMetadata = proposalMetadata;
+
+    if (nextStatus === 'ACCEPTED') {
+      nextMetadata = this.deepMerge(nextMetadata, {
+        acceptedAt: transitionAt
+      });
+    } else if (nextStatus === 'REJECTED') {
+      nextMetadata = this.deepMerge(nextMetadata, {
+        declinedAt: transitionAt
+      });
+    }
+
+    await this.prisma.proposal.update({
+      where: { id: proposal.id },
+      data: {
+        status: nextStatus,
+        metadata: nextMetadata as Prisma.InputJsonValue
+      }
+    });
+
+    let contract = null as Awaited<ReturnType<typeof this.ensureContractForProposal>> | null;
+    if (nextStatus === 'ACCEPTED') {
+      contract = await this.ensureContractForProposal({
+        ...proposal,
+        status: nextStatus,
+        metadata: nextMetadata
+      });
+      const contractMetadata = this.deepMerge(nextMetadata, {
+        contractId: contract.id,
+        contractStatus: contract.status,
+        contractCreatedAt: contract.createdAt?.toISOString?.() ?? contract.createdAt ?? transitionAt
+      });
+      await this.prisma.proposal.update({
+        where: { id: proposal.id },
+        data: {
+          metadata: contractMetadata as Prisma.InputJsonValue
+        }
+      });
+    }
+
+    await this.prisma.proposalMessage.create({
+      data: {
+        proposalId: proposal.id,
+        authorUserId: userId,
+        body:
+          nextStatus === 'ACCEPTED'
+            ? `Proposal accepted.${contract ? ` Contract ${contract.id} is now active.` : ''}`
+            : nextStatus === 'REJECTED'
+              ? 'Proposal declined.'
+              : nextStatus === 'NEGOTIATING'
+                ? 'Proposal moved into negotiation.'
+                : `Proposal status changed to ${nextStatus}.`,
+        messageType: 'SYSTEM'
+      }
+    });
+
+    const counterpartUserIds = [proposal.creatorId, proposal.seller?.userId].filter(
+      (candidate, index, list): candidate is string => Boolean(candidate) && candidate !== userId && list.indexOf(candidate) === index
+    );
+    if (counterpartUserIds.length) {
+      await this.createNotifications(
+        counterpartUserIds,
+        nextStatus === 'ACCEPTED'
+          ? `Proposal accepted for ${proposal.title}`
+          : nextStatus === 'REJECTED'
+            ? `Proposal declined for ${proposal.title}`
+            : `Proposal updated for ${proposal.title}`,
+        nextStatus === 'ACCEPTED'
+          ? `The proposal for ${proposal.title} was accepted and moved into contract execution.`
+          : nextStatus === 'REJECTED'
+            ? `The proposal for ${proposal.title} was declined.`
+            : `The proposal for ${proposal.title} changed status to ${nextStatus}.`,
+        'proposal_transition',
+        sanitizePayload(
+          {
+            proposalId: proposal.id,
+            contractId: contract?.id ?? null,
+            campaignId: proposal.campaignId ?? null,
+            campaignTitle: proposal.campaign?.title ?? proposal.title,
+            status: nextStatus
+          },
+          { maxDepth: 6, maxArrayLength: 50, maxKeys: 50 }
+        ) as Prisma.InputJsonValue
+      );
+    }
+
+    const refreshed = await this.prisma.proposal.findUnique({
+      where: { id: proposal.id },
+      include: {
+        campaign: true,
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        },
+        messages: {
+          include: {
+            author: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'asc' }
+        }
+      }
+    });
+
+    if (!refreshed) {
+      throw new NotFoundException('Proposal not found');
+    }
+
+    return this.serializeProposal(refreshed);
   }
 
   async contracts(userId: string) {
@@ -484,15 +652,91 @@ export class CollaborationService {
   }
 
   async terminateContract(userId: string, id: string, payload: { reason?: string }) {
-    const contract = await this.ensureContract(userId, id);
-    return this.prisma.contract.update({
+    const contract = await this.prisma.contract.findFirst({
+      where: { id, ...this.contractAccessClause(userId) },
+      include: {
+        campaign: true,
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        }
+      }
+    });
+
+    if (!contract) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    const updatedMetadata = this.deepMerge(this.normalizeCampaignMetadata(contract.metadata), {
+      terminationRequest: {
+        requestedAt: new Date().toISOString(),
+        requestedByUserId: userId,
+        reason: payload.reason ?? null
+      }
+    });
+
+    await this.prisma.contract.update({
       where: { id: contract.id },
       data: {
         status: 'TERMINATION_REQUESTED',
         terminationRequestedAt: new Date(),
-        terminationReason: payload.reason ?? null
+        terminationReason: payload.reason ?? null,
+        metadata: updatedMetadata as Prisma.InputJsonValue
       }
     });
+
+    const adminUsers = await this.prisma.user.findMany({
+      where: {
+        role: {
+          in: ['ADMIN', 'SUPPORT']
+        }
+      },
+      select: { id: true }
+    });
+
+    const notifiedUserIds = [contract.creatorId, contract.seller?.userId, ...adminUsers.map((entry) => entry.id)].filter(
+      (candidate, index, list): candidate is string => Boolean(candidate) && candidate !== userId && list.indexOf(candidate) === index
+    );
+    if (notifiedUserIds.length) {
+      await this.createNotifications(
+        notifiedUserIds,
+        `Termination requested for ${contract.title}`,
+        `${contract.title} has a new termination request${payload.reason ? `: ${payload.reason}` : '.'}`,
+        'contract_termination_requested',
+        sanitizePayload(
+          {
+            contractId: contract.id,
+            campaignId: contract.campaignId ?? null,
+            campaignTitle: contract.campaign?.title ?? contract.title,
+            reason: payload.reason ?? null
+          },
+          { maxDepth: 6, maxArrayLength: 50, maxKeys: 50 }
+        ) as Prisma.InputJsonValue
+      );
+    }
+
+    const refreshed = await this.prisma.contract.findUnique({
+      where: { id: contract.id },
+      include: {
+        campaign: true,
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        },
+        tasks: true,
+        assets: true
+      }
+    });
+
+    if (!refreshed) {
+      throw new NotFoundException('Contract not found');
+    }
+
+    return this.serializeContract(refreshed);
   }
 
   async tasks(userId: string) {
@@ -909,17 +1153,143 @@ export class CollaborationService {
     return actor;
   }
 
+  private normalizeProposalTransitionStatus(value: string) {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (normalized === 'DECLINED') {
+      return 'REJECTED';
+    }
+    if (
+      normalized === 'DRAFT' ||
+      normalized === 'SUBMITTED' ||
+      normalized === 'IN_REVIEW' ||
+      normalized === 'NEGOTIATING' ||
+      normalized === 'ACCEPTED' ||
+      normalized === 'REJECTED' ||
+      normalized === 'WITHDRAWN'
+    ) {
+      return normalized;
+    }
+    throw new BadRequestException('Unsupported proposal transition');
+  }
+
+  private async ensureContractForProposal(proposal: any) {
+    const proposalMetadata = this.normalizeCampaignMetadata(proposal.metadata);
+    const existing = await this.prisma.contract.findFirst({
+      where: {
+        proposalId: proposal.id
+      }
+    });
+
+    const deliverables = Array.isArray(proposalMetadata.deliverablesList)
+      ? proposalMetadata.deliverablesList
+      : Array.isArray(proposalMetadata.deliverables)
+        ? proposalMetadata.deliverables
+        : [];
+    const proposalTimeline = Array.isArray(proposalMetadata.timeline) ? proposalMetadata.timeline : [];
+    const proposalSchedule = Array.isArray(proposalMetadata.schedule) ? proposalMetadata.schedule : [];
+    const createdAt = new Date();
+    const nextMetadata = sanitizePayload(
+      {
+        ...proposalMetadata,
+        proposalId: proposal.id,
+        proposalStatus: proposal.status,
+        campaignTitle: proposal.campaign?.title ?? proposalMetadata.campaignTitle ?? proposal.title,
+        creatorUsageDecision: this.readMetadataString(proposalMetadata, 'creatorUsageDecision') || 'I will use a Creator',
+        collabMode: this.readMetadataString(proposalMetadata, 'collabMode') || 'Invite-Only',
+        approvalMode: this.readMetadataString(proposalMetadata, 'approvalMode') || 'Manual',
+        payoutStatus: this.readMetadataString(proposalMetadata, 'payoutStatus') || 'In progress',
+        health: this.readMetadataString(proposalMetadata, 'health') || 'On track',
+        healthScore: typeof proposalMetadata.healthScore === 'number' ? proposalMetadata.healthScore : 80,
+        deliverablesList: deliverables,
+        deliverables,
+        schedule: proposalSchedule,
+        timeline:
+          proposalTimeline.length
+            ? proposalTimeline
+            : [
+                {
+                  date: createdAt.toISOString(),
+                  label: 'Proposal accepted'
+                }
+              ]
+      },
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Prisma.InputJsonValue;
+
+    if (existing) {
+      return this.prisma.contract.update({
+        where: { id: existing.id },
+        data: {
+          campaignId: proposal.campaignId ?? existing.campaignId,
+          sellerId: proposal.sellerId,
+          creatorId: proposal.creatorId,
+          title: proposal.title,
+          scope: proposal.summary,
+          value: proposal.amount,
+          currency: proposal.currency ?? existing.currency,
+          status: 'ACTIVE',
+          metadata: nextMetadata
+        }
+      });
+    }
+
+    return this.prisma.contract.create({
+      data: {
+        campaignId: proposal.campaignId,
+        proposalId: proposal.id,
+        sellerId: proposal.sellerId,
+        creatorId: proposal.creatorId,
+        title: proposal.title,
+        scope: proposal.summary,
+        value: proposal.amount,
+        currency: proposal.currency ?? 'USD',
+        status: 'ACTIVE',
+        metadata: nextMetadata
+      }
+    });
+  }
+
+  private async createNotifications(
+    userIds: string[],
+    title: string,
+    body: string,
+    kind: string,
+    metadata: Prisma.InputJsonValue
+  ) {
+    await Promise.all(
+      userIds.map((userId) =>
+        this.prisma.notification.create({
+          data: {
+            userId,
+            title,
+            body,
+            kind,
+            metadata
+          }
+        })
+      )
+    );
+  }
+
   private serializeProposal(proposal: any) {
+    const metadata = this.normalizeCampaignMetadata(proposal.metadata);
     return {
       id: proposal.id,
+      campaignId: proposal.campaignId ?? null,
+      campaignTitle: proposal.campaign?.title ?? this.readMetadataString(metadata, 'campaignTitle') ?? proposal.title,
       title: proposal.title,
       summary: proposal.summary,
       amount: proposal.amount,
       currency: proposal.currency,
       status: proposal.status,
-      metadata: proposal.metadata,
+      metadata,
+      sellerId: proposal.sellerId,
+      sellerName: proposal.seller.displayName,
       seller: proposal.seller.displayName,
+      creatorId: proposal.creatorId,
+      creatorName: proposal.creator.creatorProfile?.name ?? proposal.creator.email,
       creator: proposal.creator.creatorProfile?.name ?? proposal.creator.email,
+      submittedByUserId: proposal.submittedByUserId,
       messages: proposal.messages.map((message) => ({
         ...message,
         author:
@@ -928,8 +1298,8 @@ export class CollaborationService {
           message.author?.email ??
           null
       })),
-      createdAt: proposal.createdAt,
-      updatedAt: proposal.updatedAt
+      createdAt: proposal.createdAt?.toISOString?.() ?? proposal.createdAt ?? null,
+      updatedAt: proposal.updatedAt?.toISOString?.() ?? proposal.updatedAt ?? null
     };
   }
 
@@ -1506,6 +1876,24 @@ export class CollaborationService {
     const metadata = this.normalizeCampaignMetadata(contract.metadata);
     const creatorName = contract.creator?.creatorProfile?.name ?? contract.creator?.email ?? null;
     const creatorHandle = contract.creator?.creatorProfile?.handle ? `@${contract.creator.creatorProfile.handle}` : null;
+    const period = this.readMetadataString(metadata, 'period')
+      || [contract.startAt?.toISOString?.() ?? contract.startAt, contract.endAt?.toISOString?.() ?? contract.endAt]
+        .filter(Boolean)
+        .map((value) => {
+          const date = new Date(String(value));
+          return Number.isNaN(date.getTime()) ? null : date.toISOString();
+        })
+        .filter(Boolean)
+        .join(' – ')
+      || 'Current term';
+    const approvalMode = this.readMetadataString(metadata, 'approvalMode') || 'Manual';
+    const collabMode = this.readMetadataString(metadata, 'collabMode') || 'Open for Collabs';
+    const creatorUsageDecision = this.readMetadataString(metadata, 'creatorUsageDecision') || 'I will use a Creator';
+    const payoutStatus = this.readMetadataString(metadata, 'payoutStatus') || (contract.status === 'COMPLETED' ? 'Ready for payout' : 'In progress');
+    const health = this.readMetadataString(metadata, 'health') || (contract.status === 'TERMINATED' ? 'Terminated' : 'On track');
+    const healthScore = typeof metadata.healthScore === 'number' ? metadata.healthScore : contract.status === 'TERMINATED' ? 25 : 80;
+    const schedule = Array.isArray(metadata.schedule) ? metadata.schedule : [];
+    const timeline = Array.isArray(metadata.timeline) ? metadata.timeline : [];
 
     return {
       ...contract,
@@ -1520,6 +1908,19 @@ export class CollaborationService {
       campaignName: contract.campaign?.title ?? metadata.campaignTitle ?? null,
       campaign: contract.campaign?.title ?? metadata.campaignTitle ?? null,
       brand: contract.seller?.displayName ?? null,
+      proposalId: contract.proposalId ?? null,
+      startAt: contract.startAt?.toISOString?.() ?? contract.startAt ?? null,
+      endAt: contract.endAt?.toISOString?.() ?? contract.endAt ?? null,
+      period,
+      approvalMode,
+      collabMode,
+      creatorUsageDecision,
+      payoutStatus,
+      health,
+      healthScore,
+      schedule,
+      timeline,
+      multiCreatorCampaign: Boolean(metadata.multiCreatorCampaign),
       totalTasks:
         Array.isArray(metadata.deliverablesList)
           ? metadata.deliverablesList.length
@@ -1528,9 +1929,9 @@ export class CollaborationService {
             : 0,
       governance: {
         hostRole: this.readMetadataString(metadata, 'hostRole') || 'Creator',
-        creatorUsage: this.readMetadataString(metadata, 'creatorUsageDecision') || 'I will use a Creator',
-        collabMode: this.readMetadataString(metadata, 'collabMode') || 'Open for Collabs',
-        approvalMode: this.readMetadataString(metadata, 'approvalMode') || 'Manual'
+        creatorUsage: creatorUsageDecision,
+        collabMode,
+        approvalMode
       },
       deliverables: Array.isArray(metadata.deliverablesList)
         ? metadata.deliverablesList

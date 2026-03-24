@@ -50,6 +50,94 @@ function currencyFormat(value) {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function proposalInitials(name) {
+  return (
+    String(name || "CR")
+      .split(" ")
+      .map((part) => part.trim()[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "CR"
+  );
+}
+
+function mapProposalStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "DRAFT") return "Draft";
+  if (normalized === "ACCEPTED" || normalized === "APPROVED") return "Accepted";
+  if (normalized === "DECLINED" || normalized === "REJECTED") return "Declined";
+  if (normalized === "EXPIRED" || normalized === "WITHDRAWN") return "Expired";
+  if (normalized === "COUNTERED" || normalized === "NEGOTIATING" || normalized === "IN_NEGOTIATION" || normalized === "IN_REVIEW") {
+    return "In negotiation";
+  }
+  return "New";
+}
+
+function mapProposalOrigin(record, metadata) {
+  const direct = String(metadata.origin || metadata.inviteDirection || "").trim().toLowerCase();
+  if (direct === "from-creator" || direct === "creator_to_seller") return "from-creator";
+  if (direct === "my-proposal" || direct === "seller_to_creator") return "my-proposal";
+  if (record.submittedByUserId && record.creatorId && record.submittedByUserId === record.creatorId) {
+    return "from-creator";
+  }
+  return "my-proposal";
+}
+
+function formatProposalActivity(value) {
+  if (!value) return "Recently updated";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return `Updated · ${date.toLocaleDateString()}`;
+}
+
+function normalizeProposalDeliverables(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry, index) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object") {
+        return String(entry.label || entry.title || `Deliverable ${index + 1}`);
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
+
+function toProposal(record) {
+  const metadata = record?.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const feeMin = Number(metadata.baseFeeMin ?? metadata.feeMin ?? record.amount ?? metadata.baseFee ?? 0);
+  const feeMax = Number(metadata.baseFeeMax ?? metadata.feeMax ?? feeMin);
+  const estimatedValue = Number(metadata.estimatedValue ?? record.amount ?? feeMax ?? feeMin ?? 0);
+
+  return {
+    id: String(record.id || ""),
+    creator: String(record.creatorName || record.creator || ""),
+    initials: proposalInitials(record.creatorName || record.creator),
+    campaign: String(record.campaignTitle || record.title || ""),
+    origin: mapProposalOrigin(record, metadata),
+    offerType: String(metadata.offerType || metadata.type || "Collaboration offer"),
+    category: String(metadata.category || "All"),
+    region: String(metadata.region || "Global"),
+    baseFeeMin: feeMin,
+    baseFeeMax: feeMax,
+    currency: String(record.currency || metadata.currency || "USD"),
+    commissionPct: Number(metadata.commissionPct || 0),
+    estimatedValue,
+    status: mapProposalStatus(record.status),
+    lastActivity: formatProposalActivity(record.updatedAt || record.createdAt),
+    notesShort: String(record.summary || metadata.notesShort || metadata.messageShort || "Open proposal to review the shared terms."),
+    deliverables: normalizeProposalDeliverables(metadata.deliverablesList ?? metadata.deliverables),
+    approvalMode: String(metadata.approvalMode || "Manual"),
+    creatorUsageDecision: String(metadata.creatorUsageDecision || "I will use a Creator"),
+    collabMode: String(metadata.collabMode || "Invite-Only"),
+    scheduleHint: String(metadata.scheduleHint || metadata.liveWindow || "—"),
+    reviewSlaHours: Number(metadata.reviewSlaHours || 24),
+    proposalSource: String(metadata.proposalSource || metadata.inviteDirection || ""),
+    _metadata: metadata
+  };
+}
+
 
 
 /* -------------------------------- Toast -------------------------------- */
@@ -831,6 +919,27 @@ export default function SupplierProposalsPage() {
 
   const { run, isPending } = useAsyncAction();
 
+  useEffect(() => {
+    let active = true;
+
+    const loadProposals = async () => {
+      try {
+        const records = await sellerBackendApi.getCollaborationProposals();
+        if (!active) return;
+        setProposals(Array.isArray(records) ? records.map(toProposal) : []);
+      } catch {
+        if (!active) return;
+        setProposals([]);
+        toast("Proposals failed to load");
+      }
+    };
+
+    void loadProposals();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const selectedProposal = useMemo(() => {
     if (!selectedProposalId) return proposals[0] ?? null;
     return proposals.find((p) => p.id === selectedProposalId) ?? proposals[0] ?? null;
@@ -854,33 +963,21 @@ export default function SupplierProposalsPage() {
 
   const drawerProposal = useMemo(() => proposals.find((p) => p.id === drawerProposalId) ?? null, [drawerProposalId, proposals]);
 
-  const setStatus = (id, status, lastActivity) => {
-    setProposals((prev) => prev.map((p) => (p.id === id ? { ...p, status, lastActivity } : p)));
+  const replaceProposal = (record) => {
+    const next = toProposal(record);
+    setProposals((prev) => {
+      const found = prev.some((proposal) => proposal.id === next.id);
+      if (!found) return [next, ...prev];
+      return prev.map((proposal) => (proposal.id === next.id ? next : proposal));
+    });
+    return next;
   };
 
   const handleAcceptProposal = (id) => {
     run(
       async () => {
-        await new Promise((r) => setTimeout(r, 950));
-        setProposals((prev) =>
-          prev.map((p) => {
-            if (p.id !== id) return p;
-
-            // If campaign decision was "Not sure", accepting forces "Use a Creator".
-            const nextDecision = p.creatorUsageDecision === "I am NOT SURE yet" ? "I will use a Creator" : p.creatorUsageDecision;
-
-            // Accept implies Invite-Only when proposal becomes binding (unless already open collabs).
-            const nextCollab = p.collabMode === "Open for Collabs" ? "Open for Collabs" : "Invite-Only";
-
-            return {
-              ...p,
-              status: "Accepted",
-              lastActivity: "Accepted · Just now",
-              creatorUsageDecision: nextDecision,
-              collabMode: nextCollab
-            };
-          })
-        );
+        const updated = await sellerBackendApi.transitionCollaborationProposal(id, { status: "ACCEPTED" });
+        replaceProposal(updated);
       },
       { successMessage: "Proposal accepted!" }
     );
@@ -889,8 +986,8 @@ export default function SupplierProposalsPage() {
   const handleDeclineProposal = (id) => {
     run(
       async () => {
-        await new Promise((r) => setTimeout(r, 950));
-        setStatus(id, "Declined", "Declined · Just now");
+        const updated = await sellerBackendApi.transitionCollaborationProposal(id, { status: "DECLINED" });
+        replaceProposal(updated);
       },
       { successMessage: "Proposal declined." }
     );
@@ -902,27 +999,51 @@ export default function SupplierProposalsPage() {
   };
 
   const applyCounter = (id, payload) => {
-    setProposals((prev) =>
-      prev.map((p) => {
-        if (p.id !== id) return p;
+    run(
+      async () => {
+        const current = proposals.find((proposal) => proposal.id === id);
+        if (!current) {
+          throw new Error("Proposal not found");
+        }
+
         const newMin = payload.baseFeeMin;
         const newMax = payload.baseFeeMax;
-        const newEst = Math.max(p.estimatedValue || 0, Math.round((newMin + newMax) / 2) * 2);
-
-        return {
-          ...p,
-          status: "In negotiation",
-          lastActivity: "Counter sent · Just now",
+        const newEst = Math.max(current.estimatedValue || 0, Math.round((newMin + newMax) / 2) * 2);
+        const summary = payload.message.slice(0, 120) + (payload.message.length > 120 ? "…" : "");
+        const metadata = {
+          ...(current._metadata && typeof current._metadata === "object" ? current._metadata : {}),
           approvalMode: payload.approvalMode,
           baseFeeMin: newMin,
           baseFeeMax: newMax,
+          feeMin: newMin,
+          feeMax: newMax,
           commissionPct: payload.commissionPct,
           currency: payload.currency,
           estimatedValue: newEst,
-          notesShort: payload.message.slice(0, 120) + (payload.message.length > 120 ? "…" : ""),
-          deliverables: payload.deliverables
+          notesShort: summary,
+          deliverables: payload.deliverables,
+          deliverablesList: payload.deliverables.map((label, index) => ({
+            id: `${id}_${index + 1}`,
+            label,
+            due: "TBD",
+            status: "Pending"
+          }))
         };
-      })
+
+        await sellerBackendApi.updateCollaborationProposal(id, {
+          amount: newEst,
+          currency: payload.currency,
+          summary: payload.message,
+          metadata
+        });
+        await sellerBackendApi.createCollaborationProposalMessage(id, {
+          body: payload.message,
+          messageType: "COMMENT"
+        });
+        const updated = await sellerBackendApi.transitionCollaborationProposal(id, { status: "NEGOTIATING" });
+        replaceProposal(updated);
+      },
+      { successMessage: "Counter sent!" }
     );
   };
 

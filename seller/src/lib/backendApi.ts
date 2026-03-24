@@ -1120,6 +1120,24 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getMyCreatorsWorkspace: () => request<Record<string, unknown>>("/api/my-creators/workspace"),
+  getCollaborationProposals: () => request<Array<Record<string, unknown>>>("/api/proposals"),
+  getCollaborationProposal: (id: string) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}`),
+  updateCollaborationProposal: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  createCollaborationProposalMessage: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  transitionCollaborationProposal: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/transition`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getCollaborationContracts: () => request<Array<Record<string, unknown>>>("/api/contracts"),
   getCollaborationTask: (id: string) =>
     request<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(id)}`),
