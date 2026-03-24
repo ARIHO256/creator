@@ -62,16 +62,6 @@ type EarningsDataset = {
   contracts: ContractRecord[];
 };
 
-const INITIAL_EARNINGS_DATASET: EarningsDataset = {
-  summary: {
-    available: 0,
-    pending: 0,
-    lifetime: 0
-  },
-  payouts: [],
-  contracts: []
-};
-
 function toNumber(value: unknown) {
   const next = Number(value);
   return Number.isFinite(next) ? next : 0;
@@ -129,8 +119,8 @@ function EarningsDashboardPage() {
   const [isPayoutDialogOpen, setIsPayoutDialogOpen] = useState(false);
   const [payoutStatusFilter, setPayoutStatusFilter] = useState("All");
 
-  const { data: dataset, loading, error } = useApiResource<EarningsDataset>({
-    initialData: INITIAL_EARNINGS_DATASET,
+  const { data: dataset, loading, error } = useApiResource<EarningsDataset | null>({
+    initialData: null,
     loader: async () => {
       const [summary, payouts, contracts] = await Promise.all([
         creatorApi.earningsSummary(),
@@ -158,6 +148,17 @@ function EarningsDashboardPage() {
   }
 
   if (error) {
+    return (
+      <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <PageHeader pageTitle="Earnings Dashboard" />
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Earnings data is unavailable.
+        </div>
+      </div>
+    );
+  }
+
+  if (!dataset) {
     return (
       <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 p-6">
         <PageHeader pageTitle="Earnings Dashboard" />

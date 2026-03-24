@@ -480,9 +480,8 @@ export default function PostLivePublisherPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <button
-                className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-                onClick={() => setPlan((p) => (p === "Pro" ? "Standard" : "Pro"))}
-                title="Demo: toggle plan"
+                className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-200 transition"
+                type="button"
               >
                 <Sparkles className="h-4 w-4" />
                 Plan: {plan}

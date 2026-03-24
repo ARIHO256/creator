@@ -1192,8 +1192,8 @@ export default function AdzMarketplace() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [toast, setToast] = useState<string | null>(null);
-  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
-    initialData: EMPTY_MARKETPLACE_STATE,
+  const { data: workspaceState, setData: setWorkspaceState, loading, error } = useApiResource<DealzMarketplaceWorkspaceResponse | null>({
+    initialData: null,
     loader: () => creatorApi.dealzMarketplace(),
   });
 
@@ -1208,7 +1208,12 @@ export default function AdzMarketplace() {
   const selected = useMemo(() => ads.find((a) => a.id === selectedId), [ads, selectedId]);
 
   useEffect(() => {
-    const nextAds = mapWorkspaceToAds(workspaceState || EMPTY_MARKETPLACE_STATE);
+    if (!workspaceState) {
+      setAds([]);
+      setSelectedId("");
+      return;
+    }
+    const nextAds = mapWorkspaceToAds(workspaceState);
     setAds(nextAds);
     setSelectedId((current) => {
       if (current && nextAds.some((ad) => ad.id === current)) return current;
@@ -1217,6 +1222,24 @@ export default function AdzMarketplace() {
       return "";
     });
   }, [workspaceState]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading marketplace…
+      </div>
+    );
+  }
+
+  if (error || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Marketplace data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;

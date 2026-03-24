@@ -750,28 +750,23 @@ export default function CreatorLiveCrewManagementPremium() {
     durationMin: number;
   } | null>(null);
   const [hasHydratedCrew, setHasHydratedCrew] = useState(false);
-
-  const EMPTY_SESSION: Session = useMemo(
-    () => ({
-      id: "__none__",
-      title: "No live sessions",
-      supplierName: "—",
-      campaign: "—",
-      status: "Scheduled",
-      startISO: new Date().toISOString(),
-      durationMin: 0,
-      cohostSlots: 0
-    }),
+  const EMPTY_ASSIGNMENTS: Assignments = useMemo(
+    () => ({ hostId: null, producerId: null, moderatorIds: [], cohostIds: [] }),
+    []
+  );
+  const EMPTY_SESSION_PERMS: SessionPerms = useMemo(
+    () => ({ hosts: {}, producers: {}, moderators: {}, cohosts: {} }),
     []
   );
   const activeSession = useMemo(
-    () => sessions.find((s) => s.id === activeSessionId) || sessions[0] || EMPTY_SESSION,
-    [EMPTY_SESSION, sessions, activeSessionId]
+    () => sessions.find((s) => s.id === activeSessionId) || sessions[0] || null,
+    [sessions, activeSessionId]
   );
-  const activeAssignments = assignmentsBySession[activeSession.id] || { hostId: null, producerId: null, moderatorIds: [], cohostIds: [] };
+  const activeSessionIdSafe = activeSession?.id || "";
+  const activeAssignments = activeSession ? assignmentsBySession[activeSession.id] || EMPTY_ASSIGNMENTS : EMPTY_ASSIGNMENTS;
 
-  const sessionLocks = locksBySession[activeSession.id] || {};
-  const sessionPerms = sessionPermsBySession[activeSession.id] || { hosts: {}, producers: {}, moderators: {}, cohosts: {} };
+  const sessionLocks = activeSession ? locksBySession[activeSession.id] || {} : {};
+  const sessionPerms = activeSession ? sessionPermsBySession[activeSession.id] || EMPTY_SESSION_PERMS : EMPTY_SESSION_PERMS;
 
   function addAudit(who: string, what: string, meta: string) {
     setAudit((prev) => [{ id: uid("aud"), when: nowLabel(), who, what, meta }, ...prev].slice(0, 40));
@@ -965,7 +960,7 @@ export default function CreatorLiveCrewManagementPremium() {
     }
     const m = getMember(members, memberId);
     push("Availability update requested");
-    addAudit(currentUser, "Availability update requested", `${m?.name || memberId} · Session ${activeSession.id}`);
+    addAudit(currentUser, "Availability update requested", `${m?.name || memberId}${activeSessionIdSafe ? ` · Session ${activeSessionIdSafe}` : ""}`);
   }
 
   // Conflict detection: overlaps with other sessionz OR calendar busy
@@ -1178,7 +1173,7 @@ export default function CreatorLiveCrewManagementPremium() {
       addAudit(
         currentUser,
         exists ? `${m.name} removed as Moderator for Session ${sessionId}` : `${m.name} added as Moderator for Session ${sessionId}`,
-        activeSession.title
+        activeSession?.title || ""
       );
 
       return next;
@@ -1251,7 +1246,7 @@ export default function CreatorLiveCrewManagementPremium() {
       addAudit(
         currentUser,
         exists ? `${m.name} removed as Co-host for Session ${sessionId}` : `${m.name} added as Co-host for Session ${sessionId}`,
-        activeSession.title
+        activeSession?.title || ""
       );
 
       return next;
@@ -1377,7 +1372,7 @@ export default function CreatorLiveCrewManagementPremium() {
     addAudit(
       currentUser,
       inviteMode === "guest" ? "Guest invite sent" : "Invite sent",
-      `${inferredName} · ${to} · ${inviteRole} · Session ${activeSession.id}${inviteMode === "guest" && inviteSupplier.trim() ? ` · Supplier: ${inviteSupplier.trim()}` : ""}`
+      `${inferredName} · ${to} · ${inviteRole}${activeSessionIdSafe ? ` · Session ${activeSessionIdSafe}` : ""}${inviteMode === "guest" && inviteSupplier.trim() ? ` · Supplier: ${inviteSupplier.trim()}` : ""}`
     );
 
     setInviteOpen(false);
@@ -1388,19 +1383,21 @@ export default function CreatorLiveCrewManagementPremium() {
 
   const inviteLink = useMemo(() => {
     // Example only
-    return `https://myaccounts.evzone.com/session-invite?session=${encodeURIComponent(activeSession.id)}&role=${encodeURIComponent(inviteRole)}&type=${encodeURIComponent(inviteMode)}`;
-  }, [activeSession.id, inviteRole, inviteMode]);
+    return `https://myaccounts.evzone.com/session-invite?session=${encodeURIComponent(activeSessionIdSafe)}&role=${encodeURIComponent(inviteRole)}&type=${encodeURIComponent(inviteMode)}`;
+  }, [activeSessionIdSafe, inviteRole, inviteMode]);
 
   // Active session Producer conflicts
   const activeProducerConflicts = useMemo(() => {
+    if (!activeSession) return { overlappingSessions: [] as Session[], calendarConflicts: [] as AvailabilityEvent[] };
     const pid = activeAssignments?.producerId;
     if (!pid) return { overlappingSessions: [] as Session[], calendarConflicts: [] as AvailabilityEvent[] };
 
     return computeAssignmentConflicts(activeSession.id, "Producer", pid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSession.id, activeAssignments?.producerId, sessions, assignmentsBySession, availabilityByMember]);
+  }, [activeSession, activeAssignments?.producerId, sessions, assignmentsBySession, availabilityByMember]);
 
   function memberAvailabilityState(memberId: string) {
+    if (!activeSession) return { state: "Unknown" as AvailabilityState, conflicts: [] as AvailabilityEvent[] };
     const cal = availabilityByMember[memberId];
     return availabilityForMemberInSession(activeSession, cal);
   }
@@ -1609,7 +1606,7 @@ export default function CreatorLiveCrewManagementPremium() {
         title="Team availability"
         onClose={() => setAvailabilityModal(null)}
       >
-        {availabilityModal ? (
+        {availabilityModal && activeSession ? (
           <AvailabilityModalContent
             viewerPerms={viewerPerms}
             member={getMember(members, availabilityModal.memberId)}
@@ -1623,11 +1620,17 @@ export default function CreatorLiveCrewManagementPremium() {
       {/* Invite modal */}
       <ModalShell open={inviteOpen} title="Invite crew to this session" onClose={() => setInviteOpen(false)}>
         <div className="space-y-3">
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
-            <div className="text-[11px] font-semibold dark:text-slate-100">Session</div>
-            <div className="text-[11px] text-slate-700 dark:text-slate-300">{activeSession.title}</div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400">Session {activeSession.id}</div>
-          </div>
+          {activeSession ? (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+              <div className="text-[11px] font-semibold dark:text-slate-100">Session</div>
+              <div className="text-[11px] text-slate-700 dark:text-slate-300">{activeSession.title}</div>
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">Session {activeSession.id}</div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 text-[11px] text-slate-600 dark:text-slate-300">
+              No live session is available for crew invites.
+            </div>
+          )}
 
           <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
             <div className="text-[11px] font-semibold">Invite type</div>
@@ -1640,6 +1643,7 @@ export default function CreatorLiveCrewManagementPremium() {
                 )}
                 style={inviteMode === "team" ? { background: ORANGE, borderColor: ORANGE } : undefined}
                 onClick={() => setInviteMode("team")}
+                disabled={!activeSession}
               >
                 Team member (workspace)
               </button>
@@ -1652,7 +1656,7 @@ export default function CreatorLiveCrewManagementPremium() {
                 )}
                 style={inviteMode === "guest" ? { background: ORANGE, borderColor: ORANGE } : undefined}
                 onClick={() => viewerPerms["suppliers.invite_guest_cohost"] && setInviteMode("guest")}
-                disabled={!viewerPerms["suppliers.invite_guest_cohost"]}
+                disabled={!viewerPerms["suppliers.invite_guest_cohost"] || !activeSession}
                 title={!viewerPerms["suppliers.invite_guest_cohost"] ? "Missing permission: suppliers.invite_guest_cohost" : undefined}
               >
                 Supplier guest (seller/provider)
@@ -1924,7 +1928,7 @@ export default function CreatorLiveCrewManagementPremium() {
 
             <div className="mt-3 space-y-2">
               {members.map((m) => {
-                const asg = assignmentsBySession[activeSession.id];
+                const asg = activeSession ? assignmentsBySession[activeSession.id] : undefined;
 
                 const isHost = asg?.hostId === m.id;
                 const isProducer = asg?.producerId === m.id;
@@ -1941,6 +1945,7 @@ export default function CreatorLiveCrewManagementPremium() {
 
                 // Member overlap conflicts (any crew role)
                 const memberOverlapConflict = (() => {
+                  if (!activeSession) return false;
                   const rA = getRange(activeSession);
                   return sessions
                     .filter((s) => s.id !== activeSession.id && s.status !== "Replay")
@@ -2016,11 +2021,11 @@ export default function CreatorLiveCrewManagementPremium() {
                           className={cx(
                             "px-3 py-2 rounded-2xl border text-[11px] font-semibold inline-flex items-center gap-2",
                             isHost ? "text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-slate-200",
-                            (!eligibleHost || hostLocked || !viewerPerms["crew.manage_assignments"]) && !isHost ? "opacity-60 cursor-not-allowed" : ""
+                            (!activeSession || !eligibleHost || hostLocked || !viewerPerms["crew.manage_assignments"]) && !isHost ? "opacity-60 cursor-not-allowed" : ""
                           )}
                           style={isHost ? { background: ORANGE, borderColor: ORANGE } : undefined}
-                          disabled={(!eligibleHost || hostLocked || !viewerPerms["crew.manage_assignments"]) && !isHost}
-                          onClick={() => setHost(activeSession.id, isHost ? null : m.id)}
+                          disabled={(!activeSession || !eligibleHost || hostLocked || !viewerPerms["crew.manage_assignments"]) && !isHost}
+                          onClick={() => activeSession && setHost(activeSession.id, isHost ? null : m.id)}
                           title={
                             hostLocked
                               ? "Host locked by policy"
@@ -2039,11 +2044,11 @@ export default function CreatorLiveCrewManagementPremium() {
                         className={cx(
                           "px-3 py-2 rounded-2xl border text-[11px] font-semibold inline-flex items-center gap-2",
                           isProducer ? "text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-slate-200",
-                          (!eligibleProducer || producerLocked || !viewerPerms["crew.manage_assignments"]) && !isProducer ? "opacity-60 cursor-not-allowed" : ""
+                          (!activeSession || !eligibleProducer || producerLocked || !viewerPerms["crew.manage_assignments"]) && !isProducer ? "opacity-60 cursor-not-allowed" : ""
                         )}
                         style={isProducer ? { background: ORANGE, borderColor: ORANGE } : undefined}
-                        disabled={(!eligibleProducer || producerLocked || !viewerPerms["crew.manage_assignments"]) && !isProducer}
-                        onClick={() => setProducer(activeSession.id, isProducer ? null : m.id)}
+                        disabled={(!activeSession || !eligibleProducer || producerLocked || !viewerPerms["crew.manage_assignments"]) && !isProducer}
+                        onClick={() => activeSession && setProducer(activeSession.id, isProducer ? null : m.id)}
                         title={
                           producerLocked
                             ? "Producer locked by Ops"
@@ -2065,11 +2070,11 @@ export default function CreatorLiveCrewManagementPremium() {
                         className={cx(
                           "px-3 py-2 rounded-2xl border text-[11px] font-semibold inline-flex items-center gap-2",
                           isModerator ? "text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-slate-200",
-                          (!eligibleModerator || !viewerPerms["crew.manage_assignments"]) && !isModerator ? "opacity-60 cursor-not-allowed" : ""
+                          (!activeSession || !eligibleModerator || !viewerPerms["crew.manage_assignments"]) && !isModerator ? "opacity-60 cursor-not-allowed" : ""
                         )}
                         style={isModerator ? { background: ORANGE, borderColor: ORANGE } : undefined}
-                        disabled={(!eligibleModerator || !viewerPerms["crew.manage_assignments"]) && !isModerator}
-                        onClick={() => toggleModerator(activeSession.id, m.id)}
+                        disabled={(!activeSession || !eligibleModerator || !viewerPerms["crew.manage_assignments"]) && !isModerator}
+                        onClick={() => activeSession && toggleModerator(activeSession.id, m.id)}
                         title={!eligibleModerator ? "Must be Active and have Moderator capability" : "Toggle Moderator"}
                       >
                         <ShieldCheck className="h-4 w-4" />
@@ -2081,11 +2086,11 @@ export default function CreatorLiveCrewManagementPremium() {
                         className={cx(
                           "px-3 py-2 rounded-2xl border text-[11px] font-semibold inline-flex items-center gap-2",
                           isCohost ? "text-white" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 dark:text-slate-200",
-                          (!eligibleCohost || !viewerPerms["crew.manage_assignments"]) && !isCohost ? "opacity-60 cursor-not-allowed" : ""
+                          (!activeSession || !eligibleCohost || !viewerPerms["crew.manage_assignments"]) && !isCohost ? "opacity-60 cursor-not-allowed" : ""
                         )}
                         style={isCohost ? { background: ORANGE, borderColor: ORANGE } : undefined}
-                        disabled={(!eligibleCohost || !viewerPerms["crew.manage_assignments"]) && !isCohost}
-                        onClick={() => toggleCohost(activeSession.id, m.id)}
+                        disabled={(!activeSession || !eligibleCohost || !viewerPerms["crew.manage_assignments"]) && !isCohost}
+                        onClick={() => activeSession && toggleCohost(activeSession.id, m.id)}
                         title={!eligibleCohost ? "Co-host must be eligible and have Co-host capability" : "Toggle Co-host"}
                       >
                         <Users className="h-4 w-4" />
@@ -2128,31 +2133,33 @@ export default function CreatorLiveCrewManagementPremium() {
 
         {/* Right: active session */}
         <section className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="text-[13px] font-semibold truncate">{activeSession.title}</div>
-                <StatusPill status={activeSession.status} />
-                <span className="px-2.5 py-1 rounded-full text-[10px] border bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800">
-                  {activeSession.campaign}
-                </span>
+          {activeSession ? (
+            <>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="text-[13px] font-semibold truncate">{activeSession.title}</div>
+                    <StatusPill status={activeSession.status} />
+                    <span className="px-2.5 py-1 rounded-full text-[10px] border bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800">
+                      {activeSession.campaign}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-600">
+                    {formatInOffset(activeSession.startISO, 3)} · {activeSession.durationMin} min · Supplier: {activeSession.supplierName}
+                  </div>
+                </div>
               </div>
-              <div className="mt-1 text-[11px] text-slate-600">
-                {formatInOffset(activeSession.startISO, 3)} · {activeSession.durationMin} min · Supplier: {activeSession.supplierName}
-              </div>
-            </div>
-          </div>
 
-          {/* Conflict detection callout (producer) */}
-          {(activeProducerConflicts.overlappingSessions.length || activeProducerConflicts.calendarConflicts.length) ? (
-            <div className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 p-3">
-              <div className="text-[11px] font-semibold inline-flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                Producer conflict detected
-              </div>
-              <div className="mt-1 text-[11px] text-slate-700">
-                {getMember(members, activeAssignments.producerId)?.name || "Producer"} may not be available:
-              </div>
+              {/* Conflict detection callout (producer) */}
+              {(activeProducerConflicts.overlappingSessions.length || activeProducerConflicts.calendarConflicts.length) ? (
+                <div className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-900/20 p-3">
+                  <div className="text-[11px] font-semibold inline-flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Producer conflict detected
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-700">
+                    {getMember(members, activeAssignments.producerId)?.name || "Producer"} may not be available:
+                  </div>
 
               {activeProducerConflicts.overlappingSessions.length ? (
                 <div className="mt-2">
@@ -2201,74 +2208,74 @@ export default function CreatorLiveCrewManagementPremium() {
           ) : null}
 
           {/* Crew assignments */}
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <CrewSlotCard
-              title="Host"
-              icon={<Crown className="h-4 w-4" />}
-              member={getMember(members, activeAssignments.hostId)}
-              lock={sessionLocks.host}
-              calendar={activeAssignments.hostId ? availabilityByMember[activeAssignments.hostId] : undefined}
-              session={activeSession}
-              showAvailability={viewerPerms["availability.view_team"]}
-              onOpenAvailability={() => activeAssignments.hostId && openAvailability(activeAssignments.hostId)}
-              onClear={() => setHost(activeSession.id, null)}
-              onRequestUnlock={() => sessionLocks.host && requestUnlock(activeSession.id, sessionLocks.host)}
-            />
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <CrewSlotCard
+                  title="Host"
+                  icon={<Crown className="h-4 w-4" />}
+                  member={getMember(members, activeAssignments.hostId)}
+                  lock={sessionLocks.host}
+                  calendar={activeAssignments.hostId ? availabilityByMember[activeAssignments.hostId] : undefined}
+                  session={activeSession}
+                  showAvailability={viewerPerms["availability.view_team"]}
+                  onOpenAvailability={() => activeAssignments.hostId && openAvailability(activeAssignments.hostId)}
+                  onClear={() => setHost(activeSession.id, null)}
+                  onRequestUnlock={() => sessionLocks.host && requestUnlock(activeSession.id, sessionLocks.host)}
+                />
 
-            <CrewSlotCard
-              title="Producer"
-              icon={<Video className="h-4 w-4" />}
-              member={getMember(members, activeAssignments.producerId)}
-              lock={sessionLocks.producer}
-              calendar={activeAssignments.producerId ? availabilityByMember[activeAssignments.producerId] : undefined}
-              session={activeSession}
-              showAvailability={viewerPerms["availability.view_team"]}
-              onOpenAvailability={() => activeAssignments.producerId && openAvailability(activeAssignments.producerId)}
-              onClear={() => setProducer(activeSession.id, null)}
-              onRequestUnlock={() => sessionLocks.producer && requestUnlock(activeSession.id, sessionLocks.producer)}
-            />
+                <CrewSlotCard
+                  title="Producer"
+                  icon={<Video className="h-4 w-4" />}
+                  member={getMember(members, activeAssignments.producerId)}
+                  lock={sessionLocks.producer}
+                  calendar={activeAssignments.producerId ? availabilityByMember[activeAssignments.producerId] : undefined}
+                  session={activeSession}
+                  showAvailability={viewerPerms["availability.view_team"]}
+                  onOpenAvailability={() => activeAssignments.producerId && openAvailability(activeAssignments.producerId)}
+                  onClear={() => setProducer(activeSession.id, null)}
+                  onRequestUnlock={() => sessionLocks.producer && requestUnlock(activeSession.id, sessionLocks.producer)}
+                />
 
-            <CrewMultiSlotCard
-              title="Moderators"
-              icon={<ShieldCheck className="h-4 w-4" />}
-              memberIds={activeAssignments.moderatorIds}
-              members={members}
-              calendarByMember={availabilityByMember}
-              session={activeSession}
-              showAvailability={viewerPerms["availability.view_team"]}
-              onOpenAvailability={(id) => openAvailability(id)}
-              locks={sessionLocks.moderators}
-              emptyText="No moderators assigned"
-              onRemove={(id) => toggleModerator(activeSession.id, id)}
-              max={4}
-              onRequestUnlock={(id) => {
-                const lock = sessionLocks.moderators?.[id];
-                if (lock) requestUnlock(activeSession.id, lock);
-              }}
-            />
+                <CrewMultiSlotCard
+                  title="Moderators"
+                  icon={<ShieldCheck className="h-4 w-4" />}
+                  memberIds={activeAssignments.moderatorIds}
+                  members={members}
+                  calendarByMember={availabilityByMember}
+                  session={activeSession}
+                  showAvailability={viewerPerms["availability.view_team"]}
+                  onOpenAvailability={(id) => openAvailability(id)}
+                  locks={sessionLocks.moderators}
+                  emptyText="No moderators assigned"
+                  onRemove={(id) => toggleModerator(activeSession.id, id)}
+                  max={4}
+                  onRequestUnlock={(id) => {
+                    const lock = sessionLocks.moderators?.[id];
+                    if (lock) requestUnlock(activeSession.id, lock);
+                  }}
+                />
 
-            <CrewMultiSlotCard
-              title="Co-hosts"
-              icon={<Users className="h-4 w-4" />}
-              memberIds={activeAssignments.cohostIds}
-              members={members}
-              calendarByMember={availabilityByMember}
-              session={activeSession}
-              showAvailability={viewerPerms["availability.view_team"]}
-              onOpenAvailability={(id) => openAvailability(id)}
-              locks={sessionLocks.cohosts}
-              emptyText="No co-hosts yet"
-              onRemove={(id) => toggleCohost(activeSession.id, id)}
-              max={activeSession.cohostSlots}
-              onRequestUnlock={(id) => {
-                const lock = sessionLocks.cohosts?.[id];
-                if (lock) requestUnlock(activeSession.id, lock);
-              }}
-            />
-          </div>
+                <CrewMultiSlotCard
+                  title="Co-hosts"
+                  icon={<Users className="h-4 w-4" />}
+                  memberIds={activeAssignments.cohostIds}
+                  members={members}
+                  calendarByMember={availabilityByMember}
+                  session={activeSession}
+                  showAvailability={viewerPerms["availability.view_team"]}
+                  onOpenAvailability={(id) => openAvailability(id)}
+                  locks={sessionLocks.cohosts}
+                  emptyText="No co-hosts yet"
+                  onRemove={(id) => toggleCohost(activeSession.id, id)}
+                  max={activeSession.cohostSlots}
+                  onRequestUnlock={(id) => {
+                    const lock = sessionLocks.cohosts?.[id];
+                    if (lock) requestUnlock(activeSession.id, lock);
+                  }}
+                />
+              </div>
 
           {/* Session-level permissions */}
-          <div className="mt-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4">
+              <div className="mt-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-base font-semibold inline-flex items-center gap-2 dark:text-slate-100">
@@ -2334,7 +2341,13 @@ export default function CreatorLiveCrewManagementPremium() {
               Example enforced: a Moderator can have only <span className="font-semibold">Mute chat</span> enabled;{" "}
               <span className="font-semibold">Kick host</span> is not allowed for Moderators.
             </div>
-          </div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 text-sm text-slate-600 dark:text-slate-300">
+              No live sessions were returned from the database.
+            </div>
+          )}
 
           {/* Audit log */}
           <div className="mt-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">

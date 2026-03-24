@@ -64,16 +64,6 @@ import {
  */
 
 const ORANGE = "#f77f00";
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {},
-  templates: {},
-};
-
 // From your supported sizes list (already used elsewhere)
 const HERO_IMAGE_REQUIRED = { width: 1920, height: 1080 } as const;
 const ITEM_POSTER_REQUIRED = { width: 500, height: 500 } as const;
@@ -426,11 +416,11 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
 
   const startISO = asString(
     shoppable?.startISO,
-    asString(deal.startISO, new Date(Date.now() + 60 * 60 * 1000).toISOString()),
+    asString(deal.startISO, ""),
   );
   const endISO = asString(
     shoppable?.endISO,
-    asString(deal.endISO, new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()),
+    asString(deal.endISO, ""),
   );
 
   const supplierId = asString(
@@ -1552,8 +1542,10 @@ export default function AdBuilder({
   const {
     data: workspaceState,
     setData: setWorkspaceState,
-  } = useApiResource<DealzMarketplaceWorkspaceResponse>({
-    initialData: EMPTY_MARKETPLACE_STATE,
+    loading: workspaceLoading,
+    error: workspaceError,
+  } = useApiResource<DealzMarketplaceWorkspaceResponse | null>({
+    initialData: null,
     loader: () => creatorApi.dealzMarketplace(),
   });
   const { data: mediaAssets } = useApiResource<MediaAssetRecord[]>({
@@ -1581,6 +1573,24 @@ export default function AdBuilder({
       }))
       .filter((entry) => entry.id && entry.name);
   }, [workspaceState?.templates]);
+
+  if (workspaceLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading ad builder…
+      </div>
+    );
+  }
+
+  if (workspaceError || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Ad builder data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   // "Drawer-like route" support (optional)
   const [drawerMode, setDrawerMode] = useState(isDrawer);

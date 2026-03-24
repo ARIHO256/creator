@@ -783,8 +783,8 @@ export default function AdzDashboard() {
   const [drawer, setDrawer] = useState<DrawerKey>(null);
   const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
 
-  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
-    initialData: EMPTY_MARKETPLACE_STATE,
+  const { data: workspaceState, setData: setWorkspaceState, loading, error } = useApiResource<DealzMarketplaceWorkspaceResponse | null>({
+    initialData: null,
     loader: () => creatorApi.dealzMarketplace(),
     onError: () => {
       showNotification("Unable to load dashboard data from API.", "error");
@@ -800,7 +800,12 @@ export default function AdzDashboard() {
   );
 
   useEffect(() => {
-    const nextAds = mapMarketplacePayloadToAds(workspaceState || EMPTY_MARKETPLACE_STATE);
+    if (!workspaceState) {
+      setAds([]);
+      setSelectedId("");
+      return;
+    }
+    const nextAds = mapMarketplacePayloadToAds(workspaceState);
     const selectedFromPayload = asString(workspaceState?.selectedId, "");
     setAds(nextAds);
     setSelectedId((current) => {
@@ -813,6 +818,24 @@ export default function AdzDashboard() {
       return "";
     });
   }, [workspaceState]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading dashboard…
+      </div>
+    );
+  }
+
+  if (error || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Dashboard data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
