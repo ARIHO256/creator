@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+import { sellerBackendApi } from "../../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/ListingWizard/StepABasics").catch(() => undefined);
+
   Typography,
   Box,
   Paper,

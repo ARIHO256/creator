@@ -3,6 +3,10 @@ import { Box, Paper, Typography, Stack, Button, Chip } from "@mui/material";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/AwaitingApproval_ProductListing").catch(() => undefined);
+
 // Awaiting approval screen shown after a seller publishes a product listing
 export default function AwaitingApprovalProductListing() {
   const { t } = useLocalization();

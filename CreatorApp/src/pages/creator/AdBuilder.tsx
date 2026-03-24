@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApiResource } from "../../hooks/useApiResource";
+import { buildApiUrl } from "../../lib/api";
 import { creatorApi, type DealzMarketplaceWorkspaceResponse, type MediaAssetRecord } from "../../lib/creatorApi";
 import { hasStoredAuthState } from "../../lib/authSession";
 import {
@@ -229,7 +230,7 @@ function useResolvedMediaUrl(rawUrl?: string) {
 
       let response = await fetchAsset();
       if (response.status === 401 && hasStoredAuthState()) {
-        const refresh = await fetch("/api/auth/refresh", {
+        const refresh = await fetch(buildApiUrl("/auth/refresh"), {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },

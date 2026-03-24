@@ -2,6 +2,10 @@ import React, { useMemo, useState } from "react";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { Link } from "react-router-dom";
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:orders/Returns").catch(() => undefined);
+
 // Seller — Returns & RMAs command center
 export default function SellerReturnsEVzoneV3() {
   const { t } = useLocalization();

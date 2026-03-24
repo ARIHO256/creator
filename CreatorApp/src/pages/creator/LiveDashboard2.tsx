@@ -475,11 +475,13 @@ function NewLiveSessionDrawer({
   }) => Promise<boolean> | boolean;
   createPending?: boolean;
 }) {
+  type DesktopModeInput = LiveDesktopMode | "";
   const [supplierId, setSupplierId] = useState("");
   const [campaignId, setCampaignId] = useState<string>("");
   const [hostId, setHostId] = useState("");
-  const [title, setTitle] = useState("New Live Session");
-  const [platforms, setPlatforms] = useState<LivePlatform[]>(["TikTok Live", "Instagram Live"]);
+  const [title, setTitle] = useState("");
+  const [platforms, setPlatforms] = useState<LivePlatform[]>([]);
+  const [desktopMode, setDesktopMode] = useState<DesktopModeInput>("");
   const [startDateISO, setStartDateISO] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endDateISO, setEndDateISO] = useState("");
@@ -496,9 +498,11 @@ function NewLiveSessionDrawer({
   useEffect(() => {
     if (!open) return;
     setSupplierId((prev) => (prev && suppliers.some((entry) => entry.id === prev) ? prev : ""));
+    setCampaignId("");
     setHostId((prev) => (prev && hosts.some((entry) => entry.id === prev) ? prev : ""));
-    setTitle("New Live Session");
-    setPlatforms(["TikTok Live", "Instagram Live"]);
+    setTitle("");
+    setPlatforms([]);
+    setDesktopMode("");
     setStartDateISO("");
     setStartTime("");
     setEndDateISO("");
@@ -516,6 +520,7 @@ function NewLiveSessionDrawer({
       hostId &&
       title.trim() &&
       platforms.length &&
+      desktopMode &&
       scheduleReady,
   );
 
@@ -527,6 +532,7 @@ function NewLiveSessionDrawer({
             <div>
               <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Supplier (Seller / Provider)</div>
               <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-semibold text-slate-900 dark:text-slate-100 transition-colors">
+                <option value="">Select supplier</option>
                 {suppliers.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.kind})
@@ -538,6 +544,7 @@ function NewLiveSessionDrawer({
             <div>
               <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Campaign</div>
               <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-semibold text-slate-900 dark:text-slate-100 transition-colors">
+                <option value="">No campaign selected</option>
                 {scopedCampaigns.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -555,12 +562,37 @@ function NewLiveSessionDrawer({
             <div>
               <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Host</div>
               <select value={hostId} onChange={(e) => setHostId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-semibold text-slate-900 dark:text-slate-100 transition-colors">
+                <option value="">Select host</option>
                 {hosts.map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.name} ({h.handle})
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Desktop mode</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(["modal", "fullscreen"] as LiveDesktopMode[]).map((mode) => {
+                  const active = desktopMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setDesktopMode(mode)}
+                      className={cx(
+                        "px-3 py-2 rounded-2xl border text-[12px] font-semibold transition-colors",
+                        active
+                          ? "border-amber-300 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-100"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-slate-100"
+                      )}
+                    >
+                      {mode === "modal" ? "Modal" : "Fullscreen"}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -626,6 +658,7 @@ function NewLiveSessionDrawer({
         <PrimaryButton
           disabled={!canCreate || createPending}
           onClick={() => {
+            if (!desktopMode) return;
             const startISO = combineDateTime(startDateISO, startTime);
             const endISO = combineDateTime(endDateISO, endTime);
             void Promise.resolve(
@@ -636,7 +669,7 @@ function NewLiveSessionDrawer({
                 hostId,
                 startISO,
                 endISO,
-                desktopMode: "modal",
+                desktopMode: desktopMode as LiveDesktopMode,
                 platforms,
               }),
             ).then((created) => {
@@ -1141,13 +1174,6 @@ export default function LiveDashboardPage() {
           desktopMode: payload.desktopMode,
           startISO: payload.startISO,
           endISO: payload.endISO,
-          heroImageUrl: "",
-          heroVideoUrl: "",
-          peakViewers: 0,
-          avgWatchMin: 0,
-          chatRate: 0,
-          gmv: 0,
-          crewConflicts: 0,
         },
       });
       await reloadWorkspace();

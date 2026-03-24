@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useThemeMode as useAppThemeMode, type ThemeMode as AppThemeMode } from "../../theme/themeMode";
 import {
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:landing/Landing").catch(() => undefined);
+
   ArrowRight,
   BadgeCheck,
   BarChart3,

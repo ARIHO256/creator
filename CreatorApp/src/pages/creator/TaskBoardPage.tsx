@@ -114,19 +114,6 @@ function seedInitials(name: string) {
   return (a + b).toUpperCase();
 }
 
-function addDays(d: Date, days: number) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + days);
-  return x;
-}
-
-function toYMD(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
-}
-
 // Deterministic due (demo)
 function getDeterministicDue(seed: number) {
   // Range: -2 to 7 days
@@ -630,20 +617,27 @@ export function TaskBoardPage() {
 
   async function addNewTaskToBoard(payload: NewTaskPayload) {
     const { task, column, openAfterCreate } = payload;
-    const dueAt = new Date(Date.now() + task.dueDaysFromNow * 24 * 60 * 60 * 1000);
     const created = await creatorApi.createTask({
       contractId: task.linkedContractId,
       title: task.title,
       priority: taskPriorityToApi(task.priority),
       status: taskStatusFromColumn(column),
-      dueAt: Number.isNaN(dueAt.getTime()) ? undefined : dueAt.toISOString(),
+      dueAt: task.dueAtISO,
+      description: task.description,
       metadata: {
         type: task.type,
         earnings: task.earnings,
         campaign: task.campaign,
         supplier: task.supplier,
         brand: task.brand,
-        currency: task.currency
+        currency: task.currency,
+        assignee: task.assignee || undefined,
+        watchers: task.watchers,
+        reminder: task.reminder || undefined,
+        checklist: task.checklist,
+        dependencyIds: task.dependencyIds,
+        referenceLinks: task.referenceLinks,
+        attachments: task.files,
       }
     });
     await reloadTasks();
@@ -1212,7 +1206,26 @@ function TaskSidePanel({
 /* ----------------------------- New Task Drawer ----------------------------- */
 
 type NewTaskPayload = {
-  task: Task;
+  task: {
+    title: string;
+    campaign: string;
+    supplier: string;
+    brand: string;
+    type: TaskType;
+    priority: Priority;
+    currency: string;
+    earnings: number;
+    linkedContractId?: string;
+    dueAtISO?: string;
+    description?: string;
+    assignee?: string;
+    watchers: string[];
+    reminder?: string;
+    checklist: Array<{ text: string; done: boolean }>;
+    dependencyIds: string[];
+    referenceLinks: string[];
+    files: FileStub[];
+  };
   column: ColumnId;
   openAfterCreate?: boolean;
 };
@@ -1235,6 +1248,10 @@ function NewTaskDrawer({
   onOpenAssetLibrary: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  type TaskTypeInput = TaskType | "";
+  type ColumnInput = ColumnId | "";
+  type PriorityInput = Priority | "";
+  type ReminderInput = "" | "none" | "1h" | "6h" | "24h";
 
   // Wizard steps
   const [step, setStep] = useState<number>(1); // 1 Details, 2 Assignment, 3 Timing, 4 Review
@@ -1245,9 +1262,9 @@ function NewTaskDrawer({
 
   // Task core
   const [title, setTitle] = useState<string>("");
-  const [type, setType] = useState<TaskType>("vod");
-  const [initialColumn, setInitialColumn] = useState<ColumnId>("todo");
-  const [priority, setPriority] = useState<Priority>("Normal");
+  const [type, setType] = useState<TaskTypeInput>("");
+  const [initialColumn, setInitialColumn] = useState<ColumnInput>("");
+  const [priority, setPriority] = useState<PriorityInput>("");
 
   const selectedContract = useMemo(() => {
     return (contracts || []).find((c) => c.id === contractId) || null;
@@ -1257,26 +1274,22 @@ function NewTaskDrawer({
   const [campaignOverride, setCampaignOverride] = useState<string>("");
   const [supplierOverride, setSupplierOverride] = useState<string>("");
   const [brandOverride, setBrandOverride] = useState<string>("");
-  const [currency, setCurrency] = useState<string>(selectedContract?.currency || "UGX");
+  const [currency, setCurrency] = useState<string>(selectedContract?.currency || "");
   const [payout, setPayout] = useState<string>("");
 
   // Assignment
-  const [assignee, setAssignee] = useState<string>("@me");
+  const [assignee, setAssignee] = useState<string>("");
   const [watchers, setWatchers] = useState<string[]>([]);
   const [watcherDraft, setWatcherDraft] = useState<string>("");
 
   // Timing
-  const defaultDue = useMemo(() => toYMD(addDays(new Date(), 3)), []);
-  const [dueDate, setDueDate] = useState<string>(defaultDue);
-  const [dueTime, setDueTime] = useState<string>("18:00");
-  const [reminder, setReminder] = useState<"none" | "1h" | "6h" | "24h">("6h");
+  const [dueDate, setDueDate] = useState<string>("");
+  const [dueTime, setDueTime] = useState<string>("");
+  const [reminder, setReminder] = useState<ReminderInput>("");
 
   // Work plan
   const [description, setDescription] = useState<string>("");
-  const [checklist, setChecklist] = useState<Array<{ id: string; text: string; done: boolean }>>([
-    { id: "cl-1", text: "Confirm offer details", done: false },
-    { id: "cl-2", text: "Attach assets (video/poster)", done: false },
-  ]);
+  const [checklist, setChecklist] = useState<Array<{ id: string; text: string; done: boolean }>>([]);
   const [checkDraft, setCheckDraft] = useState<string>("");
 
   // Dependencies (IDs)
@@ -1296,31 +1309,27 @@ function NewTaskDrawer({
     setContractId("");
 
     setTitle("");
-    setType("vod");
-    setInitialColumn("todo");
-    setPriority("Normal");
+    setType("");
+    setInitialColumn("");
+    setPriority("");
 
     setCampaignOverride("");
     setSupplierOverride("");
     setBrandOverride("");
 
-    const sc = null;
-    setCurrency(sc?.currency || "UGX");
+    setCurrency("");
     setPayout("");
 
-    setAssignee("@me");
+    setAssignee("");
     setWatchers([]);
     setWatcherDraft("");
 
-    setDueDate(defaultDue);
-    setDueTime("18:00");
-    setReminder("6h");
+    setDueDate("");
+    setDueTime("");
+    setReminder("");
 
     setDescription("");
-    setChecklist([
-      { id: "cl-1", text: "Confirm offer details", done: false },
-      { id: "cl-2", text: "Attach assets (video/poster)", done: false },
-    ]);
+    setChecklist([]);
     setCheckDraft("");
 
     setDependencyIds([]);
@@ -1328,7 +1337,7 @@ function NewTaskDrawer({
     setRefLinks([]);
     setRefDraft("");
     setFiles([]);
-  }, [open, contracts, defaultDue]);
+  }, [open, contracts]);
 
   // Update currency when contract changes (linked mode)
   useEffect(() => {
@@ -1369,11 +1378,15 @@ function NewTaskDrawer({
 
   const canNext =
     step === 1
-      ? title.trim().length >= 4
+      ? title.trim().length >= 4 &&
+        Boolean(type) &&
+        Boolean(initialColumn) &&
+        Boolean(priority) &&
+        (scope === "Linked" ? Boolean(contractId) : Boolean(campaignOverride.trim()) && Boolean(supplierOverride.trim()))
       : step === 2
         ? assignee.trim().length >= 2
         : step === 3
-          ? !!dueDate && !!dueTime
+          ? !!dueDate && !!dueTime && !!reminder
           : true;
 
   function next() {
@@ -1415,44 +1428,39 @@ function NewTaskDrawer({
   }
 
   async function create(openAfterCreate: boolean) {
-    // Compute due label from chosen date/time (simple, UI-only)
+    if (!type || !initialColumn || !priority) {
+      setToast("Complete the required task details.");
+      return;
+    }
+    const resolvedType = type as TaskType;
+    const resolvedColumn = initialColumn as ColumnId;
+    const resolvedPriority = priority as Priority;
     const d = new Date(`${dueDate}T${dueTime}:00`);
-    const diffDays = Math.round((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const dueAtISO = Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 
-    const dueLabel =
-      diffDays === 0
-        ? "Today"
-        : diffDays === 1
-          ? "Tomorrow"
-          : diffDays === -1
-            ? "Yesterday"
-            : diffDays < 0
-              ? `${Math.abs(diffDays)}d overdue`
-              : `In ${diffDays}d`;
-    const newId = `T-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
-
-    const supplierInitials = seedInitials(supplierName === "—" ? "" : supplierName);
-
-    const task: Task = {
-      id: newId,
+    const task = {
       title: title.trim(),
       campaign: campaignName,
       supplier: supplierName,
-      supplierInitials,
       brand: brandName === "—" ? supplierName : brandName,
-      type,
-      priority,
-      dueLabel: dueLabel,
-      dueDaysFromNow: diffDays,
-      overdue: diffDays < 0,
-      currency: (currency as any) || "UGX",
+      type: resolvedType,
+      priority: resolvedPriority,
+      currency: currency.trim() || selectedContract?.currency || "",
       earnings: payout.trim() ? Number(payout.replace(/[^0-9.]/g, "")) || 0 : 0,
-      createdAtISO: new Date().toISOString(),
       linkedContractId: scope === "Linked" ? selectedContract?.id : undefined,
+      dueAtISO,
+      description: description.trim() || undefined,
+      assignee: assignee.trim(),
+      watchers,
+      reminder: reminder || undefined,
+      checklist: checklist.map(({ text, done }) => ({ text, done })),
+      dependencyIds,
+      referenceLinks: refLinks,
+      files,
     };
 
     try {
-      await onCreate({ task, column: initialColumn, openAfterCreate });
+      await onCreate({ task, column: resolvedColumn, openAfterCreate });
       onClose();
     } catch {
       setToast("Failed to create task.");
@@ -1552,6 +1560,7 @@ function NewTaskDrawer({
                     value={contractId}
                     onChange={(e) => setContractId(e.target.value)}
                   >
+                    <option value="">Select a campaign</option>
                     {contracts.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.campaign} · {c.supplier}
@@ -1613,8 +1622,9 @@ function NewTaskDrawer({
                     <select
                       className="mt-1 w-full bg-transparent outline-none text-xs"
                       value={type}
-                      onChange={(e) => setType(e.target.value as TaskType)}
+                      onChange={(e) => setType(e.target.value as TaskTypeInput)}
                     >
+                      <option value="">Select type</option>
                       {(["live", "vod", "story", "post"] as TaskType[]).map((t) => (
                         <option key={t} value={t}>
                           {TYPE_CONFIG[t].label}
@@ -1628,8 +1638,9 @@ function NewTaskDrawer({
                     <select
                       className="mt-1 w-full bg-transparent outline-none text-xs"
                       value={initialColumn}
-                      onChange={(e) => setInitialColumn(e.target.value as ColumnId)}
+                      onChange={(e) => setInitialColumn(e.target.value as ColumnInput)}
                     >
+                      <option value="">Select column</option>
                       {COLUMNS.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.label}
@@ -1678,26 +1689,24 @@ function NewTaskDrawer({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-2">
                     <div className="text-[11px] text-slate-500">Assignee</div>
-                    <select
+                    <input
                       className="mt-1 w-full bg-transparent outline-none text-xs"
                       value={assignee}
                       onChange={(e) => setAssignee(e.target.value)}
-                    >
-                      <option value="@me">@me (Creator)</option>
-                      <option value="@crew.editor">@crew.editor (Editor)</option>
-                      <option value="@crew.pm">@crew.pm (PM)</option>
-                    </select>
+                      placeholder="Enter assignee handle or user ID"
+                    />
                     <div className="mt-1 text-[11px] text-slate-500">Who is responsible for completing this task.</div>
                   </div>
 
                   <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-2">
                     <div className="text-[11px] text-slate-500">Expected payout</div>
                     <div className="mt-1 flex items-center gap-2">
-                      <select className="bg-transparent outline-none text-xs" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                        <option value="UGX">UGX</option>
-                        <option value="USD">USD</option>
-                        <option value="GBP">GBP</option>
-                      </select>
+                      <input
+                        className="w-24 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-[#f77f00]/30"
+                        placeholder="UGX"
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                      />
                       <input
                         className="flex-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-[#f77f00]/30"
                         placeholder="0"
@@ -1819,8 +1828,9 @@ function NewTaskDrawer({
                   <select
                     className="mt-1 w-full bg-transparent outline-none text-xs"
                     value={reminder}
-                    onChange={(e) => setReminder(e.target.value as any)}
+                    onChange={(e) => setReminder(e.target.value as ReminderInput)}
                   >
+                    <option value="">Select reminder</option>
                     <option value="none">None</option>
                     <option value="1h">1 hour before</option>
                     <option value="6h">6 hours before</option>
@@ -1946,7 +1956,7 @@ function NewTaskDrawer({
                     <div className="text-[11px] text-slate-500">Task</div>
                     <div className="font-semibold dark:font-bold text-slate-800 dark:text-slate-100">{title || "—"}</div>
                     <div className="mt-1 text-[11px] text-slate-500">
-                      {TYPE_CONFIG[type].label} · {priority} · {COLUMNS.find((c) => c.id === initialColumn)?.label}
+                      {type ? TYPE_CONFIG[type].label : "—"} · {priority || "—"} · {COLUMNS.find((c) => c.id === initialColumn)?.label || "—"}
                     </div>
                   </div>
 

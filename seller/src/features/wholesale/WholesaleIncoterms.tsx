@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:wholesale/WholesaleIncoterms").catch(() => undefined);
+
   AlertTriangle,
   BookOpen,
   Check,

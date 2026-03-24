@@ -33,7 +33,7 @@ const pendingGetRequests = new Map<string, Promise<unknown>>();
 let pendingAuthRefresh: Promise<boolean> | null = null;
 let refreshBackoffUntil = 0;
 
-function buildUrl(path: string) {
+export function buildApiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   if (API_BASE.endsWith("/api") && normalizedPath.startsWith("/api/")) {
@@ -94,7 +94,7 @@ async function refreshAuthSession() {
     return pendingAuthRefresh;
   }
 
-  pendingAuthRefresh = fetch(buildUrl("/auth/refresh"), {
+  pendingAuthRefresh = fetch(buildApiUrl("/auth/refresh"), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -133,7 +133,7 @@ async function parseResponse(response: Response) {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = String(options.method ?? "GET").toUpperCase();
-  const requestUrl = buildUrl(path);
+  const requestUrl = buildApiUrl(path);
   const requestKey = `${method}:${requestUrl}`;
 
   const runRequest = async () => {

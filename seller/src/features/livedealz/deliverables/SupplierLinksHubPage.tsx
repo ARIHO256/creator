@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import SupplierLinkToolsOrangePrimaryPreviewable from "../+NewLink";
 
+import { sellerBackendApi } from "../../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/deliverables/SupplierLinksHubPage").catch(() => undefined);
+
 /**
  * SupplierLinksHubPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)

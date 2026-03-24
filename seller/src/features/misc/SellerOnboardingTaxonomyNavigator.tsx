@@ -1,5 +1,9 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:misc/SellerOnboardingTaxonomyNavigator").catch(() => undefined);
+
   Box,
   Button,
   Chip,

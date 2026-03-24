@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { sellerBackendApi } from "../../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/live/SupplierSafetyModerationPage").catch(() => undefined);
+
 /**
  * SupplierSafetyModerationPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)

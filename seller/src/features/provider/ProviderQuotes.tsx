@@ -2,6 +2,10 @@ import React, { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:provider/ProviderQuotes").catch(() => undefined);
+
 // Provider — Quotes Hub
 
 type QuoteStage = "New" | "Negotiating" | "Approved" | "Expired";

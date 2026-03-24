@@ -2,6 +2,10 @@ import React, { useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:provider/ProviderQuoteDetail").catch(() => undefined);
+
 export default function ProviderQuoteDetail() {
   const { id } = useParams();
   const { t } = useLocalization();

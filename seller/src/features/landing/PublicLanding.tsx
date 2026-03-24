@@ -4,6 +4,10 @@ import Landing from "./Landing";
 import Auth from "../misc/Auth";
 import { useLocalization } from "../../localization/LocalizationProvider";
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:landing/PublicLanding").catch(() => undefined);
+
 const BODY = typeof document !== "undefined" ? document.body : null;
 
 export default function PublicLanding() {

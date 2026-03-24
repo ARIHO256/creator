@@ -2,6 +2,10 @@ import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:wholesale/WholesaleHome").catch(() => undefined);
+
   ArrowRight,
   BarChart3,
   Bolt,

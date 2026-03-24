@@ -2,6 +2,10 @@ import React, { useMemo, useState } from "react";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { useRolePageContent } from "../../data/pageContent";
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:orders/Orders.ProviderView").catch(() => undefined);
+
 // Provider — Bookings & Orders (role-shared Orders page)
 
 type BookingStage = "Requested" | "Confirmed" | "In progress" | "Completed" | "Canceled";

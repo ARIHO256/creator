@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import { sellerBackendApi } from "../../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/collabs/SupplierNegotiationRoomPage").catch(() => undefined);
+
 /**
  * SupplierNegotiationRoomPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)

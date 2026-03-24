@@ -460,7 +460,7 @@ export type LiveSessionDraft = {
   publicJoinUrl: string; // the "Live link" that buyers open
   heroAspect: PromoAspect;
 
-  heroImageUrl: string;
+  heroImageUrl?: string;
   heroImageAssetId?: string;
   heroVideoUrl?: string;
   desktopMode: LiveDesktopMode;
@@ -674,9 +674,7 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     publicJoinUrl: "",
     heroAspect: "16:9",
 
-    heroImageUrl: "",
     heroImageAssetId: undefined,
-    heroVideoUrl: "",
     desktopMode: "modal",
 
     scheduleAnchor: "start",
@@ -3615,6 +3613,8 @@ export function LiveBuilderView({
   const builderSessionId = initialSessionId || effectiveDealId || draft.id;
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [step, setStep] = useState<StepKey>("setup");
+  const [builderReady, setBuilderReady] = useState(false);
+  const [builderLoadError, setBuilderLoadError] = useState<string | null>(null);
   const [suppliersData, setSuppliersData] = useState<Supplier[]>([]);
   const [campaignsData, setCampaignsData] = useState<Campaign[]>([]);
   const [hostsData, setHostsData] = useState<Host[]>([]);
@@ -4116,6 +4116,8 @@ export function LiveBuilderView({
     backendHydratedRef.current = false;
     autoSavePrimedRef.current = false;
     lastPersistedSnapshotRef.current = "";
+    setBuilderReady(false);
+    setBuilderLoadError(null);
 
     let active = true;
     const pickerRestoreInProgress = (() => {
@@ -4402,9 +4404,12 @@ export function LiveBuilderView({
         }
 
         backendHydratedRef.current = true;
+        setBuilderReady(true);
       })
       .catch(() => {
-        // Keep existing optimistic/local draft behavior if backend load fails.
+        if (!active) return;
+        setBuilderLoadError("Live Builder data could not be loaded from the database.");
+        showError("Could not load Live Builder data.");
       });
 
     return () => {
@@ -4899,6 +4904,30 @@ export function LiveBuilderView({
 
   const availableItemsForPins = useMemo(() => draft.products, [draft.products]);
 
+  if (builderLoadError) {
+    return (
+      <div className="space-y-4 pb-28 sm:pb-20" style={{ overflowAnchor: "none" }}>
+        <div className="rounded-3xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/20 p-6 transition-colors">
+          <div className="text-lg font-bold text-rose-900 dark:text-rose-100">Live Builder unavailable</div>
+          <div className="mt-2 text-sm text-rose-800 dark:text-rose-200">{builderLoadError}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!builderReady) {
+    return (
+      <div className="space-y-4 pb-28 sm:pb-20" style={{ overflowAnchor: "none" }}>
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 transition-colors">
+          <div className="text-lg font-bold text-slate-900 dark:text-slate-100">Loading Live Builder</div>
+          <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Waiting for live session data from the database.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 pb-28 sm:pb-20" style={{ overflowAnchor: "none" }}>
       {/* Header */}
@@ -5355,7 +5384,7 @@ export function LiveBuilderView({
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <div className="flex-1">
                       <Input
-                        value={draft.heroImageUrl}
+                        value={draft.heroImageUrl || ""}
                         onChange={(v) =>
                           setDraft((d) => ({
                             ...d,
