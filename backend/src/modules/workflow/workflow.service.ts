@@ -62,11 +62,36 @@ export class WorkflowService {
   ) {}
 
   async uploads(userId: string) {
-    const sessions = await this.prisma.uploadSession.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50
-    });
+    let sessions: Array<{
+      id: string;
+      purpose: string | null;
+      fileName: string;
+      kind: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      extension: string | null;
+      checksum: string | null;
+      storageProvider: string | null;
+      storageKey: string | null;
+      visibility: string | null;
+      status: string | null;
+      expiresAt: Date | null;
+      metadata: Prisma.JsonValue;
+      createdAt: Date;
+      updatedAt: Date;
+    }> = [];
+    try {
+      sessions = await this.prisma.uploadSession.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      return [];
+    }
     return sessions.map((session) => ({
       id: session.id,
       ...this.toUploadPayload(session)
@@ -120,15 +145,23 @@ export class WorkflowService {
 
   async onboardingLookups() {
     const key = 'onboarding_lookups';
-    const existing = await this.prisma.systemContent.findUnique({ where: { key } });
-    const record =
-      existing ??
-      (await this.prisma.systemContent.create({
-        data: {
-          key,
-          payload: {} as Prisma.InputJsonValue
-        }
-      }));
+    let record: { payload: Prisma.JsonValue } | null = null;
+    try {
+      const existing = await this.prisma.systemContent.findUnique({ where: { key } });
+      record =
+        existing ??
+        (await this.prisma.systemContent.create({
+          data: {
+            key,
+            payload: {} as Prisma.InputJsonValue
+          }
+        }));
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return EMPTY_ONBOARDING_LOOKUPS;
+      }
+      throw error;
+    }
     const payload =
       record.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
         ? (record.payload as Record<string, unknown>)
@@ -1564,9 +1597,17 @@ export class WorkflowService {
       }
     }
 
-    const legacy = await this.prisma.workflowRecord.findUnique({
-      where: { userId_recordType_recordKey: { userId, recordType: 'account_approval', recordKey: 'main' } }
-    });
+    let legacy: { payload: Prisma.JsonValue } | null = null;
+    try {
+      legacy = await this.prisma.workflowRecord.findUnique({
+        where: { userId_recordType_recordKey: { userId, recordType: 'account_approval', recordKey: 'main' } }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
     if (!legacy) {
       return null;
     }
@@ -1623,9 +1664,17 @@ export class WorkflowService {
       }
     }
 
-    const legacy = await this.prisma.workflowRecord.findUnique({
-      where: { userId_recordType_recordKey: { userId, recordType: 'screen_state', recordKey: key } }
-    });
+    let legacy: { payload: Prisma.JsonValue } | null = null;
+    try {
+      legacy = await this.prisma.workflowRecord.findUnique({
+        where: { userId_recordType_recordKey: { userId, recordType: 'screen_state', recordKey: key } }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
     if (!legacy) {
       return null;
     }
@@ -1663,10 +1712,17 @@ export class WorkflowService {
         where: { userId },
         orderBy: { updatedAt: 'desc' }
       }),
-      this.prisma.workflowRecord.findMany({
-        where: { userId, recordType: 'content_approval' },
-        orderBy: { updatedAt: 'desc' }
-      })
+      this.prisma.workflowRecord
+        .findMany({
+          where: { userId, recordType: 'content_approval' },
+          orderBy: { updatedAt: 'desc' }
+        })
+        .catch((error) => {
+          if (this.isMissingSchemaObjectError(error)) {
+            return [];
+          }
+          throw error;
+        })
     ]);
 
     const merged = new Map<string, { id: string; payload: Record<string, unknown> }>();
@@ -1690,9 +1746,17 @@ export class WorkflowService {
       return record.payload as Record<string, unknown>;
     }
 
-    const legacy = await this.prisma.workflowRecord.findUnique({
-      where: { userId_recordType_recordKey: { userId, recordType: 'content_approval', recordKey: id } }
-    });
+    let legacy: { payload: Prisma.JsonValue } | null = null;
+    try {
+      legacy = await this.prisma.workflowRecord.findUnique({
+        where: { userId_recordType_recordKey: { userId, recordType: 'content_approval', recordKey: id } }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
     if (!legacy) {
       return null;
     }
@@ -1734,28 +1798,55 @@ export class WorkflowService {
   }
 
   private async getRecordPayload(userId: string, recordType: string, recordKey: string) {
-    const record = await this.prisma.workflowRecord.findUnique({
-      where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
-    });
-    return record?.payload as Record<string, unknown> | null;
+    try {
+      const record = await this.prisma.workflowRecord.findUnique({
+        where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
+      });
+      return record?.payload as Record<string, unknown> | null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async getRecord(userId: string, recordType: string, recordKey: string) {
-    return this.prisma.workflowRecord.findUnique({
-      where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
-    });
+    try {
+      return await this.prisma.workflowRecord.findUnique({
+        where: { userId_recordType_recordKey: { userId, recordType, recordKey } }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   private async createRecord(userId: string, recordType: string, recordKey: string, payload: unknown) {
     const sanitized = this.ensurePayload(payload);
-    return this.prisma.workflowRecord.create({
-      data: {
-        userId,
-        recordType,
-        recordKey,
-        payload: sanitized as Prisma.InputJsonValue
+    try {
+      return await this.prisma.workflowRecord.create({
+        data: {
+          userId,
+          recordType,
+          recordKey,
+          payload: sanitized as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return {
+          id: `${userId}:${recordType}:${recordKey}`,
+          userId,
+          recordType,
+          recordKey,
+          payload: sanitized as Prisma.InputJsonValue
+        };
       }
-    });
+      throw error;
+    }
   }
 
   private async updateRecord(userId: string, recordType: string, recordKey: string, payload: unknown) {
@@ -1764,24 +1855,47 @@ export class WorkflowService {
       throw new NotFoundException('Record not found');
     }
     const sanitized = this.ensurePayload(payload);
-    return this.prisma.workflowRecord.update({
-      where: { id: existing.id },
-      data: { payload: sanitized as Prisma.InputJsonValue }
-    });
+    try {
+      return await this.prisma.workflowRecord.update({
+        where: { id: existing.id },
+        data: { payload: sanitized as Prisma.InputJsonValue }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return {
+          ...existing,
+          payload: sanitized as Prisma.InputJsonValue
+        };
+      }
+      throw error;
+    }
   }
 
   private async upsertRecord(userId: string, recordType: string, recordKey: string, payload: unknown) {
     const sanitized = this.ensurePayload(payload);
-    return this.prisma.workflowRecord.upsert({
-      where: { userId_recordType_recordKey: { userId, recordType, recordKey } },
-      update: { payload: sanitized as Prisma.InputJsonValue },
-      create: {
-        userId,
-        recordType,
-        recordKey,
-        payload: sanitized as Prisma.InputJsonValue
+    try {
+      return await this.prisma.workflowRecord.upsert({
+        where: { userId_recordType_recordKey: { userId, recordType, recordKey } },
+        update: { payload: sanitized as Prisma.InputJsonValue },
+        create: {
+          userId,
+          recordType,
+          recordKey,
+          payload: sanitized as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return {
+          id: `${userId}:${recordType}:${recordKey}`,
+          userId,
+          recordType,
+          recordKey,
+          payload: sanitized as Prisma.InputJsonValue
+        };
       }
-    });
+      throw error;
+    }
   }
 
   private ensurePayload(

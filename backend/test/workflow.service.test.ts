@@ -442,3 +442,95 @@ test('WorkflowService onboarding sync promotes underused onboarding fields into 
   assert.deepEqual((accountApprovals.get('user-1') as any)?.metadata?.submissionSnapshot?.providerServices, ['consulting', 'production']);
   assert.equal((accountApprovals.get('user-1') as any)?.metadata?.submissionSnapshot?.policies?.termsUrl, 'https://provider.example.com/terms');
 });
+
+test('WorkflowService.onboarding returns a default draft when workflow storage tables are missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    user: {
+      async findUnique() {
+        return { role: 'CREATOR' };
+      }
+    },
+    workflowRecord: {
+      async findUnique() {
+        throw schemaError;
+      },
+      async upsert() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const onboarding = await service.onboarding('user-1');
+
+  assert.equal(onboarding.profileType, 'CREATOR');
+  assert.equal(onboarding.status, 'draft');
+  assert.deepEqual(onboarding.support, { whatsapp: '', email: '', phone: '' });
+});
+
+test('WorkflowService.screenState returns an empty object when workflow storage tables are missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    workflowScreenState: {
+      async findUnique() {
+        throw schemaError;
+      }
+    },
+    workflowRecord: {
+      async findUnique() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const screenState = await service.screenState('user-1', 'creator-settings');
+
+  assert.deepEqual(screenState, {});
+});
+
+test('WorkflowService.uploads returns an empty list when upload storage is missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    uploadSession: {
+      async findMany() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const uploads = await service.uploads('user-1');
+
+  assert.deepEqual(uploads, []);
+});
+
+test('WorkflowService.onboardingLookups returns defaults when system content storage is missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    systemContent: {
+      async findUnique() {
+        throw schemaError;
+      },
+      async create() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const lookups = await service.onboardingLookups();
+
+  assert.deepEqual(lookups.languages, []);
+  assert.deepEqual(lookups.payoutMethods, []);
+  assert.deepEqual(lookups.payoutRegions, { alipay: [], wechat: [] });
+});

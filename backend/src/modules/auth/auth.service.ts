@@ -123,16 +123,7 @@ export class AuthService {
     const email = payload.email?.toLowerCase().trim();
     const phone = payload.phone?.trim();
 
-    const user = await this.prisma.user.findFirst({
-      where: {
-        OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
-      },
-      include: {
-        creatorProfile: true,
-        sellerProfile: true,
-        roleAssignments: true
-      }
-    });
+    const user = await this.findUserByIdentityWithFallback(email, phone);
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -513,15 +504,21 @@ export class AuthService {
     const refreshHash = await hash(refreshToken, 12);
     const expiresAt = new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000);
 
-    await this.prisma.refreshToken.create({
-      data: {
-        id: refreshTokenId,
-        userId,
-        tokenHash: refreshHash,
-        family: tokenFamily,
-        expiresAt
+    try {
+      await this.prisma.refreshToken.create({
+        data: {
+          id: refreshTokenId,
+          userId,
+          tokenHash: refreshHash,
+          family: tokenFamily,
+          expiresAt
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
       }
-    });
+    }
 
     return {
       accessToken,
@@ -534,14 +531,7 @@ export class AuthService {
   }
 
   private async findUserOrThrow(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        creatorProfile: true,
-        sellerProfile: true,
-        roleAssignments: true
-      }
-    });
+    const user = await this.findUserByIdWithFallback(userId);
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -564,15 +554,23 @@ export class AuthService {
       return user;
     }
 
-    const onboardingRecord = await this.prisma.workflowRecord.findUnique({
-      where: {
-        userId_recordType_recordKey: {
-          userId: user.id,
-          recordType: 'onboarding',
-          recordKey: 'main'
+    let onboardingRecord: { payload: Prisma.JsonValue } | null = null;
+    try {
+      onboardingRecord = await this.prisma.workflowRecord.findUnique({
+        where: {
+          userId_recordType_recordKey: {
+            userId: user.id,
+            recordType: 'onboarding',
+            recordKey: 'main'
+          }
         }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return user;
       }
-    });
+      throw error;
+    }
 
     const onboarding = onboardingRecord?.payload as Record<string, unknown> | null;
     const profileType = String(onboarding?.profileType || '').toUpperCase();
@@ -632,33 +630,46 @@ export class AuthService {
         throw error;
       }
 
-      await this.prisma.$transaction([
-        this.prisma.user.update({
+      try {
+        await this.prisma.$transaction([
+          this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+              approvalStatus: 'APPROVED',
+              onboardingCompleted: true
+            }
+          }),
+          this.prisma.workflowRecord.upsert({
+            where: {
+              userId_recordType_recordKey: {
+                userId: user.id,
+                recordType: 'account_approval',
+                recordKey: 'main'
+              }
+            },
+            update: {
+              payload: approvalPayload
+            },
+            create: {
+              userId: user.id,
+              recordType: 'account_approval',
+              recordKey: 'main',
+              payload: approvalPayload
+            }
+          })
+        ]);
+      } catch (fallbackError) {
+        if (!this.isMissingSchemaObjectError(fallbackError)) {
+          throw fallbackError;
+        }
+        await this.prisma.user.update({
           where: { id: user.id },
           data: {
             approvalStatus: 'APPROVED',
             onboardingCompleted: true
           }
-        }),
-        this.prisma.workflowRecord.upsert({
-          where: {
-            userId_recordType_recordKey: {
-              userId: user.id,
-              recordType: 'account_approval',
-              recordKey: 'main'
-            }
-          },
-          update: {
-            payload: approvalPayload
-          },
-          create: {
-            userId: user.id,
-            recordType: 'account_approval',
-            recordKey: 'main',
-            payload: approvalPayload
-          }
-        })
-      ]);
+        });
+      }
     }
 
     return this.findUserOrThrow(user.id);
@@ -689,7 +700,9 @@ export class AuthService {
   }
 
   private getAssignedRoles(user: { roleAssignments: Array<{ role: UserRole }> }) {
-    const roles = user.roleAssignments.map((assignment) => assignment.role);
+    const roles = Array.isArray(user.roleAssignments)
+      ? user.roleAssignments.map((assignment) => assignment.role)
+      : [];
     return roles.length > 0 ? roles : [UserRole.CREATOR];
   }
 
@@ -797,24 +810,96 @@ export class AuthService {
     return requestedRoles.filter((role) => !assignedRoles.has(role));
   }
 
-  private async findUserByIdentityWithRelations(email?: string, phone?: string) {
-    const matches = await this.prisma.user.findMany({
-      where: {
-        OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
-      },
-      include: {
-        creatorProfile: true,
-        sellerProfile: true,
-        roleAssignments: true
-      }
-    });
+  private async findUserByIdentityWithRelations(email?: string, phone?: string): Promise<AuthUserRecord | null> {
+    const matches = await this.findUsersByIdentityWithFallback(email, phone);
 
-    const uniqueMatches = Array.from(new Map(matches.map((user) => [user.id, user])).values());
+    const uniqueMatches = Array.from(
+      new Map<string, AuthUserRecord>(matches.map((user) => [user.id, user] as const)).values()
+    );
     if (uniqueMatches.length > 1) {
       throw new BadRequestException('Email and phone belong to different existing accounts');
     }
 
     return uniqueMatches[0] ?? null;
+  }
+
+  private async findUserByIdentityWithFallback(email?: string, phone?: string): Promise<AuthUserRecord | null> {
+    try {
+      return await this.prisma.user.findFirst({
+        where: {
+          OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
+        },
+        include: {
+          creatorProfile: true,
+          sellerProfile: true,
+          roleAssignments: true
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      return this.prisma.user.findFirst({
+        where: {
+          OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
+        }
+      }).then((user) => (user ? this.withMissingRelationsFallback(user as Record<string, unknown>) : null));
+    }
+  }
+
+  private async findUsersByIdentityWithFallback(email?: string, phone?: string): Promise<AuthUserRecord[]> {
+    try {
+      return await this.prisma.user.findMany({
+        where: {
+          OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
+        },
+        include: {
+          creatorProfile: true,
+          sellerProfile: true,
+          roleAssignments: true
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      const users = await this.prisma.user.findMany({
+        where: {
+          OR: [{ email: email ?? undefined }, { phone: phone ?? undefined }]
+        }
+      });
+      return users.map((user) => this.withMissingRelationsFallback(user as Record<string, unknown>));
+    }
+  }
+
+  private async findUserByIdWithFallback(userId: string): Promise<AuthUserRecord | null> {
+    try {
+      return await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          creatorProfile: true,
+          sellerProfile: true,
+          roleAssignments: true
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId }
+      });
+      return user ? this.withMissingRelationsFallback(user as Record<string, unknown>) : null;
+    }
+  }
+
+  private withMissingRelationsFallback(user: Record<string, unknown>): AuthUserRecord {
+    return {
+      ...user,
+      creatorProfile: null,
+      sellerProfile: null,
+      roleAssignments: Array.isArray(user.roleAssignments) ? user.roleAssignments : [{ role: user.role as UserRole }]
+    } as AuthUserRecord;
   }
 
   private shouldQueueRegistration() {

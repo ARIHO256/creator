@@ -1323,3 +1323,20 @@ test('SettingsService derives live seller settings from submitted onboarding dat
   assert.equal((kyc as any).documents[0].status, 'Submitted');
   assert.equal((kyc as any).metadata.history[0].event, 'Submitted onboarding for review');
 });
+
+test('notifications returns an empty list when notification storage is missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = createPrismaStub();
+  prisma.notification = {
+    async findMany() {
+      throw schemaError;
+    }
+  };
+
+  const service = new SettingsService(prisma as any, { async log() {} } as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const notifications = await service.notifications('user-1', 'CREATOR');
+
+  assert.deepEqual(notifications, []);
+});

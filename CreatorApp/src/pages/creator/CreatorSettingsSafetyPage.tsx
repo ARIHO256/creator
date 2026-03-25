@@ -22,6 +22,7 @@ import {
   ScrollText,
   ShieldCheck,
   Sparkles,
+  Pencil,
   Trash2,
   Upload,
   User,
@@ -589,6 +590,67 @@ function Textarea({ className, rows = 4, ...props }: TextareaProps) {
       )}
       {...props}
     />
+  );
+}
+
+interface EditableFieldShellProps {
+  editing: boolean;
+  value: string;
+  placeholder: string;
+  onEdit: () => void;
+  onDone: () => void;
+  multiline?: boolean;
+  children: React.ReactNode;
+}
+
+function EditableFieldShell({
+  editing,
+  value,
+  placeholder,
+  onEdit,
+  onDone,
+  multiline = false,
+  children
+}: EditableFieldShellProps) {
+  const hasValue = String(value || "").trim().length > 0;
+
+  if (editing) {
+    return (
+      <div className="space-y-2">
+        {children}
+        <div className="flex justify-end">
+          <GhostButton className="px-2.5 py-1.5 text-xs" onClick={onDone}>
+            <Check className="h-3.5 w-3.5" /> Done
+          </GhostButton>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onEdit}
+      className={cx(
+        "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left transition-all hover:border-amber-300 hover:bg-amber-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-amber-700 dark:hover:bg-slate-800",
+        multiline ? "min-h-[124px]" : "min-h-[44px]"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div
+          className={cx(
+            "min-w-0 text-sm",
+            hasValue ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500",
+            multiline ? "whitespace-pre-wrap pr-2" : "truncate"
+          )}
+        >
+          {hasValue ? value : placeholder}
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <Pencil className="h-3 w-3" /> Edit
+        </span>
+      </div>
+    </button>
   );
 }
 
@@ -1784,6 +1846,7 @@ export default function CreatorSettingsSafetyPremium() {
   const [form, setForm] = useState<SettingsForm>(() => defaultForm());
   const [saved, setSaved] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingFields, setEditingFields] = useState<Record<string, boolean>>({});
   const hydratedRef = useRef(false);
   const objectUrlRef = useRef<Record<string, string>>({});
 
@@ -1987,6 +2050,14 @@ export default function CreatorSettingsSafetyPremium() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function update(path: string, value: any) {
     setForm((prev) => setDeep(prev, path, value));
+  }
+
+  function openEditor(key: string) {
+    setEditingFields((prev) => ({ ...prev, [key]: true }));
+  }
+
+  function closeEditor(key: string) {
+    setEditingFields((prev) => ({ ...prev, [key]: false }));
   }
 
   function toggleInArray(path: string, value: string) {
@@ -2615,63 +2686,153 @@ export default function CreatorSettingsSafetyPremium() {
           < Card id="profile" title="Profile & brand" subtitle="These details appear on your Creator profile and in supplier proposals." icon={< User className="h-5 w-5" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Display name *">
-                <Input value={form.profile.name} onChange={(e) => update("profile.name", e.target.value)} placeholder="Your name / brand" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.name"]}
+                  value={form.profile.name}
+                  placeholder="Your name / brand"
+                  onEdit={() => openEditor("profile.name")}
+                  onDone={() => closeEditor("profile.name")}
+                >
+                  <Input autoFocus value={form.profile.name} onChange={(e) => update("profile.name", e.target.value)} placeholder="Your name / brand" />
+                </EditableFieldShell>
               </Field>
               <Field label="Handle *" hint="Used in your profile URL (letters, numbers, underscores).">
-                <Input value={form.profile.handle} onChange={(e) => update("profile.handle", e.target.value)} placeholder="example: mylivedealzcreator" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.handle"]}
+                  value={form.profile.handle}
+                  placeholder="example: mylivedealzcreator"
+                  onEdit={() => openEditor("profile.handle")}
+                  onDone={() => closeEditor("profile.handle")}
+                >
+                  <Input autoFocus value={form.profile.handle} onChange={(e) => update("profile.handle", e.target.value)} placeholder="example: mylivedealzcreator" />
+                </EditableFieldShell>
               </Field>
               <Field label="Primary email address *">
-                <Input
+                <EditableFieldShell
+                  editing={!!editingFields["profile.email"]}
                   value={form.profile.email}
-                  onChange={(e) => {
-                    update("profile.email", e.target.value);
-                    addAudit("Email updated", e.target.value);
-                    push("Email updated. Verification link sent.", "success");
-                  }}
                   placeholder="your@email.com"
-                />
+                  onEdit={() => openEditor("profile.email")}
+                  onDone={() => closeEditor("profile.email")}
+                >
+                  <Input
+                    autoFocus
+                    value={form.profile.email}
+                    onChange={(e) => {
+                      update("profile.email", e.target.value);
+                      addAudit("Email updated", e.target.value);
+                      push("Email updated. Verification link sent.", "success");
+                    }}
+                    placeholder="your@email.com"
+                  />
+                </EditableFieldShell>
               </Field>
               <Field label="Primary phone contact *">
-                <Input
+                <EditableFieldShell
+                  editing={!!editingFields["profile.phone"]}
                   value={form.profile.phone}
-                  onChange={(e) => {
-                    update("profile.phone", e.target.value);
-                    addAudit("Phone updated", e.target.value);
-                    push("Phone updated. OTP sent for verification.", "success");
-                  }}
                   placeholder="+256 700 000 000"
-                />
+                  onEdit={() => openEditor("profile.phone")}
+                  onDone={() => closeEditor("profile.phone")}
+                >
+                  <Input
+                    autoFocus
+                    value={form.profile.phone}
+                    onChange={(e) => {
+                      update("profile.phone", e.target.value);
+                      addAudit("Phone updated", e.target.value);
+                      push("Phone updated. OTP sent for verification.", "success");
+                    }}
+                    placeholder="+256 700 000 000"
+                  />
+                </EditableFieldShell>
               </Field>
               <Field label="WhatsApp number">
-                <Input
+                <EditableFieldShell
+                  editing={!!editingFields["profile.whatsapp"]}
                   value={form.profile.whatsapp}
-                  onChange={(e) => update("profile.whatsapp", e.target.value)}
                   placeholder="+256 700 000 000"
-                />
+                  onEdit={() => openEditor("profile.whatsapp")}
+                  onDone={() => closeEditor("profile.whatsapp")}
+                >
+                  <Input
+                    autoFocus
+                    value={form.profile.whatsapp}
+                    onChange={(e) => update("profile.whatsapp", e.target.value)}
+                    placeholder="+256 700 000 000"
+                  />
+                </EditableFieldShell>
               </Field>
               <Field label="Tagline">
-                <Input value={form.profile.tagline} onChange={(e) => update("profile.tagline", e.target.value)} placeholder="Example: Premium electronics creator for East Africa" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.tagline"]}
+                  value={form.profile.tagline}
+                  placeholder="Example: Premium electronics creator for East Africa"
+                  onEdit={() => openEditor("profile.tagline")}
+                  onDone={() => closeEditor("profile.tagline")}
+                >
+                  <Input autoFocus value={form.profile.tagline} onChange={(e) => update("profile.tagline", e.target.value)} placeholder="Example: Premium electronics creator for East Africa" />
+                </EditableFieldShell>
               </Field>
               <Field label="Country *">
-                <Input value={form.profile.country} onChange={(e) => update("profile.country", e.target.value)} placeholder="Uganda" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.country"]}
+                  value={form.profile.country}
+                  placeholder="Uganda"
+                  onEdit={() => openEditor("profile.country")}
+                  onDone={() => closeEditor("profile.country")}
+                >
+                  <Input autoFocus value={form.profile.country} onChange={(e) => update("profile.country", e.target.value)} placeholder="Uganda" />
+                </EditableFieldShell>
               </Field>
               <Field label="Timezone">
-                <Input value={form.profile.timezone} onChange={(e) => update("profile.timezone", e.target.value)} placeholder="Africa/Kampala" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.timezone"]}
+                  value={form.profile.timezone}
+                  placeholder="Africa/Kampala"
+                  onEdit={() => openEditor("profile.timezone")}
+                  onDone={() => closeEditor("profile.timezone")}
+                >
+                  <Input autoFocus value={form.profile.timezone} onChange={(e) => update("profile.timezone", e.target.value)} placeholder="Africa/Kampala" />
+                </EditableFieldShell>
               </Field>
               <Field label="Currency">
-                <Select value={form.profile.currency} onChange={(e) => update("profile.currency", e.target.value)}>
-                  <option value="">Select currency</option>
-                  {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </Select>
+                <EditableFieldShell
+                  editing={!!editingFields["profile.currency"]}
+                  value={form.profile.currency}
+                  placeholder="Select currency"
+                  onEdit={() => openEditor("profile.currency")}
+                  onDone={() => closeEditor("profile.currency")}
+                >
+                  <Select autoFocus value={form.profile.currency} onChange={(e) => update("profile.currency", e.target.value)}>
+                    <option value="">Select currency</option>
+                    {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </Select>
+                </EditableFieldShell>
               </Field>
 
               <div className="md:col-span-2">
                 <Field label="Bio">
-                  <Textarea value={form.profile.bio} onChange={(e) => update("profile.bio", e.target.value)} placeholder="Tell suppliers what you sell, who you reach, and how you convert." rows={5} />
+                  <EditableFieldShell
+                    editing={!!editingFields["profile.bio"]}
+                    value={form.profile.bio}
+                    placeholder="Tell suppliers what you sell, who you reach, and how you convert."
+                    onEdit={() => openEditor("profile.bio")}
+                    onDone={() => closeEditor("profile.bio")}
+                    multiline
+                  >
+                    <Textarea
+                      autoFocus
+                      value={form.profile.bio}
+                      onChange={(e) => update("profile.bio", e.target.value)}
+                      placeholder="Tell suppliers what you sell, who you reach, and how you convert."
+                      rows={5}
+                    />
+                  </EditableFieldShell>
                 </Field>
               </div>
             </div>
