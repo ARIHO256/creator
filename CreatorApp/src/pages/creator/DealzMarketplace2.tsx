@@ -2344,24 +2344,6 @@ export default function DealzMarketplace() {
     });
   }, [workspaceState]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
-        Loading dealz marketplace…
-      </div>
-    );
-  }
-
-  if (error || !workspaceState) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-          Dealz marketplace data is unavailable.
-        </div>
-      </div>
-    );
-  }
-
   const selected = useMemo(() => dealz.find((d) => d.id === selectedId), [selectedId, dealz]);
   const navigate = useNavigate();
 
@@ -2787,6 +2769,24 @@ export default function DealzMarketplace() {
     { key: "Live Sessionz", label: "Live Sessionz", icon: <Video className="h-4 w-4" /> },
     { key: "Live + Shoppables", label: "Live + Shoppables", icon: <Sparkles className="h-4 w-4" /> }
   ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading dealz marketplace…
+      </div>
+    );
+  }
+
+  if (error || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Dealz marketplace data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-slate-950 transition-colors">

@@ -404,23 +404,25 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
   const configuredProducts = storedLiveDraft?.products || [];
 
   useEffect(() => {
-    if (!studioHydrated) return;
+    if (!studioHydrated || !studioId) return;
     const timeout = window.setTimeout(() => {
-      void creatorApi.updateLiveStudio(studioId, {
-        data: {
-          mode,
-          micOn,
-          camOn,
-          screenShareOn,
-          activeSceneId,
-          highlightedProductId,
-          flashDealzActive,
-          flashDealzSeconds,
-          giveawayActive,
-          giveawayEntries,
-          selectedGiveawayId
-        }
-      });
+      void creatorApi
+        .updateLiveStudio(studioId, {
+          data: {
+            mode,
+            micOn,
+            camOn,
+            screenShareOn,
+            activeSceneId,
+            highlightedProductId,
+            flashDealzActive,
+            flashDealzSeconds,
+            giveawayActive,
+            giveawayEntries,
+            selectedGiveawayId
+          }
+        })
+        .catch(() => undefined);
     }, 400);
     return () => {
       window.clearTimeout(timeout);

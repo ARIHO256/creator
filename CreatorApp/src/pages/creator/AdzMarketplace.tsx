@@ -1212,24 +1212,6 @@ export default function AdzMarketplace() {
     });
   }, [workspaceState]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
-        Loading marketplace…
-      </div>
-    );
-  }
-
-  if (error || !workspaceState) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-          Marketplace data is unavailable.
-        </div>
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
@@ -1556,6 +1538,24 @@ export default function AdzMarketplace() {
     }
     const m = modeByOffer[offerId] || "RETAIL";
     addToCart(offerId, m);
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading marketplace…
+      </div>
+    );
+  }
+
+  if (error || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Marketplace data is unavailable.
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -28,7 +28,43 @@ type ApiEnvelope<T> = {
 const RAW_API_BASE =
   (typeof import.meta !== "undefined" && (import.meta as ImportMeta).env?.VITE_API_URL) || "/api";
 
-const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function resolveApiBase(rawApiBase: string) {
+  const normalizedBase = rawApiBase.replace(/\/+$/, "");
+  if (!normalizedBase) return "/api";
+
+  if (typeof window === "undefined") {
+    return normalizedBase;
+  }
+
+  if (!/^https?:\/\//i.test(normalizedBase)) {
+    return normalizedBase;
+  }
+
+  try {
+    const configuredUrl = new URL(normalizedBase);
+    const currentUrl = new URL(window.location.href);
+
+    // In local development, keep API requests same-origin so SameSite=Lax auth cookies survive.
+    if (
+      isLoopbackHostname(configuredUrl.hostname) &&
+      isLoopbackHostname(currentUrl.hostname) &&
+      configuredUrl.hostname !== currentUrl.hostname
+    ) {
+      return configuredUrl.pathname.replace(/\/+$/, "") || "/api";
+    }
+  } catch {
+    return normalizedBase;
+  }
+
+  return normalizedBase;
+}
+
+const API_BASE = resolveApiBase(RAW_API_BASE);
 const pendingGetRequests = new Map<string, Promise<unknown>>();
 let pendingAuthRefresh: Promise<boolean> | null = null;
 let refreshBackoffUntil = 0;
