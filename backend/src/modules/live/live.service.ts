@@ -221,16 +221,28 @@ export class LiveService {
   }
 
   async studio(userId: string, id: string) {
-    const sessionId = this.resolveSessionId(userId, id);
+    const sessionId = await this.resolveStudioSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
     return this.serializeStudio(studio);
   }
 
   async updateStudio(userId: string, id: string, body: UpdateLiveStudioDto) {
-    const sessionId = this.resolveSessionId(userId, id);
+    const sessionId = await this.resolveStudioSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
     const sanitized = this.ensureObjectPayload(this.extractPayload(body), { maxDepth: 6, maxArrayLength: 250, maxKeys: 250 });
-    const merged = { ...(studio.data as any), ...sanitized };
+    const patch = { ...sanitized };
+    if (patch.data && typeof patch.data === 'object' && !Array.isArray(patch.data)) {
+      Object.assign(patch, patch.data as Record<string, unknown>);
+      delete patch.data;
+    }
+    const currentData =
+      studio.data && typeof studio.data === 'object' && !Array.isArray(studio.data)
+        ? { ...(studio.data as Record<string, unknown>) }
+        : {};
+    if (currentData.data && typeof currentData.data === 'object' && !Array.isArray(currentData.data)) {
+      delete currentData.data;
+    }
+    const merged = { ...currentData, ...patch };
     const updated = await this.prisma.liveStudio.update({
       where: { id: studio.id },
       data: {
@@ -241,7 +253,7 @@ export class LiveService {
   }
 
   async startStudio(userId: string, id: string) {
-    const sessionId = this.resolveSessionId(userId, id);
+    const sessionId = await this.resolveStudioSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
     this.assertTransition(studio.status, 'live', this.studioTransitions(), 'studio');
     const updated = await this.prisma.liveStudio.update({
@@ -263,7 +275,7 @@ export class LiveService {
   }
 
   async endStudio(userId: string, id: string) {
-    const sessionId = this.resolveSessionId(userId, id);
+    const sessionId = await this.resolveStudioSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
     this.assertTransition(studio.status, 'ended', this.studioTransitions(), 'studio');
     const updated = await this.prisma.liveStudio.update({
@@ -282,10 +294,10 @@ export class LiveService {
       }
     });
     const replay = await this.prisma.liveReplay.upsert({
-      where: { id },
+      where: { id: sessionId },
       update: {},
       create: {
-        id,
+        id: sessionId,
         userId,
         sessionId: studio.sessionId,
         status: 'draft',
@@ -297,7 +309,7 @@ export class LiveService {
   }
 
   async addMoment(userId: string, id: string, payload: CreateLiveMomentDto) {
-    const sessionId = this.resolveSessionId(userId, id);
+    const sessionId = await this.resolveStudioSessionId(userId, id);
     const studio = await this.ensureStudioRecord(userId, sessionId);
     const sanitized = this.ensureObjectPayload(this.extractPayload(payload), { maxDepth: 4, maxArrayLength: 50, maxKeys: 50 });
     const moment = await this.prisma.liveMoment.create({
@@ -462,7 +474,7 @@ export class LiveService {
     return sanitized as Record<string, unknown>;
   }
 
-  private extractPayload(input: Record<string, unknown> | { payload: Record<string, unknown> }) {
+  private extractPayload(input: Record<string, unknown> | { payload?: Record<string, unknown> }) {
     if (
       input &&
       typeof input === 'object' &&
@@ -543,8 +555,15 @@ export class LiveService {
   }
 
   private async ensureStudioRecord(userId: string, sessionId: string) {
+    const existingSession = await this.prisma.liveSession.findUnique({
+      where: { id: sessionId }
+    });
+    if (existingSession && existingSession.userId !== userId) {
+      throw new NotFoundException('Studio not found');
+    }
+
     const session =
-      (await this.prisma.liveSession.findFirst({ where: { id: sessionId, userId } })) ??
+      existingSession ??
       (await this.prisma.liveSession.create({
         data: {
           id: sessionId,
@@ -572,6 +591,18 @@ export class LiveService {
       return `default-${userId}`;
     }
     return normalized;
+  }
+
+  private async resolveStudioSessionId(userId: string, studioIdentifier: string) {
+    const normalized = this.resolveSessionId(userId, studioIdentifier);
+    const studio = await this.prisma.liveStudio.findFirst({
+      where: {
+        userId,
+        OR: [{ id: normalized }, { sessionId: normalized }]
+      },
+      select: { sessionId: true }
+    });
+    return studio?.sessionId ?? normalized;
   }
 
   private findBuilderRecord(userId: string, identifier: string) {

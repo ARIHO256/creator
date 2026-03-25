@@ -728,18 +728,28 @@ interface UploadMiniProps {
   title: string;
   helper?: string;
   value?: string;
+  previewUrl?: string | null;
+  mimeType?: string;
   onPick: (val: string) => void;
   onFilePick?: (file: File) => void;
   accept?: string;
 }
 
-function UploadMini({ title, helper, value, onPick, onFilePick, accept = "*/*" }: UploadMiniProps) {
+function UploadMini({ title, helper, value, previewUrl, mimeType, onPick, onFilePick, accept = "*/*" }: UploadMiniProps) {
+  const previewHref = typeof previewUrl === "string" ? previewUrl.trim() : "";
+  const canPreviewImage = Boolean(previewHref) && isImageLike(mimeType, value);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:border-amber-200 dark:bg-slate-900 dark:border-slate-700 dark:hover:border-amber-700">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-slate-900 dark:text-white">{title}</div>
           {helper ? <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{helper}</div> : null}
+          {canPreviewImage ? (
+            <div className="mt-3 h-28 w-full max-w-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+              <img src={previewHref} alt={`${title} preview`} className="h-full w-full object-cover" />
+            </div>
+          ) : null}
           <div className="mt-2 text-xs text-slate-700 truncate font-medium flex items-center gap-1.5">
             {value ? <Check className="h-3 w-3 text-emerald-500" /> : <div className="h-1.5 w-1.5 rounded-full bg-slate-300" />}
             {value || "No file selected"}
@@ -2119,33 +2129,27 @@ export default function CreatorSettingsSafetyPremium() {
         return next;
       });
 
-      void creatorApi
-        .createUpload({
-          name: file.name,
-          kind: fileKindFromMime(file.type || ""),
-          mimeType: file.type || undefined,
-          sizeBytes: file.size > 0 ? file.size : undefined,
-          extension: file.name.includes(".") ? file.name.split(".").pop() || undefined : undefined,
-          storageKey,
-          purpose,
-          domain: "creator_settings",
-          entityType: "creator_profile",
-          status: "UPLOADED",
-          metadata: {
-            fieldKey,
-            source: "creator_settings",
-            acceptedAt: new Date().toISOString(),
-            previewDataUrl: persistedPreviewUrl || undefined
-          }
-        })
+      void readFileAsDataUrl(file)
+        .then((dataUrl) =>
+          creatorApi.uploadMediaFile({
+            name: file.name,
+            dataUrl,
+            kind: fileKindFromMime(file.type || ""),
+            mimeType: file.type || undefined,
+            sizeBytes: file.size > 0 ? file.size : undefined,
+            extension: file.name.includes(".") ? file.name.split(".").pop() || undefined : undefined,
+            purpose,
+            metadata: {
+              fieldKey,
+              source: "creator_settings",
+              acceptedAt: new Date().toISOString()
+            }
+          })
+        )
         .then((uploaded) => {
+          const finalPreviewUrl = uploaded.url || persistedPreviewUrl || previewUrl;
           setForm((prev) => {
             const next = deepClone(prev);
-            const uploadedPreviewDataUrl =
-              uploaded.metadata && typeof uploaded.metadata === "object" && !Array.isArray(uploaded.metadata)
-                ? String((uploaded.metadata as Record<string, unknown>).previewDataUrl || "")
-                : "";
-            const finalPreviewUrl = uploaded.url || uploadedPreviewDataUrl || persistedPreviewUrl || previewUrl;
             next.uploads[fieldKey] = {
               id: uploaded.id,
               name: uploaded.name,
@@ -2154,9 +2158,9 @@ export default function CreatorSettingsSafetyPremium() {
               extension: uploaded.extension || "",
               storageKey: uploaded.storageKey || storageKey,
               url: finalPreviewUrl,
-              status: uploaded.status || "uploaded",
+              status: "uploaded",
               createdAt: uploaded.createdAt || new Date().toISOString(),
-              purpose: uploaded.purpose || purpose,
+              purpose,
               fieldKey,
               previewUrl: finalPreviewUrl
             };
@@ -2164,7 +2168,7 @@ export default function CreatorSettingsSafetyPremium() {
           });
         })
         .catch(() => {
-          push("File selected. Metadata sync failed.", "warn");
+          push("File selected, but upload failed.", "warn");
         });
     };
 
@@ -2874,6 +2878,8 @@ export default function CreatorSettingsSafetyPremium() {
                 title="Profile photo"
                 helper="JPG/PNG, 1:1 recommended."
                 value={form.profile.profilePhotoName}
+                previewUrl={form.uploads["profile.profilePhotoName"]?.previewUrl || form.uploads["profile.profilePhotoName"]?.url || null}
+                mimeType={form.uploads["profile.profilePhotoName"]?.mimeType}
                 onPick={(name) => update("profile.profilePhotoName", name)}
                 onFilePick={(file) => {
                   registerUpload("profile.profilePhotoName", file, "creator_profile_photo");
@@ -2984,6 +2990,8 @@ export default function CreatorSettingsSafetyPremium() {
                       title="Team logo"
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.team.logoName}
+                      previewUrl={form.uploads["profile.team.logoName"]?.previewUrl || form.uploads["profile.team.logoName"]?.url || null}
+                      mimeType={form.uploads["profile.team.logoName"]?.mimeType}
                       onPick={(name) => update("profile.team.logoName", name)}
                       onFilePick={(file) => {
                         registerUpload("profile.team.logoName", file, "creator_team_logo");
@@ -3024,6 +3032,8 @@ export default function CreatorSettingsSafetyPremium() {
                       title="Agency logo"
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.agency.logoName}
+                      previewUrl={form.uploads["profile.agency.logoName"]?.previewUrl || form.uploads["profile.agency.logoName"]?.url || null}
+                      mimeType={form.uploads["profile.agency.logoName"]?.mimeType}
                       onPick={(name) => update("profile.agency.logoName", name)}
                       onFilePick={(file) => {
                         registerUpload("profile.agency.logoName", file, "creator_agency_logo");
@@ -3524,6 +3534,8 @@ export default function CreatorSettingsSafetyPremium() {
                     title="ID document"
                     helper={form.kyc.idUploaded ? "Uploaded" : "Required"}
                     value={form.kyc.idFileName}
+                    previewUrl={form.uploads["kyc.idFileName"]?.previewUrl || form.uploads["kyc.idFileName"]?.url || null}
+                    mimeType={form.uploads["kyc.idFileName"]?.mimeType}
                     onPick={(name) => {
                       update("kyc.idFileName", name);
                       update("kyc.idUploaded", true);
@@ -3537,6 +3549,8 @@ export default function CreatorSettingsSafetyPremium() {
                     title="Selfie"
                     helper={form.kyc.selfieUploaded ? "Uploaded" : "Required"}
                     value={form.kyc.selfieFileName}
+                    previewUrl={form.uploads["kyc.selfieFileName"]?.previewUrl || form.uploads["kyc.selfieFileName"]?.url || null}
+                    mimeType={form.uploads["kyc.selfieFileName"]?.mimeType}
                     onPick={(name) => {
                       update("kyc.selfieFileName", name);
                       update("kyc.selfieUploaded", true);
@@ -3550,6 +3564,8 @@ export default function CreatorSettingsSafetyPremium() {
                     title="Address proof"
                     helper={form.kyc.addressUploaded ? "Uploaded" : "Optional"}
                     value={form.kyc.addressFileName}
+                    previewUrl={form.uploads["kyc.addressFileName"]?.previewUrl || form.uploads["kyc.addressFileName"]?.url || null}
+                    mimeType={form.uploads["kyc.addressFileName"]?.mimeType}
                     onPick={(name) => {
                       update("kyc.addressFileName", name);
                       update("kyc.addressUploaded", true);
@@ -3569,6 +3585,8 @@ export default function CreatorSettingsSafetyPremium() {
                       <UploadMini
                         title="Registration"
                         value={form.kyc.org.registrationName}
+                        previewUrl={form.uploads["kyc.org.registrationName"]?.previewUrl || form.uploads["kyc.org.registrationName"]?.url || null}
+                        mimeType={form.uploads["kyc.org.registrationName"]?.mimeType}
                         onPick={(name) => {
                           update("kyc.org.registrationName", name);
                           update("kyc.org.registrationUploaded", true);
@@ -3581,6 +3599,8 @@ export default function CreatorSettingsSafetyPremium() {
                       <UploadMini
                         title="Tax certificate"
                         value={form.kyc.org.taxName}
+                        previewUrl={form.uploads["kyc.org.taxName"]?.previewUrl || form.uploads["kyc.org.taxName"]?.url || null}
+                        mimeType={form.uploads["kyc.org.taxName"]?.mimeType}
                         onPick={(name) => {
                           update("kyc.org.taxName", name);
                           update("kyc.org.taxUploaded", true);
@@ -3593,6 +3613,8 @@ export default function CreatorSettingsSafetyPremium() {
                       <UploadMini
                         title="Authorization letter"
                         value={form.kyc.org.authorizationName}
+                        previewUrl={form.uploads["kyc.org.authorizationName"]?.previewUrl || form.uploads["kyc.org.authorizationName"]?.url || null}
+                        mimeType={form.uploads["kyc.org.authorizationName"]?.mimeType}
                         onPick={(name) => {
                           update("kyc.org.authorizationName", name);
                           update("kyc.org.authorizationUploaded", true);

@@ -297,7 +297,7 @@ export class AdzService {
     return sanitized as Record<string, unknown>;
   }
 
-  private extractPayload(input: Record<string, unknown> | { payload: Record<string, unknown> }) {
+  private extractPayload(input: Record<string, unknown> | { payload?: Record<string, unknown> }) {
     if (
       input &&
       typeof input === 'object' &&

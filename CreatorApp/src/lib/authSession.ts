@@ -45,6 +45,10 @@ export function hasStoredAuthState() {
   }
 }
 
+export function hasPersistedAuthSession() {
+  return readAuthSession() !== null;
+}
+
 export function persistAuthSession(session: AuthUserSession) {
   if (typeof window === "undefined") return;
 

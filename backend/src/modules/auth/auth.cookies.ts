@@ -21,7 +21,13 @@ export function parseCookieHeader(raw: string | string[] | undefined) {
       const key = entry.slice(0, separator).trim();
       const value = entry.slice(separator + 1).trim();
       if (!key) return acc;
-      acc[key] = decodeURIComponent(value);
+      try {
+        acc[key] = decodeURIComponent(value);
+      } catch {
+        // Browser cookie jars can retain malformed values from prior runs or manual edits.
+        // Treat them as opaque strings so auth falls back to a clean 401 instead of a 500.
+        acc[key] = value;
+      }
       return acc;
     }, {});
 }

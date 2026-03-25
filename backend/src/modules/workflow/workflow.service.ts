@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SellerKind } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -54,6 +54,8 @@ const EMPTY_ONBOARDING_LOOKUPS = {
 
 @Injectable()
 export class WorkflowService {
+  private readonly logger = new Logger(WorkflowService.name);
+
   constructor(
     private readonly configService: ConfigService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -87,15 +89,20 @@ export class WorkflowService {
         take: 50
       });
     } catch (error) {
-      if (!this.isMissingSchemaObjectError(error)) {
-        throw error;
-      }
-      return [];
+      return this.listUploadEntriesWithFallback(userId, error, 'query');
     }
-    return sessions.map((session) => ({
-      id: session.id,
-      ...this.toUploadPayload(session)
-    }));
+    const uploads: Array<Record<string, unknown>> = [];
+    for (const session of sessions) {
+      try {
+        uploads.push({
+          id: session.id,
+          ...this.toUploadPayload(session)
+        });
+      } catch (error) {
+        this.logUploadWarning(userId, 'serialize', error, session.id);
+      }
+    }
+    return uploads;
   }
   async createUpload(userId: string, body: CreateUploadDto) {
     const id = body.id || randomUUID();
@@ -104,32 +111,60 @@ export class WorkflowService {
     const expiresAt = new Date(
       Date.now() + (this.configService.get<number>('upload.sessionTtlMinutes') ?? 20) * 60_000
     );
-    const session = await this.prisma.uploadSession.create({
-      data: {
-        id,
-        userId,
-        purpose: body.purpose ?? 'general',
-        fileName: file.name,
-        kind: file.kind,
-        mimeType: file.mimeType,
-        sizeBytes: file.sizeBytes,
-        extension: file.extension,
-        checksum: file.checksum,
-        storageProvider,
-        storageKey: file.storageKey ?? `${userId}/${id}/${file.name}`,
-        visibility: file.visibility ?? 'PRIVATE',
-        status: body.status ?? 'UPLOADED',
-        expiresAt,
-        metadata: {
-          ...(body.metadata ?? {}),
-          domain: body.domain ?? null,
-          entityType: body.entityType ?? null,
-          entityId: body.entityId ?? null,
-          url: body.url ?? null
-        } as Prisma.InputJsonValue
+    const uploadPayload = {
+      name: file.name,
+      kind: file.kind,
+      mimeType: file.mimeType ?? null,
+      sizeBytes: file.sizeBytes ?? null,
+      extension: file.extension ?? null,
+      checksum: file.checksum ?? null,
+      storageProvider,
+      storageKey: file.storageKey ?? `${userId}/${id}/${file.name}`,
+      url: body.url ?? null,
+      visibility: file.visibility ?? 'PRIVATE',
+      purpose: body.purpose ?? 'general',
+      domain: body.domain ?? null,
+      entityType: body.entityType ?? null,
+      entityId: body.entityId ?? null,
+      status: body.status ?? 'UPLOADED',
+      metadata: {
+        ...(body.metadata ?? {}),
+        domain: body.domain ?? null,
+        entityType: body.entityType ?? null,
+        entityId: body.entityId ?? null,
+        url: body.url ?? null
+      } as Record<string, unknown>,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      const session = await this.prisma.uploadSession.create({
+        data: {
+          id,
+          userId,
+          purpose: body.purpose ?? 'general',
+          fileName: file.name,
+          kind: file.kind,
+          mimeType: file.mimeType,
+          sizeBytes: file.sizeBytes,
+          extension: file.extension,
+          checksum: file.checksum,
+          storageProvider,
+          storageKey: file.storageKey ?? `${userId}/${id}/${file.name}`,
+          visibility: file.visibility ?? 'PRIVATE',
+          status: body.status ?? 'UPLOADED',
+          expiresAt,
+          metadata: uploadPayload.metadata as Prisma.InputJsonValue
+        }
+      });
+      return { id: session.id, ...this.toUploadPayload(session) };
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
       }
-    });
-    return { id: session.id, ...this.toUploadPayload(session) };
+      await this.appendUploadFallbackEntry(userId, { id, ...uploadPayload });
+      return { id, ...uploadPayload };
+    }
   }
 
   async onboarding(userId: string) {
@@ -1604,7 +1639,7 @@ export class WorkflowService {
       });
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
-        return null;
+        return this.getUserSettingWorkflowFallback(userId, 'account_approval', 'main');
       }
       throw error;
     }
@@ -1671,7 +1706,7 @@ export class WorkflowService {
       });
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
-        return null;
+        return this.getUserSettingWorkflowFallback(userId, 'screen_state', key);
       }
       throw error;
     }
@@ -1753,7 +1788,7 @@ export class WorkflowService {
       });
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
-        return null;
+        return this.getUserSettingWorkflowFallback(userId, 'content_approval', id);
       }
       throw error;
     }
@@ -1805,7 +1840,7 @@ export class WorkflowService {
       return record?.payload as Record<string, unknown> | null;
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
-        return null;
+        return this.getUserSettingWorkflowFallback(userId, recordType, recordKey);
       }
       throw error;
     }
@@ -1818,7 +1853,16 @@ export class WorkflowService {
       });
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
-        return null;
+        const payload = await this.getUserSettingWorkflowFallback(userId, recordType, recordKey);
+        return payload
+          ? {
+              id: `${userId}:${recordType}:${recordKey}`,
+              userId,
+              recordType,
+              recordKey,
+              payload: payload as Prisma.InputJsonValue
+            }
+          : null;
       }
       throw error;
     }
@@ -1837,6 +1881,7 @@ export class WorkflowService {
       });
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
+        await this.upsertUserSettingWorkflowFallback(userId, recordType, recordKey, sanitized);
         return {
           id: `${userId}:${recordType}:${recordKey}`,
           userId,
@@ -1862,6 +1907,7 @@ export class WorkflowService {
       });
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
+        await this.upsertUserSettingWorkflowFallback(userId, recordType, recordKey, sanitized);
         return {
           ...existing,
           payload: sanitized as Prisma.InputJsonValue
@@ -1886,6 +1932,7 @@ export class WorkflowService {
       });
     } catch (error) {
       if (this.isMissingSchemaObjectError(error)) {
+        await this.upsertUserSettingWorkflowFallback(userId, recordType, recordKey, sanitized);
         return {
           id: `${userId}:${recordType}:${recordKey}`,
           userId,
@@ -1924,7 +1971,7 @@ export class WorkflowService {
     return sanitized as Record<string, unknown>;
   }
 
-  private extractPayload(input: Record<string, unknown> | { payload: Record<string, unknown> }) {
+  private extractPayload(input: Record<string, unknown> | { payload?: Record<string, unknown> }) {
     if (
       input &&
       typeof input === 'object' &&
@@ -1943,6 +1990,148 @@ export class WorkflowService {
       error instanceof Prisma.PrismaClientKnownRequestError &&
       (error.code === 'P2021' || error.code === 'P2022')
     );
+  }
+
+  private workflowFallbackUserSettingKey(recordType: string, recordKey: string) {
+    return `workflow_fallback:${recordType}:${recordKey}`;
+  }
+
+  private uploadFallbackUserSettingKey() {
+    return 'workflow_fallback:uploads';
+  }
+
+  private async getUserSettingWorkflowFallback(userId: string, recordType: string, recordKey: string) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return null;
+    }
+    try {
+      const record = await this.prisma.userSetting.findUnique({
+        where: {
+          userId_key: {
+            userId,
+            key: this.workflowFallbackUserSettingKey(recordType, recordKey)
+          }
+        }
+      });
+      return record ? this.readStoredObjectPayload(record.payload) : null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async upsertUserSettingWorkflowFallback(
+    userId: string,
+    recordType: string,
+    recordKey: string,
+    payload: Record<string, unknown>
+  ) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return;
+    }
+    try {
+      await this.prisma.userSetting.upsert({
+        where: {
+          userId_key: {
+            userId,
+            key: this.workflowFallbackUserSettingKey(recordType, recordKey)
+          }
+        },
+        update: { payload: payload as Prisma.InputJsonValue },
+        create: {
+          userId,
+          key: this.workflowFallbackUserSettingKey(recordType, recordKey),
+          payload: payload as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  private async listUploadFallbackEntries(userId: string) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return [];
+    }
+    try {
+      const record = await this.prisma.userSetting.findUnique({
+        where: { userId_key: { userId, key: this.uploadFallbackUserSettingKey() } }
+      });
+      const payload =
+        record?.payload && typeof record.payload === 'object' && !Array.isArray(record.payload)
+          ? (record.payload as Record<string, unknown>)
+          : {};
+      const uploads = Array.isArray(payload.entries) ? payload.entries : [];
+      return uploads
+        .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
+        .map((entry) => ({
+          id: String(entry.id || randomUUID()),
+          ...this.readStoredObjectPayload(entry)
+        }));
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  private async listUploadEntriesWithFallback(userId: string, error: unknown, stage: string) {
+    if (!this.isMissingSchemaObjectError(error)) {
+      this.logUploadWarning(userId, stage, error);
+    }
+    try {
+      return await this.listUploadFallbackEntries(userId);
+    } catch (fallbackError) {
+      this.logUploadWarning(userId, `${stage}:fallback`, fallbackError);
+      return [];
+    }
+  }
+
+  private logUploadWarning(userId: string, stage: string, error: unknown, sessionId?: string) {
+    const detail = error instanceof Error ? error.message : String(error);
+    const sessionSuffix = sessionId ? ` session ${sessionId}` : '';
+    this.logger.warn(`Uploads fallback for user ${userId}${sessionSuffix} at ${stage}: ${detail}`);
+  }
+
+  private async appendUploadFallbackEntry(userId: string, entry: Record<string, unknown>) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return;
+    }
+    try {
+      const existing = await this.prisma.userSetting.findUnique({
+        where: { userId_key: { userId, key: this.uploadFallbackUserSettingKey() } }
+      });
+      const payload =
+        existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload)
+          ? (existing.payload as Record<string, unknown>)
+          : {};
+      const entries = Array.isArray(payload.entries) ? payload.entries : [];
+      const nextEntries = [
+        entry,
+        ...entries.filter((item) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+          return String((item as Record<string, unknown>).id || '') !== String(entry.id || '');
+        })
+      ].slice(0, 50);
+      await this.prisma.userSetting.upsert({
+        where: { userId_key: { userId, key: this.uploadFallbackUserSettingKey() } },
+        update: { payload: { entries: nextEntries } as Prisma.InputJsonValue },
+        create: {
+          userId,
+          key: this.uploadFallbackUserSettingKey(),
+          payload: { entries: nextEntries } as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+    }
   }
 
   private readStoredObjectPayload(payload: unknown) {
@@ -2087,33 +2276,37 @@ export class WorkflowService {
     sizeBytes: number | null;
     extension: string | null;
     checksum: string | null;
-    storageProvider: string;
-    storageKey: string;
-    visibility: string;
-    purpose: string;
-    status: string;
+    storageProvider: string | null;
+    storageKey: string | null;
+    visibility: string | null;
+    purpose: string | null;
+    status: string | null;
     metadata: unknown;
-    createdAt: Date;
+    createdAt: Date | string | null;
   }) {
-    const meta = (session.metadata ?? {}) as Record<string, unknown>;
+    const meta =
+      session.metadata && typeof session.metadata === 'object' && !Array.isArray(session.metadata)
+        ? (session.metadata as Record<string, unknown>)
+        : {};
+    const createdAt = this.readDateField(session.createdAt)?.toISOString() ?? new Date(0).toISOString();
     return {
-      name: session.fileName,
-      kind: session.kind,
-      mimeType: session.mimeType,
-      sizeBytes: session.sizeBytes,
-      extension: session.extension,
-      checksum: session.checksum,
-      storageProvider: session.storageProvider,
-      storageKey: session.storageKey,
+      name: this.readStringField(session.fileName),
+      kind: this.readStringField(session.kind),
+      mimeType: this.readNullableStringField(session.mimeType),
+      sizeBytes: typeof session.sizeBytes === 'number' && Number.isFinite(session.sizeBytes) ? session.sizeBytes : null,
+      extension: this.readNullableStringField(session.extension),
+      checksum: this.readNullableStringField(session.checksum),
+      storageProvider: this.readStringField(session.storageProvider) || 'LOCAL',
+      storageKey: this.readStringField(session.storageKey),
       url: meta.url ?? null,
-      visibility: session.visibility,
-      purpose: session.purpose,
+      visibility: this.readStringField(session.visibility) || 'PRIVATE',
+      purpose: this.readStringField(session.purpose) || 'general',
       domain: meta.domain ?? null,
       entityType: meta.entityType ?? null,
       entityId: meta.entityId ?? null,
-      status: session.status,
+      status: this.readStringField(session.status) || 'UNKNOWN',
       metadata: meta,
-      createdAt: session.createdAt.toISOString()
+      createdAt
     };
   }
 

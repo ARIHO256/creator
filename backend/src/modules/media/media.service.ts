@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { createHash, createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
 import { StorageService } from '../../platform/storage/storage.service.js';
 import { JobsService } from '../jobs/jobs.service.js';
@@ -11,6 +11,24 @@ import { CreateMediaAssetDto } from './dto/create-media-asset.dto.js';
 import { CreateUploadSessionDto } from './dto/create-upload-session.dto.js';
 import { UploadMediaFileDto } from './dto/upload-media-file.dto.js';
 import { UpdateMediaAssetDto } from './dto/update-media-asset.dto.js';
+
+type MediaFallbackAsset = {
+  id: string;
+  userId: string;
+  name: string;
+  kind?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  extension?: string | null;
+  checksum?: string | null;
+  storageProvider?: string | null;
+  storageKey?: string | null;
+  url?: string | null;
+  isPublic: boolean;
+  metadata?: Record<string, unknown> | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
 
 @Injectable()
 export class MediaService {
@@ -22,7 +40,14 @@ export class MediaService {
   ) {}
 
   async list(userId: string) {
-    return this.prisma.mediaAsset.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } });
+    try {
+      return await this.prisma.mediaAsset.findMany({ where: { userId }, orderBy: { createdAt: 'desc' } });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      return this.listFallbackAssets(userId);
+    }
   }
 
   async workspace(userId: string) {
@@ -42,6 +67,11 @@ export class MediaService {
       this.prisma.mediaAsset.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' }
+      }).catch((error) => {
+        if (this.isMissingSchemaObjectError(error)) {
+          return this.listFallbackAssets(userId);
+        }
+        throw error;
       })
     ]);
 
@@ -187,8 +217,49 @@ export class MediaService {
       file.mimeType ?? 'application/octet-stream'
     );
 
-    const asset = await this.prisma.mediaAsset.create({
-      data: {
+    const metadata = {
+      visibility: file.visibility,
+      purpose: payload.purpose ?? 'general',
+      ...(payload.metadata ?? {})
+    } as Record<string, unknown>;
+
+    try {
+      const asset = await this.prisma.mediaAsset.create({
+        data: {
+          userId,
+          name: file.name,
+          kind: file.kind,
+          mimeType: stored.mimeType,
+          sizeBytes: stored.sizeBytes,
+          extension: file.extension,
+          checksum: file.checksum,
+          storageProvider: file.storageProvider,
+          storageKey: stored.storageKey,
+          isPublic: payload.isPublic ?? file.visibility === 'PUBLIC',
+          metadata: metadata as Prisma.InputJsonValue
+        }
+      });
+
+      const urls = this.buildAssetUrls(asset.id, asset.isPublic);
+      return this.prisma.mediaAsset.update({
+        where: { id: asset.id },
+        data: {
+          url: urls.url
+        }
+      }).then((updated) => ({
+        ...updated,
+        url: urls.url,
+        publicUrl: urls.publicUrl
+      }));
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+
+      const fallbackId = randomUUID();
+      const urls = this.buildAssetUrls(fallbackId, payload.isPublic ?? file.visibility === 'PUBLIC');
+      const fallbackAsset: MediaFallbackAsset = {
+        id: fallbackId,
         userId,
         name: file.name,
         kind: file.kind,
@@ -198,26 +269,18 @@ export class MediaService {
         checksum: file.checksum,
         storageProvider: file.storageProvider,
         storageKey: stored.storageKey,
+        url: urls.url,
         isPublic: payload.isPublic ?? file.visibility === 'PUBLIC',
-        metadata: {
-          visibility: file.visibility,
-          purpose: payload.purpose ?? 'general',
-          ...(payload.metadata ?? {})
-        } as Prisma.InputJsonValue
-      }
-    });
-
-    const urls = this.buildAssetUrls(asset.id, asset.isPublic);
-    return this.prisma.mediaAsset.update({
-      where: { id: asset.id },
-      data: {
-        url: urls.url
-      }
-    }).then((updated) => ({
-      ...updated,
-      url: urls.url,
-      publicUrl: urls.publicUrl
-    }));
+        metadata,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await this.upsertFallbackAsset(fallbackAsset);
+      return {
+        ...fallbackAsset,
+        publicUrl: urls.publicUrl
+      };
+    }
   }
 
   async completeUploadSession(userId: string, id: string, payload: CompleteUploadSessionDto) {
@@ -328,9 +391,34 @@ export class MediaService {
 
   async create(userId: string, payload: CreateMediaAssetDto) {
     const file = normalizeFileIntake(payload, { defaultKind: 'other' });
-
-    return this.prisma.mediaAsset.create({
-      data: {
+    try {
+      return await this.prisma.mediaAsset.create({
+        data: {
+          userId,
+          name: file.name,
+          kind: file.kind,
+          mimeType: file.mimeType,
+          sizeBytes: file.sizeBytes,
+          extension: file.extension,
+          checksum: file.checksum,
+          storageProvider: file.storageProvider,
+          storageKey: file.storageKey,
+          url: file.url,
+          isPublic: payload.isPublic ?? file.visibility === 'PUBLIC',
+          metadata: {
+            visibility: file.visibility,
+            ...(file.metadata ?? {})
+          } as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      const fallbackId = randomUUID();
+      const urls = this.buildAssetUrls(fallbackId, payload.isPublic ?? file.visibility === 'PUBLIC');
+      const fallbackAsset: MediaFallbackAsset = {
+        id: fallbackId,
         userId,
         name: file.name,
         kind: file.kind,
@@ -340,52 +428,99 @@ export class MediaService {
         checksum: file.checksum,
         storageProvider: file.storageProvider,
         storageKey: file.storageKey,
-        url: file.url,
+        url: file.url || urls.url,
         isPublic: payload.isPublic ?? file.visibility === 'PUBLIC',
         metadata: {
           visibility: file.visibility,
           ...(file.metadata ?? {})
-        } as Prisma.InputJsonValue
-      }
-    });
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      await this.upsertFallbackAsset(fallbackAsset);
+      return fallbackAsset;
+    }
   }
 
   async update(userId: string, id: string, payload: UpdateMediaAssetDto) {
-    const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id, userId }
-    });
-    if (!asset) {
-      throw new NotFoundException('Media asset not found');
-    }
-    return this.prisma.mediaAsset.update({
-      where: { id: asset.id },
-      data: {
-        name: typeof payload.name === 'string' ? payload.name : undefined,
-        kind: typeof payload.kind === 'string' ? payload.kind : undefined,
-        url: typeof payload.url === 'string' ? payload.url : undefined,
+    try {
+      const asset = await this.prisma.mediaAsset.findFirst({
+        where: { id, userId }
+      });
+      if (!asset) {
+        throw new NotFoundException('Media asset not found');
+      }
+      return this.prisma.mediaAsset.update({
+        where: { id: asset.id },
+        data: {
+          name: typeof payload.name === 'string' ? payload.name : undefined,
+          kind: typeof payload.kind === 'string' ? payload.kind : undefined,
+          url: typeof payload.url === 'string' ? payload.url : undefined,
+          metadata:
+            payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
+              ? (payload.metadata as Prisma.InputJsonValue)
+              : undefined
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      const asset = await this.getFallbackAsset(userId, id);
+      if (!asset) {
+        throw new NotFoundException('Media asset not found');
+      }
+      const next: MediaFallbackAsset = {
+        ...asset,
+        name: typeof payload.name === 'string' ? payload.name : asset.name,
+        kind: typeof payload.kind === 'string' ? payload.kind : asset.kind,
+        url: typeof payload.url === 'string' ? payload.url : asset.url,
         metadata:
           payload.metadata && typeof payload.metadata === 'object' && !Array.isArray(payload.metadata)
-            ? (payload.metadata as Prisma.InputJsonValue)
-            : undefined
-      }
-    });
+            ? (payload.metadata as Record<string, unknown>)
+            : asset.metadata,
+        updatedAt: new Date().toISOString()
+      };
+      await this.upsertFallbackAsset(next);
+      return next;
+    }
   }
 
   async remove(userId: string, id: string) {
-    const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id, userId }
-    });
-    if (!asset) {
-      throw new NotFoundException('Media asset not found');
+    try {
+      const asset = await this.prisma.mediaAsset.findFirst({
+        where: { id, userId }
+      });
+      if (!asset) {
+        throw new NotFoundException('Media asset not found');
+      }
+      await this.prisma.mediaAsset.delete({ where: { id: asset.id } });
+      return { deleted: true };
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      const asset = await this.getFallbackAsset(userId, id);
+      if (!asset) {
+        throw new NotFoundException('Media asset not found');
+      }
+      await this.deleteFallbackAsset(userId, id);
+      return { deleted: true };
     }
-    await this.prisma.mediaAsset.delete({ where: { id: asset.id } });
-    return { deleted: true };
   }
 
   async openAssetContent(userId: string, id: string) {
-    const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id, userId }
-    });
+    let asset: { storageKey?: string | null; mimeType?: string | null; name?: string | null } | MediaFallbackAsset | null = null;
+    try {
+      asset = await this.prisma.mediaAsset.findFirst({
+        where: { id, userId }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      asset = await this.getFallbackAsset(userId, id);
+    }
     if (!asset) {
       throw new NotFoundException('Media asset not found');
     }
@@ -396,9 +531,17 @@ export class MediaService {
   }
 
   async openPublicAssetContent(id: string) {
-    const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id, isPublic: true }
-    });
+    let asset: { storageKey?: string | null; mimeType?: string | null; name?: string | null } | MediaFallbackAsset | null = null;
+    try {
+      asset = await this.prisma.mediaAsset.findFirst({
+        where: { id, isPublic: true }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      asset = await this.getPublicFallbackAsset(id);
+    }
     if (!asset) {
       throw new NotFoundException('Media asset not found');
     }
@@ -406,6 +549,165 @@ export class MediaService {
       throw new NotFoundException('Media asset file not found');
     }
     return { asset, stream: this.storage.createReadStream(asset.storageKey) };
+  }
+
+  private isMissingSchemaObjectError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
+  }
+
+  private fallbackAssetUserSettingKey(id: string) {
+    return `media_asset_fallback:${id}`;
+  }
+
+  private async listFallbackAssets(userId: string) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return [];
+    }
+    try {
+      const rows = await this.prisma.userSetting.findMany({
+        where: {
+          userId,
+          key: {
+            startsWith: 'media_asset_fallback:'
+          }
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+      return rows
+        .map((row) => this.readFallbackAsset(row.payload))
+        .filter((asset): asset is MediaFallbackAsset => Boolean(asset));
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  private async getFallbackAsset(userId: string, id: string) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return null;
+    }
+    try {
+      const row = await this.prisma.userSetting.findUnique({
+        where: {
+          userId_key: {
+            userId,
+            key: this.fallbackAssetUserSettingKey(id)
+          }
+        }
+      });
+      return row ? this.readFallbackAsset(row.payload) : null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async getPublicFallbackAsset(id: string) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return null;
+    }
+    try {
+      const row = await this.prisma.userSetting.findFirst({
+        where: {
+          key: this.fallbackAssetUserSettingKey(id)
+        }
+      });
+      const asset = row ? this.readFallbackAsset(row.payload) : null;
+      return asset?.isPublic ? asset : null;
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async upsertFallbackAsset(asset: MediaFallbackAsset) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return;
+    }
+    try {
+      await this.prisma.userSetting.upsert({
+        where: {
+          userId_key: {
+            userId: asset.userId,
+            key: this.fallbackAssetUserSettingKey(asset.id)
+          }
+        },
+        update: {
+          payload: asset as Prisma.InputJsonValue
+        },
+        create: {
+          userId: asset.userId,
+          key: this.fallbackAssetUserSettingKey(asset.id),
+          payload: asset as Prisma.InputJsonValue
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  private async deleteFallbackAsset(userId: string, id: string) {
+    if (!('userSetting' in this.prisma) || !this.prisma.userSetting) {
+      return;
+    }
+    try {
+      await this.prisma.userSetting.delete({
+        where: {
+          userId_key: {
+            userId,
+            key: this.fallbackAssetUserSettingKey(id)
+          }
+        }
+      });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  private readFallbackAsset(payload: Prisma.JsonValue | null | undefined): MediaFallbackAsset | null {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return null;
+    }
+    const row = payload as Record<string, unknown>;
+    const id = typeof row.id === 'string' ? row.id : '';
+    const userId = typeof row.userId === 'string' ? row.userId : '';
+    const name = typeof row.name === 'string' ? row.name : '';
+    if (!id || !userId || !name) {
+      return null;
+    }
+    return {
+      id,
+      userId,
+      name,
+      kind: typeof row.kind === 'string' ? row.kind : null,
+      mimeType: typeof row.mimeType === 'string' ? row.mimeType : null,
+      sizeBytes: typeof row.sizeBytes === 'number' ? row.sizeBytes : null,
+      extension: typeof row.extension === 'string' ? row.extension : null,
+      checksum: typeof row.checksum === 'string' ? row.checksum : null,
+      storageProvider: typeof row.storageProvider === 'string' ? row.storageProvider : null,
+      storageKey: typeof row.storageKey === 'string' ? row.storageKey : null,
+      url: typeof row.url === 'string' ? row.url : null,
+      isPublic: Boolean(row.isPublic),
+      metadata:
+        row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+          ? (row.metadata as Record<string, unknown>)
+          : null,
+      createdAt: typeof row.createdAt === 'string' ? row.createdAt : null,
+      updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : null
+    };
   }
 
   private buildStorageKey(userId: string, name: string, extension?: string) {

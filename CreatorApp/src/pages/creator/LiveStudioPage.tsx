@@ -242,7 +242,7 @@ function LiveStudioPage({ onChangePage }: { onChangePage?: (page: "live-schedule
           studio = await creatorApi.liveStudioDefault();
         }
         if (cancelled) return;
-        setStudioId(String(studio.id || candidateId));
+        setStudioId(String(studio.sessionId || studio.id || candidateId));
         const data =
           studio.data && typeof studio.data === "object" && !Array.isArray(studio.data)
             ? (studio.data as Record<string, unknown>)

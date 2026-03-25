@@ -83,3 +83,32 @@ test('JwtAuthGuard falls back to dev identity only when auth is disabled and no 
     email: null
   });
 });
+
+test('JwtAuthGuard returns unauthorized instead of crashing on malformed cookies', () => {
+  const reflector = {
+    getAllAndOverride: () => false
+  };
+  const configService = {
+    get: (key: string) => {
+      if (key === 'auth.disabled') return false;
+      if (key === 'auth.accessSecret') return 'test-access-secret';
+      return undefined;
+    }
+  };
+  const request: { headers: Record<string, string>; user?: unknown } = {
+    headers: {
+      cookie: 'broken=%'
+    }
+  };
+
+  const guard = new JwtAuthGuard(reflector as any, new JwtService() as any, configService as any);
+  const context = {
+    switchToHttp: () => ({
+      getRequest: () => request
+    }),
+    getHandler: () => ({}),
+    getClass: () => ({})
+  };
+
+  assert.throws(() => guard.canActivate(context as any), /Missing Authorization header/);
+});

@@ -5,7 +5,7 @@ import { validateSync } from 'class-validator';
 type DtoConstructor<T> = new () => T;
 
 @Injectable()
-export class FlexiblePayloadValidationPipe<T extends { payload: Record<string, unknown> }> implements PipeTransform {
+export class FlexiblePayloadValidationPipe<T extends { payload?: Record<string, unknown> }> implements PipeTransform {
   constructor(private readonly dtoClass: DtoConstructor<T>) {}
 
   transform(value: unknown) {

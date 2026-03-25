@@ -13,6 +13,7 @@ import {
   AUTH_INVALIDATED_EVENT,
   clearAuthSession,
   getPostAuthPath,
+  hasPersistedAuthSession,
   hasStoredAuthState,
   persistAuthSession,
   readAuthSession
@@ -144,7 +145,7 @@ const AuthRedirectHandler = () => {
 let authBootstrapPromise: Promise<void> | null = null;
 
 function ensureStoredAuthSession() {
-  if (!hasStoredAuthState()) {
+  if (!hasPersistedAuthSession()) {
     return Promise.resolve();
   }
 
@@ -175,12 +176,12 @@ function ensureStoredAuthSession() {
 const App: React.FC = () => {
   const navigate = useNavigate();
   const handleNavigate = (page: string) => navigate(page);
-  const [authReady, setAuthReady] = useState(() => !hasStoredAuthState());
+  const [authReady, setAuthReady] = useState(() => !hasPersistedAuthSession());
 
   useEffect(() => {
     let cancelled = false;
 
-    if (!hasStoredAuthState()) {
+    if (!hasPersistedAuthSession()) {
       setAuthReady(true);
       return;
     }

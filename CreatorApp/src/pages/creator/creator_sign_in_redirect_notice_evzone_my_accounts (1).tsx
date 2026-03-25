@@ -22,6 +22,7 @@ import {
   clearAuthSession,
   enableDashboardAuthOverride,
   getPostAuthPath,
+  hasPersistedAuthSession,
   hasStoredAuthState,
   persistAuthSession
 } from "../../lib/authSession";
@@ -364,7 +365,7 @@ export default function CreatorAuthRedirectNotice() {
   useEffect(() => {
     let active = true;
 
-    if (!hasStoredAuthState()) {
+    if (!hasPersistedAuthSession()) {
       setInitializing(false);
       return () => {
         active = false;
