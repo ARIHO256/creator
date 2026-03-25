@@ -1,189 +1,39 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { sellerBackendApi } from '../../../lib/backendApi';
-import { sellerBackendApi as backendApi } from '../../../lib/backendApi';
-import {
+// @ts-nocheck
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-  buildCampaignBuilderPayload,
-  buildCampaignPayload,
-  mapCampaignBuilderRecord,
-  mapCampaignWorkspace,
-} from './runtime';
+/**
+ * SupplierMyCampaignsPage.jsx (v3)
+ * Controlled Mirroring Mode (Creator → Supplier)
+ * ------------------------------------------------
+ * ✅ Requested upgrades (this revision):
+ * 1) Final step button: “Submit for Approval” (Admin must approve campaign before it becomes active).
+ * 2) “Add from Catalog” becomes contextual:
+ *    - Show “Add Products”, “Add Services”, or BOTH depending on promoted items scope.
+ *    - Clicking opens a Catalog Page experience with:
+ *      • Avatar photo
+ *      • Item details
+ *      • Quantity planned for campaign
+ *      • Current price
+ *      • Discounted price OR % discount OR amount discount (supported)
+ * 3) Campaign creation includes Promo Type + Preferred Promo Arrangement.
+ *
+ * Notes:
+ * - This file is canvas-safe (no router imports). `go()` simulates navigation.
+ * - In production:
+ *   - Catalog is a real page/route (Dealz Marketplace) that returns selections.
+ *   - Approval events are driven by backend + Admin workflows.
+ */
 
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/overview/SupplierMyCampaignsPage").catch(() => undefined);
-
-const ORANGE = '#f77f00';
-
-declare global {
-  interface Window {
-    __MLDZ_TESTS__?: boolean;
-  }
-}
-
-/* ------------------------- NEW: Retail vs Wholesale + Targeting + Compliance ------------------------- */
-
-const COMMERCE_MODES = ['Retail', 'Wholesale'];
-
-const BUNDLE_MODES = ['Single item', 'Bundle'];
-
-const REGULATED_TAGS = ['None', 'Medical', 'Edu', 'Faith'];
-
-const MARKET_REGIONS = [
-  'East Africa',
-  'West Africa',
-  'Central Africa',
-  'Southern Africa',
-  'North Africa',
-  'Pan-Africa',
-  'Global',
-];
-
-const SHIPPING_CONSTRAINTS = [
-  'Only deliver within country',
-  'No remote areas',
-  'Pickup only in selected cities',
-];
-
-const CONTENT_LANGUAGES = [
-  'English',
-  'French',
-  'Arabic',
-  'Swahili',
-  'Portuguese',
-  'Chinese (Simplified)',
-  'Spanish',
-];
-
-const TIMEZONES = [
-  'Africa/Kampala',
-  'Africa/Nairobi',
-  'Africa/Lagos',
-  'Africa/Johannesburg',
-  'UTC',
-  'Europe/London',
-  'America/New_York',
-];
-
-// Discount modes (used for Retail and Wholesale tiers)
-const DISCOUNT_TYPE_OPTIONS = [
-  { k: 'none', label: 'No discount' },
-  { k: 'percent', label: '% off' },
-  { k: 'amount', label: 'Amount off' },
-  { k: 'final', label: 'Promo price' },
-];
-
-const GIVEAWAY_SUPPORTED_CAMPAIGN_TYPES = ['Live Sessionz', 'Live + Shoppables.'];
-const SELLER_CAMPAIGN_BUILDER_ID = 'seller_campaign_builder_default';
-const BUILDER_AUTOSAVE_DEBOUNCE_MS = 2500;
-const BUILDER_AUTOSAVE_MIN_INTERVAL_MS = 2500;
-const BUILDER_AUTOSAVE_RETRY_MS = 10000;
-
-function campaignTypeSupportsGiveaways(type) {
-  return GIVEAWAY_SUPPORTED_CAMPAIGN_TYPES.includes(String(type || ''));
-}
-
-function positiveIntOrFallback(value, fallback = 1) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  const whole = Math.floor(n);
-  return whole >= 1 ? whole : fallback;
-}
-
-function parsePositiveInt(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return null;
-  if (!/^[0-9]+$/.test(raw)) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 1 ? n : null;
-}
-
-function coercePickedImageAsset(payload) {
-  const src = payload?.payload || payload;
-  if (!src || typeof src !== 'object') return null;
-  const id = typeof src.id === 'string' ? src.id : '';
-  const title =
-    (typeof src.title === 'string' && src.title) ||
-    (typeof src.name === 'string' && src.name) ||
-    (typeof src.label === 'string' && src.label) ||
-    '';
-  const previewUrl =
-    (typeof src.previewUrl === 'string' && src.previewUrl) ||
-    (typeof src.thumbnailUrl === 'string' && src.thumbnailUrl) ||
-    (typeof src.imageUrl === 'string' && src.imageUrl) ||
-    (typeof src.url === 'string' && src.url) ||
-    '';
-  const mediaType =
-    (typeof src.mediaType === 'string' && src.mediaType) ||
-    (typeof src.kind === 'string' && src.kind) ||
-    (typeof src.type === 'string' && src.type) ||
-    'image';
-
-  if (!previewUrl) return null;
-  if (String(mediaType).toLowerCase().includes('video')) return null;
-
-  return { id, title, previewUrl };
-}
-
-function resolveCampaignGiveaway(giveaway, items: any[] = []) {
-  const source =
-    giveaway?.source === 'custom' ? 'custom' : giveaway?.linkedItemId ? 'featured' : 'custom';
-  const linked =
-    source === 'featured' ? (items || []).find((it) => it.id === giveaway?.linkedItemId) : null;
-  const quantity = positiveIntOrFallback(giveaway?.quantity, 1);
-
-  return {
-    source,
-    linked,
-    quantity,
-    title:
-      source === 'featured'
-        ? linked?.title || giveaway?.title || 'Featured item giveaway'
-        : giveaway?.title || 'Custom giveaway',
-    imageUrl:
-      source === 'featured' ? linked?.avatar || giveaway?.imageUrl || '' : giveaway?.imageUrl || '',
-  };
-}
-
-function uniq(arr) {
-  return Array.from(new Set(arr.filter(Boolean)));
-}
-
-function toggleInList<T>(list: T[] = [], value: T): T[] {
-  const set = new Set(list || []);
-  if (set.has(value)) set.delete(value);
-  else set.add(value);
-  return Array.from(set);
-}
-
-function normalizedNum(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function numberOrEmpty(v) {
-  const raw = String(v ?? '').trim();
-  if (!raw) return '';
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : '';
-}
-
-function makeTier(seed = 'T') {
-  return {
-    id: `${seed}-${Math.floor(100 + Math.random() * 900)}${Math.floor(10 + Math.random() * 89)}`,
-    minQty: 1,
-    maxQty: '',
-    discountMode: 'percent',
-    discountValue: 5,
-  };
-}
+const ORANGE = "#f77f00";
 
 /* ------------------------- helpers ------------------------- */
 
 function cx(...xs) {
-  return xs.filter(Boolean).join(' ');
+  return xs.filter(Boolean).join(" ");
 }
 
 function pad2(n) {
-  return String(n).padStart(2, '0');
+  return String(n).padStart(2, "0");
 }
 
 function todayYMD() {
@@ -192,11 +42,9 @@ function todayYMD() {
 }
 
 function addDaysUTC(ymd, days) {
-  if (!ymd) return '';
-  const [y, m, d] = String(ymd)
-    .split('-')
-    .map((x) => Number(x));
-  if (!y || !m || !d) return '';
+  if (!ymd) return "";
+  const [y, m, d] = String(ymd).split("-").map((x) => Number(x));
+  if (!y || !m || !d) return "";
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + Number(days || 0));
   return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
@@ -205,19 +53,19 @@ function addDaysUTC(ymd, days) {
 function computeEndDate(startYMD, durationDays) {
   // inclusive duration: 1 day => end=start
   const dur = Number(durationDays || 1);
-  if (!startYMD) return '';
+  if (!startYMD) return "";
   return addDaysUTC(startYMD, Math.max(0, dur - 1));
 }
 
 function money(currency, value) {
   try {
     return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency: currency || 'USD',
-      maximumFractionDigits: 0,
+      style: "currency",
+      currency: currency || "USD",
+      maximumFractionDigits: 0
     }).format(value);
   } catch {
-    return `${currency || 'USD'} ${Number(value || 0).toLocaleString()}`;
+    return `${currency || "USD"} ${Number(value || 0).toLocaleString()}`;
   }
 }
 
@@ -227,7 +75,7 @@ function clamp(n, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
-function uid(prefix = 'C') {
+function uid(prefix = "C") {
   return `${prefix}-${Math.floor(100 + Math.random() * 900)}${Math.floor(10 + Math.random() * 89)}`;
 }
 
@@ -248,31 +96,31 @@ function calcDiscountedPrice(price, mode, value) {
   const p = Math.max(0, safeNum(price, 0));
   const v = Math.max(0, safeNum(value, 0));
 
-  if (!mode || mode === 'none') return p;
-  if (mode === 'percent') {
+  if (!mode || mode === "none") return p;
+  if (mode === "percent") {
     const pct = clamp(v, 0, 100);
     return Math.max(0, p * (1 - pct / 100));
   }
-  if (mode === 'amount') {
+  if (mode === "amount") {
     return Math.max(0, p - v);
   }
-  if (mode === 'final') {
+  if (mode === "final") {
     return Math.max(0, v);
   }
   return p;
 }
 
-function formatDiscount(mode, value, currency = 'USD') {
+function formatDiscount(mode, value, currency = "USD") {
   const v = safeNum(value, 0);
-  if (!mode || mode === 'none' || v <= 0) return 'No discount';
-  if (mode === 'percent') return `${clamp(v, 0, 100)}% off`;
-  if (mode === 'amount') return `${money(currency, v)} off`;
-  if (mode === 'final') return `Final: ${money(currency, v)}`;
-  return 'No discount';
+  if (!mode || mode === "none" || v <= 0) return "No discount";
+  if (mode === "percent") return `${clamp(v, 0, 100)}% off`;
+  if (mode === "amount") return `${money(currency, v)} off`;
+  if (mode === "final") return `Final: ${money(currency, v)}`;
+  return "No discount";
 }
 
-function svgAvatarDataUrl(label, seed = 'A') {
-  const letter = (label || seed || 'A').trim().slice(0, 1).toUpperCase();
+function svgAvatarDataUrl(label, seed = "A") {
+  const letter = (label || seed || "A").trim().slice(0, 1).toUpperCase();
   const h = Array.from(seed).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   const hue1 = (h * 17) % 360;
   const hue2 = (h * 29 + 90) % 360;
@@ -293,12 +141,12 @@ function svgAvatarDataUrl(label, seed = 'A') {
 /* ------------------------- toast ------------------------- */
 
 function useToasts() {
-  const [toasts, setToasts] = useState<Array<{ id: string; message: string; tone: string }>>([]);
-  const push = useCallback((message, tone = 'info') => {
+  const [toasts, setToasts] = useState([]);
+  const push = (message, tone = "info") => {
     const id = `${Date.now()}_${Math.random()}`;
     setToasts((t) => [...t, { id, message, tone }]);
     window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
-  }, []);
+  };
   return { toasts, push };
 }
 
@@ -310,27 +158,27 @@ function ToastStack({ toasts }) {
         <div
           key={t.id}
           className={cx(
-            'rounded-2xl border px-3 py-2 text-sm shadow-sm bg-white dark:bg-slate-900',
-            t.tone === 'success'
-              ? 'border-emerald-200 dark:border-emerald-800'
-              : t.tone === 'warn'
-                ? 'border-amber-200 dark:border-amber-800'
-                : t.tone === 'error'
-                  ? 'border-rose-200 dark:border-rose-800'
-                  : 'border-slate-200 dark:border-slate-800'
+            "rounded-2xl border px-3 py-2 text-sm shadow-sm bg-white dark:bg-slate-900",
+            t.tone === "success"
+              ? "border-emerald-200 dark:border-emerald-800"
+              : t.tone === "warn"
+                ? "border-amber-200 dark:border-amber-800"
+                : t.tone === "error"
+                  ? "border-rose-200 dark:border-rose-800"
+                  : "border-slate-200 dark:border-slate-800"
           )}
         >
           <div className="flex items-start gap-2">
             <span
               className={cx(
-                'mt-1.5 h-2 w-2 rounded-full',
-                t.tone === 'success'
-                  ? 'bg-emerald-500'
-                  : t.tone === 'warn'
-                    ? 'bg-amber-500'
-                    : t.tone === 'error'
-                      ? 'bg-rose-500'
-                      : 'bg-slate-400'
+                "mt-1.5 h-2 w-2 rounded-full",
+                t.tone === "success"
+                  ? "bg-emerald-500"
+                  : t.tone === "warn"
+                    ? "bg-amber-500"
+                    : t.tone === "error"
+                      ? "bg-rose-500"
+                      : "bg-slate-400"
               )}
             />
             <div className="text-slate-700 dark:text-slate-200">{t.message}</div>
@@ -343,29 +191,12 @@ function ToastStack({ toasts }) {
 
 /* ------------------------- UI atoms ------------------------- */
 
-type PillProps = {
-  tone?: string;
-  children: React.ReactNode;
-  title?: string;
-};
-
-type BtnProps = {
-  tone?: 'neutral' | 'primary' | 'ghost' | 'danger';
-  className?: string;
-  onClick?: React.MouseEventHandler<HTMLButtonElement>;
-  disabled?: boolean;
-  children: React.ReactNode;
-  title?: string;
-};
-
 function PageHeader({ title, badge, actions }) {
   return (
-    <header className="sticky top-0 z-40 w-full bg-white dark:bg-slate-900/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
-      <div className="w-full px-[0.55%] py-3 flex items-start md:items-center justify-between gap-3">
+    <header className="sticky top-0 z-40 w-full bg-white/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
+      <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-3 flex items-start md:items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-50 truncate">
-            {title}
-          </div>
+          <div className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-50 truncate">{title}</div>
           <div className="mt-1 flex flex-wrap items-center gap-2">{badge}</div>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>
@@ -374,50 +205,40 @@ function PageHeader({ title, badge, actions }) {
   );
 }
 
-function Pill({ tone = 'neutral', children, title }: PillProps) {
+function Pill({ tone = "neutral", children, title }) {
   const cls =
-    tone === 'good'
-      ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-400'
-      : tone === 'warn'
-        ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-400'
-        : tone === 'bad'
-          ? 'bg-rose-50 dark:bg-rose-900/10 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-400'
-          : tone === 'brand'
-            ? 'text-white border-transparent'
-            : 'bg-gray-50 dark:bg-slate-950 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200';
+    tone === "good"
+      ? "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-400"
+      : tone === "warn"
+        ? "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-400"
+        : tone === "bad"
+          ? "bg-rose-50 dark:bg-rose-900/10 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-400"
+          : tone === "brand"
+            ? "text-white border-transparent"
+            : "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200";
 
   return (
     <span
       title={title}
-      className={cx(
-        'inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold',
-        cls
-      )}
-      style={tone === 'brand' ? { background: ORANGE } : undefined}
+      className={cx("inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold", cls)}
+      style={tone === "brand" ? { background: ORANGE } : undefined}
     >
       {children}
     </span>
   );
 }
 
-function Btn({
-  tone = 'neutral',
-  className = '',
-  onClick = () => {},
-  disabled = false,
-  children,
-  title,
-}: BtnProps) {
+function Btn({ tone = "neutral", className = "", onClick, disabled, children, title }) {
   const base =
-    'inline-flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-semibold border transition disabled:opacity-50 disabled:cursor-not-allowed';
+    "inline-flex items-center justify-center gap-2 px-3 py-2 rounded-2xl text-sm font-semibold border transition disabled:opacity-50 disabled:cursor-not-allowed";
   const cls =
-    tone === 'primary'
-      ? 'border-transparent text-white hover:brightness-95'
-      : tone === 'ghost'
-        ? 'border-transparent bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-900 dark:text-slate-100'
-        : tone === 'danger'
-          ? 'border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 text-rose-700 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/20'
-          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800';
+    tone === "primary"
+      ? "border-transparent text-white hover:brightness-95"
+      : tone === "ghost"
+        ? "border-transparent bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-900 dark:text-slate-100"
+        : tone === "danger"
+          ? "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 text-rose-700 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/20"
+          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-800";
 
   return (
     <button
@@ -426,14 +247,14 @@ function Btn({
       disabled={disabled}
       onClick={onClick}
       className={cx(base, cls, className)}
-      style={tone === 'primary' ? { background: ORANGE } : undefined}
+      style={tone === "primary" ? { background: ORANGE } : undefined}
     >
       {children}
     </button>
   );
 }
 
-function Input({ value, onChange, placeholder, className = '', type = 'text' }) {
+function Input({ value, onChange, placeholder, className = "", type = "text" }) {
   return (
     <input
       type={type}
@@ -441,20 +262,20 @@ function Input({ value, onChange, placeholder, className = '', type = 'text' }) 
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       className={cx(
-        'w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400',
+        "w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-semibold outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400",
         className
       )}
     />
   );
 }
 
-function Select({ value, onChange, children, className = '' }) {
+function Select({ value, onChange, children, className = "" }) {
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={cx(
-        'w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none text-slate-900 dark:text-slate-100',
+        "w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none text-slate-900 dark:text-slate-100",
         className
       )}
     >
@@ -465,29 +286,25 @@ function Select({ value, onChange, children, className = '' }) {
 
 function Drawer({ open, title, subtitle, onClose, children, footer }) {
   return (
-    <div className={cx('fixed inset-0 z-[70]', open ? '' : 'pointer-events-none')}>
+    <div className={cx("fixed inset-0 z-[70]", open ? "" : "pointer-events-none")}>
       <div
         className={cx(
-          'absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity',
-          open ? 'opacity-100' : 'opacity-0'
+          "absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity",
+          open ? "opacity-100" : "opacity-0"
         )}
         onClick={onClose}
       />
       <div
         className={cx(
-          'absolute top-0 right-0 h-full w-full sm:w-[1098px] bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl transition-transform',
-          open ? 'translate-x-0' : 'translate-x-full'
+          "absolute top-0 right-0 h-full w-full sm:w-[560px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl transition-transform",
+          open ? "translate-x-0" : "translate-x-full"
         )}
       >
         <div className="h-full flex flex-col">
           <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50 truncate">
-                {title}
-              </div>
-              {subtitle ? (
-                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{subtitle}</div>
-              ) : null}
+              <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50 truncate">{title}</div>
+              {subtitle ? <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{subtitle}</div> : null}
             </div>
             <Btn tone="ghost" onClick={onClose}>
               ✕
@@ -495,7 +312,7 @@ function Drawer({ open, title, subtitle, onClose, children, footer }) {
           </div>
           <div className="flex-1 overflow-auto px-4 py-4">{children}</div>
           {footer ? (
-            <div className="border-t border-slate-200 dark:border-slate-800 px-4 py-3 bg-gray-50 dark:bg-slate-950/50 dark:bg-slate-900/30">
+            <div className="border-t border-slate-200 dark:border-slate-800 px-4 py-3 bg-slate-50/50 dark:bg-slate-900/30">
               {footer}
             </div>
           ) : null}
@@ -508,23 +325,19 @@ function Drawer({ open, title, subtitle, onClose, children, footer }) {
 function FullscreenModal({ open, title, subtitle, onClose, children, footer }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[85] bg-white dark:bg-slate-900 flex flex-col">
-      <div className="h-16 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/80 dark:bg-slate-950/70 backdrop-blur flex items-center justify-between px-[0.55%]">
+    <div className="fixed inset-0 z-[85] bg-white dark:bg-slate-950 flex flex-col">
+      <div className="h-16 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 backdrop-blur flex items-center justify-between px-3 sm:px-4 md:px-6">
         <div className="min-w-0">
           <div className="text-sm sm:text-base font-extrabold truncate">{title}</div>
-          {subtitle ? (
-            <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</div>
-          ) : null}
+          {subtitle ? <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</div> : null}
         </div>
         <div className="flex items-center gap-2">
           <Btn onClick={onClose}>✕ Close</Btn>
         </div>
       </div>
-      <div className="flex-1 overflow-auto px-[0.55%] py-4 bg-gray-50 dark:bg-slate-950">
-        {children}
-      </div>
+      <div className="flex-1 overflow-auto px-3 sm:px-4 md:px-6 py-4 bg-[#f2f2f2] dark:bg-slate-950">{children}</div>
       {footer ? (
-        <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-[0.55%] py-3">
+        <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 sm:px-4 md:px-6 py-3">
           {footer}
         </div>
       ) : null}
@@ -538,10 +351,10 @@ function RadioCard({ active, title, desc, onClick, badge }) {
       type="button"
       onClick={onClick}
       className={cx(
-        'w-full text-left rounded-3xl border p-3 transition shadow-sm',
+        "w-full text-left rounded-3xl border p-3 transition shadow-sm",
         active
-          ? 'border-[#f77f00] bg-amber-50/40 dark:bg-amber-900/20'
-          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
+          ? "border-[#f77f00] bg-amber-50/40 dark:bg-amber-900/20"
+          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800"
       )}
     >
       <div className="flex items-start justify-between gap-3">
@@ -549,7 +362,7 @@ function RadioCard({ active, title, desc, onClick, badge }) {
           <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{title}</div>
           <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">{desc}</div>
         </div>
-        {badge ? <Pill tone={active ? 'brand' : 'neutral'}>{badge}</Pill> : null}
+        {badge ? <Pill tone={active ? "brand" : "neutral"}>{badge}</Pill> : null}
       </div>
     </button>
   );
@@ -557,216 +370,516 @@ function RadioCard({ active, title, desc, onClick, badge }) {
 
 /* ------------------------- domain model (supplier) ------------------------- */
 
-const STAGES = [
-  'Draft',
-  'Collabs',
-  'Negotiating',
-  'Contracted',
-  'Execution',
-  'Completed',
-  'Terminated',
-];
+const STAGES = ["Draft", "Collabs", "Negotiating", "Contracted", "Execution", "Completed", "Terminated"];
 
-const USAGE_DECISIONS = ['I will use a Creator', 'I will NOT use a Creator', 'I am NOT SURE yet'];
-const COLLAB_MODES = ['Open for Collabs', 'Invite-only'];
-const APPROVAL_MODES = ['Manual', 'Auto']; // Manual means Supplier approves creator assets before Admin
+const USAGE_DECISIONS = ["I will use a Creator", "I will NOT use a Creator", "I am NOT SURE yet"];
+const COLLAB_MODES = ["Open for Collabs", "Invite-only"];
+const APPROVAL_MODES = ["Manual", "Auto"]; // Manual means Supplier approves creator assets before Admin
 
 const OFFER_SCOPES = [
-  { k: 'Products', label: 'Products' },
-  { k: 'Services', label: 'Services' },
-  { k: 'Both', label: 'Products & Services' },
+  { k: "Products", label: "Products" },
+  { k: "Services", label: "Services" },
+  { k: "Both", label: "Products & Services" }
 ];
 
 const PROMO_TYPES = [
-  { k: 'Discount', label: 'Discount' },
-  { k: 'Bundle', label: 'Bundle / Pack' },
-  { k: 'Coupon', label: 'Coupon / Code' },
-  { k: 'FreeShipping', label: 'Free Shipping' },
-  { k: 'Gift', label: 'Gift / Bonus' },
-  { k: 'Highlight', label: 'No Discount (Highlight)' },
+  { k: "Discount", label: "Discount" },
+  { k: "Bundle", label: "Bundle / Pack" },
+  { k: "Coupon", label: "Coupon / Code" },
+  { k: "FreeShipping", label: "Free Shipping" },
+  { k: "Gift", label: "Gift / Bonus" },
+  { k: "Highlight", label: "No Discount (Highlight)" }
 ];
 
 const PROMO_ARRANGEMENTS = {
   Discount: [
-    { k: 'PercentOff', label: '% off' },
-    { k: 'AmountOff', label: 'Amount off' },
-    { k: 'FinalPrice', label: 'Set final price' },
-    { k: 'Tiered', label: 'Tiered / volume' },
-    { k: 'Flash', label: 'Flash windows' },
+    { k: "PercentOff", label: "% off" },
+    { k: "AmountOff", label: "Amount off" },
+    { k: "FinalPrice", label: "Set final price" },
+    { k: "Tiered", label: "Tiered / volume" },
+    { k: "Flash", label: "Flash windows" }
   ],
   Bundle: [
-    { k: 'BundlePrice', label: 'Bundle price' },
-    { k: 'BuyXGetY', label: 'Buy X get Y' },
-    { k: 'MixMatch', label: 'Mix & match' },
-    { k: 'AddOn', label: 'Add-on deal' },
+    { k: "BundlePrice", label: "Bundle price" },
+    { k: "BuyXGetY", label: "Buy X get Y" },
+    { k: "MixMatch", label: "Mix & match" },
+    { k: "AddOn", label: "Add-on deal" }
   ],
   Coupon: [
-    { k: 'InfluencerCode', label: 'Influencer code' },
-    { k: 'CheckoutCode', label: 'Checkout code' },
-    { k: 'AutoApply', label: 'Auto-apply' },
+    { k: "InfluencerCode", label: "Influencer code" },
+    { k: "CheckoutCode", label: "Checkout code" },
+    { k: "AutoApply", label: "Auto-apply" }
   ],
   FreeShipping: [
-    { k: 'OverThreshold', label: 'Over threshold' },
-    { k: 'SelectedItems', label: 'Selected items' },
-    { k: 'AllOrders', label: 'All orders' },
+    { k: "OverThreshold", label: "Over threshold" },
+    { k: "SelectedItems", label: "Selected items" },
+    { k: "AllOrders", label: "All orders" }
   ],
   Gift: [
-    { k: 'GiftWithPurchase', label: 'Gift with purchase' },
-    { k: 'BonusService', label: 'Bonus service' },
-    { k: 'FreeUpgrade', label: 'Free upgrade' },
+    { k: "GiftWithPurchase", label: "Gift with purchase" },
+    { k: "BonusService", label: "Bonus service" },
+    { k: "FreeUpgrade", label: "Free upgrade" }
   ],
-  Highlight: [{ k: 'Feature', label: 'Feature highlight' }],
+  Highlight: [{ k: "Feature", label: "Feature highlight" }]
 };
 
 const DISCOUNT_MODES = [
-  { k: 'none', label: 'No discount' },
-  { k: 'percent', label: '%' },
-  { k: 'amount', label: 'Amount' },
-  { k: 'final', label: 'Final price' },
+  { k: "none", label: "No discount" },
+  { k: "percent", label: "%" },
+  { k: "amount", label: "Amount" },
+  { k: "final", label: "Final price" }
 ];
 
 const HEALTH = {
-  'on-track': { dot: 'bg-emerald-500', label: 'On track' },
-  'at-risk': { dot: 'bg-amber-500 animate-pulse', label: 'At risk' },
-  stalled: { dot: 'bg-slate-400', label: 'Stalled' },
+  "on-track": { dot: "bg-emerald-500", label: "On track" },
+  "at-risk": { dot: "bg-amber-500 animate-pulse", label: "At risk" },
+  stalled: { dot: "bg-slate-400", label: "Stalled" }
 };
 
 function statusTone(stage) {
   const map = {
-    Draft:
-      'bg-gray-50 dark:bg-slate-950 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-    Collabs:
-      'bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-700',
-    Negotiating:
-      'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700',
-    Contracted:
-      'bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700',
-    Execution:
-      'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',
-    Completed:
-      'bg-gray-50 dark:bg-slate-950 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
-    Terminated:
-      'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-700',
+    Draft: "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
+    Collabs: "bg-indigo-50 text-indigo-600 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-700",
+    Negotiating: "bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700",
+    Contracted: "bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-700",
+    Execution: "bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700",
+    Completed: "bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700",
+    Terminated: "bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-700"
   };
   return map[stage] || map.Draft;
 }
 
 function canSwitchCollabMode(c) {
-  if (c.creatorUsageDecision !== 'I will use a Creator') return false;
-  return ['Draft', 'Collabs', 'Negotiating', 'Contracted'].includes(c.stage);
+  if (c.creatorUsageDecision !== "I will use a Creator") return false;
+  return ["Draft", "Collabs", "Negotiating", "Contracted"].includes(c.stage);
 }
 
 function inferLifecycleText(c) {
-  if (c.creatorUsageDecision === 'I will NOT use a Creator') return 'Supplier acts as Creator';
-  if (c.creatorUsageDecision === 'I am NOT SURE yet') return 'Creator plan pending';
+  if (c.creatorUsageDecision === "I will NOT use a Creator") return "Supplier acts as Creator";
+  if (c.creatorUsageDecision === "I am NOT SURE yet") return "Creator plan pending";
   return c.collabMode;
 }
 
 function approvalText(c) {
-  if (c.creatorUsageDecision === 'I will use a Creator')
-    return c.approvalMode === 'Manual' ? 'Manual approval' : 'Auto approval';
-  return c.approvalMode === 'Manual' ? 'Internal review' : 'Direct to Admin';
+  if (c.creatorUsageDecision === "I will use a Creator") return c.approvalMode === "Manual" ? "Manual approval" : "Auto approval";
+  return c.approvalMode === "Manual" ? "Internal review" : "Direct to Admin";
 }
 
 function approvalStatusPill(approvalStatus) {
-  if (approvalStatus === 'Pending') return { tone: 'warn', label: 'Approval pending' };
-  if (approvalStatus === 'Rejected') return { tone: 'bad', label: 'Rejected' };
-  if (approvalStatus === 'Approved') return { tone: 'good', label: 'Approved' };
-  return { tone: 'neutral', label: 'Not submitted' };
+  if (approvalStatus === "Pending") return { tone: "warn", label: "Approval pending" };
+  if (approvalStatus === "Rejected") return { tone: "bad", label: "Rejected" };
+  if (approvalStatus === "Approved") return { tone: "good", label: "Approved" };
+  return { tone: "neutral", label: "Not submitted" };
 }
+
+
+/* ------------------------- giveaway source-of-truth helpers ------------------------- */
+
+const GIVEAWAY_PRESETS_BY_SKU = {
+  "BC-VC": {
+    enabled: true,
+    total: 60,
+    used: 18,
+    allocated: 12,
+    lowThreshold: 10,
+    updatedAt: "Today · 11:24",
+    notes: "Supplier-owned giveaway source of truth for Beauty live sessions.",
+    audit: [
+      { id: "ga1", at: "Today · 11:24", actor: "Supplier Manager", event: "Raised total stock", delta: "+10", detail: "Expanded giveaway pool for upcoming Live Sessionz." },
+      { id: "ga2", at: "Today · 09:10", actor: "Creator Live Builder", event: "Reserved for upcoming live", delta: "-12 available", detail: "Reserved across 2 upcoming sessions." },
+      { id: "ga3", at: "Yesterday · 17:45", actor: "Live Studio", event: "Claimed by winners", delta: "-18 used", detail: "Winners confirmed in previous live." }
+    ]
+  },
+  "SN-26": {
+    enabled: true,
+    total: 20,
+    used: 5,
+    allocated: 10,
+    lowThreshold: 8,
+    updatedAt: "Today · 10:03",
+    notes: "Running low because 10 units are already reserved for the weekend live.",
+    audit: [
+      { id: "ga4", at: "Today · 10:03", actor: "Creator Live Builder", event: "Reserved for weekend live", delta: "-10 available", detail: "Reserved by Featured Items > + Add Giveaway." },
+      { id: "ga5", at: "Yesterday · 15:10", actor: "Live Studio", event: "Claimed by winners", delta: "-5 used", detail: "Confirmed claims after live." }
+    ]
+  },
+  "SV-SCR": {
+    enabled: false,
+    total: 0,
+    used: 0,
+    allocated: 0,
+    lowThreshold: 2,
+    updatedAt: "Not configured",
+    notes: "Supplier has not enabled service giveaway slots yet.",
+    audit: []
+  },
+  "EB-PRO": {
+    enabled: true,
+    total: 15,
+    used: 0,
+    allocated: 4,
+    lowThreshold: 5,
+    updatedAt: "Yesterday · 18:40",
+    notes: "Ready to sync to Creator Builder after campaign approval.",
+    audit: [
+      { id: "ga6", at: "Yesterday · 18:40", actor: "Supplier Owner", event: "Initialized giveaway stock", delta: "+15", detail: "Prepared before approval." },
+      { id: "ga7", at: "Yesterday · 18:55", actor: "Creator Live Builder", event: "Pre-reserved draft", delta: "-4 available", detail: "Draft live allocation preview." }
+    ]
+  },
+  "SV-WA": {
+    enabled: true,
+    total: 6,
+    used: 1,
+    allocated: 2,
+    lowThreshold: 2,
+    updatedAt: "Yesterday · 16:15",
+    notes: "Service giveaway works as limited slots / vouchers.",
+    audit: [
+      { id: "ga8", at: "Yesterday · 16:15", actor: "Supplier Manager", event: "Configured service slots", delta: "+6", detail: "Service giveaway slot model enabled." },
+      { id: "ga9", at: "Yesterday · 16:50", actor: "Live Studio", event: "Claimed slot", delta: "-1 used", detail: "One service voucher already won." }
+    ]
+  }
+};
+
+function cloneGiveawayAudit(entries) {
+  return Array.isArray(entries) ? entries.map((entry) => ({ ...entry })) : [];
+}
+
+function defaultGiveawayPreset(item) {
+  const preset = GIVEAWAY_PRESETS_BY_SKU[item?.sku] || null;
+  if (preset) {
+    return { ...preset, audit: cloneGiveawayAudit(preset.audit) };
+  }
+
+  return {
+    enabled: false,
+    total: 0,
+    used: 0,
+    allocated: 0,
+    lowThreshold: item?.kind === "Service" ? 2 : 5,
+    updatedAt: "Not configured",
+    notes: item?.kind === "Service" ? "Service giveaway slots not yet configured." : "Giveaway stock not yet enabled.",
+    audit: []
+  };
+}
+
+function giveawayAvailability(item) {
+  return Math.max(
+    0,
+    Number(item?.giveaway?.total || 0) - Number(item?.giveaway?.used || 0) - Number(item?.giveaway?.allocated || 0)
+  );
+}
+
+function giveawayHealthTone(item) {
+  const available = Number(item?.giveaway?.total || 0) - Number(item?.giveaway?.used || 0) - Number(item?.giveaway?.allocated || 0);
+  if (!item?.giveaway?.enabled) return { tone: "neutral", label: "Disabled" };
+  if (available < 0) return { tone: "bad", label: "Over-allocated" };
+  if (available <= Number(item?.giveaway?.lowThreshold || 0)) return { tone: "warn", label: "Low availability" };
+  return { tone: "good", label: "Healthy" };
+}
+
+function ensureGiveaway(item) {
+  if (!item) return item;
+  const fallback = defaultGiveawayPreset(item);
+  const merged = {
+    ...fallback,
+    ...(item.giveaway || {})
+  };
+  return {
+    ...item,
+    giveaway: {
+      ...merged,
+      total: Math.max(0, Number(merged.total || 0)),
+      used: Math.max(0, Number(merged.used || 0)),
+      allocated: Math.max(0, Number(merged.allocated || 0)),
+      lowThreshold: Math.max(0, Number(merged.lowThreshold || 0)),
+      updatedAt: merged.updatedAt || "Now",
+      notes: merged.notes || "",
+      audit: cloneGiveawayAudit(merged.audit)
+    }
+  };
+}
+
+function ensureGiveawayExtra(item) {
+  if (!item) return item;
+  const fallback = defaultGiveawayPreset(item);
+  const merged = {
+    ...fallback,
+    ...(item.giveaway || {})
+  };
+  const assetPreview = item.assetPreview || item.avatar || svgAvatarDataUrl(item.title || "G", item.id || item.title || "G");
+  return {
+    ...item,
+    isGiveawayExtra: true,
+    sourceType: item.sourceType || "external",
+    sourceLabel:
+      item.sourceLabel ||
+      (item.sourceType === "inventory"
+        ? "Inventory item"
+        : item.sourceType === "featured"
+          ? "Featured campaign item"
+          : "External giveaway item"),
+    linkedCatalogItemId: item.linkedCatalogItemId || "",
+    linkedCampaignItemId: item.linkedCampaignItemId || "",
+    assetId: item.assetId || "",
+    assetTitle: item.assetTitle || "",
+    assetDimensions: item.assetDimensions || "",
+    assetPreview,
+    avatar: assetPreview,
+    plannedQty: Math.max(1, Number(item.plannedQty || 1)),
+    price: Math.max(0, Number(item.price || 0)),
+    discountedPrice: Math.max(0, Number(item.discountedPrice || 0)),
+    discountLabel: item.discountLabel || "Giveaway only",
+    giveaway: {
+      ...merged,
+      enabled: merged.enabled !== false,
+      total: Math.max(0, Number(merged.total || 0)),
+      used: Math.max(0, Number(merged.used || 0)),
+      allocated: Math.max(0, Number(merged.allocated || 0)),
+      lowThreshold: Math.max(0, Number(merged.lowThreshold || 0)),
+      updatedAt: merged.updatedAt || "Now",
+      notes: merged.notes || "",
+      audit: cloneGiveawayAudit(merged.audit)
+    }
+  };
+}
+
+function getCampaignGiveawayNodes(campaign) {
+  if (!campaign) return [];
+  const itemNodes = Array.isArray(campaign.items)
+    ? campaign.items.map((item) => {
+        const normalized = ensureGiveaway(item);
+        return {
+          ...normalized,
+          isGiveawayExtra: false,
+          sourceType: "campaign-item",
+          sourceLabel: "Campaign item",
+          linkedCampaignItemId: normalized.id,
+          assetId: normalized.assetId || "",
+          assetTitle: normalized.assetTitle || "",
+          assetDimensions: normalized.assetDimensions || "",
+          assetPreview: normalized.assetPreview || normalized.avatar || ""
+        };
+      })
+    : [];
+  const extraNodes = Array.isArray(campaign.giveawayExtras) ? campaign.giveawayExtras.map((item) => ensureGiveawayExtra(item)) : [];
+  return [...itemNodes, ...extraNodes];
+}
+
+function hydrateCampaignGiveaway(campaign) {
+  if (!campaign) return campaign;
+  return {
+    ...campaign,
+    items: Array.isArray(campaign.items) ? campaign.items.map((item) => ensureGiveaway(item)) : [],
+    giveawayExtras: Array.isArray(campaign.giveawayExtras) ? campaign.giveawayExtras.map((item) => ensureGiveawayExtra(item)) : []
+  };
+}
+
+function calcCampaignGiveawayTotals(campaign) {
+  const empty = { total: 0, used: 0, allocated: 0, available: 0, enabledCount: 0 };
+  const nodes = getCampaignGiveawayNodes(campaign);
+  if (!nodes.length) return empty;
+  return nodes.reduce((acc, item) => {
+    acc.total += Number(item?.giveaway?.total || 0);
+    acc.used += Number(item?.giveaway?.used || 0);
+    acc.allocated += Number(item?.giveaway?.allocated || 0);
+    acc.available += giveawayAvailability(item);
+    if (item?.giveaway?.enabled) acc.enabledCount += 1;
+    return acc;
+  }, empty);
+}
+
+function sumAllGiveawayTotals(campaigns) {
+  return (campaigns || []).reduce(
+    (acc, campaign) => {
+      const totals = calcCampaignGiveawayTotals(campaign);
+      acc.total += totals.total;
+      acc.used += totals.used;
+      acc.allocated += totals.allocated;
+      acc.available += totals.available;
+      acc.enabledCount += totals.enabledCount;
+      return acc;
+    },
+    { total: 0, used: 0, allocated: 0, available: 0, enabledCount: 0 }
+  );
+}
+
+function buildCreatorGiveawayPayload(campaign, item) {
+  if (!campaign || !item) return null;
+  return {
+    campaignId: campaign.id,
+    campaignName: campaign.name,
+    itemId: item.id,
+    itemTitle: item.title,
+    itemKind: item.kind,
+    sourceType: item.isGiveawayExtra ? item.sourceType : "campaign-item",
+    sourceLabel: item.sourceLabel || (item.isGiveawayExtra ? "Standalone giveaway item" : "Campaign item"),
+    linkedCatalogItemId: item.linkedCatalogItemId || "",
+    linkedCampaignItemId: item.linkedCampaignItemId || "",
+    assetId: item.assetId || "",
+    assetTitle: item.assetTitle || "",
+    assetDimensions: item.assetDimensions || "",
+    imagePoster: item.assetPreview || item.avatar || "",
+    giveawayEnabled: !!item?.giveaway?.enabled,
+    totalGiveawayQuantity: Number(item?.giveaway?.total || 0),
+    usedGiveawayQuantity: Number(item?.giveaway?.used || 0),
+    allocatedGiveawayQuantity: Number(item?.giveaway?.allocated || 0),
+    currentlyAvailableQuantity: giveawayAvailability(item),
+    lowAvailabilityThreshold: Number(item?.giveaway?.lowThreshold || 0),
+    supplierLastUpdatedAt: item?.giveaway?.updatedAt || "Now",
+    notes: item?.giveaway?.notes || ""
+  };
+}
+
 
 /* ------------------------- catalog dataset (preview) ------------------------- */
 
 const CATALOG_ITEMS = [
   {
-    id: 'P-1001',
-    kind: 'Product',
-    title: 'LED Ring Light Kit',
-    category: 'Electronics',
+    id: "P-1001",
+    kind: "Product",
+    title: "LED Ring Light Kit",
+    category: "Electronics",
     price: 45,
-    region: 'Global',
-    subtitle: 'Tripod + phone holder + carry bag',
-    sku: 'RL-01',
+    region: "Global",
+    subtitle: "Tripod + phone holder + carry bag",
+    sku: "RL-01"
   },
   {
-    id: 'P-1002',
-    kind: 'Product',
-    title: 'Wireless Earbuds Pro',
-    category: 'Electronics',
+    id: "P-1002",
+    kind: "Product",
+    title: "Wireless Earbuds Pro",
+    category: "Electronics",
     price: 29,
-    region: 'Africa / Asia',
-    subtitle: 'Noise reduction, 24h battery',
-    sku: 'EB-PRO',
+    region: "Africa / Asia",
+    subtitle: "Noise reduction, 24h battery",
+    sku: "EB-PRO"
   },
   {
-    id: 'P-1003',
-    kind: 'Product',
-    title: 'Vitamin C Serum Bundle',
-    category: 'Beauty',
+    id: "P-1003",
+    kind: "Product",
+    title: "Vitamin C Serum Bundle",
+    category: "Beauty",
     price: 18,
-    region: 'East Africa',
-    subtitle: 'Brightening + hydration',
-    sku: 'BC-VC',
+    region: "East Africa",
+    subtitle: "Brightening + hydration",
+    sku: "BC-VC"
   },
   {
-    id: 'P-1004',
-    kind: 'Product',
-    title: 'Men’s Sneakers (2026)',
-    category: 'Fashion',
+    id: "P-1004",
+    kind: "Product",
+    title: "Men’s Sneakers (2026)",
+    category: "Fashion",
     price: 34,
-    region: 'Global',
-    subtitle: 'Lightweight, breathable',
-    sku: 'SN-26',
+    region: "Global",
+    subtitle: "Lightweight, breathable",
+    sku: "SN-26"
   },
   {
-    id: 'S-2001',
-    kind: 'Service',
-    title: 'WhatsApp Catalog Setup',
-    category: 'Services',
+    id: "S-2001",
+    kind: "Service",
+    title: "WhatsApp Catalog Setup",
+    category: "Services",
     price: 120,
-    region: 'Africa',
-    subtitle: 'Upload items + tags + pricing',
-    sku: 'SV-WA',
+    region: "Africa",
+    subtitle: "Upload items + tags + pricing",
+    sku: "SV-WA"
   },
   {
-    id: 'S-2002',
-    kind: 'Service',
-    title: 'Influencer Script Writing',
-    category: 'Creative',
+    id: "S-2002",
+    kind: "Service",
+    title: "Influencer Script Writing",
+    category: "Creative",
     price: 80,
-    region: 'Global',
-    subtitle: 'Hooks + CTA + objections',
-    sku: 'SV-SCR',
+    region: "Global",
+    subtitle: "Hooks + CTA + objections",
+    sku: "SV-SCR"
   },
   {
-    id: 'S-2003',
-    kind: 'Service',
-    title: 'Product Photography',
-    category: 'Creative',
+    id: "S-2003",
+    kind: "Service",
+    title: "Product Photography",
+    category: "Creative",
     price: 150,
-    region: 'East Africa',
-    subtitle: '10 edits, studio lighting',
-    sku: 'SV-PH',
+    region: "East Africa",
+    subtitle: "10 edits, studio lighting",
+    sku: "SV-PH"
   },
   {
-    id: 'S-2004',
-    kind: 'Service',
-    title: 'Adz Media Buying',
-    category: 'Marketing',
+    id: "S-2004",
+    kind: "Service",
+    title: "Adz Media Buying",
+    category: "Marketing",
     price: 220,
-    region: 'Global',
-    subtitle: 'Setup + optimization',
-    sku: 'SV-ADS',
-  },
+    region: "Global",
+    subtitle: "Setup + optimization",
+    sku: "SV-ADS"
+  }
 ].map((it) => ({
   ...it,
-  avatar: svgAvatarDataUrl(it.title, it.id),
+  avatar: svgAvatarDataUrl(it.title, it.id)
 }));
+
+const APPROVED_ASSET_LIBRARY = [
+  {
+    id: "AS-501",
+    title: "Approved Serum Giveaway Poster",
+    kind: "Poster",
+    dimensions: "500 × 500 px",
+    linkedCatalogItemId: "P-1003",
+    preview: svgAvatarDataUrl("Serum", "AS-501"),
+    status: "Approved"
+  },
+  {
+    id: "AS-502",
+    title: "Approved Ring Light Poster",
+    kind: "Poster",
+    dimensions: "500 × 500 px",
+    linkedCatalogItemId: "P-1001",
+    preview: svgAvatarDataUrl("Ring", "AS-502"),
+    status: "Approved"
+  },
+  {
+    id: "AS-503",
+    title: "Approved Earbuds Poster",
+    kind: "Poster",
+    dimensions: "500 × 500 px",
+    linkedCatalogItemId: "P-1002",
+    preview: svgAvatarDataUrl("Earbuds", "AS-503"),
+    status: "Approved"
+  },
+  {
+    id: "AS-504",
+    title: "Approved VIP Giveaway Bundle Poster",
+    kind: "Poster",
+    dimensions: "500 × 500 px",
+    linkedCatalogItemId: "",
+    preview: svgAvatarDataUrl("VIP", "AS-504"),
+    status: "Approved"
+  },
+  {
+    id: "AS-505",
+    title: "Approved Service Voucher Poster",
+    kind: "Poster",
+    dimensions: "480 × 480 px",
+    linkedCatalogItemId: "S-2001",
+    preview: svgAvatarDataUrl("Voucher", "AS-505"),
+    status: "Approved"
+  }
+];
+
+function getApprovedAssetById(id) {
+  return APPROVED_ASSET_LIBRARY.find((asset) => asset.id === id) || null;
+}
+
+function getApprovedAssetForCatalogItem(catalogItemId) {
+  if (!catalogItemId) return null;
+  return APPROVED_ASSET_LIBRARY.find((asset) => asset.linkedCatalogItemId === catalogItemId) || null;
+}
 
 /* ------------------------- Catalog Page modal (selection) ------------------------- */
 
 function CatalogCampaignPickerPage({
-  catalogItems,
   open,
   onClose,
   initialKind,
@@ -775,64 +888,61 @@ function CatalogCampaignPickerPage({
   campaignCurrency,
   promoDefaults,
   existingSelectedItems,
-  onConfirm,
+  onConfirm
 }) {
-  const [activeKind, setActiveKind] = useState(initialKind || 'Product');
-  const [q, setQ] = useState('');
+  const [activeKind, setActiveKind] = useState(initialKind || "Product");
+  const [q, setQ] = useState("");
 
   // draft map: id -> { selected, qty, discountMode, discountValue }
-  const [draft, setDraft] = useState<Record<string, { selected: boolean; qty: number; discountMode: string; discountValue: number }>>({});
+  const [draft, setDraft] = useState({});
 
   useEffect(() => {
     if (!open) return;
 
     // init active tab
-    if (initialKind === 'Product' && !allowProducts && allowServices) setActiveKind('Service');
-    else if (initialKind === 'Service' && !allowServices && allowProducts) setActiveKind('Product');
-    else setActiveKind(initialKind || (allowProducts ? 'Product' : 'Service'));
+    if (initialKind === "Product" && !allowProducts && allowServices) setActiveKind("Service");
+    else if (initialKind === "Service" && !allowServices && allowProducts) setActiveKind("Product");
+    else setActiveKind(initialKind || (allowProducts ? "Product" : "Service"));
 
     // seed draft from existing selection + promo defaults
-    const byId: Record<
-      string,
-      { selected: boolean; qty: number; discountMode: string; discountValue: number }
-    > = {};
+    const byId = {};
     (existingSelectedItems || []).forEach((sel) => {
       byId[sel.id] = {
         selected: true,
         qty: safeNum(sel.plannedQty, 1),
-        discountMode: sel.discount?.mode || 'none',
-        discountValue: safeNum(sel.discount?.value, 0),
+        discountMode: sel.discount?.mode || "none",
+        discountValue: safeNum(sel.discount?.value, 0)
       };
     });
 
     // ensure all visible items have state
-    catalogItems.forEach((it) => {
+    CATALOG_ITEMS.forEach((it) => {
       if (byId[it.id]) return;
       byId[it.id] = {
         selected: false,
         qty: 1,
-        discountMode: promoDefaults?.defaultDiscountMode || 'none',
-        discountValue: safeNum(promoDefaults?.defaultDiscountValue, 0),
+        discountMode: promoDefaults?.defaultDiscountMode || "none",
+        discountValue: safeNum(promoDefaults?.defaultDiscountValue, 0)
       };
     });
 
     setDraft(byId);
-    setQ('');
-  }, [open, initialKind, allowProducts, allowServices, existingSelectedItems, promoDefaults, catalogItems]);
+    setQ("");
+  }, [open, initialKind, allowProducts, allowServices, existingSelectedItems, promoDefaults]);
 
   const items = useMemo(() => {
     const qq = q.trim().toLowerCase();
-    return catalogItems.filter((it) => {
-      if (activeKind === 'Product' && it.kind !== 'Product') return false;
-      if (activeKind === 'Service' && it.kind !== 'Service') return false;
+    return CATALOG_ITEMS.filter((it) => {
+      if (activeKind === "Product" && it.kind !== "Product") return false;
+      if (activeKind === "Service" && it.kind !== "Service") return false;
       if (!qq) return true;
       const hay = `${it.title} ${it.subtitle} ${it.category} ${it.region} ${it.sku}`.toLowerCase();
       return hay.includes(qq);
     });
-  }, [activeKind, q, catalogItems]);
+  }, [activeKind, q]);
 
   const selectedItems = useMemo(() => {
-    const out: Array<any> = [];
+    const out = [];
     items.forEach((it) => {
       const s = draft[it.id];
       if (!s?.selected) return;
@@ -843,7 +953,7 @@ function CatalogCampaignPickerPage({
         plannedQty: qty,
         discount: { mode: s.discountMode, value: safeNum(s.discountValue, 0) },
         discountedPrice: discounted,
-        discountLabel: formatDiscount(s.discountMode, s.discountValue, campaignCurrency),
+        discountLabel: formatDiscount(s.discountMode, s.discountValue, campaignCurrency)
       });
     });
     return out;
@@ -865,8 +975,7 @@ function CatalogCampaignPickerPage({
   const footer = (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
       <div className="text-xs text-slate-500 dark:text-slate-400">
-        Selected: <span className="font-extrabold">{selectedCount}</span> · Tab total:{' '}
-        <span className="font-extrabold">{money(campaignCurrency, totalPlanned)}</span>
+        Selected: <span className="font-extrabold">{selectedCount}</span> · Tab total: <span className="font-extrabold">{money(campaignCurrency, totalPlanned)}</span>
       </div>
       <div className="flex items-center gap-2">
         <Btn onClick={onClose}>Cancel</Btn>
@@ -896,19 +1005,19 @@ function CatalogCampaignPickerPage({
         <div className="flex flex-wrap items-center gap-2">
           <Btn
             disabled={!allowProducts}
-            onClick={() => setActiveKind('Product')}
-            className={cx(activeKind === 'Product' ? 'border-transparent text-white' : '')}
-            tone={activeKind === 'Product' ? 'primary' : 'neutral'}
-            title={allowProducts ? 'Show Products' : 'Products disabled by scope'}
+            onClick={() => setActiveKind("Product")}
+            className={cx(activeKind === "Product" ? "border-transparent text-white" : "")}
+            tone={activeKind === "Product" ? "primary" : "neutral"}
+            title={allowProducts ? "Show Products" : "Products disabled by scope"}
           >
             🧺 Products
           </Btn>
           <Btn
             disabled={!allowServices}
-            onClick={() => setActiveKind('Service')}
-            className={cx(activeKind === 'Service' ? 'border-transparent text-white' : '')}
-            tone={activeKind === 'Service' ? 'primary' : 'neutral'}
-            title={allowServices ? 'Show Services' : 'Services disabled by scope'}
+            onClick={() => setActiveKind("Service")}
+            className={cx(activeKind === "Service" ? "border-transparent text-white" : "")}
+            tone={activeKind === "Service" ? "primary" : "neutral"}
+            title={allowServices ? "Show Services" : "Services disabled by scope"}
           >
             🧩 Services
           </Btn>
@@ -926,27 +1035,14 @@ function CatalogCampaignPickerPage({
             <div>
               <div className="text-sm font-extrabold">Promo defaults</div>
               <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                These defaults prefill discount fields for newly selected items. You can override
-                per item.
+                These defaults prefill discount fields for newly selected items. You can override per item.
               </div>
             </div>
-            <Pill tone="brand">{promoDefaults?.promoTypeLabel || 'Promo'}</Pill>
+            <Pill tone="brand">{promoDefaults?.promoTypeLabel || "Promo"}</Pill>
           </div>
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            <Pill tone="neutral">
-              Arrangement:{' '}
-              <span className="font-extrabold">{promoDefaults?.promoArrangementLabel || '—'}</span>
-            </Pill>
-            <Pill tone="neutral">
-              Default discount:{' '}
-              <span className="font-extrabold">
-                {formatDiscount(
-                  promoDefaults?.defaultDiscountMode,
-                  promoDefaults?.defaultDiscountValue,
-                  campaignCurrency
-                )}
-              </span>
-            </Pill>
+            <Pill tone="neutral">Arrangement: <span className="font-extrabold">{promoDefaults?.promoArrangementLabel || "—"}</span></Pill>
+            <Pill tone="neutral">Default discount: <span className="font-extrabold">{formatDiscount(promoDefaults?.defaultDiscountMode, promoDefaults?.defaultDiscountValue, campaignCurrency)}</span></Pill>
           </div>
         </div>
 
@@ -955,60 +1051,28 @@ function CatalogCampaignPickerPage({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1100px] text-left">
               <thead>
-                <tr className="bg-gray-50 dark:bg-slate-950 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
-                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Item
-                  </th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Qty planned
-                  </th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Current price
-                  </th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Discount
-                  </th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Discounted price
-                  </th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    Add
-                  </th>
+                <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Item</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Qty planned</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Current price</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Discount</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Discounted price</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Add</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {items.map((it) => {
-                  const s = draft[it.id] || {
-                    selected: false,
-                    qty: 1,
-                    discountMode: 'none',
-                    discountValue: 0,
-                  };
+                  const s = draft[it.id] || { selected: false, qty: 1, discountMode: "none", discountValue: 0 };
                   const discounted = calcDiscountedPrice(it.price, s.discountMode, s.discountValue);
-                  const discountLabel = formatDiscount(
-                    s.discountMode,
-                    s.discountValue,
-                    campaignCurrency
-                  );
+                  const discountLabel = formatDiscount(s.discountMode, s.discountValue, campaignCurrency);
                   return (
-                    <tr
-                      key={it.id}
-                      className={cx(
-                        'hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800/30',
-                        s.selected ? 'bg-amber-50/30 dark:bg-amber-900/10' : ''
-                      )}
+                    <tr key={it.id} className={cx("hover:bg-slate-50 dark:hover:bg-slate-800/30", s.selected ? "bg-amber-50/30 dark:bg-amber-900/10" : "")}
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={it.avatar}
-                            alt="avatar"
-                            className="h-10 w-10 rounded-2xl border border-slate-200 dark:border-slate-700"
-                          />
+                          <img src={it.avatar} alt="avatar" className="h-10 w-10 rounded-2xl border border-slate-200 dark:border-slate-700" />
                           <div className="min-w-0">
-                            <div className="text-sm font-extrabold truncate text-slate-900 dark:text-slate-50">
-                              {it.title}
-                            </div>
+                            <div className="text-sm font-extrabold truncate text-slate-900 dark:text-slate-50">{it.title}</div>
                             <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 truncate">
                               {it.subtitle} · {it.category} · {it.region} · {it.sku}
                             </div>
@@ -1025,21 +1089,17 @@ function CatalogCampaignPickerPage({
                             const v = clamp(e.target.value, 1, 1000000);
                             setDraft((prev) => ({
                               ...prev,
-                              [it.id]: { ...prev[it.id], qty: v },
+                              [it.id]: { ...prev[it.id], qty: v }
                             }));
                           }}
-                          className="w-24 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-bold outline-none"
+                          className="w-24 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-bold outline-none"
                           title="Quantity planned for campaign"
                         />
                       </td>
 
                       <td className="px-4 py-3">
-                        <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">
-                          {money(campaignCurrency, it.price)}
-                        </div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Current
-                        </div>
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{money(campaignCurrency, it.price)}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Current</div>
                       </td>
 
                       <td className="px-4 py-3">
@@ -1050,10 +1110,10 @@ function CatalogCampaignPickerPage({
                               const nextMode = e.target.value;
                               setDraft((prev) => ({
                                 ...prev,
-                                [it.id]: { ...prev[it.id], discountMode: nextMode },
+                                [it.id]: { ...prev[it.id], discountMode: nextMode }
                               }));
                             }}
-                            className="w-32 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-bold outline-none"
+                            className="w-32 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-bold outline-none"
                           >
                             {DISCOUNT_MODES.map((m) => (
                               <option key={m.k} value={m.k}>
@@ -1064,33 +1124,29 @@ function CatalogCampaignPickerPage({
 
                           <input
                             type="number"
-                            disabled={s.discountMode === 'none'}
+                            disabled={s.discountMode === "none"}
                             value={s.discountValue}
                             onChange={(e) => {
                               const v = Math.max(0, safeNum(e.target.value, 0));
                               setDraft((prev) => ({
                                 ...prev,
-                                [it.id]: { ...prev[it.id], discountValue: v },
+                                [it.id]: { ...prev[it.id], discountValue: v }
                               }));
                             }}
                             className={cx(
-                              'w-28 rounded-2xl border px-3 py-2 text-sm font-bold outline-none',
-                              s.discountMode === 'none'
-                                ? 'border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 text-slate-400'
-                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+                              "w-28 rounded-2xl border px-3 py-2 text-sm font-bold outline-none",
+                              s.discountMode === "none"
+                                ? "border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-400"
+                                : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
                             )}
                             title="Discount value (% / amount / final price)"
                           />
                         </div>
-                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                          {discountLabel}
-                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{discountLabel}</div>
                       </td>
 
                       <td className="px-4 py-3">
-                        <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">
-                          {money(campaignCurrency, discounted)}
-                        </div>
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{money(campaignCurrency, discounted)}</div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400">
                           Line: {money(campaignCurrency, discounted * clamp(s.qty, 1, 1000000))}
                         </div>
@@ -1104,7 +1160,7 @@ function CatalogCampaignPickerPage({
                             onChange={() => {
                               setDraft((prev) => ({
                                 ...prev,
-                                [it.id]: { ...prev[it.id], selected: !prev[it.id]?.selected },
+                                [it.id]: { ...prev[it.id], selected: !prev[it.id]?.selected }
                               }));
                             }}
                           />
@@ -1128,619 +1184,210 @@ function CatalogCampaignPickerPage({
         </div>
 
         <div className="text-xs text-slate-500 dark:text-slate-400">
-          Integration note: In production, this is a real Catalog route. Selections are returned to
-          Campaign Builder via router state, URL params, or global store.
+          Integration note: In production, this is a real Catalog route. Selections are returned to Campaign Builder via router state, URL params, or global store.
         </div>
       </div>
     </FullscreenModal>
   );
 }
 
-/* ------------------------- campaigns ------------------------- */
+/* ------------------------- seed campaigns ------------------------- */
 
-export function createEmptySupplierCampaignBuilder() {
-  return {
-    campaignId: '',
-    name: '',
-    type: 'Shoppable Adz',
-    region: 'East Africa',
-    currency: 'USD',
-    estValue: 1000,
-    internalReference: '',
-    commerceMode: 'Retail',
-    bundleMode: 'Single item',
-    startDate: todayYMD(),
-    durationDays: 7,
-    startTime: '09:00',
-    endTime: '21:00',
-    timezone: 'Africa/Kampala',
-    flashWindows: '',
-    marketRegions: ['East Africa'],
-    shippingConstraints: [],
-    contentLanguages: ['English'],
-    promoType: 'Discount',
-    promoArrangement: 'PercentOff',
-    promoCode: '',
-    shippingThreshold: 0,
-    giftNote: '',
-    offerScope: 'Products',
-    defaultDiscountMode: 'percent',
-    defaultDiscountValue: 10,
-    items: [],
-    hasGiveaways: false,
-    giveaways: [],
-    regulatedDocsConfirmed: false,
-    regulatedDisclaimersAccepted: false,
-    regulatedDeskNotes: '',
-    creatorUsageDecision: 'I will use a Creator',
-    collabMode: 'Open for Collabs',
-    approvalMode: 'Manual',
-    allowMultiCreators: true,
-    notes: '',
-    internalOwner: 'Supplier Manager',
-  };
-}
-
-const emptySupplierCampaignBuilderValue = createEmptySupplierCampaignBuilder();
-const emptySupplierCampaignBuilderStep = 1;
+const INIT_CAMPAIGNS = [
+  {
+    id: "S-201",
+    name: "Beauty Flash Week (Combo)",
+    stage: "Execution",
+    approvalStatus: "Approved",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    offerScope: "Products",
+    promoType: "Discount",
+    promoArrangement: "PercentOff",
+    currency: "USD",
+    estValue: 2400,
+    region: "East Africa",
+    type: "Shoppable Adz + Live",
+    startDate: "2026-02-10",
+    durationDays: 14,
+    endDate: computeEndDate("2026-02-10", 14),
+    items: [
+      {
+        ...CATALOG_ITEMS[2],
+        plannedQty: 40,
+        discount: { mode: "percent", value: 15 },
+        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[2].price, "percent", 15),
+        discountLabel: formatDiscount("percent", 15, "USD")
+      },
+      {
+        ...CATALOG_ITEMS[3],
+        plannedQty: 25,
+        discount: { mode: "amount", value: 5 },
+        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[3].price, "amount", 5),
+        discountLabel: formatDiscount("amount", 5, "USD")
+      }
+    ],
+    creatorsCount: 2,
+    pitchesCount: 7,
+    invitesSent: 0,
+    invitesAccepted: 0,
+    proposalsCount: 2,
+    contractCount: 1,
+    pendingSupplierApproval: true,
+    pendingAdminApproval: false,
+    adminRejected: false,
+    creatorRejected: false,
+    renegotiation: false,
+    health: "on-track",
+    nextAction: "Approve Creator Clip #3",
+    lastActivity: "Assets submitted · 2h",
+    lastActivityAt: Date.now() - 2 * 60 * 60 * 1000
+  },
+  {
+    id: "S-202",
+    name: "Tech Friday Mega Live",
+    stage: "Draft",
+    approvalStatus: "Pending",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-only",
+    approvalMode: "Manual",
+    offerScope: "Products",
+    promoType: "Coupon",
+    promoArrangement: "InfluencerCode",
+    promoCode: "TECHFRIDAY",
+    currency: "USD",
+    estValue: 3100,
+    region: "Africa / Asia",
+    type: "Live Sessionz",
+    startDate: "2026-02-25",
+    durationDays: 10,
+    endDate: computeEndDate("2026-02-25", 10),
+    items: [
+      {
+        ...CATALOG_ITEMS[1],
+        plannedQty: 60,
+        discount: { mode: "percent", value: 10 },
+        discountedPrice: calcDiscountedPrice(CATALOG_ITEMS[1].price, "percent", 10),
+        discountLabel: formatDiscount("percent", 10, "USD")
+      }
+    ],
+    creatorsCount: 0,
+    pitchesCount: 0,
+    invitesSent: 0,
+    invitesAccepted: 0,
+    proposalsCount: 0,
+    contractCount: 0,
+    pendingSupplierApproval: false,
+    pendingAdminApproval: true,
+    adminRejected: false,
+    creatorRejected: false,
+    renegotiation: false,
+    health: "at-risk",
+    nextAction: "Await Admin approval",
+    lastActivity: "Submitted for approval · 1d",
+    lastActivityAt: Date.now() - 1 * 24 * 60 * 60 * 1000,
+    queuedStageAfterApproval: "Collabs",
+    queuedNextActionAfterApproval: "Invite creators"
+  }
+];
 
 /* ------------------------- main component ------------------------- */
 
 export default function SupplierMyCampaignsPage() {
   const { toasts, push } = useToasts();
 
-  const [campaigns, setCampaigns] = useState<any[]>([]);
-  const [catalogItems, setCatalogItems] = useState<any[]>([]);
-  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [campaigns, setCampaigns] = useState(() => INIT_CAMPAIGNS.map((campaign) => hydrateCampaignGiveaway(campaign)));
 
-  const [activeStageFilter, setActiveStageFilter] = useState('All');
-  const [search, setSearch] = useState('');
+  const [activeStageFilter, setActiveStageFilter] = useState("All");
+  const [search, setSearch] = useState("");
 
-  const [sortKey, setSortKey] = useState('estValue');
-  const [sortOrder, setSortOrder] = useState('desc');
+  const [sortKey, setSortKey] = useState("estValue");
+  const [sortOrder, setSortOrder] = useState("desc");
 
   const [builderOpen, setBuilderOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [activeCampaign, setActiveCampaign] = useState<any | null>(null);
+  const [activeCampaign, setActiveCampaign] = useState(null);
+  const [giveawayEditorOpen, setGiveawayEditorOpen] = useState(false);
+  const [giveawayEditorCampaignId, setGiveawayEditorCampaignId] = useState(null);
+  const [giveawayEditorItemId, setGiveawayEditorItemId] = useState(null);
+  const [giveawayDraftEnabled, setGiveawayDraftEnabled] = useState(false);
+  const [giveawayDraftTotal, setGiveawayDraftTotal] = useState("0");
+  const [giveawayDraftLowThreshold, setGiveawayDraftLowThreshold] = useState("0");
+  const [giveawayDraftNotes, setGiveawayDraftNotes] = useState("");
+  const [savingGiveaway, setSavingGiveaway] = useState(false);
+  const [giveawayAddOpen, setGiveawayAddOpen] = useState(false);
+  const [giveawayAddCampaignId, setGiveawayAddCampaignId] = useState(null);
+  const [giveawayAddSource, setGiveawayAddSource] = useState("featured");
+  const [giveawayAddFeaturedItemId, setGiveawayAddFeaturedItemId] = useState("");
+  const [giveawayAddCatalogItemId, setGiveawayAddCatalogItemId] = useState("");
+  const [giveawayAddExternalTitle, setGiveawayAddExternalTitle] = useState("");
+  const [giveawayAddExternalSubtitle, setGiveawayAddExternalSubtitle] = useState("");
+  const [giveawayAddExternalKind, setGiveawayAddExternalKind] = useState("Product");
+  const [giveawayAddExternalSku, setGiveawayAddExternalSku] = useState("");
+  const [giveawayAddAssetId, setGiveawayAddAssetId] = useState("");
+  const [giveawayAddTotal, setGiveawayAddTotal] = useState("10");
+  const [giveawayAddLowThreshold, setGiveawayAddLowThreshold] = useState("2");
+  const [giveawayAddNotes, setGiveawayAddNotes] = useState("Use an approved Asset Library poster for this giveaway item.");
+  const [savingGiveawayAdd, setSavingGiveawayAdd] = useState(false);
 
   // Catalog page state
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const [catalogKind, setCatalogKind] = useState('Product');
-  const overlayOpen = builderOpen || detailsOpen || catalogOpen;
+  const [catalogKind, setCatalogKind] = useState("Product");
 
-  const [builderStep, setBuilderStep] = useState(emptySupplierCampaignBuilderStep);
-  const [builder, setBuilder] = useState<any>(emptySupplierCampaignBuilderValue);
-  const builderHashRef = useRef('');
-  const builderSaveTimerRef = useRef<number | null>(null);
-  const builderSaveInFlightRef = useRef(false);
-  const builderSavePromiseRef = useRef<Promise<void> | null>(null);
-  const builderPendingHashRef = useRef('');
-  const builderPendingPayloadRef = useRef<Record<string, unknown> | null>(null);
-  const builderLastSaveAtRef = useRef(0);
-  const builderRetryAfterRef = useRef(0);
-  const workspaceLoadStartedRef = useRef(false);
-  const restoreBuilderStartedRef = useRef(false);
+  const [builderStep, setBuilderStep] = useState(1);
+  const [builder, setBuilder] = useState(() => ({
+    name: "",
+    type: "Shoppable Adz",
+    region: "East Africa",
+    currency: "USD",
+    estValue: 1000,
 
-  const giveawaysSupported = useMemo(
-    () => campaignTypeSupportsGiveaways(builder.type),
-    [builder.type]
-  );
+    // duration
+    startDate: todayYMD(),
+    durationDays: 7, // min 1 max 45
 
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
+    // promo
+    promoType: "Discount",
+    promoArrangement: "PercentOff",
+    promoCode: "",
+    shippingThreshold: 0,
+    giftNote: "",
 
-    const body = document.body;
-    const html = document.documentElement;
+    // offer scope
+    offerScope: "Products",
 
-    if (!overlayOpen) {
-      body.classList.remove('mldz-overlay-open');
-      return;
-    }
+    // discount defaults (used by catalog)
+    defaultDiscountMode: "percent",
+    defaultDiscountValue: 10,
 
-    const prevBodyOverflow = body.style.overflow;
-    const prevHtmlOverflow = html.style.overflow;
+    // selected items (campaign catalog)
+    items: [],
 
-    body.classList.add('mldz-overlay-open');
-    body.style.overflow = 'hidden';
-    html.style.overflow = 'hidden';
+    // flow
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    allowMultiCreators: true,
 
-    return () => {
-      body.classList.remove('mldz-overlay-open');
-      body.style.overflow = prevBodyOverflow;
-      html.style.overflow = prevHtmlOverflow;
-    };
-  }, [overlayOpen]);
-  const campaignGiveaways = useMemo(
-    () => (Array.isArray(builder.giveaways) ? builder.giveaways : []),
-    [builder.giveaways]
-  );
-  const totalGiveawayQty = useMemo(
-    () => campaignGiveaways.reduce((sum, g) => sum + positiveIntOrFallback(g?.quantity, 1), 0),
-    [campaignGiveaways]
-  );
+    notes: "",
+    internalOwner: "Supplier Manager"
+  }));
 
-  const [giveawayAddMode, setGiveawayAddMode] = useState('featured');
-  const [featuredGiveawayItemId, setFeaturedGiveawayItemId] = useState('');
-  const [featuredGiveawayQuantity, setFeaturedGiveawayQuantity] = useState('1');
-  const [customGiveawayDraft, setCustomGiveawayDraft] = useState({
-    title: '',
-    quantity: '1',
-    imageUrl: '',
-    posterAssetId: '',
-    assetName: '',
-  });
-
-  const featuredGiveawayQtyValue = parsePositiveInt(featuredGiveawayQuantity);
-  const customGiveawayQtyValue = parsePositiveInt(customGiveawayDraft.quantity);
-
-  const builderDraftPayload = useMemo(
-    () =>
-      buildCampaignBuilderPayload({
-        id: SELLER_CAMPAIGN_BUILDER_ID,
-        builderStep,
-        builder,
-        giveawayUi: {
-          giveawayAddMode,
-          featuredGiveawayItemId,
-          featuredGiveawayQuantity,
-          customGiveawayDraft,
-        },
-      }),
-    [
-      builder,
-      builderStep,
-      customGiveawayDraft,
-      featuredGiveawayItemId,
-      featuredGiveawayQuantity,
-      giveawayAddMode,
-    ]
-  );
-
-  const scheduleBuilderSave = useCallback((delayMs: number, action: () => void) => {
-    if (builderSaveTimerRef.current) {
-      window.clearTimeout(builderSaveTimerRef.current);
-    }
-    builderSaveTimerRef.current = window.setTimeout(() => {
-      builderSaveTimerRef.current = null;
-      action();
-    }, Math.max(0, delayMs));
-  }, []);
-
-  const flushBuilderDraft = useCallback(
-    (force = false): Promise<void> => {
-      if (!workspaceLoaded) {
-        return Promise.resolve();
-      }
-
-      if (builderSaveInFlightRef.current) {
-        return (builderSavePromiseRef.current ?? Promise.resolve()).then(() => flushBuilderDraft(force));
-      }
-
-      const pendingHash = builderPendingHashRef.current;
-      const pendingPayload = builderPendingPayloadRef.current;
-      if (!pendingHash || !pendingPayload || pendingHash === builderHashRef.current) {
-        return Promise.resolve();
-      }
-
-      const now = Date.now();
-      const earliestAllowedAt = force
-        ? builderRetryAfterRef.current
-        : Math.max(
-            builderLastSaveAtRef.current + BUILDER_AUTOSAVE_MIN_INTERVAL_MS,
-            builderRetryAfterRef.current
-          );
-      if (now < earliestAllowedAt) {
-        scheduleBuilderSave(earliestAllowedAt - now, () => {
-          void flushBuilderDraft(force);
-        });
-        return Promise.resolve();
-      }
-
-      builderSaveInFlightRef.current = true;
-      const savePromise = backendApi
-        .saveLiveBuilder(pendingPayload)
-        .then(() => {
-          builderHashRef.current = pendingHash;
-          builderLastSaveAtRef.current = Date.now();
-          builderRetryAfterRef.current = 0;
-          if (builderPendingHashRef.current === pendingHash) {
-            builderPendingHashRef.current = '';
-            builderPendingPayloadRef.current = null;
-          }
-        })
-        .catch((error: unknown) => {
-          const status =
-            error && typeof error === 'object' && 'status' in error
-              ? Number((error as { status?: unknown }).status)
-              : 0;
-          if (status === 429) {
-            builderRetryAfterRef.current = Date.now() + BUILDER_AUTOSAVE_RETRY_MS;
-            scheduleBuilderSave(BUILDER_AUTOSAVE_RETRY_MS, () => {
-              void flushBuilderDraft();
-            });
-          }
-        })
-        .finally(() => {
-          builderSaveInFlightRef.current = false;
-          builderSavePromiseRef.current = null;
-          if (
-            builderPendingHashRef.current &&
-            builderPendingHashRef.current !== builderHashRef.current &&
-            !builderSaveTimerRef.current
-          ) {
-            scheduleBuilderSave(BUILDER_AUTOSAVE_DEBOUNCE_MS, () => {
-              void flushBuilderDraft();
-            });
-          }
-        });
-
-      builderSavePromiseRef.current = savePromise;
-      return savePromise;
-    },
-    [scheduleBuilderSave, workspaceLoaded]
-  );
-
-  const queueBuilderDraftSave = useCallback(
-    (payload: Record<string, unknown>, hash: string, force = false) => {
-      builderPendingHashRef.current = hash;
-      builderPendingPayloadRef.current = payload;
-      if (hash === builderHashRef.current) {
-        return;
-      }
-      scheduleBuilderSave(force ? 0 : BUILDER_AUTOSAVE_DEBOUNCE_MS, () => {
-        void flushBuilderDraft(force);
-      });
-    },
-    [flushBuilderDraft, scheduleBuilderSave]
-  );
-
-  useEffect(() => {
-    if (workspaceLoadStartedRef.current) return;
-    workspaceLoadStartedRef.current = true;
-
-    let cancelled = false;
-
-    async function loadWorkspace() {
-      setWorkspaceLoaded(false);
-      setWorkspaceError(null);
-
-      try {
-        const [workspaceResult, draftResult] = await Promise.allSettled([
-          backendApi.getCampaignWorkspace(),
-          backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID),
-        ]);
-
-        if (cancelled) return;
-        const workspace =
-          workspaceResult.status === 'fulfilled' ? workspaceResult.value : null;
-        const draft = draftResult.status === 'fulfilled' ? draftResult.value : null;
-        if (!workspace) {
-          throw new Error('Failed to load campaign workspace');
-        }
-
-        const mappedWorkspace = mapCampaignWorkspace(workspace);
-        setCampaigns(mappedWorkspace.campaigns);
-        setCatalogItems(mappedWorkspace.catalogItems);
-
-        if (draft) {
-          const mappedDraft = mapCampaignBuilderRecord(draft);
-          if (mappedDraft.builder && Object.keys(mappedDraft.builder).length) {
-            setBuilder(mappedDraft.builder);
-          }
-          if (mappedDraft.builderStep) {
-            setBuilderStep(mappedDraft.builderStep);
-          }
-          const ui = mappedDraft.giveawayUi || {};
-          if (ui.giveawayAddMode === 'featured' || ui.giveawayAddMode === 'custom') {
-            setGiveawayAddMode(ui.giveawayAddMode);
-          }
-          if (typeof ui.featuredGiveawayItemId === 'string') {
-            setFeaturedGiveawayItemId(ui.featuredGiveawayItemId);
-          }
-          if (typeof ui.featuredGiveawayQuantity === 'string') {
-            setFeaturedGiveawayQuantity(ui.featuredGiveawayQuantity);
-          }
-          if (ui.customGiveawayDraft && typeof ui.customGiveawayDraft === 'object') {
-            setCustomGiveawayDraft({
-              title: typeof ui.customGiveawayDraft.title === 'string' ? ui.customGiveawayDraft.title : '',
-              quantity: typeof ui.customGiveawayDraft.quantity === 'string' ? ui.customGiveawayDraft.quantity : '1',
-              imageUrl: typeof ui.customGiveawayDraft.imageUrl === 'string' ? ui.customGiveawayDraft.imageUrl : '',
-              posterAssetId:
-                typeof ui.customGiveawayDraft.posterAssetId === 'string'
-                  ? ui.customGiveawayDraft.posterAssetId
-                  : '',
-              assetName: typeof ui.customGiveawayDraft.assetName === 'string' ? ui.customGiveawayDraft.assetName : '',
-            });
-          }
-          builderHashRef.current = JSON.stringify(
-            buildCampaignBuilderPayload({
-              id: mappedDraft.id,
-              builderStep: mappedDraft.builderStep || 1,
-              builder: mappedDraft.builder,
-              giveawayUi: mappedDraft.giveawayUi,
-            })
-          );
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setWorkspaceError(error instanceof Error ? error.message : 'Unable to load campaigns workspace');
-      } finally {
-        if (!cancelled) {
-          setWorkspaceLoaded(true);
-        }
-      }
-    }
-
-    void loadWorkspace();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [push]);
-
-  useEffect(() => {
-    if (!workspaceLoaded) return;
-    const nextHash = JSON.stringify(builderDraftPayload);
-    if (nextHash === builderHashRef.current) return;
-    queueBuilderDraftSave(builderDraftPayload, nextHash);
-  }, [builderDraftPayload, queueBuilderDraftSave, workspaceLoaded]);
-
-  useEffect(
-    () => () => {
-      if (builderSaveTimerRef.current) {
-        window.clearTimeout(builderSaveTimerRef.current);
-      }
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!Array.isArray(builder.items) || builder.items.length === 0) {
-      setFeaturedGiveawayItemId('');
-      return;
-    }
-    if (featuredGiveawayItemId && builder.items.some((it) => it.id === featuredGiveawayItemId))
-      return;
-    setFeaturedGiveawayItemId(builder.items[0]?.id || '');
-  }, [builder.items, featuredGiveawayItemId]);
-
-  const persistBuilderForAssetPicker = useCallback(async () => {
-    const nextHash = JSON.stringify(builderDraftPayload);
-    if (nextHash === builderHashRef.current) {
-      return;
-    }
-    queueBuilderDraftSave(builderDraftPayload, nextHash, true);
-    await flushBuilderDraft(true);
-  }, [builderDraftPayload, flushBuilderDraft, queueBuilderDraftSave]);
-
-  const buildReturnToUrl = useCallback(() => {
-    if (typeof window === 'undefined') return '';
-    const u = new URL(window.location.href);
-    u.searchParams.set('restoreCampaignBuilder', '1');
-    u.searchParams.delete('assetId');
-    u.searchParams.delete('applyTo');
-    return u.toString();
-  }, []);
-
-  const openAssetLibraryPicker = useCallback(
-    async (applyTo = 'campaignGiveawayPoster') => {
-      if (typeof window === 'undefined') return;
-      await persistBuilderForAssetPicker();
-      const picker = new URL('/supplier/deliverables/assets', window.location.origin);
-      picker.searchParams.set('mode', 'picker');
-      picker.searchParams.set('target', 'supplierCampaign');
-      picker.searchParams.set('applyTo', applyTo);
-      const returnTo = buildReturnToUrl();
-      if (returnTo) picker.searchParams.set('returnTo', returnTo);
-      window.location.assign(picker.toString());
-    },
-    [persistBuilderForAssetPicker, buildReturnToUrl]
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (restoreBuilderStartedRef.current) return;
-
-    const sp = new URLSearchParams(window.location.search);
-    const shouldRestore = sp.get('restoreCampaignBuilder') === '1' || sp.has('assetId');
-    if (!shouldRestore) return;
-    restoreBuilderStartedRef.current = true;
-
-    void (async () => {
-      const saved = await backendApi.getLiveBuilder(SELLER_CAMPAIGN_BUILDER_ID);
-      const mapped = saved ? mapCampaignBuilderRecord(saved) : null;
-      if (mapped?.builder && Object.keys(mapped.builder).length) {
-        setBuilder(mapped.builder);
-        if (mapped.builderStep) setBuilderStep(mapped.builderStep);
-        setBuilderOpen(true);
-      }
-
-      const ui = mapped?.giveawayUi;
-      if (ui && typeof ui === 'object') {
-      if (ui.giveawayAddMode === 'featured' || ui.giveawayAddMode === 'custom')
-        setGiveawayAddMode(ui.giveawayAddMode);
-      if (typeof ui.featuredGiveawayItemId === 'string')
-        setFeaturedGiveawayItemId(ui.featuredGiveawayItemId);
-      if (typeof ui.featuredGiveawayQuantity === 'string')
-        setFeaturedGiveawayQuantity(ui.featuredGiveawayQuantity);
-      if (ui.customGiveawayDraft && typeof ui.customGiveawayDraft === 'object') {
-        setCustomGiveawayDraft({
-          title:
-            typeof ui.customGiveawayDraft.title === 'string' ? ui.customGiveawayDraft.title : '',
-          quantity:
-            typeof ui.customGiveawayDraft.quantity === 'string'
-              ? ui.customGiveawayDraft.quantity
-              : '1',
-          imageUrl:
-            typeof ui.customGiveawayDraft.imageUrl === 'string'
-              ? ui.customGiveawayDraft.imageUrl
-              : '',
-          posterAssetId:
-            typeof ui.customGiveawayDraft.posterAssetId === 'string'
-              ? ui.customGiveawayDraft.posterAssetId
-              : '',
-          assetName:
-            typeof ui.customGiveawayDraft.assetName === 'string'
-              ? ui.customGiveawayDraft.assetName
-              : '',
-        });
-      }
-      }
-
-      const assetId = sp.get('assetId') || '';
-      const applyTo = sp.get('applyTo') || '';
-      if (assetId && applyTo === 'campaignGiveawayPoster') {
-        const assets = await backendApi.getMediaAssets();
-        const rawAsset = assets.find((entry) => String(entry.id || '') === assetId);
-        const asset = rawAsset
-          ? coercePickedImageAsset({
-              id: rawAsset.id,
-              title: rawAsset.name,
-              previewUrl: rawAsset.url,
-            })
-          : null;
-        if (asset) {
-          setCustomGiveawayDraft((prev) => ({
-            ...prev,
-            imageUrl: asset.previewUrl,
-            posterAssetId: asset.id || prev.posterAssetId,
-            assetName: asset.title || prev.assetName,
-          }));
-          push('Custom giveaway poster attached from Asset Library.', 'success');
-        }
-      }
-
-      const clean = new URL(window.location.href);
-      clean.searchParams.delete('restoreCampaignBuilder');
-      clean.searchParams.delete('assetId');
-      clean.searchParams.delete('applyTo');
-      clean.searchParams.delete('returnTo');
-      const qs = clean.searchParams.toString();
-      window.history.replaceState({}, '', clean.pathname + (qs ? `?${qs}` : '') + clean.hash);
-    })();
-  }, [push]);
-
-  function removeCampaignGiveaway(giveawayId) {
-    setBuilder((p) => ({
-      ...p,
-      giveaways: (p.giveaways || []).filter((g) => g.id !== giveawayId),
-    }));
-  }
-
-  function addFeaturedGiveaway() {
-    const quantity = featuredGiveawayQtyValue;
-    if (!featuredGiveawayItemId || !quantity) {
-      push('Select a featured product/service and enter a valid quantity.', 'error');
-      return;
-    }
-
-    const linkedItem = (builder.items || []).find((it) => it.id === featuredGiveawayItemId);
-    if (!linkedItem) {
-      push('That featured item is no longer available in this campaign.', 'error');
-      return;
-    }
-
-    setBuilder((p) => {
-      const next = Array.isArray(p.giveaways) ? [...p.giveaways] : [];
-      const existingIndex = next.findIndex(
-        (g) => g.source === 'featured' && g.linkedItemId === featuredGiveawayItemId
-      );
-      if (existingIndex >= 0) {
-        next[existingIndex] = {
-          ...next[existingIndex],
-          quantity: positiveIntOrFallback(next[existingIndex].quantity, 1) + quantity,
-        };
-      } else {
-        next.push({
-          id: uid('GW'),
-          source: 'featured',
-          linkedItemId: featuredGiveawayItemId,
-          quantity,
-        });
-      }
-      return { ...p, hasGiveaways: true, giveaways: next };
-    });
-
-    setFeaturedGiveawayQuantity('1');
-    push('Featured-item giveaway added.', 'success');
-  }
-
-  function addCustomGiveaway() {
-    const title = String(customGiveawayDraft.title || '').trim();
-    const quantity = customGiveawayQtyValue;
-
-    if (!title) {
-      push('Enter the custom giveaway product/service name.', 'error');
-      return;
-    }
-    if (!quantity) {
-      push('Enter a valid custom giveaway quantity.', 'error');
-      return;
-    }
-    if (!customGiveawayDraft.imageUrl) {
-      push('Attach a poster image from Asset Library for the custom giveaway.', 'error');
-      return;
-    }
-
-    setBuilder((p) => ({
-      ...p,
-      hasGiveaways: true,
-      giveaways: [
-        ...(Array.isArray(p.giveaways) ? p.giveaways : []),
-        {
-          id: uid('GW'),
-          source: 'custom',
-          title,
-          quantity,
-          imageUrl: customGiveawayDraft.imageUrl,
-          posterAssetId: customGiveawayDraft.posterAssetId,
-          assetName: customGiveawayDraft.assetName,
-        },
-      ],
-    }));
-
-    setCustomGiveawayDraft({
-      title: '',
-      quantity: '1',
-      imageUrl: '',
-      posterAssetId: '',
-      assetName: '',
-    });
-    push('Custom giveaway added.', 'success');
-  }
-
-  const builderEndDate = useMemo(
-    () => computeEndDate(builder.startDate, builder.durationDays),
-    [builder.startDate, builder.durationDays]
-  );
+  const builderEndDate = useMemo(() => computeEndDate(builder.startDate, builder.durationDays), [builder.startDate, builder.durationDays]);
 
   const promoLabels = useMemo(() => {
-    const promoTypeLabel =
-      PROMO_TYPES.find((p) => p.k === builder.promoType)?.label || builder.promoType;
+    const promoTypeLabel = (PROMO_TYPES.find((p) => p.k === builder.promoType)?.label) || builder.promoType;
     const promoArrangementLabel =
-      PROMO_ARRANGEMENTS[builder.promoType]?.find((a) => a.k === builder.promoArrangement)?.label ||
-      builder.promoArrangement;
+      (PROMO_ARRANGEMENTS[builder.promoType]?.find((a) => a.k === builder.promoArrangement)?.label) || builder.promoArrangement;
     return { promoTypeLabel, promoArrangementLabel };
   }, [builder.promoType, builder.promoArrangement]);
 
-  const regulatedTags = useMemo(
-    () => uniq((builder.items || []).map((it) => it.regulatedTag).filter((t) => t && t !== 'None')),
-    [builder.items]
-  );
-  const hasRegulated = regulatedTags.length > 0;
-
   const totals = useMemo(() => {
     const totalValue = campaigns.reduce((sum, c) => sum + (Number(c.estValue) || 0), 0);
-    const activeCount = campaigns.filter((c) =>
-      ['Collabs', 'Negotiating', 'Contracted', 'Execution'].includes(c.stage)
-    ).length;
+    const activeCount = campaigns.filter((c) => ["Collabs", "Negotiating", "Contracted", "Execution"].includes(c.stage)).length;
     const pendingApprovals = campaigns.filter(
-      (c) =>
-        c.pendingSupplierApproval ||
-        c.pendingAdminApproval ||
-        c.adminRejected ||
-        c.approvalStatus === 'Pending'
+      (c) => c.pendingSupplierApproval || c.pendingAdminApproval || c.adminRejected || c.approvalStatus === "Pending"
     ).length;
     const creatorsEngaged = campaigns.reduce((sum, c) => sum + (Number(c.creatorsCount) || 0), 0);
     return { totalValue, activeCount, pendingApprovals, creatorsEngaged };
@@ -1762,24 +1409,124 @@ export default function SupplierMyCampaignsPage() {
     const base = {
       useCreator: { count: 0 },
       supplierAsCreator: { count: 0 },
-      notSure: { count: 0 },
+      notSure: { count: 0 }
     };
     campaigns.forEach((c) => {
-      if (c.creatorUsageDecision === 'I will use a Creator') base.useCreator.count += 1;
-      else if (c.creatorUsageDecision === 'I will NOT use a Creator')
-        base.supplierAsCreator.count += 1;
+      if (c.creatorUsageDecision === "I will use a Creator") base.useCreator.count += 1;
+      else if (c.creatorUsageDecision === "I will NOT use a Creator") base.supplierAsCreator.count += 1;
       else base.notSure.count += 1;
     });
     return base;
   }, [campaigns]);
 
+  useEffect(() => {
+    if (!activeCampaign?.id) return;
+    const fresh = campaigns.find((campaign) => campaign.id === activeCampaign.id);
+    if (fresh && fresh !== activeCampaign) {
+      setActiveCampaign(fresh);
+    }
+  }, [campaigns, activeCampaign?.id]);
+
+  const overallGiveawayTotals = useMemo(() => sumAllGiveawayTotals(campaigns), [campaigns]);
+  const activeCampaignGiveawayTotals = useMemo(
+    () => (activeCampaign ? calcCampaignGiveawayTotals(activeCampaign) : { total: 0, used: 0, allocated: 0, available: 0, enabledCount: 0 }),
+    [activeCampaign]
+  );
+  const activeCampaignGiveawayNodes = useMemo(() => getCampaignGiveawayNodes(activeCampaign), [activeCampaign]);
+  const giveawayEditorCampaign = useMemo(
+    () => campaigns.find((campaign) => campaign.id === giveawayEditorCampaignId) || null,
+    [campaigns, giveawayEditorCampaignId]
+  );
+  const giveawayEditorItem = useMemo(
+    () => getCampaignGiveawayNodes(giveawayEditorCampaign).find((item) => item.id === giveawayEditorItemId) || null,
+    [giveawayEditorCampaign, giveawayEditorItemId]
+  );
+  const giveawayCommittedQty = useMemo(
+    () => Number(giveawayEditorItem?.giveaway?.used || 0) + Number(giveawayEditorItem?.giveaway?.allocated || 0),
+    [giveawayEditorItem]
+  );
+  const giveawayCreatorPayload = useMemo(
+    () => buildCreatorGiveawayPayload(giveawayEditorCampaign, giveawayEditorItem),
+    [giveawayEditorCampaign, giveawayEditorItem]
+  );
+
+  useEffect(() => {
+    if (!giveawayEditorItem) return;
+    setGiveawayDraftEnabled(!!giveawayEditorItem.giveaway?.enabled);
+    setGiveawayDraftTotal(String(giveawayEditorItem.giveaway?.total ?? 0));
+    setGiveawayDraftLowThreshold(String(giveawayEditorItem.giveaway?.lowThreshold ?? (giveawayEditorItem.kind === "Service" ? 2 : 5)));
+    setGiveawayDraftNotes(giveawayEditorItem.giveaway?.notes || "");
+  }, [giveawayEditorItem]);
+
+  const giveawayAddCampaign = useMemo(
+    () => campaigns.find((campaign) => campaign.id === giveawayAddCampaignId) || null,
+    [campaigns, giveawayAddCampaignId]
+  );
+  const giveawayAddFeaturedCandidates = useMemo(
+    () => (giveawayAddCampaign?.items || []).map((item) => ensureGiveaway(item)),
+    [giveawayAddCampaign]
+  );
+  const giveawayAddFeaturedItem = useMemo(
+    () => giveawayAddFeaturedCandidates.find((item) => item.id === giveawayAddFeaturedItemId) || null,
+    [giveawayAddFeaturedCandidates, giveawayAddFeaturedItemId]
+  );
+  const giveawayAddInventoryCandidates = useMemo(() => {
+    const attachedIds = new Set((giveawayAddCampaign?.items || []).map((item) => item.id));
+    return CATALOG_ITEMS.filter((item) => !attachedIds.has(item.id));
+  }, [giveawayAddCampaign]);
+  const giveawayAddCatalogItem = useMemo(
+    () => giveawayAddInventoryCandidates.find((item) => item.id === giveawayAddCatalogItemId) || null,
+    [giveawayAddInventoryCandidates, giveawayAddCatalogItemId]
+  );
+  const giveawayAddAsset = useMemo(() => getApprovedAssetById(giveawayAddAssetId), [giveawayAddAssetId]);
+  const giveawayAddCommittedQty = useMemo(
+    () => (giveawayAddSource === "featured" && giveawayAddFeaturedItem ? Number(giveawayAddFeaturedItem.giveaway?.used || 0) + Number(giveawayAddFeaturedItem.giveaway?.allocated || 0) : 0),
+    [giveawayAddSource, giveawayAddFeaturedItem]
+  );
+
+  useEffect(() => {
+    if (!giveawayAddOpen) return;
+    if (!giveawayAddAssetId && giveawayAddSource === "inventory" && giveawayAddCatalogItem) {
+      const suggested = getApprovedAssetForCatalogItem(giveawayAddCatalogItem.id);
+      if (suggested) setGiveawayAddAssetId(suggested.id);
+    }
+    if (!giveawayAddAssetId && giveawayAddSource === "featured" && giveawayAddFeaturedItem) {
+      const suggested = getApprovedAssetForCatalogItem(giveawayAddFeaturedItem.id);
+      if (suggested) setGiveawayAddAssetId(suggested.id);
+    }
+  }, [giveawayAddOpen, giveawayAddSource, giveawayAddCatalogItem, giveawayAddFeaturedItem, giveawayAddAssetId]);
+
+  const parsedGiveawayDraftTotal = Number(giveawayDraftTotal || 0);
+  const parsedGiveawayLowThreshold = Number(giveawayDraftLowThreshold || 0);
+  const giveawayDraftInvalid =
+    giveawayDraftEnabled &&
+    (Number.isNaN(parsedGiveawayDraftTotal) ||
+      parsedGiveawayDraftTotal < giveawayCommittedQty ||
+      parsedGiveawayDraftTotal < 0 ||
+      Number.isNaN(parsedGiveawayLowThreshold) ||
+      parsedGiveawayLowThreshold < 0);
+
+  const parsedGiveawayAddTotal = Number(giveawayAddTotal || 0);
+  const parsedGiveawayAddLowThreshold = Number(giveawayAddLowThreshold || 0);
+  const giveawayAddRequiresAsset = giveawayAddSource === "inventory" || giveawayAddSource === "external";
+  const giveawayAddInvalid =
+    !giveawayAddCampaign ||
+    Number.isNaN(parsedGiveawayAddTotal) ||
+    parsedGiveawayAddTotal < giveawayAddCommittedQty ||
+    parsedGiveawayAddTotal < 0 ||
+    Number.isNaN(parsedGiveawayAddLowThreshold) ||
+    parsedGiveawayAddLowThreshold < 0 ||
+    (giveawayAddSource === "featured" && !giveawayAddFeaturedItem) ||
+    (giveawayAddSource === "inventory" && !giveawayAddCatalogItem) ||
+    (giveawayAddSource === "external" && !String(giveawayAddExternalTitle || "").trim()) ||
+    (giveawayAddRequiresAsset && !giveawayAddAsset);
+
   const filteredCampaigns = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const result = campaigns.filter((c) => {
-      if (activeStageFilter !== 'All' && c.stage !== activeStageFilter) return false;
+    let result = campaigns.filter((c) => {
+      if (activeStageFilter !== "All" && c.stage !== activeStageFilter) return false;
       if (q) {
-        const hay =
-          `${c.name} ${c.type} ${c.region} ${c.creatorUsageDecision} ${c.collabMode} ${c.startDate || ''} ${c.endDate || ''} ${c.approvalStatus || ''} ${c.promoType || ''}`.toLowerCase();
+        const hay = `${c.name} ${c.type} ${c.region} ${c.creatorUsageDecision} ${c.collabMode} ${c.startDate || ""} ${c.endDate || ""} ${c.approvalStatus || ""} ${c.promoType || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -1788,89 +1535,53 @@ export default function SupplierMyCampaignsPage() {
     result.sort((a, b) => {
       const va = a[sortKey];
       const vb = b[sortKey];
-      const numericKeys = new Set(['estValue', 'lastActivityAt']);
+      const numericKeys = new Set(["estValue", "lastActivityAt"]);
       if (numericKeys.has(sortKey)) {
         const na = Number(va) || 0;
         const nb = Number(vb) || 0;
-        if (na < nb) return sortOrder === 'asc' ? -1 : 1;
-        if (na > nb) return sortOrder === 'asc' ? 1 : -1;
+        if (na < nb) return sortOrder === "asc" ? -1 : 1;
+        if (na > nb) return sortOrder === "asc" ? 1 : -1;
         return 0;
       }
-      const sa = String(va || '');
-      const sb = String(vb || '');
+      const sa = String(va || "");
+      const sb = String(vb || "");
       const cmp = sa.localeCompare(sb);
-      return sortOrder === 'asc' ? cmp : -cmp;
+      return sortOrder === "asc" ? cmp : -cmp;
     });
 
     return result;
   }, [campaigns, activeStageFilter, search, sortKey, sortOrder]);
 
   const toggleSort = (key) => {
-    if (sortKey === key) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    if (sortKey === key) setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     else {
       setSortKey(key);
-      setSortOrder('desc');
+      setSortOrder("desc");
     }
   };
 
   function openCreate() {
     setBuilderStep(1);
-    setGiveawayAddMode('featured');
-    setFeaturedGiveawayItemId('');
-    setFeaturedGiveawayQuantity('1');
-    setCustomGiveawayDraft({
-      title: '',
-      quantity: '1',
-      imageUrl: '',
-      posterAssetId: '',
-      assetName: '',
-    });
-
     setBuilder((p) => ({
       ...p,
-      campaignId: '',
-      name: '',
+      name: "",
       estValue: 1000,
-
-      internalReference: '',
-
-      commerceMode: 'Retail',
-      bundleMode: 'Single item',
-
       startDate: todayYMD(),
       durationDays: 7,
-
-      startTime: '09:00',
-      endTime: '21:00',
-      timezone: 'Africa/Kampala',
-      flashWindows: '',
-      marketRegions: ['East Africa'],
-      shippingConstraints: [],
-      contentLanguages: ['English'],
-
-      promoType: 'Discount',
-      promoArrangement: 'PercentOff',
-      promoCode: '',
+      promoType: "Discount",
+      promoArrangement: "PercentOff",
+      promoCode: "",
       shippingThreshold: 0,
-      giftNote: '',
-
-      offerScope: 'Products',
-      defaultDiscountMode: 'percent',
+      giftNote: "",
+      offerScope: "Products",
+      defaultDiscountMode: "percent",
       defaultDiscountValue: 10,
       items: [],
-
-      hasGiveaways: false,
-      giveaways: [],
-
-      regulatedDocsConfirmed: false,
-      regulatedDisclaimersAccepted: false,
-      regulatedDeskNotes: '',
-
-      creatorUsageDecision: 'I will use a Creator',
-      collabMode: 'Open for Collabs',
-      approvalMode: 'Manual',
+      creatorUsageDecision: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual",
       allowMultiCreators: true,
-      notes: '',
+      notes: ""
     }));
     setBuilderOpen(true);
   }
@@ -1880,193 +1591,52 @@ export default function SupplierMyCampaignsPage() {
     setDetailsOpen(true);
   }
 
-  function persistCampaignUpdate(campaign, patch) {
-    setCampaigns((xs) =>
-      xs.map((entry) => (entry.id === campaign.id ? { ...entry, ...patch } : entry))
-    );
-    void backendApi
-      .patchCampaign(campaign.id, buildCampaignPayload({ ...campaign, ...patch }))
-      .then((saved) => {
-        setCampaigns((xs) => xs.map((entry) => (entry.id === campaign.id ? { ...entry, ...saved } : entry)));
-      })
-      .catch(() => undefined);
-  }
-
   function allowProducts(scope) {
-    return scope === 'Products' || scope === 'Both';
+    return scope === "Products" || scope === "Both";
   }
 
   function allowServices(scope) {
-    return scope === 'Services' || scope === 'Both';
+    return scope === "Services" || scope === "Both";
   }
 
   function openCatalog(kind) {
-    // Open the catalog picker float on this page (no route navigation)
-    push('Opening catalog picker…', 'info');
+    // Navigate to real catalog page (preview stub) + open in-app catalog page modal
+    push("Opening Catalog page… (preview)", "info");
+    go(`/supplier/overview/dealz-marketplace?selectForCampaign=1&kind=${kind}`);
     setCatalogKind(kind);
-    setBuilderOpen(true);
     setCatalogOpen(true);
-  }
-
-  // ------------------------- NEW: builder item helpers (Retail + Wholesale tiers) -------------------------
-
-  function updateLineItem(itemId, patch) {
-    setBuilder((p) => ({
-      ...p,
-      items: (p.items || []).map((it) => (it.id === itemId ? { ...it, ...patch } : it)),
-    }));
-  }
-
-  function removeLineItem(itemId) {
-    setBuilder((p) => ({ ...p, items: (p.items || []).filter((it) => it.id !== itemId) }));
-    push('Item removed.', 'success');
-  }
-
-  function updateLineItemDiscount(itemId, nextMode, nextValue) {
-    setBuilder((p) => ({
-      ...p,
-      items: (p.items || []).map((it) => {
-        if (it.id !== itemId) return it;
-        const discountedPrice = calcDiscountedPrice(it.price, nextMode, nextValue);
-        return {
-          ...it,
-          discount: { mode: nextMode, value: normalizedNum(nextValue, 0) },
-          discountedPrice,
-          discountLabel: formatDiscount(nextMode, nextValue, p.currency),
-        };
-      }),
-    }));
-  }
-
-  function updateLineItemLimits(itemId, patch) {
-    setBuilder((p) => ({
-      ...p,
-      items: (p.items || []).map((it) => {
-        if (it.id !== itemId) return it;
-        const prev = it.limits || { total: '', perBuyer: '' };
-        return { ...it, limits: { ...prev, ...patch } };
-      }),
-    }));
-  }
-
-  function ensureWholesaleTiersForAll(items, ctx) {
-    const mode = ctx?.defaultDiscountMode || 'percent';
-    const val = normalizedNum(ctx?.defaultDiscountValue, 10);
-    return (items || []).map((it) => {
-      if (Array.isArray(it.wholesaleTiers) && it.wholesaleTiers.length) return it;
-      return {
-        ...it,
-        wholesaleTiers: [
-          {
-            ...makeTier(it.id),
-            discountMode: mode,
-            discountValue: val,
-          },
-        ],
-      };
-    });
-  }
-
-  function addWholesaleTier(itemId) {
-    setBuilder((p) => ({
-      ...p,
-      items: (p.items || []).map((it) => {
-        if (it.id !== itemId) return it;
-        const tiers = Array.isArray(it.wholesaleTiers) ? it.wholesaleTiers : [];
-        if (tiers.length >= 4) return it;
-        return {
-          ...it,
-          wholesaleTiers: [
-            ...tiers,
-            {
-              ...makeTier(it.id),
-              minQty: tiers[tiers.length - 1]?.maxQty
-                ? normalizedNum(tiers[tiers.length - 1].maxQty, 1) + 1
-                : normalizedNum(tiers[tiers.length - 1]?.minQty, 1) + 1,
-              discountMode: p.defaultDiscountMode || 'percent',
-              discountValue: normalizedNum(p.defaultDiscountValue, 10),
-            },
-          ],
-        };
-      }),
-    }));
-  }
-
-  function removeWholesaleTier(itemId, tierId) {
-    setBuilder((p) => ({
-      ...p,
-      items: (p.items || []).map((it) => {
-        if (it.id !== itemId) return it;
-        const tiers = Array.isArray(it.wholesaleTiers) ? it.wholesaleTiers : [];
-        const next = tiers.filter((t) => t.id !== tierId);
-        return { ...it, wholesaleTiers: next };
-      }),
-    }));
-  }
-
-  function updateWholesaleTier(itemId, tierId, patch) {
-    setBuilder((p) => ({
-      ...p,
-      items: (p.items || []).map((it) => {
-        if (it.id !== itemId) return it;
-        const tiers = Array.isArray(it.wholesaleTiers) ? it.wholesaleTiers : [];
-        return {
-          ...it,
-          wholesaleTiers: tiers.map((t) => (t.id === tierId ? { ...t, ...patch } : t)),
-        };
-      }),
-    }));
   }
 
   function applyDefaultDiscountToSelected() {
     const mode = builder.defaultDiscountMode;
     const val = safeNum(builder.defaultDiscountValue, 0);
-
-    setBuilder((p) => {
-      const nextItems = (p.items || []).map((it) => {
-        // Retail: set per-line discount
-        if (p.commerceMode !== 'Wholesale') {
-          const discountedPrice = calcDiscountedPrice(it.price, mode, val);
-          return {
-            ...it,
-            discount: { mode, value: val },
-            discountedPrice,
-            discountLabel: formatDiscount(mode, val, p.currency),
-          };
-        }
-
-        // Wholesale: apply default to every tier (per-line tiers)
-        const tiers = Array.isArray(it.wholesaleTiers) ? it.wholesaleTiers : [];
-        const nextTiers = (tiers.length ? tiers : [makeTier(it.id)]).map((t) => ({
-          ...t,
-          discountMode: mode,
-          discountValue: val,
-        }));
-
+    setBuilder((p) => ({
+      ...p,
+      items: (p.items || []).map((it) => {
+        const discountedPrice = calcDiscountedPrice(it.price, mode, val);
         return {
           ...it,
-          wholesaleTiers: nextTiers,
+          discount: { mode, value: val },
+          discountedPrice,
+          discountLabel: formatDiscount(mode, val, p.currency)
         };
-      });
-
-      return { ...p, items: nextItems };
-    });
-
-    push('Default discount applied to selected items.', 'success');
+      })
+    }));
+    push("Default discount applied to selected items.", "success");
   }
 
   function saveDraft() {
-    void upsertCampaign({ submitForApproval: false });
+    upsertCampaign({ submitForApproval: false });
   }
 
   function submitForApproval() {
-    void upsertCampaign({ submitForApproval: true });
+    upsertCampaign({ submitForApproval: true });
   }
 
-  async function upsertCampaign({ submitForApproval }) {
-    const name = String(builder.name || '').trim();
+  function upsertCampaign({ submitForApproval }) {
+    const name = String(builder.name || "").trim();
     if (!name) {
-      push('Campaign name is required.', 'error');
+      push("Campaign name is required.", "error");
       return;
     }
 
@@ -2074,151 +1644,45 @@ export default function SupplierMyCampaignsPage() {
     const durationDays = clamp(builder.durationDays, 1, 45);
     const startDate = builder.startDate;
     const endDate = computeEndDate(startDate, durationDays);
-    const effectiveGiveaways =
-      campaignTypeSupportsGiveaways(builder.type) && builder.hasGiveaways
-        ? Array.isArray(builder.giveaways)
-          ? builder.giveaways
-          : []
-        : [];
 
     if (submitForApproval) {
       if (!startDate) {
-        push('Start date is required.', 'error');
+        push("Start date is required.", "error");
         return;
       }
       if (!durationDays || durationDays < 1 || durationDays > 45) {
-        push('Duration must be between 1 and 45 days.', 'error');
+        push("Duration must be between 1 and 45 days.", "error");
         return;
       }
       if (!Array.isArray(builder.items) || builder.items.length === 0) {
-        push('Please add at least one Product or Service to the campaign.', 'error');
+        push("Please add at least one Product or Service to the campaign.", "error");
         return;
       }
-
-      if (campaignTypeSupportsGiveaways(builder.type) && builder.hasGiveaways) {
-        if (!effectiveGiveaways.length) {
-          push(
-            'Please add at least one giveaway item or switch giveaways off for this campaign.',
-            'error'
-          );
-          return;
-        }
-
-        for (const giveaway of effectiveGiveaways) {
-          const quantity = positiveIntOrFallback(giveaway?.quantity, 0);
-          if (quantity < 1) {
-            push('Each giveaway must have a valid quantity of 1 or more.', 'error');
-            return;
-          }
-
-          if (
-            (giveaway?.source === 'featured' || giveaway?.linkedItemId) &&
-            !(builder.items || []).some((it) => it.id === giveaway?.linkedItemId)
-          ) {
-            push(
-              'One or more featured-item giveaways no longer match the selected campaign items.',
-              'error'
-            );
-            return;
-          }
-
-          if (
-            (giveaway?.source === 'custom' || !giveaway?.linkedItemId) &&
-            !String(giveaway?.title || '').trim()
-          ) {
-            push('Each custom giveaway must include the product or service name.', 'error');
-            return;
-          }
-
-          if (
-            (giveaway?.source === 'custom' || !giveaway?.linkedItemId) &&
-            !String(giveaway?.imageUrl || '').trim()
-          ) {
-            push('Each custom giveaway must include a poster image from Asset Library.', 'error');
-            return;
-          }
-        }
-      }
-
-      // Retail vs Wholesale requirement
-      if (String(builder.commerceMode || 'Retail') === 'Wholesale') {
-        const missingTiers = (builder.items || []).filter(
-          (it) => !Array.isArray(it.wholesaleTiers) || it.wholesaleTiers.length === 0
-        );
-        if (missingTiers.length) {
-          push(
-            `Wholesale campaigns require quantity/price tiers (max 4). Missing tiers for: ${missingTiers
-              .map((x) => x.title)
-              .slice(0, 3)
-              .join(', ')}${missingTiers.length > 3 ? '…' : ''}`,
-            'error'
-          );
-          return;
-        }
-        const overLimit = (builder.items || []).filter(
-          (it) => Array.isArray(it.wholesaleTiers) && it.wholesaleTiers.length > 4
-        );
-        if (overLimit.length) {
-          push('Wholesale tier limit exceeded. Maximum is 4 tiers per item.', 'error');
-          return;
-        }
-
-        for (const it of builder.items || []) {
-          for (const t of it.wholesaleTiers || []) {
-            const minQ = clamp(t.minQty, 1, 100000000);
-            const maxRaw = t.maxQty;
-            const maxQ =
-              maxRaw === '' || maxRaw === null || typeof maxRaw === 'undefined'
-                ? null
-                : clamp(maxRaw, 1, 100000000);
-            if (maxQ !== null && maxQ < minQ) {
-              push(`Wholesale tier max qty must be ≥ min qty for “${it.title}”.`, 'error');
-              return;
-            }
-          }
-        }
-      }
-
-      // Regulated routing requirement
-      const regulated = (builder.items || []).filter(
-        (it) => it.regulatedTag && it.regulatedTag !== 'None'
-      );
-      if (regulated.length) {
-        if (!builder.regulatedDocsConfirmed) {
-          push('Regulated items detected. Please confirm required documents.', 'error');
-          return;
-        }
-        if (!builder.regulatedDisclaimersAccepted) {
-          push('Regulated items detected. Please accept the disclaimer.', 'error');
-          return;
-        }
-      }
       if (!builder.promoType) {
-        push('Promo type is required.', 'error');
+        push("Promo type is required.", "error");
         return;
       }
       if (!builder.promoArrangement) {
-        push('Promo arrangement is required.', 'error');
+        push("Promo arrangement is required.", "error");
         return;
       }
     }
 
-    const id = String(builder.campaignId || '').trim() || uid('S');
+    const id = uid("S");
 
     // after approval routing
-    let queuedStageAfterApproval = 'Draft';
-    let queuedNextActionAfterApproval = 'Complete setup';
+    let queuedStageAfterApproval = "Draft";
+    let queuedNextActionAfterApproval = "Complete setup";
 
-    if (builder.creatorUsageDecision === 'I will NOT use a Creator') {
-      queuedStageAfterApproval = 'Execution';
-      queuedNextActionAfterApproval = 'Upload content (Supplier as Creator)';
-    } else if (builder.creatorUsageDecision === 'I will use a Creator') {
-      queuedStageAfterApproval = 'Collabs';
-      queuedNextActionAfterApproval =
-        builder.collabMode === 'Invite-only' ? 'Invite creators' : 'Await pitches';
+    if (builder.creatorUsageDecision === "I will NOT use a Creator") {
+      queuedStageAfterApproval = "Execution";
+      queuedNextActionAfterApproval = "Upload content (Supplier as Creator)";
+    } else if (builder.creatorUsageDecision === "I will use a Creator") {
+      queuedStageAfterApproval = "Collabs";
+      queuedNextActionAfterApproval = builder.collabMode === "Invite-only" ? "Invite creators" : "Await pitches";
     } else {
-      queuedStageAfterApproval = 'Draft';
-      queuedNextActionAfterApproval = 'Choose creator plan (pending)';
+      queuedStageAfterApproval = "Draft";
+      queuedNextActionAfterApproval = "Choose creator plan (pending)";
     }
 
     const newCampaign = {
@@ -2229,25 +1693,6 @@ export default function SupplierMyCampaignsPage() {
       currency: builder.currency,
       estValue: clamp(builder.estValue, 0, 100000000),
 
-      // internal reference + commerce
-      internalReference: builder.internalReference,
-      commerceMode: builder.commerceMode,
-      bundleMode: builder.bundleMode,
-
-      // timing + targeting
-      startTime: builder.startTime,
-      endTime: builder.endTime,
-      timezone: builder.timezone,
-      flashWindows: builder.flashWindows,
-      marketRegions: builder.marketRegions,
-      shippingConstraints: builder.shippingConstraints,
-      contentLanguages: builder.contentLanguages,
-
-      // compliance
-      regulatedDocsConfirmed: builder.regulatedDocsConfirmed,
-      regulatedDisclaimersAccepted: builder.regulatedDisclaimersAccepted,
-      regulatedDeskNotes: builder.regulatedDeskNotes,
-
       // duration
       startDate,
       durationDays,
@@ -2255,8 +1700,6 @@ export default function SupplierMyCampaignsPage() {
 
       // offer scope
       offerScope: builder.offerScope,
-      defaultDiscountMode: builder.defaultDiscountMode,
-      defaultDiscountValue: builder.defaultDiscountValue,
 
       // promo
       promoType: builder.promoType,
@@ -2267,25 +1710,21 @@ export default function SupplierMyCampaignsPage() {
 
       // items
       items: Array.isArray(builder.items) ? builder.items : [],
-
-      // giveaways (live-only campaign types)
-      hasGiveaways: effectiveGiveaways.length > 0,
-      giveaways: effectiveGiveaways,
+      giveawayExtras: [],
 
       // flow
       creatorUsageDecision: builder.creatorUsageDecision,
-      collabMode:
-        builder.creatorUsageDecision === 'I will use a Creator' ? builder.collabMode : '—',
+      collabMode: builder.creatorUsageDecision === "I will use a Creator" ? builder.collabMode : "—",
       approvalMode: builder.approvalMode,
       allowMultiCreators: builder.allowMultiCreators,
 
       // campaign approval gating
-      approvalStatus: submitForApproval ? 'Pending' : 'NotSubmitted',
+      approvalStatus: submitForApproval ? "Pending" : "NotSubmitted",
       pendingAdminApproval: submitForApproval,
       adminRejected: false,
 
       // stage is Draft until Admin approval
-      stage: 'Draft',
+      stage: "Draft",
       queuedStageAfterApproval,
       queuedNextActionAfterApproval,
 
@@ -2299,133 +1738,327 @@ export default function SupplierMyCampaignsPage() {
       pendingSupplierApproval: false,
       creatorRejected: false,
       renegotiation: false,
-      health: submitForApproval ? 'on-track' : 'stalled',
-      nextAction: submitForApproval ? 'Await Admin approval' : 'Complete setup',
-      lastActivity: submitForApproval ? 'Submitted for approval · now' : 'Draft saved · now',
+      health: submitForApproval ? "on-track" : "stalled",
+      nextAction: submitForApproval ? "Await Admin approval" : "Complete setup",
+      lastActivity: submitForApproval ? "Submitted for approval · now" : "Draft saved · now",
       lastActivityAt: Date.now(),
 
       notes: builder.notes,
-      internalOwner: builder.internalOwner,
-      submissionSnapshot: {
-        builderStep,
-        builder: {
-          ...builder,
-          campaignId: id,
-          giveaways: effectiveGiveaways,
-          durationDays,
-          endDate,
-        },
-      },
+      internalOwner: builder.internalOwner
     };
 
-    try {
-      const savedCampaign = String(builder.campaignId || '').trim()
-        ? await backendApi.patchCampaign(id, buildCampaignPayload(newCampaign))
-        : await backendApi.createCampaign(buildCampaignPayload(newCampaign));
-      const nextCampaign = {
-        ...newCampaign,
-        ...savedCampaign,
-        id: String(savedCampaign?.id || id),
-      };
-      setBuilder((prev) => ({
-        ...prev,
-        campaignId: nextCampaign.id,
-      }));
-      setCampaigns((xs) => [nextCampaign, ...xs.filter((entry) => entry.id !== nextCampaign.id)]);
-      setBuilderOpen(false);
-      push(
-        submitForApproval ? 'Campaign submitted for Admin approval.' : 'Draft saved.',
-        submitForApproval ? 'success' : 'info'
-      );
-      setTimeout(() => {
-        openDetails(nextCampaign);
-      }, 0);
-    } catch {
-      return;
-    }
+    const hydratedNewCampaign = hydrateCampaignGiveaway(newCampaign);
+    setCampaigns((xs) => [hydratedNewCampaign, ...xs]);
+    setBuilderOpen(false);
+    push(submitForApproval ? "Campaign submitted for Admin approval." : "Draft saved.", submitForApproval ? "success" : "info");
+
+    setTimeout(() => {
+      openDetails(hydratedNewCampaign);
+    }, 0);
   }
 
   function simulateAdminDecision(c, decision) {
-    if (decision === 'approve') {
-      const nextCampaign = {
-        ...c,
-        approvalStatus: 'Approved',
-        pendingAdminApproval: false,
-        stage: c.queuedStageAfterApproval || c.stage,
-        nextAction: c.queuedNextActionAfterApproval || c.nextAction,
-        lastActivity: 'Admin approved · now',
-        lastActivityAt: Date.now(),
-        health: 'on-track',
-      };
-      void backendApi
-        .patchCampaign(c.id, buildCampaignPayload(nextCampaign))
-      .then((saved) => {
-        push('Admin approved (preview).', 'success');
-        setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
-      })
-      .catch(() => undefined);
+    if (decision === "approve") {
+      push("Admin approved (preview).", "success");
+      setCampaigns((xs) =>
+        xs.map((x) => {
+          if (x.id !== c.id) return x;
+          return {
+            ...x,
+            approvalStatus: "Approved",
+            pendingAdminApproval: false,
+            stage: x.queuedStageAfterApproval || x.stage,
+            nextAction: x.queuedNextActionAfterApproval || x.nextAction,
+            lastActivity: "Admin approved · now",
+            lastActivityAt: Date.now(),
+            health: "on-track"
+          };
+        })
+      );
       return;
     }
 
-    const nextCampaign = {
-      ...c,
-      approvalStatus: 'Rejected',
-      pendingAdminApproval: false,
-      adminRejected: true,
-      stage: 'Draft',
-      nextAction: 'Fix and resubmit',
-      lastActivity: 'Admin rejected · now',
-      lastActivityAt: Date.now(),
-      health: 'at-risk',
-    };
-    void backendApi
-      .patchCampaign(c.id, buildCampaignPayload(nextCampaign))
-      .then((saved) => {
-        push('Admin rejected (preview).', 'warn');
-        setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
+    push("Admin rejected (preview).", "warn");
+    setCampaigns((xs) =>
+      xs.map((x) => {
+        if (x.id !== c.id) return x;
+        return {
+          ...x,
+          approvalStatus: "Rejected",
+          pendingAdminApproval: false,
+          adminRejected: true,
+          stage: "Draft",
+          nextAction: "Fix and resubmit",
+          lastActivity: "Admin rejected · now",
+          lastActivityAt: Date.now(),
+          health: "at-risk"
+        };
       })
-      .catch(() => undefined);
+    );
   }
 
   function resubmitAfterRejection(c) {
-    const nextCampaign = {
-      ...c,
-      approvalStatus: 'Pending',
-      pendingAdminApproval: true,
-      adminRejected: false,
-      nextAction: 'Await Admin approval',
-      lastActivity: 'Resubmitted · now',
-      lastActivityAt: Date.now(),
-      health: 'on-track',
-    };
-    void backendApi
-      .patchCampaign(c.id, buildCampaignPayload(nextCampaign))
-      .then((saved) => {
-        push('Resubmitted for approval (preview).', 'success');
-        setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...nextCampaign, ...saved } : x)));
+    push("Resubmitted for approval (preview).", "success");
+    setCampaigns((xs) =>
+      xs.map((x) => {
+        if (x.id !== c.id) return x;
+        return {
+          ...x,
+          approvalStatus: "Pending",
+          pendingAdminApproval: true,
+          adminRejected: false,
+          nextAction: "Await Admin approval",
+          lastActivity: "Resubmitted · now",
+          lastActivityAt: Date.now(),
+          health: "on-track"
+        };
       })
-      .catch(() => undefined);
+    );
+  }
+
+
+  function openGiveawayEditor(campaign, item) {
+    if (!campaign || !item) return;
+    setGiveawayEditorCampaignId(campaign.id);
+    setGiveawayEditorItemId(item.id);
+    setGiveawayEditorOpen(true);
+  }
+
+  function openGiveawayAdd(campaign) {
+    if (!campaign) return;
+    const firstFeatured = (campaign.items || [])[0] || null;
+    const firstInventory = CATALOG_ITEMS.find((item) => !(campaign.items || []).some((attached) => attached.id === item.id)) || CATALOG_ITEMS[0] || null;
+    const defaultSource = firstFeatured ? "featured" : firstInventory ? "inventory" : "external";
+    setGiveawayAddCampaignId(campaign.id);
+    setGiveawayAddSource(defaultSource);
+    setGiveawayAddFeaturedItemId(firstFeatured?.id || "");
+    setGiveawayAddCatalogItemId(firstInventory?.id || "");
+    setGiveawayAddExternalTitle("");
+    setGiveawayAddExternalSubtitle("");
+    setGiveawayAddExternalKind("Product");
+    setGiveawayAddExternalSku("");
+    const defaultAsset = getApprovedAssetForCatalogItem(firstFeatured?.id || firstInventory?.id || "") || APPROVED_ASSET_LIBRARY[0] || null;
+    setGiveawayAddAssetId(defaultAsset?.id || "");
+    setGiveawayAddTotal(String(firstFeatured ? Math.max(10, Number(firstFeatured.giveaway?.total || 0)) : 10));
+    setGiveawayAddLowThreshold(String(firstFeatured?.kind === "Service" ? 2 : 5));
+    setGiveawayAddNotes("Use approved Asset Library poster or image only. If the right visual is missing, add it from Asset Library first.");
+    setGiveawayAddOpen(true);
+  }
+
+  function openApprovedAssetLibrary() {
+    push("Open Asset Library (approved only). If the poster or image is missing, add it there first, then return here to select it.", "info");
+    go("/supplier/overview/asset-library?status=approved&purpose=giveaway-visual");
+  }
+
+  async function saveGiveawayItem() {
+    if (!giveawayAddCampaign || giveawayAddInvalid) {
+      push("Complete the giveaway item setup before saving.", "error");
+      return;
+    }
+
+    const total = Math.max(0, Number(giveawayAddTotal || 0));
+    const lowThreshold = Math.max(0, Number(giveawayAddLowThreshold || 0));
+    const asset = giveawayAddAsset;
+    const nowLabel = "Now";
+    const auditEntry = {
+      id: `audit_${Date.now()}`,
+      at: nowLabel,
+      actor: "Supplier giveaway owner",
+      event: giveawayAddSource === "featured" ? "Configured featured giveaway item" : "Added giveaway item",
+      delta: `Total ${total}`,
+      detail:
+        giveawayAddSource === "featured"
+          ? "Configured giveaway stock for an existing featured campaign item."
+          : giveawayAddSource === "inventory"
+            ? "Added supplier inventory item as a standalone giveaway entry with an approved Asset Library poster."
+            : "Added external giveaway item with an approved Asset Library poster."
+    };
+
+    setSavingGiveawayAdd(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 650));
+
+    if (giveawayAddSource === "featured" && giveawayAddFeaturedItem) {
+      setCampaigns((prev) =>
+        prev.map((campaign) => {
+          if (campaign.id !== giveawayAddCampaign.id) return campaign;
+          return {
+            ...campaign,
+            lastActivity: "Featured giveaway source updated · now",
+            lastActivityAt: Date.now(),
+            items: (campaign.items || []).map((item) =>
+              item.id !== giveawayAddFeaturedItem.id
+                ? item
+                : {
+                    ...item,
+                    assetId: asset?.id || item.assetId || "",
+                    assetTitle: asset?.title || item.assetTitle || "",
+                    assetDimensions: asset?.dimensions || item.assetDimensions || "",
+                    assetPreview: asset?.preview || item.assetPreview || item.avatar,
+                    giveaway: {
+                      ...(item.giveaway || {}),
+                      enabled: true,
+                      total,
+                      lowThreshold,
+                      notes: giveawayAddNotes,
+                      updatedAt: nowLabel,
+                      audit: [auditEntry, ...((item.giveaway && item.giveaway.audit) || [])]
+                    }
+                  }
+            )
+          };
+        })
+      );
+      setSavingGiveawayAdd(false);
+      setGiveawayAddOpen(false);
+      push("Featured giveaway item configured and synced.", "success");
+      return;
+    }
+
+    if (giveawayAddSource === "inventory") {
+      const alreadyExists = (giveawayAddCampaign.giveawayExtras || []).some((entry) => entry.linkedCatalogItemId === giveawayAddCatalogItem?.id);
+      if (alreadyExists) {
+        setSavingGiveawayAdd(false);
+        push("That inventory item already exists as a standalone giveaway entry for this campaign.", "warn");
+        return;
+      }
+    }
+
+    const baseItem = giveawayAddSource === "inventory" && giveawayAddCatalogItem
+      ? {
+          ...giveawayAddCatalogItem,
+          sourceType: "inventory",
+          sourceLabel: "Inventory item",
+          linkedCatalogItemId: giveawayAddCatalogItem.id,
+          linkedCampaignItemId: "",
+          title: giveawayAddCatalogItem.title,
+          subtitle: giveawayAddCatalogItem.subtitle,
+          kind: giveawayAddCatalogItem.kind,
+          sku: giveawayAddCatalogItem.sku,
+          price: giveawayAddCatalogItem.price,
+          plannedQty: 1,
+          discountLabel: "Giveaway only",
+          discountedPrice: 0
+        }
+      : {
+          id: uid("GX"),
+          sourceType: "external",
+          sourceLabel: "External giveaway item",
+          linkedCatalogItemId: "",
+          linkedCampaignItemId: "",
+          kind: giveawayAddExternalKind,
+          title: String(giveawayAddExternalTitle || "").trim(),
+          subtitle: String(giveawayAddExternalSubtitle || "").trim() || "Custom supplier-defined giveaway entry",
+          sku: String(giveawayAddExternalSku || "").trim() || "EXT-GIVEAWAY",
+          price: 0,
+          plannedQty: 1,
+          discountLabel: "Giveaway only",
+          discountedPrice: 0
+        };
+
+    const newEntry = ensureGiveawayExtra({
+      ...baseItem,
+      id: giveawayAddSource === "inventory" ? uid("GX") : baseItem.id,
+      assetId: asset?.id || "",
+      assetTitle: asset?.title || "",
+      assetDimensions: asset?.dimensions || "",
+      assetPreview: asset?.preview || svgAvatarDataUrl(baseItem.title, baseItem.id || baseItem.title),
+      giveaway: {
+        enabled: true,
+        total,
+        used: 0,
+        allocated: 0,
+        lowThreshold,
+        updatedAt: nowLabel,
+        notes: giveawayAddNotes,
+        audit: [auditEntry]
+      }
+    });
+
+    setCampaigns((prev) =>
+      prev.map((campaign) => {
+        if (campaign.id !== giveawayAddCampaign.id) return campaign;
+        return {
+          ...campaign,
+          lastActivity: "Standalone giveaway item added · now",
+          lastActivityAt: Date.now(),
+          giveawayExtras: [...(campaign.giveawayExtras || []), newEntry]
+        };
+      })
+    );
+
+    setSavingGiveawayAdd(false);
+    setGiveawayAddOpen(false);
+    push("Standalone giveaway item added and synced to Creator Builder preview.", "success");
+  }
+
+  async function saveGiveawayConfig() {
+    if (!giveawayEditorCampaign || !giveawayEditorItem) return;
+    if (giveawayDraftInvalid) {
+      push(`Giveaway total cannot be lower than committed stock (${giveawayCommittedQty}).`, "error");
+      return;
+    }
+
+    setSavingGiveaway(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 650));
+
+    const nextTotal = giveawayDraftEnabled ? Math.max(0, Number(giveawayDraftTotal || 0)) : 0;
+    const nextThreshold = giveawayDraftEnabled ? Math.max(0, Number(giveawayDraftLowThreshold || 0)) : 0;
+    const nextUpdatedAt = "Now";
+    const auditEntry = {
+      id: `audit_${Date.now()}`,
+      at: "Now",
+      actor: "Supplier giveaway owner",
+      event: giveawayDraftEnabled ? "Updated source-of-truth config" : "Disabled giveaway source",
+      delta: giveawayDraftEnabled ? `Total ${nextTotal}` : "Disabled",
+      detail: giveawayDraftEnabled
+        ? "Saved supplier-owned giveaway stock that powers Creator App > Live Builder > Featured Items > + Add Giveaway."
+        : "Creator Builder can no longer draw giveaway stock from this item."
+    };
+
+    setCampaigns((xs) =>
+      xs.map((campaign) => {
+        if (campaign.id !== giveawayEditorCampaign.id) return campaign;
+        return {
+          ...campaign,
+          lastActivity: "Giveaway stock updated · now",
+          lastActivityAt: Date.now(),
+          items: (campaign.items || []).map((item) =>
+            item.id !== giveawayEditorItem.id
+              ? item
+              : {
+                  ...item,
+                  giveaway: {
+                    ...item.giveaway,
+                    enabled: giveawayDraftEnabled,
+                    total: nextTotal,
+                    lowThreshold: nextThreshold,
+                    notes: giveawayDraftNotes,
+                    updatedAt: nextUpdatedAt,
+                    audit: [auditEntry, ...(item.giveaway?.audit || [])]
+                  }
+                }
+          )
+        };
+      })
+    );
+
+    setSavingGiveaway(false);
+    push("Giveaway stock source saved and synced to Creator Builder preview.", "success");
+    setGiveawayEditorOpen(false);
   }
 
   const promoDefaultsForCatalog = useMemo(() => {
     return {
-      promoTypeLabel:
-        PROMO_TYPES.find((p) => p.k === builder.promoType)?.label || builder.promoType,
+      promoTypeLabel: (PROMO_TYPES.find((p) => p.k === builder.promoType)?.label) || builder.promoType,
       promoArrangementLabel:
-        PROMO_ARRANGEMENTS[builder.promoType]?.find((a) => a.k === builder.promoArrangement)
-          ?.label || builder.promoArrangement,
+        (PROMO_ARRANGEMENTS[builder.promoType]?.find((a) => a.k === builder.promoArrangement)?.label) || builder.promoArrangement,
       defaultDiscountMode: builder.defaultDiscountMode,
-      defaultDiscountValue: builder.defaultDiscountValue,
+      defaultDiscountValue: builder.defaultDiscountValue
     };
-  }, [
-    builder.promoType,
-    builder.promoArrangement,
-    builder.defaultDiscountMode,
-    builder.defaultDiscountValue,
-  ]);
+  }, [builder.promoType, builder.promoArrangement, builder.defaultDiscountMode, builder.defaultDiscountValue]);
 
   return (
-    <div className="min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors overflow-x-hidden">
+    <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <ToastStack toasts={toasts} />
 
       <PageHeader
@@ -2441,8 +2074,8 @@ export default function SupplierMyCampaignsPage() {
             <Btn
               tone="ghost"
               onClick={() => {
-                push('Opening Live Schedule (preview).', 'info');
-                go('/supplier/live/schedule');
+                push("Opening Live Schedule (preview).", "info");
+                go("/supplier/live/schedule");
               }}
               title="Go to Live Schedule"
             >
@@ -2451,8 +2084,8 @@ export default function SupplierMyCampaignsPage() {
             <Btn
               tone="ghost"
               onClick={() => {
-                push('Opening Adz Manager (preview).', 'info');
-                go('/supplier/adz/manager');
+                push("Opening Adz Manager (preview).", "info");
+                go("/supplier/adz/manager");
               }}
               title="Go to Adz Manager"
             >
@@ -2465,64 +2098,78 @@ export default function SupplierMyCampaignsPage() {
         }
       />
 
-      <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
           {/* Summary */}
           <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
             <div>
-              <h1 className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-0.5">
-                My Campaigns
-              </h1>
+              <h1 className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-0.5">My Campaigns</h1>
               <p className="text-xs text-slate-500 dark:text-slate-300">
-                Track every campaign you own – from drafts to Admin approval, creator collabs,
-                execution, and analytics.
+                Track every campaign you own – from drafts to Admin approval, creator collabs, execution, and analytics.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <div className="flex flex-col min-w-[160px]">
                 <span className="text-slate-500 dark:text-slate-300">Total planned budget</span>
-                <span className="text-lg font-semibold text-[#f77f00] dark:text-[#f77f00]">
-                  {money('USD', totals.totalValue)}
-                </span>
+                <span className="text-lg font-semibold text-[#f77f00] dark:text-[#f77f00]">{money("USD", totals.totalValue)}</span>
               </div>
               <div className="flex flex-col min-w-[130px]">
                 <span className="text-slate-500 dark:text-slate-300">Active</span>
-                <span className="text-lg font-semibold text-slate-900 dark:text-white">
-                  {totals.activeCount}
-                </span>
+                <span className="text-lg font-semibold text-slate-900 dark:text-white">{totals.activeCount}</span>
               </div>
               <div className="flex flex-col min-w-[130px]">
                 <span className="text-slate-500 dark:text-slate-300">Pending actions</span>
-                <span className="text-lg font-semibold text-slate-900 dark:text-white">
-                  {totals.pendingApprovals}
-                </span>
+                <span className="text-lg font-semibold text-slate-900 dark:text-white">{totals.pendingApprovals}</span>
               </div>
             </div>
           </section>
 
           {/* Quick split */}
           <section className="flex flex-wrap gap-2">
-            <Pill tone="neutral">
-              👥 Use Creator:{' '}
-              <span className="font-extrabold">{modeSummaries.useCreator.count}</span>
-            </Pill>
-            <Pill tone="neutral">
-              ✨ Supplier as Creator:{' '}
-              <span className="font-extrabold">{modeSummaries.supplierAsCreator.count}</span>
-            </Pill>
-            <Pill tone="neutral">
-              ⏳ Not sure: <span className="font-extrabold">{modeSummaries.notSure.count}</span>
-            </Pill>
-            <Pill tone="brand">
-              🎬 Creators engaged: <span className="font-extrabold">{totals.creatorsEngaged}</span>
-            </Pill>
+            <Pill tone="neutral">👥 Use Creator: <span className="font-extrabold">{modeSummaries.useCreator.count}</span></Pill>
+            <Pill tone="neutral">✨ Supplier as Creator: <span className="font-extrabold">{modeSummaries.supplierAsCreator.count}</span></Pill>
+            <Pill tone="neutral">⏳ Not sure: <span className="font-extrabold">{modeSummaries.notSure.count}</span></Pill>
+            <Pill tone="brand">🎬 Creators engaged: <span className="font-extrabold">{totals.creatorsEngaged}</span></Pill>
           </section>
+
+          {/* Giveaway source-of-truth summary */}
+          <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Configured giveaway items</div>
+              <div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{overallGiveawayTotals.enabledCount}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Products or services with giveaway enabled</div>
+            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Total giveaway pool</div>
+              <div className="mt-2 text-2xl font-black text-[#f77f00]">{overallGiveawayTotals.total}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Supplier-defined quantity across campaigns</div>
+            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Used</div>
+              <div className="mt-2 text-2xl font-black text-rose-600 dark:text-rose-400">{overallGiveawayTotals.used}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Already claimed in previous live sessions</div>
+            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Allocated</div>
+              <div className="mt-2 text-2xl font-black text-amber-600 dark:text-amber-400">{overallGiveawayTotals.allocated}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Reserved by upcoming creator sessions</div>
+            </div>
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Currently available</div>
+              <div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">{overallGiveawayTotals.available}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">What Creator Live Builder can still allocate</div>
+            </div>
+          </section>
+
+          <div className="text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            Giveaway stock is supplier-owned source of truth. The same total, used, allocated and available values power Creator App &gt; Live Builder &gt; Featured Items &gt; + Add Giveaway.
+          </div>
 
           {/* Filters */}
           <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-2 flex flex-col gap-2 text-sm">
             <div className="flex flex-col gap-3 p-2">
-              <div className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 rounded-full px-4 py-2 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 transition-colors">
+              <div className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 rounded-full px-4 py-2 bg-slate-50 dark:bg-slate-800 transition-colors">
                 <span className="text-slate-400">🔍</span>
                 <input
                   value={search}
@@ -2534,12 +2181,12 @@ export default function SupplierMyCampaignsPage() {
 
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => setActiveStageFilter('All')}
+                  onClick={() => setActiveStageFilter("All")}
                   className={cx(
-                    'px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
-                    activeStageFilter === 'All'
-                      ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100 shadow-md scale-105'
-                      : 'bg-white dark:bg-slate-900 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700'
+                    "px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
+                    activeStageFilter === "All"
+                      ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100 shadow-md scale-105"
+                      : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
                   )}
                 >
                   All Pipelines
@@ -2550,12 +2197,12 @@ export default function SupplierMyCampaignsPage() {
                     key={stage}
                     onClick={() => setActiveStageFilter(stage)}
                     className={cx(
-                      'px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border',
+                      "px-4 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
                       activeStageFilter === stage
-                        ? 'bg-[#f77f00] text-white border-[#f77f00] shadow-md scale-105'
-                        : 'bg-white dark:bg-slate-900 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700'
+                        ? "bg-[#f77f00] text-white border-[#f77f00] shadow-md scale-105"
+                        : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
                     )}
-                    title={`${stageSummaries[stage]?.count || 0} campaigns · ${money('USD', stageSummaries[stage]?.value || 0)}`}
+                    title={`${stageSummaries[stage]?.count || 0} campaigns · ${money("USD", stageSummaries[stage]?.value || 0)}`}
                   >
                     {stage}
                   </button>
@@ -2569,48 +2216,32 @@ export default function SupplierMyCampaignsPage() {
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <h2 className="text-sm font-bold tracking-tight">Campaign Pipelines</h2>
               <div className="flex gap-3">
-                <Btn onClick={() => toggleSort('name')} title="Sort by name">
-                  ↕ Name
-                </Btn>
-                <Btn onClick={() => toggleSort('estValue')} title="Sort by budget">
-                  ↕ Budget
-                </Btn>
+                <Btn onClick={() => toggleSort("name")} title="Sort by name">↕ Name</Btn>
+                <Btn onClick={() => toggleSort("estValue")} title="Sort by budget">↕ Budget</Btn>
               </div>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[1200px]">
                 <thead>
-                  <tr className="bg-gray-50 dark:bg-slate-950/50 dark:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800">
+                  <tr className="bg-slate-50/50 dark:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800">
                     <th className="px-6 py-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Campaign
-                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Campaign</span>
                     </th>
                     <th className="px-6 py-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Mode
-                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mode</span>
                     </th>
                     <th className="px-6 py-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Budget
-                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Budget</span>
                     </th>
                     <th className="px-6 py-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Status
-                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</span>
                     </th>
                     <th className="px-6 py-4">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Next Step
-                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Next Step</span>
                     </th>
                     <th className="px-6 py-4 text-right">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Actions
-                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Actions</span>
                     </th>
                   </tr>
                 </thead>
@@ -2622,27 +2253,25 @@ export default function SupplierMyCampaignsPage() {
                       campaign={c}
                       onOpen={() => openDetails(c)}
                       onGo={(path) => {
-                        push(`Navigate → ${path}`, 'info');
+                        push(`Navigate → ${path}`, "info");
                         go(path);
                       }}
                       onSwitchMode={() => {
                         if (!canSwitchCollabMode(c)) {
-                          push(
-                            'Collaboration mode cannot be changed after content submission begins.',
-                            'warn'
-                          );
+                          push("Collaboration mode cannot be changed after content submission begins.", "warn");
                           return;
                         }
-                        const nextMode =
-                          c.collabMode === 'Invite-only' ? 'Open for Collabs' : 'Invite-only';
-                        persistCampaignUpdate(c, {
-                          collabMode: nextMode,
-                          lastActivity: `Collab mode switched → ${nextMode} · now`,
-                          lastActivityAt: Date.now(),
-                        });
-                        push(`Collab mode switched to ${nextMode}.`, 'success');
+                        const nextMode = c.collabMode === "Invite-only" ? "Open for Collabs" : "Invite-only";
+                        setCampaigns((xs) =>
+                          xs.map((x) =>
+                            x.id === c.id
+                              ? { ...x, collabMode: nextMode, lastActivity: `Collab mode switched → ${nextMode} · now`, lastActivityAt: Date.now() }
+                              : x
+                          )
+                        );
+                        push(`Collab mode switched to ${nextMode}.`, "success");
                       }}
-                      onUpdate={(patch) => persistCampaignUpdate(c, patch)}
+                      onUpdate={(patch) => setCampaigns((xs) => xs.map((x) => (x.id === c.id ? { ...x, ...patch } : x)))}
                       push={push}
                     />
                   ))}
@@ -2663,7 +2292,6 @@ export default function SupplierMyCampaignsPage() {
 
       {/* Catalog page modal */}
       <CatalogCampaignPickerPage
-        catalogItems={catalogItems}
         open={catalogOpen}
         onClose={() => setCatalogOpen(false)}
         initialKind={catalogKind}
@@ -2673,307 +2301,96 @@ export default function SupplierMyCampaignsPage() {
         promoDefaults={{
           ...promoDefaultsForCatalog,
           promoTypeLabel: promoLabels.promoTypeLabel,
-          promoArrangementLabel: promoLabels.promoArrangementLabel,
+          promoArrangementLabel: promoLabels.promoArrangementLabel
         }}
         existingSelectedItems={builder.items}
         onConfirm={({ kind, selected }) => {
-          // Merge: replace items of this kind, keep other kind (supports scope=Both)
-          // Supplier upgrades:
-          // - Preserve per-line settings (regulated tag, limits, wholesale tiers) when re-opening catalog.
-          // - Ensure new lines get defaults needed for Pricing + Compliance sections.
-          const selectedCount = Array.isArray(selected) ? selected.length : 0;
-
+          // merge: replace items of this kind, keep other kind (supports scope=Both)
           setBuilder((p) => {
-            const existingById = {};
-            (p.items || []).forEach((x) => {
-              existingById[x.id] = x;
-            });
-
-            const isThisKind = (it) =>
-              kind === 'Product' ? it.kind === 'Product' : it.kind === 'Service';
-            const keepOtherKind = (p.items || []).filter((it) => !isThisKind(it));
-
-            const normalizedSelected = (selected || []).map((it) => {
-              const prev = existingById[it.id];
-
-              const discountMode = it.discount?.mode || prev?.discount?.mode || 'none';
-              const discountValue = normalizedNum(it.discount?.value ?? prev?.discount?.value, 0);
-              const discountedPrice =
-                typeof it.discountedPrice === 'number'
-                  ? it.discountedPrice
-                  : calcDiscountedPrice(it.price, discountMode, discountValue);
-
-              const base = {
-                ...prev,
-                ...it,
-
-                // Ensure fields expected by Pricing + Compliance surfaces exist:
-                regulatedTag: prev?.regulatedTag || it.regulatedTag || 'None',
-                limits: prev?.limits || it.limits || { total: '', perBuyer: '' },
-
-                plannedQty: clamp(it.plannedQty ?? prev?.plannedQty ?? 1, 1, 100000000),
-                discount: { mode: discountMode, value: discountValue },
-                discountedPrice,
-                discountLabel:
-                  it.discountLabel || formatDiscount(discountMode, discountValue, p.currency),
-              };
-
-              // Wholesale: tiers required (max 4) — ensure at least Tier 1 exists
-              if (String(p.commerceMode || 'Retail') === 'Wholesale') {
-                return ensureWholesaleTiersForAll([base], p)[0];
-              }
-
-              // Retail: tiers not required, but if present we keep them (in case user switches back to Wholesale later)
-              return base;
-            });
-
-            return { ...p, items: [...keepOtherKind, ...normalizedSelected] };
+            const keep = (p.items || []).filter((it) => it.kind !== kind);
+            const merged = [...keep, ...selected];
+            return { ...p, items: merged };
           });
-
           setCatalogOpen(false);
-          if (selectedCount > 0) {
-            push(
-              `${selectedCount} ${kind === 'Product' ? 'product' : 'service'} item(s) added.`,
-              'success'
-            );
-          }
+          push(`Added ${selected.length} ${kind === "Product" ? "product" : "service"}(s) to campaign.`, "success");
         }}
       />
 
-      {/* + New Campaign (Side Drawer) */}
+      {/* Campaign Builder Drawer */}
       <Drawer
         open={builderOpen}
-        title="+ New Campaign"
-        subtitle="Build a campaign draft, attach products/services, plan pricing & targeting, then submit for Admin approval."
+        title="New Campaign"
+        subtitle="Campaign Builder · Promo + Catalog · Submit for Admin approval"
         onClose={() => setBuilderOpen(false)}
         footer={
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="text-xs text-slate-600 dark:text-slate-300">
-              Step <span className="font-extrabold">{builderStep}</span> of{' '}
-              <span className="font-extrabold">4</span>
-              <span className="text-slate-400"> · </span>
-              <span className="text-slate-500 dark:text-slate-400">
-                {builderStep === 1
-                  ? 'Setup'
-                  : builderStep === 2
-                    ? 'Creator plan'
-                    : builderStep === 3
-                      ? 'Collabs & approval'
-                      : 'Review & submit'}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Btn onClick={() => setBuilderOpen(false)} title="Close without saving">
-                Cancel
-              </Btn>
-
-              <Btn
-                disabled={builderStep <= 1}
-                onClick={() => setBuilderStep((s) => Math.max(1, s - 1))}
-                title="Go back"
-              >
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs text-slate-500 dark:text-slate-400">Step {builderStep} / 4</div>
+            <div className="flex items-center gap-2">
+              <Btn onClick={() => setBuilderStep((s) => Math.max(1, s - 1))} disabled={builderStep === 1}>
                 ← Back
               </Btn>
-
               {builderStep < 4 ? (
                 <Btn
                   tone="primary"
-                  onClick={() => setBuilderStep((s) => Math.min(4, s + 1))}
-                  title="Next step"
+                  onClick={() => {
+                    if (builderStep === 1 && !String(builder.name || "").trim()) {
+                      push("Campaign name is required.", "error");
+                      return;
+                    }
+                    setBuilderStep((s) => Math.min(4, s + 1));
+                  }}
                 >
                   Next →
                 </Btn>
               ) : (
-                <Btn tone="primary" onClick={submitForApproval} title="Send to Admin for approval">
-                  🚀 Submit for Approval
-                </Btn>
+                <>
+                  <Btn onClick={saveDraft} title="Save draft">📝 Save draft</Btn>
+                  <Btn tone="primary" onClick={submitForApproval} title="Submit to Admin for approval">
+                    📨 Submit for Approval
+                  </Btn>
+                </>
               )}
-
-              <Btn onClick={saveDraft} title="Save as draft (Admin approval not requested)">
-                💾 Save Draft
-              </Btn>
             </div>
           </div>
         }
       >
-        {/* Stepper */}
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3 mb-3">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="text-sm font-extrabold">Campaign Builder</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                Configure campaign identity, items, pricing, targeting, creator workflow, and
-                approvals.
-              </div>
-            </div>
-            <Pill tone="brand">Step {builderStep}/4</Pill>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {[
-              { n: 1, label: 'Setup' },
-              { n: 2, label: 'Creator plan' },
-              { n: 3, label: 'Collabs' },
-              { n: 4, label: 'Review' },
-            ].map((s) => (
-              <button
-                key={s.n}
-                type="button"
-                onClick={() => setBuilderStep(s.n)}
-                className={cx(
-                  'px-3 py-2 rounded-2xl border text-xs font-extrabold transition text-left',
-                  builderStep === s.n
-                    ? 'border-[#f77f00] bg-white dark:bg-slate-900'
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 dark:bg-slate-950/40 hover:bg-gray-50 dark:hover:bg-slate-950'
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-900 dark:text-slate-50">{s.label}</span>
-                  <span
-                    className={cx(
-                      'h-2 w-2 rounded-full',
-                      builderStep === s.n ? 'bg-[#f77f00]' : 'bg-slate-300 dark:bg-slate-700'
-                    )}
-                  />
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* STEP 1 */}
         {builderStep === 1 ? (
           <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3">
-              <div className="text-sm font-bold">Campaign setup</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                Define identity, commerce model, timing/targeting, promo mechanics, and your catalog
-                lines. Final step is Submit for Admin approval.
-              </div>
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
+              <div className="text-sm font-bold">Basics + Promo + Catalog</div>
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Define identity, duration, promo design, and items to promote.</div>
             </div>
 
             <div className="grid grid-cols-1 gap-3">
-              {/* Basics */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Campaign name *
-                  </div>
-                  <div className="mt-2">
-                    <Input
-                      value={builder.name}
-                      onChange={(v) => setBuilder((p) => ({ ...p, name: v }))}
-                      placeholder="Example: Beauty Flash Week (Combo)"
-                    />
-                  </div>
-                </div>
-
-                {/* Internal reference (screenshot #1) */}
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Internal reference
-                  </div>
-                  <div className="mt-2">
-                    <Input
-                      value={builder.internalReference}
-                      onChange={(v) => setBuilder((p) => ({ ...p, internalReference: v }))}
-                      placeholder="Internal code for your team"
-                    />
-                  </div>
-                  <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                    Optional — helps your team track the Dealz across internal systems.
-                  </div>
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Campaign name *</div>
+                <div className="mt-2">
+                  <Input
+                    value={builder.name}
+                    onChange={(v) => setBuilder((p) => ({ ...p, name: v }))}
+                    placeholder="Example: Beauty Flash Week (Combo)"
+                  />
                 </div>
               </div>
 
-              {/* Campaign meta */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Campaign type
-                  </div>
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Campaign type</div>
                   <div className="mt-2">
-                    <Select
-                      value={builder.type}
-                      onChange={(v) => setBuilder((p) => ({ ...p, type: v }))}
-                    >
+                    <Select value={builder.type} onChange={(v) => setBuilder((p) => ({ ...p, type: v }))}>
                       <option value="Shoppable Adz">Shoppable Adz</option>
                       <option value="Live Sessionz">Live Sessionz</option>
-                      <option value="Live + Shoppables.">Live + Shoppables.</option>
+                      <option value="Shoppable Adz + Live">Shoppable Adz + Live</option>
+                      <option value="Live + Clips">Live + Clips</option>
                     </Select>
                   </div>
                 </div>
 
-                {/* NEW: Retail vs Wholesale */}
                 <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                        Campaign pricing model
-                      </div>
-                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                        Retail uses line-level discounts. Wholesale requires quantity/price tiers
-                        (max 4 tiers per line).
-                      </div>
-                    </div>
-                    <Pill tone={builder.commerceMode === 'Wholesale' ? 'brand' : 'neutral'}>
-                      {builder.commerceMode}
-                    </Pill>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {COMMERCE_MODES.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => {
-                          setBuilder((p) => {
-                            const next = { ...p, commerceMode: m };
-                            if (m === 'Wholesale') {
-                              return {
-                                ...next,
-                                items: ensureWholesaleTiersForAll(p.items || [], p),
-                              };
-                            }
-                            return next;
-                          });
-                        }}
-                        className={cx(
-                          'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
-                          builder.commerceMode === m
-                            ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
-                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
-                        )}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-
-                  {builder.commerceMode === 'Wholesale' ? (
-                    <div className="mt-3 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3 text-xs text-amber-900/80 dark:text-amber-200/80">
-                      Wholesale campaigns will show tiered pricing on the buyer side. Plan up to{' '}
-                      <span className="font-extrabold">4 tiers</span> per product/service.
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Region (primary)
-                  </div>
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Region</div>
                   <div className="mt-2">
-                    <Select
-                      value={builder.region}
-                      onChange={(v) =>
-                        setBuilder((p) => ({
-                          ...p,
-                          region: v,
-                          marketRegions: p.marketRegions?.length ? p.marketRegions : [v],
-                        }))
-                      }
-                    >
+                    <Select value={builder.region} onChange={(v) => setBuilder((p) => ({ ...p, region: v }))}>
                       <option value="East Africa">East Africa</option>
                       <option value="West Africa">West Africa</option>
                       <option value="Southern Africa">Southern Africa</option>
@@ -2985,14 +2402,9 @@ export default function SupplierMyCampaignsPage() {
                 </div>
 
                 <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Currency
-                  </div>
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Currency</div>
                   <div className="mt-2">
-                    <Select
-                      value={builder.currency}
-                      onChange={(v) => setBuilder((p) => ({ ...p, currency: v }))}
-                    >
+                    <Select value={builder.currency} onChange={(v) => setBuilder((p) => ({ ...p, currency: v }))}>
                       <option value="USD">USD</option>
                       <option value="UGX">UGX</option>
                       <option value="KES">KES</option>
@@ -3002,268 +2414,75 @@ export default function SupplierMyCampaignsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 sm:col-span-2">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Planned budget
-                  </div>
+                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Planned budget</div>
                   <div className="mt-2">
                     <Input
                       type="number"
                       value={builder.estValue}
-                      onChange={(v) =>
-                        setBuilder((p) => ({ ...p, estValue: clamp(v, 0, 100000000) }))
-                      }
+                      onChange={(v) => setBuilder((p) => ({ ...p, estValue: clamp(v, 0, 100000000) }))}
                       placeholder="1000"
                     />
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Estimate until contracts are signed.
-                    </div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Estimate until contracts are signed.</div>
                   </div>
                 </div>
               </div>
 
-              {/* Timing & targeting (screenshot #4) */}
+              {/* Duration */}
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-sm font-bold">Timing and targeting</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      Decide when this Dealz runs, which markets see it, and which languages are
-                      used for creatives and live sessions.
-                    </div>
+                    <div className="text-sm font-bold">Campaign duration</div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Min 1 day, max 45 days. End date is auto-calculated.</div>
                   </div>
                   <Pill tone="brand">Max 45 days</Pill>
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Left column: schedule + timezone */}
-                  <div className="space-y-3">
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                      <div className="flex items-center gap-2 text-sm font-bold">
-                        <span className="opacity-70">🕒</span> <span>Schedule window</span>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">
-                            Start
-                          </div>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <input
-                              type="date"
-                              value={builder.startDate}
-                              onChange={(e) =>
-                                setBuilder((p) => ({ ...p, startDate: e.target.value }))
-                              }
-                              className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                            />
-                            <input
-                              type="time"
-                              value={builder.startTime}
-                              onChange={(e) =>
-                                setBuilder((p) => ({ ...p, startTime: e.target.value }))
-                              }
-                              className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">
-                            End
-                          </div>
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <input
-                              type="date"
-                              value={builderEndDate}
-                              disabled
-                              className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none text-slate-700 dark:text-slate-300"
-                            />
-                            <input
-                              type="time"
-                              value={builder.endTime}
-                              onChange={(e) =>
-                                setBuilder((p) => ({ ...p, endTime: e.target.value }))
-                              }
-                              className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                            Duration (days) *
-                          </div>
-                          <input
-                            type="number"
-                            min={1}
-                            max={45}
-                            value={builder.durationDays}
-                            onChange={(e) => {
-                              const v = clamp(e.target.value, 1, 45);
-                              if (Number(e.target.value) !== v)
-                                push('Duration must be between 1 and 45 days.', 'warn');
-                              setBuilder((p) => ({ ...p, durationDays: v }));
-                            }}
-                            className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                          />
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            End date is auto-calculated (inclusive).
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                            Time zone
-                          </div>
-                          <Select
-                            value={builder.timezone}
-                            onChange={(v) => setBuilder((p) => ({ ...p, timezone: v }))}
-                            className="mt-2"
-                          >
-                            {TIMEZONES.map((tz) => (
-                              <option key={tz} value={tz}>
-                                {tz}
-                              </option>
-                            ))}
-                          </Select>
-                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Live start times, countdown timers, and calendar invites will respect
-                            this timezone.
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="mt-3">
-                        <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                          Flash sale windows (optional)
-                        </div>
-                        <Input
-                          value={builder.flashWindows}
-                          onChange={(v) => setBuilder((p) => ({ ...p, flashWindows: v }))}
-                          placeholder="e.g. Daily 7–9pm local time, weekend only"
-                          className="mt-2"
-                        />
-                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Use this when you want extra urgency on top of the main window.
-                        </div>
-                      </div>
-                    </div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Start date *</div>
+                    <input
+                      type="date"
+                      value={builder.startDate}
+                      onChange={(e) => setBuilder((p) => ({ ...p, startDate: e.target.value }))}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-semibold outline-none"
+                    />
                   </div>
 
-                  {/* Right column: regions, shipping, languages */}
-                  <div className="space-y-3">
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                      <div className="flex items-center gap-2 text-sm font-bold">
-                        <span className="opacity-70">📍</span> <span>Regions / countries</span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {MARKET_REGIONS.map((r) => {
-                          const active = (builder.marketRegions || []).includes(r);
-                          return (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() =>
-                                setBuilder((p) => ({
-                                  ...p,
-                                  marketRegions: toggleInList(p.marketRegions || [], r),
-                                }))
-                              }
-                              className={cx(
-                                'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
-                                active
-                                  ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
-                                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
-                              )}
-                              title="Used for feed distribution, recommendation rules, and shipping eligibility."
-                            >
-                              {r}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Used for feed distribution, recommendation rules, and shipping eligibility.
-                      </div>
-                    </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Duration (days) *</div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={45}
+                      value={builder.durationDays}
+                      onChange={(e) => {
+                        const v = clamp(e.target.value, 1, 45);
+                        if (Number(e.target.value) !== v) push("Duration must be between 1 and 45 days.", "warn");
+                        setBuilder((p) => ({ ...p, durationDays: v }));
+                      }}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-semibold outline-none"
+                    />
+                  </div>
 
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                      <div className="text-sm font-bold">Shipping constraints</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {SHIPPING_CONSTRAINTS.map((s) => {
-                          const active = (builder.shippingConstraints || []).includes(s);
-                          return (
-                            <button
-                              key={s}
-                              type="button"
-                              onClick={() =>
-                                setBuilder((p) => ({
-                                  ...p,
-                                  shippingConstraints: toggleInList(p.shippingConstraints || [], s),
-                                }))
-                              }
-                              className={cx(
-                                'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
-                                active
-                                  ? 'bg-[#f77f00] text-white border-[#f77f00]'
-                                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
-                              )}
-                            >
-                              {s}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                      <div className="text-sm font-bold">Languages for content</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {CONTENT_LANGUAGES.map((l) => {
-                          const active = (builder.contentLanguages || []).includes(l);
-                          return (
-                            <button
-                              key={l}
-                              type="button"
-                              onClick={() =>
-                                setBuilder((p) => ({
-                                  ...p,
-                                  contentLanguages: toggleInList(p.contentLanguages || [], l),
-                                }))
-                              }
-                              className={cx(
-                                'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
-                                active
-                                  ? 'bg-[#f77f00] text-white border-[#f77f00]'
-                                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
-                              )}
-                              title="Feeds into captions, translated promo copy, and live session overlays."
-                            >
-                              {l}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Feeds into auto-generated captions, translated promo copy, and live session
-                        overlays.
-                      </div>
-                    </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">End date (auto)</div>
+                    <input
+                      type="date"
+                      value={builderEndDate}
+                      disabled
+                      className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none text-slate-700 dark:text-slate-300"
+                    />
                   </div>
                 </div>
               </div>
 
-              {/* Promo (kept from previous version) */}
+              {/* Promo */}
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-bold">Promo type & arrangement</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      Define the promo mechanism (discount, coupon, bundle, etc.).
-                    </div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Define the promo mechanism (discount, coupon, bundle, etc.).</div>
                   </div>
                   <Pill tone="brand">{promoLabels.promoTypeLabel}</Pill>
                 </div>
@@ -3275,22 +2494,21 @@ export default function SupplierMyCampaignsPage() {
                       type="button"
                       onClick={() => {
                         const arrangements = PROMO_ARRANGEMENTS[pt.k] || [];
-                        const nextArrangement = arrangements[0]?.k || '';
+                        const nextArrangement = arrangements[0]?.k || "";
                         setBuilder((p) => ({
                           ...p,
                           promoType: pt.k,
                           promoArrangement: nextArrangement,
                           // sensible defaults
-                          defaultDiscountMode:
-                            pt.k === 'Discount' || pt.k === 'Coupon' ? 'percent' : 'none',
-                          defaultDiscountValue: pt.k === 'Discount' || pt.k === 'Coupon' ? 10 : 0,
+                          defaultDiscountMode: pt.k === "Discount" || pt.k === "Coupon" ? "percent" : "none",
+                          defaultDiscountValue: pt.k === "Discount" || pt.k === "Coupon" ? 10 : 0
                         }));
                       }}
                       className={cx(
-                        'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
+                        "px-3 py-1.5 rounded-full text-xs font-semibold border transition",
                         builder.promoType === pt.k
-                          ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
-                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
+                          ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100"
+                          : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800"
                       )}
                     >
                       {pt.label}
@@ -3300,9 +2518,7 @@ export default function SupplierMyCampaignsPage() {
 
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                      Preferred arrangement
-                    </div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Preferred arrangement</div>
                     <Select
                       value={builder.promoArrangement}
                       onChange={(v) => setBuilder((p) => ({ ...p, promoArrangement: v }))}
@@ -3317,9 +2533,7 @@ export default function SupplierMyCampaignsPage() {
                   </div>
 
                   <div>
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                      Offer scope
-                    </div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Offer scope</div>
                     <Select
                       value={builder.offerScope}
                       onChange={(v) => setBuilder((p) => ({ ...p, offerScope: v }))}
@@ -3335,62 +2549,50 @@ export default function SupplierMyCampaignsPage() {
                 </div>
 
                 {/* Promo extra fields */}
-                {builder.promoType === 'Coupon' ? (
+                {builder.promoType === "Coupon" ? (
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                        Promo / coupon code
-                      </div>
+                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Promo / coupon code</div>
                       <Input
                         value={builder.promoCode}
                         onChange={(v) => setBuilder((p) => ({ ...p, promoCode: v.toUpperCase() }))}
                         placeholder="Example: TECHFRIDAY"
                         className="mt-2"
                       />
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Creators can mention this code in content.
-                      </div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Creators can mention this code in content.</div>
                     </div>
                   </div>
                 ) : null}
 
-                {builder.promoType === 'FreeShipping' ? (
+                {builder.promoType === "FreeShipping" ? (
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                        Shipping threshold
-                      </div>
+                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Shipping threshold</div>
                       <Input
                         type="number"
                         value={builder.shippingThreshold}
-                        onChange={(v) =>
-                          setBuilder((p) => ({ ...p, shippingThreshold: clamp(v, 0, 100000000) }))
-                        }
+                        onChange={(v) => setBuilder((p) => ({ ...p, shippingThreshold: clamp(v, 0, 100000000) }))}
                         placeholder="0"
                         className="mt-2"
                       />
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Example: free shipping over $50.
-                      </div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Example: free shipping over $50.</div>
                     </div>
                   </div>
                 ) : null}
 
-                {builder.promoType === 'Gift' ? (
+                {builder.promoType === "Gift" ? (
                   <div className="mt-3">
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                      Gift / bonus note
-                    </div>
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Gift / bonus note</div>
                     <textarea
                       value={builder.giftNote}
                       onChange={(e) => setBuilder((p) => ({ ...p, giftNote: e.target.value }))}
-                      className="mt-2 w-full min-h-[84px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm outline-none"
+                      className="mt-2 w-full min-h-[84px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none"
                       placeholder="Example: Free travel pouch with every bundle purchase"
                     />
                   </div>
                 ) : null}
 
-                <div className="mt-3 rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
+                <div className="mt-3 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-bold">Default discount (for catalog)</div>
@@ -3398,1082 +2600,121 @@ export default function SupplierMyCampaignsPage() {
                         Applies when selecting items, and can be overridden per item.
                       </div>
                     </div>
-                    <Btn
-                      onClick={applyDefaultDiscountToSelected}
-                      title="Apply discount to items already selected"
-                    >
+                    <Btn onClick={applyDefaultDiscountToSelected} title="Apply discount to items already selected">
                       ✨ Apply to selected
                     </Btn>
                   </div>
-
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                        Default type
-                      </div>
+                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Default mode</div>
                       <Select
                         value={builder.defaultDiscountMode}
                         onChange={(v) => setBuilder((p) => ({ ...p, defaultDiscountMode: v }))}
                         className="mt-2"
                       >
-                        {DISCOUNT_TYPE_OPTIONS.filter((d) => d.k !== 'final').map((m) => (
+                        {DISCOUNT_MODES.map((m) => (
                           <option key={m.k} value={m.k}>
                             {m.label}
                           </option>
                         ))}
                       </Select>
                     </div>
-
                     <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                        Default value
-                      </div>
+                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Default value</div>
                       <Input
                         type="number"
                         value={builder.defaultDiscountValue}
-                        onChange={(v) =>
-                          setBuilder((p) => ({
-                            ...p,
-                            defaultDiscountValue: clamp(v, 0, 100000000),
-                          }))
-                        }
-                        placeholder="10"
+                        onChange={(v) => setBuilder((p) => ({ ...p, defaultDiscountValue: Math.max(0, safeNum(v, 0)) }))}
                         className="mt-2"
+                        placeholder="10"
                       />
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {formatDiscount(builder.defaultDiscountMode, builder.defaultDiscountValue, builder.currency)}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Products and services (screenshot #2) */}
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold">Products and services</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      Pull items from your EVzone catalog and decide if this Dealz is a single hero
-                      item or a bundle.
-                    </div>
-                  </div>
-                  <Pill tone="neutral">{(builder.items || []).length} selected</Pill>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-2">
-                    {BUNDLE_MODES.map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => setBuilder((p) => ({ ...p, bundleMode: m }))}
-                        className={cx(
-                          'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
-                          builder.bundleMode === m
-                            ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
-                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
-                        )}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex-1" />
-
-                  {/* Catalog buttons are contextual (Products/Services/Both) */}
-                  <div className="flex flex-wrap gap-2">
-                    {allowProducts(builder.offerScope) ? (
-                      <button
-                        type="button"
-                        onClick={() => openCatalog('Product')}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-extrabold text-white bg-[#f77f00] hover:opacity-95 transition"
-                        title="Add products from catalog"
-                      >
-                        🔎 Add Products
-                      </button>
-                    ) : null}
-                    {allowServices(builder.offerScope) ? (
-                      <button
-                        type="button"
-                        onClick={() => openCatalog('Service')}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-extrabold text-white bg-[#f77f00] hover:opacity-95 transition"
-                        title="Add services from catalog"
-                      >
-                        🧰 Add Services
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="mt-3 overflow-x-auto">
-                  <table className="w-full min-w-[920px] text-left border-collapse">
-                    <thead>
-                      <tr className="bg-gray-50 dark:bg-slate-950/50 dark:bg-slate-800/40 border-y border-slate-100 dark:border-slate-800">
-                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          Item
-                        </th>
-                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          SKU
-                        </th>
-                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          Base price
-                        </th>
-                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          Category
-                        </th>
-                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          Regulated tag
-                        </th>
-                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                          Planned qty
-                        </th>
-                        <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-
-                    <tbody className="divide-y divide-slate-50 dark:divide-slate-800/40">
-                      {(builder.items || []).map((it) => (
-                        <tr key={it.id} className="bg-white dark:bg-slate-900">
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <img
-                                src={it.avatar}
-                                alt="avatar"
-                                className="h-9 w-9 rounded-2xl border border-slate-200 dark:border-slate-700"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <input
-                                  value={it.title}
-                                  onChange={(e) => updateLineItem(it.id, { title: e.target.value })}
-                                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                                />
-                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 truncate">
-                                  {it.kind} · {it.subtitle || it.region || '—'}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <input
-                              value={it.sku || '—'}
-                              readOnly
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 px-3 py-2 text-xs font-bold outline-none text-slate-700 dark:text-slate-300"
-                            />
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <input
-                              type="number"
-                              value={normalizedNum(it.price, 0)}
-                              onChange={(e) => {
-                                const nextPrice = clamp(e.target.value, 0, 100000000);
-                                setBuilder((p) => ({
-                                  ...p,
-                                  items: (p.items || []).map((x) => {
-                                    if (x.id !== it.id) return x;
-                                    const mode = x.discount?.mode || 'none';
-                                    const val = normalizedNum(x.discount?.value, 0);
-                                    const discountedPrice = calcDiscountedPrice(
-                                      nextPrice,
-                                      mode,
-                                      val
-                                    );
-                                    return {
-                                      ...x,
-                                      price: nextPrice,
-                                      discount: { mode, value: val },
-                                      discountedPrice,
-                                      discountLabel: formatDiscount(mode, val, p.currency),
-                                    };
-                                  }),
-                                }));
-                              }}
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                            />
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                              {it.category || '—'}
-                            </div>
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <Select
-                              value={it.regulatedTag || 'None'}
-                              onChange={(v) => updateLineItem(it.id, { regulatedTag: v })}
-                            >
-                              {REGULATED_TAGS.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
-                                </option>
-                              ))}
-                            </Select>
-                          </td>
-
-                          <td className="px-4 py-3">
-                            <input
-                              type="number"
-                              value={normalizedNum(it.plannedQty, 1)}
-                              onChange={(e) =>
-                                updateLineItem(it.id, {
-                                  plannedQty: clamp(e.target.value, 1, 100000000),
-                                })
-                              }
-                              className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                            />
-                          </td>
-
-                          <td className="px-4 py-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => removeLineItem(it.id)}
-                              className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 transition"
-                              title="Remove"
-                            >
-                              ✕
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-
-                      {(builder.items || []).length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-4 py-10 text-center text-slate-400 italic">
-                            No items selected yet. Use “Add Products” / “Add Services” to pull from
-                            catalog.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Giveaways (live campaign types only) */}
+              {/* Items */}
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <div className="text-sm font-bold">Campaign giveaways</div>
+                    <div className="text-sm font-bold">Products / Services</div>
                     <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      Configure prizes the seller/provider will give out during live sessions.
-                      Applies to <span className="font-extrabold">Live Sessionz</span> and{' '}
-                      <span className="font-extrabold">Live + Shoppables.</span>, not Shoppable
-                      Adz.
+                      Select items from Catalog. Each item can have its own planned quantity and discount.
                     </div>
                   </div>
-                  {!giveawaysSupported ? (
-                    <Pill tone="neutral">Not available for this campaign type</Pill>
-                  ) : builder.hasGiveaways ? (
-                    <Pill tone="brand">
-                      {campaignGiveaways.length} item(s) · Qty {totalGiveawayQty}
-                    </Pill>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {allowProducts(builder.offerScope) ? (
+                      <Btn tone="primary" onClick={() => openCatalog("Product")}>➕ Add Products</Btn>
+                    ) : null}
+                    {allowServices(builder.offerScope) ? (
+                      <Btn tone={allowProducts(builder.offerScope) ? "neutral" : "primary"} onClick={() => openCatalog("Service")}>
+                        ➕ Add Services
+                      </Btn>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  {(builder.items || []).length === 0 ? (
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 text-xs text-slate-500 dark:text-slate-400">
+                      No items selected yet.
+                    </div>
                   ) : (
-                    <Pill tone="neutral">Optional</Pill>
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                      {(builder.items || []).map((it) => (
+                        <div
+                          key={it.id}
+                          className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <img src={it.avatar} alt="avatar" className="h-10 w-10 rounded-2xl border border-slate-200 dark:border-slate-700" />
+                            <div className="min-w-0">
+                              <div className="text-sm font-extrabold truncate">{it.title}</div>
+                              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 truncate">
+                                {it.kind} · Qty: <span className="font-bold">{it.plannedQty || 1}</span> · {it.discountLabel || "No discount"}
+                              </div>
+                              <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                                Price: {money(builder.currency, it.price)} → <span className="font-extrabold">{money(builder.currency, it.discountedPrice ?? it.price)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Btn
+                              onClick={() => {
+                                // open catalog focused on the item kind
+                                openCatalog(it.kind);
+                              }}
+                            >
+                              ✏️ Edit
+                            </Btn>
+                            <Btn
+                              onClick={() => {
+                                setBuilder((p) => ({ ...p, items: (p.items || []).filter((x) => x.id !== it.id) }));
+                                push("Item removed.", "success");
+                              }}
+                            >
+                              🗑️ Remove
+                            </Btn>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
-                {!giveawaysSupported ? (
-                  <div className="mt-3 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-3 text-xs text-slate-500 dark:text-slate-400">
-                    Switch the campaign type to{' '}
-                    <span className="font-extrabold">Live Sessionz</span> or{' '}
-                    <span className="font-extrabold">Live + Shoppables.</span> to configure live
-                    giveaway items.
-                  </div>
-                ) : (
-                  <>
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <RadioCard
-                        active={!builder.hasGiveaways}
-                        title="No giveaways in this campaign"
-                        badge="No"
-                        desc="Use this when the live campaign will not include any seller/provider giveaway items."
-                        onClick={() => setBuilder((p) => ({ ...p, hasGiveaways: false }))}
-                      />
-                      <RadioCard
-                        active={!!builder.hasGiveaways}
-                        title="Yes — include giveaways"
-                        badge="Yes"
-                        desc="Add featured-item giveaways or custom giveaway products/services with their quantities."
-                        onClick={() => setBuilder((p) => ({ ...p, hasGiveaways: true }))}
-                      />
-                    </div>
-
-                    {builder.hasGiveaways ? (
-                      <>
-                        <div className="mt-3">
-                          {campaignGiveaways.length ? (
-                            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                              {campaignGiveaways.map((g, idx) => {
-                                const meta = resolveCampaignGiveaway(g, builder.items || []);
-                                return (
-                                  <div
-                                    key={g.id || idx}
-                                    className="flex items-center justify-between gap-3 px-4 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-800"
-                                  >
-                                    <div className="flex items-center gap-3 min-w-0">
-                                      {meta.imageUrl ? (
-                                        <img
-                                          src={meta.imageUrl}
-                                          alt={meta.title}
-                                          className="h-11 w-11 rounded-2xl object-cover border border-slate-200 dark:border-slate-700"
-                                        />
-                                      ) : (
-                                        <div className="h-11 w-11 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-lg">
-                                          🎁
-                                        </div>
-                                      )}
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-extrabold truncate">
-                                          {meta.title}
-                                        </div>
-                                        <div className="mt-1 flex flex-wrap gap-2">
-                                          <Pill tone="neutral">
-                                            {meta.source === 'featured'
-                                              ? 'From featured items'
-                                              : 'Custom'}
-                                          </Pill>
-                                          <Pill tone="brand">Qty {meta.quantity}</Pill>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <Btn
-                                      tone="ghost"
-                                      onClick={() => removeCampaignGiveaway(g.id)}
-                                      title="Remove giveaway"
-                                    >
-                                      ✕
-                                    </Btn>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-3 text-xs text-slate-500 dark:text-slate-400">
-                              No giveaway items added yet.
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="mt-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-sm font-bold">Add giveaway item</div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setGiveawayAddMode('featured')}
-                                className={cx(
-                                  'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
-                                  giveawayAddMode === 'featured'
-                                    ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
-                                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
-                                )}
-                              >
-                                From featured items
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setGiveawayAddMode('custom')}
-                                className={cx(
-                                  'px-3 py-1.5 rounded-full text-xs font-semibold border transition',
-                                  giveawayAddMode === 'custom'
-                                    ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
-                                    : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800'
-                                )}
-                              >
-                                Custom
-                              </button>
-                            </div>
-                          </div>
-
-                          {giveawayAddMode === 'featured' ? (
-                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_140px_auto] gap-3 items-end">
-                              <div>
-                                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                  Featured product / service
-                                </div>
-                                <Select
-                                  value={featuredGiveawayItemId}
-                                  onChange={(v) => setFeaturedGiveawayItemId(v)}
-                                  className="mt-2"
-                                >
-                                  <option value="">Select a featured item</option>
-                                  {(builder.items || []).map((it) => (
-                                    <option key={it.id} value={it.id}>
-                                      {it.title}
-                                    </option>
-                                  ))}
-                                </Select>
-                                {!(builder.items || []).length ? (
-                                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    Add Products or Services first so the supplier can select
-                                    featured-item giveaways.
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              <div>
-                                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                  Quantity *
-                                </div>
-                                <Input
-                                  type="number"
-                                  value={featuredGiveawayQuantity}
-                                  onChange={(v) =>
-                                    setFeaturedGiveawayQuantity(String(v).replace(/[^0-9]/g, ''))
-                                  }
-                                  placeholder="1"
-                                  className="mt-2"
-                                />
-                                {!featuredGiveawayQtyValue ? (
-                                  <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                                    Enter a whole number of 1 or more.
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              <Btn
-                                tone="primary"
-                                className="h-[42px]"
-                                disabled={
-                                  !(builder.items || []).length ||
-                                  !featuredGiveawayItemId ||
-                                  !featuredGiveawayQtyValue
-                                }
-                                onClick={addFeaturedGiveaway}
-                              >
-                                ➕ Add giveaway
-                              </Btn>
-                            </div>
-                          ) : (
-                            <div className="mt-3 grid grid-cols-1 gap-3">
-                              <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_140px] gap-3">
-                                <div>
-                                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                    Custom giveaway product / service *
-                                  </div>
-                                  <Input
-                                    value={customGiveawayDraft.title}
-                                    onChange={(v) =>
-                                      setCustomGiveawayDraft((p) => ({ ...p, title: v }))
-                                    }
-                                    placeholder="Example: VIP Skincare Gift Box"
-                                    className="mt-2"
-                                  />
-                                </div>
-
-                                <div>
-                                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                    Quantity *
-                                  </div>
-                                  <Input
-                                    type="number"
-                                    value={customGiveawayDraft.quantity}
-                                    onChange={(v) =>
-                                      setCustomGiveawayDraft((p) => ({
-                                        ...p,
-                                        quantity: String(v).replace(/[^0-9]/g, ''),
-                                      }))
-                                    }
-                                    placeholder="1"
-                                    className="mt-2"
-                                  />
-                                  {!customGiveawayQtyValue ? (
-                                    <div className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                                      Enter a whole number of 1 or more.
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="flex items-center justify-between gap-2">
-                                  <div>
-                                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                      Poster image (500 × 500px) *
-                                    </div>
-                                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                      Choose an approved image from Asset Library or use that page
-                                      to submit content for approval.
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Btn
-                                      tone="primary"
-                                      onClick={() =>
-                                        openAssetLibraryPicker('campaignGiveawayPoster')
-                                      }
-                                    >
-                                      🖼️ Choose poster
-                                    </Btn>
-                                    <Btn
-                                      onClick={() =>
-                                        setCustomGiveawayDraft((p) => ({
-                                          ...p,
-                                          imageUrl: '',
-                                          posterAssetId: '',
-                                          assetName: '',
-                                        }))
-                                      }
-                                      disabled={!customGiveawayDraft.imageUrl}
-                                    >
-                                      Clear
-                                    </Btn>
-                                  </div>
-                                </div>
-
-                                <div className="mt-3 w-full max-w-[220px]">
-                                  <div className="aspect-square rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden flex items-center justify-center">
-                                    {customGiveawayDraft.imageUrl ? (
-                                      <img
-                                        src={customGiveawayDraft.imageUrl}
-                                        alt={customGiveawayDraft.title || 'Custom giveaway poster'}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    ) : (
-                                      <div className="px-4 text-center text-xs text-slate-500 dark:text-slate-400">
-                                        No poster selected
-                                      </div>
-                                    )}
-                                  </div>
-                                  {customGiveawayDraft.assetName ? (
-                                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 truncate">
-                                      Selected: {customGiveawayDraft.assetName}
-                                    </div>
-                                  ) : null}
-                                  {!customGiveawayDraft.imageUrl ? (
-                                    <div className="mt-2 text-xs text-rose-600 dark:text-rose-400">
-                                      A poster image is required for custom giveaways.
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </div>
-
-                              <div className="flex justify-end">
-                                <Btn
-                                  tone="primary"
-                                  disabled={
-                                    !String(customGiveawayDraft.title || '').trim() ||
-                                    !customGiveawayQtyValue ||
-                                    !customGiveawayDraft.imageUrl
-                                  }
-                                  onClick={addCustomGiveaway}
-                                >
-                                  ➕ Add custom giveaway
-                                </Btn>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="mt-3 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-3 text-xs text-slate-500 dark:text-slate-400">
-                        Select “Yes — include giveaways” if this live campaign will give out
-                        seller/provider prizes during the session.
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Pricing and discounts (screenshot #3) */}
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-bold">Pricing and discounts</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      Configure how each line behaves. Promo price is auto-calculated for % and
-                      amount discounts and can be set directly for promo price type.
-                    </div>
-                  </div>
-                  <Pill tone={builder.commerceMode === 'Wholesale' ? 'brand' : 'neutral'}>
-                    {builder.commerceMode}
-                  </Pill>
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Catalog requirement: avatar, details, qty, current price, discount, and discounted price are captured per item.
                 </div>
-
-                {(builder.items || []).length === 0 ? (
-                  <div className="mt-3 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 p-4 text-sm text-slate-600 dark:text-slate-300">
-                    Add at least one line item to configure pricing.
-                  </div>
-                ) : builder.commerceMode !== 'Wholesale' ? (
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full min-w-[980px] text-left border-collapse">
-                      <thead>
-                        <tr className="bg-gray-50 dark:bg-slate-950/50 dark:bg-slate-800/40 border-y border-slate-100 dark:border-slate-800">
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            Item
-                          </th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            Base price
-                          </th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            Discount type
-                          </th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            Discount value
-                          </th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            Promo price
-                          </th>
-                          <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                            Limits
-                          </th>
-                        </tr>
-                      </thead>
-
-                      <tbody className="divide-y divide-slate-50 dark:divide-slate-800/40">
-                        {(builder.items || []).map((it) => {
-                          const mode = it.discount?.mode || 'none';
-                          const value = normalizedNum(it.discount?.value, 0);
-                          const promo = calcDiscountedPrice(it.price, mode, value);
-                          const limits = it.limits || { total: '', perBuyer: '' };
-                          const isPromoPrice = mode === 'final';
-
-                          return (
-                            <tr key={it.id} className="bg-white dark:bg-slate-900">
-                              <td className="px-4 py-3">
-                                <div className="text-sm font-extrabold">{it.title}</div>
-                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                  {it.kind} · SKU {it.sku || '—'}
-                                </div>
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <div className="text-sm font-semibold">
-                                  {money(builder.currency, normalizedNum(it.price, 0))}
-                                </div>
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <Select
-                                  value={mode}
-                                  onChange={(v) => {
-                                    const nextMode = v;
-                                    const nextVal = nextMode === 'none' ? 0 : value;
-                                    updateLineItemDiscount(it.id, nextMode, nextVal);
-                                  }}
-                                >
-                                  {DISCOUNT_TYPE_OPTIONS.map((d) => (
-                                    <option key={d.k} value={d.k}>
-                                      {d.label}
-                                    </option>
-                                  ))}
-                                </Select>
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <input
-                                  type="number"
-                                  value={mode === 'none' ? '' : value}
-                                  placeholder={
-                                    mode === 'amount'
-                                      ? 'Amount'
-                                      : mode === 'percent'
-                                        ? 'Percent'
-                                        : mode === 'final'
-                                          ? 'Promo price'
-                                          : ''
-                                  }
-                                  onChange={(e) =>
-                                    updateLineItemDiscount(
-                                      it.id,
-                                      mode,
-                                      clamp(e.target.value, 0, 100000000)
-                                    )
-                                  }
-                                  disabled={mode === 'none' || mode === 'final'}
-                                  className={cx(
-                                    'w-full rounded-xl border px-3 py-2 text-sm font-semibold outline-none',
-                                    mode === 'none' || mode === 'final'
-                                      ? 'border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
-                                      : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
-                                  )}
-                                />
-                                {mode === 'percent' ? (
-                                  <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                    0–100
-                                  </div>
-                                ) : null}
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <input
-                                  type="number"
-                                  value={isPromoPrice ? value : Math.round(promo * 100) / 100}
-                                  onChange={(e) => {
-                                    if (!isPromoPrice) return;
-                                    updateLineItemDiscount(
-                                      it.id,
-                                      'final',
-                                      clamp(e.target.value, 0, 100000000)
-                                    );
-                                  }}
-                                  disabled={!isPromoPrice}
-                                  className={cx(
-                                    'w-full rounded-xl border px-3 py-2 text-sm font-extrabold outline-none',
-                                    isPromoPrice
-                                      ? 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
-                                      : 'border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 text-slate-700 dark:text-slate-300'
-                                  )}
-                                />
-                              </td>
-
-                              <td className="px-4 py-3">
-                                <div className="grid grid-cols-1 gap-2">
-                                  <input
-                                    type="number"
-                                    value={limits.total}
-                                    onChange={(e) =>
-                                      updateLineItemLimits(it.id, {
-                                        total: clamp(e.target.value, 0, 100000000),
-                                      })
-                                    }
-                                    placeholder="Total"
-                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold outline-none"
-                                  />
-                                  <input
-                                    type="number"
-                                    value={limits.perBuyer}
-                                    onChange={(e) =>
-                                      updateLineItemLimits(it.id, {
-                                        perBuyer: clamp(e.target.value, 0, 100000000),
-                                      })
-                                    }
-                                    placeholder="Per buyer"
-                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold outline-none"
-                                  />
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-
-                    <div className="mt-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3 text-xs text-slate-600 dark:text-slate-300">
-                      <span className="font-extrabold">%</span> You can mix discount types across
-                      lines. For volume and BOGO offers, the buyer side will show a clean
-                      mobile-first breakdown so shoppers instantly understand the value.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-3 space-y-3">
-                    {(builder.items || []).map((it) => {
-                      const tiers = Array.isArray(it.wholesaleTiers) ? it.wholesaleTiers : [];
-                      const limits = it.limits || { total: '', perBuyer: '' };
-
-                      return (
-                        <div
-                          key={it.id}
-                          className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="text-sm font-extrabold truncate">{it.title}</div>
-                              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                Base price:{' '}
-                                <span className="font-bold">
-                                  {money(builder.currency, normalizedNum(it.price, 0))}
-                                </span>{' '}
-                                · Max 4 tiers
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <Btn
-                                onClick={() => addWholesaleTier(it.id)}
-                                disabled={(tiers || []).length >= 4}
-                                title="Add tier (max 4)"
-                              >
-                                ➕ Tier
-                              </Btn>
-                            </div>
-                          </div>
-
-                          <div className="mt-3 overflow-x-auto">
-                            <table className="w-full min-w-[980px] text-left border-collapse">
-                              <thead>
-                                <tr className="border-y border-slate-200 dark:border-slate-800">
-                                  <th className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Tier
-                                  </th>
-                                  <th className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Min qty
-                                  </th>
-                                  <th className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Max qty
-                                  </th>
-                                  <th className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Discount type
-                                  </th>
-                                  <th className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Value
-                                  </th>
-                                  <th className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                    Unit price
-                                  </th>
-                                  <th className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">
-                                    Actions
-                                  </th>
-                                </tr>
-                              </thead>
-
-                              <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800/60">
-                                {(tiers.length
-                                  ? tiers
-                                  : ensureWholesaleTiersForAll([it], builder)[0].wholesaleTiers
-                                ).map((t, idx) => {
-                                  const mode = t.discountMode || 'percent';
-                                  const val = normalizedNum(t.discountValue, 0);
-                                  const unitPrice = calcDiscountedPrice(it.price, mode, val);
-
-                                  return (
-                                    <tr key={t.id} className="bg-white dark:bg-slate-900/70 dark:bg-slate-950/40">
-                                      <td className="px-3 py-2 text-sm font-extrabold">
-                                        T{idx + 1}
-                                      </td>
-
-                                      <td className="px-3 py-2">
-                                        <input
-                                          type="number"
-                                          value={normalizedNum(t.minQty, 1)}
-                                          onChange={(e) =>
-                                            updateWholesaleTier(it.id, t.id, {
-                                              minQty: clamp(e.target.value, 1, 100000000),
-                                            })
-                                          }
-                                          className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                                        />
-                                      </td>
-
-                                      <td className="px-3 py-2">
-                                        <input
-                                          type="number"
-                                          value={numberOrEmpty(t.maxQty)}
-                                          onChange={(e) =>
-                                            updateWholesaleTier(it.id, t.id, {
-                                              maxQty:
-                                                e.target.value === ''
-                                                  ? ''
-                                                  : clamp(e.target.value, 1, 100000000),
-                                            })
-                                          }
-                                          placeholder="∞"
-                                          className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                                        />
-                                      </td>
-
-                                      <td className="px-3 py-2">
-                                        <Select
-                                          value={mode}
-                                          onChange={(v) =>
-                                            updateWholesaleTier(it.id, t.id, { discountMode: v })
-                                          }
-                                        >
-                                          {DISCOUNT_TYPE_OPTIONS.filter((d) => d.k !== 'none').map(
-                                            (d) => (
-                                              <option key={d.k} value={d.k}>
-                                                {d.label}
-                                              </option>
-                                            )
-                                          )}
-                                        </Select>
-                                      </td>
-
-                                      <td className="px-3 py-2">
-                                        <input
-                                          type="number"
-                                          value={val}
-                                          onChange={(e) =>
-                                            updateWholesaleTier(it.id, t.id, {
-                                              discountValue: clamp(e.target.value, 0, 100000000),
-                                            })
-                                          }
-                                          className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
-                                        />
-                                      </td>
-
-                                      <td className="px-3 py-2">
-                                        <div className="text-sm font-extrabold">
-                                          {money(
-                                            builder.currency,
-                                            Math.round(unitPrice * 100) / 100
-                                          )}
-                                        </div>
-                                      </td>
-
-                                      <td className="px-3 py-2 text-right">
-                                        <Btn
-                                          onClick={() => removeWholesaleTier(it.id, t.id)}
-                                          title="Remove tier"
-                                        >
-                                          🗑️
-                                        </Btn>
-                                      </td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
-
-                          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                              <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                                Limits
-                              </div>
-                              <div className="mt-2 grid grid-cols-2 gap-2">
-                                <input
-                                  type="number"
-                                  value={limits.total}
-                                  onChange={(e) =>
-                                    updateLineItemLimits(it.id, {
-                                      total: clamp(e.target.value, 0, 100000000),
-                                    })
-                                  }
-                                  placeholder="Total"
-                                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold outline-none"
-                                />
-                                <input
-                                  type="number"
-                                  value={limits.perBuyer}
-                                  onChange={(e) =>
-                                    updateLineItemLimits(it.id, {
-                                      perBuyer: clamp(e.target.value, 0, 100000000),
-                                    })
-                                  }
-                                  placeholder="Per buyer"
-                                  className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold outline-none"
-                                />
-                              </div>
-                              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                Optional caps to prevent oversubscription.
-                              </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 dark:bg-slate-950/40 p-3 text-xs text-slate-600 dark:text-slate-300">
-                              Wholesale tiers are displayed as a buyer-friendly breakdown. You can
-                              mix discount types per tier (e.g., % off for Tier 1, promo price for
-                              Tier 2).
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
-
-              {/* Regulated category check (screenshot #5) */}
-              {hasRegulated ? (
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                    <div className="flex items-start gap-2">
-                      <div className="text-lg">🛡️</div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-bold">Regulated category check</div>
-                        <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                          MyLiveDealz automatically routes Med / Edu / Faith items to a dedicated
-                          Regulated Desk queue for extra review before going live.
-                        </div>
-                        <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                          This Dealz includes regulated items ({regulatedTags.join(', ')}). Please
-                          confirm documentation and disclaimers below.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    <div className="space-y-3">
-                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-bold">Required documents</div>
-                            <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                              I have uploaded all product labels, certifications, and supporting
-                              documents.
-                            </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={!!builder.regulatedDocsConfirmed}
-                            onChange={(e) =>
-                              setBuilder((p) => ({
-                                ...p,
-                                regulatedDocsConfirmed: e.target.checked,
-                              }))
-                            }
-                            className="mt-1 h-4 w-4"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-bold">Disclaimers</div>
-                            <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                              I accept that this Dealz will not go live until the Regulated Desk has
-                              approved all relevant items.
-                            </div>
-                          </div>
-                          <input
-                            type="checkbox"
-                            checked={!!builder.regulatedDisclaimersAccepted}
-                            onChange={(e) =>
-                              setBuilder((p) => ({
-                                ...p,
-                                regulatedDisclaimersAccepted: e.target.checked,
-                              }))
-                            }
-                            className="mt-1 h-4 w-4"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                      <div className="text-xs font-black uppercase tracking-widest text-slate-400">
-                        Routing preview
-                      </div>
-                      <ul className="mt-2 text-xs text-slate-600 dark:text-slate-300 list-disc pl-5 space-y-1">
-                        <li>Standard items → Promo Studio queue for creative polish & approval.</li>
-                        <li>Med / Edu / Faith items → Regulated Desk queue.</li>
-                        <li>
-                          The Dealz will only go fully live once all regulated items have been
-                          cleared.
-                        </li>
-                      </ul>
-
-                      <div className="mt-3">
-                        <textarea
-                          value={builder.regulatedDeskNotes}
-                          onChange={(e) =>
-                            setBuilder((p) => ({ ...p, regulatedDeskNotes: e.target.value }))
-                          }
-                          className="w-full min-h-[92px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm outline-none"
-                          placeholder="Internal notes to Regulated Desk (optional) — e.g. source of products, prior approvals, internal ticket references."
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
 
               {/* Internal owner */}
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  Internal owner
-                </div>
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Internal owner</div>
                 <div className="mt-2">
-                  <Select
-                    value={builder.internalOwner}
-                    onChange={(v) => setBuilder((p) => ({ ...p, internalOwner: v }))}
-                  >
+                  <Select value={builder.internalOwner} onChange={(v) => setBuilder((p) => ({ ...p, internalOwner: v }))}>
                     <option value="Supplier Owner">Supplier Owner</option>
                     <option value="Supplier Manager">Supplier Manager</option>
                     <option value="Collabs Manager">Collabs Manager</option>
@@ -4481,22 +2722,7 @@ export default function SupplierMyCampaignsPage() {
                     <option value="Live Producer">Live Producer</option>
                   </Select>
                 </div>
-                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  (RBAC note) Sensitive actions should be limited to authorized roles.
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  Notes (internal)
-                </div>
-                <textarea
-                  value={builder.notes}
-                  onChange={(e) => setBuilder((p) => ({ ...p, notes: e.target.value }))}
-                  className="mt-2 w-full min-h-[96px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm outline-none"
-                  placeholder="Context for your team or Admin reviewers (optional)."
-                />
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">(RBAC note) Sensitive actions should be limited to authorized roles.</div>
               </div>
             </div>
           </div>
@@ -4505,11 +2731,9 @@ export default function SupplierMyCampaignsPage() {
         {/* STEP 2 */}
         {builderStep === 2 ? (
           <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
               <div className="text-sm font-bold">Creator plan (required)</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                This selection drives the workflow.
-              </div>
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">This selection drives the workflow.</div>
             </div>
 
             <div className="grid grid-cols-1 gap-2">
@@ -4518,41 +2742,31 @@ export default function SupplierMyCampaignsPage() {
                   key={v}
                   active={builder.creatorUsageDecision === v}
                   title={v}
-                  badge={
-                    v === 'I will use a Creator'
-                      ? 'Collabs'
-                      : v === 'I will NOT use a Creator'
-                        ? 'Supplier acts as creator'
-                        : 'Decide later'
-                  }
+                  badge={v === "I will use a Creator" ? "Collabs" : v === "I will NOT use a Creator" ? "Supplier acts as creator" : "Decide later"}
                   desc={
-                    v === 'I will use a Creator'
-                      ? 'Open Collabs: creators pitch. Invite-only: you invite creators and they accept the invite to collaborate, then negotiation and contract follow.'
-                      : v === 'I will NOT use a Creator'
-                        ? 'Skip collaboration logic. Start at Content Submission stage after Admin approves the campaign.'
-                        : 'Create the campaign now and decide collaboration mode later (before content submission).'
+                    v === "I will use a Creator"
+                      ? "Open Collabs: creators pitch. Invite-only: you invite creators and they accept the invite to collaborate, then negotiation and contract follow."
+                      : v === "I will NOT use a Creator"
+                        ? "Skip collaboration logic. Start at Content Submission stage after Admin approves the campaign."
+                        : "Create the campaign now and decide collaboration mode later (before content submission)."
                   }
                   onClick={() => {
                     setBuilder((p) => ({
                       ...p,
                       creatorUsageDecision: v,
-                      collabMode: v === 'I will use a Creator' ? p.collabMode : 'Open for Collabs',
-                      allowMultiCreators:
-                        v === 'I will use a Creator' ? p.allowMultiCreators : false,
+                      collabMode: v === "I will use a Creator" ? p.collabMode : "Open for Collabs",
+                      allowMultiCreators: v === "I will use a Creator" ? p.allowMultiCreators : false
                     }));
                   }}
                 />
               ))}
             </div>
 
-            {builder.creatorUsageDecision === 'I will NOT use a Creator' ? (
+            {builder.creatorUsageDecision === "I will NOT use a Creator" ? (
               <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3">
-                <div className="text-sm font-bold text-amber-900 dark:text-amber-300">
-                  Supplier acts as Creator
-                </div>
+                <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Supplier acts as Creator</div>
                 <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
-                  Collaboration logic is skipped. After Admin approves the campaign, you proceed to
-                  content submission.
+                  Collaboration logic is skipped. After Admin approves the campaign, you proceed to content submission.
                 </div>
               </div>
             ) : null}
@@ -4562,22 +2776,18 @@ export default function SupplierMyCampaignsPage() {
         {/* STEP 3 */}
         {builderStep === 3 ? (
           <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
               <div className="text-sm font-bold">Collaboration & content approval</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                Editable per campaign until content submission.
-              </div>
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Editable per campaign until content submission.</div>
             </div>
 
-            {builder.creatorUsageDecision === 'I will use a Creator' ? (
+            {builder.creatorUsageDecision === "I will use a Creator" ? (
               <>
                 <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-bold">Collaboration mode</div>
-                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                        Default is Open for Collabs. Invite-only is private.
-                      </div>
+                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Default is Open for Collabs. Invite-only is private.</div>
                     </div>
                     <Pill tone="brand">Default: Open</Pill>
                   </div>
@@ -4588,11 +2798,11 @@ export default function SupplierMyCampaignsPage() {
                         key={m}
                         active={builder.collabMode === m}
                         title={m}
-                        badge={m === 'Open for Collabs' ? 'Public' : 'Private'}
+                        badge={m === "Open for Collabs" ? "Public" : "Private"}
                         desc={
-                          m === 'Open for Collabs'
-                            ? 'After Admin approval: campaign appears on Creator Opportunities Board. Creators pitch. You review, negotiate and contract.'
-                            : 'After Admin approval: you invite creators. Creators ACCEPT invites to collaborate, then negotiation and contracts follow.'
+                          m === "Open for Collabs"
+                            ? "After Admin approval: campaign appears on Creator Opportunities Board. Creators pitch. You review, negotiate and contract."
+                            : "After Admin approval: you invite creators. Creators ACCEPT invites to collaborate, then negotiation and contracts follow."
                         }
                         onClick={() => setBuilder((p) => ({ ...p, collabMode: m }))}
                       />
@@ -4602,21 +2812,19 @@ export default function SupplierMyCampaignsPage() {
 
                 <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                   <div className="text-sm font-bold">Content approval</div>
-                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                    Manual means you approve creator assets before Admin review.
-                  </div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Manual means you approve creator assets before Admin review.</div>
 
                   <div className="mt-3 grid grid-cols-1 gap-2">
                     {APPROVAL_MODES.map((m) => (
                       <RadioCard
                         key={m}
                         active={builder.approvalMode === m}
-                        title={m === 'Manual' ? 'Manual Content Approval' : 'Auto Approval'}
+                        title={m === "Manual" ? "Manual Content Approval" : "Auto Approval"}
                         badge={m}
                         desc={
-                          m === 'Manual'
-                            ? 'Creator → Supplier review (approve/request changes/reject) → Admin review → scheduling/execution.'
-                            : 'Creator → Admin review directly. Supplier can still monitor and comment in the record.'
+                          m === "Manual"
+                            ? "Creator → Supplier review (approve/request changes/reject) → Admin review → scheduling/execution."
+                            : "Creator → Admin review directly. Supplier can still monitor and comment in the record."
                         }
                         onClick={() => setBuilder((p) => ({ ...p, approvalMode: m }))}
                       />
@@ -4628,48 +2836,33 @@ export default function SupplierMyCampaignsPage() {
                       <input
                         type="checkbox"
                         checked={!!builder.allowMultiCreators}
-                        onChange={(e) =>
-                          setBuilder((p) => ({ ...p, allowMultiCreators: e.target.checked }))
-                        }
+                        onChange={(e) => setBuilder((p) => ({ ...p, allowMultiCreators: e.target.checked }))}
                       />
-                      <span>
-                        Allow multiple creators per campaign (split deliverables and partial
-                        settlement supported).
-                      </span>
+                      <span>Allow multiple creators per campaign (split deliverables and partial settlement supported).</span>
                     </label>
                   </div>
                 </div>
               </>
-            ) : builder.creatorUsageDecision === 'I am NOT SURE yet' ? (
+            ) : builder.creatorUsageDecision === "I am NOT SURE yet" ? (
               <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3">
-                <div className="text-sm font-bold text-amber-900 dark:text-amber-300">
-                  Collab mode can be selected later
-                </div>
+                <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Collab mode can be selected later</div>
                 <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
-                  You can submit for Admin approval now. Before content submission, select Open for
-                  Collabs or Invite-only.
+                  You can submit for Admin approval now. Before content submission, select Open for Collabs or Invite-only.
                 </div>
               </div>
             ) : (
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
                 <div className="text-sm font-bold">Supplier acts as Creator</div>
-                <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                  Collaboration settings are skipped. You proceed to content submission after Admin
-                  approval.
-                </div>
+                <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Collaboration settings are skipped. You proceed to content submission after Admin approval.</div>
 
                 <div className="mt-3 grid grid-cols-1 gap-2">
                   {APPROVAL_MODES.map((m) => (
                     <RadioCard
                       key={m}
                       active={builder.approvalMode === m}
-                      title={m === 'Manual' ? 'Internal Review' : 'Direct to Admin'}
+                      title={m === "Manual" ? "Internal Review" : "Direct to Admin"}
                       badge={m}
-                      desc={
-                        m === 'Manual'
-                          ? 'Internal checks before sending to Admin.'
-                          : 'Submit supplier content directly to Admin review.'
-                      }
+                      desc={m === "Manual" ? "Internal checks before sending to Admin." : "Submit supplier content directly to Admin review."}
                       onClick={() => setBuilder((p) => ({ ...p, approvalMode: m }))}
                     />
                   ))}
@@ -4682,7 +2875,7 @@ export default function SupplierMyCampaignsPage() {
         {/* STEP 4 */}
         {builderStep === 4 ? (
           <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
               <div className="text-sm font-bold">Review & submit</div>
               <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                 Confirm duration, promo, and items. Submitting triggers Admin approval.
@@ -4692,118 +2885,61 @@ export default function SupplierMyCampaignsPage() {
             <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-sm font-extrabold truncate">
-                    {builder.name || '(Campaign name)'}
-                  </div>
+                  <div className="text-sm font-extrabold truncate">{builder.name || "(Campaign name)"}</div>
                   <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                     {builder.type} · {builder.region} · {builder.currency}
                   </div>
                 </div>
-                <Pill tone="brand">
-                  {money(builder.currency, clamp(builder.estValue, 0, 100000000))}
-                </Pill>
+                <Pill tone="brand">{money(builder.currency, clamp(builder.estValue, 0, 100000000))}</Pill>
               </div>
 
               <div className="mt-3 grid grid-cols-1 gap-2">
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Duration
-                  </div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Duration</div>
                   <div className="mt-1 text-sm font-semibold">
-                    {builder.startDate || '(start date missing)'} → {builderEndDate || '(end date)'}{' '}
-                    · {clamp(builder.durationDays, 1, 45)} day(s)
+                    {builder.startDate || "(start date missing)"} → {builderEndDate || "(end date)"} · {clamp(builder.durationDays, 1, 45)} day(s)
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
                   <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Promo</div>
                   <div className="mt-1 text-sm font-semibold">
-                    {promoLabels.promoTypeLabel} ·{' '}
-                    {
-                      (PROMO_ARRANGEMENTS[builder.promoType] || []).find(
-                        (a) => a.k === builder.promoArrangement
-                      )?.label
-                    }
+                    {promoLabels.promoTypeLabel} · {(PROMO_ARRANGEMENTS[builder.promoType] || []).find((a) => a.k === builder.promoArrangement)?.label}
                   </div>
-                  {builder.promoType === 'Coupon' && builder.promoCode ? (
-                    <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-                      Code: <span className="font-extrabold">{builder.promoCode}</span>
-                    </div>
+                  {builder.promoType === "Coupon" && builder.promoCode ? (
+                    <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">Code: <span className="font-extrabold">{builder.promoCode}</span></div>
                   ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Products / Services
-                  </div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Products / Services</div>
                   <div className="mt-1 text-sm font-semibold">
-                    {(builder.items || []).length === 0
-                      ? '(no items selected)'
-                      : `${builder.items.length} item(s) selected`}
+                    {(builder.items || []).length === 0 ? "(no items selected)" : `${builder.items.length} item(s) selected`}
                   </div>
                   {(builder.items || []).length ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {(builder.items || []).slice(0, 6).map((it) => (
-                        <Pill key={it.id} tone="neutral">
-                          {it.title}
-                        </Pill>
+                        <Pill key={it.id} tone="neutral">{it.title}</Pill>
                       ))}
-                      {(builder.items || []).length > 6 ? (
-                        <Pill tone="neutral">+{(builder.items || []).length - 6} more</Pill>
-                      ) : null}
+                      {(builder.items || []).length > 6 ? <Pill tone="neutral">+{(builder.items || []).length - 6} more</Pill> : null}
                     </div>
                   ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Campaign giveaways
-                  </div>
-                  {!campaignTypeSupportsGiveaways(builder.type) ? (
-                    <div className="mt-1 text-sm font-semibold">
-                      Not applicable for this campaign type
-                    </div>
-                  ) : !builder.hasGiveaways ? (
-                    <div className="mt-1 text-sm font-semibold">No giveaways planned</div>
-                  ) : (
-                    <>
-                      <div className="mt-1 text-sm font-semibold">
-                        {campaignGiveaways.length} giveaway item(s) · Total qty {totalGiveawayQty}
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {campaignGiveaways.map((g) => {
-                          const meta = resolveCampaignGiveaway(g, builder.items || []);
-                          return (
-                            <Pill key={g.id} tone={meta.source === 'custom' ? 'warn' : 'neutral'}>
-                              {meta.title} · Qty {meta.quantity}
-                            </Pill>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Creator plan
-                  </div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Creator plan</div>
                   <div className="mt-1 text-sm font-semibold">{builder.creatorUsageDecision}</div>
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-amber-50 dark:bg-amber-900/10 p-3">
-                  <div className="text-sm font-bold text-amber-900 dark:text-amber-300">
-                    Admin approval
-                  </div>
+                  <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Admin approval</div>
                   <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
-                    Submitting sends this campaign to Admin for review. Once approved, the campaign
-                    becomes active and can enter Collabs/Execution based on your selected workflow.
+                    Submitting sends this campaign to Admin for review. Once approved, the campaign becomes active and can enter Collabs/Execution based on your selected workflow.
                   </div>
                 </div>
 
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Validation on submit: Start date, duration (1–45), promo type/arrangement, and at
-                  least one item must be present.
+                  Validation on submit: Start date, duration (1–45), promo type/arrangement, and at least one item must be present.
                 </div>
               </div>
             </div>
@@ -4814,34 +2950,34 @@ export default function SupplierMyCampaignsPage() {
       {/* Campaign Details Drawer */}
       <Drawer
         open={detailsOpen}
-        title={activeCampaign ? `${activeCampaign.name}` : 'Campaign details'}
-        subtitle={
-          activeCampaign
-            ? `${activeCampaign.id} · ${activeCampaign.type} · ${activeCampaign.region}`
-            : ''
-        }
+        title={activeCampaign ? `${activeCampaign.name}` : "Campaign details"}
+        subtitle={activeCampaign ? `${activeCampaign.id} · ${activeCampaign.type} · ${activeCampaign.region}` : ""}
         onClose={() => setDetailsOpen(false)}
         footer={
           activeCampaign ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Pill tone="neutral">
-                  Stage: <span className="font-extrabold">{activeCampaign.stage}</span>
-                </Pill>
+              <div className="flex flex-wrap items-center gap-2">
+                <Pill tone="neutral">Stage: <span className="font-extrabold">{activeCampaign.stage}</span></Pill>
                 <Pill tone={approvalStatusPill(activeCampaign.approvalStatus).tone}>
                   {approvalStatusPill(activeCampaign.approvalStatus).label}
                 </Pill>
+                <Pill tone="brand">Giveaway available: <span className="font-extrabold">{activeCampaignGiveawayTotals.available}</span></Pill>
               </div>
               <div className="flex items-center gap-2">
                 {activeCampaign.adminRejected ? (
-                  <Btn tone="primary" onClick={() => resubmitAfterRejection(activeCampaign)}>
-                    🔁 Resubmit
-                  </Btn>
+                  <Btn tone="primary" onClick={() => resubmitAfterRejection(activeCampaign)}>🔁 Resubmit</Btn>
                 ) : null}
+                <Btn
+                  onClick={() => {
+                    push("Opening giveaway source-of-truth workspace (preview).", "info");
+                  }}
+                >
+                  🎁 Giveaway stock
+                </Btn>
                 <Btn
                   tone="primary"
                   onClick={() => {
-                    push('Opening campaign workspace (preview).', 'info');
+                    push("Opening campaign workspace (preview).", "info");
                     go(`/supplier/overview/my-campaigns/${activeCampaign.id}`);
                   }}
                 >
@@ -4868,28 +3004,20 @@ export default function SupplierMyCampaignsPage() {
                 </Pill>
               </div>
 
-              {activeCampaign.approvalStatus === 'Pending' ? (
+              {activeCampaign.approvalStatus === "Pending" ? (
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Btn
-                    tone="primary"
-                    onClick={() => simulateAdminDecision(activeCampaign, 'approve')}
-                  >
+                  <Btn tone="primary" onClick={() => simulateAdminDecision(activeCampaign, "approve")}>
                     ✅ Simulate Approve
                   </Btn>
-                  <Btn
-                    tone="danger"
-                    onClick={() => simulateAdminDecision(activeCampaign, 'reject')}
-                  >
+                  <Btn tone="danger" onClick={() => simulateAdminDecision(activeCampaign, "reject")}>
                     ❌ Simulate Reject
                   </Btn>
                 </div>
-              ) : activeCampaign.approvalStatus === 'Approved' ? (
+              ) : activeCampaign.approvalStatus === "Approved" ? (
                 <div className="mt-3 text-xs text-slate-600 dark:text-slate-300">
-                  Approved. Next pipeline:{' '}
-                  <span className="font-extrabold">{activeCampaign.stage}</span> →{' '}
-                  {activeCampaign.nextAction}
+                  Approved. Next pipeline: <span className="font-extrabold">{activeCampaign.stage}</span> → {activeCampaign.nextAction}
                 </div>
-              ) : activeCampaign.approvalStatus === 'Rejected' ? (
+              ) : activeCampaign.approvalStatus === "Rejected" ? (
                 <div className="mt-3 text-xs text-rose-700 dark:text-rose-300">
                   Rejected. Fix issues and resubmit.
                 </div>
@@ -4902,37 +3030,22 @@ export default function SupplierMyCampaignsPage() {
 
             {/* Campaign window + promo summary */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
                 <div className="text-xs text-slate-500 dark:text-slate-400 font-bold">Window</div>
-                <div className="mt-1 text-sm font-extrabold">
-                  {activeCampaign.startDate || '—'} → {activeCampaign.endDate || '—'}
-                </div>
-                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {activeCampaign.durationDays || '—'} days
-                </div>
+                <div className="mt-1 text-sm font-extrabold">{activeCampaign.startDate || "—"} → {activeCampaign.endDate || "—"}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{activeCampaign.durationDays || "—"} days</div>
               </div>
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
                 <div className="text-xs text-slate-500 dark:text-slate-400 font-bold">Promo</div>
-                <div className="mt-1 text-sm font-extrabold">
-                  {PROMO_TYPES.find((p) => p.k === activeCampaign.promoType)?.label ||
-                    activeCampaign.promoType}
-                </div>
+                <div className="mt-1 text-sm font-extrabold">{(PROMO_TYPES.find((p) => p.k === activeCampaign.promoType)?.label) || activeCampaign.promoType}</div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  {
-                    (PROMO_ARRANGEMENTS[activeCampaign.promoType] || []).find(
-                      (a) => a.k === activeCampaign.promoArrangement
-                    )?.label
-                  }
-                  {activeCampaign.promoType === 'Coupon' && activeCampaign.promoCode
-                    ? ` · ${activeCampaign.promoCode}`
-                    : ''}
+                  {(PROMO_ARRANGEMENTS[activeCampaign.promoType] || []).find((a) => a.k === activeCampaign.promoArrangement)?.label}
+                  {activeCampaign.promoType === "Coupon" && activeCampaign.promoCode ? ` · ${activeCampaign.promoCode}` : ""}
                 </div>
               </div>
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 p-3">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
                 <div className="text-xs text-slate-500 dark:text-slate-400 font-bold">Budget</div>
-                <div className="mt-1 text-sm font-extrabold">
-                  {money(activeCampaign.currency, activeCampaign.estValue)}
-                </div>
+                <div className="mt-1 text-sm font-extrabold">{money(activeCampaign.currency, activeCampaign.estValue)}</div>
               </div>
             </div>
 
@@ -4941,158 +3054,554 @@ export default function SupplierMyCampaignsPage() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-sm font-extrabold">Products / Services</div>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Items attached to this campaign (qty + discount captured).
-                  </div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Items attached to this campaign (qty + discount captured), now combined with giveaway stock source-of-truth.</div>
+                  <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Use <span className="font-extrabold">+ Giveaway Item</span> when the giveaway should come from an existing featured campaign item, another supplier inventory item, or a totally external giveaway item.</div>
                 </div>
-                <Btn
-                  onClick={() => {
-                    push('Opening Catalog… (preview)', 'info');
-                    go('/supplier/overview/dealz-marketplace?selectForCampaign=1');
-                  }}
-                >
-                  🗂️ Open catalog
-                </Btn>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Btn
+                    onClick={() => {
+                      push("Opening Catalog… (preview)", "info");
+                      go("/supplier/overview/dealz-marketplace?selectForCampaign=1");
+                    }}
+                  >
+                    🗂️ Open catalog
+                  </Btn>
+                  <Btn tone="primary" onClick={() => openGiveawayAdd(activeCampaign)}>
+                    ➕ Giveaway Item
+                  </Btn>
+                </div>
               </div>
 
               <div className="mt-3">
                 {(activeCampaign.items || []).length === 0 ? (
-                  <div className="text-xs text-slate-500 dark:text-slate-400">
-                    No items attached.
-                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">No items attached.</div>
                 ) : (
                   <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                    {(activeCampaign.items || []).map((it) => (
-                      <div
-                        key={it.id}
-                        className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <img
-                            src={it.avatar}
-                            alt="avatar"
-                            className="h-10 w-10 rounded-2xl border border-slate-200 dark:border-slate-700"
-                          />
-                          <div className="min-w-0">
-                            <div className="text-sm font-extrabold truncate">{it.title}</div>
-                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              Qty: {it.plannedQty || 1} · {it.discountLabel || 'No discount'}
+                    {(activeCampaign.items || []).map((it) => {
+                      const health = giveawayHealthTone(it);
+                      return (
+                        <div key={it.id} className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <img src={it.avatar} alt="avatar" className="h-10 w-10 rounded-2xl border border-slate-200 dark:border-slate-700" />
+                              <div className="min-w-0">
+                                <div className="text-sm font-extrabold truncate">{it.title}</div>
+                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Qty: {it.plannedQty || 1} · {it.discountLabel || "No discount"}</div>
+                                <div className="mt-1 flex flex-wrap gap-2">
+                                  <Pill tone={it.giveaway?.enabled ? "good" : "neutral"}>{it.giveaway?.enabled ? "Giveaway enabled" : "Giveaway disabled"}</Pill>
+                                  <Pill tone={health.tone}>{health.label}</Pill>
+                                  <Pill tone="neutral">Available: <span className="font-extrabold">{giveawayAvailability(it)}</span></Pill>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs text-slate-500 dark:text-slate-400">Current</div>
+                              <div className="text-sm font-extrabold">{money(activeCampaign.currency, it.price)}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">Discounted</div>
+                              <div className="text-sm font-extrabold">{money(activeCampaign.currency, it.discountedPrice ?? it.price)}</div>
+                              <div className="mt-2">
+                                <Btn tone="primary" onClick={() => openGiveawayEditor(activeCampaign, it)}>Configure Giveaway</Btn>
+                              </div>
                             </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-xs text-slate-500 dark:text-slate-400">Current</div>
-                          <div className="text-sm font-extrabold">
-                            {money(activeCampaign.currency, it.price)}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            Discounted
-                          </div>
-                          <div className="text-sm font-extrabold">
-                            {money(activeCampaign.currency, it.discountedPrice ?? it.price)}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Campaign giveaways */}
-            {campaignTypeSupportsGiveaways(activeCampaign.type) ? (
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-sm font-extrabold">Giveaways</div>
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Giveaway items planned by the seller/provider for live sessions in this
-                      campaign.
-                    </div>
+            {/* Giveaway stock source-of-truth */}
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-extrabold">Giveaway stock source of truth</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Supplier defines total giveaway stock per campaign item, inventory-only giveaway item, or external giveaway item here. Creator App &gt; Live Builder consumes the same total, used, allocated and currently available quantities.
                   </div>
-                  {Array.isArray(activeCampaign.giveaways) && activeCampaign.giveaways.length ? (
-                    <Pill tone="brand">
-                      {activeCampaign.giveaways.length} item(s) · Qty{' '}
-                      {activeCampaign.giveaways.reduce(
-                        (sum, g) => sum + positiveIntOrFallback(g?.quantity, 1),
-                        0
-                      )}
-                    </Pill>
-                  ) : (
-                    <Pill tone="neutral">No giveaways</Pill>
-                  )}
+                  <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Images or posters for standalone giveaway items must come from the <span className="font-extrabold">approved Asset Library</span>. If the right visual is not there, the supplier adds it there first, not from this page.</div>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Pill tone="brand">Creator dependency locked here</Pill>
+                  <Btn tone="primary" onClick={() => openGiveawayAdd(activeCampaign)}>➕ Giveaway Item</Btn>
+                </div>
+              </div>
 
-                <div className="mt-3">
-                  {Array.isArray(activeCampaign.giveaways) && activeCampaign.giveaways.length ? (
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                      {activeCampaign.giveaways.map((g, idx) => {
-                        const meta = resolveCampaignGiveaway(g, activeCampaign.items || []);
-                        return (
-                          <div
-                            key={g.id || idx}
-                            className="flex items-center justify-between gap-3 px-4 py-3 border-b last:border-b-0 border-slate-100 dark:border-slate-800"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              {meta.imageUrl ? (
-                                <img
-                                  src={meta.imageUrl}
-                                  alt={meta.title}
-                                  className="h-11 w-11 rounded-2xl object-cover border border-slate-200 dark:border-slate-700"
-                                />
-                              ) : (
-                                <div className="h-11 w-11 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-lg">
-                                  🎁
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <div className="text-sm font-extrabold truncate">{meta.title}</div>
-                                <div className="mt-1 flex flex-wrap gap-2">
-                                  <Pill tone="neutral">
-                                    {meta.source === 'featured' ? 'From featured items' : 'Custom'}
-                                  </Pill>
-                                  <Pill tone="brand">Qty {meta.quantity}</Pill>
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-bold">Configured items</div>
+                  <div className="mt-2 text-xl font-black text-slate-900 dark:text-slate-100">{activeCampaignGiveawayTotals.enabledCount}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-bold">Total pool</div>
+                  <div className="mt-2 text-xl font-black text-[#f77f00]">{activeCampaignGiveawayTotals.total}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-bold">Used + allocated</div>
+                  <div className="mt-2 text-xl font-black text-slate-900 dark:text-slate-100">{activeCampaignGiveawayTotals.used + activeCampaignGiveawayTotals.allocated}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-bold">Currently available</div>
+                  <div className="mt-2 text-xl font-black text-emerald-600 dark:text-emerald-400">{activeCampaignGiveawayTotals.available}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[860px] text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900/60">
+                    <tr>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Item / Service</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Mode</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Total</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Used</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Allocated</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Available</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Health</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeCampaignGiveawayNodes.map((item) => {
+                      const health = giveawayHealthTone(item);
+                      return (
+                        <tr key={item.id} className="border-t border-slate-200 dark:border-slate-800">
+                          <td className="px-4 py-3">
+                            <div className="flex items-start gap-3">
+                              <img src={item.assetPreview || item.avatar} alt={item.title} className="h-11 w-11 rounded-2xl border border-slate-200 dark:border-slate-700 object-cover" />
+                              <div>
+                                <div className="font-extrabold text-slate-900 dark:text-slate-100">{item.title}</div>
+                                <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{item.kind} · {item.subtitle} · {item.sku}</div>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Pill tone={item.isGiveawayExtra ? "warn" : "neutral"}>{item.sourceLabel}</Pill>
+                                  {item.assetTitle ? <Pill tone="good">Asset: {item.assetTitle}</Pill> : null}
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      No giveaway items attached to this campaign.
-                    </div>
-                  )}
-                </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Pill tone={item.giveaway?.enabled ? "good" : "neutral"}>{item.giveaway?.enabled ? "Enabled" : "Disabled"}</Pill>
+                          </td>
+                          <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-slate-100">{item.giveaway?.total || 0}</td>
+                          <td className="px-4 py-3 font-extrabold text-rose-600 dark:text-rose-400">{item.giveaway?.used || 0}</td>
+                          <td className="px-4 py-3 font-extrabold text-amber-600 dark:text-amber-400">{item.giveaway?.allocated || 0}</td>
+                          <td className="px-4 py-3 font-extrabold text-emerald-600 dark:text-emerald-400">{giveawayAvailability(item)}</td>
+                          <td className="px-4 py-3"><Pill tone={health.tone}>{health.label}</Pill></td>
+                          <td className="px-4 py-3 text-right">
+                            <Btn tone="primary" onClick={() => openGiveawayEditor(activeCampaign, item)}>Configure</Btn>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {activeCampaignGiveawayNodes.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">No giveaway entries configured yet. Use + Giveaway Item to add from featured items, inventory or external sources.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
               </div>
-            ) : null}
+            </div>
 
             {/* Invite-only note (kept) */}
-            {activeCampaign.creatorUsageDecision === 'I will use a Creator' &&
-            activeCampaign.collabMode === 'Invite-only' ? (
+            {activeCampaign.creatorUsageDecision === "I will use a Creator" && activeCampaign.collabMode === "Invite-only" ? (
               <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3">
-                <div className="text-sm font-extrabold text-amber-900 dark:text-amber-300">
-                  Invite-only flow
-                </div>
+                <div className="text-sm font-extrabold text-amber-900 dark:text-amber-300">Invite-only flow</div>
                 <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
-                  Creators respond by{' '}
-                  <span className="font-extrabold">accepting the invite to collaborate</span>. After
-                  acceptance, negotiation and contracts follow.
+                  Creators respond by <span className="font-extrabold">accepting the invite to collaborate</span>. After acceptance, negotiation and contracts follow.
                 </div>
               </div>
             ) : null}
 
             <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
               <div className="text-sm font-extrabold">Next action</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {activeCampaign.lastActivity}
-              </div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{activeCampaign.lastActivity}</div>
               <div className="mt-2 text-sm font-semibold">{activeCampaign.nextAction}</div>
             </div>
           </div>
         )}
       </Drawer>
+
+      {/* Giveaway item add drawer */}
+      <Drawer
+        open={giveawayAddOpen}
+        title={giveawayAddCampaign ? `+ Giveaway Item` : `+ Giveaway Item`}
+        subtitle={giveawayAddCampaign ? `${giveawayAddCampaign.name} · featured item, inventory item or totally external giveaway item` : ""}
+        onClose={() => setGiveawayAddOpen(false)}
+        widthClass="sm:w-[820px]"
+        footer={
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+            <div className="text-xs text-slate-500 dark:text-slate-400">Use approved Asset Library visuals only. If the right poster or image is missing, add it from Asset Library first, then return here.</div>
+            <div className="flex items-center gap-2">
+              <Btn onClick={() => setGiveawayAddOpen(false)}>Cancel</Btn>
+              <Btn tone="primary" onClick={saveGiveawayItem} disabled={savingGiveawayAdd || giveawayAddInvalid}>{savingGiveawayAdd ? "Saving..." : "Add giveaway item"}</Btn>
+            </div>
+          </div>
+        }
+      >
+        {!giveawayAddCampaign ? null : (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-sm font-extrabold">Giveaway source</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Support three paths: featured campaign item, another supplier inventory item, or a totally external giveaway item.</div>
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                {[
+                  { id: "featured", title: "Featured campaign item", sub: "Choose from items already attached to this campaign." },
+                  { id: "inventory", title: "Supplier inventory item", sub: "Choose from inventory / catalog items not currently featured in this campaign." },
+                  { id: "external", title: "External giveaway item", sub: "Create a standalone giveaway entry that exists outside current inventory." },
+                ].map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setGiveawayAddSource(option.id)}
+                    className={cx(
+                      "rounded-2xl border p-4 text-left transition-all",
+                      giveawayAddSource === option.id
+                        ? "border-[#f77f00]/40 bg-orange-50/70 dark:bg-orange-950/10 shadow-[0_10px_24px_rgba(247,127,0,0.10)]"
+                        : "border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 hover:border-slate-300 dark:hover:border-slate-700"
+                    )}
+                  >
+                    <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100">{option.title}</div>
+                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">{option.sub}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {giveawayAddSource === "featured" ? (
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <FieldShell label="Featured campaign item">
+                  <Select value={giveawayAddFeaturedItemId} onChange={(e) => setGiveawayAddFeaturedItemId(e.target.value)}>
+                    {(giveawayAddFeaturedCandidates || []).map((item) => (
+                      <option key={item.id} value={item.id}>{item.title} · {item.kind}</option>
+                    ))}
+                  </Select>
+                </FieldShell>
+                <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">This path reuses an existing featured campaign item and configures giveaway stock on that same item without creating a duplicate entry.</div>
+              </div>
+            ) : null}
+
+            {giveawayAddSource === "inventory" ? (
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <FieldShell label="Supplier inventory item">
+                  <Select value={giveawayAddCatalogItemId} onChange={(e) => setGiveawayAddCatalogItemId(e.target.value)}>
+                    {(giveawayAddInventoryCandidates || []).map((item) => (
+                      <option key={item.id} value={item.id}>{item.title} · {item.kind} · {item.sku}</option>
+                    ))}
+                  </Select>
+                </FieldShell>
+                {giveawayAddCatalogItem ? (
+                  <div className="mt-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+                    <div className="font-extrabold text-slate-900 dark:text-slate-100">{giveawayAddCatalogItem.title}</div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{giveawayAddCatalogItem.kind} · {giveawayAddCatalogItem.subtitle} · {giveawayAddCatalogItem.sku}</div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {giveawayAddSource === "external" ? (
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FieldShell label="External giveaway title" hint="Required">
+                    <Input value={giveawayAddExternalTitle} onChange={(e) => setGiveawayAddExternalTitle(e.target.value)} placeholder="e.g. VIP Winner Bundle" />
+                  </FieldShell>
+                  <FieldShell label="Item type">
+                    <Select value={giveawayAddExternalKind} onChange={(e) => setGiveawayAddExternalKind(e.target.value)}>
+                      <option>Product</option>
+                      <option>Service</option>
+                    </Select>
+                  </FieldShell>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                  <FieldShell label="Subtitle / description">
+                    <Input value={giveawayAddExternalSubtitle} onChange={(e) => setGiveawayAddExternalSubtitle(e.target.value)} placeholder="Short giveaway description" />
+                  </FieldShell>
+                  <FieldShell label="Reference SKU / code">
+                    <Input value={giveawayAddExternalSku} onChange={(e) => setGiveawayAddExternalSku(e.target.value)} placeholder="e.g. EXT-GIVEAWAY" />
+                  </FieldShell>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <div className="text-sm font-extrabold">Approved Asset Library visual</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Pick an approved image or poster from Asset Library only. Local upload is intentionally blocked here.</div>
+                <div className="mt-4 flex flex-col gap-3">
+                  <FieldShell label="Approved poster / image" hint={giveawayAddRequiresAsset ? "Required" : "Optional for featured items"}>
+                    <Select value={giveawayAddAssetId} onChange={(e) => setGiveawayAddAssetId(e.target.value)}>
+                      <option value="">Select approved asset</option>
+                      {APPROVED_ASSET_LIBRARY.map((asset) => (
+                        <option key={asset.id} value={asset.id}>{asset.title} · {asset.dimensions}</option>
+                      ))}
+                    </Select>
+                  </FieldShell>
+                  <Btn onClick={openApprovedAssetLibrary}>📚 Open Asset Library</Btn>
+                  {giveawayAddAsset ? (
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3 flex items-center gap-3">
+                      <img src={giveawayAddAsset.preview} alt={giveawayAddAsset.title} className="h-16 w-16 rounded-2xl border border-slate-200 dark:border-slate-700 object-cover" />
+                      <div>
+                        <div className="font-extrabold text-slate-900 dark:text-slate-100">{giveawayAddAsset.title}</div>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{giveawayAddAsset.kind} · {giveawayAddAsset.dimensions} · {giveawayAddAsset.status}</div>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <div className="text-sm font-extrabold">Initial giveaway stock</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Set the supplier-owned stock object that Creator Builder will consume.</div>
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Total giveaway quantity</div>
+                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Committed stock cannot exceed this number.</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Btn onClick={() => setGiveawayAddTotal(String(Math.max(giveawayAddCommittedQty, Number(giveawayAddTotal || 0) - 1)))} disabled={Number(giveawayAddTotal || 0) <= giveawayAddCommittedQty}>−</Btn>
+                        <Input type="number" value={String(giveawayAddTotal ?? "")} onChange={setGiveawayAddTotal} className="w-24 text-center" />
+                        <Btn onClick={() => setGiveawayAddTotal(String(Math.min(9999, Number(giveawayAddTotal || 0) + 1)))}>＋</Btn>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Low-availability threshold</div>
+                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Warn when remaining stock is at or below this number.</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Btn onClick={() => setGiveawayAddLowThreshold(String(Math.max(0, Number(giveawayAddLowThreshold || 0) - 1)))} disabled={Number(giveawayAddLowThreshold || 0) <= 0}>−</Btn>
+                        <Input type="number" value={String(giveawayAddLowThreshold ?? "")} onChange={setGiveawayAddLowThreshold} className="w-24 text-center" />
+                        <Btn onClick={() => setGiveawayAddLowThreshold(String(Math.min(999, Number(giveawayAddLowThreshold || 0) + 1)))}>＋</Btn>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+                    <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100">Resulting available quantity</div>
+                    <div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">{Math.max(0, Number(giveawayAddTotal || 0) - giveawayAddCommittedQty)}</div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used or allocated quantity already committed: {giveawayAddCommittedQty}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <FieldShell label="Source-of-truth notes">
+                <TextArea rows={4} value={giveawayAddNotes} onChange={(e) => setGiveawayAddNotes(e.target.value)} placeholder="Add supplier-side notes, audit context, Creator Builder sync notes or restrictions for this giveaway item." />
+              </FieldShell>
+              {giveawayAddInvalid ? (
+                <div className="mt-3 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+                  Complete all required source, stock and approved asset fields. Total giveaway quantity cannot be lower than already committed quantity ({giveawayAddCommittedQty}).
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      {/* Giveaway stock editor drawer */}
+      <Drawer
+        open={giveawayEditorOpen}
+        title={giveawayEditorItem ? `Configure giveaway stock` : "Configure giveaway stock"}
+        subtitle={giveawayEditorItem ? `${giveawayEditorItem.title} · ${giveawayEditorItem.kind} · supplier-owned source of truth` : ""}
+        onClose={() => setGiveawayEditorOpen(false)}
+        footer={
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Creator App &gt; Live Builder &gt; Featured Items &gt; + Add Giveaway uses this exact stock object.
+            </div>
+            <div className="flex items-center gap-2">
+              <Btn onClick={() => setGiveawayEditorOpen(false)}>Cancel</Btn>
+              <Btn tone="primary" onClick={saveGiveawayConfig} disabled={savingGiveaway || giveawayDraftInvalid}>
+                {savingGiveaway ? "Saving..." : "Save source of truth"}
+              </Btn>
+            </div>
+          </div>
+        }
+      >
+        {!giveawayEditorItem ? null : (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-extrabold">{giveawayEditorItem.title}</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    {giveawayEditorItem.kind} · {giveawayEditorItem.subtitle} · SKU {giveawayEditorItem.sku} · Planned qty {giveawayEditorItem.plannedQty}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Pill tone={giveawayEditorItem.isGiveawayExtra ? "warn" : "neutral"}>{giveawayEditorItem.sourceLabel || "Campaign item"}</Pill>
+                    {giveawayEditorItem.assetTitle ? <Pill tone="good">Approved Asset: {giveawayEditorItem.assetTitle}</Pill> : <Pill tone="neutral">No approved asset override</Pill>}
+                  </div>
+                </div>
+                <Pill tone={giveawayDraftEnabled ? "good" : "neutral"}>{giveawayDraftEnabled ? "Giveaway enabled" : "Giveaway disabled"}</Pill>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <Btn tone={giveawayDraftEnabled ? "danger" : "primary"} onClick={() => setGiveawayDraftEnabled((prev) => !prev)}>
+                  {giveawayDraftEnabled ? "Disable giveaway" : "Enable giveaway"}
+                </Btn>
+                <Pill tone="neutral">Current price {money(giveawayEditorCampaign?.currency, giveawayEditorItem.price)}</Pill>
+                <Pill tone="neutral">Used + allocated committed {giveawayCommittedQty}</Pill>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                      Total giveaway {giveawayEditorItem.kind === "Service" ? "slots" : "quantity"}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      Supplier-defined stock that Creator Builder can consume.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Btn onClick={() => setGiveawayDraftTotal(String(Math.max(0, Number(giveawayDraftTotal || 0) - 1)))} disabled={!giveawayDraftEnabled || Number(giveawayDraftTotal || 0) <= 0}>−</Btn>
+                    <Input type="number" value={String(giveawayDraftTotal ?? "")} onChange={setGiveawayDraftTotal} className="w-24 text-center" />
+                    <Btn onClick={() => setGiveawayDraftTotal(String(Math.min(9999, Number(giveawayDraftTotal || 0) + 1)))} disabled={!giveawayDraftEnabled}>＋</Btn>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Low-availability threshold</div>
+                    <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Warn supplier and creator when remaining stock drops to this level or lower.</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Btn onClick={() => setGiveawayDraftLowThreshold(String(Math.max(0, Number(giveawayDraftLowThreshold || 0) - 1)))} disabled={!giveawayDraftEnabled || Number(giveawayDraftLowThreshold || 0) <= 0}>−</Btn>
+                    <Input type="number" value={String(giveawayDraftLowThreshold ?? "")} onChange={setGiveawayDraftLowThreshold} className="w-24 text-center" />
+                    <Btn onClick={() => setGiveawayDraftLowThreshold(String(Math.min(999, Number(giveawayDraftLowThreshold || 0) + 1)))} disabled={!giveawayDraftEnabled}>＋</Btn>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-rose-50/60 dark:bg-rose-900/10 p-3 shadow-sm">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-rose-600 dark:text-rose-400 font-bold">Used</div>
+                <div className="mt-2 text-2xl font-black text-rose-700 dark:text-rose-300">{giveawayEditorItem.giveaway?.used || 0}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Claimed by previous winners</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-amber-50/60 dark:bg-amber-900/10 p-3 shadow-sm">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300 font-bold">Allocated</div>
+                <div className="mt-2 text-2xl font-black text-amber-700 dark:text-amber-300">{giveawayEditorItem.giveaway?.allocated || 0}</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Reserved by future creator sessions</div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-emerald-50/60 dark:bg-emerald-900/10 p-3 shadow-sm">
+                <div className="text-[10px] uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300 font-bold">Available</div>
+                <div className="mt-2 text-2xl font-black text-emerald-700 dark:text-emerald-300">
+                  {giveawayDraftEnabled ? Math.max(0, Number(giveawayDraftTotal || 0) - giveawayCommittedQty) : 0}
+                </div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">What Creator Live Builder can still allocate</div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-sm font-extrabold">Availability breakdown</div>
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  <span>Used {giveawayEditorItem.giveaway?.used || 0}</span>
+                  <span>Allocated {giveawayEditorItem.giveaway?.allocated || 0}</span>
+                  <span>Available {giveawayDraftEnabled ? Math.max(0, Number(giveawayDraftTotal || 0) - giveawayCommittedQty) : 0}</span>
+                </div>
+                <div className="h-3 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200 dark:border-slate-700 flex">
+                  <div
+                    className="h-full bg-rose-400"
+                    style={{
+                      width: `${Math.min(100, Number(giveawayDraftTotal || 0) ? ((giveawayEditorItem.giveaway?.used || 0) / Number(giveawayDraftTotal || 0)) * 100 : 0)}%`
+                    }}
+                  />
+                  <div
+                    className="h-full bg-amber-400"
+                    style={{
+                      width: `${Math.min(100, Number(giveawayDraftTotal || 0) ? ((giveawayEditorItem.giveaway?.allocated || 0) / Number(giveawayDraftTotal || 0)) * 100 : 0)}%`
+                    }}
+                  />
+                  <div
+                    className="h-full bg-emerald-400"
+                    style={{
+                      width: `${Math.min(100, Number(giveawayDraftTotal || 0) ? ((Math.max(0, Number(giveawayDraftTotal || 0) - giveawayCommittedQty)) / Number(giveawayDraftTotal || 0)) * 100 : 0)}%`
+                    }}
+                  />
+                </div>
+              </div>
+
+              {giveawayDraftInvalid ? (
+                <div className="mt-3 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+                  Validation failed: total giveaway quantity cannot be lower than already committed stock ({giveawayCommittedQty}). Reduce future allocations first or increase total stock.
+                </div>
+              ) : giveawayDraftEnabled && Number(giveawayDraftTotal || 0) - giveawayCommittedQty <= Number(giveawayDraftLowThreshold || 0) ? (
+                <div className="mt-3 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                  Low-availability warning: remaining stock will appear as low in the Supplier view and the Creator Builder preview.
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-sm font-extrabold">Source-of-truth notes</div>
+              <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">Use this field for supplier-side audit context, ops instructions or Creator Builder sync notes.</div>
+              <textarea
+                value={giveawayDraftNotes}
+                onChange={(e) => setGiveawayDraftNotes(e.target.value)}
+                rows={4}
+                className="mt-3 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none text-slate-900 dark:text-slate-100"
+                placeholder="Add supplier-side notes about how this giveaway stock should be used."
+              />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-4 shadow-sm">
+              <div className="text-sm font-extrabold">Creator Live Builder handoff preview</div>
+              <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">This is the same supplier-owned object the creator giveaway selector consumes.</div>
+              <pre className="mt-3 overflow-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-950 text-slate-100 text-[11px] p-3 leading-5">
+{JSON.stringify(
+  {
+    ...giveawayCreatorPayload,
+    giveawayEnabled: giveawayDraftEnabled,
+    totalGiveawayQuantity: giveawayDraftEnabled ? Number(giveawayDraftTotal || 0) : 0,
+    currentlyAvailableQuantity: giveawayDraftEnabled ? Math.max(0, Number(giveawayDraftTotal || 0) - giveawayCommittedQty) : 0,
+    lowAvailabilityThreshold: giveawayDraftEnabled ? Number(giveawayDraftLowThreshold || 0) : 0,
+    notes: giveawayDraftNotes
+  },
+  null,
+  2
+)}
+              </pre>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-extrabold">Audit trail</div>
+                <Pill tone="neutral">Explicit + auditable</Pill>
+              </div>
+              <div className="mt-3 space-y-2">
+                {(giveawayEditorItem.giveaway?.audit || []).length === 0 ? (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">No giveaway audit events yet.</div>
+                ) : (
+                  (giveawayEditorItem.giveaway?.audit || []).map((entry) => (
+                    <div key={entry.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{entry.event}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">{entry.at}</div>
+                      </div>
+                      <div className="mt-1 text-[12px] text-slate-600 dark:text-slate-300">{entry.actor} · {entry.delta}</div>
+                      <div className="mt-1 text-[12px] text-slate-500 dark:text-slate-400">{entry.detail}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
     </div>
   );
 }
@@ -5106,76 +3615,55 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
   const health = HEALTH[campaign.health] || HEALTH.stalled;
   const modeLabel = inferLifecycleText(campaign);
   const approvalLabel = approvalText(campaign);
-  const needsAttention =
-    campaign.pendingSupplierApproval ||
-    campaign.pendingAdminApproval ||
-    campaign.adminRejected ||
-    campaign.approvalStatus === 'Pending';
+  const needsAttention = campaign.pendingSupplierApproval || campaign.pendingAdminApproval || campaign.adminRejected || campaign.approvalStatus === "Pending";
   const itemsCount = Array.isArray(campaign.items) ? campaign.items.length : 0;
 
   const approvalP = approvalStatusPill(campaign.approvalStatus);
 
-  const promoTypeLabel =
-    PROMO_TYPES.find((p) => p.k === campaign.promoType)?.label || campaign.promoType || '—';
+  const promoTypeLabel = (PROMO_TYPES.find((p) => p.k === campaign.promoType)?.label) || campaign.promoType || "—";
 
   const modeMeta = useMemo(() => {
-    if (campaign.creatorUsageDecision !== 'I will use a Creator') {
+    if (campaign.creatorUsageDecision !== "I will use a Creator") {
       return `Items: ${itemsCount}`;
     }
-    if (campaign.collabMode === 'Invite-only') {
+    if (campaign.collabMode === "Invite-only") {
       const sent = Number(campaign.invitesSent) || 0;
       const acc = Number(campaign.invitesAccepted) || 0;
       return `Invites: ${acc}/${sent} accepted · Items: ${itemsCount}`;
     }
     return `Pitches: ${Number(campaign.pitchesCount) || 0} · Items: ${itemsCount}`;
-  }, [
-    campaign.creatorUsageDecision,
-    campaign.collabMode,
-    campaign.invitesSent,
-    campaign.invitesAccepted,
-    campaign.pitchesCount,
-    itemsCount,
-  ]);
+  }, [campaign.creatorUsageDecision, campaign.collabMode, campaign.invitesSent, campaign.invitesAccepted, campaign.pitchesCount, itemsCount]);
 
   const actions = {
-    proposals: '/supplier/collabs/proposals',
-    contracts: '/supplier/collabs/contracts',
-    assets: '/supplier/deliverables/assets',
-    links: '/supplier/deliverables/links',
-    adz: '/supplier/adz/manager',
-    live: '/supplier/live/schedule',
+    proposals: "/supplier/collabs/proposals",
+    contracts: "/supplier/collabs/contracts",
+    assets: "/supplier/deliverables/assets",
+    links: "/supplier/deliverables/links",
+    adz: "/supplier/adz/manager",
+    live: "/supplier/live/schedule"
   };
 
   return (
-    <tr className="hover:bg-gray-50 dark:bg-slate-950/80 dark:hover:bg-slate-800/40 transition-colors group">
+    <tr className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors group">
       <td className="px-6 py-4">
         <button type="button" onClick={onOpen} className="w-full text-left">
           <div className="flex items-center gap-3">
             <div className="relative">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center font-bold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600 shadow-sm transition-transform group-hover:scale-110">
-                {String(campaign.name || 'C')[0]}
+                {String(campaign.name || "C")[0]}
               </div>
-              <div
-                className={cx(
-                  'absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900',
-                  health.dot
-                )}
-              />
+              <div className={cx("absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-slate-900", health.dot)} />
             </div>
 
             <div className="flex flex-col min-w-0">
-              <span className="text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">
-                {campaign.name}
-              </span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">{campaign.name}</span>
               <span className="text-[10px] font-bold text-[#f77f00] uppercase tracking-tighter">
                 {campaign.id} · {campaign.type}
               </span>
               <span className="text-[10px] text-slate-400 truncate">
                 {campaign.region}
-                {campaign.startDate && campaign.endDate
-                  ? ` · ${campaign.startDate} → ${campaign.endDate}`
-                  : ''}
-                {promoTypeLabel ? ` · ${promoTypeLabel}` : ''}
+                {campaign.startDate && campaign.endDate ? ` · ${campaign.startDate} → ${campaign.endDate}` : ""}
+                {promoTypeLabel ? ` · ${promoTypeLabel}` : ""}
               </span>
             </div>
           </div>
@@ -5185,29 +3673,29 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
       <td className="px-6 py-4">
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap gap-2">
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
               {modeLabel}
             </span>
             <span
               className={cx(
-                'px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border',
-                campaign.approvalMode === 'Manual'
-                  ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300'
-                  : 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                campaign.approvalMode === "Manual"
+                  ? "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300"
+                  : "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
               )}
             >
               {approvalLabel}
             </span>
             <span
               className={cx(
-                'px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border',
-                approvalP.tone === 'warn'
-                  ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300'
-                  : approvalP.tone === 'good'
-                    ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                    : approvalP.tone === 'bad'
-                      ? 'bg-rose-50 dark:bg-rose-900/10 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                      : 'bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                approvalP.tone === "warn"
+                  ? "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300"
+                  : approvalP.tone === "good"
+                    ? "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
+                    : approvalP.tone === "bad"
+                      ? "bg-rose-50 dark:bg-rose-900/10 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300"
+                      : "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
               )}
             >
               {approvalP.label}
@@ -5219,21 +3707,14 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
 
       <td className="px-6 py-4">
         <div className="flex flex-col">
-          <span className="text-sm font-black text-slate-900 dark:text-white">
-            {money(campaign.currency, campaign.estValue)}
-          </span>
+          <span className="text-sm font-black text-slate-900 dark:text-white">{money(campaign.currency, campaign.estValue)}</span>
           <span className="text-[10px] text-slate-400 italic">Planned</span>
         </div>
       </td>
 
       <td className="px-6 py-4">
         <div className="flex flex-col gap-2">
-          <span
-            className={cx(
-              'px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all',
-              statusTone(campaign.stage)
-            )}
-          >
+          <span className={cx("px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all", statusTone(campaign.stage))}>
             {campaign.stage}
           </span>
 
@@ -5247,9 +3728,7 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
 
       <td className="px-6 py-4">
         <div className="flex flex-col max-w-[220px]">
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-            {campaign.nextAction}
-          </span>
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{campaign.nextAction}</span>
           <span className="text-[10px] text-slate-400 truncate">{campaign.lastActivity}</span>
         </div>
       </td>
@@ -5258,14 +3737,14 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
         <div className="flex items-center justify-end gap-2">
           <button
             onClick={() => onGo(actions.proposals)}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 text-slate-400 hover:text-[#f77f00] hover:border-[#f77f00] transition-all"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 hover:text-[#f77f00] hover:border-[#f77f00] transition-all"
             title="Proposals"
           >
             📋
           </button>
           <button
             onClick={() => onGo(actions.contracts)}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 text-slate-400 hover:text-emerald-500 hover:border-emerald-500 transition-all font-bold"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 hover:text-emerald-500 hover:border-emerald-500 transition-all font-bold"
             title="Contracts"
           >
             ✍️
@@ -5273,10 +3752,10 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
           <button
             onClick={() => onGo(actions.assets)}
             className={cx(
-              'p-2 rounded-xl border bg-white dark:bg-slate-900 dark:bg-slate-800 transition-all',
+              "p-2 rounded-xl border bg-white dark:bg-slate-800 transition-all",
               campaign.pendingSupplierApproval || campaign.adminRejected
-                ? 'border-amber-200 dark:border-amber-800 text-amber-700 hover:border-amber-500'
-                : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700'
+                ? "border-amber-200 dark:border-amber-800 text-amber-700 hover:border-amber-500"
+                : "border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700"
             )}
             title="Asset Library"
           >
@@ -5285,13 +3764,14 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
 
           <button
             onClick={() => setShowMenu((s) => !s)}
-            className="p-2 rounded-xl border border-slate-100 dark:border-slate-800 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all relative"
+            className="p-2 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all relative"
             title="More"
             ref={menuRef}
           >
             •••
+
             {showMenu ? (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-900 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-2">
+              <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-2">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -5299,7 +3779,7 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
                     onOpen();
                     setShowMenu(false);
                   }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
                 >
                   🧭 Open details
                 </button>
@@ -5311,7 +3791,7 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
                     onGo(actions.links);
                     setShowMenu(false);
                   }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
                 >
                   🔗 Links Hub
                 </button>
@@ -5324,7 +3804,7 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
                       onSwitchMode();
                       setShowMenu(false);
                     }}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+                    className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
                   >
                     🔁 Switch collab mode
                   </button>
@@ -5334,15 +3814,11 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    push('Marked as at-risk (preview).', 'warn');
-                    onUpdate({
-                      health: 'at-risk',
-                      lastActivity: 'Health flagged · now',
-                      lastActivityAt: Date.now(),
-                    });
+                    push("Marked as at-risk (preview).", "warn");
+                    onUpdate({ health: "at-risk", lastActivity: "Health flagged · now", lastActivityAt: Date.now() });
                     setShowMenu(false);
                   }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
                 >
                   ⚠️ Flag at-risk
                 </button>
@@ -5353,14 +3829,8 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    push('Campaign terminated (preview).', 'warn');
-                    onUpdate({
-                      stage: 'Terminated',
-                      health: 'stalled',
-                      nextAction: 'Campaign ended',
-                      lastActivity: 'Terminated · now',
-                      lastActivityAt: Date.now(),
-                    });
+                    push("Campaign terminated (preview).", "warn");
+                    onUpdate({ stage: "Terminated", health: "stalled", nextAction: "Campaign ended", lastActivity: "Terminated · now", lastActivityAt: Date.now() });
                     setShowMenu(false);
                   }}
                   className="w-full px-4 py-2 text-left text-sm hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors flex items-center gap-2 text-rose-700 dark:text-rose-300"
@@ -5378,17 +3848,17 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
 
 /* ------------------------------ Lightweight self-tests ------------------------------ */
 // To run in dev console: window.__MLDZ_TESTS__ = true; location.reload();
-if (typeof window !== 'undefined' && window.__MLDZ_TESTS__) {
+if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   const assert = (cond, msg) => {
     if (!cond) throw new Error(`SupplierMyCampaignsPage v3 test failed: ${msg}`);
   };
 
-  assert(computeEndDate('2026-02-23', 1) === '2026-02-23', '1-day duration end date equals start');
-  assert(computeEndDate('2026-02-23', 2) === '2026-02-24', '2-day duration end date is start+1');
-  assert(calcDiscountedPrice(100, 'percent', 10) === 90, 'percent discount works');
-  assert(calcDiscountedPrice(100, 'amount', 5) === 95, 'amount discount works');
-  assert(calcDiscountedPrice(100, 'final', 70) === 70, 'final price works');
-  assert(formatDiscount('none', 0, 'USD') === 'No discount', 'format no discount');
+  assert(computeEndDate("2026-02-23", 1) === "2026-02-23", "1-day duration end date equals start");
+  assert(computeEndDate("2026-02-23", 2) === "2026-02-24", "2-day duration end date is start+1");
+  assert(calcDiscountedPrice(100, "percent", 10) === 90, "percent discount works");
+  assert(calcDiscountedPrice(100, "amount", 5) === 95, "amount discount works");
+  assert(calcDiscountedPrice(100, "final", 70) === 70, "final price works");
+  assert(formatDiscount("none", 0, "USD") === "No discount", "format no discount");
 
-  console.log('✅ SupplierMyCampaignsPage v3 self-tests passed');
+  console.log("✅ SupplierMyCampaignsPage v3 self-tests passed");
 }
