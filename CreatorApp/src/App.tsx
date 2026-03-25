@@ -8,6 +8,7 @@ import { getUserStatus, getLandingPageTarget, hasPermission } from "./utils/acce
 import { GlobalErrorBoundary } from "./components/GlobalErrorBoundary";
 import { NotificationProvider } from "./contexts/NotificationContext";
 import { authApi } from "./lib/authApi";
+import { ApiError } from "./lib/api";
 import {
   AUTH_INVALIDATED_EVENT,
   clearAuthSession,
@@ -116,8 +117,19 @@ const AuthRedirectHandler = () => {
         persistAuthSession(session);
         setTargetPath(getPostAuthPath(session));
       })
-      .catch(() => {
-        clearAuthSession();
+      .catch((error) => {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          clearAuthSession();
+          setTargetPath("/auth-redirect");
+          return;
+        }
+
+        const storedSession = readAuthSession();
+        if (storedSession) {
+          setTargetPath(getPostAuthPath(storedSession));
+          return;
+        }
+
         setTargetPath("/auth-redirect");
       });
   }, []);
@@ -142,8 +154,15 @@ function ensureStoredAuthSession() {
       .then((session) => {
         persistAuthSession(session);
       })
-      .catch(() => {
-        clearAuthSession();
+      .catch((error) => {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          clearAuthSession();
+          return;
+        }
+
+        if (!readAuthSession()) {
+          clearAuthSession();
+        }
       })
       .finally(() => {
         authBootstrapPromise = null;

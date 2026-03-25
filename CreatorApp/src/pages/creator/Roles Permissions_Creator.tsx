@@ -95,7 +95,7 @@ type Role = {
 };
 
 type MemberStatus = "Active" | "Invited" | "Inactive" | "Suspended";
-type Seat = "Creator" | "Manager" | "Supplier Guest" | "Support Ops";
+type Seat = string;
 
 type Member = {
   id: string;
@@ -106,7 +106,7 @@ type Member = {
   seat: Seat;
   roleId: string;
   lastActiveLabel: string;
-  twoFA: "On" | "Off";
+  twoFA: "Enabled" | "Disabled" | "Unknown";
 };
 
 type Invite = {
@@ -122,6 +122,7 @@ type Invite = {
 type AuditEvent = {
   id: string;
   at: string;
+  atMs: number;
   actor: string;
   action: string;
   detail?: string;
@@ -130,6 +131,80 @@ type AuditEvent = {
 
 function nowLabel() {
   return new Date().toLocaleString();
+}
+
+function parseTimestamp(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatTimestampLabel(value: unknown, fallback = "—") {
+  const atMs = parseTimestamp(value);
+  if (atMs === null) return fallback;
+  return new Date(atMs).toLocaleString();
+}
+
+function classifyAuditSeverity(action: string, statusCode: unknown): AuditEvent["severity"] {
+  const normalizedAction = action.toLowerCase();
+  const numericStatus = typeof statusCode === "number" ? statusCode : Number(statusCode);
+  if (Number.isFinite(numericStatus) && numericStatus >= 400) return "critical";
+  if (
+    normalizedAction.includes("deleted") ||
+    normalizedAction.includes("revoked") ||
+    normalizedAction.includes("security") ||
+    normalizedAction.includes("suspend")
+  ) {
+    return "warn";
+  }
+  return "info";
+}
+
+function humanizeAuditAction(action: string) {
+  return action
+    .split(/[._]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function summarizeAuditDetail(record: Record<string, unknown>) {
+  const metadata =
+    record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
+      ? (record.metadata as Record<string, unknown>)
+      : {};
+  const detailBits = [
+    typeof metadata.name === "string" && metadata.name.trim() ? metadata.name : null,
+    typeof metadata.email === "string" && metadata.email.trim() ? metadata.email : null,
+    typeof record.entityId === "string" && record.entityId.trim() ? record.entityId : null
+  ].filter(Boolean);
+  return detailBits.length ? detailBits.join(" · ") : undefined;
+}
+
+function mapAuditRecord(entry: Record<string, unknown>): AuditEvent {
+  const atMs = parseTimestamp(entry.createdAt) ?? Date.now();
+  const metadata =
+    entry.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata)
+      ? (entry.metadata as Record<string, unknown>)
+      : {};
+  const actor =
+    (typeof metadata.email === "string" && metadata.email.trim() ? metadata.email : null) ||
+    (typeof entry.role === "string" && entry.role.trim() ? entry.role : null) ||
+    "Workspace";
+  const action = typeof entry.action === "string" && entry.action.trim() ? entry.action : "workspace.updated";
+  return {
+    id: String(entry.id || `audit_${atMs}`),
+    at: formatTimestampLabel(entry.createdAt, nowLabel()),
+    atMs,
+    actor,
+    action: humanizeAuditAction(action),
+    detail: summarizeAuditDetail(entry),
+    severity: classifyAuditSeverity(action, entry.statusCode)
+  };
+}
+
+function sortAuditEvents(events: AuditEvent[]) {
+  return [...events].sort((a, b) => b.atMs - a.atMs);
 }
 
 function useToasts() {
@@ -562,6 +637,7 @@ export default function RolesPermissionsPremium() {
   const { toasts, push } = useToasts();
 
   const [tab, setTab] = useState<TabKey>("roles");
+  const [roleSearch, setRoleSearch] = useState("");
 
   const [roles, setRoles] = useState<Role[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -589,6 +665,12 @@ export default function RolesPermissionsPremium() {
   const [allowExternalInvites, setAllowExternalInvites] = useState(false);
   const [supplierGuestExpiryHours, setSupplierGuestExpiryHours] = useState(24);
   const [hasLoadedBackendRoles, setHasLoadedBackendRoles] = useState(false);
+  const [securitySnapshot, setSecuritySnapshot] = useState<{
+    sessions: number;
+    passkeys: number;
+    trustedDevices: number;
+    alerts: number;
+  } | null>(null);
 
   const [activeRole, setActiveRole] = useState<string>("owner");
 
@@ -653,15 +735,26 @@ export default function RolesPermissionsPremium() {
                 id: String(member.id || `member_${index}`),
                 name: String(member.name || member.email || "Member"),
                 email: String(member.email || ""),
-                avatarUrl: "",
+                avatarUrl: String(member.avatarUrl || member.imageUrl || ""),
                 status: normalizedStatus as MemberStatus,
-                seat: String(member.seat || "Manager") as Seat,
+                seat: String(member.seat || "Manager"),
                 roleId: String(member.roleId || "owner"),
-                lastActiveLabel: "Synced",
-                twoFA: "On"
+                lastActiveLabel: formatTimestampLabel(member.lastActiveAt || member.updatedAt || member.createdAt, "—"),
+                twoFA:
+                  typeof member.twoFactorEnabled === "boolean"
+                    ? member.twoFactorEnabled
+                      ? "Enabled"
+                      : "Disabled"
+                    : typeof member.twoFAEnabled === "boolean"
+                      ? member.twoFAEnabled
+                        ? "Enabled"
+                        : "Disabled"
+                      : "Unknown"
               } satisfies Member;
             })
           );
+        } else {
+          setMembers([]);
         }
 
         const backendInvites = Array.isArray(payload.invites) ? payload.invites : [];
@@ -682,13 +775,15 @@ export default function RolesPermissionsPremium() {
                 id: String(invite.id || `invite_${index}`),
                 email: String(invite.email || ""),
                 roleId: String(invite.roleId || "viewer"),
-                seat: String(invite.seat || "Manager") as Seat,
-                createdAtLabel: "Synced",
-                expiresAtLabel: "—",
+                seat: String(invite.seat || "Manager"),
+                createdAtLabel: formatTimestampLabel(invite.createdAt || invite.updatedAt, "—"),
+                expiresAtLabel: formatTimestampLabel(invite.expiresAt, "Not set"),
                 status: normalizedStatus as Invite["status"]
               } satisfies Invite;
             })
           );
+        } else {
+          setInvites([]);
         }
 
         const security =
@@ -733,6 +828,54 @@ export default function RolesPermissionsPremium() {
     }).catch(() => undefined);
   }, [allowExternalInvites, hasLoadedBackendRoles, require2FA, supplierGuestExpiryHours]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    void creatorApi
+      .auditLogs()
+      .then((entries) => {
+        if (cancelled) return;
+        const mapped = entries.map((entry) => mapAuditRecord(entry as Record<string, unknown>));
+        setAudit((current) => {
+          const merged = new Map<string, AuditEvent>();
+          [...current, ...mapped].forEach((event) => {
+            merged.set(event.id, event);
+          });
+          return sortAuditEvents(Array.from(merged.values()));
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void creatorApi
+      .securitySettings()
+      .then((payload) => {
+        if (cancelled) return;
+        setSecuritySnapshot({
+          sessions: Array.isArray(payload.sessions) ? payload.sessions.length : 0,
+          passkeys: Array.isArray(payload.passkeys) ? payload.passkeys.length : 0,
+          trustedDevices: Array.isArray(payload.trustedDevices) ? payload.trustedDevices.length : 0,
+          alerts: Array.isArray(payload.alerts) ? payload.alerts.length : 0
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSecuritySnapshot(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const permIndex = useMemo(() => {
     const m = new Map<string, Perm>();
     PERM_GROUPS.forEach((g) => g.perms.forEach((p) => m.set(p.id, p)));
@@ -754,9 +897,25 @@ export default function RolesPermissionsPremium() {
     return n;
   }, [selectedRole, permIndex]);
 
+  const filteredRoles = useMemo(() => {
+    const query = roleSearch.trim().toLowerCase();
+    if (!query) return roles;
+    return roles.filter((role) => `${role.name} ${role.description} ${role.badge}`.toLowerCase().includes(query));
+  }, [roleSearch, roles]);
+
+  const seatOptions = useMemo(() => {
+    const base = ["Creator", "Manager", "Supplier Guest", "Support Ops"];
+    const dynamic = [...members.map((member) => member.seat), ...invites.map((invite) => invite.seat)];
+    return Array.from(new Set([...base, ...dynamic].filter((seat) => seat && seat.trim())));
+  }, [invites, members]);
+
+  const supplierMembers = useMemo(() => members.filter((member) => member.seat.toLowerCase().includes("supplier")), [members]);
+  const supplierInvites = useMemo(() => invites.filter((invite) => invite.seat.toLowerCase().includes("supplier")), [invites]);
+
   function log(actor: string, action: string, detail?: string, severity: AuditEvent["severity"] = "info") {
-    const e: AuditEvent = { id: `${Date.now()}_${Math.random()}`, at: nowLabel(), actor, action, detail, severity };
-    setAudit((a) => [e, ...a]);
+    const atMs = Date.now();
+    const e: AuditEvent = { id: `${atMs}_${Math.random()}`, at: nowLabel(), atMs, actor, action, detail, severity };
+    setAudit((events) => sortAuditEvents([e, ...events]));
   }
 
   function openEditRole() {
@@ -890,8 +1049,8 @@ export default function RolesPermissionsPremium() {
       email,
       roleId: inviteRoleId,
       seat: inviteSeat,
-      createdAtLabel: "Now",
-      expiresAtLabel: "In 7 days",
+      createdAtLabel: nowLabel(),
+      expiresAtLabel: "Not set",
       status: "Pending"
     };
     setInvites((x) => [inv, ...x]);
@@ -1049,15 +1208,19 @@ export default function RolesPermissionsPremium() {
               <div className="p-3">
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-2 flex items-center gap-2 transition-colors">
                   <Search className="h-4 w-4 text-slate-500" />
-                  <input className="bg-transparent outline-none text-sm w-full dark:text-slate-200" placeholder="Search roles…" onChange={() => { }} />
+                  <input
+                    className="bg-transparent outline-none text-sm w-full dark:text-slate-200"
+                    placeholder="Search roles…"
+                    value={roleSearch}
+                    onChange={(e) => setRoleSearch(e.target.value)}
+                  />
                 </div>
               </div>
 
               <div className="px-3 pb-3 space-y-2 max-h-[560px] overflow-auto scrollbar-hide">
-                {roles.map((r) => {
+                {filteredRoles.map((r) => {
                   const active = r.id === selectedRoleId;
                   const enabled = Object.values(r.perms).filter(Boolean).length;
-                  const isSystem = r.badge === "System";
                   return (
                     <button
                       key={r.id}
@@ -1273,7 +1436,18 @@ export default function RolesPermissionsPremium() {
                     <tr key={m.id} className="border-t border-slate-200 dark:border-slate-800 transition-colors">
                       <td className="py-3 px-1">
                         <div className="flex items-center gap-3">
-                          <img src={m.avatarUrl} alt={m.name} className="h-10 w-10 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm" />
+                          {m.avatarUrl ? (
+                            <img src={m.avatarUrl} alt={m.name} className="h-10 w-10 rounded-2xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm" />
+                          ) : (
+                            <div className="inline-grid h-10 w-10 place-items-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-700 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700 shadow-sm">
+                              {(m.name || m.email || "?")
+                                .split(/\s+/)
+                                .filter(Boolean)
+                                .slice(0, 2)
+                                .map((part) => part[0]?.toUpperCase() || "")
+                                .join("") || "?"}
+                            </div>
+                          )}
                           <div className="min-w-0">
                             <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{m.name}</div>
                             <div className="truncate text-xs text-slate-500 dark:text-slate-400">{m.email}</div>
@@ -1303,7 +1477,7 @@ export default function RolesPermissionsPremium() {
                         />
                       </td>
                       <td className="py-3 px-1">
-                        <Pill tone={m.twoFA === "On" ? "good" : "warn"} text={m.twoFA} icon={<KeyRound className="h-3.5 w-3.5" />} />
+                        <Pill tone={m.twoFA === "Enabled" ? "good" : m.twoFA === "Disabled" ? "bad" : "neutral"} text={m.twoFA} icon={<KeyRound className="h-3.5 w-3.5" />} />
                       </td>
                       <td className="py-3 px-1 text-sm text-slate-700 dark:text-slate-300 font-semibold">{m.lastActiveLabel}</td>
                       <td className="py-3 px-1">
@@ -1355,7 +1529,7 @@ export default function RolesPermissionsPremium() {
                     <AlertTriangle className="h-4 w-4 text-amber-800 dark:text-amber-500 mt-0.5" />
                     <div className="text-sm text-amber-900 dark:text-amber-300">
                       <div className="font-bold">2FA is required</div>
-                      <div className="mt-1 text-amber-800 dark:text-amber-400">Members with 2FA OFF will be prompted to enable before accessing sensitive features.</div>
+                      <div className="mt-1 text-amber-800 dark:text-amber-400">Member-level 2FA status is only shown when the backend provides it. Access policy still applies to everyone.</div>
                     </div>
                   </div>
                 </div>
@@ -1421,6 +1595,9 @@ export default function RolesPermissionsPremium() {
                   External invites: <span className="font-bold">{allowExternalInvites ? "Allowed" : "Blocked"}</span> · Supplier guest expiry:{" "}
                   <span className="font-bold">{supplierGuestExpiryHours}h</span>
                 </div>
+                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Invite timestamps come from the backend when available. Expiry stays empty until the API provides an explicit expiry value.
+                </div>
               </div>
             </div>
           </div>
@@ -1458,6 +1635,55 @@ export default function RolesPermissionsPremium() {
               </div>
 
               <div className="mt-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Supplier guest access from database</div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Live supplier member and invite records currently stored for this workspace.</div>
+                  </div>
+                  <Pill tone="good" text={`${supplierMembers.length + supplierInvites.length} records`} />
+                </div>
+
+                {supplierMembers.length || supplierInvites.length ? (
+                  <div className="mt-4 space-y-3">
+                    {supplierMembers.map((member) => (
+                      <div key={member.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-3 shadow-sm transition-colors">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{member.name}</div>
+                            <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">{member.email}</div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Pill tone="neutral" text={member.seat} />
+                            <Pill tone={member.status === "Active" ? "good" : member.status === "Suspended" ? "bad" : "warn"} text={member.status} />
+                            <Pill tone="neutral" text={member.lastActiveLabel} icon={<CalendarClock className="h-3.5 w-3.5" />} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {supplierInvites.map((invite) => (
+                      <div key={invite.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-3 shadow-sm transition-colors">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{invite.email}</div>
+                            <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Created {invite.createdAtLabel}</div>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Pill tone="neutral" text={invite.seat} />
+                            <Pill tone={invite.status === "Pending" ? "warn" : invite.status === "Accepted" ? "good" : invite.status === "Revoked" ? "bad" : "neutral"} text={invite.status} />
+                            <Pill tone="neutral" text={roles.find((role) => role.id === invite.roleId)?.name || invite.roleId} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-6 text-sm text-slate-600 dark:text-slate-400">
+                    No supplier guest members or invites were returned from the database.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Supplier guest expiry</div>
                   <div className="flex items-center gap-2">
@@ -1480,6 +1706,7 @@ export default function RolesPermissionsPremium() {
 
             <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
               <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Quick actions</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">These shortcuts are still placeholders until a dedicated supplier API is wired in.</div>
               <div className="mt-3 flex flex-col gap-2">
                 <SmallBtn icon={<ExternalLink className="h-4 w-4" />} onClick={() => push("Open supplier directory (demo).")}>
                   Supplier directory
@@ -1493,9 +1720,9 @@ export default function RolesPermissionsPremium() {
               </div>
 
               <div className="mt-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 shadow-sm transition-colors">
-                <div className="text-sm font-bold text-slate-900 dark:text-slate-50">What changed recently?</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Coverage status</div>
                 <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">
-                  Shoppable Adz and Live Sessionz now share a single Asset Library. Supplier guests may contribute media, but it must be reviewed before use in dealz.
+                  Supplier guests, invites, security counts and audit entries now come from backend data. Directory management and incident shortcuts are still placeholder actions.
                 </div>
               </div>
             </div>
@@ -1550,8 +1777,29 @@ export default function RolesPermissionsPremium() {
               </div>
 
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm transition-colors">
-                <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Device & session policies (demo)</div>
-                <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">Add your device list, login sessions, and revocation controls here.</div>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Device & session policies</div>
+                {securitySnapshot ? (
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-3 transition-colors">
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Sessions</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-50">{securitySnapshot.sessions}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-3 transition-colors">
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Trusted devices</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-50">{securitySnapshot.trustedDevices}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-3 transition-colors">
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Passkeys</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-50">{securitySnapshot.passkeys}</div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-3 py-3 transition-colors">
+                      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Alerts</div>
+                      <div className="mt-1 text-xl font-bold text-slate-900 dark:text-slate-50">{securitySnapshot.alerts}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">No security snapshot was returned for sessions or devices, so this section is still a placeholder.</div>
+                )}
               </div>
             </div>
 
@@ -1567,29 +1815,35 @@ export default function RolesPermissionsPremium() {
               </div>
 
               <div className="p-4 space-y-3 max-h-[520px] overflow-auto scrollbar-hide">
-                {audit.map((a) => (
-                  <div
-                    key={a.id}
-                    className={cx(
-                      "rounded-3xl border p-3 shadow-sm transition-colors",
-                      a.severity === "critical" ? "border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-900/10" : a.severity === "warn" ? "border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/10" : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{a.action}</div>
-                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {a.actor} · {a.at}
+                {audit.length ? (
+                  audit.map((a) => (
+                    <div
+                      key={a.id}
+                      className={cx(
+                        "rounded-3xl border p-3 shadow-sm transition-colors",
+                        a.severity === "critical" ? "border-rose-200 dark:border-rose-800/50 bg-rose-50 dark:bg-rose-900/10" : a.severity === "warn" ? "border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/10" : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-slate-900 dark:text-slate-50">{a.action}</div>
+                          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {a.actor} · {a.at}
+                          </div>
+                          {a.detail ? <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">{a.detail}</div> : null}
                         </div>
-                        {a.detail ? <div className="mt-2 text-sm text-slate-700 dark:text-slate-300">{a.detail}</div> : null}
+                        <Pill
+                          tone={a.severity === "critical" ? "bad" : a.severity === "warn" ? "warn" : "neutral"}
+                          text={a.severity === "critical" ? "Critical" : a.severity === "warn" ? "Warn" : "Info"}
+                        />
                       </div>
-                      <Pill
-                        tone={a.severity === "critical" ? "bad" : a.severity === "warn" ? "warn" : "neutral"}
-                        text={a.severity === "critical" ? "Critical" : a.severity === "warn" ? "Warn" : "Info"}
-                      />
                     </div>
+                  ))
+                ) : (
+                  <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-6 text-sm text-slate-600 dark:text-slate-400">
+                    No audit entries were returned from the backend for this workspace.
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
@@ -1683,10 +1937,11 @@ export default function RolesPermissionsPremium() {
               value={inviteSeat}
               onChange={(e) => setInviteSeat(e.target.value as Seat)}
             >
-              <option value="Creator" className="bg-white dark:bg-slate-900">Creator</option>
-              <option value="Manager" className="bg-white dark:bg-slate-900">Manager</option>
-              <option value="Supplier Guest" className="bg-white dark:bg-slate-900">Supplier Guest</option>
-              <option value="Support Ops" className="bg-white dark:bg-slate-900">Support Ops</option>
+              {seatOptions.map((seat) => (
+                <option key={seat} value={seat} className="bg-white dark:bg-slate-900">
+                  {seat}
+                </option>
+              ))}
             </select>
             <div className="mt-2 text-xs text-slate-600 dark:text-slate-400">Seat type affects policies.</div>
           </div>

@@ -497,8 +497,8 @@ function BarList({
       </div>
 
       <div className="mt-4 space-y-3">
-        {rows.map((r) => (
-          <div key={r.label}>
+        {rows.map((r, index) => (
+          <div key={`${r.label}:${index}`}>
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="truncate text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">{r.label}</div>

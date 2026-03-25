@@ -1575,24 +1575,6 @@ export default function AdBuilder({
       .filter((entry) => entry.id && entry.name);
   }, [workspaceState?.templates]);
 
-  if (workspaceLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
-        Loading ad builder…
-      </div>
-    );
-  }
-
-  if (workspaceError || !workspaceState) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-          Ad builder data is unavailable.
-        </div>
-      </div>
-    );
-  }
-
   // "Drawer-like route" support (optional)
   const [drawerMode, setDrawerMode] = useState(isDrawer);
   const [returnTo, setReturnTo] = useState<string | null>(null);
@@ -2847,6 +2829,24 @@ export default function AdBuilder({
       return;
     }
     window.history.back();
+  }
+
+  if (workspaceLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading ad builder…
+      </div>
+    );
+  }
+
+  if (workspaceError || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Ad builder data is unavailable.
+        </div>
+      </div>
+    );
   }
 
   const content = (
