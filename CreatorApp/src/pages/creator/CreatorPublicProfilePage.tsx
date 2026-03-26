@@ -56,15 +56,6 @@ type PerformanceItem = {
   sub: string;
 };
 
-const FALLBACK_PERFORMANCE: PerformanceItem[] = [
-  { label: "Total sales driven", value: "—", sub: "No data yet" },
-  { label: "Avg live viewers", value: "—", sub: "No data yet" },
-  { label: "Conversion rate", value: "—", sub: "No data yet" },
-  { label: "Completed collabs", value: "—", sub: "No data yet" },
-  { label: "Average rating", value: "—", sub: "No data yet" },
-  { label: "Return customer rate", value: "—", sub: "No data yet" }
-];
-
 function CreatorPublicProfilePage() {
   const navigate = useNavigate();
   const { showNotification } = useNotification();
@@ -89,13 +80,13 @@ function CreatorPublicProfilePage() {
 
   const creator = data.creator ?? {};
 
-  const creatorName = creator.name || "Creator profile";
-  const creatorHandle = creator.handle || "@creator";
-  const creatorInitials = creator.initials || "CP";
+  const creatorName = creator.name || "";
+  const creatorHandle = creator.handle || "";
+  const creatorInitials = creator.initials || "";
   const creatorAvatarUrl = String(creator.avatarUrl || "").trim();
-  const creatorTier = creator.tier || "Creator Tier";
+  const creatorTier = creator.tier || "";
   const creatorVerified = Boolean(creator.verified);
-  const creatorBio = creator.bio || "No biography yet.";
+  const creatorBio = creator.bio || "";
   const creatorCategories = creator.categories?.length ? creator.categories : [];
   const creatorLanguages = creator.languages?.length ? creator.languages : [];
   const creatorMarkets = creator.markets?.length ? creator.markets : [];
@@ -103,12 +94,12 @@ function CreatorPublicProfilePage() {
   const performance = useMemo<PerformanceItem[]>(
     () =>
       data.performance?.length
-        ? data.performance.map((item, index) => ({
-            label: item.label || FALLBACK_PERFORMANCE[index % FALLBACK_PERFORMANCE.length]?.label || "Metric",
-            value: item.value || FALLBACK_PERFORMANCE[index % FALLBACK_PERFORMANCE.length]?.value || "—",
-            sub: item.sub || FALLBACK_PERFORMANCE[index % FALLBACK_PERFORMANCE.length]?.sub || ""
+        ? data.performance.map((item) => ({
+            label: item.label || "",
+            value: item.value || "",
+            sub: item.sub || ""
           }))
-        : FALLBACK_PERFORMANCE,
+        : [],
     [data.performance]
   );
 
@@ -117,10 +108,10 @@ function CreatorPublicProfilePage() {
       data.portfolio?.length
         ? data.portfolio.map((item, index) => ({
             id: item.id || `portfolio-${index + 1}`,
-            brand: item.brand || "Seller workspace",
-            category: item.category || "Campaign",
-            title: item.title || "Campaign replay",
-            body: item.body || "Campaign details available in workspace."
+            brand: item.brand || "",
+            category: item.category || "",
+            title: item.title || "",
+            body: item.body || ""
           }))
         : [],
     [data.portfolio]
@@ -132,8 +123,8 @@ function CreatorPublicProfilePage() {
         ? data.liveSlots.map((item, index) => ({
             id: item.id || `live-slot-${index + 1}`,
             label: item.label || "Upcoming",
-            title: item.title || "Live session",
-            time: item.time || "Schedule pending",
+            title: item.title || "",
+            time: item.time || "",
             cta: item.cta || "Set reminder"
           }))
         : [],
@@ -145,8 +136,8 @@ function CreatorPublicProfilePage() {
       data.reviews?.length
         ? data.reviews.map((item, index) => ({
             id: item.id || `review-${index + 1}`,
-            brand: item.brand || `Seller ${index + 1}`,
-            quote: item.quote || "Strong execution and delivery."
+            brand: item.brand || "",
+            quote: item.quote || ""
           }))
         : [],
     [data.reviews]
@@ -157,9 +148,9 @@ function CreatorPublicProfilePage() {
       data.socials?.length
         ? data.socials.map((item, index) => ({
             id: item.id || `social-${index + 1}`,
-            name: item.name || `Social ${index + 1}`,
+            name: item.name || "",
             handle: item.handle || "",
-            tag: item.tag || item.name?.slice(0, 2)?.toUpperCase() || "SC",
+            tag: item.tag || item.name?.slice(0, 2)?.toUpperCase() || "",
             color: item.color || "bg-slate-900",
             href: item.href || null,
             followers: item.followers
@@ -173,18 +164,18 @@ function CreatorPublicProfilePage() {
       data.pastCampaigns?.length
         ? data.pastCampaigns.map((item, index) => ({
             id: item.id || `campaign-${index + 1}`,
-            title: item.title || `Campaign ${index + 1}`,
-            period: item.period || "Schedule pending",
-            gmv: item.gmv || "$0",
-            ctr: item.ctr || "0.0%",
-            conv: item.conv || "0.0%"
+            title: item.title || "",
+            period: item.period || "",
+            gmv: item.gmv || "",
+            ctr: item.ctr || "",
+            conv: item.conv || ""
           }))
         : [],
     [data.pastCampaigns]
   );
 
   const tags = data.tags?.length ? data.tags : [];
-  const quickFacts = data.quickFacts?.length ? data.quickFacts : ["Collaboration facts will appear after profile data sync."];
+  const quickFacts = data.quickFacts?.length ? data.quickFacts : [];
   const compatibility = data.compatibility ?? {
     score: 0,
     summary: "Compatibility insights will appear once enough campaign and audience data is available.",

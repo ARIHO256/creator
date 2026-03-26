@@ -5,6 +5,9 @@ import { sellerBackendApi } from "../../../lib/backendApi";
 import { formatOrderDisplayId, formatOrderItemDisplaySku } from "../../../lib/orderIds";
 import { useLocalization } from "../../../localization/LocalizationProvider";
 
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:orders/prints/PrintInvoice").catch(() => undefined);
+
 const EMPTY_ORDER = {
   id: "",
   channel: "",

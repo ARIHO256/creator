@@ -20,6 +20,7 @@ type Session = {
   title: string;
   campaign: string;
   seller: string;
+  startISO?: string;
   weekday: WeekDay;
   dateLabel: string;
   time: string;
@@ -46,18 +47,28 @@ function normalizeWeekday(value: unknown): WeekDay {
 }
 
 function toSession(record: Record<string, unknown>): Session {
+  const startISO = String(record.startISO || record.startsAtISO || "");
+  const parsedStart = startISO ? new Date(startISO) : null;
+  const hasValidStart = Boolean(parsedStart && !Number.isNaN(parsedStart.getTime()));
+  const defaultDateLabel = hasValidStart
+    ? parsedStart!.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })
+    : "";
+  const defaultTime = hasValidStart
+    ? parsedStart!.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
   return {
     id: String(record.id || ""),
-    title: String(record.title || "Untitled session"),
-    campaign: String(record.campaign || "Untitled campaign"),
-    seller: String(record.supplier || "Unknown seller"),
+    title: String(record.title || ""),
+    campaign: String(record.campaign || ""),
+    seller: String(record.supplier || ""),
+    startISO: startISO || undefined,
     weekday: normalizeWeekday(record.weekday),
-    dateLabel: String(record.dateLabel || ""),
-    time: String(record.time || ""),
-    location: String(record.location || "MyLiveDealz"),
+    dateLabel: String(record.dateLabel || defaultDateLabel),
+    time: String(record.time || defaultTime),
+    location: String(record.location || ""),
     simulcast: String(record.simulcast || ""),
-    status: String(record.status || "Draft"),
-    role: String(record.hostRole || "Host"),
+    status: String(record.status || ""),
+    role: String(record.hostRole || ""),
     durationMin: Number(record.durationMin || 0),
     scriptsReady: Boolean(record.scriptsReady),
     assetsReady: Boolean(record.assetsReady),
@@ -110,13 +121,13 @@ function LiveScheduleCalendarPage() {
     const heavyDays = sessions.filter((s) => s.workloadScore >= 4);
     if (heavyDays.length > 0) {
       msgs.push(
-        "You have heavy workload on Tech Friday. Consider spacing prep and lives."
+        "You have heavy workload on some scheduled days. Consider spacing prep and live sessions."
       );
     }
     const conflictSessions = sessions.filter((s) => s.conflict);
     if (conflictSessions.length > 0) {
       msgs.push(
-        "Some sessionz may overlap with prep windows. Check Tech Friday schedule."
+        "Some sessions may overlap with prep windows. Review your schedule."
       );
     }
     return msgs;
@@ -400,14 +411,31 @@ function LiveScheduleCalendarPage() {
 }
 
 function MonthView({ sessions, onSelectSession }: { sessions: Session[], onSelectSession: (s: Session) => void }) {
-  // Mock calendar grid for Oct 2026
-  const days = Array.from({ length: 31 }, (_, i) => i + 1);
-  const startOffset = 3; // Starts on Thursday
+  const sessionDate = (session: Session) => {
+    if (session.startISO) {
+      const parsed = new Date(session.startISO);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return null;
+  };
+
+  const monthBaseDate = useMemo(() => {
+    const firstSessionDate = sessions.map(sessionDate).find((entry): entry is Date => Boolean(entry));
+    return firstSessionDate || new Date();
+  }, [sessions]);
+
+  const monthStart = new Date(monthBaseDate.getFullYear(), monthBaseDate.getMonth(), 1);
+  const daysInMonth = new Date(monthBaseDate.getFullYear(), monthBaseDate.getMonth() + 1, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  const jsWeekday = monthStart.getDay(); // 0 Sun .. 6 Sat
+  const startOffset = (jsWeekday + 6) % 7; // Monday-first
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">October 2026</h3>
+        <h3 className="text-sm font-semibold dark:font-bold dark:text-slate-50">
+          {monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+        </h3>
         <div className="flex gap-2">
           <button className="text-xs p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">◀</button>
           <button className="text-xs p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">▶</button>
@@ -421,9 +449,15 @@ function MonthView({ sessions, onSelectSession }: { sessions: Session[], onSelec
           <div key={`empty-${i}`} className="bg-slate-50/50 dark:bg-slate-800/30 rounded-lg" />
         ))}
         {days.map(day => {
-          // Find sessions for this day (Mock matching by day number in dateLabel string for simplicity in this mock data)
-          // Real app would use actual Date objects
-          const daySessions = sessions.filter(s => s.dateLabel.includes(` ${day} `));
+          const daySessions = sessions.filter((session) => {
+            const parsed = sessionDate(session);
+            if (!parsed) return false;
+            return (
+              parsed.getFullYear() === monthStart.getFullYear() &&
+              parsed.getMonth() === monthStart.getMonth() &&
+              parsed.getDate() === day
+            );
+          });
           return (
             <div key={day} className="border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-lg p-1 flex flex-col gap-1 overflow-hidden transition-colors">
               <span className="text-xs font-medium text-slate-400">{day}</span>

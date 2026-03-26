@@ -47,30 +47,42 @@ function readAvatarUrl(value: unknown) {
   return "";
 }
 
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/\D+/g, "");
+}
+
 function buildUserIdentity() {
   const session = readAuthSession();
   const creatorProfile = readRecord(session?.creatorProfile);
   const sellerProfile = readRecord(session?.sellerProfile);
+  const email = readString(session?.email);
+  const phone = readString(session?.phone);
+  const identifierName = email || phone;
 
   const name =
+    identifierName ||
     readString(creatorProfile.name) ||
     readString(sellerProfile.displayName) ||
     readString(sellerProfile.name) ||
-    (() => {
-      const email = readString(session?.email);
-      if (email.includes("@")) {
-        return email.split("@")[0];
-      }
-      return readString(session?.phone) || "Creator";
-    })();
+    "Creator";
 
   const handleRaw = readString(creatorProfile.handle) || readString(sellerProfile.handle);
+  const handleBaseFromIdentifier = email.includes("@")
+    ? email.split("@")[0]
+    : phone.replace(/\D+/g, "");
+  const handleBase =
+    handleBaseFromIdentifier ||
+    name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "");
   const handle =
     handleRaw && handleRaw !== "@"
       ? handleRaw.startsWith("@")
         ? handleRaw
         : `@${handleRaw}`
-      : `@${name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "creator"}`;
+      : `@${handleBase || "creator"}`;
 
   const initials =
     name
@@ -149,15 +161,27 @@ function resolveAvatarFromUploadSessions(payload: unknown) {
   return "";
 }
 
-function resolveAvatarFromLocalDraft() {
+function resolveAvatarFromLocalDraft(session: ReturnType<typeof readAuthSession>) {
   if (typeof window === "undefined") return "";
   const keys = ["mldz_creator_onboarding_v2_4", "mldz_creator_onboarding_v2_3"];
+  const sessionEmail = normalizeEmail(readString(session?.email));
+  const sessionPhone = normalizePhone(readString(session?.phone));
+
   for (const key of keys) {
     try {
       const raw = window.localStorage.getItem(key);
       if (!raw) continue;
       const payload = JSON.parse(raw) as unknown;
       const root = readRecord(payload);
+      const profile = readRecord(root.profile);
+      const draftEmail = normalizeEmail(readString(profile.email));
+      const draftPhone = normalizePhone(readString(profile.phone));
+      const matchesSession =
+        (sessionEmail && draftEmail && sessionEmail === draftEmail) ||
+        (sessionPhone && draftPhone && sessionPhone === draftPhone);
+
+      if (!matchesSession) continue;
+
       const uploads = readRecord(root.uploads);
       const profileUpload = readRecord(uploads["profile.profilePhotoName"]);
       const direct = readAvatarFromUploadsRecord(profileUpload);
@@ -257,13 +281,14 @@ export const TopBar: React.FC<TopBarProps> = ({
     ])
       .then((results) => {
         if (cancelled) return;
+        const currentSession = readAuthSession();
         const fromScreenState =
           results[0].status === "fulfilled" ? resolveAvatarFromScreenState(results[0].value) : "";
         const fromOnboarding =
           results[1].status === "fulfilled" ? resolveAvatarFromOnboarding(results[1].value) : "";
         const fromUploads =
           results[2].status === "fulfilled" ? resolveAvatarFromUploadSessions(results[2].value) : "";
-        const fromLocalDraft = resolveAvatarFromLocalDraft();
+        const fromLocalDraft = resolveAvatarFromLocalDraft(currentSession);
         const nextAvatar = fromScreenState || fromOnboarding || fromUploads || fromLocalDraft || "";
         if (nextAvatar) {
           setAvatarUrl(nextAvatar);

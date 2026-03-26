@@ -35,7 +35,6 @@ import {
  * - Safeguardrails: frequency cap indicator, preview + confirm modal
  * - “Pin link to chat” helper per destination
  *
- * NOTE: Self-contained demo UI. Wire to backend for real sends, caps, and channel policies.
  */
 
 type SessionStatus = "Draft" | "Scheduled" | "Live" | "Ended";
@@ -233,35 +232,38 @@ function Modal({
 export default function LiveAlertsManager() {
   const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
-  const { data: payload } = useApiResource({
-    initialData: {} as LiveAlertsPayload,
+  const { data: payload, loading, error } = useApiResource<LiveAlertsPayload | null>({
+    initialData: null,
     loader: () => creatorApi.liveTool("live-alerts") as Promise<LiveAlertsPayload>,
   });
   const sessionId = useMemo(() => {
-    if (typeof window === "undefined") return "session";
-    return new URLSearchParams(window.location.search).get("sessionId") || "session";
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("sessionId") || "";
   }, []);
   const session = useMemo(
-    () => ({
-      id: payload.session?.id || sessionId,
-      title: payload.session?.title || "Live session",
-      status: payload.session?.status || ("Draft" as SessionStatus),
-      startedISO: payload.session?.startedISO || new Date(Date.now() - 9 * 60 * 1000).toISOString(),
-      endsISO: payload.session?.endsISO || new Date(Date.now() + 51 * 60 * 1000).toISOString(),
-    }),
-    [payload.session, sessionId],
+    () =>
+      payload?.session
+        ? {
+            id: payload.session.id || sessionId,
+            title: payload.session.title || "",
+            status: payload.session.status || ("Draft" as SessionStatus),
+            startedISO: payload.session.startedISO || "",
+            endsISO: payload.session.endsISO || "",
+          }
+        : null,
+    [payload?.session, sessionId],
   );
 
-  const liveLink = useMemo(() => buildLiveLink(session.id), [session.id]);
+  const liveLink = useMemo(() => buildLiveLink(session?.id || ""), [session?.id]);
 
   const channels: Channel[] = useMemo(
-    () => payload.channels || [],
-    [payload.channels],
+      () => payload?.channels || [],
+    [payload?.channels],
   );
 
   const templates: AlertTemplate[] = useMemo(
     () =>
-      (payload.templates || []).map((template) => ({
+      ((payload?.templates || [])).map((template) => ({
         key: template.key,
         title: template.title,
         subtitle: template.subtitle,
@@ -275,7 +277,7 @@ export default function LiveAlertsManager() {
             .replaceAll("{{dealName}}", dealName)
             .replaceAll("{{endsIn}}", endsIn),
       })),
-    [payload.templates],
+    [payload?.templates],
   );
 
   const [enabledDest, setEnabledDest] = useState<Record<ChannelKey, boolean>>({
@@ -298,12 +300,30 @@ export default function LiveAlertsManager() {
     last_chance: 0,
   });
   useEffect(() => {
-    if (!Object.keys(payload).length) return;
+    if (!payload) return;
     setEnabledDest((current) => ({ ...current, ...(payload.enabledDest || {}) }));
     setDealName(payload.dealName || "");
     setDealEndsMinutes(typeof payload.dealEndsMinutes === "number" ? payload.dealEndsMinutes : 0);
     setLastSent((current) => ({ ...current, ...(payload.lastSent || {}) }));
   }, [payload]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading live alerts…
+      </div>
+    );
+  }
+
+  if (error || !payload || !session || !session.startedISO || !session.endsISO) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Live alerts data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -326,9 +346,15 @@ export default function LiveAlertsManager() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
   useEffect(() => {
-    if (!templates.length) return;
-    setActive((current) => current && templates.some((item) => item.key === current.key) ? templates.find((item) => item.key === current.key) || templates[0] : templates[0]);
+    setActive((current) => {
+      if (!current) return null;
+      return templates.find((item) => item.key === current.key) || null;
+    });
   }, [templates]);
+  const quickLiveTemplate = useMemo(
+    () => templates.find((item) => item.key === "were_live") || null,
+    [templates]
+  );
 
 
   const openConfirm = (t: AlertTemplate) => {
@@ -413,7 +439,7 @@ export default function LiveAlertsManager() {
                 Copy link
               </Btn>
             </div>
-            <Btn tone="primary" onClick={() => templates[0] && openConfirm(templates[0])} disabled={!templates[0] || !canSend(templates[0])} left={<Zap className="h-4 w-4" />}>
+            <Btn tone="primary" onClick={() => quickLiveTemplate && openConfirm(quickLiveTemplate)} disabled={!quickLiveTemplate || !canSend(quickLiveTemplate)} left={<Zap className="h-4 w-4" />}>
               <span className="hidden sm:inline">Quick “We’re live”</span>
               <span className="sm:hidden">Alert</span>
             </Btn>
@@ -469,7 +495,7 @@ export default function LiveAlertsManager() {
 
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <Btn tone="primary" disabled={!ok || isPending} onClick={() => openConfirm(t)} left={<Send className="h-4 w-4" />}>
-                          {isPending && active.key === t.key ? "Sending..." : "Send"}
+                          {isPending && active?.key === t.key ? "Sending..." : "Send"}
                         </Btn>
                         <button className="text-xs font-semibold text-neutral-700 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-slate-100 transition" onClick={() => setActive(t)}>
                           Select

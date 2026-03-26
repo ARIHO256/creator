@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
+
   AppBar,
   Toolbar,
   IconButton,
@@ -18,6 +19,8 @@ import {
 } from "@mui/material";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { sellerBackendApi } from "../../lib/backendApi";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/FormPreview").catch(() => undefined);
 
 // -----------------------------------------------------------------------------
 // EVzone brand palette (light mode)
@@ -72,6 +75,7 @@ function SellerFormPreviewPage() {
   const [tabs, setTabs] = useState([]);
   const [standardSteps, setStandardSteps] = useState([]);
   const [selectedTabId, setSelectedTabId] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -114,11 +118,14 @@ function SellerFormPreviewPage() {
         setTabs(nextTabs);
         setStandardSteps(nextStandardSteps);
         setSelectedTabId(nextTabs[0]?.id || "");
+        setLoadError("");
       })
       .catch(() => {
         if (!active) return;
         setTabs([]);
         setStandardSteps([]);
+        setSelectedTabId("");
+        setLoadError("Listing form preview is unavailable because the backend did not return the wizard configuration.");
       });
 
     return () => {
@@ -199,6 +206,23 @@ function SellerFormPreviewPage() {
           }}
         >
           <Box className="flex flex-col h-full">
+            {loadError ? (
+              <Paper
+                elevation={0}
+                sx={{
+                  m: 3,
+                  mb: 0,
+                  p: 2,
+                  borderRadius: 3,
+                  border: `1px solid ${EV_COLORS.border}`,
+                  backgroundColor: EV_COLORS.accentSoft,
+                  color: EV_COLORS.textMain,
+                }}
+              >
+                <Typography sx={{ fontWeight: 800 }}>{t("Form preview unavailable")}</Typography>
+                <Typography sx={{ mt: 0.5, color: EV_COLORS.textSubtle }}>{loadError}</Typography>
+              </Paper>
+            ) : null}
             <Box
               className="px-4 py-3 flex flex-col gap-2"
               sx={{ borderBottom: `1px solid ${EV_COLORS.border}` }}

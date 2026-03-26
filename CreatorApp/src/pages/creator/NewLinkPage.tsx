@@ -109,22 +109,6 @@ function safeCopy(text: string | number | null | undefined): Promise<void> {
   })
 }
 
-function placeholder(label: string | null | undefined): string {
-  const safe = encodeURIComponent(String(label || ""))
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='900' height='600'>
-    <defs>
-      <linearGradient id='g' x1='0' x2='1' y1='0' y2='1'>
-        <stop offset='0%' stop-color='#f3f4f6'/>
-        <stop offset='100%' stop-color='#e5e7eb'/>
-      </linearGradient>
-    </defs>
-    <rect width='100%' height='100%' fill='url(#g)'/>
-    <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle'
-      font-family='Arial' font-size='26' fill='#6b7280'>${safe}</text>
-  </svg>`
-  return `data:image/svg+xml;charset=utf-8,${svg}`
-}
-
 function buildSellerLink(slug: string | null | undefined): string {
   const s = String(slug || "").trim() || "my-shoppable-adz"
   return `https://mylivedealz.com/a/${encodeURIComponent(s)}`
@@ -132,8 +116,8 @@ function buildSellerLink(slug: string | null | undefined): string {
 
 function buildCreatorLink(slug: string | null | undefined, ref: string | null | undefined): string {
   const base = buildSellerLink(slug)
-  const r = String(ref || "CR-1234")
-  return `${base}?ref=${encodeURIComponent(r)}`
+  const r = String(ref || "").trim()
+  return r ? `${base}?ref=${encodeURIComponent(r)}` : base
 }
 
 // Deterministic short code (preview-only)
@@ -350,9 +334,6 @@ function ToolCard({ title, desc, children }: ToolCardProps) {
   )
 }
 
-/************** Data **************/
-const CREATOR = { handle: "@EVzoneCreator", ref: "CR-7782" }
-
 function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[]): Campaign[] {
   return campaigns.map((campaign) => {
     const data =
@@ -363,6 +344,7 @@ function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLink
     const slug = String(data.slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))
     const sellerName = String(data.sellerName || data.seller || "Seller")
     const sellerHandle = String(data.sellerHandle || "")
+    const creatorRef = String(data.creatorRef || data.ref || "")
     const linked = links.filter((link) => {
       const linkData =
         link.data && typeof link.data === "object" && !Array.isArray(link.data)
@@ -385,16 +367,17 @@ function mapCampaignsToDrawerData(campaigns: AdzCampaignRecord[], links: AdzLink
           url: String(
             link.url ||
               (link.data as Record<string, unknown> | undefined)?.url ||
-              buildCreatorLink(slug, CREATOR.ref)
+              buildCreatorLink(slug, creatorRef)
           )
         }))
-      : [{ id: `${campaign.id}_default`, label: "Default", url: buildCreatorLink(slug, CREATOR.ref) }]
+        .filter((entry) => entry.url.trim().length > 0)
+      : []
 
     return {
       id: campaign.id,
       title,
       slug,
-      hero: String(data.heroImageUrl || data.posterImageUrl || placeholder(title)),
+      hero: String(data.heroImageUrl || data.posterImageUrl || ""),
       seller: {
         name: sellerName,
         handle: sellerHandle,
@@ -454,14 +437,13 @@ useEffect(() => {
 
   const [linkId, setLinkId] = useState("")
   useEffect(() => {
-    if (!campaignId && campaignOptions.length > 0) {
-      setCampaignId(initialCampaignId || campaignOptions[0].id)
+    if (!campaignId && initialCampaignId && campaignOptions.some((campaignOption) => campaignOption.id === initialCampaignId)) {
+      setCampaignId(initialCampaignId)
     }
   }, [campaignId, campaignOptions, initialCampaignId])
 
   useEffect(() => {
-    const first = campaign?.links?.[0]?.id
-    setLinkId((prev) => (campaign?.links?.some((l) => l.id === prev) ? prev : first || ""))
+    setLinkId((prev) => (campaign?.links?.some((l) => l.id === prev) ? prev : ""))
   }, [campaign])
 
   const linkItem = useMemo(() => (campaign?.links || []).find((l) => l.id === linkId) || null, [campaign, linkId])
@@ -581,11 +563,15 @@ useEffect(() => {
         <section className={cx(TOKENS.card, "p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors")}>
           <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
             <div className="min-w-0 flex items-start gap-3">
-              <img
-                src={campaign?.hero || placeholder("Campaign")}
-                alt={campaign?.title || "Campaign"}
-                className="h-16 w-24 rounded-2xl border border-slate-200 dark:border-slate-700 object-cover bg-slate-100 dark:bg-slate-700"
-              />
+              {campaign?.hero ? (
+                <img
+                  src={campaign.hero}
+                  alt={campaign?.title || "Campaign"}
+                  className="h-16 w-24 rounded-2xl border border-slate-200 dark:border-slate-700 object-cover bg-slate-100 dark:bg-slate-700"
+                />
+              ) : (
+                <div className="h-16 w-24 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700" />
+              )}
               <div className="min-w-0">
                 <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100 truncate">{campaign?.title || "Select a campaign"}</div>
                 <div className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-300 font-semibold truncate">
@@ -709,9 +695,6 @@ useEffect(() => {
                     alt="QR"
                     className="h-44 w-44 object-cover bg-white dark:bg-slate-800"
                     loading="lazy"
-                    onError={(e) => {
-                      e.currentTarget.src = placeholder("QR")
-                    }}
                   />
                 </button>
               ) : (
@@ -787,7 +770,6 @@ useEffect(() => {
                 alt="WeChat QR"
                 className="h-44 w-44 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 loading="lazy"
-                onError={(e) => { e.currentTarget.src = placeholder("QR") }}
               />
             ) : (
               <div className="text-xs text-slate-600 dark:text-slate-300">Select a link</div>

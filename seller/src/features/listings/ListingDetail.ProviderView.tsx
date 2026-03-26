@@ -3,6 +3,9 @@ import { useParams, Link } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { sellerBackendApi } from "../../lib/backendApi";
 
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/ListingDetail.ProviderView").catch(() => undefined);
+
 type ServiceDetail = {
   id: string;
   title: string;

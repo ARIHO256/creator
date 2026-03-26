@@ -411,8 +411,6 @@ function statusLabel(s: DestinationStatus) {
   return s;
 }
 
-const DEFAULT_TITLE = 'Live session';
-
 export default function StreamToPlatformsPage() {
   const { showSuccess, showError, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
@@ -427,7 +425,7 @@ export default function StreamToPlatformsPage() {
 
   const [profile, setProfile] = useState<OutputProfile>({
     orientation: 'Auto',
-    quality: 'Auto',
+    quality: 'Standard',
     advancedOpen: false,
     resolution: '720p',
     bitrateKbps: 2500,
@@ -453,7 +451,7 @@ export default function StreamToPlatformsPage() {
     setSessionStatus(payload.sessionStatus || 'Draft');
     setProfile(payload.profile || {
       orientation: 'Auto',
-      quality: 'Auto',
+      quality: 'Standard',
       advancedOpen: false,
       resolution: '720p',
       bitrateKbps: 2500,
@@ -563,8 +561,7 @@ export default function StreamToPlatformsPage() {
   }
 
   function runBandwidthTest() {
-    const jitter = (Math.random() * 10 - 3);
-    const next = Math.max(1, Math.min(40, estimatedUploadMbps + jitter));
+    const next = Math.max(1, Math.min(40, requiredUpload));
     setEstimatedUploadMbps(next);
     showSuccess('Bandwidth check updated');
   }
@@ -622,14 +619,12 @@ export default function StreamToPlatformsPage() {
   const selectedDest = useMemo(() => destinations.find((d) => d.id === selectedDestId) || null, [destinations, selectedDestId]);
 
   const healthSeries = useMemo(() => {
-    // lightweight demo series
-    const base = profile.bitrateKbps;
-    const values = Array.from({ length: 12 }, (_, i) => {
-      const wobble = Math.sin(i / 2) * 0.07 + (Math.random() * 0.06 - 0.03);
-      return Math.max(0, Math.round(base * (0.86 + wobble)));
-    });
-    return values;
-  }, [profile.bitrateKbps]);
+    const liveBitrates = enabledDests
+      .filter((d) => d.status === 'Live')
+      .map((d) => Math.max(0, Math.round(d.health.outBitrateKbps)));
+    if (liveBitrates.length > 0) return liveBitrates;
+    return [Math.max(0, Math.round(profile.bitrateKbps))];
+  }, [enabledDests, profile.bitrateKbps]);
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
@@ -866,7 +861,7 @@ export default function StreamToPlatformsPage() {
                           <div className="text-[10px] sm:text-xs font-bold text-slate-800 dark:text-slate-200">Title Override</div>
                           <span className="text-[10px] text-slate-500 dark:text-slate-500">Per platform</span>
                         </div>
-                        <div className="mt-1 line-clamp-1 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 italic">“{d.settings.title || DEFAULT_TITLE}”</div>
+                        <div className="mt-1 line-clamp-1 text-[10px] sm:text-xs text-slate-600 dark:text-slate-400 italic">“{d.settings.title}”</div>
                       </div>
 
                       {/* Live thumbnail */}

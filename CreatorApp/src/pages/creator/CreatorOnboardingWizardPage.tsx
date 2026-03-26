@@ -141,26 +141,26 @@ function CreatorOnboardingWizardPage() {
   const [formData, setFormData] = useState({
     name: "",
     handle: "",
-    tagline: "EV & commerce storyteller",
-    bio: "Creator focused on EVs, tech and cross-border commerce stories.",
-    timezone: "Africa/Kampala",
-    currency: "USD",
-    contentLanguages: ["English"],
-    audienceRegions: ["East Africa", "Asia"],
+    tagline: "",
+    bio: "",
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    currency: "",
+    contentLanguages: [],
+    audienceRegions: [],
     socials: {
       instagram: "",
       tiktok: "",
       youtube: ""
     },
-    primaryPlatform: "Instagram",
+    primaryPlatform: "",
     extraSocials: [],
     kycStatus: "pending",
     kycIdUploaded: false,
     kycSelfieUploaded: false,
     payoutMethod: "",
     payoutAccount: "",
-    categories: ["Beauty & Skincare", "Tech & Gadgets"],
-    models: ["Flat fee", "Commission"]
+    categories: [],
+    models: []
   });
 
   const isFirstStep = stepIndex === 0;

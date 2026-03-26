@@ -895,7 +895,7 @@ export default function ProviderPortfolioPage() {
   const [caseStudies, setCaseStudies] = useState<CaseStudy[]>([]);
   const [customTags, setCustomTags] = useState<string[]>([]);
   const [isPublic, setIsPublic] = useState(true);
-  const [handle, setHandle] = useState("provider-portfolio");
+  const [handle, setHandle] = useState("");
   const portfolioHydratedRef = useRef(false);
   const portfolioAutosaveRef = useRef<number | null>(null);
 
@@ -956,7 +956,7 @@ export default function ProviderPortfolioPage() {
           Array.isArray(settings.customTags) ? settings.customTags.map((item) => String(item).toLowerCase()) : []
         );
         setIsPublic(settings.isPublic === undefined ? true : Boolean(settings.isPublic));
-        setHandle(String(settings.handle ?? "provider-portfolio"));
+        setHandle(typeof settings.handle === "string" ? settings.handle : "");
         portfolioHydratedRef.current = true;
       })
       .catch(() => {

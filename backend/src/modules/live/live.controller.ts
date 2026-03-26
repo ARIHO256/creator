@@ -105,4 +105,19 @@ export class LiveController {
   @RateLimit({ limit: 30, windowMs: 60_000 })
   @Patch('tools/safety')
   patchSafety(@CurrentUser() user: RequestUser, @Body(new FlexiblePayloadValidationPipe(UpdateLiveToolDto)) body: UpdateLiveToolDto) { return this.service.toolPatch(user.sub, 'safety', body); }
+
+  @Get('tools/:key')
+  toolByKey(@CurrentUser() user: RequestUser, @Param('key') key: string) {
+    return this.service.toolGet(user.sub, key);
+  }
+
+  @RateLimit({ limit: 30, windowMs: 60_000 })
+  @Patch('tools/:key')
+  patchToolByKey(
+    @CurrentUser() user: RequestUser,
+    @Param('key') key: string,
+    @Body(new FlexiblePayloadValidationPipe(UpdateLiveToolDto)) body: UpdateLiveToolDto
+  ) {
+    return this.service.toolPatch(user.sub, key, body);
+  }
 }

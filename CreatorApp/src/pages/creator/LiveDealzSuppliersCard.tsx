@@ -68,7 +68,7 @@ export function LiveDealzSuppliersCard({
 }) {
     const { data: suppliers } = useApiResource({
         initialData: [] as Array<Record<string, unknown>>,
-        loader: () => creatorApi.sellers({ limit: 500 }) as Promise<Array<Record<string, unknown>>>
+        loader: () => creatorApi.sellers({ limit: 100 }) as Promise<Array<Record<string, unknown>>>
     });
     const { sellerCount, providerCount } = useMemo(() => {
         const sellers = suppliers.filter((entry) => {

@@ -22,6 +22,7 @@ import {
   ScrollText,
   ShieldCheck,
   Sparkles,
+  Pencil,
   Trash2,
   Upload,
   User,
@@ -58,6 +59,37 @@ function deepClone<T>(obj: T): T {
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function lookupLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const record = entry as Record<string, unknown>;
+        return String(record.label || record.title || record.value || "").trim();
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
+
+function lookupPayoutMethodCards(
+  value: unknown
+): Array<{ key: string; title: string; desc: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const record = entry as Record<string, unknown>;
+      const key = String(record.key || record.value || "").trim();
+      const title = String(record.title || record.label || key).trim();
+      const desc = String(record.desc || record.helper || "").trim();
+      if (!key || !title) return null;
+      return { key, title, desc };
+    })
+    .filter((entry): entry is { key: string; title: string; desc: string } => Boolean(entry));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -561,6 +593,67 @@ function Textarea({ className, rows = 4, ...props }: TextareaProps) {
   );
 }
 
+interface EditableFieldShellProps {
+  editing: boolean;
+  value: string;
+  placeholder: string;
+  onEdit: () => void;
+  onDone: () => void;
+  multiline?: boolean;
+  children: React.ReactNode;
+}
+
+function EditableFieldShell({
+  editing,
+  value,
+  placeholder,
+  onEdit,
+  onDone,
+  multiline = false,
+  children
+}: EditableFieldShellProps) {
+  const hasValue = String(value || "").trim().length > 0;
+
+  if (editing) {
+    return (
+      <div className="space-y-2">
+        {children}
+        <div className="flex justify-end">
+          <GhostButton className="px-2.5 py-1.5 text-xs" onClick={onDone}>
+            <Check className="h-3.5 w-3.5" /> Done
+          </GhostButton>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onEdit}
+      className={cx(
+        "w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-left transition-all hover:border-amber-300 hover:bg-amber-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-amber-700 dark:hover:bg-slate-800",
+        multiline ? "min-h-[124px]" : "min-h-[44px]"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div
+          className={cx(
+            "min-w-0 text-sm",
+            hasValue ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500",
+            multiline ? "whitespace-pre-wrap pr-2" : "truncate"
+          )}
+        >
+          {hasValue ? value : placeholder}
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <Pencil className="h-3 w-3" /> Edit
+        </span>
+      </div>
+    </button>
+  );
+}
+
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> { }
 
 function Select({ className, children, ...props }: SelectProps) {
@@ -635,18 +728,28 @@ interface UploadMiniProps {
   title: string;
   helper?: string;
   value?: string;
+  previewUrl?: string | null;
+  mimeType?: string;
   onPick: (val: string) => void;
   onFilePick?: (file: File) => void;
   accept?: string;
 }
 
-function UploadMini({ title, helper, value, onPick, onFilePick, accept = "*/*" }: UploadMiniProps) {
+function UploadMini({ title, helper, value, previewUrl, mimeType, onPick, onFilePick, accept = "*/*" }: UploadMiniProps) {
+  const previewHref = typeof previewUrl === "string" ? previewUrl.trim() : "";
+  const canPreviewImage = Boolean(previewHref) && isImageLike(mimeType, value);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 transition-all hover:border-amber-200 dark:bg-slate-900 dark:border-slate-700 dark:hover:border-amber-700">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-slate-900 dark:text-white">{title}</div>
           {helper ? <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{helper}</div> : null}
+          {canPreviewImage ? (
+            <div className="mt-3 h-28 w-full max-w-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+              <img src={previewHref} alt={`${title} preview`} className="h-full w-full object-cover" />
+            </div>
+          ) : null}
           <div className="mt-2 text-xs text-slate-700 truncate font-medium flex items-center gap-1.5">
             {value ? <Check className="h-3 w-3 text-emerald-500" /> : <div className="h-1.5 w-1.5 rounded-full bg-slate-300" />}
             {value || "No file selected"}
@@ -839,41 +942,13 @@ function UploadedFilesPanel({
 
 /* ---------- Options (mirrors Onboarding v2.5) ---------- */
 
-const LANGUAGE_OPTIONS = ["English", "Swahili", "French", "Arabic", "Chinese", "Portuguese"];
-const REGION_OPTIONS = ["East Africa", "Southern Africa", "West Africa", "North Africa", "Asia", "Europe", "North America"];
-
 const TEAM_TYPES = ["Seller team", "Provider team", "Production crew", "Brand team", "Other"];
 const AGENCY_TYPES = ["Talent / influencer agency", "Marketing agency", "Seller network", "Provider network", "Other"];
 const ORG_SIZES = ["1–5", "6–15", "16–50", "51–200", "200+"];
 
 const OTHER_SOCIAL_OPTIONS = ["Facebook", "X (Twitter)", "Snapchat", "Kwai", "LinkedIn", "Twitch", "Pinterest", "Other"];
 
-const PRODUCT_SERVICE_LINES = [
-  "Services",
-  "Electronics",
-  "Fashion & Beauty",
-  "Food & Groceries",
-  "General Supplies",
-  "Home & Living",
-  "Properties & Supplies",
-  "EV & Mobility",
-  "Medical & Health",
-  "Education",
-  "Faith",
-  "Travel & Tourism"
-];
-
 const COLLAB_MODELS = ["Flat fee", "Commission", "Hybrid"];
-
-const CONTENT_FORMATS = ["Live Sessionz", "Shoppable Adz", "Short-form (Reels/Shorts)", "Long-form (YouTube)", "UGC (brand content)", "Livestream co-hosting"];
-
-const PAYOUT_METHODS = [
-  { key: "Bank", title: "Bank", desc: "Best for high volume and stable settlements." },
-  { key: "Mobile Money", title: "Mobile Money", desc: "Fast and popular across Africa." },
-  { key: "PayPal / Wallet", title: "PayPal / Wallet", desc: "Use existing wallets in supported regions." },
-  { key: "AliPay", title: "AliPay", desc: "China payment method for creators and cross-border payments." },
-  { key: "WeChat Pay", title: "WeChat Pay", desc: "China payment method for creators and cross-border payments." }
-];
 
 interface PolicySection {
   h: string;
@@ -984,7 +1059,7 @@ function defaultSettings(): Settings {
   return {
     calendar: {
       shareAvailability: true,
-      visibility: "Admins only",
+      visibility: "",
       googleConnected: false
     },
     notifications: {
@@ -996,18 +1071,13 @@ function defaultSettings(): Settings {
       platformNews: false
     },
     privacy: {
-      profileVisibility: "Public",
-      allowDMsFrom: "All suppliers",
+      profileVisibility: "",
+      allowDMsFrom: "",
       allowExternalGuests: true,
-      blockedSellers: ["Fake Dealz Ltd"]
+      blockedSellers: []
     },
-    devices: [
-      { id: "d1", name: "iPhone 14 • Kampala", lastActive: "2m ago" },
-      { id: "d2", name: "Chrome • MacBook Pro", lastActive: "Yesterday" }
-    ],
-    audit: [
-      { id: "s1", when: nowLabel(), what: "Settings initialized", meta: "Premium Settings & Safety" }
-    ]
+    devices: [],
+    audit: []
   };
 }
 
@@ -1024,16 +1094,16 @@ function defaultForm(): SettingsForm {
       phone: "",
       whatsapp: "",
       country: "",
-      timezone: "Africa/Kampala",
-      currency: "UGX",
-      contentLanguages: ["English"],
-      audienceRegions: ["East Africa"],
+      timezone: "",
+      currency: "",
+      contentLanguages: [],
+      audienceRegions: [],
       profilePhotoName: "",
       mediaKitName: "",
       team: {
         name: "",
         type: "",
-        size: "1–5",
+        size: "",
         website: "",
         logoName: ""
       },
@@ -1049,7 +1119,7 @@ function defaultForm(): SettingsForm {
       tiktok: "",
       youtube: "",
       primaryPlatform: "",
-      primaryOtherPlatform: "Facebook",
+      primaryOtherPlatform: "",
       primaryOtherCustomName: "",
       primaryOtherHandle: "",
       primaryOtherFollowers: "",
@@ -1057,7 +1127,7 @@ function defaultForm(): SettingsForm {
     },
     kyc: {
       status: "unverified", // unverified | in_review | verified | rejected
-      documentType: "National ID",
+      documentType: "",
       idFileName: "",
       selfieFileName: "",
       addressFileName: "",
@@ -1075,32 +1145,32 @@ function defaultForm(): SettingsForm {
     },
     payout: {
       method: "",
-      currency: "UGX",
-      schedule: "Weekly",
-      minThreshold: 100000,
+      currency: "",
+      schedule: "",
+      minThreshold: "",
       acceptPayoutPolicy: false,
       verification: {
         status: "unverified", // unverified | code_sent | verified
         lastSentTo: ""
       },
       bank: { bankName: "", accountName: "", accountNumber: "", swift: "" },
-      mobile: { provider: "MTN", number: "" },
-      wallet: { provider: "PayPal", email: "" },
+      mobile: { provider: "", number: "" },
+      wallet: { provider: "", email: "" },
       alipay: { name: "", accountId: "" },
       wechat: { name: "", accountId: "", phone: "" },
       tax: { residency: "", taxId: "" }
     },
     preferences: {
-      lines: ["Electronics"],
-      formats: ["Live Sessionz"],
-      models: ["Commission"],
+      lines: [],
+      formats: [],
+      models: [],
       availability: {
-        days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-        timeWindow: "18:00–22:00"
+        days: [],
+        timeWindow: ""
       },
-      rateCard: { flatFee: 0, commissionPct: 10 },
-      inviteRules: "All",
-      supplierType: "Sellers + Providers"
+      rateCard: { flatFee: "", commissionPct: "" },
+      inviteRules: "",
+      supplierType: ""
     },
     review: {
       seenPolicies: { platform: false, content: false, payout: false },
@@ -1357,7 +1427,7 @@ function payoutRhythmFromApi(rhythm: string) {
   if (rhythm === "weekly") return "Weekly";
   if (rhythm === "biweekly") return "Bi-weekly";
   if (rhythm === "monthly") return "Monthly";
-  return "Weekly";
+  return "";
 }
 
 function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | null {
@@ -1381,8 +1451,8 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
       handle: String(root.storeSlug || ""),
       bio: String(root.about || ""),
       country: String(asRecord(root.shipFrom)?.country || ""),
-      timezone: "Africa/Kampala",
-      currency: String(payout?.currency || "UGX"),
+      timezone: String(asRecord(metadata)?.timezone || ""),
+      currency: String(payout?.currency || ""),
       tagline: "",
       contentLanguages: Array.isArray(root.languages) ? root.languages.map((entry) => String(entry)) : [],
       audienceRegions: [],
@@ -1392,7 +1462,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
       whatsapp: String(asRecord(root.support)?.whatsapp || ""),
       profilePhotoName: "",
       mediaKitName: "",
-      team: { name: "", type: "", size: "1–5", website: "", logoName: "" },
+      team: { name: "", type: "", size: "", website: "", logoName: "" },
       agency: { name: "", type: "", website: "", logoName: "" }
     },
     kyc: {
@@ -1404,7 +1474,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
             : String(verification?.kycStatus || "").toUpperCase() === "REJECTED"
               ? "rejected"
               : "unverified",
-      documentType: "National ID",
+      documentType: "",
       idUploaded: false,
       selfieUploaded: false,
       addressUploaded: false,
@@ -1416,7 +1486,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
     },
     payout: {
       method: payoutMethodFromApi(method),
-      currency: String(payout?.currency || "UGX"),
+      currency: String(payout?.currency || ""),
       schedule: payoutRhythmFromApi(rhythm),
       minThreshold: Number(payout?.thresholdAmount || 0),
       bank: {
@@ -1430,7 +1500,7 @@ function extractBackendSettingsForm(payload: unknown): Partial<SettingsForm> | n
         number: String(payout?.mobileNo || "")
       },
       wallet: {
-        provider: "PayPal",
+        provider: "",
         email: String(payout?.otherDetails || "")
       },
       alipay: {
@@ -1782,9 +1852,11 @@ export default function CreatorSettingsSafetyPremium() {
   const navigate = useNavigate();
   const { toasts, push } = useToasts();
 
+  const [lookups, setLookups] = useState<Record<string, unknown>>({});
   const [form, setForm] = useState<SettingsForm>(() => defaultForm());
   const [saved, setSaved] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingFields, setEditingFields] = useState<Record<string, boolean>>({});
   const hydratedRef = useRef(false);
   const objectUrlRef = useRef<Record<string, string>>({});
 
@@ -1802,6 +1874,18 @@ export default function CreatorSettingsSafetyPremium() {
   const selectedSocialPlatforms = useMemo(
     () => getSelectedSocialPlatforms(form.socials),
     [form.socials]
+  );
+  const languageOptions = useMemo(() => lookupLabels(lookups.languages), [lookups.languages]);
+  const regionOptions = useMemo(() => lookupLabels(lookups.supplierTargetRegions), [lookups.supplierTargetRegions]);
+  const productServiceLines = useMemo(() => {
+    const serviceCategories = lookupLabels(lookups.serviceCategories);
+    const productCategories = lookupLabels(lookups.productCategories);
+    return Array.from(new Set([...serviceCategories, ...productCategories]));
+  }, [lookups.productCategories, lookups.serviceCategories]);
+  const contentFormats = useMemo(() => lookupLabels(lookups.contentFormats), [lookups.contentFormats]);
+  const payoutMethods = useMemo(
+    () => lookupPayoutMethodCards(lookups.payoutMethodCards),
+    [lookups.payoutMethodCards]
   );
   const normalizedPrimaryPlatform = useMemo(
     () => normalizePrimaryPlatform(form.socials.primaryPlatform),
@@ -1832,6 +1916,12 @@ export default function CreatorSettingsSafetyPremium() {
   useEffect(() => {
     let cancelled = false;
     try {
+      void creatorApi.onboardingLookups().then((payload) => {
+        if (!cancelled && payload && typeof payload === "object" && !Array.isArray(payload)) {
+          setLookups(payload as Record<string, unknown>);
+        }
+      }).catch(() => undefined);
+
       void creatorApi
         .onboarding()
         .then(async (payload) => {
@@ -1972,6 +2062,14 @@ export default function CreatorSettingsSafetyPremium() {
     setForm((prev) => setDeep(prev, path, value));
   }
 
+  function openEditor(key: string) {
+    setEditingFields((prev) => ({ ...prev, [key]: true }));
+  }
+
+  function closeEditor(key: string) {
+    setEditingFields((prev) => ({ ...prev, [key]: false }));
+  }
+
   function toggleInArray(path: string, value: string) {
     setForm((prev) => {
       const next = deepClone(prev);
@@ -2031,33 +2129,27 @@ export default function CreatorSettingsSafetyPremium() {
         return next;
       });
 
-      void creatorApi
-        .createUpload({
-          name: file.name,
-          kind: fileKindFromMime(file.type || ""),
-          mimeType: file.type || undefined,
-          sizeBytes: file.size > 0 ? file.size : undefined,
-          extension: file.name.includes(".") ? file.name.split(".").pop() || undefined : undefined,
-          storageKey,
-          purpose,
-          domain: "creator_settings",
-          entityType: "creator_profile",
-          status: "UPLOADED",
-          metadata: {
-            fieldKey,
-            source: "creator_settings",
-            acceptedAt: new Date().toISOString(),
-            previewDataUrl: persistedPreviewUrl || undefined
-          }
-        })
+      void readFileAsDataUrl(file)
+        .then((dataUrl) =>
+          creatorApi.uploadMediaFile({
+            name: file.name,
+            dataUrl,
+            kind: fileKindFromMime(file.type || ""),
+            mimeType: file.type || undefined,
+            sizeBytes: file.size > 0 ? file.size : undefined,
+            extension: file.name.includes(".") ? file.name.split(".").pop() || undefined : undefined,
+            purpose,
+            metadata: {
+              fieldKey,
+              source: "creator_settings",
+              acceptedAt: new Date().toISOString()
+            }
+          })
+        )
         .then((uploaded) => {
+          const finalPreviewUrl = uploaded.url || persistedPreviewUrl || previewUrl;
           setForm((prev) => {
             const next = deepClone(prev);
-            const uploadedPreviewDataUrl =
-              uploaded.metadata && typeof uploaded.metadata === "object" && !Array.isArray(uploaded.metadata)
-                ? String((uploaded.metadata as Record<string, unknown>).previewDataUrl || "")
-                : "";
-            const finalPreviewUrl = uploaded.url || uploadedPreviewDataUrl || persistedPreviewUrl || previewUrl;
             next.uploads[fieldKey] = {
               id: uploaded.id,
               name: uploaded.name,
@@ -2066,9 +2158,9 @@ export default function CreatorSettingsSafetyPremium() {
               extension: uploaded.extension || "",
               storageKey: uploaded.storageKey || storageKey,
               url: finalPreviewUrl,
-              status: uploaded.status || "uploaded",
+              status: "uploaded",
               createdAt: uploaded.createdAt || new Date().toISOString(),
-              purpose: uploaded.purpose || purpose,
+              purpose,
               fieldKey,
               previewUrl: finalPreviewUrl
             };
@@ -2076,7 +2168,7 @@ export default function CreatorSettingsSafetyPremium() {
           });
         })
         .catch(() => {
-          push("File selected. Metadata sync failed.", "warn");
+          push("File selected, but upload failed.", "warn");
         });
     };
 
@@ -2598,62 +2690,153 @@ export default function CreatorSettingsSafetyPremium() {
           < Card id="profile" title="Profile & brand" subtitle="These details appear on your Creator profile and in supplier proposals." icon={< User className="h-5 w-5" />}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Field label="Display name *">
-                <Input value={form.profile.name} onChange={(e) => update("profile.name", e.target.value)} placeholder="Your name / brand" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.name"]}
+                  value={form.profile.name}
+                  placeholder="Your name / brand"
+                  onEdit={() => openEditor("profile.name")}
+                  onDone={() => closeEditor("profile.name")}
+                >
+                  <Input autoFocus value={form.profile.name} onChange={(e) => update("profile.name", e.target.value)} placeholder="Your name / brand" />
+                </EditableFieldShell>
               </Field>
               <Field label="Handle *" hint="Used in your profile URL (letters, numbers, underscores).">
-                <Input value={form.profile.handle} onChange={(e) => update("profile.handle", e.target.value)} placeholder="example: mylivedealzcreator" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.handle"]}
+                  value={form.profile.handle}
+                  placeholder="example: mylivedealzcreator"
+                  onEdit={() => openEditor("profile.handle")}
+                  onDone={() => closeEditor("profile.handle")}
+                >
+                  <Input autoFocus value={form.profile.handle} onChange={(e) => update("profile.handle", e.target.value)} placeholder="example: mylivedealzcreator" />
+                </EditableFieldShell>
               </Field>
               <Field label="Primary email address *">
-                <Input
+                <EditableFieldShell
+                  editing={!!editingFields["profile.email"]}
                   value={form.profile.email}
-                  onChange={(e) => {
-                    update("profile.email", e.target.value);
-                    addAudit("Email updated", e.target.value);
-                    push("Email updated. Verification link sent.", "success");
-                  }}
                   placeholder="your@email.com"
-                />
+                  onEdit={() => openEditor("profile.email")}
+                  onDone={() => closeEditor("profile.email")}
+                >
+                  <Input
+                    autoFocus
+                    value={form.profile.email}
+                    onChange={(e) => {
+                      update("profile.email", e.target.value);
+                      addAudit("Email updated", e.target.value);
+                      push("Email updated. Verification link sent.", "success");
+                    }}
+                    placeholder="your@email.com"
+                  />
+                </EditableFieldShell>
               </Field>
               <Field label="Primary phone contact *">
-                <Input
+                <EditableFieldShell
+                  editing={!!editingFields["profile.phone"]}
                   value={form.profile.phone}
-                  onChange={(e) => {
-                    update("profile.phone", e.target.value);
-                    addAudit("Phone updated", e.target.value);
-                    push("Phone updated. OTP sent for verification.", "success");
-                  }}
                   placeholder="+256 700 000 000"
-                />
+                  onEdit={() => openEditor("profile.phone")}
+                  onDone={() => closeEditor("profile.phone")}
+                >
+                  <Input
+                    autoFocus
+                    value={form.profile.phone}
+                    onChange={(e) => {
+                      update("profile.phone", e.target.value);
+                      addAudit("Phone updated", e.target.value);
+                      push("Phone updated. OTP sent for verification.", "success");
+                    }}
+                    placeholder="+256 700 000 000"
+                  />
+                </EditableFieldShell>
               </Field>
               <Field label="WhatsApp number">
-                <Input
+                <EditableFieldShell
+                  editing={!!editingFields["profile.whatsapp"]}
                   value={form.profile.whatsapp}
-                  onChange={(e) => update("profile.whatsapp", e.target.value)}
                   placeholder="+256 700 000 000"
-                />
+                  onEdit={() => openEditor("profile.whatsapp")}
+                  onDone={() => closeEditor("profile.whatsapp")}
+                >
+                  <Input
+                    autoFocus
+                    value={form.profile.whatsapp}
+                    onChange={(e) => update("profile.whatsapp", e.target.value)}
+                    placeholder="+256 700 000 000"
+                  />
+                </EditableFieldShell>
               </Field>
               <Field label="Tagline">
-                <Input value={form.profile.tagline} onChange={(e) => update("profile.tagline", e.target.value)} placeholder="Example: Premium electronics creator for East Africa" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.tagline"]}
+                  value={form.profile.tagline}
+                  placeholder="Example: Premium electronics creator for East Africa"
+                  onEdit={() => openEditor("profile.tagline")}
+                  onDone={() => closeEditor("profile.tagline")}
+                >
+                  <Input autoFocus value={form.profile.tagline} onChange={(e) => update("profile.tagline", e.target.value)} placeholder="Example: Premium electronics creator for East Africa" />
+                </EditableFieldShell>
               </Field>
               <Field label="Country *">
-                <Input value={form.profile.country} onChange={(e) => update("profile.country", e.target.value)} placeholder="Uganda" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.country"]}
+                  value={form.profile.country}
+                  placeholder="Uganda"
+                  onEdit={() => openEditor("profile.country")}
+                  onDone={() => closeEditor("profile.country")}
+                >
+                  <Input autoFocus value={form.profile.country} onChange={(e) => update("profile.country", e.target.value)} placeholder="Uganda" />
+                </EditableFieldShell>
               </Field>
               <Field label="Timezone">
-                <Input value={form.profile.timezone} onChange={(e) => update("profile.timezone", e.target.value)} placeholder="Africa/Kampala" />
+                <EditableFieldShell
+                  editing={!!editingFields["profile.timezone"]}
+                  value={form.profile.timezone}
+                  placeholder="Africa/Kampala"
+                  onEdit={() => openEditor("profile.timezone")}
+                  onDone={() => closeEditor("profile.timezone")}
+                >
+                  <Input autoFocus value={form.profile.timezone} onChange={(e) => update("profile.timezone", e.target.value)} placeholder="Africa/Kampala" />
+                </EditableFieldShell>
               </Field>
               <Field label="Currency">
-                <Select value={form.profile.currency} onChange={(e) => update("profile.currency", e.target.value)}>
-                  {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </Select>
+                <EditableFieldShell
+                  editing={!!editingFields["profile.currency"]}
+                  value={form.profile.currency}
+                  placeholder="Select currency"
+                  onEdit={() => openEditor("profile.currency")}
+                  onDone={() => closeEditor("profile.currency")}
+                >
+                  <Select autoFocus value={form.profile.currency} onChange={(e) => update("profile.currency", e.target.value)}>
+                    <option value="">Select currency</option>
+                    {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </Select>
+                </EditableFieldShell>
               </Field>
 
               <div className="md:col-span-2">
                 <Field label="Bio">
-                  <Textarea value={form.profile.bio} onChange={(e) => update("profile.bio", e.target.value)} placeholder="Tell suppliers what you sell, who you reach, and how you convert." rows={5} />
+                  <EditableFieldShell
+                    editing={!!editingFields["profile.bio"]}
+                    value={form.profile.bio}
+                    placeholder="Tell suppliers what you sell, who you reach, and how you convert."
+                    onEdit={() => openEditor("profile.bio")}
+                    onDone={() => closeEditor("profile.bio")}
+                    multiline
+                  >
+                    <Textarea
+                      autoFocus
+                      value={form.profile.bio}
+                      onChange={(e) => update("profile.bio", e.target.value)}
+                      placeholder="Tell suppliers what you sell, who you reach, and how you convert."
+                      rows={5}
+                    />
+                  </EditableFieldShell>
                 </Field>
               </div>
             </div>
@@ -2668,7 +2851,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <Badge tone="neutral">{(form.profile.contentLanguages || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {LANGUAGE_OPTIONS.map((l) => (
+                  {languageOptions.map((l) => (
                     <Chip key={l} label={l} active={(form.profile.contentLanguages || []).includes(l)} onClick={() => toggleInArray("profile.contentLanguages", l)} />
                   ))}
                 </div>
@@ -2683,7 +2866,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <Badge tone="neutral">{(form.profile.audienceRegions || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {REGION_OPTIONS.map((r) => (
+                  {regionOptions.map((r) => (
                     <Chip key={r} label={r} active={(form.profile.audienceRegions || []).includes(r)} onClick={() => toggleInArray("profile.audienceRegions", r)} />
                   ))}
                 </div>
@@ -2695,6 +2878,8 @@ export default function CreatorSettingsSafetyPremium() {
                 title="Profile photo"
                 helper="JPG/PNG, 1:1 recommended."
                 value={form.profile.profilePhotoName}
+                previewUrl={form.uploads["profile.profilePhotoName"]?.previewUrl || form.uploads["profile.profilePhotoName"]?.url || null}
+                mimeType={form.uploads["profile.profilePhotoName"]?.mimeType}
                 onPick={(name) => update("profile.profilePhotoName", name)}
                 onFilePick={(file) => {
                   registerUpload("profile.profilePhotoName", file, "creator_profile_photo");
@@ -2788,6 +2973,7 @@ export default function CreatorSettingsSafetyPremium() {
                     </Field>
                     <Field label="Team size">
                       <Select value={form.profile.team.size} onChange={(e) => update("profile.team.size", e.target.value)}>
+                        <option value="">Select size</option>
                         {ORG_SIZES.map((x) => (
                           <option key={x} value={x}>
                             {x}
@@ -2804,6 +2990,8 @@ export default function CreatorSettingsSafetyPremium() {
                       title="Team logo"
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.team.logoName}
+                      previewUrl={form.uploads["profile.team.logoName"]?.previewUrl || form.uploads["profile.team.logoName"]?.url || null}
+                      mimeType={form.uploads["profile.team.logoName"]?.mimeType}
                       onPick={(name) => update("profile.team.logoName", name)}
                       onFilePick={(file) => {
                         registerUpload("profile.team.logoName", file, "creator_team_logo");
@@ -2844,6 +3032,8 @@ export default function CreatorSettingsSafetyPremium() {
                       title="Agency logo"
                       helper="Optional. Used in proposals and shared sessions."
                       value={form.profile.agency.logoName}
+                      previewUrl={form.uploads["profile.agency.logoName"]?.previewUrl || form.uploads["profile.agency.logoName"]?.url || null}
+                      mimeType={form.uploads["profile.agency.logoName"]?.mimeType}
                       onPick={(name) => update("profile.agency.logoName", name)}
                       onFilePick={(file) => {
                         registerUpload("profile.agency.logoName", file, "creator_agency_logo");
@@ -2863,9 +3053,9 @@ export default function CreatorSettingsSafetyPremium() {
               </div>
               <SoftButton
                 onClick={() => {
-                  const region = (form.profile.audienceRegions || ["Global"])[0] || "Global";
-                  const langs = (form.profile.contentLanguages || ["English"]).join(", ");
-                  const line = (form.preferences.lines || ["Electronics"])[0] || "Electronics";
+                  const region = (form.profile.audienceRegions || []).find((entry) => String(entry).trim()) || "";
+                  const langs = (form.profile.contentLanguages || []).filter((entry) => String(entry).trim()).join(", ");
+                  const line = (form.preferences.lines || []).find((entry) => String(entry).trim()) || "";
                   update("profile.tagline", `${line} creator for ${region}`);
                   update(
                     "profile.bio",
@@ -2996,6 +3186,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <div className="mt-3 space-y-2">
                     <Field label="Select platform">
                       <Select value={form.socials.primaryOtherPlatform} onChange={(e) => update("socials.primaryOtherPlatform", e.target.value)}>
+                        <option value="">Select platform</option>
                         {OTHER_SOCIAL_OPTIONS.map((o) => (
                           <option key={o} value={o}>
                             {o}
@@ -3066,7 +3257,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <SoftButton
                   onClick={() => {
                     const extra = Array.isArray(form.socials.extra) ? form.socials.extra : [];
-                    update("socials.extra", [...extra, { platform: "Facebook", handle: "" }]);
+                    update("socials.extra", [...extra, { platform: "", handle: "" }]);
                     push("Extra account added.", "success");
                   }}
                 >
@@ -3088,6 +3279,7 @@ export default function CreatorSettingsSafetyPremium() {
                           update("socials.extra", extra);
                         }}
                       >
+                        <option value="">Select platform</option>
                         {OTHER_SOCIAL_OPTIONS.map((o) => (
                           <option key={o} value={o}>
                             {o}
@@ -3133,7 +3325,7 @@ export default function CreatorSettingsSafetyPremium() {
                   <Badge tone="neutral">{(form.preferences.lines || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {PRODUCT_SERVICE_LINES.map((x) => (
+                  {productServiceLines.map((x) => (
                     <Chip key={x} label={x} active={(form.preferences.lines || []).includes(x)} onClick={() => toggleInArray("preferences.lines", x)} />
                   ))}
                 </div>
@@ -3164,7 +3356,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <Badge tone="neutral">{(form.preferences.formats || []).length}</Badge>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {CONTENT_FORMATS.map((x) => (
+                {contentFormats.map((x) => (
                   <Chip key={x} label={x} active={(form.preferences.formats || []).includes(x)} onClick={() => toggleInArray("preferences.formats", x)} />
                 ))}
               </div>
@@ -3200,6 +3392,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-2 grid grid-cols-1 gap-2">
                   <Field label="Who can invite you?">
                     <Select value={form.preferences.inviteRules} onChange={(e) => update("preferences.inviteRules", e.target.value)}>
+                      <option value="">Select rule</option>
                       {["All", "Verified suppliers only", "Invite-only"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3209,6 +3402,7 @@ export default function CreatorSettingsSafetyPremium() {
                   </Field>
                   <Field label="Supplier type">
                     <Select value={form.preferences.supplierType} onChange={(e) => update("preferences.supplierType", e.target.value)}>
+                      <option value="">Select type</option>
                       {["Sellers + Providers", "Sellers only", "Providers only"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3260,6 +3454,7 @@ export default function CreatorSettingsSafetyPremium() {
                   />
                   <Field label="Visibility">
                     <Select value={form.settings.calendar.visibility} onChange={(e) => update("settings.calendar.visibility", e.target.value)}>
+                      <option value="">Select visibility</option>
                       {["Admins only", "Admins + Producers", "Anyone with permission"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3325,6 +3520,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Document type">
                     <Select value={form.kyc.documentType} onChange={(e) => update("kyc.documentType", e.target.value)}>
+                      <option value="">Select document type</option>
                       {["National ID", "Passport", "Driver’s license"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3338,6 +3534,8 @@ export default function CreatorSettingsSafetyPremium() {
                     title="ID document"
                     helper={form.kyc.idUploaded ? "Uploaded" : "Required"}
                     value={form.kyc.idFileName}
+                    previewUrl={form.uploads["kyc.idFileName"]?.previewUrl || form.uploads["kyc.idFileName"]?.url || null}
+                    mimeType={form.uploads["kyc.idFileName"]?.mimeType}
                     onPick={(name) => {
                       update("kyc.idFileName", name);
                       update("kyc.idUploaded", true);
@@ -3351,6 +3549,8 @@ export default function CreatorSettingsSafetyPremium() {
                     title="Selfie"
                     helper={form.kyc.selfieUploaded ? "Uploaded" : "Required"}
                     value={form.kyc.selfieFileName}
+                    previewUrl={form.uploads["kyc.selfieFileName"]?.previewUrl || form.uploads["kyc.selfieFileName"]?.url || null}
+                    mimeType={form.uploads["kyc.selfieFileName"]?.mimeType}
                     onPick={(name) => {
                       update("kyc.selfieFileName", name);
                       update("kyc.selfieUploaded", true);
@@ -3364,6 +3564,8 @@ export default function CreatorSettingsSafetyPremium() {
                     title="Address proof"
                     helper={form.kyc.addressUploaded ? "Uploaded" : "Optional"}
                     value={form.kyc.addressFileName}
+                    previewUrl={form.uploads["kyc.addressFileName"]?.previewUrl || form.uploads["kyc.addressFileName"]?.url || null}
+                    mimeType={form.uploads["kyc.addressFileName"]?.mimeType}
                     onPick={(name) => {
                       update("kyc.addressFileName", name);
                       update("kyc.addressUploaded", true);
@@ -3383,6 +3585,8 @@ export default function CreatorSettingsSafetyPremium() {
                       <UploadMini
                         title="Registration"
                         value={form.kyc.org.registrationName}
+                        previewUrl={form.uploads["kyc.org.registrationName"]?.previewUrl || form.uploads["kyc.org.registrationName"]?.url || null}
+                        mimeType={form.uploads["kyc.org.registrationName"]?.mimeType}
                         onPick={(name) => {
                           update("kyc.org.registrationName", name);
                           update("kyc.org.registrationUploaded", true);
@@ -3395,6 +3599,8 @@ export default function CreatorSettingsSafetyPremium() {
                       <UploadMini
                         title="Tax certificate"
                         value={form.kyc.org.taxName}
+                        previewUrl={form.uploads["kyc.org.taxName"]?.previewUrl || form.uploads["kyc.org.taxName"]?.url || null}
+                        mimeType={form.uploads["kyc.org.taxName"]?.mimeType}
                         onPick={(name) => {
                           update("kyc.org.taxName", name);
                           update("kyc.org.taxUploaded", true);
@@ -3407,6 +3613,8 @@ export default function CreatorSettingsSafetyPremium() {
                       <UploadMini
                         title="Authorization letter"
                         value={form.kyc.org.authorizationName}
+                        previewUrl={form.uploads["kyc.org.authorizationName"]?.previewUrl || form.uploads["kyc.org.authorizationName"]?.url || null}
+                        mimeType={form.uploads["kyc.org.authorizationName"]?.mimeType}
                         onPick={(name) => {
                           update("kyc.org.authorizationName", name);
                           update("kyc.org.authorizationUploaded", true);
@@ -3492,7 +3700,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="text-sm">Payout method</div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">Choose where your earnings should go.</div>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {PAYOUT_METHODS.map((m) => {
+                  {payoutMethods.map((m) => {
                     const active = form.payout.method === m.key;
                     return (
                       <button
@@ -3519,6 +3727,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                   <Field label="Currency">
                     <Select value={form.payout.currency} onChange={(e) => update("payout.currency", e.target.value)}>
+                      <option value="">Select currency</option>
                       {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
                         <option key={c} value={c}>
                           {c}
@@ -3528,6 +3737,7 @@ export default function CreatorSettingsSafetyPremium() {
                   </Field>
                   <Field label="Schedule">
                     <Select value={form.payout.schedule} onChange={(e) => update("payout.schedule", e.target.value)}>
+                      <option value="">Select schedule</option>
                       {["Weekly", "Bi-weekly", "Monthly"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3573,6 +3783,7 @@ export default function CreatorSettingsSafetyPremium() {
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                       <Field label="Provider">
                         <Select value={form.payout.mobile.provider} onChange={(e) => update("payout.mobile.provider", e.target.value)}>
+                          <option value="">Select provider</option>
                           {["MTN", "Airtel", "Vodacom", "Safaricom"].map((x) => (
                             <option key={x} value={x}>
                               {x}
@@ -3590,6 +3801,7 @@ export default function CreatorSettingsSafetyPremium() {
                     <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
                       <Field label="Provider">
                         <Select value={form.payout.wallet.provider} onChange={(e) => update("payout.wallet.provider", e.target.value)}>
+                          <option value="">Select provider</option>
                           {["PayPal", "Wise", "Payoneer"].map((x) => (
                             <option key={x} value={x}>
                               {x}
@@ -3798,6 +4010,7 @@ export default function CreatorSettingsSafetyPremium() {
                 <div className="mt-3 space-y-2">
                   <Field label="Profile visibility">
                     <Select value={form.settings.privacy.profileVisibility} onChange={(e) => update("settings.privacy.profileVisibility", e.target.value)}>
+                      <option value="">Select visibility</option>
                       {["Public", "suppliers only", "Private"].map((x) => (
                         <option key={x} value={x}>
                           {x}
@@ -3807,6 +4020,7 @@ export default function CreatorSettingsSafetyPremium() {
                   </Field>
                   <Field label="Direct messages">
                     <Select value={form.settings.privacy.allowDMsFrom} onChange={(e) => update("settings.privacy.allowDMsFrom", e.target.value)}>
+                      <option value="">Select direct-message rule</option>
                       {["All suppliers", "Verified only", "None"].map((x) => (
                         <option key={x} value={x}>
                           {x}

@@ -112,10 +112,10 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       campaign.data && typeof campaign.data === "object" && !Array.isArray(campaign.data)
         ? (campaign.data as Record<string, unknown>)
         : {};
-    const sellerName = String(data.supplierName || data.sellerName || data.seller || "Supplier");
+    const sellerName = String(data.supplierName || data.sellerName || data.seller || "");
     const supplierType: SupplierType =
       String(data.supplierType || "").toLowerCase() === "provider" ? "Provider" : "Seller";
-    const titleBase = String(campaign.title || data.title || "Campaign");
+    const titleBase = String(campaign.title || data.title || "");
     const status = mapCampaignStatusToLinkStatus(campaign.status || data.status);
     const clicks = Number(data.clicks || 0);
     const purchases = Number(data.purchases || 0);
@@ -133,12 +133,7 @@ function buildLinkHubItems(campaigns: AdzCampaignRecord[], links: AdzLinkRecord[
       );
     });
 
-    const primaryUrl = String(
-      relatedLinks[0]?.url ||
-        (relatedLinks[0]?.data as Record<string, unknown> | undefined)?.url ||
-        data.shareUrl ||
-        `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`
-    );
+    const primaryUrl = String(data.shareUrl || `https://mylivedealz.com/campaign/${encodeURIComponent(campaign.id)}`);
 
     const channels =
       relatedLinks.length > 0
@@ -274,7 +269,7 @@ export default function CreatorLinksHubV3Fixed({
 
   const selected = useMemo(() => {
     const inView = selectedId ? visible.find((x) => x.id === selectedId) : null;
-    return inView ?? pinnedForTab[0] ?? visible[0] ?? null;
+    return inView ?? null;
   }, [visible, selectedId, pinnedForTab]);
 
   const togglePin = (id: string) => {
@@ -502,7 +497,7 @@ export default function CreatorLinksHubV3Fixed({
                           <span className="mx-2">·</span>
                           Clicks: <span className="font-bold text-slate-700 dark:text-slate-200">{fmtInt(sum(g.items.map((x) => x.metrics.clicks)))}</span>
                           <span className="mx-2">·</span>
-                          Earn: <span className="font-bold" style={{ color: ORANGE }}>{g.items[0]?.metrics.currency} {fmtInt(sum(g.items.map((x) => x.metrics.earnings)))}</span>
+                          Earn: <span className="font-bold" style={{ color: ORANGE }}>{g.items.find((item) => item.metrics.currency)?.metrics.currency || ""} {fmtInt(sum(g.items.map((x) => x.metrics.earnings)))}</span>
                         </div>
                       </div>
 

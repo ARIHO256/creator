@@ -123,12 +123,12 @@ function toProposal(record: ProposalRecord): Proposal {
 
   return {
     id: record.id,
-    brand: String(record.sellerName || "Supplier"),
+    brand: String(record.sellerName || ""),
     initials: proposalInitials(record.sellerName),
-    campaign: String(record.campaignTitle || record.title || "Campaign"),
+    campaign: String(record.campaignTitle || record.title || ""),
     origin: mapProposalOrigin(metadata),
     offerType: String((metadata as { offerType?: unknown }).offerType || "Collaboration offer"),
-    category: String((metadata as { category?: unknown }).category || "General"),
+    category: String((metadata as { category?: unknown }).category || ""),
     region: String((metadata as { region?: unknown }).region || "Global"),
     baseFeeMin: feeMin,
     baseFeeMax: feeMax,
@@ -184,8 +184,8 @@ export function ProposalsInboxPage(): JSX.Element {
 
 
   const selectedProposal = useMemo<Proposal | null>(() => {
-    if (!selectedProposalId) return proposals[0] ?? null;
-    return proposals.find((p) => p.id === selectedProposalId) ?? proposals[0] ?? null;
+    if (!selectedProposalId) return null;
+    return proposals.find((p) => p.id === selectedProposalId) ?? null;
   }, [selectedProposalId, proposals]);
 
   const filteredProposals = useMemo<Proposal[]>(() => {

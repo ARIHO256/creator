@@ -22,6 +22,7 @@ import {
   clearAuthSession,
   enableDashboardAuthOverride,
   getPostAuthPath,
+  hasPersistedAuthSession,
   hasStoredAuthState,
   persistAuthSession
 } from "../../lib/authSession";
@@ -39,6 +40,13 @@ interface Toast {
 
 type AuthMode = "signin" | "signup" | null;
 type IdentifierMode = "email" | "phone";
+
+function parseAuthMode(search: string): AuthMode {
+  const mode = new URLSearchParams(search).get("mode")?.trim().toLowerCase();
+  if (mode === "signup" || mode === "register" || mode === "sign-up") return "signup";
+  if (mode === "signin" || mode === "login" || mode === "sign-in") return "signin";
+  return null;
+}
 
 function cx(...xs: (string | boolean | undefined | null)[]): string {
   return xs.filter(Boolean).join(" ");
@@ -63,36 +71,6 @@ type AuthNoticeContent = {
   nextSteps: AuthNoticeStep[];
   readyItems: string[];
   quickAnswers: AuthNoticeFaq[];
-};
-
-const DEFAULT_AUTH_NOTICE_CONTENT: AuthNoticeContent = {
-  nextSteps: [
-    { n: 1, t: "Choose Sign in / Sign up", d: "Go to EVzone My Accounts" },
-    { n: 2, t: "Verify your identity", d: "Email/phone confirmation" },
-    { n: 3, t: "Return to MyLiveDealz", d: "Auto redirect back" },
-    { n: 4, t: "Finish Creator setup", d: "KYC, payouts, preferences" }
-  ],
-  readyItems: [
-    "Email or phone number",
-    "Access to verification codes",
-    "A short creator bio",
-    "ID for KYC (later)",
-    "Preferred payout method"
-  ],
-  quickAnswers: [
-    {
-      q: "Can I use the same account for EVzone Marketplace and MyLiveDealz?",
-      a: "Yes. EVzone My Accounts is shared across EVzone services. One account helps you manage your identity, security, and payouts in one place."
-    },
-    {
-      q: "Will I come back to MyLiveDealz after signing in?",
-      a: "Yes. After signing in or signing up, you will be redirected back to MyLiveDealz to continue onboarding or access creator tools."
-    },
-    {
-      q: "What if I already created an EVzone account before?",
-      a: "Sign in using that account. Do not create another one. This helps keep your identity and payouts consistent."
-    }
-  ]
 };
 
 function normalizeAuthNoticeContent(value: unknown): AuthNoticeContent | null {
@@ -129,7 +107,6 @@ function normalizeAuthNoticeContent(value: unknown): AuthNoticeContent | null {
     }))
     .filter((entry) => entry.q && entry.a);
 
-  if (!nextSteps.length || !readyItems.length || !quickAnswers.length) return null;
   return { nextSteps, readyItems, quickAnswers };
 }
 
@@ -336,6 +313,7 @@ export default function CreatorAuthRedirectNotice() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { toasts, push } = useToasts();
+  const requestedMode = useMemo(() => parseAuthMode(location.search), [location.search]);
 
   const [showWhy, setShowWhy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -351,21 +329,21 @@ export default function CreatorAuthRedirectNotice() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [noticeContent, setNoticeContent] = useState<AuthNoticeContent>(DEFAULT_AUTH_NOTICE_CONTENT);
+  const [noticeContent, setNoticeContent] = useState<AuthNoticeContent | null>(null);
 
   useEffect(() => {
-    const nextMode = new URLSearchParams(location.search).get("mode");
-    if (nextMode === "register") {
-      setAuthMode("signup");
-      return;
-    }
-    if (nextMode === "login") {
-      setAuthMode("signin");
-    }
-  }, [location.search]);
+    if (!requestedMode) return;
+    setAuthMode(requestedMode);
+  }, [requestedMode]);
 
   useEffect(() => {
     let active = true;
+    if (!hasStoredAuthState()) {
+      setNoticeContent(null);
+      return () => {
+        active = false;
+      };
+    }
     void creatorApi
       .workflowScreenState(AUTH_NOTICE_SCREEN_STATE_KEY)
       .then((screenState) => {
@@ -375,15 +353,11 @@ export default function CreatorAuthRedirectNotice() {
           setNoticeContent(normalized);
           return;
         }
-        setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
-        void creatorApi.patchWorkflowScreenState(AUTH_NOTICE_SCREEN_STATE_KEY, {
-          content: DEFAULT_AUTH_NOTICE_CONTENT,
-          seededAt: new Date().toISOString()
-        }).catch(() => undefined);
+        setNoticeContent(null);
       })
       .catch(() => {
         if (!active) return;
-        setNoticeContent(DEFAULT_AUTH_NOTICE_CONTENT);
+        setNoticeContent(null);
       });
     return () => {
       active = false;
@@ -393,7 +367,16 @@ export default function CreatorAuthRedirectNotice() {
   useEffect(() => {
     let active = true;
 
-    if (!hasStoredAuthState()) {
+    // Explicit auth intent from query param should always show the selected form.
+    // Do not auto-redirect to dashboard/onboarding from stored session in this case.
+    if (requestedMode) {
+      setInitializing(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    if (!hasPersistedAuthSession()) {
       setInitializing(false);
       return () => {
         active = false;
@@ -420,7 +403,7 @@ export default function CreatorAuthRedirectNotice() {
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [navigate, requestedMode]);
 
   const statusLabel = useMemo(() => {
     if (queueMessage) return queueMessage;
@@ -896,7 +879,7 @@ export default function CreatorAuthRedirectNotice() {
                   What happens next
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  {noticeContent.nextSteps.map((s) => (
+                  {(noticeContent?.nextSteps || []).map((s) => (
                     <div
                       key={s.n}
                       className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-4 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 shadow-sm hover:shadow"
@@ -940,7 +923,7 @@ export default function CreatorAuthRedirectNotice() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Have these ready</div>
                 <div className="mt-3 space-y-2">
-                  {noticeContent.readyItems.map((x) => (
+                  {(noticeContent?.readyItems || []).map((x) => (
                     <div key={x} className="flex items-start gap-2">
                       <span className="mt-0.5 h-5 w-5 rounded-full bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-center">
                         <Check className="h-3 w-3" />
@@ -954,7 +937,7 @@ export default function CreatorAuthRedirectNotice() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-50">Quick answers</div>
                 <div className="mt-3 space-y-2">
-                  {noticeContent.quickAnswers.map((item) => (
+                  {(noticeContent?.quickAnswers || []).map((item) => (
                     <Accordion key={item.q} q={item.q} a={item.a} />
                   ))}
                 </div>

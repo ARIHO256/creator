@@ -39,55 +39,25 @@ function ProposalNegotiationRoomPage() {
   const initialProposalId = (location.state as { proposalId?: string })?.proposalId;
   // const { theme } = useTheme();
   const [status, setStatus] = useState<Status>("Negotiating");
-  const [proposalId, setProposalId] = useState<string | null>(initialProposalId || null);
-  const [sellerName, setSellerName] = useState("GlowUp Hub");
-  const [campaignTitle, setCampaignTitle] = useState("Autumn Beauty Flash · Serum Launch");
-  const [campaignSummary, setCampaignSummary] = useState(
-    "Live + Shoppable Adz campaign to push the new GlowUp serum across East Africa."
-  );
-  const [lastUpdatedLabel, setLastUpdatedLabel] = useState("2h ago");
-  const [regionLabel, setRegionLabel] = useState("East Africa · Online only");
+  const [proposalId] = useState<string | null>(initialProposalId || null);
+  const [sellerName, setSellerName] = useState("");
+  const [campaignTitle, setCampaignTitle] = useState("");
+  const [campaignSummary, setCampaignSummary] = useState("");
+  const [lastUpdatedLabel, setLastUpdatedLabel] = useState("");
+  const [regionLabel, setRegionLabel] = useState("");
 
   const baseTerms = useMemo(
     () => ({
-      deliverables: `• 1x 60–90 min live session (Autumn Beauty Flash)\n• 3x short clips (15–30s) for Shoppable Adz\n• 2x Instagram stories with swipe-up`,
-      schedule: `• Live date: Friday, 20:00–21:30 EAT\n• Clips delivery: within 48 hours after live\n• Stories: 24 hours before and after live`,
-      compensation: `• Flat fee: $400\n• Commission: 5% on live-driven sales\n• Payment terms: 50% upfront, 50% 7 days after live`
+      deliverables: "",
+      schedule: "",
+      compensation: ""
     }),
     []
   );
 
   const [terms, setTerms] = useState<Terms>(baseTerms);
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      from: "seller",
-      name: "GlowUp Hub",
-      avatar: "GH",
-      time: "10:14",
-      body:
-        "Hi creator, we’re excited to do the Autumn Beauty Flash with you. We’ve drafted the terms – feel free to adjust.",
-    },
-    {
-      id: 2,
-      from: "creator",
-      name: "You",
-      avatar: "RY",
-      time: "10:20",
-      body:
-        "Thanks! I’d like to add a small clip package and clarify payment timing. See edits under Compensation.",
-    },
-    {
-      id: 3,
-      from: "seller",
-      name: "GlowUp Hub",
-      avatar: "GH",
-      time: "10:32",
-      body:
-        "Looks good overall. Can we cap the commission only on live sales, not 7 days after?",
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
 
   const [draftMessage, setDraftMessage] = useState("");
 
@@ -162,13 +132,6 @@ function ProposalNegotiationRoomPage() {
     const load = async () => {
       try {
         let resolvedId = proposalId;
-        if (!resolvedId) {
-          const list = await creatorApi.proposals();
-          resolvedId = list[0]?.id || null;
-          if (resolvedId && !cancelled) {
-            setProposalId(resolvedId);
-          }
-        }
         if (!resolvedId) return;
 
         const proposal = await creatorApi.proposal(resolvedId);
@@ -180,9 +143,10 @@ function ProposalNegotiationRoomPage() {
             : {};
 
         setStatus(mapStatus(proposal.status));
-        setSellerName(String(proposal.sellerName || proposal.seller || "GlowUp Hub"));
-        setCampaignTitle(String(proposal.campaignTitle || proposal.title || "Campaign"));
-        setCampaignSummary(String(proposal.summary || campaignSummary));
+        const sellerLabel = String(proposal.sellerName || proposal.seller || "");
+        setSellerName(sellerLabel);
+        setCampaignTitle(String(proposal.campaignTitle || proposal.title || ""));
+        setCampaignSummary(String(proposal.summary || ""));
         setLastUpdatedLabel("Synced from workspace");
         if (metadata.region) {
           setRegionLabel(String(metadata.region));
@@ -208,7 +172,7 @@ function ProposalNegotiationRoomPage() {
               return {
                 id: index + 1,
                 from,
-                name: author || (from === "creator" ? "You" : sellerName),
+                name: author || (from === "creator" ? "You" : sellerLabel),
                 avatar: from === "creator" ? "RY" : "GH",
                 time: row.createdAt ? new Date(String(row.createdAt)).toLocaleTimeString() : "Now",
                 body: String(row.body || "")
@@ -220,7 +184,7 @@ function ProposalNegotiationRoomPage() {
           setMessages(nextMessages);
         }
       } catch {
-        // Keep local UI fallback when API is unavailable.
+        setMessages([]);
       }
     };
 
@@ -229,7 +193,7 @@ function ProposalNegotiationRoomPage() {
     return () => {
       cancelled = true;
     };
-  }, [baseTerms.compensation, baseTerms.schedule, proposalId, campaignSummary, sellerName]);
+  }, [baseTerms.compensation, baseTerms.schedule, proposalId]);
 
   // Filter out applied suggestions
   const visibleSuggestions = clauseSuggestions.filter(s => !appliedSuggestions.includes(s.id));

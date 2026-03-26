@@ -6,7 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "../adz/SupplierAdBuilderPage";
-import { LiveBuilderDrawer } from "../live/SupplierLiveDashboardPage";
+import { LiveBuilderDrawer } from "../live/LiveBuilder_LivePlan_SupplierFacing";
 import { SupplierAdzPerformanceDrawer as AdzPerformanceDrawer } from "../adz/SupplierAdzPerformancePage";
 import {
   Calendar,

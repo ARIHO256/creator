@@ -4,6 +4,11 @@ import SupportCenterPage from './SupportCenter';
 import SupportSystemPage from './SupportSystem';
 import SupportChangelogPage from './SupportChangelog';
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:misc/HelpSupport").catch(() => undefined);
+
 export default function HelpSupport() {
   const location = useLocation();
   const path = location.pathname;

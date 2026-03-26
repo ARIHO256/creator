@@ -7,7 +7,6 @@ import { CreateWholesaleQuoteDto } from './dto/create-wholesale-quote.dto.js';
 import { UpdateWholesaleQuoteDto } from './dto/update-wholesale-quote.dto.js';
 import {
   createWholesaleQuote,
-  normalizeWholesaleIncoterms,
   updateWholesaleQuote
 } from './wholesale-state.js';
 
@@ -95,20 +94,11 @@ export class WholesaleService {
   }
 
   async incoterms(userId: string) {
+    void userId;
     const terms = await this.prisma.wholesaleIncoterm.findMany({
       where: { isActive: true },
       orderBy: { code: 'asc' }
     });
-    if (terms.length === 0) {
-      return normalizeWholesaleIncoterms({
-        terms: [
-          { code: 'EXW', description: 'Ex Works' },
-          { code: 'FOB', description: 'Free On Board' },
-          { code: 'CIF', description: 'Cost, Insurance & Freight' },
-          { code: 'DAP', description: 'Delivered At Place' }
-        ]
-      });
-    }
     return {
       terms: terms.map((term) => ({
         code: term.code,

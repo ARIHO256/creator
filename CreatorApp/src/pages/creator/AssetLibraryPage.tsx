@@ -36,6 +36,7 @@ import {
   Zap,
 } from "lucide-react";
 import { creatorApi, type AssetRecord, type MediaAssetRecord, type MediaWorkspaceResponse } from "../../lib/creatorApi";
+import { readAuthSession } from "../../lib/authSession";
 
 /**
  * Asset Library (Independent Premium Page)
@@ -1090,12 +1091,23 @@ function MiniChart({ points, height = 54 }: { points: number[]; height?: number 
   );
 }
 
-const DEFAULT_CREATOR: Creator = {
-  id: "creator",
-  name: "Creator",
-  handle: "@creator",
-  avatarUrl: "",
-};
+function creatorFromSession(): Creator | null {
+  const session = readAuthSession();
+  if (!session) return null;
+  const raw = session as Record<string, unknown>;
+  const id = toStringValue(raw.id, "").trim();
+  const name = toStringValue(raw.name, "").trim();
+  const handleRaw = toStringValue(raw.handle, "").trim();
+  const handle = handleRaw ? (handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`) : "";
+  const avatarUrl = toStringValue(raw.avatarUrl, "").trim();
+  if (!id && !name && !handle) return null;
+  return {
+    id,
+    name,
+    handle,
+    avatarUrl,
+  };
+}
 
 function normalizeCreatorRow(row: unknown): Creator | null {
   const record = toRecord(row);
@@ -1103,7 +1115,7 @@ function normalizeCreatorRow(row: unknown): Creator | null {
   const id = toStringValue(record.id, "").trim();
   const name = toStringValue(record.name, "").trim();
   if (!id || !name) return null;
-  const handle = toStringValue(record.handle, "@creator").trim();
+  const handle = toStringValue(record.handle, "").trim();
   return {
     id,
     name,
@@ -1137,7 +1149,7 @@ function normalizeCampaignRow(row: unknown): Campaign | null {
     id,
     supplierId,
     name,
-    brand: toStringValue(record.brand, "Seller"),
+    brand: toStringValue(record.brand, ""),
     status: /^paused$/i.test(toStringValue(record.status, "")) ? "Paused" : "Active",
   };
 }
@@ -1153,7 +1165,7 @@ function normalizeDeliverableRow(row: unknown): Deliverable | null {
     id,
     campaignId,
     label,
-    dueDateLabel: toStringValue(record.dueDateLabel, "No due date"),
+    dueDateLabel: toStringValue(record.dueDateLabel, ""),
   };
 }
 
@@ -1170,7 +1182,7 @@ function normalizeMediaAsset(row: MediaAssetRecord): Asset {
   return {
     id: row.id,
     creatorScope: toStringValue(metadata.creatorScope, "all"),
-    title: toStringValue(metadata.title, row.name || "Untitled asset"),
+    title: toStringValue(metadata.title, row.name || ""),
     subtitle: toStringValue(metadata.subtitle, ""),
     campaignId: toStringValue(metadata.campaignId, ""),
     supplierId: toStringValue(metadata.supplierId, ""),
@@ -1207,7 +1219,7 @@ function normalizeCollabAsset(row: AssetRecord): Asset {
   return {
     id: row.id,
     creatorScope: "all",
-    title: toStringValue(metadata.title, toStringValue(row.title, "Untitled asset")),
+    title: toStringValue(metadata.title, toStringValue(row.title, "")),
     subtitle: toStringValue(metadata.subtitle, ""),
     campaignId: toStringValue(row.campaignId, toStringValue(metadata.campaignId, "")),
     supplierId: toStringValue(metadata.supplierId, ""),
@@ -1262,10 +1274,11 @@ export default function AssetLibraryPage() {
   const [activityPoints, setActivityPoints] = useState<number[]>(Array.from({ length: 14 }, () => 0));
   const [activitySummary, setActivitySummary] = useState({ newCount: 0, approvedCount: 0, pendingCount: 0 });
   const [collectionSummary, setCollectionSummary] = useState({
-    starterPack: { assetCount: 0, status: "needs_review" },
-    priceDropOverlays: { assetCount: 0, status: "needs_review" },
+    starterPack: { name: "", subtitle: "", assetCount: 0, status: "needs_review" },
+    priceDropOverlays: { name: "", subtitle: "", assetCount: 0, status: "needs_review" },
   });
-  const [selectedCreatorId, setSelectedCreatorId] = useState("");
+  const sessionCreator = useMemo(() => creatorFromSession(), []);
+  const [selectedCreatorId, setSelectedCreatorId] = useState(sessionCreator?.id || "");
   const [selectedSupplierId, setSelectedSupplierId] = useState("");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
@@ -1328,12 +1341,11 @@ export default function AssetLibraryPage() {
 
   const pickerSupplierFallback = useMemo<Supplier | null>(() => {
     if (!pickerMode) return null;
-    if (!pickerSupplierId && !pickerSupplierName) return null;
-    const id = pickerSupplierId || "picker-supplier";
+    if (!pickerSupplierId) return null;
     const kind = /^provider$/i.test(pickerSupplierKind || "") ? "Provider" : "Seller";
-    const name = pickerSupplierName || "Supplier";
+    const name = pickerSupplierName || "";
     return {
-      id,
+      id: pickerSupplierId,
       name,
       kind,
       brand: pickerSupplierBrand || name,
@@ -1342,14 +1354,14 @@ export default function AssetLibraryPage() {
 
   const pickerCampaignFallback = useMemo<Campaign | null>(() => {
     if (!pickerMode) return null;
-    if (!pickerCampaignId && !pickerCampaignName) return null;
-    const fallbackSupplierId = pickerSupplierFallback?.id || pickerSupplierId || "";
+    if (!pickerCampaignId) return null;
+    const fallbackSupplierId = pickerSupplierId || "";
     if (!fallbackSupplierId) return null;
     return {
-      id: pickerCampaignId || "picker-campaign",
+      id: pickerCampaignId,
       supplierId: fallbackSupplierId,
-      name: pickerCampaignName || "Campaign",
-      brand: pickerCampaignBrand || pickerSupplierBrand || pickerSupplierFallback?.brand || "Seller",
+      name: pickerCampaignName || "",
+      brand: pickerCampaignBrand || pickerSupplierBrand || pickerSupplierFallback?.brand || "",
       status: "Active",
     };
   }, [
@@ -1427,7 +1439,7 @@ export default function AssetLibraryPage() {
             id: `sp-${campaignId}`,
             name: "Show pack",
             campaignId,
-            brand: campaign?.name || "Campaign",
+            brand: campaign?.name || "",
             autoGrouped: true,
             items: campaignAssets.slice(0, 5).map((asset) => ({
               title: asset.title,
@@ -1437,7 +1449,7 @@ export default function AssetLibraryPage() {
         })
         .filter((pack) => pack.items.length > 0);
 
-      setCreators(nextCreators.length ? nextCreators : [DEFAULT_CREATOR]);
+      setCreators(nextCreators);
       setSuppliers(nextSuppliers);
       setCampaigns(nextCampaigns);
       setDeliverables(nextDeliverables);
@@ -1451,24 +1463,35 @@ export default function AssetLibraryPage() {
       });
       setCollectionSummary({
         starterPack: {
+          name: toStringValue(starterPack.name, ""),
+          subtitle: toStringValue(starterPack.subtitle, ""),
           assetCount: Math.max(0, toNumberValue(starterPack.assetCount, 0)),
           status: toStringValue(starterPack.status, "needs_review"),
         },
         priceDropOverlays: {
+          name: toStringValue(priceDropOverlays.name, ""),
+          subtitle: toStringValue(priceDropOverlays.subtitle, ""),
           assetCount: Math.max(0, toNumberValue(priceDropOverlays.assetCount, 0)),
           status: toStringValue(priceDropOverlays.status, "needs_review"),
         },
       });
 
-      setSelectedCreatorId((prev) => (prev && nextCreators.some((c) => c.id === prev) ? prev : (nextCreators[0]?.id || DEFAULT_CREATOR.id)));
-      setSelectedSupplierId((prev) => (prev && nextSuppliers.some((p) => p.id === prev) ? prev : (nextSuppliers[0]?.id || "")));
+      setSelectedCreatorId((prev) => {
+        if (prev && nextCreators.some((c) => c.id === prev)) return prev;
+        if (sessionCreator?.id && nextCreators.some((c) => c.id === sessionCreator.id)) return sessionCreator.id;
+        return sessionCreator?.id || "";
+      });
+      setSelectedSupplierId((prev) => {
+        if (prev && nextSuppliers.some((p) => p.id === prev)) return prev;
+        if (pickerSupplierId && nextSuppliers.some((p) => p.id === pickerSupplierId)) return pickerSupplierId;
+        return "";
+      });
       setSelectedCampaignId((prev) => {
         if (prev && nextCampaigns.some((c) => c.id === prev)) return prev;
-        const supplierId = nextSuppliers[0]?.id || "";
-        const firstForSupplier = nextCampaigns.find((c) => c.supplierId === supplierId);
-        return firstForSupplier?.id || nextCampaigns[0]?.id || "";
+        if (pickerCampaignId && nextCampaigns.some((c) => c.id === pickerCampaignId)) return pickerCampaignId;
+        return "";
       });
-      setActiveAssetId((prev) => (prev && mergedAssets.some((asset) => asset.id === prev) ? prev : (mergedAssets[0]?.id || null)));
+      setActiveAssetId((prev) => (prev && mergedAssets.some((asset) => asset.id === prev) ? prev : null));
     } catch (error) {
       setToast({
         title: "Failed to load asset library",
@@ -1477,7 +1500,7 @@ export default function AssetLibraryPage() {
     } finally {
       setIsLoadingLibrary(false);
     }
-  }, []);
+  }, [pickerCampaignId, pickerSupplierId, sessionCreator]);
 
   useEffect(() => {
     void loadLibraryFromBackend();
@@ -1506,11 +1529,6 @@ export default function AssetLibraryPage() {
             setSelectedCampaignId(campaignMatch.id);
             return;
           }
-        }
-
-        const firstSupplierCampaign = campaigns.find((campaign) => campaign.supplierId === pickerSupplierId);
-        if (firstSupplierCampaign) {
-          setSelectedCampaignId(firstSupplierCampaign.id);
         }
         return;
       }
@@ -1571,16 +1589,15 @@ export default function AssetLibraryPage() {
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) ?? null, [assets, activeAssetId]);
 
   const selectedCreator = useMemo(
-    () => creators.find((c) => c.id === selectedCreatorId) ?? creators[0] ?? DEFAULT_CREATOR,
-    [creators, selectedCreatorId],
+    () => creators.find((c) => c.id === selectedCreatorId) ?? sessionCreator ?? null,
+    [creators, selectedCreatorId, sessionCreator],
   );
   const selectedSupplier = useMemo(
     () =>
       suppliers.find((p) => p.id === selectedSupplierId) ??
       (pickerSupplierFallback && pickerSupplierFallback.id === selectedSupplierId ? pickerSupplierFallback : null) ??
-      suppliers[0] ??
       pickerSupplierFallback ??
-      { id: "", name: "Supplier", kind: "Seller" as const, brand: "Supplier" },
+      { id: "", name: "", kind: "Seller" as const, brand: "" },
     [pickerSupplierFallback, selectedSupplierId, suppliers],
   );
   const supplierOptions = useMemo(() => {
@@ -1588,14 +1605,20 @@ export default function AssetLibraryPage() {
     const contextSupplier = suppliers.find((supplier) => supplier.id === pickerSupplierFallback.id) || pickerSupplierFallback;
     return contextSupplier ? [contextSupplier] : suppliers;
   }, [pickerMode, pickerSupplierFallback, suppliers]);
-  const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) ?? campaignsForSupplier[0], [selectedCampaignId, campaignsForSupplier]);
+  const selectedCampaign = useMemo(() => campaigns.find((c) => c.id === selectedCampaignId) ?? null, [campaigns, selectedCampaignId]);
 
-  // If supplier changes, auto-select first campaign under supplier
+  // If supplier changes, clear campaign when it no longer belongs to the selected supplier.
   useEffect(() => {
-    const first = campaigns.find((c) => c.supplierId === selectedSupplierId);
-    if (first && first.id !== selectedCampaignId) setSelectedCampaignId(first.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSupplierId]);
+    if (!selectedCampaignId) return;
+    const selectedCampaignRecord = campaigns.find((campaign) => campaign.id === selectedCampaignId);
+    if (!selectedCampaignRecord) {
+      setSelectedCampaignId("");
+      return;
+    }
+    if (selectedCampaignRecord.supplierId !== selectedSupplierId) {
+      setSelectedCampaignId("");
+    }
+  }, [campaigns, selectedCampaignId, selectedSupplierId]);
 
   const submitRoleOptions = useMemo(() => {
     const mt = submitDraft.mediaType;
@@ -1633,8 +1656,7 @@ export default function AssetLibraryPage() {
   useEffect(() => {
     const allowed = new Set(submitRoleOptions.map((x) => x.value));
     if (!allowed.has(submitDraft.role)) {
-      const next = submitRoleOptions[0]?.value ?? "";
-      setSubmitDraft((d) => ({ ...d, role: next as SubmitDraft["role"] }));
+      setSubmitDraft((d) => ({ ...d, role: "" as SubmitDraft["role"] }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [submitRoleOptions]);
@@ -1694,12 +1716,11 @@ export default function AssetLibraryPage() {
   }
 
   function resetSubmitDraft() {
-    const firstDeliverable = deliverables.find((d) => d.campaignId === selectedCampaignId)?.id ?? "";
     setSubmitStatus("draft");
     setSubmitImageMeta(null);
     setSubmitDraft({
       campaignId: selectedCampaignId,
-      deliverableId: firstDeliverable,
+      deliverableId: "",
       title: "",
       caption: "",
       notes: "",
@@ -1788,14 +1809,19 @@ export default function AssetLibraryPage() {
     const finalStatus: ReviewStatus = "approved";
     setSubmitStatus(finalStatus);
 
-    const subtitle = `${selectedCampaign?.name ?? "Campaign"} · ${selectedSupplier?.name ?? "Supplier"}`;
+    const subtitle = [selectedCampaign?.name, selectedSupplier?.name].filter(Boolean).join(" · ");
     const tags = submitDraft.tagsCsv
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
+    const resolvedTitle =
+      submitDraft.title.trim() ||
+      submitDraft.files[0]?.name?.trim() ||
+      submitDraft.linkUrl.trim() ||
+      "";
 
     const metadata: Record<string, unknown> = {
-      title: submitDraft.title || "Untitled submission",
+      title: resolvedTitle,
       subtitle,
       campaignId: submitDraft.campaignId,
       supplierId: selectedSupplierId,
@@ -1835,7 +1861,7 @@ export default function AssetLibraryPage() {
     try {
       if (submitDraft.mediaType === "link") {
         await creatorApi.createMediaAsset({
-          name: submitDraft.title || "Untitled submission",
+          name: resolvedTitle,
           kind: "link",
           mimeType: "text/uri-list",
           url: submitDraft.linkUrl.trim(),
@@ -2164,7 +2190,15 @@ export default function AssetLibraryPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   {/* Creator selector */}
                   <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
-                    <img src={selectedCreator.avatarUrl} alt={selectedCreator.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                    {selectedCreator?.avatarUrl ? (
+                      <img
+                        src={selectedCreator.avatarUrl}
+                        alt={selectedCreator.name}
+                        className="h-6 w-6 rounded-full object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="h-6 w-6 rounded-full bg-slate-200 dark:bg-slate-700 shrink-0" aria-hidden="true" />
+                    )}
                     <select
                       value={selectedCreatorId}
                       onChange={(e) => setSelectedCreatorId(e.target.value)}
@@ -2392,9 +2426,12 @@ export default function AssetLibraryPage() {
                 <div className="rounded-2xl border border-slate-300 dark:border-slate-700 transition-colors bg-slate-50 dark:bg-slate-800 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">Autumn Beauty Flash — Starter pack</div>
+                      <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">
+                        {collectionSummary.starterPack.name}
+                      </div>
                       <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">
-                        {collectionSummary.starterPack.assetCount} assets · opener + hero + offer
+                        {collectionSummary.starterPack.assetCount} assets
+                        {collectionSummary.starterPack.subtitle ? ` · ${collectionSummary.starterPack.subtitle}` : ""}
                       </div>
                     </div>
                     <span className={starterCollectionStatus.className}>
@@ -2402,7 +2439,7 @@ export default function AssetLibraryPage() {
                     </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
-                    <div className="text-xs text-slate-500 dark:text-slate-300">Use for shoppable ads and short lives.</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-300">{collectionSummary.starterPack.subtitle}</div>
                     <button className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-3 py-2 text-xs font-semibold dark:font-bold text-white hover:bg-slate-800">
                       Use pack <ArrowRight className="h-4 w-4" />
                     </button>
@@ -2412,9 +2449,12 @@ export default function AssetLibraryPage() {
                 <div className="rounded-2xl border border-slate-300 dark:border-slate-700 transition-colors bg-slate-50 dark:bg-slate-800 p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">Price-drop overlays</div>
+                      <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50">
+                        {collectionSummary.priceDropOverlays.name}
+                      </div>
                       <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">
-                        {collectionSummary.priceDropOverlays.assetCount} assets · overlay variants
+                        {collectionSummary.priceDropOverlays.assetCount} assets
+                        {collectionSummary.priceDropOverlays.subtitle ? ` · ${collectionSummary.priceDropOverlays.subtitle}` : ""}
                       </div>
                     </div>
                     <span className={priceDropCollectionStatus.className}>
@@ -2422,7 +2462,7 @@ export default function AssetLibraryPage() {
                     </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
-                    <div className="text-xs text-slate-500 dark:text-slate-300">Complete review to unlock this collection.</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-300">{collectionSummary.priceDropOverlays.subtitle}</div>
                     <button className="inline-flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 px-3 py-2 text-xs font-semibold dark:font-bold text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 transition-colors">
                       Open <ExternalLink className="h-4 w-4" />
                     </button>

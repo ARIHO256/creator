@@ -3,7 +3,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useApiResource } from "../../hooks/useApiResource";
+import { buildApiUrl } from "../../lib/api";
 import { creatorApi, type DealzMarketplaceWorkspaceResponse, type MediaAssetRecord } from "../../lib/creatorApi";
+import { hasStoredAuthState } from "../../lib/authSession";
 import {
   BadgeCheck,
   Check,
@@ -63,17 +65,6 @@ import {
  */
 
 const ORANGE = "#f77f00";
-const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {},
-  templates: {},
-};
-
 // From your supported sizes list (already used elsewhere)
 const HERO_IMAGE_REQUIRED = { width: 1920, height: 1080 } as const;
 const ITEM_POSTER_REQUIRED = { width: 500, height: 500 } as const;
@@ -238,8 +229,8 @@ function useResolvedMediaUrl(rawUrl?: string) {
         });
 
       let response = await fetchAsset();
-      if (response.status === 401) {
-        const refresh = await fetch("/api/auth/refresh", {
+      if (response.status === 401 && hasStoredAuthState()) {
+        const refresh = await fetch(buildApiUrl("/auth/refresh"), {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -426,19 +417,23 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
 
   const startISO = asString(
     shoppable?.startISO,
-    asString(deal.startISO, new Date(Date.now() + 60 * 60 * 1000).toISOString()),
+    asString(deal.startISO, ""),
   );
   const endISO = asString(
     shoppable?.endISO,
-    asString(deal.endISO, new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()),
+    asString(deal.endISO, ""),
   );
 
-  const supplierId = asString(supplier.id, `deal-supplier:${dealId}`);
-  const campaignId = `deal-campaign:${dealId}`;
-  const campaignName = asString(shoppable?.campaignName, asString(deal.title, "Campaign"));
+  const supplierId = asString(
+    supplier.id,
+    asString(supplier.supplierId, asString(deal.supplierId, asString(deal.sellerId, ""))),
+  ).trim();
+  if (!supplierId) return null;
+  const campaignId = asString(shoppable?.campaignId, asString(deal.campaignId, dealId)).trim();
+  const campaignName = asString(shoppable?.campaignName, asString(deal.title, ""));
   const campaignStatusRaw = asString(shoppable?.status, asString(deal.status, ""));
   const campaignStatus: "Active" | "Paused" = campaignStatusRaw.toLowerCase().includes("pause") ? "Paused" : "Active";
-  const fallbackPoster = asString(shoppable?.heroImageUrl, asString(supplier.logoUrl, BLANK_IMAGE));
+  const fallbackPoster = asString(shoppable?.heroImageUrl, "");
 
   const offerEntries: Offer[] = asArray(shoppable?.offers).map((entry, index) => {
     const offer = asRecord(entry) || {};
@@ -448,19 +443,20 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
       supplierId,
       campaignId,
       type,
-      name: asString(offer.name, `Offer ${index + 1}`),
+      name: asString(offer.name, ""),
       price: Math.max(0, asNumber(offer.price, 0)),
       basePrice: typeof offer.basePrice === "number" ? offer.basePrice : undefined,
       currency: asCurrency(offer.currency, "UGX"),
       stockLeft: asNumber(offer.stockLeft, type === "SERVICE" ? -1 : 0),
       sold: asNumber(offer.sold, 0),
-      catalogPosterUrl: asString(offer.posterUrl, fallbackPoster || BLANK_IMAGE),
+      catalogPosterUrl: asString(offer.posterUrl, fallbackPoster),
       catalogVideoUrl: asString(offer.videoUrl, "") || undefined,
     };
   });
 
   const creatorHandle = (() => {
-    const raw = asString(creator.handle, "@creator");
+    const raw = asString(creator.handle, "");
+    if (!raw) return "";
     return raw.startsWith("@") ? raw : `@${raw}`;
   })();
 
@@ -468,9 +464,9 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
     dealId,
     supplierEntry: {
       id: supplierId,
-      name: asString(supplier.name, "Supplier"),
-      avatarUrl: asString(supplier.logoUrl, BLANK_IMAGE),
-      category: asString(supplier.category, "Supplier"),
+      name: asString(supplier.name, ""),
+      avatarUrl: asString(supplier.logoUrl, ""),
+      category: asString(supplier.category, ""),
     },
     campaignEntry: {
       id: campaignId,
@@ -482,9 +478,9 @@ function mapWorkspaceDealScope(rawDeal: unknown): WorkspaceDealScope | null {
     },
     offerEntries,
     creator: {
-      name: asString(creator.name, "Creator"),
+      name: asString(creator.name, ""),
       handle: creatorHandle,
-      avatarUrl: asString(creator.avatarUrl, BLANK_IMAGE),
+      avatarUrl: asString(creator.avatarUrl, ""),
       verified: asBoolean(creator.verified, false),
     },
     shoppableRecord: shoppable,
@@ -834,37 +830,6 @@ function Section({ title, subtitle, children, right }: { title: string; subtitle
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
   return <div className={cx("rounded-2xl bg-white dark:bg-slate-900/80 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors", className)}>{children}</div>;
 }
-
-/** ------------------------------ Demo Data ------------------------------ */
-
-const DEFAULT_CREATOR = {
-  name: "Creator",
-  handle: "@creator",
-  avatarUrl: BLANK_IMAGE,
-  badge: "Host",
-};
-
-/** UTM presets library (premium) */
-const UTM_PRESETS: UTMTemplate[] = [
-  {
-    id: "utm1",
-    name: "Host IG Story",
-    description: "Strong host attribution for IG story swipes.",
-    params: { utm_source: "instagram", utm_medium: "story", utm_campaign: "host", utm_content: "creator" },
-  },
-  {
-    id: "utm2",
-    name: "TikTok Bio Link",
-    description: "Bio link tracking for TikTok host traffic.",
-    params: { utm_source: "tiktok", utm_medium: "bio", utm_campaign: "host", utm_content: "creator" },
-  },
-  {
-    id: "utm3",
-    name: "Marketplace Featured",
-    description: "Marketplace featured slot traffic.",
-    params: { utm_source: "marketplace", utm_medium: "featured", utm_campaign: "dealz", utm_content: "hero" },
-  },
-];
 
 // function PlayOverlayButton({ onClick, label }: { onClick: () => void; label: string }) {
 //   return (
@@ -1578,14 +1543,37 @@ export default function AdBuilder({
   const {
     data: workspaceState,
     setData: setWorkspaceState,
-  } = useApiResource<DealzMarketplaceWorkspaceResponse>({
-    initialData: EMPTY_MARKETPLACE_STATE,
+    loading: workspaceLoading,
+    error: workspaceError,
+  } = useApiResource<DealzMarketplaceWorkspaceResponse | null>({
+    initialData: null,
     loader: () => creatorApi.dealzMarketplace(),
   });
   const { data: mediaAssets } = useApiResource<MediaAssetRecord[]>({
     initialData: [],
     loader: () => creatorApi.mediaAssets(),
   });
+  const utmPresets = useMemo<UTMTemplate[]>(() => {
+    const templates = asRecord(workspaceState?.templates);
+    const trackingTemplates = asRecord(templates?.tracking);
+    return asArray(trackingTemplates?.utmPresets)
+      .map((entry) => asRecord(entry))
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry))
+      .map((entry) => ({
+        id: asString(entry.id, ""),
+        name: asString(entry.name, ""),
+        description: asString(entry.description, ""),
+        params:
+          asRecord(entry.params)
+            ? Object.fromEntries(
+                Object.entries(asRecord(entry.params) as Record<string, unknown>)
+                  .map(([key, value]) => [key, String(value ?? "")])
+                  .filter(([, value]) => value.trim().length > 0)
+              )
+            : {},
+      }))
+      .filter((entry) => entry.id && entry.name);
+  }, [workspaceState?.templates]);
 
   // "Drawer-like route" support (optional)
   const [drawerMode, setDrawerMode] = useState(isDrawer);
@@ -1673,18 +1661,18 @@ export default function AdBuilder({
   const pickerDealScope = useMemo(() => {
     if (!pickerContext?.dealId) return null;
 
-    const supplierId = pickerContext.supplierId || `deal-supplier:${pickerContext.dealId}`;
-    const campaignId = pickerContext.campaignId || `deal-campaign:${pickerContext.dealId}`;
-    const supplierName = pickerContext.supplierName || "Supplier";
-    const campaignName = pickerContext.campaignName || "Campaign";
+    const supplierId = pickerContext.supplierId || "";
+    const campaignId = pickerContext.campaignId || "";
+    const supplierName = pickerContext.supplierName || "";
+    const campaignName = pickerContext.campaignName || "";
     const campaignStatus = pickerContext.campaignStatus === "Paused" ? "Paused" : "Active";
-    const startISO = pickerContext.startISO || new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const endISO = pickerContext.endISO || new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+    const startISO = typeof pickerContext.startISO === "string" ? pickerContext.startISO : "";
+    const endISO = typeof pickerContext.endISO === "string" ? pickerContext.endISO : "";
 
     const supplierEntry: Supplier = {
       id: supplierId,
       name: supplierName,
-      category: pickerContext.supplierKind || "Seller",
+      category: pickerContext.supplierKind || "",
       avatarUrl: "",
     };
 
@@ -1703,7 +1691,7 @@ export default function AdBuilder({
         supplierId,
         campaignId,
         type: offer.type === "SERVICE" ? "SERVICE" : "PRODUCT",
-        name: offer.name || `Offer ${index + 1}`,
+        name: offer.name || "",
         price: typeof offer.price === "number" ? offer.price : 0,
         basePrice: typeof offer.basePrice === "number" ? offer.basePrice : undefined,
         currency: offer.currency === "UGX" ? "UGX" : "USD",
@@ -1740,7 +1728,7 @@ export default function AdBuilder({
       const matched = workspaceDealScopes.find((deal) => deal.dealId === preferredDealId);
       if (matched) return matched;
     }
-    return workspaceDealScopes[0];
+    return null;
   }, [initialAdId, pickerContext?.dealId, queryDealId, workspaceDealScopes, workspaceState?.selectedId]);
 
   const effectiveDealScope = useMemo(
@@ -1754,30 +1742,34 @@ export default function AdBuilder({
     () =>
       effectiveDealScope
         ? [effectiveDealScope.supplierEntry]
-        : [
+        : (pickerContext?.supplierId || pickerContext?.supplierName)
+          ? [
             {
-              id: pickerContext?.supplierId || "supplier",
-              name: pickerContext?.supplierName || "Supplier",
-              avatarUrl: BLANK_IMAGE,
-              category: pickerContext?.supplierKind || "Supplier",
+              id: pickerContext?.supplierId || "",
+              name: pickerContext?.supplierName || "",
+              avatarUrl: "",
+              category: pickerContext?.supplierKind || "",
             } satisfies Supplier,
-          ],
+          ]
+          : [],
     [effectiveDealScope, pickerContext?.supplierId, pickerContext?.supplierKind, pickerContext?.supplierName],
   );
   const availableCampaigns = useMemo(
     () =>
       effectiveDealScope
         ? [effectiveDealScope.campaignEntry]
-        : [
+        : pickerContext?.campaignId
+          ? [
             {
-              id: pickerContext?.campaignId || "campaign",
-              supplierId: availableSuppliers[0]?.id || "supplier",
-              name: pickerContext?.campaignName || "Campaign",
+              id: pickerContext?.campaignId || "",
+              supplierId: pickerContext?.supplierId || "",
+              name: pickerContext?.campaignName || "",
               status: pickerContext?.campaignStatus === "Paused" ? "Paused" : "Active",
-              startsAtISO: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-              endsAtISO: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+              startsAtISO: typeof pickerContext?.startISO === "string" ? pickerContext.startISO : "",
+              endsAtISO: typeof pickerContext?.endISO === "string" ? pickerContext.endISO : "",
             } satisfies Campaign,
-          ],
+          ]
+          : [],
     [
       availableSuppliers,
       effectiveDealScope,
@@ -1800,22 +1792,19 @@ export default function AdBuilder({
   const previewCreator = useMemo(() => {
     const scopedCreator = effectiveDealScope?.creator;
     const rawHandle = (pickerContext?.creatorHandle || "").trim();
-    const fallbackHandle = scopedCreator?.handle || DEFAULT_CREATOR.handle;
+    const fallbackHandle = scopedCreator?.handle || "";
     const handle = rawHandle ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : fallbackHandle;
     return {
-      name: (pickerContext?.creatorName || "").trim() || scopedCreator?.name || DEFAULT_CREATOR.name,
+      name: (pickerContext?.creatorName || "").trim() || scopedCreator?.name || "",
       handle,
-      avatarUrl: (pickerContext?.creatorAvatarUrl || "").trim() || scopedCreator?.avatarUrl || DEFAULT_CREATOR.avatarUrl,
+      avatarUrl: (pickerContext?.creatorAvatarUrl || "").trim() || scopedCreator?.avatarUrl || "",
       verified: Boolean(pickerContext?.creatorVerified ?? scopedCreator?.verified),
     };
   }, [effectiveDealScope?.creator, pickerContext]);
   const dealScopeLocked = Boolean(effectiveDealScope?.dealId);
 
-  const defaultSupplierId = availableSuppliers[0]?.id || "supplier";
-  const defaultCampaignId =
-    availableCampaigns.find((campaign) => campaign.supplierId === defaultSupplierId)?.id ||
-    availableCampaigns[0]?.id ||
-    "campaign";
+  const defaultSupplierId = effectiveDealScope?.supplierEntry.id || pickerContext?.supplierId || "";
+  const defaultCampaignId = effectiveDealScope?.campaignEntry.id || pickerContext?.campaignId || "";
 
   // default schedule: tomorrow 18:00-19:00
   const defaultStart = useMemo(() => {
@@ -1841,8 +1830,8 @@ export default function AdBuilder({
   const [builder, setBuilder] = useState<BuilderState>(() => ({
     supplierId: defaultSupplierId,
     campaignId: defaultCampaignId,
-    selectedOfferIds: [availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || ""].filter(Boolean),
-    primaryOfferId: availableOffers.find((o) => o.campaignId === defaultCampaignId)?.id || availableOffers[0]?.id || "",
+    selectedOfferIds: [],
+    primaryOfferId: "",
     platforms: ["Instagram"],
     platformOtherList: [],
     platformOtherDraft: "",
@@ -1857,7 +1846,7 @@ export default function AdBuilder({
     landingUrl: "",
     shortDomain: "mldz.link",
     shortSlug: "adz-" + Math.random().toString(36).slice(2, 7),
-    utmPresetId: UTM_PRESETS[0].id,
+    utmPresetId: "",
     utmCustom: {},
     startDate: toDateInputValue(defaultStart),
     startTime: toTimeInputValue(defaultStart),
@@ -1869,7 +1858,7 @@ export default function AdBuilder({
   const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>({});
 
   const supplier = useMemo(
-    () => availableSuppliers.find((entry) => entry.id === builder.supplierId) || availableSuppliers[0],
+    () => availableSuppliers.find((entry) => entry.id === builder.supplierId),
     [availableSuppliers, builder.supplierId],
   );
   const campaignOptions = useMemo(
@@ -1877,7 +1866,7 @@ export default function AdBuilder({
     [availableCampaigns, builder.supplierId],
   );
   const campaign = useMemo(
-    () => availableCampaigns.find((entry) => entry.id === builder.campaignId) || campaignOptions[0],
+    () => availableCampaigns.find((entry) => entry.id === builder.campaignId),
     [availableCampaigns, builder.campaignId, campaignOptions],
   );
 
@@ -1892,7 +1881,7 @@ export default function AdBuilder({
         .filter(Boolean) as Offer[],
     [builder.selectedOfferIds, scopedOffers, availableOffers],
   );
-  const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
+  const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId), [selectedOffers, builder.primaryOfferId]);
 
   useEffect(() => {
     if (!dealScopeLocked) return;
@@ -1901,11 +1890,11 @@ export default function AdBuilder({
       .map((entry) => entry.id);
     setBuilder((prev) => {
       const selectedOfferIds = prev.selectedOfferIds.filter((id) => scopedOfferIds.includes(id));
-      const normalizedSelectedOfferIds = selectedOfferIds.length ? selectedOfferIds : scopedOfferIds.slice(0, 2);
+      const normalizedSelectedOfferIds = selectedOfferIds;
       const primaryOfferId =
         normalizedSelectedOfferIds.includes(prev.primaryOfferId)
           ? prev.primaryOfferId
-          : normalizedSelectedOfferIds[0] || "";
+          : "";
 
       if (
         prev.supplierId === defaultSupplierId &&
@@ -1958,10 +1947,8 @@ export default function AdBuilder({
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);
   const fallbackHeroImageUrl =
-    selectedOffers[0]?.catalogPosterUrl ||
-    asString(effectiveDealScope?.shoppableRecord?.heroImageUrl, "") ||
-    supplier?.avatarUrl ||
-    BLANK_IMAGE;
+    primaryOffer?.catalogPosterUrl ||
+    asString(effectiveDealScope?.shoppableRecord?.heroImageUrl, "");
   const resolvedHeroImageUrl = useResolvedMediaUrl(heroImageAsset?.url || fallbackHeroImageUrl);
   const resolvedHeroVideoPosterUrl = useResolvedMediaUrl(
     heroVideoAsset?.posterUrl || heroImageAsset?.url || fallbackHeroImageUrl
@@ -2018,8 +2005,8 @@ export default function AdBuilder({
   const countdownLabel = useMemo(() => (countdownState === "upcoming" ? "Starts in" : countdownState === "live" ? "Ends in" : "Session ended"), [countdownState]);
 
   // Tracking URL
-  const utmPreset = useMemo(() => UTM_PRESETS.find((p) => p.id === builder.utmPresetId) || UTM_PRESETS[0], [builder.utmPresetId]);
-  const mergedUtm = useMemo(() => ({ ...utmPreset.params, ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
+  const utmPreset = useMemo(() => utmPresets.find((p) => p.id === builder.utmPresetId) ?? null, [builder.utmPresetId, utmPresets]);
+  const mergedUtm = useMemo(() => ({ ...(utmPreset?.params ?? {}), ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
   const shortLink = useMemo(() => buildShortLink(builder.shortDomain, builder.shortSlug, mergedUtm), [builder.shortDomain, builder.shortSlug, mergedUtm]);
 
   const effectivePlatforms = useMemo(() => {
@@ -2078,10 +2065,8 @@ export default function AdBuilder({
     const selectedOfferIds = shoppableOffers
       .map((entry) => asString(entry.id, ""))
       .filter(Boolean);
-    const offerIds = selectedOfferIds.length
-      ? selectedOfferIds
-      : effectiveDealScope.offerEntries.slice(0, 2).map((offer) => offer.id);
-    const primaryOfferId = asString(shoppable.primaryOfferId, offerIds[0] || "");
+    const offerIds = selectedOfferIds;
+    const primaryOfferId = asString(shoppable.primaryOfferId, "");
 
     setBuilder((prev) => ({
       ...prev,
@@ -2190,14 +2175,14 @@ export default function AdBuilder({
 
       const shoppablePayload: Record<string, unknown> = {
         ...existingShoppable,
-        campaignName: campaign?.name || asString(existingDeal?.title, "Campaign"),
+        campaignName: campaign?.name || asString(existingDeal?.title, ""),
         campaignSubtitle: builder.ctaText || asString(existingDeal?.tagline, ""),
         status: generated ? "Generated" : "Draft",
         generated,
         platforms: effectivePlatforms,
         startISO: startsAt.toISOString(),
         endISO: endsAt.toISOString(),
-        heroImageUrl: resolvedHeroImageUrl || BLANK_IMAGE,
+        heroImageUrl: resolvedHeroImageUrl || "",
         heroIntroVideoUrl: heroVideoAsset?.url || "",
         heroIntroVideoPosterUrl: resolvedHeroVideoPosterUrl || "",
         heroDesktopMode: heroVideoAsset?.desktopMode || "modal",
@@ -2218,20 +2203,20 @@ export default function AdBuilder({
         ...(existingDeal || {}),
         id: activeDealId,
         type: asString(existingDeal?.type, "Shoppable Adz"),
-        title: campaign?.name || asString(existingDeal?.title, "Campaign"),
+        title: campaign?.name || asString(existingDeal?.title, ""),
         tagline: builder.ctaText || asString(existingDeal?.tagline, ""),
         supplier: {
           ...asRecord(existingDeal?.supplier),
-          id: supplier?.id || asString(asRecord(existingDeal?.supplier)?.id, `deal-supplier:${activeDealId}`),
-          name: supplier?.name || asString(asRecord(existingDeal?.supplier)?.name, "Supplier"),
-          category: supplier?.category || asString(asRecord(existingDeal?.supplier)?.category, "Supplier"),
-          logoUrl: supplier?.avatarUrl || asString(asRecord(existingDeal?.supplier)?.logoUrl, BLANK_IMAGE),
+          id: supplier?.id || asString(asRecord(existingDeal?.supplier)?.id, ""),
+          name: supplier?.name || asString(asRecord(existingDeal?.supplier)?.name, ""),
+          category: supplier?.category || asString(asRecord(existingDeal?.supplier)?.category, ""),
+          logoUrl: supplier?.avatarUrl || asString(asRecord(existingDeal?.supplier)?.logoUrl, ""),
         },
         creator: {
           ...asRecord(existingDeal?.creator),
           name: previewCreator.name,
           handle: previewCreator.handle,
-          avatarUrl: previewCreator.avatarUrl || BLANK_IMAGE,
+          avatarUrl: previewCreator.avatarUrl || "",
           verified: previewCreator.verified,
         },
         startISO: startsAt.toISOString(),
@@ -2353,8 +2338,10 @@ export default function AdBuilder({
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 
   useEffect(() => {
-    if (!selectedHeroOfferId && primaryOffer?.id) setSelectedHeroOfferId(primaryOffer.id);
-  }, [primaryOffer?.id, selectedHeroOfferId]);
+    if (selectedHeroOfferId && !selectedOffers.some((offer) => offer.id === selectedHeroOfferId)) {
+      setSelectedHeroOfferId("");
+    }
+  }, [selectedHeroOfferId, selectedOffers]);
 
   function openHeroViewer() {
     if (!heroVideoAsset?.url) {
@@ -2636,7 +2623,7 @@ export default function AdBuilder({
   function resetScope(nextSupplierId: string, nextCampaignId: string) {
     const offers = availableOffers.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
     const ids = offers.slice(0, 2).map((o) => o.id);
-    const primary = ids[0] || offers[0]?.id || "";
+    const primary = "";
     setBuilder((prev) => ({
       ...prev,
       supplierId: nextSupplierId,
@@ -2658,7 +2645,7 @@ export default function AdBuilder({
           ? prev.selectedOfferIds
           : [...prev.selectedOfferIds, offerId];
 
-      const nextPrimary = nextIds.includes(prev.primaryOfferId) ? prev.primaryOfferId : nextIds[0] || "";
+      const nextPrimary = nextIds.includes(prev.primaryOfferId) ? prev.primaryOfferId : "";
       return { ...prev, selectedOfferIds: nextIds, primaryOfferId: nextPrimary };
     });
   }
@@ -2679,11 +2666,7 @@ export default function AdBuilder({
     const parsedStock = Number.parseInt(offerDraft.stockLeft, 10);
     const stockLeft = Number.isFinite(parsedStock) ? parsedStock : -1;
     const offerId = `o_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-    const fallbackPoster =
-      supplier?.avatarUrl ||
-      heroImageAsset?.url ||
-      fallbackHeroImageUrl ||
-      BLANK_IMAGE;
+    const fallbackPoster = heroImageAsset?.url || fallbackHeroImageUrl || "";
 
     const nextOffer: Offer = {
       id: offerId,
@@ -2848,6 +2831,24 @@ export default function AdBuilder({
     window.history.back();
   }
 
+  if (workspaceLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading ad builder…
+      </div>
+    );
+  }
+
+  if (workspaceError || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Ad builder data is unavailable.
+        </div>
+      </div>
+    );
+  }
+
   const content = (
     <div className="min-h-screen bg-neutral-50 dark:bg-slate-950 transition-colors">
       {/* Header */}
@@ -2954,7 +2955,7 @@ export default function AdBuilder({
               <Card>
                 <div className="text-xs font-bold text-neutral-600 dark:text-slate-400">Link</div>
                 <div className="mt-1 truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{builder.shortDomain}/{builder.shortSlug}</div>
-                <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">UTM preset: {utmPreset.name}</div>
+                <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">UTM preset: {utmPreset?.name || "Custom"}</div>
               </Card>
               <Card>
                 <div className="text-xs font-bold text-neutral-600 dark:text-slate-400">Schedule</div>
@@ -3021,8 +3022,7 @@ export default function AdBuilder({
                       onChange={(e) => {
                         const nextSupplier = e.target.value;
                         const nextCampaign =
-                          availableCampaigns.find((c) => c.supplierId === nextSupplier)?.id ||
-                          availableCampaigns[0]?.id;
+                          availableCampaigns.find((c) => c.supplierId === nextSupplier)?.id || "";
                         resetScope(nextSupplier, nextCampaign);
                       }}
                     >
@@ -3225,7 +3225,11 @@ export default function AdBuilder({
                       <div key={o.id} className={cx("rounded-2xl p-3 ring-1", selected ? "bg-neutral-50 dark:bg-slate-900/50 ring-neutral-200 dark:ring-slate-800" : "bg-white dark:bg-slate-950 ring-neutral-200 dark:ring-slate-800")}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3 min-w-0">
-                            <img src={o.catalogPosterUrl} alt={o.name} className="h-12 w-12 rounded-2xl object-cover ring-1 ring-neutral-200 dark:ring-slate-700" />
+                            {o.catalogPosterUrl ? (
+                              <img src={o.catalogPosterUrl} alt={o.name} className="h-12 w-12 rounded-2xl object-cover ring-1 ring-neutral-200 dark:ring-slate-700" />
+                            ) : (
+                              <div className="h-12 w-12 rounded-2xl bg-neutral-100 dark:bg-slate-800 ring-1 ring-neutral-200 dark:ring-slate-700" aria-hidden="true" />
+                            )}
                             <div className="min-w-0">
                               <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{o.name}</div>
                               <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">
@@ -3285,7 +3289,11 @@ export default function AdBuilder({
                     </span>
                   </div>
                   <div className="mt-3 overflow-hidden rounded-2xl ring-1 ring-neutral-200 dark:ring-slate-800">
-                    <img src={resolvedHeroImageUrl || fallbackHeroImageUrl || BLANK_IMAGE} alt="Hero" className="h-40 w-full object-cover" />
+                    {resolvedHeroImageUrl || fallbackHeroImageUrl ? (
+                      <img src={resolvedHeroImageUrl || fallbackHeroImageUrl} alt="Hero" className="h-40 w-full object-cover" />
+                    ) : (
+                      <div className="h-40 w-full bg-neutral-100 dark:bg-slate-800" aria-hidden="true" />
+                    )}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Btn tone="primary" onClick={() => openAssetLibraryPicker("hero_image")} left={<Search className="h-4 w-4" />}>
@@ -3386,7 +3394,11 @@ export default function AdBuilder({
                               <Pill tone="neutral">{ITEM_POSTER_REQUIRED.width}×{ITEM_POSTER_REQUIRED.height}</Pill>
                             </div>
                             <div className="mt-2 overflow-hidden rounded-2xl ring-1 ring-neutral-200">
-                              <img src={posterAsset?.url || o.catalogPosterUrl} alt="Poster" className="h-40 w-full object-cover" />
+                              {posterAsset?.url || o.catalogPosterUrl ? (
+                                <img src={posterAsset?.url || o.catalogPosterUrl} alt="Poster" className="h-40 w-full object-cover" />
+                              ) : (
+                                <div className="h-40 w-full bg-neutral-100 dark:bg-slate-800" aria-hidden="true" />
+                              )}
                             </div>
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Btn tone="primary" onClick={() => openAssetLibraryPicker(`item_poster:${o.id}`)} left={<Search className="h-4 w-4" />}>
@@ -3594,7 +3606,7 @@ export default function AdBuilder({
                   </div>
 
                   <div className="mt-3 space-y-2">
-                    {UTM_PRESETS.map((p) => {
+                    {utmPresets.map((p) => {
                       const active = p.id === builder.utmPresetId;
                       return (
                         <button

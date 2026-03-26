@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   AlertTriangle,
   BookOpen,
@@ -23,6 +24,8 @@ import {
   Truck,
   X,
 } from "lucide-react";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:wholesale/WholesaleIncoterms").catch(() => undefined);
 
 /**
  * Wholesale Incoterms Tool (Previewable)

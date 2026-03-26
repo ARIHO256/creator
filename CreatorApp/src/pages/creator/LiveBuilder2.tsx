@@ -139,9 +139,9 @@ function combineDateTime(dateISO: string, timeHHMM: string) {
 }
 
 /**
- * Mock backend validation call.
+ * Validate schedule against selected campaign window.
  */
-function mockValidateSchedule(
+function validateSchedule(
   campaigns: Campaign[],
   campaignId: string | undefined,
   startISO: string,
@@ -460,7 +460,7 @@ export type LiveSessionDraft = {
   publicJoinUrl: string; // the "Live link" that buyers open
   heroAspect: PromoAspect;
 
-  heroImageUrl: string;
+  heroImageUrl?: string;
   heroImageAssetId?: string;
   heroVideoUrl?: string;
   desktopMode: LiveDesktopMode;
@@ -644,7 +644,7 @@ function normalizeSupplierCustomGiveawayPresets(
     .map((g) => ({
       id: String(g.id),
       campaignId: String(g.campaignId || ""),
-      title: String(g.title || "Untitled"),
+      title: String(g.title || ""),
       imageUrl: String(g.imageUrl || ""),
       notes: String(g.notes || ""),
       quantity: Number(g.quantity || 0),
@@ -654,40 +654,27 @@ function normalizeSupplierCustomGiveawayPresets(
 }
 
 function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
-  const now = new Date();
-  const startDateISO = toISODate(now);
-  const startTime = `${pad2(Math.min(23, now.getHours() + 1))}:00`;
-  const endDateISO = startDateISO;
-  const endTime = `${pad2(Math.min(23, now.getHours() + 2))}:30`;
-
-  const title = dealId
-    ? `Live session for dealz`
-    : "Mega Live Dealz — Products + Consultation";
+  const title = "";
 
   return {
     id: seedId,
     title,
-    description:
-      "Join the live for product drops and a short consultation segment. Live-only bundles, Q&A, and limited slots.",
-    tags: ["Live session", "Q&A", "Bundles", "Limited stock"],
+    description: "",
+    tags: [],
     status: "Draft",
 
     supplierId: undefined,
     campaignId: undefined,
     hostId: undefined,
 
-    platforms: ["TikTok Live", "Instagram Live"],
+    platforms: [],
     platformOther: "",
 
-    locationLabel: "Online",
-    publicJoinUrl: dealId
-      ? `https://mylivedealz.com/live/${encodeURIComponent(dealId)}`
-      : `https://mylivedealz.com/live/${seedId}`,
+    locationLabel: "",
+    publicJoinUrl: "",
     heroAspect: "16:9",
 
-    heroImageUrl: "",
     heroImageAssetId: undefined,
-    heroVideoUrl: "",
     desktopMode: "modal",
 
     scheduleAnchor: "start",
@@ -695,10 +682,10 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     durationMinutes: 60,
     timezoneLabel: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
 
-    startDateISO,
-    startTime,
-    endDateISO,
-    endTime,
+    startDateISO: "",
+    startTime: "",
+    endDateISO: "",
+    endTime: "",
 
     products: [],
 
@@ -706,24 +693,7 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
 
     teleprompterScript: "",
 
-    runOfShow: [
-      {
-        id: "seg_1",
-        type: "Opener",
-        title: "Opener + hook",
-        durationMin: 2,
-        notes: "Set the promise. Tease the best deal.",
-      },
-      { id: "seg_2", type: "Product showcase", title: "Feature: #1 best pick", durationMin: 8 },
-      {
-        id: "seg_3",
-        type: "Q&A",
-        title: "Answer top objections",
-        durationMin: 6,
-      },
-      { id: "seg_4", type: "Price drop", title: "Limited price drop + bonus", durationMin: 3 },
-      { id: "seg_5", type: "Closing", title: "Closing + CTA", durationMin: 3 },
-    ],
+    runOfShow: [],
 
     creatives: {
       openerAssetId: undefined,
@@ -735,8 +705,8 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
       ingestUrl: "",
       streamKey: "",
       simulcast: {
-        "TikTok Live": true,
-        "Instagram Live": true,
+        "TikTok Live": false,
+        "Instagram Live": false,
         "YouTube Live": false,
         "Facebook Live": false,
       },
@@ -748,13 +718,13 @@ function defaultDraft(seedId: string, dealId?: string): LiveSessionDraft {
     team: {
       moderators: [],
       cohosts: [],
-      blockedTerms: ["guaranteed", "miracle", "cure"],
+      blockedTerms: [],
       pinnedGuidelines: true,
     },
 
     compliance: {
       requiresDisclosure: true,
-      disclosureText: "Paid partnership. Some links may earn commission.",
+      disclosureText: "",
       restrictedTermsCheck: true,
       musicRightsConfirmed: false,
     },
@@ -767,7 +737,7 @@ function normalizeSupplierEntry(value: unknown): Supplier | null {
   const id = toStr(record.id, "").trim();
   const name = toStr(record.name, "").trim();
   if (!id || !name) return null;
-  const category = toStr(record.kind, toStr(record.category, "Seller"));
+  const category = toStr(record.kind, toStr(record.category, ""));
   const kind = category.toLowerCase() === "provider" ? "Provider" : "Seller";
   return {
     id,
@@ -871,7 +841,7 @@ function normalizeCampaignsFromMarketplaceDeals(
       const live = asRecord(record.live);
       const title = toStr(
         record.title,
-        toStr(live?.title, `Deal campaign ${index + 1}`),
+        toStr(live?.title, ""),
       ).trim();
       const startsAtRaw = toStr(live?.startISO, toStr(record.startISO, ""));
       const endsAtRaw = toStr(live?.endISO, toStr(record.endISO, ""));
@@ -909,24 +879,18 @@ function campaignBelongsToSupplier(
   );
 }
 
-function firstCampaignForSupplier(
-  campaigns: Campaign[],
-  supplier: Supplier | null | undefined,
-): Campaign | undefined {
-  return campaigns.find((entry) => campaignBelongsToSupplier(entry, supplier));
-}
-
 function normalizeHostEntry(value: unknown): Host | null {
   const record = asRecord(value);
   if (!record) return null;
   const id = toStr(record.id, "").trim();
   const name = toStr(record.name, "").trim();
   if (!id || !name) return null;
-  const rawHandle = toStr(record.handle, "@creator").trim();
+  const rawHandle = toStr(record.handle, "").trim();
+  const handle = rawHandle ? (rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`) : "";
   return {
     id,
     name,
-    handle: rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`,
+    handle,
     avatarUrl: toStr(record.avatarUrl, ""),
     verified: toBool(record.verified, false),
     niche: toStr(record.niche, toStr(record.role, "")),
@@ -941,7 +905,8 @@ function normalizeCatalogFromMarketplace(value: unknown): LiveItem[] {
   deals.forEach((deal, dealIndex) => {
     const dealRecord = asRecord(deal);
     if (!dealRecord) return;
-    const campaignId = toStr(dealRecord.id, `deal_${dealIndex + 1}`);
+    const campaignId = toStr(dealRecord.id, "").trim();
+    if (!campaignId) return;
     const fallbackImage =
       toStr(asRecord(dealRecord.live)?.heroImageUrl, "") ||
       toStr(asRecord(dealRecord.shoppable)?.heroImageUrl, "") ||
@@ -959,7 +924,7 @@ function normalizeCatalogFromMarketplace(value: unknown): LiveItem[] {
         id: itemId,
         campaignId,
         kind,
-        name: toStr(record.name, "Offer"),
+        name: toStr(record.name, ""),
         imageUrl: toStr(record.posterUrl, fallbackImage),
         videoUrl: toStr(record.videoUrl, "") || undefined,
         badge: toStr(record.badge, ""),
@@ -985,7 +950,7 @@ function normalizeCatalogFromMarketplace(value: unknown): LiveItem[] {
         id: itemId,
         campaignId,
         kind,
-        name: toStr(record.name, "Featured item"),
+        name: toStr(record.name, ""),
         imageUrl: toStr(record.posterUrl, fallbackImage),
         videoUrl: toStr(record.videoUrl, "") || undefined,
         badge: toStr(record.badge, ""),
@@ -2386,7 +2351,7 @@ function PromoLinkPreviewPhone({
               {/* Top bar */}
               <div className="sticky top-0 z-20 flex items-center justify-between bg-white/90 dark:bg-slate-950/90 px-3 py-2 backdrop-blur shadow-sm transition-colors ring-1 ring-slate-100 dark:ring-slate-800">
                 <div className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {draft.title || "Untitled session"}
+                  {draft.title || ""}
                 </div>
                 <button
                   onClick={() => {
@@ -3648,6 +3613,8 @@ export function LiveBuilderView({
   const builderSessionId = initialSessionId || effectiveDealId || draft.id;
   const [showSharePanel, setShowSharePanel] = useState(false);
   const [step, setStep] = useState<StepKey>("setup");
+  const [builderReady, setBuilderReady] = useState(false);
+  const [builderLoadError, setBuilderLoadError] = useState<string | null>(null);
   const [suppliersData, setSuppliersData] = useState<Supplier[]>([]);
   const [campaignsData, setCampaignsData] = useState<Campaign[]>([]);
   const [hostsData, setHostsData] = useState<Host[]>([]);
@@ -4052,7 +4019,6 @@ export function LiveBuilderView({
       byId(draft.id) ||
       byCampaign(effectiveDealId) ||
       byCampaign(draft.campaignId) ||
-      dashboardSessionsData[0] ||
       null
     );
   }, [
@@ -4150,6 +4116,8 @@ export function LiveBuilderView({
     backendHydratedRef.current = false;
     autoSavePrimedRef.current = false;
     lastPersistedSnapshotRef.current = "";
+    setBuilderReady(false);
+    setBuilderLoadError(null);
 
     let active = true;
     const pickerRestoreInProgress = (() => {
@@ -4258,10 +4226,11 @@ export function LiveBuilderView({
 
         const marketplaceDeals = asArray(marketplace.deals);
         const giveawaysByCampaign: Record<string, SupplierCustomGiveawayPreset[]> = {};
-        marketplaceDeals.forEach((deal, index) => {
+        marketplaceDeals.forEach((deal) => {
           const dealRecord = asRecord(deal);
           if (!dealRecord) return;
-          const campaignId = toStr(dealRecord.id, `campaign_${index + 1}`);
+          const campaignId = toStr(dealRecord.id, "").trim();
+          if (!campaignId) return;
           const live = asRecord(dealRecord.live);
           const rawGiveaways = asArray(live?.giveaways);
           const presets = normalizeSupplierCustomGiveawayPresets(rawGiveaways, campaignId);
@@ -4307,22 +4276,22 @@ export function LiveBuilderView({
             pickerRestoreInProgress || Boolean(pendingPickerAssetRef.current)
           ) && Boolean(previousHeroImageUrl || previousHeroVideoUrl || previousHeroImageAssetId);
           const fallbackSupplierId =
-            prev.supplierId ||
-            suppliers[0]?.id ||
-            undefined;
-          const fallbackSupplier = fallbackSupplierId
-            ? suppliers.find((entry) => entry.id === fallbackSupplierId)
-            : undefined;
+            prev.supplierId && suppliers.some((entry) => entry.id === prev.supplierId)
+              ? prev.supplierId
+              : undefined;
           const fallbackCampaignId =
             prev.campaignId && campaigns.some((entry) => entry.id === prev.campaignId)
               ? prev.campaignId
-              : firstCampaignForSupplier(campaigns, fallbackSupplier)?.id;
+              : undefined;
           const fallback = {
             ...prev,
             id: builderSessionId,
             supplierId: fallbackSupplierId,
             campaignId: fallbackCampaignId,
-            hostId: prev.hostId || hosts[0]?.id || undefined
+            hostId:
+              prev.hostId && hosts.some((entry) => entry.id === prev.hostId)
+                ? prev.hostId
+                : undefined
           };
           const picked = pendingPickerAssetRef.current;
           const applyPickedSelection = (base: LiveSessionDraft) => {
@@ -4339,13 +4308,10 @@ export function LiveBuilderView({
               dealPrefill.supplierId && suppliers.some((entry) => entry.id === dealPrefill.supplierId)
                 ? dealPrefill.supplierId
                 : base.supplierId;
-            const nextSupplier = nextSupplierId
-              ? suppliers.find((entry) => entry.id === nextSupplierId)
-              : undefined;
             const nextCampaignId =
               dealPrefill.campaignId && campaigns.some((entry) => entry.id === dealPrefill.campaignId)
                 ? dealPrefill.campaignId
-                : firstCampaignForSupplier(campaigns, nextSupplier)?.id || base.campaignId;
+                : base.campaignId;
             const nextHostId =
               dealPrefill.hostId && hosts.some((entry) => entry.id === dealPrefill.hostId)
                 ? dealPrefill.hostId
@@ -4438,9 +4404,12 @@ export function LiveBuilderView({
         }
 
         backendHydratedRef.current = true;
+        setBuilderReady(true);
       })
       .catch(() => {
-        // Keep existing optimistic/local draft behavior if backend load fails.
+        if (!active) return;
+        setBuilderLoadError("Live Builder data could not be loaded from the database.");
+        showError("Could not load Live Builder data.");
       });
 
     return () => {
@@ -4477,7 +4446,7 @@ export function LiveBuilderView({
       draft.endDateISO &&
       draft.endTime,
     ) &&
-    mockValidateSchedule(
+    validateSchedule(
       campaignsData,
       draft.campaignId,
       draft.startDateISO,
@@ -4607,7 +4576,7 @@ export function LiveBuilderView({
         };
       }
 
-      const resolvedActiveItemId = activeFeaturedItemId || prev.products[0]?.id;
+      const resolvedActiveItemId = activeFeaturedItemId;
 
       if (
         applyTo === "featuredItemPoster" ||
@@ -4934,6 +4903,30 @@ export function LiveBuilderView({
   }, [buildBuilderPayload, builderSessionId]);
 
   const availableItemsForPins = useMemo(() => draft.products, [draft.products]);
+
+  if (builderLoadError) {
+    return (
+      <div className="space-y-4 pb-28 sm:pb-20" style={{ overflowAnchor: "none" }}>
+        <div className="rounded-3xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/20 p-6 transition-colors">
+          <div className="text-lg font-bold text-rose-900 dark:text-rose-100">Live Builder unavailable</div>
+          <div className="mt-2 text-sm text-rose-800 dark:text-rose-200">{builderLoadError}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!builderReady) {
+    return (
+      <div className="space-y-4 pb-28 sm:pb-20" style={{ overflowAnchor: "none" }}>
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 transition-colors">
+          <div className="text-lg font-bold text-slate-900 dark:text-slate-100">Loading Live Builder</div>
+          <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Waiting for live session data from the database.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 pb-28 sm:pb-20" style={{ overflowAnchor: "none" }}>
@@ -5391,7 +5384,7 @@ export function LiveBuilderView({
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <div className="flex-1">
                       <Input
-                        value={draft.heroImageUrl}
+                        value={draft.heroImageUrl || ""}
                         onChange={(v) =>
                           setDraft((d) => ({
                             ...d,
@@ -6646,11 +6639,7 @@ export function LiveBuilderView({
                             durationMin: 3,
                             notes:
                               "Launch a limited-time offer, confirm the timer, pin the featured item, and remind viewers how to claim before stock or slots run out.",
-                            pinnedItemIds: activeFeaturedItemId
-                              ? [activeFeaturedItemId]
-                              : d.products[0]?.id
-                                ? [d.products[0].id]
-                                : [],
+                            pinnedItemIds: activeFeaturedItemId ? [activeFeaturedItemId] : [],
                           },
                         ],
                       }))
@@ -7543,7 +7532,7 @@ export function LiveBuilderView({
                   </div>
 
                   {(() => {
-                    const val = mockValidateSchedule(
+                    const val = validateSchedule(
                       campaignsData,
                       draft.campaignId,
                       draft.startDateISO,

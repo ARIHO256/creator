@@ -2,6 +2,11 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
 
+import { sellerBackendApi } from "../../lib/backendApi";
+
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:provider/ProviderOnboardingReview").catch(() => undefined);
+
 export default function ProviderOnboardingReview() {
   const { t } = useLocalization();
   return (

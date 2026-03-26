@@ -411,6 +411,20 @@ function queueUiStatePatch(body: Record<string, unknown>) {
   });
 }
 
+const LIVE_TOOL_ROUTE_MAP: Record<string, string> = {
+  "audience-notifications": "/api/tools/audience-notifications",
+  "live-alerts": "/api/tools/live-alerts",
+  overlays: "/api/tools/overlays",
+  "post-live": "/api/tools/post-live",
+  streaming: "/api/tools/streaming",
+  safety: "/api/tools/safety",
+};
+
+function resolveLiveToolPath(key: string) {
+  const normalized = String(key || "").trim();
+  return LIVE_TOOL_ROUTE_MAP[normalized] ?? `/api/tools/${encodeURIComponent(normalized)}`;
+}
+
 export const sellerBackendApi = {
   ensureWorkspaceRole: async (preferredRole?: UserRole) => {
     const session = readSession();
@@ -848,7 +862,7 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   patchSupportTicket: (id: string, body: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/api/support/tickets/${encodeURIComponent(id)}`, {
+    request<Record<string, unknown>>(`/api/help-support/tickets/${encodeURIComponent(id)}`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -1106,6 +1120,29 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getMyCreatorsWorkspace: () => request<Record<string, unknown>>("/api/my-creators/workspace"),
+  getCollaborationProposals: () => request<Array<Record<string, unknown>>>("/api/proposals"),
+  createCollaborationProposal: (body: Record<string, unknown>) =>
+    request<Record<string, unknown>>("/api/proposals", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getCollaborationProposal: (id: string) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}`),
+  updateCollaborationProposal: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  createCollaborationProposalMessage: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  transitionCollaborationProposal: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/transition`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   getCollaborationContracts: () => request<Array<Record<string, unknown>>>("/api/contracts"),
   getCollaborationTask: (id: string) =>
     request<Record<string, unknown>>(`/api/tasks/${encodeURIComponent(id)}`),
@@ -1142,9 +1179,9 @@ export const sellerBackendApi = {
       body: JSON.stringify(body),
     }),
   getLiveToolConfig: (key: string) =>
-    request<Record<string, unknown>>(`/api/tools/${encodeURIComponent(key)}`),
+    request<Record<string, unknown>>(resolveLiveToolPath(key)),
   patchLiveToolConfig: (key: string, body: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/api/tools/${encodeURIComponent(key)}`, {
+    request<Record<string, unknown>>(resolveLiveToolPath(key), {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -1170,5 +1207,5 @@ export const sellerBackendApi = {
   getMediaWorkspace: () => request<Record<string, unknown>>("/api/media/workspace"),
   getMarketplaceListings: () => request<Array<Record<string, unknown>>>("/api/marketplace/listings"),
   getListingDetail: (id: string) =>
-    request<Record<string, unknown>>(`/api/listings/${encodeURIComponent(id)}`),
+    request<Record<string, unknown>>(`/api/seller/listings/${encodeURIComponent(id)}`),
 };

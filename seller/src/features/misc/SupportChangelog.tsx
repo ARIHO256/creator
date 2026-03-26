@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { sellerBackendApi } from "../../lib/backendApi";
 import {
+
   Bell,
   Calendar,
   Check,
@@ -22,6 +23,8 @@ import {
   Users,
   X,
 } from "lucide-react";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:misc/SupportChangelog").catch(() => undefined);
 
 /**
  * Changelog (Previewable)

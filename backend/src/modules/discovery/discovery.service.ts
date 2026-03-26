@@ -1383,6 +1383,31 @@ export class DiscoveryService {
     const currentValue = activeContracts.reduce((sum, entry) => sum + Number(entry.value || 0), 0);
     const lifetimeRevenue = params.contracts.reduce((sum, entry) => sum + Number(entry.value || 0), 0);
     const rating = this.resolveRating(params.profile.rating, params.reviews);
+    const avgConversion = this.computeConversion(Number(params.profile.totalSalesDriven || 0), params.profile.followers);
+    const trustBadges = this.buildTrustBadges(params.profile, rating, activeContracts.length);
+    const nextAction =
+      openInvites.length > 0
+        ? `${openInvites.length} pending invite${openInvites.length === 1 ? '' : 's'}`
+        : activeContracts.length > 0
+          ? 'Review active deliverables'
+          : 'No active deliverables';
+    const activeCampaigns = params.campaigns
+      .filter((entry) => ['ACTIVE', 'DRAFT'].includes(String(entry.status)))
+      .slice(0, 3)
+      .map((entry) => ({
+        id: entry.id,
+        name: entry.title,
+        type:
+          this.readString(entry.metadata, 'campaignType') ||
+          this.readString(entry.metadata, 'type') ||
+          this.readString(entry.metadata, 'promoType') ||
+          'Campaign',
+        stage: this.formatCampaignStatus(entry.status),
+        approvalMode: this.readString(entry.metadata, 'approvalMode') || 'Manual'
+      }));
+    const latestContract = [...params.contracts].sort((left, right) =>
+      String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
+    )[0];
 
     return {
       id: params.profile.userId,
@@ -1398,25 +1423,26 @@ export class DiscoveryService {
       relationship: activeContracts.length > 0 ? 'Active collab' : 'Past collab',
       following: params.followed,
       favourite: false,
+      collabInviteStatus: openInvites.length > 0 ? 'pending' : 'none',
+      primaryContact: `@${params.profile.handle}`,
       nextLive: latestCampaign?.startAt ? this.formatCampaignSlot(latestCampaign.startAt) : 'Not scheduled',
-      nextAction:
-        openInvites.length > 0
-          ? `${openInvites.length} pending invite${openInvites.length === 1 ? '' : 's'}`
-          : activeContracts.length > 0
-            ? 'Review active deliverables'
-            : 'No active deliverables',
+      nextAction,
       activeContracts: activeContracts.length,
       activeContractIds: activeContracts.map((entry) => entry.id),
       currentValue,
       lifetimeRevenue,
-      activeCampaigns: params.campaigns
-        .filter((entry) => ['ACTIVE', 'DRAFT'].includes(String(entry.status)))
-        .slice(0, 3)
-        .map((entry) => ({
-          id: entry.id,
-          name: entry.title,
-          stage: this.formatCampaignStatus(entry.status)
-        })),
+      avgConversion,
+      campaignsCount: params.campaigns.length,
+      lastCampaign: latestCampaign?.title || 'No campaigns yet',
+      lastResult:
+        activeContracts.length > 0
+          ? `${activeContracts.length} active contract${activeContracts.length === 1 ? '' : 's'}`
+          : latestContract
+            ? `${String(latestContract.status || 'Completed').toLowerCase()} contract`
+            : 'Awaiting next collaboration',
+      openProposals: openInvites.length,
+      trustBadges,
+      activeCampaigns,
       queues: {
         pendingSupplier: openInvites.length,
         pendingAdmin: activeContracts.filter((entry) => this.readString(entry.metadata, 'approvalMode') === 'Manual').length,

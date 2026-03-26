@@ -442,3 +442,325 @@ test('WorkflowService onboarding sync promotes underused onboarding fields into 
   assert.deepEqual((accountApprovals.get('user-1') as any)?.metadata?.submissionSnapshot?.providerServices, ['consulting', 'production']);
   assert.equal((accountApprovals.get('user-1') as any)?.metadata?.submissionSnapshot?.policies?.termsUrl, 'https://provider.example.com/terms');
 });
+
+test('WorkflowService.onboarding returns a default draft when workflow storage tables are missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    user: {
+      async findUnique() {
+        return { role: 'CREATOR' };
+      }
+    },
+    workflowRecord: {
+      async findUnique() {
+        throw schemaError;
+      },
+      async upsert() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const onboarding = await service.onboarding('user-1');
+
+  assert.equal(onboarding.profileType, 'CREATOR');
+  assert.equal(onboarding.status, 'draft');
+  assert.deepEqual(onboarding.support, { whatsapp: '', email: '', phone: '' });
+});
+
+test('WorkflowService.screenState returns an empty object when workflow storage tables are missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    workflowScreenState: {
+      async findUnique() {
+        throw schemaError;
+      }
+    },
+    workflowRecord: {
+      async findUnique() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const screenState = await service.screenState('user-1', 'creator-settings');
+
+  assert.deepEqual(screenState, {});
+});
+
+test('WorkflowService.uploads returns an empty list when upload storage is missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    uploadSession: {
+      async findMany() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const uploads = await service.uploads('user-1');
+
+  assert.deepEqual(uploads, []);
+});
+
+test('WorkflowService.uploads falls back to stored uploads when the upload query fails unexpectedly', async () => {
+  const userSettings = new Map<string, Record<string, unknown>>();
+  userSettings.set('user-1:workflow_fallback:uploads', {
+    entries: [
+      {
+        id: 'upload-1',
+        name: 'avatar.png',
+        kind: 'IMAGE',
+        status: 'UPLOADED',
+        createdAt: '2026-03-25T09:00:00.000Z'
+      }
+    ]
+  });
+  const prisma = {
+    uploadSession: {
+      async findMany() {
+        throw new Error('sort buffer exhausted');
+      }
+    },
+    userSetting: {
+      async findUnique({ where }: any) {
+        const payload = userSettings.get(`${where.userId_key.userId}:${where.userId_key.key}`);
+        return payload ? { payload } : null;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+
+  const uploads = await service.uploads('user-1');
+
+  assert.equal(uploads.length, 1);
+  assert.equal((uploads[0] as any).id, 'upload-1');
+  assert.equal((uploads[0] as any).name, 'avatar.png');
+});
+
+test('WorkflowService.uploads skips malformed upload rows instead of failing the whole response', async () => {
+  const prisma = {
+    uploadSession: {
+      async findMany() {
+        return [
+          {
+            id: 'upload-good',
+            purpose: 'general',
+            fileName: 'avatar.png',
+            kind: 'IMAGE',
+            mimeType: 'image/png',
+            sizeBytes: 42,
+            extension: 'png',
+            checksum: null,
+            storageProvider: 'LOCAL',
+            storageKey: 'user-1/avatar.png',
+            visibility: 'PRIVATE',
+            status: 'UPLOADED',
+            expiresAt: new Date('2026-03-26T00:00:00.000Z'),
+            metadata: { url: '/uploads/avatar.png' },
+            createdAt: new Date('2026-03-25T09:00:00.000Z'),
+            updatedAt: new Date('2026-03-25T09:00:00.000Z')
+          },
+          {
+            id: 'upload-bad',
+            purpose: 'general',
+            get fileName() {
+              throw new Error('corrupt row');
+            },
+            kind: 'IMAGE',
+            mimeType: 'image/png',
+            sizeBytes: 42,
+            extension: 'png',
+            checksum: null,
+            storageProvider: 'LOCAL',
+            storageKey: 'user-1/bad.png',
+            visibility: 'PRIVATE',
+            status: 'UPLOADED',
+            expiresAt: new Date('2026-03-26T00:00:00.000Z'),
+            metadata: { url: '/uploads/bad.png' },
+            createdAt: new Date('2026-03-25T09:00:00.000Z'),
+            updatedAt: new Date('2026-03-25T09:00:00.000Z')
+          }
+        ];
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+
+  const uploads = await service.uploads('user-1');
+
+  assert.equal(uploads.length, 1);
+  assert.equal((uploads[0] as any).id, 'upload-good');
+  assert.equal((uploads[0] as any).name, 'avatar.png');
+});
+
+test('WorkflowService.onboardingLookups returns defaults when system content storage is missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const prisma = {
+    systemContent: {
+      async findUnique() {
+        throw schemaError;
+      },
+      async create() {
+        throw schemaError;
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  const lookups = await service.onboardingLookups();
+
+  assert.deepEqual(lookups.languages, []);
+  assert.deepEqual(lookups.payoutMethods, []);
+  assert.deepEqual(lookups.payoutRegions, { alipay: [], wechat: [] });
+});
+
+test('WorkflowService.patchScreenState persists to user settings when workflow tables are missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const userSettings = new Map<string, Record<string, unknown>>();
+  const prisma = {
+    workflowScreenState: {
+      async findUnique() {
+        throw schemaError;
+      },
+      async upsert() {
+        throw schemaError;
+      }
+    },
+    workflowRecord: {
+      async findUnique() {
+        throw schemaError;
+      },
+      async upsert() {
+        throw schemaError;
+      }
+    },
+    userSetting: {
+      async findUnique({ where }: any) {
+        const payload = userSettings.get(`${where.userId_key.userId}:${where.userId_key.key}`);
+        return payload ? { payload } : null;
+      },
+      async upsert({ where, update, create }: any) {
+        const key = `${where.userId_key.userId}:${where.userId_key.key}`;
+        const payload = userSettings.has(key) ? update.payload : create.payload;
+        userSettings.set(key, payload);
+        return { payload };
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  await service.patchScreenState('user-1', 'creator-settings', { profile: { name: 'Saved Name' } });
+  const restored = await service.screenState('user-1', 'creator-settings');
+
+  assert.equal((restored as any).profile.name, 'Saved Name');
+  assert.equal((userSettings.get('user-1:workflow_fallback:screen_state:creator-settings') as any)?.profile?.name, 'Saved Name');
+});
+
+test('WorkflowService.onboarding persists to user settings when workflow tables are missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const userSettings = new Map<string, Record<string, unknown>>();
+  const prisma = {
+    user: {
+      async findUnique() {
+        return { role: 'CREATOR' };
+      }
+    },
+    workflowRecord: {
+      async findUnique() {
+        throw schemaError;
+      },
+      async upsert() {
+        throw schemaError;
+      }
+    },
+    userSetting: {
+      async findUnique({ where }: any) {
+        const payload = userSettings.get(`${where.userId_key.userId}:${where.userId_key.key}`);
+        return payload ? { payload } : null;
+      },
+      async upsert({ where, update, create }: any) {
+        const key = `${where.userId_key.userId}:${where.userId_key.key}`;
+        const payload = userSettings.has(key) ? update.payload : create.payload;
+        userSettings.set(key, payload);
+        return { payload };
+      }
+    },
+    creatorProfile: {
+      async findUnique() {
+        return null;
+      },
+      async create() {
+        return { id: 'creator-1' };
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, { assertNodesInTree: async () => undefined } as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  await service.patchOnboarding('user-1', { owner: 'Saved Creator', storeSlug: 'saved-creator' } as any);
+  const restored = await service.onboarding('user-1');
+
+  assert.equal(restored.owner, 'Saved Creator');
+  assert.equal((userSettings.get('user-1:workflow_fallback:onboarding:creator') as any)?.owner, 'Saved Creator');
+});
+
+test('WorkflowService.createUpload persists fallback uploads to user settings when upload storage is missing', async () => {
+  const schemaError = { code: 'P2021' };
+  const userSettings = new Map<string, Record<string, unknown>>();
+  const prisma = {
+    uploadSession: {
+      async findMany() {
+        throw schemaError;
+      },
+      async create() {
+        throw schemaError;
+      }
+    },
+    userSetting: {
+      async findUnique({ where }: any) {
+        const payload = userSettings.get(`${where.userId_key.userId}:${where.userId_key.key}`);
+        return payload ? { payload } : null;
+      },
+      async upsert({ where, update, create }: any) {
+        const key = `${where.userId_key.userId}:${where.userId_key.key}`;
+        const payload = userSettings.has(key) ? update.payload : create.payload;
+        userSettings.set(key, payload);
+        return { payload };
+      }
+    }
+  };
+
+  const service = new WorkflowService({ get() { return undefined; } } as any, prisma as any, {} as any, {} as any);
+  (service as any).isMissingSchemaObjectError = (error: unknown) => (error as { code?: string })?.code === 'P2021';
+
+  await service.createUpload('user-1', {
+    name: 'avatar.png',
+    kind: 'IMAGE',
+    mimeType: 'image/png',
+    storageKey: 'user-1/avatar.png',
+    purpose: 'creator_profile_photo',
+    metadata: { fieldKey: 'profile.profilePhotoName' }
+  } as any);
+  const uploads = await service.uploads('user-1');
+
+  assert.equal(uploads.length, 1);
+  assert.equal((uploads[0] as any).name, 'avatar.png');
+  assert.equal(((userSettings.get('user-1:workflow_fallback:uploads') as any)?.entries || []).length, 1);
+});

@@ -51,45 +51,43 @@ function mySellerNumericId(value: string) {
 }
 
 function mySellerInitials(name?: string | null) {
-  return (
-    String(name || "SP")
-      .split(" ")
-      .map((part) => part.trim()[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "SP"
-  );
+  return String(name ?? "")
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
 function toMySeller(record: PublicSellerRecord): MySeller {
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
   const categories = Array.isArray(record.categories) && record.categories.length > 0
     ? record.categories
-    : [String(record.category || "General")];
+    : [String(record.category || "")].filter(Boolean);
   const activeContracts = Number((metadata as { activeContracts?: unknown }).activeContracts || 0);
 
   return {
     id: mySellerNumericId(String(record.id)),
     apiId: String(record.id),
-    name: String(record.displayName || record.name || "Supplier"),
+    name: String(record.displayName || record.name || ""),
     initials: mySellerInitials(record.displayName || record.name),
-    tagline: String(record.description || "Supplier profile"),
+    tagline: String(record.description || ""),
     categories,
     relationship: activeContracts > 0 ? "Active collab" : "Past collab",
     lifetimeRevenue: Number((metadata as { lifetimeRevenue?: unknown }).lifetimeRevenue || 0),
     currentValue: Number((metadata as { currentValue?: unknown }).currentValue || 0),
     avgConversion: Number((metadata as { avgConversion?: unknown }).avgConversion || 0),
     campaignsCount: Number((metadata as { campaignsCount?: unknown }).campaignsCount || 0),
-    lastCampaign: String((metadata as { lastCampaign?: unknown }).lastCampaign || "Campaign"),
-    lastResult: String((metadata as { lastResult?: unknown }).lastResult || "No campaign summary yet"),
+    lastCampaign: String((metadata as { lastCampaign?: unknown }).lastCampaign || ""),
+    lastResult: String((metadata as { lastResult?: unknown }).lastResult || ""),
     openProposals: Number((metadata as { openProposals?: unknown }).openProposals || 0),
     activeContracts,
     rating: Number(record.rating || 0),
     trustBadges: Array.isArray((metadata as { trustBadges?: unknown[] }).trustBadges) ? ((metadata as { trustBadges?: unknown[] }).trustBadges as unknown[]).map((item) => String(item)) : [],
-    primaryContact: String((metadata as { primaryContact?: unknown }).primaryContact || "Brand team"),
-    nextLive: String((metadata as { nextLive?: unknown }).nextLive || "Not scheduled"),
-    nextAction: String((metadata as { nextAction?: unknown }).nextAction || "Review supplier workspace"),
+    primaryContact: String((metadata as { primaryContact?: unknown }).primaryContact || ""),
+    nextLive: String((metadata as { nextLive?: unknown }).nextLive || ""),
+    nextAction: String((metadata as { nextAction?: unknown }).nextAction || ""),
     following: Boolean((metadata as { following?: unknown }).following),
     favourite: Boolean((metadata as { favourite?: unknown }).favourite)
   };
@@ -124,8 +122,8 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
     if (seller) {
       setPitchRecipient(seller);
     } else {
-      // If global "Pitch Suppliers" is clicked, maybe pick selected or default
-      setPitchRecipient(selectedSeller || mySellers[0] || null);
+      // If global "Pitch Suppliers" is clicked, use explicit current selection only.
+      setPitchRecipient(selectedSeller || null);
     }
     setIsPitchDrawerOpen(true);
   };
@@ -161,8 +159,8 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
   }, [mySellers, search, relationshipFilter, viewTab]);
 
   const selectedSeller = useMemo<MySeller | null>(() => {
-    if (selectedSellerId == null) return filteredSellers[0] ?? null;
-    return filteredSellers.find((s) => s.id === selectedSellerId) ?? filteredSellers[0] ?? null;
+    if (selectedSellerId == null) return null;
+    return filteredSellers.find((s) => s.id === selectedSellerId) ?? null;
   }, [filteredSellers, selectedSellerId]);
 
   const toggleFollow = (id: number) => {
@@ -408,7 +406,7 @@ export function MySellersPage({ onChangePage }: MySellersPageProps) {
         onClose={() => setIsPitchDrawerOpen(false)}
         recipientName={pitchRecipient?.name || ""}
         recipientInitials={pitchRecipient?.initials || ""}
-        defaultCategory={pitchRecipient?.categories?.[0] || "General"}
+        defaultCategory={pitchRecipient?.categories?.[0] || ""}
       />
     </div>
   );

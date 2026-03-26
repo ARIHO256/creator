@@ -1,6 +1,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { sellerBackendApi } from "../../../lib/backendApi";
+
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/collabs/SupplierContractsPage").catch(() => undefined);
+
 /**
  * SupplierContractsPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)
@@ -46,6 +51,126 @@ function money(n, currency = "USD") {
   } catch {
     return `${currency} ${Math.round(v).toLocaleString()}`;
   }
+}
+
+function formatContractDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function mapContractStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "COMPLETED") return "Completed";
+  if (normalized === "TERMINATED" || normalized === "CANCELLED") return "Terminated";
+  if (normalized === "TERMINATION_REQUESTED") return "Terminated";
+  if (normalized === "DRAFT" || normalized === "PENDING" || normalized === "UPCOMING") return "Upcoming";
+  return "Active";
+}
+
+function mapContractDeliverables(deliverables, totalTasks) {
+  const mapped = (Array.isArray(deliverables) ? deliverables : [])
+    .map((entry, index) => {
+      if (!entry || typeof entry !== "object") return null;
+      return {
+        id: String(entry.id || index + 1),
+        label: String(entry.label || entry.title || `Deliverable ${index + 1}`),
+        due: String(entry.due || entry.dueAt || "TBD"),
+        status: String(entry.status || (entry.done || entry.completed ? "Approved" : "Pending"))
+      };
+    })
+    .filter(Boolean);
+
+  if (mapped.length) return mapped;
+
+  return Array.from({ length: Math.max(0, Number(totalTasks || 0)) }).map((_, index) => ({
+    id: String(index + 1),
+    label: `Deliverable ${index + 1}`,
+    due: "TBD",
+    status: "Pending"
+  }));
+}
+
+function mapContractSchedule(metadata, record) {
+  if (Array.isArray(metadata.schedule)) {
+    return metadata.schedule
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        return {
+          label: String(entry.label || "Stage"),
+          start: Number(entry.start || 0),
+          end: Number(entry.end || 0)
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (record.startAt || record.endAt) {
+    return [{ label: "Delivery window", start: 0, end: 100 }];
+  }
+
+  return [];
+}
+
+function mapContractTimeline(metadata, record) {
+  if (Array.isArray(metadata.timeline)) {
+    return metadata.timeline
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        return {
+          date: String(entry.date || formatContractDate(record.createdAt) || "—"),
+          label: String(entry.label || "Contract updated")
+        };
+      })
+      .filter(Boolean);
+  }
+
+  const events = [];
+  if (record.createdAt) {
+    events.push({ date: formatContractDate(record.createdAt), label: "Contract created" });
+  }
+  if (record.terminationRequestedAt) {
+    events.push({ date: formatContractDate(record.terminationRequestedAt), label: "Termination requested" });
+  } else if (record.updatedAt && record.updatedAt !== record.createdAt) {
+    events.push({ date: formatContractDate(record.updatedAt), label: "Contract updated" });
+  }
+  return events;
+}
+
+function toContract(record) {
+  const metadata = record?.metadata && typeof record.metadata === "object" ? record.metadata : {};
+  const status = mapContractStatus(record.status);
+  const deliverables = mapContractDeliverables(record.deliverables, record.totalTasks || 0);
+  const approvedCount = deliverables.filter((item) => item.status === "Approved").length;
+  const totalTasks = Number(record.totalTasks || deliverables.length || 0);
+
+  return {
+    id: String(record.id || ""),
+    creator: String(record.creatorName || record.creator || ""),
+    campaign: String(record.campaignName || record.campaign || record.title || ""),
+    period:
+      String(metadata.period || "").trim() ||
+      [formatContractDate(record.startAt), formatContractDate(record.endAt)].filter(Boolean).join(" – ") ||
+      [formatContractDate(record.createdAt), formatContractDate(record.updatedAt)].filter(Boolean).join(" – ") ||
+      "Current term",
+    status,
+    value: Number(record.value || 0),
+    currency: String(record.currency || "USD"),
+    remainingTasks: Math.max(0, totalTasks - approvedCount),
+    totalTasks,
+    payoutStatus: String(record.payoutStatus || metadata.payoutStatus || (status === "Completed" ? "Ready for payout" : "In progress")),
+    health: String(record.health || metadata.health || (status === "Terminated" ? "Terminated" : "On track")),
+    healthScore: Number(record.healthScore || metadata.healthScore || (status === "Terminated" ? 25 : 80)),
+    schedule: mapContractSchedule(metadata, record),
+    deliverables,
+    timeline: mapContractTimeline(metadata, record),
+    approvalMode: String(record.approvalMode || metadata.approvalMode || "Manual"),
+    collabMode: String(record.collabMode || metadata.collabMode || "Invite-Only"),
+    creatorUsageDecision: String(record.creatorUsageDecision || metadata.creatorUsageDecision || "I will use a Creator"),
+    multiCreatorCampaign: Boolean(record.multiCreatorCampaign || metadata.multiCreatorCampaign),
+    _rawStatus: String(record.status || "")
+  };
 }
 
 /* -------------------------------- Toast -------------------------------- */
@@ -382,7 +507,7 @@ function ContractRow({ contract, active, onSelect }) {
   );
 }
 
-function ContractDetail({ contract, onUpdateContract }) {
+function ContractDetail({ contract, onUpdateContract, onRequestTermination }) {
   const [terminationReason, setTerminationReason] = useState("for-cause");
   const [terminationExplanation, setTerminationExplanation] = useState("");
   const [terminationError, setTerminationError] = useState("");
@@ -393,6 +518,10 @@ function ContractDetail({ contract, onUpdateContract }) {
 
   const [rejectId, setRejectId] = useState(null);
 
+  useEffect(() => {
+    setTerminationStatus(contract?._rawStatus === "TERMINATION_REQUESTED" ? "Requested" : "Idle");
+  }, [contract?.id, contract?._rawStatus]);
+
   const handleRequestTermination = async () => {
     if (!terminationExplanation.trim()) {
       setTerminationError("Please provide a clear explanation before requesting termination.");
@@ -401,13 +530,19 @@ function ContractDetail({ contract, onUpdateContract }) {
     setTerminationError("");
     setIsSimulating(true);
 
-    setTimeout(() => {
-      // Supplier-side: notify Creator + EVzone Admin
+    try {
+      const next = await onRequestTermination(contract.id, {
+        reason: `${terminationReason}: ${terminationExplanation.trim()}`
+      });
+      onUpdateContract(next);
       setNotificationsSentTo(["Creator", "EVzone Admin"]);
       setTerminationStatus("Requested");
-      setIsSimulating(false);
       toast("Termination request sent");
-    }, 1200);
+    } catch {
+      setTerminationError("Termination request failed. Check backend connectivity and retry.");
+    } finally {
+      setIsSimulating(false);
+    }
   };
 
   const printContract = () => {
@@ -754,9 +889,33 @@ export default function SupplierContractsPage() {
   const [activeFilter, setActiveFilter] = useState("Active");
   const [selectedContractId, setSelectedContractId] = useState("");
 
-  const [dataState, setDataState] = useState("ready"); // ready | loading | error
+  const [dataState, setDataState] = useState("loading"); // ready | loading | error
 
   const [contracts, setContracts] = useState<Array<Record<string, any>>>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadContracts = async () => {
+      setDataState("loading");
+      try {
+        const records = await sellerBackendApi.getCollaborationContracts();
+        if (!active) return;
+        setContracts(Array.isArray(records) ? records.map(toContract) : []);
+        setDataState("ready");
+      } catch {
+        if (!active) return;
+        setContracts([]);
+        setDataState("error");
+        toast("Contracts failed to load");
+      }
+    };
+
+    void loadContracts();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredContracts = useMemo(() => {
     return contracts.filter((c) => {
@@ -770,6 +929,11 @@ export default function SupplierContractsPage() {
 
   const updateContract = (next) => {
     setContracts((prev) => prev.map((c) => (c.id === next.id ? next : c)));
+  };
+
+  const requestTermination = async (id, payload) => {
+    const updated = await sellerBackendApi.terminateCollaborationContract(id, payload);
+    return toContract(updated);
   };
 
   const badge = (
@@ -849,7 +1013,18 @@ export default function SupplierContractsPage() {
                   <button
                     type="button"
                     className="px-4 py-2 rounded-full bg-slate-900 text-white text-[11px] font-extrabold"
-                    onClick={() => setDataState("ready")}
+                    onClick={async () => {
+                      setDataState("loading");
+                      try {
+                        const records = await sellerBackendApi.getCollaborationContracts();
+                        setContracts(Array.isArray(records) ? records.map(toContract) : []);
+                        setDataState("ready");
+                      } catch {
+                        setContracts([]);
+                        setDataState("error");
+                        toast("Contracts failed to load");
+                      }
+                    }}
                   >
                     Retry
                   </button>
@@ -886,7 +1061,11 @@ export default function SupplierContractsPage() {
                 <p className="text-xs max-w-xs text-center">You will see scope, deliverable schedule, health and payout status for the selected contract.</p>
               </div>
             ) : (
-              <ContractDetail contract={selectedContract} onUpdateContract={updateContract} />
+              <ContractDetail
+                contract={selectedContract}
+                onUpdateContract={updateContract}
+                onRequestTermination={requestTermination}
+              />
             )}
           </section>
         </div>

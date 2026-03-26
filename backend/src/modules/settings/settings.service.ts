@@ -155,32 +155,37 @@ export class SettingsService {
       rows
         .filter((row) => this.matchesRoleMetadata(row.metadata, role))
         .map((row) => {
-        const metadata =
-          row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
-            ? (row.metadata as Record<string, unknown>)
-            : {};
-        return {
-          id: row.id,
-          type: typeof metadata.type === 'string'
-            ? metadata.type
-            : row.kind === 'collaboration_invite'
-              ? 'invite'
-              : row.kind === 'collaboration_invite_response'
-                ? 'proposal'
-                : 'system',
-          title: row.title,
-          message: row.body,
-          kind: row.kind,
-          read: Boolean(row.readAt),
-          readAt: row.readAt,
-          brand: typeof metadata.sellerName === 'string' ? metadata.sellerName : typeof metadata.brand === 'string' ? metadata.brand : null,
-          campaign: typeof metadata.campaignTitle === 'string' ? metadata.campaignTitle : null,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-          metadata
-        };
+          const metadata =
+            row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+              ? (row.metadata as Record<string, unknown>)
+              : {};
+          return {
+            id: row.id,
+            type: typeof metadata.type === 'string'
+              ? metadata.type
+              : row.kind === 'collaboration_invite'
+                ? 'invite'
+                : row.kind === 'collaboration_invite_response'
+                  ? 'proposal'
+                  : 'system',
+            title: row.title,
+            message: row.body,
+            kind: row.kind,
+            read: Boolean(row.readAt),
+            readAt: row.readAt,
+            brand: typeof metadata.sellerName === 'string' ? metadata.sellerName : typeof metadata.brand === 'string' ? metadata.brand : null,
+            campaign: typeof metadata.campaignTitle === 'string' ? metadata.campaignTitle : null,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            metadata
+          };
         })
-    );
+    ).catch((error) => {
+      if (this.isMissingSchemaObjectError(error)) {
+        return [];
+      }
+      throw error;
+    });
   }
   async notificationRead(userId: string, role: string, id: string) {
     const existing = await this.prisma.notification.findFirst({
@@ -279,52 +284,55 @@ export class SettingsService {
   }
 
   async security(userId: string, body: UpdateRolesSecurityDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    this.ensureWorkspaceRoleManager(workspace);
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      this.ensureWorkspaceRoleManager(workspace);
 
-    const nextSecurity = {
-      ...workspace.workspaceSecurity,
-      ...(body.require2FA !== undefined ? { require2FA: body.require2FA } : {}),
-      ...(body.allowExternalInvites !== undefined ? { allowExternalInvites: body.allowExternalInvites } : {}),
-      ...(body.supplierGuestExpiryHours !== undefined
-        ? { supplierGuestExpiryHours: Math.max(1, Math.min(168, Math.round(body.supplierGuestExpiryHours))) }
-        : {}),
-      ...(body.requireApprovalForPayouts !== undefined ? { requireApprovalForPayouts: body.requireApprovalForPayouts } : {}),
-      ...(body.payoutApprovalThresholdUsd !== undefined
-        ? { payoutApprovalThresholdUsd: Math.max(0, Math.round(body.payoutApprovalThresholdUsd)) }
-        : {}),
-      ...(body.restrictSensitiveExports !== undefined ? { restrictSensitiveExports: body.restrictSensitiveExports } : {}),
-      ...(body.sessionTimeoutMins !== undefined
-        ? { sessionTimeoutMins: Math.max(5, Math.min(1440, Math.round(body.sessionTimeoutMins))) }
-        : {}),
-      ...(body.inviteDomainAllowlist !== undefined
-        ? { inviteDomainAllowlist: body.inviteDomainAllowlist.map((entry) => entry.trim().toLowerCase()).filter(Boolean) }
-        : {})
-    };
+      const nextSecurity = this.applyWorkspaceSecurityPatch(workspace.workspaceSecurity, body);
 
-    const record = await this.prisma.workspace.update({
-      where: { id: workspace.workspace.id },
-      data: {
-        require2FA: nextSecurity.require2FA,
-        allowExternalInvites: nextSecurity.allowExternalInvites,
-        supplierGuestExpiryHours: nextSecurity.supplierGuestExpiryHours,
-        inviteDomainAllowlist: nextSecurity.inviteDomainAllowlist as Prisma.InputJsonValue,
-        requireApprovalForPayouts: nextSecurity.requireApprovalForPayouts,
-        payoutApprovalThresholdUsd: nextSecurity.payoutApprovalThresholdUsd,
-        restrictSensitiveExports: nextSecurity.restrictSensitiveExports,
-        sessionTimeoutMins: nextSecurity.sessionTimeoutMins
+      const record = await this.prisma.workspace.update({
+        where: { id: workspace.workspace.id },
+        data: {
+          require2FA: nextSecurity.require2FA,
+          allowExternalInvites: nextSecurity.allowExternalInvites,
+          supplierGuestExpiryHours: nextSecurity.supplierGuestExpiryHours,
+          inviteDomainAllowlist: nextSecurity.inviteDomainAllowlist as Prisma.InputJsonValue,
+          requireApprovalForPayouts: nextSecurity.requireApprovalForPayouts,
+          payoutApprovalThresholdUsd: nextSecurity.payoutApprovalThresholdUsd,
+          restrictSensitiveExports: nextSecurity.restrictSensitiveExports,
+          sessionTimeoutMins: nextSecurity.sessionTimeoutMins
+        }
+      });
+      await this.audit.log({
+        userId,
+        action: 'workspace.security_updated',
+        entityType: 'workspace',
+        entityId: workspace.workspace.id,
+        route: '/api/roles/security',
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return this.serializeWorkspaceSecurity(record);
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
       }
-    });
-    await this.audit.log({
-      userId,
-      action: 'workspace.security_updated',
-      entityType: 'workspace',
-      entityId: workspace.workspace.id,
-      route: '/api/roles/security',
-      method: 'PATCH',
-      statusCode: 200
-    });
-    return this.serializeWorkspaceSecurity(record);
+      const legacyWorkspace = await this.buildLegacyWorkspaceResponse(userId);
+      this.ensureWorkspaceRoleManager(legacyWorkspace);
+      const currentSecurity = this.hydrateWorkspaceSecurity(legacyWorkspace.workspaceSecurity as Record<string, unknown>);
+      const nextSecurity = this.applyWorkspaceSecurityPatch(currentSecurity, body);
+      await this.upsertWorkspaceSetting(userId, 'roles_security', nextSecurity);
+      await this.audit.log({
+        userId,
+        action: 'workspace.security_updated',
+        entityType: 'workspace_setting',
+        entityId: 'roles_security',
+        route: '/api/roles/security',
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return nextSecurity;
+    }
   }
   async createRole(userId: string, body: CreateRoleDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
@@ -366,50 +374,69 @@ export class SettingsService {
     return this.serializeWorkspaceRole(role);
   }
   async updateRole(userId: string, id: string, body: UpdateRoleDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    this.ensureWorkspaceRoleManager(workspace);
-    const existing = workspace.roleRecords.find((entry) => entry.key === id);
-    if (!existing) {
-      throw new NotFoundException('Role not found');
-    }
-
-    if (body.name) {
-      const nextName = body.name.trim();
-      if (
-        workspace.roles.some(
-          (role) => role.id !== id && String(role.name || '').trim().toLowerCase() === nextName.toLowerCase()
-        )
-      ) {
-        throw new BadRequestException('Role name already exists');
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      this.ensureWorkspaceRoleManager(workspace);
+      const existing = workspace.roleRecords.find((entry) => entry.key === id);
+      if (!existing) {
+        throw new NotFoundException('Role not found');
       }
-    }
 
-    const updated = await this.prisma.workspaceRole.update({
-      where: { dbId: existing.dbId },
-      data: {
-        ...(body.name ? { name: body.name.trim() } : {}),
-        ...(body.badge ? { badge: body.badge.trim() } : {}),
-        ...(body.description ? { description: body.description.trim() } : {}),
-        ...(body.perms
-          ? {
-              permissions: {
-                ...this.readPermissionPayload(existing.permissions),
-                ...this.normalizePerms(body.perms)
-              } as Prisma.InputJsonValue
-            }
-          : {})
+      if (body.name) {
+        const nextName = body.name.trim();
+        if (
+          workspace.roles.some(
+            (role) => role.id !== id && String(role.name || '').trim().toLowerCase() === nextName.toLowerCase()
+          )
+        ) {
+          throw new BadRequestException('Role name already exists');
+        }
       }
-    });
-    await this.audit.log({
-      userId,
-      action: 'workspace.role_updated',
-      entityType: 'workspace_role',
-      entityId: id,
-      route: `/api/roles/${id}`,
-      method: 'PATCH',
-      statusCode: 200
-    });
-    return this.serializeWorkspaceRole(updated);
+
+      const updated = await this.prisma.workspaceRole.update({
+        where: { dbId: existing.dbId },
+        data: {
+          ...(body.name ? { name: body.name.trim() } : {}),
+          ...(body.badge ? { badge: body.badge.trim() } : {}),
+          ...(body.description ? { description: body.description.trim() } : {}),
+          ...(body.perms
+            ? {
+                permissions: {
+                  ...this.readPermissionPayload(existing.permissions),
+                  ...this.normalizePerms(body.perms)
+                } as Prisma.InputJsonValue
+              }
+            : {})
+        }
+      });
+      await this.audit.log({
+        userId,
+        action: 'workspace.role_updated',
+        entityType: 'workspace_role',
+        entityId: id,
+        route: `/api/roles/${id}`,
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return this.serializeWorkspaceRole(updated);
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      const legacyWorkspace = await this.buildLegacyWorkspaceResponse(userId);
+      this.ensureWorkspaceRoleManager(legacyWorkspace);
+      const updated = await this.updateLegacyRole(userId, id, body);
+      await this.audit.log({
+        userId,
+        action: 'workspace.role_updated',
+        entityType: 'workspace_setting',
+        entityId: id,
+        route: `/api/roles/${id}`,
+        method: 'PATCH',
+        statusCode: 200
+      });
+      return updated;
+    }
   }
   async deleteRole(userId: string, id: string) {
     const workspace = await this.ensureWorkspaceSeed(userId);
@@ -569,22 +596,29 @@ export class SettingsService {
   }
 
   async crew(userId: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    await this.migrateLegacyCrewSessions(userId, workspace.workspace.id);
-    const sessions = await this.prisma.workspaceCrewSession.findMany({
-      where: { workspaceId: workspace.workspace.id },
-      include: {
-        assignments: {
-          include: {
-            member: {
-              include: { role: true }
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.migrateLegacyCrewSessions(userId, workspace.workspace.id);
+      const sessions = await this.prisma.workspaceCrewSession.findMany({
+        where: { workspaceId: workspace.workspace.id },
+        include: {
+          assignments: {
+            include: {
+              member: {
+                include: { role: true }
+              }
             }
           }
-        }
-      },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return sessions.map((session) => this.serializeCrewSession(session));
+        },
+        orderBy: { updatedAt: 'desc' }
+      });
+      return sessions.map((session) => this.serializeCrewSession(session));
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      return this.readLegacyCrewSessions(userId);
+    }
   }
   async crewSession(userId: string, id: string, body: UpdateCrewSessionDto) {
     const workspace = await this.ensureWorkspaceSeed(userId);
@@ -1368,9 +1402,6 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : defaultValue;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return defaultValue;
-      }
       throw error;
     }
   }
@@ -1382,9 +1413,6 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : null;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return null;
-      }
       throw error;
     }
   }
@@ -1396,39 +1424,21 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : null;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return null;
-      }
       throw error;
     }
   }
 
   private async upsertWorkspaceSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    try {
-      return await this.prisma.workspaceSetting.upsert({
-        where: { userId_key: { userId, key } },
-        update: { payload: sanitized as Prisma.InputJsonValue },
-        create: {
-          userId,
-          key,
-          payload: sanitized as Prisma.InputJsonValue
-        }
-      });
-    } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        const now = new Date();
-        return {
-          id: `workspace-setting-fallback:${userId}:${key}`,
-          userId,
-          key,
-          payload: sanitized,
-          createdAt: now,
-          updatedAt: now
-        };
+    return await this.prisma.workspaceSetting.upsert({
+      where: { userId_key: { userId, key } },
+      update: { payload: sanitized as Prisma.InputJsonValue },
+      create: {
+        userId,
+        key,
+        payload: sanitized as Prisma.InputJsonValue
       }
-      throw error;
-    }
+    });
   }
 
   private async getUserSetting(userId: string, key: string, defaultValue: Record<string, unknown>) {
@@ -1438,39 +1448,21 @@ export class SettingsService {
       });
       return record ? (record.payload as Record<string, unknown>) : defaultValue;
     } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        return defaultValue;
-      }
       throw error;
     }
   }
 
   private async upsertUserSetting(userId: string, key: string, body: unknown) {
     const sanitized = this.ensurePayload(body);
-    try {
-      return await this.prisma.userSetting.upsert({
-        where: { userId_key: { userId, key } },
-        update: { payload: sanitized as Prisma.InputJsonValue },
-        create: {
-          userId,
-          key,
-          payload: sanitized as Prisma.InputJsonValue
-        }
-      });
-    } catch (error) {
-      if (this.isMissingSchemaObjectError(error)) {
-        const now = new Date();
-        return {
-          id: `user-setting-fallback:${userId}:${key}`,
-          userId,
-          key,
-          payload: sanitized,
-          createdAt: now,
-          updatedAt: now
-        };
+    return await this.prisma.userSetting.upsert({
+      where: { userId_key: { userId, key } },
+      update: { payload: sanitized as Prisma.InputJsonValue },
+      create: {
+        userId,
+        key,
+        payload: sanitized as Prisma.InputJsonValue
       }
-      throw error;
-    }
+    });
   }
 
   private ensurePayload(payload: unknown) {
@@ -2388,6 +2380,135 @@ export class SettingsService {
       effectivePermissions: ownerRole.perms,
       workspaceSecurity: DEFAULT_WORKSPACE_SECURITY
     };
+  }
+
+  private applyWorkspaceSecurityPatch(
+    current: {
+      require2FA: boolean;
+      allowExternalInvites: boolean;
+      supplierGuestExpiryHours: number;
+      inviteDomainAllowlist: string[];
+      requireApprovalForPayouts: boolean;
+      payoutApprovalThresholdUsd: number;
+      restrictSensitiveExports: boolean;
+      sessionTimeoutMins: number;
+    },
+    body: UpdateRolesSecurityDto
+  ) {
+    return {
+      ...current,
+      ...(body.require2FA !== undefined ? { require2FA: body.require2FA } : {}),
+      ...(body.allowExternalInvites !== undefined ? { allowExternalInvites: body.allowExternalInvites } : {}),
+      ...(body.supplierGuestExpiryHours !== undefined
+        ? { supplierGuestExpiryHours: Math.max(1, Math.min(168, Math.round(body.supplierGuestExpiryHours))) }
+        : {}),
+      ...(body.requireApprovalForPayouts !== undefined ? { requireApprovalForPayouts: body.requireApprovalForPayouts } : {}),
+      ...(body.payoutApprovalThresholdUsd !== undefined
+        ? { payoutApprovalThresholdUsd: Math.max(0, Math.round(body.payoutApprovalThresholdUsd)) }
+        : {}),
+      ...(body.restrictSensitiveExports !== undefined ? { restrictSensitiveExports: body.restrictSensitiveExports } : {}),
+      ...(body.sessionTimeoutMins !== undefined
+        ? { sessionTimeoutMins: Math.max(5, Math.min(1440, Math.round(body.sessionTimeoutMins))) }
+        : {}),
+      ...(body.inviteDomainAllowlist !== undefined
+        ? { inviteDomainAllowlist: body.inviteDomainAllowlist.map((entry) => entry.trim().toLowerCase()).filter(Boolean) }
+        : {})
+    };
+  }
+
+  private buildDefaultLegacyRole(now: string) {
+    return {
+      id: 'role_owner',
+      name: 'Owner',
+      badge: 'System',
+      description: 'Workspace owner with full access.',
+      perms: {
+        'roles.manage': true,
+        'admin.manage_roles': true,
+        'admin.manage_team': true,
+        'admin.audit': true
+      },
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+
+  private async readLegacyWorkspaceRoles(userId: string) {
+    const now = new Date().toISOString();
+    const payload = await this.findWorkspaceSetting(userId, 'roles');
+    const rows = this.extractList(payload ?? { roles: [] }, 'roles') as Array<Record<string, unknown>>;
+    const roles = rows
+      .map((row, index) => {
+        const id = this.readString(row.id) || `legacy_role_${index + 1}`;
+        return {
+          id,
+          name: this.readString(row.name) || `Role ${index + 1}`,
+          badge: this.readString(row.badge) || 'Custom',
+          description: this.readString(row.description) || 'Custom workspace role.',
+          perms: this.readPermissionPayload(row.perms),
+          createdAt: this.readString(row.createdAt) || now,
+          updatedAt: this.readString(row.updatedAt) || now
+        };
+      })
+      .filter((role) => Boolean(role.id));
+    if (roles.length > 0) {
+      return roles;
+    }
+    return [this.buildDefaultLegacyRole(now)];
+  }
+
+  private async updateLegacyRole(userId: string, id: string, body: UpdateRoleDto) {
+    const roles = await this.readLegacyWorkspaceRoles(userId);
+    const targetIndex = roles.findIndex((role) => role.id === id);
+    if (targetIndex < 0) {
+      throw new NotFoundException('Role not found');
+    }
+    if (body.name) {
+      const nextName = body.name.trim();
+      if (
+        roles.some(
+          (role, index) => index !== targetIndex && String(role.name || '').trim().toLowerCase() === nextName.toLowerCase()
+        )
+      ) {
+        throw new BadRequestException('Role name already exists');
+      }
+    }
+
+    const current = roles[targetIndex];
+    const updated = {
+      ...current,
+      ...(body.name ? { name: body.name.trim() } : {}),
+      ...(body.badge ? { badge: body.badge.trim() } : {}),
+      ...(body.description ? { description: body.description.trim() } : {}),
+      ...(body.perms ? { perms: { ...current.perms, ...this.normalizePerms(body.perms) } } : {}),
+      updatedAt: new Date().toISOString()
+    };
+    const nextRoles = roles.map((role, index) => (index === targetIndex ? updated : role));
+    await this.upsertWorkspaceSetting(userId, 'roles', { roles: nextRoles });
+    return updated;
+  }
+
+  private async readLegacyCrewSessions(userId: string) {
+    const payload = await this.findUserSetting(userId, 'crew_sessions');
+    const sessions = this.extractList(payload ?? { sessions: [] }, 'sessions') as Array<Record<string, unknown>>;
+    return sessions.map((entry, index) => {
+      const record = this.isPlainObject(entry) ? { ...(entry as Record<string, unknown>) } : {};
+      const id = this.readString(record.id) || `crew-session-${index + 1}`;
+      const createdAt = this.readString(record.createdAt) || this.readString(record.updatedAt) || new Date().toISOString();
+      const updatedAt = this.readString(record.updatedAt) || createdAt;
+      const assignments = Array.isArray(record.assignments)
+        ? record.assignments
+            .map((assignment) => (this.isPlainObject(assignment) ? (assignment as Record<string, unknown>) : null))
+            .filter(Boolean)
+        : [];
+      return {
+        ...record,
+        id,
+        assignments,
+        createdAt,
+        updatedAt
+      };
+    });
   }
 
   private async ensureWorkspaceRow(userId: string) {

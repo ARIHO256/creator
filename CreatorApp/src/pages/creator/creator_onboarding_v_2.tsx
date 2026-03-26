@@ -355,6 +355,37 @@ const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
 // const LIGHT_GREY = "#f2f2f2";
 
+function lookupLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+        const record = entry as Record<string, unknown>;
+        return String(record.label || record.title || record.value || "").trim();
+      }
+      return "";
+    })
+    .filter(Boolean);
+}
+
+function lookupPayoutMethodCards(
+  value: unknown
+): Array<{ key: string; title: string; desc: string }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const record = entry as Record<string, unknown>;
+      const key = String(record.key || record.value || "").trim();
+      const title = String(record.title || record.label || key).trim();
+      const desc = String(record.desc || record.helper || "").trim();
+      if (!key || !title) return null;
+      return { key, title, desc };
+    })
+    .filter((entry): entry is { key: string; title: string; desc: string } => Boolean(entry));
+}
+
 const STEPS = [
   { key: "profile", label: "Profile", icon: <User className="h-4 w-4" /> },
   { key: "socials", label: "Socials", icon: <LinkIcon className="h-4 w-4" /> },
@@ -363,9 +394,6 @@ const STEPS = [
   { key: "preferences", label: "Preferences", icon: <Users className="h-4 w-4" /> },
   { key: "review", label: "Review & Terms", icon: <ScrollText className="h-4 w-4" /> }
 ];
-
-const LANGUAGE_OPTIONS = ["English", "Swahili", "French", "Arabic", "Chinese", "Portuguese"];
-const REGION_OPTIONS = ["East Africa", "Southern Africa", "West Africa", "North Africa", "Asia", "Europe", "North America"];
 
 const TEAM_TYPES = ["Seller team", "Provider team", "Production crew", "Brand team", "Other"];
 const AGENCY_TYPES = ["Talent / influencer agency", "Marketing agency", "Seller network", "Provider network", "Other"];
@@ -379,40 +407,7 @@ const SOCIAL_PRIMARY = [
 
 const OTHER_SOCIAL_OPTIONS = ["Facebook", "X (Twitter)", "Snapchat", "Kwai", "LinkedIn", "Twitch", "Pinterest", "Other"];
 
-// Product/Service lines
-const PRODUCT_SERVICE_LINES = [
-  "Services",
-  "Electronics",
-  "Fashion & Beauty",
-  "Food & Groceries",
-  "General Supplies",
-  "Home & Living",
-  "Properties & Supplies",
-  "EV & Mobility",
-  "Medical & Health",
-  "Education",
-  "Faith",
-  "Travel & Tourism"
-];
-
 const COLLAB_MODELS = ["Flat fee", "Commission", "Hybrid"];
-
-const CONTENT_FORMATS = [
-  "Live Sessionz",
-  "Shoppable Adz",
-  "Short-form (Reels/Shorts)",
-  "Long-form (YouTube)",
-  "UGC (brand content)",
-  "Livestream co-hosting"
-];
-
-const PAYOUT_METHODS = [
-  { key: "Bank", title: "Bank", desc: "Best for high volume and stable settlements." },
-  { key: "Mobile Money", title: "Mobile Money", desc: "Fast and popular across Africa." },
-  { key: "PayPal / Wallet", title: "PayPal / Wallet", desc: "Use existing wallets in supported regions." },
-  { key: "AliPay", title: "AliPay", desc: "China payment method for creators and cross-border payments." },
-  { key: "WeChat Pay", title: "WeChat Pay", desc: "China payment method for creators and cross-border payments." }
-];
 
 // Policies (summaries must be visible on-page; full text shown in a modal)
 const POLICY_LIBRARY = {
@@ -1515,6 +1510,7 @@ export default function CreatorOnboardingWorldClassV25() {
   const [editingVerificationContact, setEditingVerificationContact] = useState(false);
 
   const [form, setForm] = useState<OnboardingForm>(() => defaultForm());
+  const [lookups, setLookups] = useState<Record<string, unknown>>({});
 
   const prevMethodRef = useRef<string>("");
 
@@ -1523,10 +1519,28 @@ export default function CreatorOnboardingWorldClassV25() {
   const [termsScrollPct, setTermsScrollPct] = useState(0);
 
   const creatorType = form.profile.creatorType;
+  const languageOptions = useMemo(() => lookupLabels(lookups.languages), [lookups.languages]);
+  const regionOptions = useMemo(() => lookupLabels(lookups.supplierTargetRegions), [lookups.supplierTargetRegions]);
+  const productServiceLines = useMemo(() => {
+    const serviceCategories = lookupLabels(lookups.serviceCategories);
+    const productCategories = lookupLabels(lookups.productCategories);
+    return Array.from(new Set([...serviceCategories, ...productCategories]));
+  }, [lookups.productCategories, lookups.serviceCategories]);
+  const contentFormats = useMemo(() => lookupLabels(lookups.contentFormats), [lookups.contentFormats]);
+  const payoutMethods = useMemo(
+    () => lookupPayoutMethodCards(lookups.payoutMethodCards),
+    [lookups.payoutMethodCards]
+  );
 
   // Load onboarding form from backend.
   useEffect(() => {
     let cancelled = false;
+
+    void creatorApi.onboardingLookups().then((payload) => {
+      if (!cancelled && payload && typeof payload === "object" && !Array.isArray(payload)) {
+        setLookups(payload as Record<string, unknown>);
+      }
+    }).catch(() => undefined);
 
     void creatorApi.onboarding()
       .then((payload) => {
@@ -1681,9 +1695,9 @@ export default function CreatorOnboardingWorldClassV25() {
   };
 
   const makeAiProfile = () => {
-    const region = (form.profile.audienceRegions || ["Global"])[0] || "Global";
-    const langs = (form.profile.contentLanguages || ["English"]).join(", ");
-    const line = (form.preferences.lines || ["Electronics"])[0] || "Electronics";
+    const region = (form.profile.audienceRegions || []).find((entry) => String(entry).trim()) || "";
+    const langs = (form.profile.contentLanguages || []).filter((entry) => String(entry).trim()).join(", ");
+    const line = (form.preferences.lines || []).find((entry) => String(entry).trim()) || "";
 
     update("profile.tagline", `${line} creator for ${region}`);
     update(
@@ -2076,7 +2090,7 @@ export default function CreatorOnboardingWorldClassV25() {
                 <div className="flex flex-col gap-1">
                   <label className="font-medium text-[11px]">Content languages</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {LANGUAGE_OPTIONS.map((lang) => (
+                    {languageOptions.map((lang) => (
                       <Chip
                         key={lang}
                         label={lang}
@@ -2090,7 +2104,7 @@ export default function CreatorOnboardingWorldClassV25() {
                 <div className="flex flex-col gap-1">
                   <label className="font-medium text-[11px]">Audience regions</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {REGION_OPTIONS.map((r) => (
+                    {regionOptions.map((r) => (
                       <Chip key={r} label={r} selected={(form.profile.audienceRegions || []).includes(r)} onClick={() => toggleInArray("profile.audienceRegions", r)} />
                     ))}
                   </div>
@@ -2555,7 +2569,7 @@ export default function CreatorOnboardingWorldClassV25() {
               }
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                {PAYOUT_METHODS.map((m) => (
+                {payoutMethods.map((m) => (
                   <PayoutMethodCard
                     key={m.key}
                     label={m.title}
@@ -2932,7 +2946,7 @@ export default function CreatorOnboardingWorldClassV25() {
               <div className="flex flex-col gap-1">
                 <label className="font-medium text-[11px]">Product/Service lines *</label>
                 <div className="flex flex-wrap gap-1.5">
-                  {PRODUCT_SERVICE_LINES.map((c) => (
+                  {productServiceLines.map((c) => (
                     <Chip key={c} label={c} selected={(form.preferences.lines || []).includes(c)} onClick={() => toggleInArray("preferences.lines", c)} />
                   ))}
                 </div>
@@ -2971,7 +2985,7 @@ export default function CreatorOnboardingWorldClassV25() {
                 <div className="flex flex-col gap-1">
                   <label className="font-medium text-[11px]">Content formats *</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {CONTENT_FORMATS.map((f) => (
+                    {contentFormats.map((f) => (
                       <Chip key={f} label={f} selected={(form.preferences.formats || []).includes(f)} onClick={() => toggleInArray("preferences.formats", f)} />
                     ))}
                   </div>

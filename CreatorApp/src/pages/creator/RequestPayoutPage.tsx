@@ -49,7 +49,7 @@ export const RequestPayoutPage: React.FC = () => {
             .then(([summary, payoutMethods]) => {
                 if (cancelled) return;
                 setAvailableBalance(Number(summary.available || 0));
-                const primary = payoutMethods.methods.find((method) => method.isDefault) || payoutMethods.methods[0];
+                const primary = payoutMethods.methods.find((method) => method.isDefault);
                 if (primary?.currency) {
                     setCurrency(primary.currency);
                 }

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   ArrowRight,
   BarChart3,
@@ -17,6 +18,8 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:wholesale/WholesaleHome").catch(() => undefined);
 
 
 const TOKENS = {

@@ -216,11 +216,13 @@ function SellerProductListingWizardPage() {
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [draftListingId, setDraftListingId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError("");
     void sellerBackendApi
       .getSellerListingWizard()
       .then((payload) => {
@@ -229,11 +231,11 @@ function SellerProductListingWizardPage() {
         setWizardConfig(nextConfig);
         setForm(nextConfig.initialForm);
         setDraftListingId(typeof inboundState.listingId === "string" ? inboundState.listingId : "");
+        setLoadError("");
       })
       .catch(() => {
         if (cancelled) return;
-        setWizardConfig({ markets: [], steps: [], variantOptions: { colors: [], trims: [], batteries: [], wheelSizes: [], interiorColors: [] }, initialForm: null });
-        setForm(null);
+        setLoadError("Listing wizard data is unavailable from the backend right now.");
       })
       .finally(() => {
         if (!cancelled) {
@@ -340,7 +342,7 @@ function SellerProductListingWizardPage() {
 
   const canGoNext = isCurrentStepValid && !submitting;
 
-  if (loading || !form || !wizardConfig) {
+  if (loading) {
     return (
       <Box sx={{ minHeight: "100vh", backgroundColor: EV_COLORS.bg, p: 3 }}>
         <Paper
@@ -358,6 +360,31 @@ function SellerProductListingWizardPage() {
             {t("Loading listing wizard")}
           </Typography>
           <LinearProgress sx={{ mt: 2, bgcolor: EV_COLORS.surfaceAlt }} />
+        </Paper>
+      </Box>
+    );
+  }
+
+  if (loadError || !form || !wizardConfig) {
+    return (
+      <Box sx={{ minHeight: "100vh", backgroundColor: EV_COLORS.bg, p: 3 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            maxWidth: 1180,
+            mx: "auto",
+            p: 3,
+            borderRadius: 3,
+            border: `1px solid ${EV_COLORS.border}`,
+            background: HERO_SURFACE,
+          }}
+        >
+          <Typography sx={{ fontWeight: 900, color: EV_COLORS.textMain }}>
+            {t("Listing wizard unavailable")}
+          </Typography>
+          <Typography sx={{ mt: 1, color: EV_COLORS.textSubtle }}>
+            {loadError || t("The backend did not return the listing wizard configuration.")}
+          </Typography>
         </Paper>
       </Box>
     );

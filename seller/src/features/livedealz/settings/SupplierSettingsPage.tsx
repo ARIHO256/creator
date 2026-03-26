@@ -656,18 +656,18 @@ const PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "RWF", "ZAR
 const PAYOUT_RHYTHMS = ["Daily", "Weekly", "Biweekly", "Monthly", "When balance reaches a threshold"];
 
 const DEFAULT_SUPPLIER_SETTINGS_LOOKUPS = {
-  languages: LANGUAGE_OPTIONS,
-  supplierModels: SUPPLIER_MODELS,
-  supplierTargetRegions: REGION_OPTIONS,
-  productCategories: PRODUCT_CATEGORIES,
-  serviceCategories: SERVICE_CATEGORIES,
-  contentFormats: CONTENT_FORMATS,
-  creatorUsageDecisions: CREATOR_USAGE_DECISIONS,
-  collabModes: COLLAB_MODES,
-  approvalModes: APPROVAL_MODES,
-  payoutMethodCards: PAYOUT_METHODS,
-  payoutCurrencies: PAYOUT_CURRENCIES,
-  payoutRhythms: PAYOUT_RHYTHMS
+  languages: [],
+  supplierModels: [],
+  supplierTargetRegions: [],
+  productCategories: [],
+  serviceCategories: [],
+  contentFormats: [],
+  creatorUsageDecisions: [],
+  collabModes: [],
+  approvalModes: [],
+  payoutMethodCards: [],
+  payoutCurrencies: [],
+  payoutRhythms: []
 };
 
 function normalizeStringOptions(value, fallback) {
@@ -1001,6 +1001,7 @@ export default function SupplierSettingsSafetyPage() {
   const [lookups, setLookups] = useState(DEFAULT_SUPPLIER_SETTINGS_LOOKUPS);
   const [saved, setSaved] = useState(true);
   const [hydrated, setHydrated] = useState(false);
+  const [loadError, setLoadError] = useState("");
 
   const [openPolicy, setOpenPolicy] = useState(null); // platform | content | payout | full | null
   const [policyScrollPct, setPolicyScrollPct] = useState(0);
@@ -1069,10 +1070,10 @@ export default function SupplierSettingsSafetyPage() {
           ? deepMerge(hydratedFromOnboarding, savedSupplierSettings)
           : hydratedFromOnboarding;
         setForm(nextForm);
+        setLoadError("");
       } catch {
         if (!cancelled) {
-          setLookups(DEFAULT_SUPPLIER_SETTINGS_LOOKUPS);
-          setForm(createEmptySupplierSettingsForm());
+          setLoadError("Settings data is unavailable from the backend right now.");
         }
       } finally {
         if (!cancelled) {
@@ -1318,6 +1319,12 @@ export default function SupplierSettingsSafetyPage() {
       </div>
 
       <ToastStack toasts={toasts} />
+
+      {loadError ? (
+        <div className="relative z-[1] mx-4 mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          {loadError}
+        </div>
+      ) : null}
 
       {/* Policy review modal */}
       <Modal open={!!openPolicy} title={policyTitle} subtitle={policySubtitle} onClose={() => setOpenPolicy(null)} footer={policyFooter}>

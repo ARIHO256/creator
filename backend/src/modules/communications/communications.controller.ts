@@ -35,6 +35,11 @@ export class CommunicationsController {
   @Post('help-support/tickets') createTicket(@CurrentUser() user: RequestUser, @Body() body: CreateSupportTicketDto) { return this.service.createTicket(user.sub, user.role, body); }
   @Get('help-support/tickets/:id')
   supportTicket(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.supportTicket(user.sub, user.role, id); }
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  @Patch('help-support/tickets/:id')
+  updateOwnTicket(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: UpdateSupportTicketDto) {
+    return this.service.updateOwnSupportTicket(user.sub, user.role, id, body);
+  }
   @Get('system-status') systemStatus(@CurrentUser() user: RequestUser) { return this.service.systemStatus(user.sub); }
 
   @Roles('SUPPORT', 'ADMIN')

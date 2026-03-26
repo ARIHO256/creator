@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect } from "react";
+import { sellerBackendApi } from "../../lib/backendApi";
 import {
   Box,
   Button,
@@ -10,6 +11,8 @@ import {
   Typography,
 } from "@mui/material";
 import { TreeView, TreeItem } from "@mui/lab";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:misc/SellerOnboardingTaxonomyNavigator").catch(() => undefined);
 
 const EV_COLORS = {
   primary: "#00B388",

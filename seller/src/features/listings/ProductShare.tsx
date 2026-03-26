@@ -4,6 +4,9 @@ import { Link, useParams } from "react-router-dom";
 import { useLocalization } from "../../localization/LocalizationProvider";
 import { sellerBackendApi } from "../../lib/backendApi";
 
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/ProductShare").catch(() => undefined);
+
 export default function ProductShare() {
   const { t } = useLocalization();
   const { sku } = useParams();

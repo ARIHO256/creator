@@ -1,6 +1,6 @@
 import { INestApplication, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { MetricsService } from '../metrics/metrics.service.js';
 
 type PrismaRole = 'read' | 'write';
@@ -20,6 +20,7 @@ const WRAPPER_PROPERTIES = new Set([
   'enableShutdownHooks',
   'readConnectionStatus'
 ]);
+const RETRYABLE_RECONNECT_ATTEMPTS = 3;
 
 function resolveDatasourceUrl(configService: ConfigService | undefined, role: PrismaRole) {
   const preferredKey = role === 'read' ? 'database.readUrl' : 'database.writeUrl';
@@ -36,6 +37,8 @@ abstract class BasePrismaService extends PrismaClient implements OnModuleInit, O
   private readonly connectionStatusState: ReadConnectionStatus;
   private fallbackClient: PrismaClient | null = null;
   private activeClient: PrismaClient;
+  private reconnectPromise: Promise<void> | null = null;
+  private readonly delegateProxyCache = new WeakMap<object, object>();
 
   protected constructor(
     private readonly role: PrismaRole,
@@ -79,7 +82,13 @@ abstract class BasePrismaService extends PrismaClient implements OnModuleInit, O
 
         const source = target.activeClient;
         const value = Reflect.get(source, prop, source);
-        return typeof value === 'function' ? value.bind(source) : value;
+        if (typeof value === 'function') {
+          return target.wrapMethod(source, value);
+        }
+        if (value && typeof value === 'object') {
+          return target.wrapDelegate(value as object);
+        }
+        return value;
       }
     }) as this;
   }
@@ -112,6 +121,109 @@ abstract class BasePrismaService extends PrismaClient implements OnModuleInit, O
 
   private disconnectPrimaryClient() {
     return PrismaClient.prototype.$disconnect.call(this) as Promise<void>;
+  }
+
+  private isRetryableConnectionError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    if (
+      normalized.includes('server has closed the connection') ||
+      normalized.includes("can't reach database server") ||
+      normalized.includes('connection terminated unexpectedly') ||
+      normalized.includes('socket hang up') ||
+      normalized.includes('broken pipe')
+    ) {
+      return true;
+    }
+
+    return (
+      error instanceof Prisma.PrismaClientInitializationError ||
+      (error instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P1001', 'P1017'].includes(String(error.code || '')))
+    );
+  }
+
+  private async reconnectActiveClient(error: unknown) {
+    if (!this.isRetryableConnectionError(error)) {
+      throw error;
+    }
+
+    if (!this.reconnectPromise) {
+      this.reconnectPromise = (async () => {
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Reconnecting ${this.role} database client after connection failure: ${reason}`);
+        let lastReconnectError: unknown = null;
+
+        for (let attempt = 1; attempt <= RETRYABLE_RECONNECT_ATTEMPTS; attempt += 1) {
+          try {
+            if (this.activeClient === this) {
+              await this.disconnectPrimaryClient().catch(() => undefined);
+              await this.connectClient(this);
+            } else if (this.fallbackClient) {
+              await this.fallbackClient.$disconnect().catch(() => undefined);
+              await this.connectClient(this.fallbackClient);
+            } else {
+              await this.connectClient(this);
+            }
+            return;
+          } catch (reconnectError) {
+            lastReconnectError = reconnectError;
+            if (attempt >= RETRYABLE_RECONNECT_ATTEMPTS) {
+              break;
+            }
+            const backoffMs = 200 * attempt;
+            this.logger.warn(`Retrying ${this.role} database reconnect in ${backoffMs}ms (attempt ${attempt + 1}/${RETRYABLE_RECONNECT_ATTEMPTS})`);
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          }
+        }
+
+        throw lastReconnectError ?? error;
+      })().finally(() => {
+        this.reconnectPromise = null;
+      });
+    }
+
+    await this.reconnectPromise;
+  }
+
+  private wrapMethod<T extends (...args: any[]) => any>(source: unknown, method: T) {
+    return (async (...args: Parameters<T>) => {
+      let lastError: unknown = null;
+
+      for (let attempt = 1; attempt <= RETRYABLE_RECONNECT_ATTEMPTS; attempt += 1) {
+        try {
+          return await method.apply(source, args);
+        } catch (error) {
+          lastError = error;
+          if (!this.isRetryableConnectionError(error) || attempt >= RETRYABLE_RECONNECT_ATTEMPTS) {
+            throw error;
+          }
+
+          await this.reconnectActiveClient(error);
+          const backoffMs = 100 * attempt;
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
+      }
+
+      throw lastError;
+    }) as T;
+  }
+
+  private wrapDelegate<T extends object>(delegate: T): T {
+    const cached = this.delegateProxyCache.get(delegate);
+    if (cached) {
+      return cached as T;
+    }
+
+    const proxy = new Proxy(delegate, {
+      get: (target, prop, receiver) => {
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? this.wrapMethod(target, value as (...args: any[]) => any) : value;
+      }
+    });
+
+    this.delegateProxyCache.set(delegate, proxy);
+    return proxy;
   }
 
   private markHealthy() {

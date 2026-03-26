@@ -18,6 +18,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApiResource } from "../../hooks/useApiResource";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
 import { creatorApi, type ContractRecord, type TaskRecord } from "../../lib/creatorApi";
 
 const ORANGE = "#f77f00";
@@ -109,21 +110,8 @@ const PRIORITY: Array<{ k: Priority; pill: string }> = [
 function seedInitials(name: string) {
   const parts = name.split(" ").filter(Boolean);
   const a = parts[0]?.[0] || "S";
-  const b = parts[1]?.[0] || (parts[0]?.[1] || "U");
+  const b = parts[1]?.[0] || parts[0]?.[1] || "";
   return (a + b).toUpperCase();
-}
-
-function addDays(d: Date, days: number) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + days);
-  return x;
-}
-
-function toYMD(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
 }
 
 // Deterministic due (demo)
@@ -219,13 +207,13 @@ function toBoardContract(record: ContractRecord): Contract {
   return {
     id: record.id,
     status: mapContractStatus(String(record.status || "ACTIVE")),
-    campaign: String(record.campaignName || record.campaign || "Campaign"),
-    brand: String(record.brand || record.sellerName || record.seller || "Supplier"),
-    supplier: String(record.sellerName || record.seller || record.brand || "Supplier"),
+    campaign: String(record.campaignName || record.campaign || ""),
+    brand: String(record.brand || record.sellerName || record.seller || ""),
+    supplier: String(record.sellerName || record.seller || record.brand || ""),
     currency: String(record.currency || "USD"),
     value: Number(record.value || 0),
     totalTasks: Number(record.totalTasks || deliverables.length || 0),
-    creator: { name: String(record.creatorName || "Creator"), handle: "@creator", avatarUrl: "" },
+    creator: { name: String(record.creatorName || ""), handle: "", avatarUrl: "" },
     deliverables
   };
 }
@@ -256,6 +244,43 @@ function dueOffset(date?: string | null) {
   return Math.ceil((parsed.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
+function taskStatusFromColumn(column: ColumnId): "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "APPROVED" | "BLOCKED" {
+  if (column === "in-progress") return "IN_PROGRESS";
+  if (column === "submitted") return "IN_REVIEW";
+  if (column === "approved") return "APPROVED";
+  if (column === "needs-changes") return "BLOCKED";
+  return "TODO";
+}
+
+function taskPriorityToApi(priority: Priority): "LOW" | "MEDIUM" | "HIGH" | "URGENT" {
+  if (priority === "Low") return "LOW";
+  if (priority === "High") return "HIGH";
+  if (priority === "Critical") return "URGENT";
+  return "MEDIUM";
+}
+
+function attachmentKindForFile(file: File): "IMAGE" | "VIDEO" | "DOCUMENT" {
+  const mime = String(file.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return "IMAGE";
+  if (mime.startsWith("video/")) return "VIDEO";
+  return "DOCUMENT";
+}
+
+function extensionFromFileName(name: string): string | undefined {
+  const parts = name.split(".");
+  if (parts.length < 2) return undefined;
+  const ext = parts[parts.length - 1].trim().toLowerCase();
+  return ext || undefined;
+}
+
+function commentFromActorRole(role?: string | null): Comment["from"] {
+  const normalized = String(role || "").trim().toUpperCase();
+  if (normalized === "ADMIN") return "Admin";
+  if (normalized === "SUPPORT" || normalized === "OPS") return "Ops";
+  if (normalized === "SELLER" || normalized === "PROVIDER") return "Supplier";
+  return "Creator";
+}
+
 function toBoardTask(record: TaskRecord): { column: ColumnId; task: Task } {
   const metadata = record.metadata && typeof record.metadata === "object" ? record.metadata : {};
   const contract = record.contract;
@@ -265,7 +290,7 @@ function toBoardTask(record: TaskRecord): { column: ColumnId; task: Task } {
       contract?.sellerName ||
       contract?.seller ||
       contract?.brand ||
-      "Supplier"
+      ""
     );
   const dueDaysFromNow = dueOffset(record.dueAt);
 
@@ -273,8 +298,8 @@ function toBoardTask(record: TaskRecord): { column: ColumnId; task: Task } {
     column: taskColumnForStatus(record.status),
     task: {
       id: record.id,
-      title: String(record.title || "Task"),
-      campaign: String(contract?.campaignName || contract?.campaign || (metadata as { campaign?: unknown }).campaign || "Campaign"),
+      title: String(record.title || ""),
+      campaign: String(contract?.campaignName || contract?.campaign || (metadata as { campaign?: unknown }).campaign || ""),
       supplier,
       supplierInitials: seedInitials(supplier),
       brand: String(contract?.brand || contract?.sellerName || contract?.seller || supplier),
@@ -387,19 +412,19 @@ function Toast({ text, onClose }: { text: string | null; onClose: () => void }) 
 
 export function TaskBoardPage() {
   const navigate = useNavigate();
+  const { run } = useAsyncAction();
   const [toast, setToast] = useState<string | null>(null);
   const { data: contractRecords } = useApiResource({
     initialData: [] as ContractRecord[],
     loader: () => creatorApi.contracts()
   });
-  const { data: taskRecords } = useApiResource({
+  const { data: taskRecords, reload: reloadTasks } = useApiResource({
     initialData: [] as TaskRecord[],
     loader: () => creatorApi.tasks()
   });
   const contracts = useMemo(() => contractRecords.map(toBoardContract), [contractRecords]);
 
-  // Seed tasks from backend tasks
-  const seededColumns = useMemo<ColumnsState>(() => {
+  const columnsFromTasks = useMemo<ColumnsState>(() => {
     const col: ColumnsState = {
       todo: [],
       "in-progress": [],
@@ -414,11 +439,11 @@ export function TaskBoardPage() {
     return col;
   }, [taskRecords]);
 
-  const [columns, setColumns] = useState<ColumnsState>(seededColumns);
+  const [columns, setColumns] = useState<ColumnsState>(columnsFromTasks);
 
   useEffect(() => {
-    setColumns(seededColumns);
-  }, [seededColumns]);
+    setColumns(columnsFromTasks);
+  }, [columnsFromTasks]);
 
   const taskToColumn = useMemo(() => {
     const map = new Map<string, ColumnId>();
@@ -444,27 +469,64 @@ export function TaskBoardPage() {
 
   // Selected task side panel
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const selectedTaskRecord = useMemo(
+    () => taskRecords.find((record) => record.id === selectedTask?.id) || null,
+    [taskRecords, selectedTask?.id]
+  );
 
-  // Side panel state (uploads/comments demo)
+  // Side panel state
   const [uploadNote, setUploadNote] = useState("");
   const [contentLink, setContentLink] = useState("");
-  const [uploadedFiles, setUploadedFiles] = useState<FileStub[]>([]);
-  const [comments, setComments] = useState<Comment[]>([
-    {
-      id: 1,
-      from: "Supplier",
-      name: "Supplier Manager",
-      body: "Please keep the first 3 seconds hook-heavy and include the CTA verbatim.",
-      time: "Yesterday",
-    },
-  ]);
   const [commentDraft, setCommentDraft] = useState("");
+  const [pendingOpenTaskId, setPendingOpenTaskId] = useState<string | null>(null);
 
   // ✅ New Task drawer
   const [newTaskOpen, setNewTaskOpen] = useState(false);
 
   // Drag & drop
   const dragRef = useRef<{ taskId: string; fromCol: ColumnId } | null>(null);
+
+  const uploadedFiles = useMemo<FileStub[]>(
+    () =>
+      Array.isArray(selectedTaskRecord?.attachments)
+        ? selectedTaskRecord.attachments.map((attachment, index) => {
+            const record = attachment && typeof attachment === "object" ? (attachment as Record<string, unknown>) : {};
+            const sizeBytes = Number(record.sizeBytes || 0);
+            return {
+              name: String(record.name || `File ${index + 1}`),
+              sizeLabel: sizeBytes > 0 ? `${Math.max(1, Math.round(sizeBytes / 1024))} KB` : "—"
+            };
+          })
+        : [],
+    [selectedTaskRecord?.attachments]
+  );
+
+  const comments = useMemo<Comment[]>(
+    () =>
+      Array.isArray(selectedTaskRecord?.comments)
+        ? selectedTaskRecord.comments.map((comment, index) => {
+            const record = comment && typeof comment === "object" ? (comment as Record<string, unknown>) : {};
+            const author = record.author && typeof record.author === "object" ? (record.author as Record<string, unknown>) : {};
+            const createdAt = typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString();
+            return {
+              id: index + 1,
+              from: commentFromActorRole(typeof author.role === "string" ? author.role : null),
+              name: String(author.name || "—"),
+              body: String(record.body || ""),
+              time: fmtTimeAgo(createdAt)
+            };
+          })
+        : [],
+    [selectedTaskRecord?.comments]
+  );
+
+  useEffect(() => {
+    if (!pendingOpenTaskId) return;
+    const task = allTasksFlat.find((entry) => entry.id === pendingOpenTaskId);
+    if (!task) return;
+    setSelectedTask(task);
+    setPendingOpenTaskId(null);
+  }, [allTasksFlat, pendingOpenTaskId]);
 
   function moveTask(taskId: string, toCol: ColumnId) {
     const from = taskToColumn.get(taskId);
@@ -482,6 +544,13 @@ export function TaskBoardPage() {
         [toCol]: [task, ...prev[toCol]],
       };
     });
+
+    void creatorApi
+      .updateTask(taskId, { status: taskStatusFromColumn(toCol) })
+      .catch(() => {
+        setToast("Failed to move task.");
+        void reloadTasks();
+      });
   }
 
   function handleDragStart(taskId: string, fromCol: ColumnId) {
@@ -499,38 +568,82 @@ export function TaskBoardPage() {
     setSelectedTask(task);
     setUploadNote("");
     setContentLink("");
-    setUploadedFiles([]);
     setCommentDraft("");
   }
 
   function handleFileUpload(files: FileList | null) {
-    if (!files) return;
-    const next: FileStub[] = Array.from(files).map((f) => ({
-      name: f.name,
-      sizeLabel: `${Math.max(1, Math.round(f.size / 1024))} KB`,
-    }));
-    setUploadedFiles((prev) => [...prev, ...next]);
-    setToast(`Added ${next.length} file(s)`);
+    if (!files || !selectedTask) return;
+    const list = Array.from(files);
+    run(
+      async () => {
+        await Promise.all(
+          list.map((file) =>
+            creatorApi.taskAttachment(selectedTask.id, {
+              name: file.name,
+              kind: attachmentKindForFile(file),
+              mimeType: file.type || undefined,
+              sizeBytes: file.size > 0 ? file.size : undefined,
+              extension: extensionFromFileName(file.name),
+              metadata: {
+                source: "task-board",
+                note: uploadNote || undefined
+              }
+            })
+          )
+        );
+        await reloadTasks();
+        setToast(`Added ${list.length} file(s)`);
+      },
+      {
+        errorMessage: "Failed to upload files."
+      }
+    );
   }
 
   function handleAddComment() {
     const text = commentDraft.trim();
-    if (!text) return;
-    setComments((prev) => [
-      ...prev,
-      { id: prev.length + 1, from: "Creator", name: "You", body: text, time: "Just now" },
-    ]);
-    setCommentDraft("");
+    if (!text || !selectedTask) return;
+    run(
+      async () => {
+        await creatorApi.taskComment(selectedTask.id, { body: text });
+        setCommentDraft("");
+        await reloadTasks();
+      },
+      {
+        errorMessage: "Failed to send comment."
+      }
+    );
   }
 
-  function addNewTaskToBoard(payload: NewTaskPayload) {
+  async function addNewTaskToBoard(payload: NewTaskPayload) {
     const { task, column, openAfterCreate } = payload;
-
-    setColumns((prev) => ({ ...prev, [column]: [task, ...prev[column]] }));
+    const created = await creatorApi.createTask({
+      contractId: task.linkedContractId,
+      title: task.title,
+      priority: taskPriorityToApi(task.priority),
+      status: taskStatusFromColumn(column),
+      dueAt: task.dueAtISO,
+      description: task.description,
+      metadata: {
+        type: task.type,
+        earnings: task.earnings,
+        campaign: task.campaign,
+        supplier: task.supplier,
+        brand: task.brand,
+        currency: task.currency,
+        assignee: task.assignee || undefined,
+        watchers: task.watchers,
+        reminder: task.reminder || undefined,
+        checklist: task.checklist,
+        dependencyIds: task.dependencyIds,
+        referenceLinks: task.referenceLinks,
+        attachments: task.files,
+      }
+    });
+    await reloadTasks();
     setToast("Task created");
-
     if (openAfterCreate) {
-      setSelectedTask(task);
+      setPendingOpenTaskId(created.id);
     }
   }
 
@@ -1026,9 +1139,14 @@ function TaskSidePanel({
             <div className="flex items-center justify-end">
               <Btn
                 tone="neutral"
-                onClick={() => {
+                onClick={async () => {
                   if (!contentLink.trim()) return setToast("Add a link first.");
-                  setToast("Link copied (demo).");
+                  try {
+                    await navigator.clipboard.writeText(contentLink.trim());
+                    setToast("Link copied.");
+                  } catch {
+                    setToast("Copy failed.");
+                  }
                 }}
               >
                 Copy link
@@ -1040,6 +1158,9 @@ function TaskSidePanel({
             <h3 className="text-xs font-semibold dark:font-bold">Comments</h3>
 
             <div className="space-y-2">
+              {!comments.length ? (
+                <div className="text-xs text-slate-500 dark:text-slate-300">No comments yet.</div>
+              ) : null}
               {comments.map((c) => (
                 <div key={c.id} className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-2">
                   <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-300">
@@ -1085,7 +1206,26 @@ function TaskSidePanel({
 /* ----------------------------- New Task Drawer ----------------------------- */
 
 type NewTaskPayload = {
-  task: Task;
+  task: {
+    title: string;
+    campaign: string;
+    supplier: string;
+    brand: string;
+    type: TaskType;
+    priority: Priority;
+    currency: string;
+    earnings: number;
+    linkedContractId?: string;
+    dueAtISO?: string;
+    description?: string;
+    assignee?: string;
+    watchers: string[];
+    reminder?: string;
+    checklist: Array<{ text: string; done: boolean }>;
+    dependencyIds: string[];
+    referenceLinks: string[];
+    files: FileStub[];
+  };
   column: ColumnId;
   openAfterCreate?: boolean;
 };
@@ -1103,24 +1243,28 @@ function NewTaskDrawer({
   onClose: () => void;
   contracts: Contract[];
   existingTasks: Task[];
-  onCreate: (payload: NewTaskPayload) => void;
+  onCreate: (payload: NewTaskPayload) => Promise<void> | void;
   setToast: (s: string) => void;
   onOpenAssetLibrary: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  type TaskTypeInput = TaskType | "";
+  type ColumnInput = ColumnId | "";
+  type PriorityInput = Priority | "";
+  type ReminderInput = "" | "none" | "1h" | "6h" | "24h";
 
   // Wizard steps
   const [step, setStep] = useState<number>(1); // 1 Details, 2 Assignment, 3 Timing, 4 Review
 
   // Scope
   const [scope, setScope] = useState<"Linked" | "Internal">("Linked");
-  const [contractId, setContractId] = useState<string>(contracts?.[0]?.id || "");
+  const [contractId, setContractId] = useState<string>("");
 
   // Task core
   const [title, setTitle] = useState<string>("");
-  const [type, setType] = useState<TaskType>("vod");
-  const [initialColumn, setInitialColumn] = useState<ColumnId>("todo");
-  const [priority, setPriority] = useState<Priority>("Normal");
+  const [type, setType] = useState<TaskTypeInput>("");
+  const [initialColumn, setInitialColumn] = useState<ColumnInput>("");
+  const [priority, setPriority] = useState<PriorityInput>("");
 
   const selectedContract = useMemo(() => {
     return (contracts || []).find((c) => c.id === contractId) || null;
@@ -1130,26 +1274,22 @@ function NewTaskDrawer({
   const [campaignOverride, setCampaignOverride] = useState<string>("");
   const [supplierOverride, setSupplierOverride] = useState<string>("");
   const [brandOverride, setBrandOverride] = useState<string>("");
-  const [currency, setCurrency] = useState<string>(selectedContract?.currency || "UGX");
+  const [currency, setCurrency] = useState<string>(selectedContract?.currency || "");
   const [payout, setPayout] = useState<string>("");
 
   // Assignment
-  const [assignee, setAssignee] = useState<string>("@me");
+  const [assignee, setAssignee] = useState<string>("");
   const [watchers, setWatchers] = useState<string[]>([]);
   const [watcherDraft, setWatcherDraft] = useState<string>("");
 
   // Timing
-  const defaultDue = useMemo(() => toYMD(addDays(new Date(), 3)), []);
-  const [dueDate, setDueDate] = useState<string>(defaultDue);
-  const [dueTime, setDueTime] = useState<string>("18:00");
-  const [reminder, setReminder] = useState<"none" | "1h" | "6h" | "24h">("6h");
+  const [dueDate, setDueDate] = useState<string>("");
+  const [dueTime, setDueTime] = useState<string>("");
+  const [reminder, setReminder] = useState<ReminderInput>("");
 
   // Work plan
   const [description, setDescription] = useState<string>("");
-  const [checklist, setChecklist] = useState<Array<{ id: string; text: string; done: boolean }>>([
-    { id: "cl-1", text: "Confirm offer details", done: false },
-    { id: "cl-2", text: "Attach assets (video/poster)", done: false },
-  ]);
+  const [checklist, setChecklist] = useState<Array<{ id: string; text: string; done: boolean }>>([]);
   const [checkDraft, setCheckDraft] = useState<string>("");
 
   // Dependencies (IDs)
@@ -1166,35 +1306,30 @@ function NewTaskDrawer({
     setStep(1);
     setScope("Linked");
 
-    const first = contracts?.[0]?.id || "";
-    setContractId(first);
+    setContractId("");
 
     setTitle("");
-    setType("vod");
-    setInitialColumn("todo");
-    setPriority("Normal");
+    setType("");
+    setInitialColumn("");
+    setPriority("");
 
     setCampaignOverride("");
     setSupplierOverride("");
     setBrandOverride("");
 
-    const sc = (contracts || []).find((c) => c.id === first) || null;
-    setCurrency(sc?.currency || "UGX");
+    setCurrency("");
     setPayout("");
 
-    setAssignee("@me");
+    setAssignee("");
     setWatchers([]);
     setWatcherDraft("");
 
-    setDueDate(defaultDue);
-    setDueTime("18:00");
-    setReminder("6h");
+    setDueDate("");
+    setDueTime("");
+    setReminder("");
 
     setDescription("");
-    setChecklist([
-      { id: "cl-1", text: "Confirm offer details", done: false },
-      { id: "cl-2", text: "Attach assets (video/poster)", done: false },
-    ]);
+    setChecklist([]);
     setCheckDraft("");
 
     setDependencyIds([]);
@@ -1202,7 +1337,7 @@ function NewTaskDrawer({
     setRefLinks([]);
     setRefDraft("");
     setFiles([]);
-  }, [open, contracts, defaultDue]);
+  }, [open, contracts]);
 
   // Update currency when contract changes (linked mode)
   useEffect(() => {
@@ -1243,11 +1378,15 @@ function NewTaskDrawer({
 
   const canNext =
     step === 1
-      ? title.trim().length >= 4
+      ? title.trim().length >= 4 &&
+        Boolean(type) &&
+        Boolean(initialColumn) &&
+        Boolean(priority) &&
+        (scope === "Linked" ? Boolean(contractId) : Boolean(campaignOverride.trim()) && Boolean(supplierOverride.trim()))
       : step === 2
         ? assignee.trim().length >= 2
         : step === 3
-          ? !!dueDate && !!dueTime
+          ? !!dueDate && !!dueTime && !!reminder
           : true;
 
   function next() {
@@ -1288,45 +1427,44 @@ function NewTaskDrawer({
     setToast(`Attached ${next.length} file(s)`);
   }
 
-  function create(openAfterCreate: boolean) {
-    // Compute due label from chosen date/time (simple, UI-only)
+  async function create(openAfterCreate: boolean) {
+    if (!type || !initialColumn || !priority) {
+      setToast("Complete the required task details.");
+      return;
+    }
+    const resolvedType = type as TaskType;
+    const resolvedColumn = initialColumn as ColumnId;
+    const resolvedPriority = priority as Priority;
     const d = new Date(`${dueDate}T${dueTime}:00`);
-    const diffDays = Math.round((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const dueAtISO = Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 
-    const dueLabel =
-      diffDays === 0
-        ? "Today"
-        : diffDays === 1
-          ? "Tomorrow"
-          : diffDays === -1
-            ? "Yesterday"
-            : diffDays < 0
-              ? `${Math.abs(diffDays)}d overdue`
-              : `In ${diffDays}d`;
-    const newId = `T-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
-
-    const supplierInitials = seedInitials(supplierName === "—" ? "Supplier" : supplierName);
-
-    const task: Task = {
-      id: newId,
+    const task = {
       title: title.trim(),
       campaign: campaignName,
       supplier: supplierName,
-      supplierInitials,
       brand: brandName === "—" ? supplierName : brandName,
-      type,
-      priority,
-      dueLabel: dueLabel,
-      dueDaysFromNow: diffDays,
-      overdue: diffDays < 0,
-      currency: (currency as any) || "UGX",
+      type: resolvedType,
+      priority: resolvedPriority,
+      currency: currency.trim() || selectedContract?.currency || "",
       earnings: payout.trim() ? Number(payout.replace(/[^0-9.]/g, "")) || 0 : 0,
-      createdAtISO: new Date().toISOString(),
       linkedContractId: scope === "Linked" ? selectedContract?.id : undefined,
+      dueAtISO,
+      description: description.trim() || undefined,
+      assignee: assignee.trim(),
+      watchers,
+      reminder: reminder || undefined,
+      checklist: checklist.map(({ text, done }) => ({ text, done })),
+      dependencyIds,
+      referenceLinks: refLinks,
+      files,
     };
 
-    onCreate({ task, column: initialColumn, openAfterCreate });
-    onClose();
+    try {
+      await onCreate({ task, column: resolvedColumn, openAfterCreate });
+      onClose();
+    } catch {
+      setToast("Failed to create task.");
+    }
   }
 
   return (
@@ -1422,6 +1560,7 @@ function NewTaskDrawer({
                     value={contractId}
                     onChange={(e) => setContractId(e.target.value)}
                   >
+                    <option value="">Select a campaign</option>
                     {contracts.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.campaign} · {c.supplier}
@@ -1483,8 +1622,9 @@ function NewTaskDrawer({
                     <select
                       className="mt-1 w-full bg-transparent outline-none text-xs"
                       value={type}
-                      onChange={(e) => setType(e.target.value as TaskType)}
+                      onChange={(e) => setType(e.target.value as TaskTypeInput)}
                     >
+                      <option value="">Select type</option>
                       {(["live", "vod", "story", "post"] as TaskType[]).map((t) => (
                         <option key={t} value={t}>
                           {TYPE_CONFIG[t].label}
@@ -1498,8 +1638,9 @@ function NewTaskDrawer({
                     <select
                       className="mt-1 w-full bg-transparent outline-none text-xs"
                       value={initialColumn}
-                      onChange={(e) => setInitialColumn(e.target.value as ColumnId)}
+                      onChange={(e) => setInitialColumn(e.target.value as ColumnInput)}
                     >
+                      <option value="">Select column</option>
                       {COLUMNS.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.label}
@@ -1548,26 +1689,24 @@ function NewTaskDrawer({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-2">
                     <div className="text-[11px] text-slate-500">Assignee</div>
-                    <select
+                    <input
                       className="mt-1 w-full bg-transparent outline-none text-xs"
                       value={assignee}
                       onChange={(e) => setAssignee(e.target.value)}
-                    >
-                      <option value="@me">@me (Creator)</option>
-                      <option value="@crew.editor">@crew.editor (Editor)</option>
-                      <option value="@crew.pm">@crew.pm (PM)</option>
-                    </select>
+                      placeholder="Enter assignee handle or user ID"
+                    />
                     <div className="mt-1 text-[11px] text-slate-500">Who is responsible for completing this task.</div>
                   </div>
 
                   <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 p-2">
                     <div className="text-[11px] text-slate-500">Expected payout</div>
                     <div className="mt-1 flex items-center gap-2">
-                      <select className="bg-transparent outline-none text-xs" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                        <option value="UGX">UGX</option>
-                        <option value="USD">USD</option>
-                        <option value="GBP">GBP</option>
-                      </select>
+                      <input
+                        className="w-24 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-[#f77f00]/30"
+                        placeholder="UGX"
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value)}
+                      />
                       <input
                         className="flex-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-2 py-1.5 text-xs outline-none focus:ring-2 focus:ring-[#f77f00]/30"
                         placeholder="0"
@@ -1689,15 +1828,16 @@ function NewTaskDrawer({
                   <select
                     className="mt-1 w-full bg-transparent outline-none text-xs"
                     value={reminder}
-                    onChange={(e) => setReminder(e.target.value as any)}
+                    onChange={(e) => setReminder(e.target.value as ReminderInput)}
                   >
+                    <option value="">Select reminder</option>
                     <option value="none">None</option>
                     <option value="1h">1 hour before</option>
                     <option value="6h">6 hours before</option>
                     <option value="24h">24 hours before</option>
                   </select>
                   <div className="mt-1 text-[11px] text-slate-500">
-                    Demo reminder only — connect to notifications system later.
+                    Reminder preferences are saved with this task for follow-up workflows.
                   </div>
                 </div>
               </div>
@@ -1816,7 +1956,7 @@ function NewTaskDrawer({
                     <div className="text-[11px] text-slate-500">Task</div>
                     <div className="font-semibold dark:font-bold text-slate-800 dark:text-slate-100">{title || "—"}</div>
                     <div className="mt-1 text-[11px] text-slate-500">
-                      {TYPE_CONFIG[type].label} · {priority} · {COLUMNS.find((c) => c.id === initialColumn)?.label}
+                      {type ? TYPE_CONFIG[type].label : "—"} · {priority || "—"} · {COLUMNS.find((c) => c.id === initialColumn)?.label || "—"}
                     </div>
                   </div>
 
@@ -1844,7 +1984,7 @@ function NewTaskDrawer({
               <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-900 dark:text-amber-200">
                 <div className="font-semibold dark:font-bold">Premium guardrail</div>
                 <div className="mt-1">
-                  This demo doesn't send real notifications. Hook reminders to your Notifications service when integrating.
+                  Review due time, dependencies, and links before creating the task.
                 </div>
               </div>
             </div>
@@ -1864,10 +2004,10 @@ function NewTaskDrawer({
               </Btn>
             ) : (
               <>
-                <Btn tone="neutral" onClick={() => create(false)}>
+                <Btn tone="neutral" onClick={() => void create(false)}>
                   Create
                 </Btn>
-                <Btn tone="brand" onClick={() => create(true)}>
+                <Btn tone="brand" onClick={() => void create(true)}>
                   Create & open
                 </Btn>
               </>

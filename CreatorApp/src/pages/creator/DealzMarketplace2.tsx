@@ -229,15 +229,6 @@ function useCountdown(targetISO: string) {
   return { d, h, m, sec, diff };
 }
 
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {}
-};
-
 function toRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -256,30 +247,30 @@ function toBoolean(value: unknown, fallback = false): boolean {
 
 function normalizeHandle(value: unknown): string {
   const base = toString(value, "").trim();
-  if (!base) return "@creator";
+  if (!base) return "";
   return base.startsWith("@") ? base : `@${base}`;
 }
 
-function normalizeISO(value: unknown, fallback = new Date().toISOString()): string {
+function normalizeISO(value: unknown, fallback = ""): string {
   const raw = toString(value, "");
   if (!raw) return fallback;
   const parsed = new Date(raw);
   return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
 }
 
-function normalizeSupplier(value: unknown, fallbackName = "Seller"): Supplier {
+function normalizeSupplier(value: unknown): Supplier {
   const record = toRecord(value);
   return {
-    name: toString(record?.name, fallbackName),
-    category: toString(record?.category, "Seller"),
+    name: toString(record?.name, ""),
+    category: toString(record?.category, ""),
     logoUrl: toString(record?.logoUrl, "")
   };
 }
 
-function normalizeCreator(value: unknown, fallbackName = "Creator"): Creator {
+function normalizeCreator(value: unknown): Creator {
   const record = toRecord(value);
   return {
-    name: toString(record?.name, fallbackName),
+    name: toString(record?.name, ""),
     handle: normalizeHandle(record?.handle),
     avatarUrl: toString(record?.avatarUrl, ""),
     verified: toBoolean(record?.verified, false)
@@ -293,7 +284,7 @@ function normalizeOffer(value: unknown, index: number, fallbackPosterUrl: string
   return {
     id: toString(record?.id, `offer_${index + 1}`),
     type,
-    name: toString(record?.name, "Offer"),
+    name: toString(record?.name, ""),
     price: toNumber(record?.price, 0),
     basePrice: typeof record?.basePrice === "number" ? record.basePrice : undefined,
     currency,
@@ -311,7 +302,7 @@ function normalizeLiveItem(value: unknown, index: number, fallbackPosterUrl: str
   return {
     id: toString(record?.id, `live_item_${index + 1}`),
     kind,
-    name: toString(record?.name, "Item"),
+    name: toString(record?.name, ""),
     priceLabel: toString(record?.priceLabel, ""),
     stockLeft: toNumber(record?.stockLeft, 0),
     posterUrl: toString(record?.posterUrl, fallbackPosterUrl),
@@ -330,10 +321,10 @@ function resolveDealType(raw: unknown, hasShoppable: boolean, hasLive: boolean):
 
 function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse) {
   const suppliers = Array.isArray(payload.suppliers)
-    ? payload.suppliers.map((entry, index) => normalizeSupplier(entry, `Seller ${index + 1}`))
+    ? payload.suppliers.map((entry) => normalizeSupplier(entry))
     : [];
   const creators = Array.isArray(payload.creators)
-    ? payload.creators.map((entry, index) => normalizeCreator(entry, `Creator ${index + 1}`))
+    ? payload.creators.map((entry) => normalizeCreator(entry))
     : [];
 
   const deals: Deal[] = Array.isArray(payload.deals)
@@ -341,12 +332,13 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
       .map((entry, index) => {
         const record = toRecord(entry);
         if (!record) return null;
+        const dealId = toString(record.id, "").trim();
+        if (!dealId) return null;
 
-        const supplier = normalizeSupplier(record.supplier, suppliers[0]?.name || "Seller");
-        const creator = normalizeCreator(record.creator, creators[0]?.name || "Creator");
-        const nowISO = new Date().toISOString();
-        const startISO = normalizeISO(record.startISO, nowISO);
-        const endISO = normalizeISO(record.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString());
+        const supplier = normalizeSupplier(record.supplier);
+        const creator = normalizeCreator(record.creator);
+        const startISO = normalizeISO(record.startISO, "");
+        const endISO = normalizeISO(record.endISO, startISO);
 
         const shoppableRecord = toRecord(record.shoppable);
         const liveRecord = toRecord(record.live);
@@ -356,7 +348,7 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
           ? {
             id: toString(shoppableRecord.id, `ad_${toString(record.id, index + 1)}`),
             status: toString(shoppableRecord.status, "Draft") === "Generated" ? "Generated" : "Draft",
-            campaignName: toString(shoppableRecord.campaignName, toString(record.title, "Campaign")),
+            campaignName: toString(shoppableRecord.campaignName, toString(record.title, "")),
             campaignSubtitle: toString(shoppableRecord.campaignSubtitle, toString(record.tagline, "")),
             supplier,
             creator,
@@ -372,8 +364,8 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
                 normalizeOffer(offer, offerIndex, toString(shoppableRecord.heroImageUrl, supplier.logoUrl || creator.avatarUrl || ""))
               )
               : [],
-            ctaPrimaryLabel: toString(shoppableRecord.ctaPrimaryLabel, "Buy now"),
-            ctaSecondaryLabel: toString(shoppableRecord.ctaSecondaryLabel, "Add to cart"),
+            ctaPrimaryLabel: toString(shoppableRecord.ctaPrimaryLabel, ""),
+            ctaSecondaryLabel: toString(shoppableRecord.ctaSecondaryLabel, ""),
             kpis: Array.isArray(shoppableRecord.kpis)
               ? shoppableRecord.kpis
                 .map((kpi) => toRecord(kpi))
@@ -391,14 +383,14 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
               if (status === "Scheduled" || status === "Live" || status === "Ended") return status;
               return "Draft";
             })(),
-            title: toString(liveRecord.title, toString(record.title, "Live Session")),
+            title: toString(liveRecord.title, toString(record.title, "")),
             description: toString(liveRecord.description, ""),
-            host: normalizeCreator(liveRecord.host, creator.name),
-            supplier: normalizeSupplier(liveRecord.supplier, supplier.name),
+            host: normalizeCreator(liveRecord.host),
+            supplier: normalizeSupplier(liveRecord.supplier),
             platforms: Array.isArray(liveRecord.platforms) ? liveRecord.platforms.map((p) => toString(p, "")).filter(Boolean) : [],
             startISO: normalizeISO(liveRecord.startISO, startISO),
             endISO: normalizeISO(liveRecord.endISO, endISO),
-            timezoneLabel: toString(liveRecord.timezoneLabel, "Local time"),
+            timezoneLabel: toString(liveRecord.timezoneLabel, ""),
             promoLink: toString(liveRecord.promoLink, ""),
             heroImageUrl: toString(liveRecord.heroImageUrl, supplier.logoUrl || creator.avatarUrl || ""),
             heroVideoUrl: toString(liveRecord.heroVideoUrl, "") || undefined,
@@ -412,9 +404,9 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
           : undefined;
 
         return {
-          id: toString(record.id, `deal_${index + 1}`),
+          id: dealId,
           type,
-          title: toString(record.title, "Untitled deal"),
+          title: toString(record.title, ""),
           tagline: toString(record.tagline, ""),
           supplier,
           creator,
@@ -444,7 +436,7 @@ function normalizeMarketplacePayload(payload: DealzMarketplaceWorkspaceResponse)
 
   const selectedId = typeof payload.selectedId === "string" && deals.some((deal) => deal.id === payload.selectedId)
     ? payload.selectedId
-    : deals[0]?.id || "";
+    : "";
 
   return {
     suppliers,
@@ -968,7 +960,7 @@ function ShoppableAdPreview({
   const countdownLabel = state === "upcoming" ? "Starts in" : state === "live" ? "Ends in" : "Session ended";
 
   const offers = ad.offers || [];
-  const primaryOfferId = offers[0]?.id;
+  const primaryOfferId = "";
 
   const productsCount = offers.filter((o) => o.type === "PRODUCT").length;
   const servicesCount = offers.filter((o) => o.type === "SERVICE").length;
@@ -1002,7 +994,7 @@ function ShoppableAdPreview({
   const cartCount = useMemo(() => cartLines.reduce((sum, l) => sum + l.qty, 0), [cartLines]);
   const currencies = useMemo(() => new Set(cartLines.map((l) => l.offer.currency)), [cartLines]);
   const multiCurrency = currencies.size > 1;
-  const currency = cartLines[0]?.offer.currency || "USD";
+  const currency = cartLines.find((line) => line.offer.currency)?.offer.currency || "USD";
   const cartTotal = cartLines.reduce((sum, l) => sum + l.offer.price * l.qty, 0);
 
   return (
@@ -1543,7 +1535,7 @@ function LiveInvitePreviewPhone({
           <div className="h-[760px] overflow-y-auto">
             {/* Top bar */}
             <div className="sticky top-0 z-20 flex items-center justify-between bg-white/90 dark:bg-slate-950/90 px-3 py-2 backdrop-blur shadow-sm transition-colors ring-1 ring-slate-100 dark:ring-slate-800">
-              <div className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{live.title || "Untitled session"}</div>
+              <div className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{live.title}</div>
               <button
                 onClick={onSharePromo}
                 aria-label="Share"
@@ -1976,22 +1968,21 @@ function NewDealzWizard({
 }) {
   const [step, setStep] = useState(0);
   const [type, setType] = useState<WizardType>("");
-  const [supplierIdx, setSupplierIdx] = useState(0);
+  const [supplierIdx, setSupplierIdx] = useState(-1);
   // Default to first creator since selection is removed
   const [creatorIdx] = useState(0);
-  const [campaignName, setCampaignName] = useState("New Campaign");
+  const [campaignName, setCampaignName] = useState("");
 
-  // Default timing (next 24h) since selection is removed
-  const [startISO] = useState(new Date(Date.now() + 24 * 3600 * 1000).toISOString());
-  const [endISO] = useState(new Date(Date.now() + 25 * 3600 * 1000).toISOString());
+  const [startISO] = useState("");
+  const [endISO] = useState("");
   const hasSuppliers = suppliers.length > 0;
 
   useEffect(() => {
     if (!open) return;
     setStep(0);
     setType("");
-    setSupplierIdx(0);
-    setCampaignName("New Campaign");
+    setSupplierIdx(-1);
+    setCampaignName("");
   }, [open]);
 
   // Updated steps: 0=Type, 1=Supplier, 2=Campaign
@@ -2011,8 +2002,9 @@ function NewDealzWizard({
   function create(behavior: "open-builder" | "stay") {
     if (!type || !hasSuppliers) return;
 
-    const supplier = suppliers[supplierIdx] || suppliers[0];
-    const creator = creators[creatorIdx] || creators[0] || { name: "Creator", handle: "@creator", avatarUrl: "", verified: false };
+    const supplier = suppliers[supplierIdx];
+    const creator = creators[creatorIdx];
+    if (!supplier || !creator) return;
     const id = `dz_${Math.floor(Date.now() / 1000)}`;
     const heroImage = supplier?.logoUrl || creator.avatarUrl || "";
 
@@ -2020,12 +2012,12 @@ function NewDealzWizard({
       id,
       type,
       title: type === "Shoppable Adz" ? campaignName : type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
-      tagline: type === "Shoppable Adz" ? "Creator-first shoppable clips" : type === "Live Sessionz" ? "Live run-of-show + drops" : "Live session + shoppable clips",
+      tagline: "",
       supplier,
       creator,
       startISO,
       endISO,
-      notes: "Created from +New Dealz."
+      notes: ""
     };
 
     const withShoppable =
@@ -2036,12 +2028,12 @@ function NewDealzWizard({
             id: `ad_${id}`,
             status: "Draft",
             campaignName,
-            campaignSubtitle: "New deal draft",
+            campaignSubtitle: "",
             supplier,
             creator,
             startISO,
             endISO,
-            platforms: ["Instagram", "TikTok"],
+            platforms: [],
             heroImageUrl: heroImage,
             offers: [],
             ctaPrimaryLabel: "Buy now",
@@ -2059,14 +2051,14 @@ function NewDealzWizard({
             id: `live_${id}`,
             status: "Draft",
             title: type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
-            description: "Draft live session created from Dealz Marketplace. Add run-of-show, featured items, and destinations in Live Builder.",
+            description: "",
             supplier,
             host: creator,
-            platforms: ["Instagram"],
+            platforms: [],
             startISO,
             endISO,
-            timezoneLabel: Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time",
-            promoLink: `https://mldz.link/live_${id}`,
+            timezoneLabel: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+            promoLink: "",
             heroImageUrl: heroImage,
             featured: []
           }
@@ -2077,7 +2069,7 @@ function NewDealzWizard({
     onClose();
   }
 
-  const supplier = suppliers[supplierIdx] || suppliers[0] || { name: "Supplier", category: "Seller", logoUrl: "" };
+  const supplier = suppliers[supplierIdx] || null;
 
   return (
     <Drawer
@@ -2203,7 +2195,7 @@ function NewDealzWizard({
                   placeholder="e.g., Valentine Glow Week"
                 />
                 <div className="mt-3 text-[11px] text-neutral-600 dark:text-slate-400">
-                  Supplier: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
+                  Supplier: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier?.name || "—"}</span>
                   {/* Creator is implicitly selected as current user. */}
                   {/* · Creator: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{creator.handle}</span> */}
                 </div>
@@ -2213,7 +2205,7 @@ function NewDealzWizard({
                 <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Create</div>
                 <div className="mt-2 text-sm text-neutral-700 dark:text-slate-300">
                   Deal type: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{type || "—"}</span> · Supplier:{" "}
-                  <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
+                  <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier?.name || "—"}</span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Btn tone="primary" onClick={() => create("open-builder")} left={<Sparkles className="h-4 w-4" />}>
@@ -2245,8 +2237,8 @@ export default function DealzMarketplace() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const { data: workspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
-    initialData: EMPTY_MARKETPLACE_STATE,
+  const { data: workspaceState, loading, error } = useApiResource<DealzMarketplaceWorkspaceResponse | null>({
+    initialData: null,
     loader: () => creatorApi.dealzMarketplace()
   });
 
@@ -2279,7 +2271,9 @@ export default function DealzMarketplace() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(window.location.search);
-    const isPickerReturn = sp.get("restore") === "1" || sp.has("assetId");
+    const source = (sp.get("pickerSource") || "").toLowerCase();
+    const hasPickerSource = source === "live-builder" || source === "ad-builder";
+    const isPickerReturn = sp.get("restore") === "1" || sp.has("assetId") || hasPickerSource;
     if (!isPickerReturn) return;
     const returnDealId = sp.get("dealId") || "";
     if (returnDealId) {
@@ -2287,7 +2281,6 @@ export default function DealzMarketplace() {
       setSelectedId(returnDealId);
     }
 
-    const source = (sp.get("pickerSource") || "").toLowerCase();
     if (source === "live-builder") {
       setLiveBuilderOpen(true);
       return;
@@ -2320,7 +2313,16 @@ export default function DealzMarketplace() {
   const [liveCart, setLiveCart] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    const normalized = normalizeMarketplacePayload(workspaceState || EMPTY_MARKETPLACE_STATE);
+    if (!workspaceState) {
+      setSuppliers([]);
+      setCreators([]);
+      setDealz([]);
+      setCart({});
+      setLiveCart({});
+      setSelectedId("");
+      return;
+    }
+    const normalized = normalizeMarketplacePayload(workspaceState);
     setSuppliers(normalized.suppliers);
     setCreators(normalized.creators);
     setDealz(normalized.deals);
@@ -2460,7 +2462,9 @@ export default function DealzMarketplace() {
   useEffect(() => {
     const ad = selected?.shoppable;
     if (!ad) return;
-    if (!selectedHeroOfferId) setSelectedHeroOfferId(ad.offers[0]?.id || "");
+    if (selectedHeroOfferId && !ad.offers.some((offer) => offer.id === selectedHeroOfferId)) {
+      setSelectedHeroOfferId("");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
@@ -2477,7 +2481,7 @@ export default function DealzMarketplace() {
 
   // compute countdown for viewer
   const startISO = selected?.startISO || new Date().toISOString();
-  const endISO = selected?.endISO || new Date(Date.now() + 3600 * 1000).toISOString();
+  const endISO = selected?.endISO || "";
   const startMs = new Date(startISO).getTime();
   const endMs = new Date(endISO).getTime();
   const countdownState = computeCountdownState(Date.now(), startMs, endMs);
@@ -2644,7 +2648,7 @@ export default function DealzMarketplace() {
     const details = live.description ? `${live.description}\n\n${live.promoLink}` : live.promoLink;
     const params = new URLSearchParams({
       action: "TEMPLATE",
-      text: live.title || "Live session",
+      text: live.title || "",
       dates: `${toGoogleDate(live.startISO)}/${toGoogleDate(live.endISO)}`,
       details
     });
@@ -2665,7 +2669,7 @@ export default function DealzMarketplace() {
     } else {
       const live = selected.live;
       if (!live) return "";
-      const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId;
+      const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId;
       const it = live.featured.find((x) => x.id === itemId);
       return it ? `${it.name} · ${it.priceLabel}` : "";
     }
@@ -2681,7 +2685,7 @@ export default function DealzMarketplace() {
     } else {
       const live = selected.live;
       if (!live) return null;
-      const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId || "";
+      const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId || "";
       return stockLabelForLive(live, itemId);
     }
   }, [viewerCtx, selected?.id, selectedHeroOfferId, countdownState]);
@@ -2734,7 +2738,7 @@ export default function DealzMarketplace() {
 
     const live = selected.live;
     if (!live) return;
-    const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId;
+    const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId;
     if (!itemId) return setToast("Choose an item first.");
     liveBuy(live, itemId);
   };
@@ -2753,7 +2757,7 @@ export default function DealzMarketplace() {
 
     const live = selected.live;
     if (!live) return;
-    const itemId = viewerCtx.kind === "hero" ? (live.featured[0]?.id || "") : viewerCtx.itemId;
+    const itemId = viewerCtx.kind === "hero" ? "" : viewerCtx.itemId;
     if (!itemId) return setToast("Choose an item first.");
     liveAdd(live, itemId);
   };
@@ -2765,6 +2769,24 @@ export default function DealzMarketplace() {
     { key: "Live Sessionz", label: "Live Sessionz", icon: <Video className="h-4 w-4" /> },
     { key: "Live + Shoppables", label: "Live + Shoppables", icon: <Sparkles className="h-4 w-4" /> }
   ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading dealz marketplace…
+      </div>
+    );
+  }
+
+  if (error || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Dealz marketplace data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-slate-950 transition-colors">

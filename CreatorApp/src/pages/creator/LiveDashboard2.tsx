@@ -287,7 +287,7 @@ type LiveDashboardWorkspace = {
 function toLiveSession(record: Record<string, unknown>): LiveSession {
   return {
     id: String(record.id || ""),
-    title: String(record.title || "Untitled live session"),
+    title: String(record.title || ""),
     status: String(record.status || "Draft") as LiveStatus,
     supplierId: String(record.supplierId || ""),
     campaignId: typeof record.campaignId === "string" ? record.campaignId : undefined,
@@ -296,8 +296,8 @@ function toLiveSession(record: Record<string, unknown>): LiveSession {
     heroImageUrl: String(record.heroImageUrl || ""),
     heroVideoUrl: typeof record.heroVideoUrl === "string" ? record.heroVideoUrl : undefined,
     desktopMode: record.desktopMode === "fullscreen" ? "fullscreen" : "modal",
-    startISO: String(record.startISO || new Date().toISOString()),
-    endISO: String(record.endISO || new Date().toISOString()),
+    startISO: String(record.startISO || ""),
+    endISO: String(record.endISO || ""),
     peakViewers: Number(record.peakViewers || 0),
     avgWatchMin: Number(record.avgWatchMin || 0),
     chatRate: Number(record.chatRate || 0),
@@ -475,35 +475,53 @@ function NewLiveSessionDrawer({
   }) => Promise<boolean> | boolean;
   createPending?: boolean;
 }) {
+  type DesktopModeInput = LiveDesktopMode | "";
   const [supplierId, setSupplierId] = useState("");
   const [campaignId, setCampaignId] = useState<string>("");
   const [hostId, setHostId] = useState("");
-  const [title, setTitle] = useState("New Live Session");
-  const [platforms, setPlatforms] = useState<LivePlatform[]>(["TikTok Live", "Instagram Live"]);
+  const [title, setTitle] = useState("");
+  const [platforms, setPlatforms] = useState<LivePlatform[]>([]);
+  const [desktopMode, setDesktopMode] = useState<DesktopModeInput>("");
+  const [startDateISO, setStartDateISO] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endDateISO, setEndDateISO] = useState("");
+  const [endTime, setEndTime] = useState("");
 
   const scopedCampaigns = useMemo(() => campaigns.filter((c) => c.supplierId === supplierId), [campaigns, supplierId]);
+  const scheduleReady = useMemo(() => {
+    if (!startDateISO || !startTime || !endDateISO || !endTime) return false;
+    const start = new Date(`${startDateISO}T${startTime}`);
+    const end = new Date(`${endDateISO}T${endTime}`);
+    return !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end.getTime() > start.getTime();
+  }, [startDateISO, startTime, endDateISO, endTime]);
 
   useEffect(() => {
     if (!open) return;
-    const firstSupplierId = suppliers[0]?.id || "";
-    const firstHostId = hosts[0]?.id || "";
-    setSupplierId((prev) => (prev && suppliers.some((entry) => entry.id === prev) ? prev : firstSupplierId));
-    setHostId((prev) => (prev && hosts.some((entry) => entry.id === prev) ? prev : firstHostId));
-    setTitle("New Live Session");
-    setPlatforms(["TikTok Live", "Instagram Live"]);
+    setSupplierId((prev) => (prev && suppliers.some((entry) => entry.id === prev) ? prev : ""));
+    setCampaignId("");
+    setHostId((prev) => (prev && hosts.some((entry) => entry.id === prev) ? prev : ""));
+    setTitle("");
+    setPlatforms([]);
+    setDesktopMode("");
+    setStartDateISO("");
+    setStartTime("");
+    setEndDateISO("");
+    setEndTime("");
   }, [open, suppliers, hosts]);
 
   useEffect(() => {
     // reset campaign if not in scoped list
     if (!open) return;
-    if (!scopedCampaigns.find((c) => c.id === campaignId)) setCampaignId(scopedCampaigns[0]?.id || "");
+    if (!scopedCampaigns.find((c) => c.id === campaignId)) setCampaignId("");
   }, [open, scopedCampaigns, campaignId]);
 
   const canCreate = Boolean(
     supplierId &&
       hostId &&
       title.trim() &&
-      platforms.length,
+      platforms.length &&
+      desktopMode &&
+      scheduleReady,
   );
 
   return (
@@ -514,6 +532,7 @@ function NewLiveSessionDrawer({
             <div>
               <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Supplier (Seller / Provider)</div>
               <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-semibold text-slate-900 dark:text-slate-100 transition-colors">
+                <option value="">Select supplier</option>
                 {suppliers.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name} ({p.kind})
@@ -525,6 +544,7 @@ function NewLiveSessionDrawer({
             <div>
               <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Campaign</div>
               <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-semibold text-slate-900 dark:text-slate-100 transition-colors">
+                <option value="">No campaign selected</option>
                 {scopedCampaigns.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -542,12 +562,56 @@ function NewLiveSessionDrawer({
             <div>
               <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Host</div>
               <select value={hostId} onChange={(e) => setHostId(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] font-semibold text-slate-900 dark:text-slate-100 transition-colors">
+                <option value="">Select host</option>
                 {hosts.map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.name} ({h.handle})
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Desktop mode</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(["modal", "fullscreen"] as LiveDesktopMode[]).map((mode) => {
+                  const active = desktopMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setDesktopMode(mode)}
+                      className={cx(
+                        "px-3 py-2 rounded-2xl border text-[12px] font-semibold transition-colors",
+                        active
+                          ? "border-amber-300 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-100"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-slate-100"
+                      )}
+                    >
+                      {mode === "modal" ? "Modal" : "Fullscreen"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Start date</div>
+                <input type="date" value={startDateISO} onChange={(e) => setStartDateISO(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">Start time</div>
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">End date</div>
+                <input type="date" value={endDateISO} onChange={(e) => setEndDateISO(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">End time</div>
+                <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="mt-1 w-full px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[12px] text-slate-900 dark:text-slate-100 transition-colors" />
+              </div>
             </div>
           </div>
         </Card>
@@ -594,9 +658,9 @@ function NewLiveSessionDrawer({
         <PrimaryButton
           disabled={!canCreate || createPending}
           onClick={() => {
-            // Default to now + 1hr (unscheduled)
-            const startISO = new Date(Date.now() + 3600 * 1000).toISOString();
-            const endISO = new Date(Date.now() + 7200 * 1000).toISOString();
+            if (!desktopMode) return;
+            const startISO = combineDateTime(startDateISO, startTime);
+            const endISO = combineDateTime(endDateISO, endTime);
             void Promise.resolve(
               onCreate({
                 title: title.trim(),
@@ -605,7 +669,7 @@ function NewLiveSessionDrawer({
                 hostId,
                 startISO,
                 endISO,
-                desktopMode: "modal",
+                desktopMode: desktopMode as LiveDesktopMode,
                 platforms,
               }),
             ).then((created) => {
@@ -919,9 +983,12 @@ export default function LiveDashboardPage() {
 
   useEffect(() => {
     // Ensure selection remains valid after creating/removing sessions
-    if (!sessions.length) return;
-    if (!toolSessionId || !sessions.find((s) => s.id === toolSessionId)) {
-      setToolSessionId(sessions[0].id);
+    if (!sessions.length) {
+      if (toolSessionId) setToolSessionId("");
+      return;
+    }
+    if (toolSessionId && !sessions.find((s) => s.id === toolSessionId)) {
+      setToolSessionId("");
     }
   }, [sessions, toolSessionId]);
 
@@ -1107,13 +1174,6 @@ export default function LiveDashboardPage() {
           desktopMode: payload.desktopMode,
           startISO: payload.startISO,
           endISO: payload.endISO,
-          heroImageUrl: "",
-          heroVideoUrl: "",
-          peakViewers: 0,
-          avgWatchMin: 0,
-          chatRate: 0,
-          gmv: 0,
-          crewConflicts: 0,
         },
       });
       await reloadWorkspace();

@@ -98,61 +98,46 @@ function LiveReplaysClipsPage() {
   const replays = useMemo(() => replayRecords.map(toReplay), [replayRecords]);
 
   const selectedReplay =
-    replays.find((r) => r.id === selectedReplayId) || replays[0] || null;
+    replays.find((r) => r.id === selectedReplayId) || null;
 
   const aiClipSuggestions = useMemo(() => {
     if (!selectedReplay) return [];
-    // Simple demo: different suggestions depending on replay
-    if (selectedReplay.id === "R-101") {
-      return [
-        {
-          id: 1,
-          label: "Hook + first serum demo",
-          start: 15,
-          end: 75,
-          tags: ["Hook within first 3 seconds", "Texture demo"]
-        },
-        {
-          id: 2,
-          label: "Before/after reveal",
-          start: 420,
-          end: 465,
-          tags: ["Visual proof", "High comment volume"]
-        },
-        {
-          id: 3,
-          label: "Flash deal countdown",
-          start: 900,
-          end: 945,
-          tags: ["Urgency", "Sales spike"]
-        }
-      ];
-    }
-    if (selectedReplay.id === "R-102") {
-      return [
-        {
-          id: 1,
-          label: "Gadget unboxing moment",
-          start: 120,
-          end: 180,
-          tags: ["Unboxing", "Reactions spike"]
-        },
-        {
-          id: 2,
-          label: "Top 3 gadgets summary",
-          start: 2100,
-          end: 2160,
-          tags: ["Summary", "Shareable"]
-        }
-      ];
-    }
+    const seconds = selectedReplay.duration
+      .split(":")
+      .map((part) => Number(part))
+      .filter((part) => Number.isFinite(part));
+    const totalSeconds =
+      seconds.length === 3
+        ? seconds[0] * 3600 + seconds[1] * 60 + seconds[2]
+        : seconds.length === 2
+          ? seconds[0] * 60 + seconds[1]
+          : 0;
+    if (totalSeconds <= 0) return [];
+    const safeStart = Math.max(0, Math.floor(totalSeconds * 0.1));
+    const safeMid = Math.max(0, Math.floor(totalSeconds * 0.45));
+    const safeEnd = Math.max(0, Math.floor(totalSeconds * 0.75));
+    const makeEnd = (start: number, desired: number) => Math.min(totalSeconds, Math.max(start + 10, desired));
     return [
       {
         id: 1,
-        label: "Warm welcome + show outline",
-        start: 30,
-        end: 90,
-        tags: ["Warm opener", "Faith-compatible tone"]
+        label: "Opening highlight",
+        start: safeStart,
+        end: makeEnd(safeStart, safeStart + 60),
+        tags: selectedReplay.performanceTags.slice(0, 2)
+      },
+      {
+        id: 2,
+        label: "Mid-session highlight",
+        start: safeMid,
+        end: makeEnd(safeMid, safeMid + 60),
+        tags: selectedReplay.performanceTags.slice(0, 2)
+      },
+      {
+        id: 3,
+        label: "Closing highlight",
+        start: safeEnd,
+        end: makeEnd(safeEnd, safeEnd + 45),
+        tags: selectedReplay.performanceTags.slice(0, 2)
       }
     ];
   }, [selectedReplay]);
@@ -567,8 +552,16 @@ function ClipEditorPanel({
   onChangeCta,
   secondsToTime
 }: ClipEditorPanelProps) {
-  const totalDurationSec = 1200; // pretend 20 min timeline for demo
-  const clamp = (val: number): number => Math.min(Math.max(val, 0), totalDurationSec);
+  const totalDurationSec = useMemo(() => {
+    if (!replay?.duration) return 0;
+    const parts = replay.duration.split(":").map((part) => Number(part));
+    if (parts.some((part) => !Number.isFinite(part))) return 0;
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parts.length === 1 ? parts[0] : 0;
+  }, [replay?.duration]);
+  const safeDurationSec = Math.max(1, totalDurationSec);
+  const clamp = (val: number): number => Math.min(Math.max(val, 0), safeDurationSec);
 
   const handleStartChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const v = clamp(Number(e.target.value) || 0);
@@ -582,8 +575,8 @@ function ClipEditorPanel({
     onChangeEnd(v);
   };
 
-  const startPercent = (clipStart / totalDurationSec) * 100;
-  const endPercent = (clipEnd / totalDurationSec) * 100;
+  const startPercent = (clipStart / safeDurationSec) * 100;
+  const endPercent = (clipEnd / safeDurationSec) * 100;
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-3 text-sm">

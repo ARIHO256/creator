@@ -971,7 +971,14 @@ export class DashboardService {
   }
 
   async myDay(userId: string) {
-    return this.readReadModel(userId, 'my-day-shell', () => this.computeMyDay(userId));
+    try {
+      return await this.readReadModel(userId, 'my-day-shell', () => this.computeMyDay(userId));
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return this.emptyMyDayShell();
+      }
+      throw error;
+    }
   }
 
   private async computeMyDay(userId: string) {
@@ -1187,22 +1194,7 @@ export class DashboardService {
         },
         orderBy: { createdAt: 'asc' }
       }),
-      this.prisma.workspace.findUnique({
-        where: { ownerUserId: userId },
-        include: {
-          crewSessions: {
-            include: {
-              assignments: {
-                include: {
-                  member: true
-                }
-              }
-            },
-            orderBy: { updatedAt: 'desc' },
-            take: 1
-          }
-        }
-      })
+      this.readWorkspaceWithCrew(userId)
     ]);
 
     const creatorName = user?.creatorProfile?.name || 'Creator';
@@ -1489,6 +1481,54 @@ export class DashboardService {
     return points;
   }
 
+  private emptyMyDayShell() {
+    const now = new Date().toISOString();
+    return {
+      header: {
+        isLiveRunning: false,
+        liveViewers: 0,
+        statusLabel: 'Online'
+      },
+      recentLive: null,
+      kpis: {
+        lives: 0,
+        tasks: 0,
+        proposals: 0,
+        approvals: 0
+      },
+      smartPlan: [],
+      timeline: [{ time: 'Today', label: 'No scheduled items yet', type: 'light' }],
+      nextLive: null,
+      crew: {
+        title: 'No scheduled live session',
+        rows: []
+      },
+      tasks: [],
+      proposals: [],
+      earnings: {
+        today: 0,
+        todayFlat: 0,
+        todayCommission: 0,
+        todaySpark: [0, 0, 0, 0, 0, 0, 0],
+        last7: 0,
+        last7Avg: 0,
+        last7Spark: [0, 0, 0, 0, 0, 0, 0],
+        mtd: 0,
+        mtdGoal: 0,
+        mtdSpark: [0, 0, 0, 0, 0, 0, 0],
+        currency: 'USD',
+        available: 0,
+        pending: 0,
+        lifetime: 0
+      },
+      lastUpdatedAt: now,
+      counts: {
+        dueToday: 0,
+        completedToday: 0
+      }
+    };
+  }
+
   private resolveMyDayTaskType(task: { title?: string | null; metadata?: Prisma.JsonValue | null }) {
     const explicitType = this.readString(task.metadata, 'type') || this.readString(task.metadata, 'taskType');
     if (explicitType) {
@@ -1538,6 +1578,39 @@ export class DashboardService {
     const next = new Date(value);
     next.setDate(next.getDate() + amount);
     return next;
+  }
+
+  private async readWorkspaceWithCrew(userId: string) {
+    try {
+      return await this.prisma.workspace.findUnique({
+        where: { ownerUserId: userId },
+        include: {
+          crewSessions: {
+            include: {
+              assignments: {
+                include: {
+                  member: true
+                }
+              }
+            },
+            orderBy: { updatedAt: 'desc' },
+            take: 1
+          }
+        }
+      });
+    } catch (error) {
+      if (this.isMissingSchemaObjectError(error)) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private isMissingSchemaObjectError(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2021' || error.code === 'P2022')
+    );
   }
 
   private securityWarnings() {

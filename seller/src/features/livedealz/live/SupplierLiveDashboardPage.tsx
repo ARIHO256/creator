@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
+import { LiveBuilderDrawer as SupplierFacingLiveBuilderDrawer } from "./LiveBuilder_LivePlan_SupplierFacing";
 
 /**
  * SupplierLiveDashboardPage.jsx
@@ -326,8 +327,6 @@ function isoNowPlus(ms) {
   return new Date(Date.now() + ms).toISOString();
 }
 
-const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-
 /* ------------------------------ UI primitives ------------------------------ */
 
 function PageHeader({ pageTitle, rightContent }) {
@@ -335,6 +334,7 @@ function PageHeader({ pageTitle, rightContent }) {
     <header className="sticky top-0 z-30 w-full bg-white dark:bg-slate-900/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
       <div className="w-full max-w-full px-3 sm:px-4 md:px-5 lg:px-6 py-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500 font-semibold">Supplier App</div>
           <h1 className="truncate text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
             {pageTitle}
           </h1>
@@ -1482,8 +1482,7 @@ export default function SupplierLiveDashboardPage() {
           startISO: payload.startISO,
           endISO: payload.endISO,
           desktopMode: payload.desktopMode,
-          platforms: payload.platforms,
-          heroVideoUrl: SAMPLE_VIDEO_1
+          platforms: payload.platforms
         });
 
         await loadWorkspace();
@@ -2019,22 +2018,15 @@ export default function SupplierLiveDashboardPage() {
           asyncApi={{ run, isPending }}
         />
 
-        <LiveBuilderDrawer
+        <SupplierFacingLiveBuilderDrawer
           open={builderOpen}
           onClose={() => {
             setBuilderOpen(false);
             setBuilderSessionId(undefined);
             setPrefillDealId(undefined);
           }}
+          sessionId={builderSessionId}
           dealId={prefillDealId}
-          session={sessions.find((s) => s.id === (builderSessionId || "")) || null}
-          campaign={
-            builderSessionId
-              ? campaigns.find((c) => c.id === sessions.find((s) => s.id === builderSessionId)?.campaignId)
-              : null
-          }
-          toastApi={toastApi}
-          asyncApi={{ run, isPending }}
           zIndex={130}
         />
       </div>

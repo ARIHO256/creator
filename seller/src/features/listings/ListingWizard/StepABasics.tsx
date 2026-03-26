@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   Typography,
   Box,
@@ -17,6 +18,8 @@ import { useNavigate } from 'react-router-dom';
 import { useLocalization } from '../../../localization/LocalizationProvider';
 import { useRolePageContent } from '../../../data/pageContent';
 import type { ListingLineSeed, ListingTaxonomyNode } from '../../../data/pageTypes';
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/ListingWizard/StepABasics").catch(() => undefined);
 
 // -----------------------------------------------------------------------------
 // Brand tokens (match storefront)

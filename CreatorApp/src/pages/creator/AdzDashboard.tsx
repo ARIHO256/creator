@@ -497,8 +497,8 @@ function BarList({
       </div>
 
       <div className="mt-4 space-y-3">
-        {rows.map((r) => (
-          <div key={r.label}>
+        {rows.map((r, index) => (
+          <div key={`${r.label}:${index}`}>
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="truncate text-[12px] font-extrabold text-neutral-900 dark:text-slate-100">{r.label}</div>
@@ -515,19 +515,6 @@ function BarList({
     </div>
   );
 }
-
-/** ------------------------------ Mock data ------------------------------ */
-
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {},
-};
-
-const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -645,7 +632,7 @@ function mapOffer(raw: unknown, index: number, fallbackPosterUrl: string): Offer
   return {
     id: asString(record?.id, `offer_${index + 1}`),
     type,
-    name: asString(record?.name, "Offer"),
+    name: asString(record?.name, ""),
     currency: asCurrency(record?.currency, "UGX"),
     price: Math.max(0, asNumber(record?.price, 0)),
     basePrice: typeof record?.basePrice === "number" ? record.basePrice : undefined,
@@ -683,8 +670,7 @@ function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
   const creatorRecord = asRecord(record.creator);
 
   const offersRaw = asArray(shoppable.offers);
-  const fallbackHero = asString(shoppable.heroImageUrl, asString(supplierRecord?.logoUrl, BLANK_IMAGE) || BLANK_IMAGE);
-  const offers = offersRaw.map((offer, offerIndex) => mapOffer(offer, offerIndex, fallbackHero));
+  const offers = offersRaw.map((offer, offerIndex) => mapOffer(offer, offerIndex, ""));
 
   const inferredCurrency = offers[0]?.currency || asCurrency(shoppable.currency, "UGX");
   const metricsRecord = asRecord(shoppable.metrics);
@@ -717,28 +703,29 @@ function mapMarketplaceDealToAd(raw: unknown, index: number): Ad | null {
 
   return {
     id: asString(record.id, `adz_${index + 1}`),
-    campaignName: asString(shoppable.campaignName, asString(record.title, `Campaign ${index + 1}`)),
+    campaignName: asString(shoppable.campaignName, asString(record.title, "")),
     campaignSubtitle: asString(shoppable.campaignSubtitle, asString(record.tagline, "")),
     supplier: {
-      name: asString(supplierRecord?.name, "Seller"),
-      category: asString(supplierRecord?.category, "Seller"),
-      logoUrl: asString(supplierRecord?.logoUrl, BLANK_IMAGE) || BLANK_IMAGE,
+      name: asString(supplierRecord?.name, ""),
+      category: asString(supplierRecord?.category, ""),
+      logoUrl: asString(supplierRecord?.logoUrl, ""),
     },
     creator: {
-      name: asString(creatorRecord?.name, "Creator"),
+      name: asString(creatorRecord?.name, ""),
       handle: (() => {
-        const handle = asString(creatorRecord?.handle, "@creator");
+        const handle = asString(creatorRecord?.handle, "");
+        if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
-      avatarUrl: asString(creatorRecord?.avatarUrl, BLANK_IMAGE) || BLANK_IMAGE,
+      avatarUrl: asString(creatorRecord?.avatarUrl, ""),
       verified: asBoolean(creatorRecord?.verified, false),
     },
     status,
     platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
-    startISO: asString(shoppable.startISO, asString(record.startISO, new Date().toISOString())),
-    endISO: asString(shoppable.endISO, asString(record.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString())),
-    timezone: asString(shoppable.timezone, Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
-    heroImageUrl: asString(shoppable.heroImageUrl, offers[0]?.posterUrl || BLANK_IMAGE),
+    startISO: asString(shoppable.startISO, asString(record.startISO, "")),
+    endISO: asString(shoppable.endISO, asString(record.endISO, "")),
+    timezone: asString(shoppable.timezone, asString(record.timezone, "")),
+    heroImageUrl: asString(shoppable.heroImageUrl, ""),
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     compensation: mapCompensation(shoppable.compensation ?? record.compensation, inferredCurrency),
     offers,
@@ -785,8 +772,8 @@ export default function AdzDashboard() {
   const [drawer, setDrawer] = useState<DrawerKey>(null);
   const [drawerData, setDrawerData] = useState<string | undefined>(undefined);
 
-  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
-    initialData: EMPTY_MARKETPLACE_STATE,
+  const { data: workspaceState, setData: setWorkspaceState, loading, error } = useApiResource<DealzMarketplaceWorkspaceResponse | null>({
+    initialData: null,
     loader: () => creatorApi.dealzMarketplace(),
     onError: () => {
       showNotification("Unable to load dashboard data from API.", "error");
@@ -795,14 +782,19 @@ export default function AdzDashboard() {
 
   const [ads, setAds] = useState<Ad[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  const selected = useMemo(() => ads.find((a) => a.id === selectedId), [ads, selectedId]);
   const drawerAd = useMemo(
     () => ads.find((ad) => ad.id === drawerData) || selected,
     [ads, drawerData, selected],
   );
 
   useEffect(() => {
-    const nextAds = mapMarketplacePayloadToAds(workspaceState || EMPTY_MARKETPLACE_STATE);
+    if (!workspaceState) {
+      setAds([]);
+      setSelectedId("");
+      return;
+    }
+    const nextAds = mapMarketplacePayloadToAds(workspaceState);
     const selectedFromPayload = asString(workspaceState?.selectedId, "");
     setAds(nextAds);
     setSelectedId((current) => {
@@ -812,9 +804,17 @@ export default function AdzDashboard() {
       if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) {
         return selectedFromPayload;
       }
-      return nextAds[0]?.id || "";
+      return "";
     });
   }, [workspaceState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const contextId = params.get("adId") || params.get("dealId") || "";
+    if (!contextId) return;
+    setSelectedId((current) => (ads.some((ad) => ad.id === contextId) ? contextId : current));
+  }, [ads]);
 
   // Search/filter
   const [q, setQ] = useState("");
@@ -1000,6 +1000,24 @@ export default function AdzDashboard() {
     ads.forEach((a) => m.set(a.status, (m.get(a.status) || 0) + 1));
     return Array.from(m.entries()).map(([label, value]) => ({ label, value }));
   }, [ads]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading dashboard…
+      </div>
+    );
+  }
+
+  if (error || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Dashboard data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-slate-950 transition-colors">

@@ -105,6 +105,7 @@ type Ad = {
   id: string;
   rank: number;
   status: AdStatus;
+  saved: boolean;
 
   campaignName: string;
   campaignSubtitle: string;
@@ -588,10 +589,12 @@ function CountdownPill({ startsAt, endsAt }: { startsAt: Date; endsAt: Date }) {
 /** Full Shoppable Ad Preview (buyer-first; phone-sized; internal scroll) */
 function ShoppableAdPreview({
   ad,
+  saved,
   cart,
   modeByOffer,
   onSetOfferMode,
   shareEnabled,
+  onToggleSaved,
   onPlayHero,
   onPlayOffer,
   onBuy,
@@ -601,11 +604,13 @@ function ShoppableAdPreview({
   onShare,
 }: {
   ad: Ad;
+  saved: boolean;
   cart: CartState;
   modeByOffer: Record<string, SellingMode>;
   onSetOfferMode: (offerId: string, mode: SellingMode) => void;
 
   shareEnabled?: boolean;
+  onToggleSaved: () => void;
   onPlayHero: () => void;
   onPlayOffer: (offerId: string) => void;
   onBuy: (offerId: string, mode: SellingMode) => void;
@@ -619,7 +624,6 @@ function ShoppableAdPreview({
 
   const state = computeCountdownState(Date.now(), startsAt.getTime(), endsAt.getTime());
 
-  const [saved, setSaved] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
 
   const cartLines = useMemo(() => {
@@ -639,7 +643,7 @@ function ShoppableAdPreview({
 
   const currencySet = useMemo(() => new Set(cartLines.map((l) => l.offer.currency)), [cartLines]);
   const multiCurrency = currencySet.size > 1;
-  const currency = cartLines[0]?.offer.currency || "USD";
+  const currency = cartLines.find((line) => line.offer.currency)?.offer.currency || "USD";
   const cartTotal = useMemo(() => {
     if (multiCurrency) return 0;
     return cartLines.reduce((s, l) => s + lineTotalFor(l.offer, l.mode, l.qty), 0);
@@ -741,7 +745,7 @@ function ShoppableAdPreview({
                   <div className="absolute right-3 top-3">
                     <button
                       type="button"
-                      onClick={() => setSaved((s) => !s)}
+                      onClick={onToggleSaved}
                       className={cx(
                         "rounded-full p-2 backdrop-blur ring-1",
                         saved ? "bg-white/35 ring-white/40" : "bg-white/20 ring-white/30 hover:bg-white/30",
@@ -1004,19 +1008,6 @@ function ShoppableAdPreview({
   );
 }
 
-/** ------------------------------ Data mapping ------------------------------ */
-
-const EMPTY_MARKETPLACE_STATE: DealzMarketplaceWorkspaceResponse = {
-  deals: [],
-  suppliers: [],
-  creators: [],
-  selectedId: "",
-  cart: {},
-  liveCart: {},
-};
-
-const BLANK_IMAGE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -1044,13 +1035,6 @@ function asCurrency(value: unknown, fallback: "UGX" | "USD" = "UGX"): "UGX" | "U
   return "UGX";
 }
 
-function compactNum(value: number): string {
-  if (!Number.isFinite(value)) return "0";
-  if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  return `${Math.round(value)}`;
-}
-
 function parseCompactMetric(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string") return null;
@@ -1075,7 +1059,7 @@ function adzStatus(raw: unknown): AdStatus {
   return "Draft";
 }
 
-function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
+function mapOffer(raw: unknown, index: number): Offer {
   const record = asRecord(raw);
   const type = asString(record?.type, "PRODUCT").toUpperCase() === "SERVICE" ? "SERVICE" : "PRODUCT";
   const sellingModes = asArray(record?.sellingModes)
@@ -1086,13 +1070,13 @@ function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
   return {
     id: asString(record?.id, `offer_${index + 1}`),
     type,
-    name: asString(record?.name, "Offer"),
+    name: asString(record?.name, ""),
     price: Math.max(0, asNumber(record?.price, 0)),
     basePrice: typeof record?.basePrice === "number" ? record.basePrice : undefined,
     currency: asCurrency(record?.currency, "UGX"),
     stockLeft: asNumber(record?.stockLeft, type === "SERVICE" ? -1 : 0),
     sold: asNumber(record?.sold, 0),
-    posterUrl: asString(record?.posterUrl, fallbackPoster),
+    posterUrl: asString(record?.posterUrl, ""),
     videoUrl: asString(record?.videoUrl, "") || undefined,
     desktopMode: asString(record?.desktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
     sellingModes: sellingModes.length ? sellingModes : undefined,
@@ -1117,7 +1101,7 @@ function mapOffer(raw: unknown, index: number, fallbackPoster: string): Offer {
   };
 }
 
-function mapShoppableDeal(raw: unknown): Ad | null {
+function mapShoppableDeal(raw: unknown, index: number): Ad | null {
   const deal = asRecord(raw);
   if (!deal) return null;
   const shoppable = asRecord(deal.shoppable);
@@ -1125,8 +1109,7 @@ function mapShoppableDeal(raw: unknown): Ad | null {
 
   const supplier = asRecord(deal.supplier);
   const creator = asRecord(deal.creator);
-  const fallbackHero = asString(shoppable.heroImageUrl, asString(supplier?.logoUrl, BLANK_IMAGE));
-  const offers = asArray(shoppable.offers).map((offer, index) => mapOffer(offer, index, fallbackHero));
+  const offers = asArray(shoppable.offers).map((offer, offerIndex) => mapOffer(offer, offerIndex));
 
   const rawKpis = asArray(shoppable.kpis)
     .map((item) => asRecord(item))
@@ -1135,63 +1118,47 @@ function mapShoppableDeal(raw: unknown): Ad | null {
     .filter((item) => item.label && item.value);
 
   const metrics = asRecord(shoppable.metrics);
-  const fallbackViews =
-    asNumber(shoppable.impressions7d, Number.NaN) ||
-    asNumber(metrics?.impressions, Number.NaN) ||
-    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("view") || k.label.toLowerCase().includes("impression"))?.value ?? null) ||
-    0;
-  const fallbackSaves =
-    asNumber(metrics?.saves, Number.NaN) ||
-    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("save"))?.value ?? null) ||
-    0;
-  const fallbackCtrRaw =
-    asNumber(metrics?.ctr, Number.NaN) ||
-    parseCompactMetric(rawKpis.find((k) => k.label.toLowerCase().includes("ctr"))?.value ?? null) ||
-    0;
-  const fallbackCtr = fallbackCtrRaw > 1 ? fallbackCtrRaw : fallbackCtrRaw * 100;
-
-  const kpis = rawKpis.length
-    ? rawKpis
-    : [
-        { label: "Views", value: compactNum(fallbackViews) },
-        { label: "Saves", value: compactNum(fallbackSaves) },
-        { label: "CTR", value: `${Number.isFinite(fallbackCtr) ? fallbackCtr.toFixed(1) : "0.0"}%` },
-      ];
+  const impressions7d = asNumber(shoppable.impressions7d, 0);
+  const saves = asNumber(metrics?.saves, 0);
+  const orders7d = asNumber(shoppable.orders7d, asNumber(metrics?.orders, 0));
+  const kpis = rawKpis;
 
   const score =
-    Math.max(0, fallbackViews) +
-    Math.max(0, fallbackSaves) * 10 +
-    Math.max(0, asNumber(shoppable.orders7d, asNumber(metrics?.orders, 0))) * 200;
+    Math.max(0, impressions7d) +
+    Math.max(0, saves) * 10 +
+    Math.max(0, orders7d) * 200;
 
   return {
-    id: asString(deal.id, `ad_${Date.now()}`),
+    id: asString(deal.id, `ad_${index + 1}`),
     rank: 0,
     status: adzStatus(shoppable.status ?? deal.status),
-    campaignName: asString(shoppable.campaignName, asString(deal.title, "Campaign")),
+    saved: asBool(shoppable.saved, false),
+    campaignName: asString(shoppable.campaignName, asString(deal.title, "")),
     campaignSubtitle: asString(shoppable.campaignSubtitle, asString(deal.tagline, "")),
     supplier: {
-      name: asString(supplier?.name, "Seller"),
-      category: asString(supplier?.category, "Seller"),
-      logoUrl: asString(supplier?.logoUrl, BLANK_IMAGE),
+      name: asString(supplier?.name, ""),
+      category: asString(supplier?.category, ""),
+      logoUrl: asString(supplier?.logoUrl, ""),
     },
     creator: {
-      name: asString(creator?.name, "Creator"),
+      name: asString(creator?.name, ""),
       handle: (() => {
-        const handle = asString(creator?.handle, "@creator");
+        const handle = asString(creator?.handle, "");
+        if (!handle) return "";
         return handle.startsWith("@") ? handle : `@${handle}`;
       })(),
-      avatarUrl: asString(creator?.avatarUrl, BLANK_IMAGE),
+      avatarUrl: asString(creator?.avatarUrl, ""),
       verified: asBool(creator?.verified, false),
     },
     platforms: asArray(shoppable.platforms).map((entry) => asString(entry, "")).filter(Boolean),
-    startISO: asString(shoppable.startISO, asString(deal.startISO, new Date().toISOString())),
-    endISO: asString(shoppable.endISO, asString(deal.endISO, new Date(Date.now() + 60 * 60 * 1000).toISOString())),
-    heroImageUrl: asString(shoppable.heroImageUrl, fallbackHero || BLANK_IMAGE),
+    startISO: asString(shoppable.startISO, asString(deal.startISO, "")),
+    endISO: asString(shoppable.endISO, asString(deal.endISO, "")),
+    heroImageUrl: asString(shoppable.heroImageUrl, ""),
     heroIntroVideoUrl: asString(shoppable.heroIntroVideoUrl, "") || undefined,
     heroIntroVideoPosterUrl: asString(shoppable.heroIntroVideoPosterUrl, "") || undefined,
     heroDesktopMode: asString(shoppable.heroDesktopMode, "") === "fullscreen" ? "fullscreen" : "modal",
-    ctaPrimaryLabel: asString(shoppable.ctaPrimaryLabel, "Buy now"),
-    ctaSecondaryLabel: asString(shoppable.ctaSecondaryLabel, "Add to cart"),
+    ctaPrimaryLabel: asString(shoppable.ctaPrimaryLabel, ""),
+    ctaSecondaryLabel: asString(shoppable.ctaSecondaryLabel, ""),
     offers,
     kpis,
     __score: score,
@@ -1200,7 +1167,7 @@ function mapShoppableDeal(raw: unknown): Ad | null {
 
 function mapWorkspaceToAds(payload: DealzMarketplaceWorkspaceResponse): Ad[] {
   const ranked = asArray(payload.deals)
-    .map((deal) => mapShoppableDeal(deal))
+    .map((deal, index) => mapShoppableDeal(deal, index))
     .filter((ad): ad is Ad & { __score: number } => Boolean(ad))
     .sort((a, b) => b.__score - a.__score || a.campaignName.localeCompare(b.campaignName));
 
@@ -1219,8 +1186,8 @@ export default function AdzMarketplace() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [toast, setToast] = useState<string | null>(null);
-  const { data: workspaceState, setData: setWorkspaceState } = useApiResource<DealzMarketplaceWorkspaceResponse>({
-    initialData: EMPTY_MARKETPLACE_STATE,
+  const { data: workspaceState, setData: setWorkspaceState, loading, error } = useApiResource<DealzMarketplaceWorkspaceResponse | null>({
+    initialData: null,
     loader: () => creatorApi.dealzMarketplace(),
   });
 
@@ -1232,24 +1199,30 @@ export default function AdzMarketplace() {
 
   const [ads, setAds] = useState<Ad[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
-  const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  const selected = useMemo(() => ads.find((a) => a.id === selectedId), [ads, selectedId]);
 
   useEffect(() => {
-    const nextAds = mapWorkspaceToAds(workspaceState || EMPTY_MARKETPLACE_STATE);
+    if (!workspaceState) {
+      setAds([]);
+      setSelectedId("");
+      return;
+    }
+    const nextAds = mapWorkspaceToAds(workspaceState);
     setAds(nextAds);
     setSelectedId((current) => {
       if (current && nextAds.some((ad) => ad.id === current)) return current;
       const selectedFromPayload = asString(workspaceState?.selectedId, "");
       if (selectedFromPayload && nextAds.some((ad) => ad.id === selectedFromPayload)) return selectedFromPayload;
-      return nextAds[0]?.id || "";
+      return "";
     });
   }, [workspaceState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const adId = new URLSearchParams(window.location.search).get("adId");
-    if (!adId) return;
-    setSelectedId((current) => (ads.some((ad) => ad.id === adId) ? adId : current));
+    const params = new URLSearchParams(window.location.search);
+    const contextId = params.get("adId") || params.get("dealId") || "";
+    if (!contextId) return;
+    setSelectedId((current) => (ads.some((ad) => ad.id === contextId) ? contextId : current));
   }, [ads]);
 
   // Per-ad mode selections (Retail/Wholesale) for offers
@@ -1321,6 +1294,22 @@ export default function AdzMarketplace() {
       });
     }
     if (o?.type === "PRODUCT" && mode === "WHOLESALE") setToast("Wholesale mode enabled (MOQ & tier rules apply).");
+  }
+
+  function toggleSelectedSaved() {
+    if (!selected) return;
+    const adId = selected.id;
+    const nextSaved = !selected.saved;
+
+    setAds((prev) => prev.map((ad) => (ad.id === adId ? { ...ad, saved: nextSaved } : ad)));
+
+    void persistDealPatch(adId, (shoppable) => ({
+      ...shoppable,
+      saved: nextSaved,
+    })).catch(() => {
+      setAds((prev) => prev.map((ad) => (ad.id === adId ? { ...ad, saved: !nextSaved } : ad)));
+      setToast("Failed to save ad.");
+    });
   }
 
   function addToCart(offerId: string, mode: SellingMode) {
@@ -1429,13 +1418,13 @@ export default function AdzMarketplace() {
 
   useEffect(() => {
     if (!selected) return;
-    if (!selectedHeroOfferId || !selected.offers.some((offer) => offer.id === selectedHeroOfferId)) {
-      setSelectedHeroOfferId(selected.offers[0]?.id || "");
+    if (selectedHeroOfferId && !selected.offers.some((offer) => offer.id === selectedHeroOfferId)) {
+      setSelectedHeroOfferId("");
     }
   }, [selected, selectedHeroOfferId]);
 
   const startsAt = useMemo(() => (selected ? new Date(selected.startISO) : new Date()), [selected]);
-  const endsAt = useMemo(() => (selected ? new Date(selected.endISO) : new Date(Date.now() + 3600 * 1000)), [selected]);
+  const endsAt = useMemo(() => (selected ? new Date(selected.endISO) : new Date()), [selected]);
   const countdownState = useMemo(() => computeCountdownState(Date.now(), startsAt.getTime(), endsAt.getTime()), [startsAt, endsAt]);
   const countdownLabel = useMemo(
     () => (countdownState === "upcoming" ? "Starts in" : countdownState === "live" ? "Ends in" : "Session ended"),
@@ -1570,6 +1559,24 @@ export default function AdzMarketplace() {
     }
     const m = modeByOffer[offerId] || "RETAIL";
     addToCart(offerId, m);
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading marketplace…
+      </div>
+    );
+  }
+
+  if (error || !workspaceState) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Marketplace data is unavailable.
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1782,10 +1789,12 @@ export default function AdzMarketplace() {
                 <div className="bg-neutral-50 dark:bg-slate-950 p-4 rounded-2xl transition-colors">
                   <ShoppableAdPreview
                     ad={selected}
+                    saved={selected.saved}
                     cart={cart}
                     modeByOffer={modeByOffer}
                     onSetOfferMode={setOfferMode}
                     shareEnabled={selected.status === "Generated"}
+                    onToggleSaved={toggleSelectedSaved}
                     onPlayHero={openHeroViewer}
                     onPlayOffer={openOfferViewer}
                     onBuy={buyNow}

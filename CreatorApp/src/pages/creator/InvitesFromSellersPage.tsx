@@ -121,11 +121,11 @@ function toInvite(record: InviteRecord): Invite {
 
   return {
     id: record.id,
-    brand: String(record.seller || record.sender || "Supplier"),
+    brand: String(record.seller || record.sender || ""),
     initials: sellerInitials(record.seller, record.sellerInitials),
-    campaign: String(record.campaign || record.title || "Campaign"),
+    campaign: String(record.campaign || record.title || ""),
     inviteType: String(record.type || (metadata as { inviteType?: unknown }).inviteType || "Collaboration"),
-    category: String(record.category || (metadata as { category?: unknown }).category || "General"),
+    category: String(record.category || (metadata as { category?: unknown }).category || ""),
     region: String(record.region || (metadata as { region?: unknown }).region || "Global"),
     baseFee: Number(record.baseFee || 0),
     currency: String(record.currency || "USD"),
@@ -193,9 +193,8 @@ export function InvitesFromSellersPage() {
   };
 
   const selectedInvite = useMemo<Invite | null>(() => {
-    // Look up in the updated 'invites' state
-    if (!selectedInviteId) return invites[0] ?? null;
-    return invites.find((i) => i.id === selectedInviteId) ?? invites[0] ?? null;
+    if (!selectedInviteId) return null;
+    return invites.find((i) => i.id === selectedInviteId) ?? null;
   }, [selectedInviteId, invites]);
 
   const filteredInvites = useMemo<Invite[]>(() => {
@@ -382,7 +381,7 @@ export function InvitesFromSellersPage() {
         onClose={() => setIsPitchDrawerOpen(false)}
         recipientName={pitchRecipient?.brand || ""}
         recipientInitials={pitchRecipient?.initials || ""}
-        defaultCategory={pitchRecipient?.category || "General"}
+        defaultCategory={pitchRecipient?.category || ""}
         aiSuggestion={
           pitchRecipient
             ? `Hi ${pitchRecipient.brand}, thanks for the invite to ${pitchRecipient.campaign}. I’d love to propose a hybrid model...`

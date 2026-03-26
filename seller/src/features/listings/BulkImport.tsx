@@ -1,3 +1,8 @@
+import { sellerBackendApi } from "../../lib/backendApi";
+
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:listings/BulkImport").catch(() => undefined);
+
 // Seller — 05 Bulk Import (EVzone) v3.1 — Renamed Channels (fixed JSX + pure JS)
 // Route: /listings/bulk
 // - Channel keys updated everywhere: HealthMart, EduMart, FaithMart (was Medical/Edu/Faith)

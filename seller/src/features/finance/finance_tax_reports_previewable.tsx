@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { sellerBackendApi } from "../../lib/backendApi";
 import { useThemeMode } from "../../theme/themeMode";
 import {
+
   BadgeCheck,
   Calendar,
   Check,
@@ -23,6 +24,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
+
+void sellerBackendApi.getWorkflowScreenState("seller-feature:finance/finance_tax_reports_previewable").catch(() => undefined);
 
 /**
  * Tax Reports (Previewable)

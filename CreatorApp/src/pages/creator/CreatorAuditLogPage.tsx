@@ -451,7 +451,7 @@ function __selfTest() {
   ]);
   if (!csv.includes("T-1") || !csv.includes("Shoppable Adz")) throw new Error("toCsv() self-test failed");
 
-  const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+  const old = "2000-01-01T00:00:00.000Z";
   if (inRange(old, "30d")) throw new Error("inRange() self-test failed");
 }
 

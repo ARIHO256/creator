@@ -44,7 +44,6 @@ import {
  *    - restock alerts
  *
  * Notes:
- * - Self-contained demo UI (no backend).
  * - TailwindCSS assumed.
  */
 
@@ -288,9 +287,9 @@ export default function PostLivePublisherPage() {
   const { showSuccess, showNotification } = useNotification();
   const { run, isPending } = useAsyncAction();
   const sp = useMemo(() => parseSearch(), []);
-  const sessionId = sp.get('sessionId') ?? 'LS-20418';
-  const { data: payload } = useApiResource({
-    initialData: {} as PostLivePayload,
+  const sessionId = sp.get('sessionId') ?? '';
+  const { data: payload, loading, error } = useApiResource<PostLivePayload | null>({
+    initialData: null,
     loader: () => creatorApi.liveTool("post-live") as Promise<PostLivePayload>,
   });
 
@@ -298,25 +297,28 @@ export default function PostLivePublisherPage() {
     if (typeof window === 'undefined') return '';
     return `${window.location.origin}/replay/${encodeURIComponent(sessionId)}`;
   }, [sessionId]);
-  const [plan, setPlan] = useState<'Standard' | 'Pro'>('Standard');
+  const [plan, setPlan] = useState<'Standard' | 'Pro' | null>(null);
   const isPro = plan === 'Pro';
 
   const session = useMemo(
-    () => ({
-      id: payload.session?.id || sessionId,
-      title: payload.session?.title || 'Live session',
-      status: payload.session?.status || ('Draft' as SessionStatus),
-      endedISO: payload.session?.endedISO || new Date(Date.now() - 33 * 60 * 1000).toISOString(),
-      replayUrl: payload.session?.replayUrl || replayBaseUrl,
-      coverUrl: payload.session?.coverUrl || '',
-    }),
-    [payload.session, sessionId, replayBaseUrl],
+    () =>
+      payload?.session
+        ? {
+            id: payload.session.id || sessionId,
+            title: payload.session.title || '',
+            status: payload.session.status || ('Draft' as SessionStatus),
+            endedISO: payload.session.endedISO || '',
+            replayUrl: payload.session.replayUrl || '',
+            coverUrl: payload.session.coverUrl || '',
+          }
+        : null,
+    [payload?.session, sessionId, replayBaseUrl],
   );
 
   // Replay/publish state
   const [published, setPublished] = useState(false);
   const [schedulePublish, setSchedulePublish] = useState(false);
-  const [publishAt, setPublishAt] = useState(() => new Date(Date.now() + 30 * 60 * 1000).toISOString());
+  const [publishAt, setPublishAt] = useState('');
   const [allowComments, setAllowComments] = useState(true);
   const [showProductStrip, setShowProductStrip] = useState(true);
 
@@ -351,18 +353,18 @@ export default function PostLivePublisherPage() {
   const [audience, setAudience] = useState<AudienceKey>('past_buyers');
   const [scheduleSends, setScheduleSends] = useState(false);
   const [sendNow, setSendNow] = useState(false);
-  const [templatePack, setTemplatePack] = useState<'Default' | 'VIP' | 'High intent'>('Default');
+  const [templatePack, setTemplatePack] = useState<'' | 'Default' | 'VIP' | 'High intent'>('');
 
   // Booster toggles
   const [cartRecovery, setCartRecovery] = useState(false);
   const [priceDrop, setPriceDrop] = useState(false);
   const [restock, setRestock] = useState(false);
   useEffect(() => {
-    if (!Object.keys(payload).length) return;
-    setPlan(payload.plan || 'Standard');
+    if (!payload) return;
+    setPlan(payload.plan ?? null);
     setPublished(payload.published ?? false);
     setSchedulePublish(payload.schedulePublish ?? false);
-    setPublishAt(payload.publishAt || new Date(Date.now() + 30 * 60 * 1000).toISOString());
+    setPublishAt(payload.publishAt || '');
     setAllowComments(payload.allowComments ?? true);
     setShowProductStrip(payload.showProductStrip ?? true);
     setClips(payload.clips || []);
@@ -370,34 +372,36 @@ export default function PostLivePublisherPage() {
     setAudience(payload.audience || 'past_buyers');
     setScheduleSends(payload.scheduleSends ?? false);
     setSendNow(payload.sendNow ?? false);
-    setTemplatePack(payload.templatePack || 'Default');
+    setTemplatePack(payload.templatePack || '');
     setCartRecovery(payload.cartRecovery ?? false);
     setPriceDrop(payload.priceDrop ?? false);
     setRestock(payload.restock ?? false);
   }, [payload]);
 
   const metrics = useMemo(
-    () => ({
-      viewers: payload.metrics?.viewers || 0,
-      clicks: payload.metrics?.clicks || 0,
-      orders: payload.metrics?.orders || 0,
-      gmv: payload.metrics?.gmv || 0,
-      addToCart: payload.metrics?.addToCart || 0,
-      cartAbandon: payload.metrics?.cartAbandon || 0,
-      ctr: payload.metrics?.ctr || 0,
-      conv: payload.metrics?.conv || 0,
-      ordersSeries: payload.metrics?.ordersSeries || [],
-    }),
-    [payload.metrics],
+    () =>
+      payload?.metrics
+        ? {
+            viewers: payload.metrics.viewers || 0,
+            clicks: payload.metrics.clicks || 0,
+            orders: payload.metrics.orders || 0,
+            gmv: payload.metrics.gmv || 0,
+            addToCart: payload.metrics.addToCart || 0,
+            cartAbandon: payload.metrics.cartAbandon || 0,
+            ctr: payload.metrics.ctr || 0,
+            conv: payload.metrics.conv || 0,
+            ordersSeries: payload.metrics.ordersSeries || [],
+          }
+        : null,
+    [payload?.metrics],
   );
   void metrics; // Suppress unused
 
   const enabledChannelList = useMemo(() => channels.filter((c) => enabledChannels[c.key]), [channels, enabledChannels]);
 
   const estimatedReach = useMemo(() => {
-    // demo reach: depends on audience segment
-    return audience === 'past_buyers' ? 3400 : audience === 'attendees' ? 5200 : audience === 'vip_list' ? 420 : 1800;
-  }, [audience]);
+    return Math.max(0, metrics.viewers);
+  }, [metrics.viewers]);
 
   const estimatedCost = useMemo(() => {
     const costPer = enabledChannelList.reduce((sum, c) => sum + c.costPerMessageUSD, 0);
@@ -415,6 +419,24 @@ export default function PostLivePublisherPage() {
     return items;
   }, [clips.length, enabledChannelList]);
   void preflight; // Suppress unused
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading post-live publisher…
+      </div>
+    );
+  }
+
+  if (error || !payload || !plan || !session || !session.endedISO || !templatePack || !metrics) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Post-live publisher data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
@@ -457,9 +479,8 @@ export default function PostLivePublisherPage() {
 
             <div className="flex flex-wrap items-center gap-2">
               <button
-                className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
-                onClick={() => setPlan((p) => (p === "Pro" ? "Standard" : "Pro"))}
-                title="Demo: toggle plan"
+                className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-semibold text-slate-800 dark:text-slate-200 transition"
+                type="button"
               >
                 <Sparkles className="h-4 w-4" />
                 Plan: {plan}

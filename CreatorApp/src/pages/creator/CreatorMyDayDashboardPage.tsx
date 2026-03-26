@@ -172,53 +172,6 @@ type MyDayShellData = MyDayDashboardResponse & {
   };
 };
 
-const EMPTY_EARNINGS: MyDayShellData["earnings"] = {
-  today: 0,
-  todayFlat: 0,
-  todayCommission: 0,
-  todaySpark: [0, 0, 0, 0, 0, 0, 0],
-  last7: 0,
-  last7Avg: 0,
-  last7Spark: [0, 0, 0, 0, 0, 0, 0],
-  mtd: 0,
-  mtdGoal: 0,
-  mtdSpark: [0, 0, 0, 0, 0, 0, 0],
-  currency: "USD",
-  available: 0,
-  pending: 0,
-  lifetime: 0
-};
-
-const INITIAL_SHELL_DATA: MyDayShellData = {
-  header: {
-    isLiveRunning: false,
-    liveViewers: 0,
-    statusLabel: "Online"
-  },
-  recentLive: null,
-  kpis: {
-    lives: 0,
-    tasks: 0,
-    proposals: 0,
-    approvals: 0
-  },
-  smartPlan: [],
-  timeline: [],
-  nextLive: null,
-  crew: {
-    title: "No scheduled live session",
-    rows: []
-  },
-  tasks: [],
-  proposals: [],
-  earnings: EMPTY_EARNINGS,
-  counts: {
-    dueToday: 0,
-    completedToday: 0
-  },
-  lastUpdatedAt: ""
-};
-
 function formatCompactNumber(value: number) {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
 }
@@ -264,39 +217,14 @@ export function CreatorMyDayDashboardPage() {
   const [isOffline, setIsOffline] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
   const { run: runTaskAction, isPending: taskActionPending } = useAsyncAction();
-  const { data: shellData } = useApiResource({
-    initialData: INITIAL_SHELL_DATA,
+  const { data: shellData, loading, error } = useApiResource<MyDayShellData | null>({
+    initialData: null,
     loader: async () => {
       const payload = await creatorApi.myDay();
-      return {
-        ...INITIAL_SHELL_DATA,
-        ...payload,
-        header: {
-          ...INITIAL_SHELL_DATA.header,
-          ...(payload.header ?? {})
-        },
-        kpis: {
-          ...INITIAL_SHELL_DATA.kpis,
-          ...(payload.kpis ?? {})
-        },
-        smartPlan: Array.isArray(payload.smartPlan) ? payload.smartPlan : [],
-        timeline: Array.isArray(payload.timeline) ? payload.timeline : [],
-        nextLive: payload.nextLive ?? null,
-        crew: {
-          title: payload.crew?.title || INITIAL_SHELL_DATA.crew.title,
-          rows: Array.isArray(payload.crew?.rows) ? payload.crew?.rows : []
-        },
-        tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
-        proposals: Array.isArray(payload.proposals) ? payload.proposals : [],
-        earnings: {
-          ...EMPTY_EARNINGS,
-          ...(payload.earnings ?? {})
-        },
-        counts: {
-          ...INITIAL_SHELL_DATA.counts,
-          ...(payload.counts ?? {})
-        }
-      };
+      if (!payload || typeof payload !== "object") {
+        return null;
+      }
+      return payload as MyDayShellData;
     }
   });
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -305,8 +233,36 @@ export function CreatorMyDayDashboardPage() {
   const [proposalsPanelOpen, setProposalsPanelOpen] = useState(false);
 
   useEffect(() => {
-    setTasks(shellData.tasks);
-  }, [shellData.tasks]);
+    setTasks(shellData?.tasks || []);
+  }, [shellData?.tasks]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 text-sm text-slate-600 dark:text-slate-300">
+        Loading creator dashboard…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Creator dashboard data is unavailable.
+        </div>
+      </div>
+    );
+  }
+
+  if (!shellData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Creator dashboard data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   const isLiveRunning = Boolean(shellData.header.isLiveRunning);
   const liveViewers = Number(shellData.header.liveViewers || 0);

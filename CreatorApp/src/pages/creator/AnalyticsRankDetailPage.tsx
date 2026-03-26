@@ -99,36 +99,6 @@ type AnalyticsSeed = {
   trend: TrendPoint[];
 };
 
-const EMPTY_ANALYTICS_SEED: AnalyticsSeed = {
-  rank: {
-    currentTier: "Bronze",
-    nextTier: "Silver",
-    progressPercent: 0,
-    pointsCurrent: 0,
-    pointsToNext: 1000,
-    benefits: {
-      Bronze: [],
-      Silver: [],
-      Gold: []
-    }
-  },
-  metrics: {
-    avgViewers: 0,
-    ctr: 0,
-    conversion: 0,
-    salesDriven: 0
-  },
-  campaigns: [],
-  goals: [],
-  benchmarks: {
-    viewersPercentile: 0,
-    ctrPercentile: 0,
-    conversionPercentile: 0,
-    salesPercentile: 0
-  },
-  trend: []
-};
-
 function money(n: number, currency: "USD" | "UGX" = "USD") {
   try {
     return new Intl.NumberFormat(currency === "USD" ? "en-US" : "en-UG", {
@@ -176,13 +146,16 @@ export default function AnalyticsRankDetailPage() {
   const [timeRange, setTimeRange] = useState<Range>("30");
   const [category, setCategory] = useState<Category>("All");
   const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("sales");
-  const { data: analyticsSeed, reload } = useApiResource<AnalyticsSeed>({
-    initialData: EMPTY_ANALYTICS_SEED,
+  const { data: analyticsSeed, reload, loading, error } = useApiResource<AnalyticsSeed | null>({
+    initialData: null,
     loader: async () => {
       const payload = await creatorApi.analyticsRankDetail({
         range: timeRange,
         category
       });
+      if (!payload.rank || !payload.metrics || !payload.benchmarks) {
+        return null;
+      }
       const normalizedCampaigns: CampaignRow[] = Array.isArray(payload.campaigns)
         ? payload.campaigns.map((campaign, index) => {
             const engagements = Number(campaign.engagements || 0) || 0;
@@ -191,10 +164,10 @@ export default function AnalyticsRankDetailPage() {
             const conversions = backendConversions > 0 ? backendConversions : Math.round((engagements * convRate) / 100);
             return {
               id: Number(campaign.id || index + 1) || index + 1,
-              campaignId: String(campaign.campaignId || `campaign-${index + 1}`),
-              name: String(campaign.name || `Campaign ${index + 1}`),
-              seller: String(campaign.seller || "Seller"),
-              category: (String(campaign.category || "Tech") as Exclude<Category, "All">),
+              campaignId: String(campaign.campaignId || ""),
+              name: String(campaign.name || ""),
+              seller: String(campaign.seller || ""),
+              category: (String(campaign.category || "") as Exclude<Category, "All">),
               sales: Number(campaign.sales || 0) || 0,
               engagements,
               conversions,
@@ -203,12 +176,12 @@ export default function AnalyticsRankDetailPage() {
           })
         : [];
       return {
-        rank: payload.rank || EMPTY_ANALYTICS_SEED.rank,
-        metrics: payload.metrics || EMPTY_ANALYTICS_SEED.metrics,
+        rank: payload.rank as Rank,
+        metrics: payload.metrics as Metrics,
         campaigns: normalizedCampaigns,
-        goals: Array.isArray(payload.goals) ? payload.goals : EMPTY_ANALYTICS_SEED.goals,
-        benchmarks: payload.benchmarks || EMPTY_ANALYTICS_SEED.benchmarks,
-        trend: Array.isArray(payload.trend) ? payload.trend : EMPTY_ANALYTICS_SEED.trend
+        goals: Array.isArray(payload.goals) ? payload.goals : [],
+        benchmarks: payload.benchmarks as Benchmarks,
+        trend: Array.isArray(payload.trend) ? payload.trend : []
       };
     }
   });
@@ -216,14 +189,14 @@ export default function AnalyticsRankDetailPage() {
     void reload();
   }, [timeRange, category, reload]);
 
-  const rank = analyticsSeed.rank;
-  const metrics = analyticsSeed.metrics;
-  const campaigns = analyticsSeed.campaigns;
-  const goals = analyticsSeed.goals;
-  const seedTrend = analyticsSeed.trend;
-  const benchmarks = analyticsSeed.benchmarks;
+  const rank = analyticsSeed?.rank;
+  const metrics = analyticsSeed?.metrics;
+  const campaigns = analyticsSeed?.campaigns ?? [];
+  const goals = analyticsSeed?.goals ?? [];
+  const seedTrend = analyticsSeed?.trend ?? [];
+  const benchmarks = analyticsSeed?.benchmarks;
 
-  const filteredCampaigns = useMemo(() => {
+  const filteredCampaigns = useMemo<CampaignRow[]>(() => {
     const arr = [...campaigns];
     const scoped = category === "All" ? arr : arr.filter((c) => c.category === category);
     scoped.sort((a, b) => {
@@ -231,7 +204,7 @@ export default function AnalyticsRankDetailPage() {
       return b.sales - a.sales;
     });
     return scoped.slice(0, 6);
-  }, [category, leaderboardMode]);
+  }, [campaigns, category, leaderboardMode]);
 
   const trend = useMemo<TrendPoint[]>(() => {
     const needed = timeRange === "7" ? 7 : timeRange === "30" ? 30 : 90;
@@ -247,6 +220,24 @@ export default function AnalyticsRankDetailPage() {
       return Math.round(runningXp);
     });
   }, [trend]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--page-bg,#f2f2f2)] text-sm text-slate-600">
+        Loading analytics…
+      </div>
+    );
+  }
+
+  if (error || !analyticsSeed || !rank || !metrics || !benchmarks) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--page-bg,#f2f2f2)] p-6">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          Analytics data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   function onExport() {
     const rows: Record<string, string | number>[] = trend.map((t) => ({
@@ -993,7 +984,7 @@ function MetricCard({
       : card.value.toLocaleString();
 
   const sparkValues = useMemo(() => {
-    if (!trend.length) return [0];
+    if (!trend.length) return [];
     return trend.map((point) => point[card.series]);
   }, [card.series, trend]);
 

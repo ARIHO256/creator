@@ -58,15 +58,13 @@ type OpportunitiesLocationState = {
 };
 
 function opportunityInitials(name?: string | null) {
-  return (
-    String(name || "SP")
-      .split(" ")
-      .map((part) => part.trim()[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join("")
-      .toUpperCase() || "SP"
-  );
+  return String(name ?? "")
+    .split(" ")
+    .map((part) => part.trim()[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
 function numericIdFromString(value: string) {
@@ -112,6 +110,10 @@ function toCampaign(record: OpportunityRecord): Campaign {
   const budgetMax = readNumber(record.budgetMax ?? record.budget ?? metadataBudgetMax ?? metadataBudget ?? budgetMin);
   const commission = readNumber((metadata as { commissionPct?: unknown }).commissionPct);
   const sellerName = String(seller?.displayName || seller?.name || "").trim();
+  const sellerType = String(seller?.type || seller?.kind || "").trim().toLowerCase();
+  const metadataCategory = String((metadata as { category?: unknown }).category || "").trim();
+  const metadataLanguage = String((metadata as { language?: unknown }).language || "").trim();
+  const statusRaw = String(record.status ?? "").trim().toUpperCase();
   const currency = String(record.currency || (metadata as { currency?: unknown }).currency || "").trim();
   const hasBudgetBand = (budgetMin ?? 0) > 0 || (budgetMax ?? 0) > 0;
   const bandMin = budgetMin ?? budgetMax;
@@ -129,10 +131,10 @@ function toCampaign(record: OpportunityRecord): Campaign {
     seller: sellerName,
     sellerInitials: opportunityInitials(sellerName),
     rating: readNumber(seller?.rating ?? (metadata as { sellerRating?: unknown }).sellerRating),
-    category: String(record.category || seller?.category || categories[0] || "").trim(),
+    category: String(record.category || seller?.category || metadataCategory || "").trim(),
     categories,
     region: String(record.region || seller?.region || (metadata as { region?: unknown }).region || "").trim(),
-    language: String(record.language || seller?.languages?.[0] || (metadata as { language?: unknown }).language || "").trim(),
+    language: String(record.language || metadataLanguage || "").trim(),
     currency,
     payBand,
     budgetMin,
@@ -153,9 +155,9 @@ function toCampaign(record: OpportunityRecord): Campaign {
     tags: Array.isArray((metadata as { tags?: unknown[] }).tags)
       ? ((metadata as { tags?: unknown[] }).tags as unknown[]).map((item) => String(item))
       : [],
-    supplierType: String(seller?.type || seller?.kind || "Seller").toLowerCase() === "provider" ? "Provider" : "Seller",
+    supplierType: sellerType === "provider" ? "Provider" : "Seller",
     collaborationStatus: mapCollaborationStatus((record as { collaborationStatus?: unknown }).collaborationStatus ?? (metadata as { collaborationStatus?: unknown }).collaborationStatus),
-    opportunityStatus: String(record.status || "OPEN").trim().toUpperCase() === "CLOSED" ? "Closed" : "Open",
+    opportunityStatus: statusRaw === "CLOSED" ? "Closed" : "Open",
     isSaved: Boolean((record as { isSaved?: unknown }).isSaved),
     isFollowing: Boolean((record as { isFollowing?: unknown }).isFollowing)
   };

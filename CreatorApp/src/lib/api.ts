@@ -28,11 +28,48 @@ type ApiEnvelope<T> = {
 const RAW_API_BASE =
   (typeof import.meta !== "undefined" && (import.meta as ImportMeta).env?.VITE_API_URL) || "/api";
 
-const API_BASE = RAW_API_BASE.replace(/\/+$/, "");
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function resolveApiBase(rawApiBase: string) {
+  const normalizedBase = rawApiBase.replace(/\/+$/, "");
+  if (!normalizedBase) return "/api";
+
+  if (typeof window === "undefined") {
+    return normalizedBase;
+  }
+
+  if (!/^https?:\/\//i.test(normalizedBase)) {
+    return normalizedBase;
+  }
+
+  try {
+    const configuredUrl = new URL(normalizedBase);
+    const currentUrl = new URL(window.location.href);
+
+    // In local development, keep API requests same-origin so SameSite=Lax auth cookies survive.
+    if (
+      isLoopbackHostname(configuredUrl.hostname) &&
+      isLoopbackHostname(currentUrl.hostname) &&
+      configuredUrl.hostname !== currentUrl.hostname
+    ) {
+      return configuredUrl.pathname.replace(/\/+$/, "") || "/api";
+    }
+  } catch {
+    return normalizedBase;
+  }
+
+  return normalizedBase;
+}
+
+const API_BASE = resolveApiBase(RAW_API_BASE);
 const pendingGetRequests = new Map<string, Promise<unknown>>();
 let pendingAuthRefresh: Promise<boolean> | null = null;
+let refreshBackoffUntil = 0;
 
-function buildUrl(path: string) {
+export function buildApiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   if (API_BASE.endsWith("/api") && normalizedPath.startsWith("/api/")) {
@@ -69,6 +106,7 @@ function shouldInvalidateSession(path: string, status: number) {
   if (normalizedPath.startsWith("/auth/register")) return false;
   if (normalizedPath.startsWith("/auth/logout")) return false;
   if (normalizedPath.startsWith("/auth/refresh")) return false;
+  if (normalizedPath.startsWith("/workflow/screen-state/")) return false;
   return true;
 }
 
@@ -79,15 +117,20 @@ function shouldTryRefresh(path: string, status: number) {
   if (normalizedPath.startsWith("/auth/register")) return false;
   if (normalizedPath.startsWith("/auth/logout")) return false;
   if (normalizedPath.startsWith("/auth/refresh")) return false;
+  if (normalizedPath.startsWith("/workflow/screen-state/")) return false;
   return true;
 }
 
 async function refreshAuthSession() {
+  if (Date.now() < refreshBackoffUntil) {
+    return false;
+  }
+
   if (pendingAuthRefresh) {
     return pendingAuthRefresh;
   }
 
-  pendingAuthRefresh = fetch(buildUrl("/auth/refresh"), {
+  pendingAuthRefresh = fetch(buildApiUrl("/auth/refresh"), {
     method: "POST",
     credentials: "include",
     headers: {
@@ -95,7 +138,16 @@ async function refreshAuthSession() {
     },
     body: JSON.stringify({})
   })
-    .then((response) => response.ok)
+    .then((response) => {
+      if (response.ok) {
+        refreshBackoffUntil = 0;
+        return true;
+      }
+      if (response.status === 401 || response.status === 403) {
+        refreshBackoffUntil = Date.now() + 30_000;
+      }
+      return false;
+    })
     .catch(() => false)
     .finally(() => {
       pendingAuthRefresh = null;
@@ -117,7 +169,7 @@ async function parseResponse(response: Response) {
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = String(options.method ?? "GET").toUpperCase();
-  const requestUrl = buildUrl(path);
+  const requestUrl = buildApiUrl(path);
   const requestKey = `${method}:${requestUrl}`;
 
   const runRequest = async () => {

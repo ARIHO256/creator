@@ -18,6 +18,7 @@
     "creators:backfill-directory": "node --env-file=.env scripts/backfill-creator-directory-profiles.mjs",
     "shipping:backfill-onboarding-profiles": "node --env-file=.env scripts/backfill-onboarding-shipping-profiles.mjs",
     "lookups:seed-universal": "node --env-file=.env scripts/seed-universal-form-lookups.mjs",
+    "runtime:seed-content": "node --env-file=.env scripts/seed-runtime-content.mjs",
     "loadtest": "node scripts/load-test.mjs",
     "benchmark": "node scripts/benchmark-scenario.mjs",
     "loadtest:k6:global": "k6 run loadtest/k6-global-read.js",

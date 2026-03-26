@@ -82,13 +82,13 @@ function toCampaign(record: CollaborationCampaignRecord): Campaign {
 
   return {
     id: record.id,
-    name: String(record.title || "Campaign"),
-    seller: String(record.seller || "Supplier"),
+    name: String(record.title || ""),
+    seller: String(record.seller || ""),
     stage,
     origin: mapCampaignOrigin(metadata),
     estValue: Number(record.budget || 0),
     currency: String(record.currency || "USD"),
-    type: String((metadata as { type?: unknown }).type || "Campaign"),
+    type: String((metadata as { type?: unknown }).type || ""),
     region: String((metadata as { region?: unknown }).region || "Global"),
     nextAction: String(
       (metadata as { nextAction?: unknown }).nextAction || (stage === "Completed" ? "Review performance" : "Open campaign")
@@ -337,7 +337,7 @@ export function CampaignsBoardPage({ onChangePage: _onChangePage }: CampaignsBoa
         onClose={() => setIsPitchDrawerOpen(false)}
         recipientName={pitchRecipient?.seller || "New Supplier"}
         recipientInitials={pitchRecipient?.seller?.slice(0, 2).toUpperCase() || "??"}
-        defaultCategory={pitchRecipient?.type || "General"}
+        defaultCategory={pitchRecipient?.type || ""}
       />
     </div>
   );

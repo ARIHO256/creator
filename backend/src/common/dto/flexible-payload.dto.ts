@@ -1,6 +1,7 @@
-import { IsObject } from 'class-validator';
+import { IsObject, IsOptional } from 'class-validator';
 
 export class FlexiblePayloadDto {
+  @IsOptional()
   @IsObject()
-  payload!: Record<string, unknown>;
+  payload?: Record<string, unknown>;
 }

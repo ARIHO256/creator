@@ -731,22 +731,12 @@ type ProviderOnboardingLookups = {
 };
 
 const DEFAULT_PROVIDER_ONBOARDING_LOOKUPS: ProviderOnboardingLookups = {
-  languages: LANGUAGE_OPTIONS,
-  taxpayerTypes: [
-    { value: 'business', label: 'Business / company' },
-    { value: 'individual', label: 'Individual' },
-  ],
-  payoutMethods: PAYOUT_METHODS.map((method) => ({
-    value: method.value,
-    label: method.label,
-    helper: method.helper,
-  })),
-  payoutCurrencies: PAYOUT_CURRENCIES,
-  payoutRhythms: PAYOUT_RHYTHMS,
-  providerRegions: REGION_OPTIONS.map((entry) => ({
-    value: entry.code,
-    label: entry.label,
-  })),
+  languages: [],
+  taxpayerTypes: [],
+  payoutMethods: [],
+  payoutCurrencies: [],
+  payoutRhythms: [],
+  providerRegions: [],
 };
 
 function normalizeProviderLookupOptions(
