@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CacheService } from '../../platform/cache/cache.service.js';
 import { PublicReadCacheService } from '../../platform/cache/public-read-cache.service.js';
@@ -63,9 +63,13 @@ type FlatSeedTaxonomyNode = {
   metadata: Prisma.InputJsonValue;
 };
 
+const TAXONOMY_FALLBACK_COOLDOWN_MS = 60_000;
+
 @Injectable()
 export class TaxonomyService {
   private defaultTreesPromise: Promise<void> | null = null;
+  private fallbackUntilEpochMs = 0;
+  private readonly logger = new Logger(TaxonomyService.name);
   private readonly prismaReadClient: ReadPrismaService;
   private readonly cacheLayer: CacheService;
   private readonly publicCache: PublicReadCacheService;
@@ -96,36 +100,72 @@ export class TaxonomyService {
   }
 
   async listTrees() {
-    await this.ensureDefaultTaxonomyTrees();
-    return this.cacheLayer.getOrSet(
-      this.publicCache.taxonomyTreesKey(),
-      this.publicCache.taxonomyTtlMs(),
-      () => this.prismaReadClient.taxonomyTree.findMany({ orderBy: { name: 'asc' } })
-    );
+    if (this.isFallbackCooldownActive()) {
+      return this.listSeededTreesFallback();
+    }
+
+    try {
+      await this.ensureDefaultTaxonomyTrees();
+      return this.cacheLayer.getOrSet(
+        this.publicCache.taxonomyTreesKey(),
+        this.publicCache.taxonomyTtlMs(),
+        () => this.prismaReadClient.taxonomyTree.findMany({ orderBy: { name: 'asc' } })
+      );
+    } catch (error) {
+      if (!this.isFallbackEligibleTaxonomyError(error)) {
+        throw error;
+      }
+
+      this.activateFallbackCooldown();
+      this.logger.warn(
+        `Serving seeded taxonomy tree fallback after database error: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return this.listSeededTreesFallback();
+    }
   }
 
   async getTreeNodes(identifier: string, options?: { maxDepth?: number; includeInactive?: boolean }) {
-    await this.ensureDefaultTaxonomyTrees();
-    return this.cacheLayer.getOrSet(
-      this.publicCache.taxonomyTreeNodesKey(identifier, options?.maxDepth, options?.includeInactive),
-      this.publicCache.taxonomyTtlMs(),
-      async () => {
-        const tree = await this.resolveTree(identifier, this.prismaReadClient);
-        const nodes = await this.prismaReadClient.taxonomyNode.findMany({
-          where: {
-            treeId: tree.id,
-            isActive: options?.includeInactive ? undefined : true,
-            depth: typeof options?.maxDepth === 'number' ? { lte: options.maxDepth } : undefined
-          },
-          orderBy: [{ depth: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
-        });
+    if (this.isFallbackCooldownActive()) {
+      return this.getSeededTreeNodesFallback(identifier, options);
+    }
 
-        return {
-          tree,
-          nodes: this.buildTree(nodes)
-        };
+    try {
+      await this.ensureDefaultTaxonomyTrees();
+      return this.cacheLayer.getOrSet(
+        this.publicCache.taxonomyTreeNodesKey(identifier, options?.maxDepth, options?.includeInactive),
+        this.publicCache.taxonomyTtlMs(),
+        async () => {
+          const tree = await this.resolveTree(identifier, this.prismaReadClient);
+          const nodes = await this.prismaReadClient.taxonomyNode.findMany({
+            where: {
+              treeId: tree.id,
+              isActive: options?.includeInactive ? undefined : true,
+              depth: typeof options?.maxDepth === 'number' ? { lte: options.maxDepth } : undefined
+            },
+            orderBy: [{ depth: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
+          });
+
+          return {
+            tree,
+            nodes: this.buildTree(nodes)
+          };
+        }
+      );
+    } catch (error) {
+      if (!this.isFallbackEligibleTaxonomyError(error)) {
+        throw error;
       }
-    );
+
+      this.activateFallbackCooldown();
+      this.logger.warn(
+        `Serving seeded taxonomy node fallback for "${identifier}" after database error: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+      return this.getSeededTreeNodesFallback(identifier, options);
+    }
   }
 
   async listNodeChildren(id: string) {
@@ -836,6 +876,102 @@ export class TaxonomyService {
     });
 
     return this.defaultTreesPromise;
+  }
+
+  private seedTreeConfigs() {
+    return [
+      {
+        treeId: SELLER_CATALOG_TAXONOMY_TREE_ID,
+        slug: SELLER_CATALOG_TAXONOMY_TREE_SLUG,
+        name: SELLER_CATALOG_TAXONOMY_TREE_NAME,
+        description: 'Seller catalog taxonomy used by seller onboarding and listing workflows.',
+        nodes: SELLER_CATALOG_TAXONOMY as SeedTaxonomyNode[]
+      },
+      {
+        treeId: PROVIDER_SERVICE_TAXONOMY_TREE_ID,
+        slug: PROVIDER_SERVICE_TAXONOMY_TREE_SLUG,
+        name: PROVIDER_SERVICE_TAXONOMY_TREE_NAME,
+        description: 'Provider service taxonomy used by provider onboarding.',
+        nodes: PROVIDER_SERVICE_TAXONOMY as SeedTaxonomyNode[]
+      }
+    ];
+  }
+
+  private listSeededTreesFallback() {
+    return this.seedTreeConfigs()
+      .map((config) => ({
+        id: config.treeId,
+        slug: config.slug,
+        name: config.name,
+        description: config.description,
+        status: 'ACTIVE'
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  private getSeededTreeNodesFallback(
+    identifier: string,
+    options?: { maxDepth?: number; includeInactive?: boolean }
+  ) {
+    const tree = this.seedTreeConfigs().find((item) => item.treeId === identifier || item.slug === identifier);
+    if (!tree) {
+      throw new NotFoundException('Taxonomy tree not found');
+    }
+
+    const nodes = this.flattenSeedNodes(tree.nodes)
+      .filter((node) => (typeof options?.maxDepth === 'number' ? node.depth <= options.maxDepth : true))
+      .map((node) => ({
+        id: node.id,
+        treeId: tree.treeId,
+        parentId: node.parentId,
+        name: node.name,
+        slug: node.slug,
+        kind: node.kind,
+        description: node.description,
+        path: node.path,
+        depth: node.depth,
+        sortOrder: node.sortOrder,
+        isActive: true,
+        metadata: node.metadata as Prisma.JsonValue
+      }));
+
+    return {
+      tree: {
+        id: tree.treeId,
+        slug: tree.slug,
+        name: tree.name,
+        description: tree.description,
+        status: 'ACTIVE'
+      },
+      nodes: this.buildTree(nodes)
+    };
+  }
+
+  private isFallbackEligibleTaxonomyError(error: unknown) {
+    if (
+      error instanceof Prisma.PrismaClientInitializationError ||
+      (error instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P1001', 'P1017', 'P2021', 'P2022'].includes(String(error.code || '')))
+    ) {
+      return true;
+    }
+
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    return (
+      message.includes("can't reach database server") ||
+      message.includes('server has closed the connection') ||
+      message.includes('connection terminated unexpectedly') ||
+      message.includes('broken pipe') ||
+      message.includes('socket hang up')
+    );
+  }
+
+  private isFallbackCooldownActive() {
+    return Date.now() < this.fallbackUntilEpochMs;
+  }
+
+  private activateFallbackCooldown() {
+    this.fallbackUntilEpochMs = Date.now() + TAXONOMY_FALLBACK_COOLDOWN_MS;
   }
 
   private async ensureSeededTree(config: {

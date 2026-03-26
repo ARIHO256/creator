@@ -53,7 +53,14 @@ async function bootstrap() {
   );
   app.useLogger(['error', 'warn']);
 
-  app.enableCors({ origin: true, credentials: true });
+  app.enableCors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'X-Requested-With'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204
+  });
   app.enableShutdownHooks();
   app.setGlobalPrefix('api', {
     exclude: [{ path: 'health', method: RequestMethod.GET }]

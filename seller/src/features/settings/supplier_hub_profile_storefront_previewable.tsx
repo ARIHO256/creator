@@ -66,6 +66,8 @@ const TOKENS = {
   orange: '#F77F00',
   black: '#0B0F14',
 };
+const ENV = (import.meta as ImportMeta & { env?: { VITE_API_BASE_URL?: string } }).env;
+const API_BASE_URL = String(ENV?.VITE_API_BASE_URL || '').replace(/\/+$/, '');
 
 type ToastTone = 'success' | 'warning' | 'danger' | 'default';
 type Toast = { id: string; title: string; message?: string; tone?: ToastTone; action?: { label: string; onClick: () => void } };
@@ -118,6 +120,14 @@ function fmtTime(iso) {
 
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
+}
+
+function toAbsoluteMediaUrl(value: unknown) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^(data:|blob:|https?:\/\/)/i.test(raw)) return raw;
+  if (raw.startsWith('/') && API_BASE_URL) return `${API_BASE_URL}${raw}`;
+  return raw;
 }
 
 
@@ -1345,6 +1355,8 @@ export default function SupplierHubProfileStorefrontPage() {
   const [supportHours, setSupportHours] = useState(emptyState.supportHours);
   const [socials, setSocials] = useState(emptyState.socials);
   const [customSocials, setCustomSocials] = useState<CustomSocial[]>(emptyState.customSocials || []);
+  const [brandingPreview, setBrandingPreview] = useState({ logo: '', cover: '' });
+  const [brandingUploadPending, setBrandingUploadPending] = useState({ logo: false, cover: false });
   const [loading, setLoading] = useState(true);
   const [coverageRecords, setCoverageRecords] = useState<CoverageRecord[]>([]);
   const [storefrontRecord, setStorefrontRecord] = useState<Record<string, unknown> | null>(null);
@@ -1493,6 +1505,12 @@ export default function SupplierHubProfileStorefrontPage() {
           identity: (profile.identity as typeof emptyState.identity | undefined) ?? emptyState.identity,
           branding: {
             ...((profile.branding as typeof emptyState.branding | undefined) ?? emptyState.branding),
+            logoUrl: toAbsoluteMediaUrl(
+              (profile.branding as typeof emptyState.branding | undefined)?.logoUrl ?? emptyState.branding.logoUrl
+            ),
+            coverUrl: toAbsoluteMediaUrl(
+              (profile.branding as typeof emptyState.branding | undefined)?.coverUrl ?? emptyState.branding.coverUrl
+            ),
             tagline:
               typeof storefront?.tagline === 'string'
                 ? storefront.tagline
@@ -1545,6 +1563,8 @@ export default function SupplierHubProfileStorefrontPage() {
         setSupportHours(nextSnapshot.supportHours);
         setSocials(nextSnapshot.socials);
         setCustomSocials(nextSnapshot.customSocials);
+        setBrandingPreview({ logo: '', cover: '' });
+        setBrandingUploadPending({ logo: false, cover: false });
         setCoverageRecords(
           coverage
             .map((entry) => ({
@@ -1566,6 +1586,8 @@ export default function SupplierHubProfileStorefrontPage() {
         setSupportHours(emptyState.supportHours);
         setSocials(emptyState.socials);
         setCustomSocials(emptyState.customSocials);
+        setBrandingPreview({ logo: '', cover: '' });
+        setBrandingUploadPending({ logo: false, cover: false });
         setCoverageRecords([]);
         setStorefrontRecord(null);
         setSavedSnapshot(JSON.parse(JSON.stringify({
@@ -1673,6 +1695,53 @@ export default function SupplierHubProfileStorefrontPage() {
 
   const saveAll = async () => {
     await persistSnapshot(snapshot);
+  };
+
+  const uploadBrandingImage = async (
+    slot: 'logo' | 'cover',
+    payload: { name: string; previewUrl?: string; file: File }
+  ) => {
+    const previewKey = slot === 'logo' ? 'logo' : 'cover';
+    const urlKey = slot === 'logo' ? 'logoUrl' : 'coverUrl';
+    const nameKey = slot === 'logo' ? 'logoName' : 'coverName';
+    const previewUrl = payload.previewUrl || '';
+
+    setBrandingPreview((prev) => ({ ...prev, [previewKey]: previewUrl }));
+    setBranding((prev) => ({ ...prev, [nameKey]: payload.name }));
+    setBrandingUploadPending((prev) => ({ ...prev, [previewKey]: true }));
+
+    try {
+      const uploaded = await sellerBackendApi.uploadMediaFile({
+        name: payload.name,
+        dataUrl: previewUrl,
+        kind: 'image',
+        mimeType: payload.file.type || 'image/*',
+        sizeBytes: payload.file.size,
+        isPublic: true,
+        purpose: slot === 'logo' ? 'storefront_logo' : 'storefront_cover',
+        metadata: { scope: 'supplier_profile_branding', slot },
+      });
+      const persistedUrl = toAbsoluteMediaUrl(
+        (uploaded as Record<string, unknown>)?.publicUrl ?? (uploaded as Record<string, unknown>)?.url
+      );
+      if (persistedUrl) {
+        setBranding((prev) => ({ ...prev, [urlKey]: persistedUrl }));
+        setBrandingPreview((prev) => ({ ...prev, [previewKey]: '' }));
+      }
+      pushToast({
+        title: slot === 'logo' ? 'Logo updated' : 'Cover updated',
+        message: persistedUrl ? 'Preview will persist after save.' : 'Using local preview.',
+        tone: 'success',
+      });
+    } catch {
+      pushToast({
+        title: 'Upload failed',
+        message: 'Preview is kept locally. Try uploading again to persist across devices.',
+        tone: 'warning',
+      });
+    } finally {
+      setBrandingUploadPending((prev) => ({ ...prev, [previewKey]: false }));
+    }
   };
 
   const setDefaultAddress = (id) => {
@@ -2233,19 +2302,19 @@ export default function SupplierHubProfileStorefrontPage() {
                           <UploadCard
                             title="Logo"
                             value={branding.logoName}
-                            previewUrl={branding.logoUrl}
-                            onUpload={({ name, previewUrl }) => {
-                              setBranding((s) => ({ ...s, logoName: name, logoUrl: previewUrl || s.logoUrl }));
-                              pushToast({ title: 'Logo updated', tone: 'success' });
+                            previewUrl={brandingPreview.logo || branding.logoUrl}
+                            isPending={brandingUploadPending.logo}
+                            onUpload={(payload) => {
+                              void uploadBrandingImage('logo', payload);
                             }}
                           />
                           <UploadCard
                             title="Cover image"
                             value={branding.coverName}
-                            previewUrl={branding.coverUrl}
-                            onUpload={({ name, previewUrl }) => {
-                              setBranding((s) => ({ ...s, coverName: name, coverUrl: previewUrl || s.coverUrl }));
-                              pushToast({ title: 'Cover updated', tone: 'success' });
+                            previewUrl={brandingPreview.cover || branding.coverUrl}
+                            isPending={brandingUploadPending.cover}
+                            onUpload={(payload) => {
+                              void uploadBrandingImage('cover', payload);
                             }}
                           />
                         </div>
@@ -3111,7 +3180,7 @@ async function fileToDataUrl(file: File) {
   });
 }
 
-function UploadCard({ title, value, previewUrl, onUpload }) {
+function UploadCard({ title, value, previewUrl, onUpload, isPending = false }) {
   const ref = useRef<HTMLInputElement | null>(null);
   return (
     <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
@@ -3119,7 +3188,9 @@ function UploadCard({ title, value, previewUrl, onUpload }) {
         <ImageIcon className="h-4 w-4 text-slate-700" />
         <div className="text-sm font-black text-slate-900">{title}</div>
         <span className="ml-auto">
-          <Badge tone={value ? 'green' : 'orange'}>{value ? 'Uploaded' : 'Missing'}</Badge>
+          <Badge tone={isPending ? 'orange' : value ? 'green' : 'orange'}>
+            {isPending ? 'Uploading...' : value ? 'Uploaded' : 'Missing'}
+          </Badge>
         </span>
       </div>
       <div className="mt-2 text-xs font-semibold text-slate-500">
@@ -3146,11 +3217,12 @@ function UploadCard({ title, value, previewUrl, onUpload }) {
         <button
           type="button"
           onClick={() => ref.current?.click?.()}
+          disabled={isPending}
           className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-xs font-extrabold text-white"
           style={{ background: TOKENS.orange }}
         >
           <Plus className="h-4 w-4" />
-          Upload
+          {isPending ? 'Uploading...' : 'Upload'}
         </button>
         <input
           ref={ref}
@@ -3162,7 +3234,7 @@ function UploadCard({ title, value, previewUrl, onUpload }) {
             const f = e.target.files?.[0];
             if (!f) return;
             const previewUrl = await fileToDataUrl(f).catch(() => '');
-            onUpload({ name: f.name, previewUrl });
+            await onUpload({ name: f.name, previewUrl, file: f });
             input.value = '';
           }}
         />
