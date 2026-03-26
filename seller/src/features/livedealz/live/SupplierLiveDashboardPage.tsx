@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
+import { LiveBuilderDrawer as SupplierFacingLiveBuilderDrawer } from "./LiveBuilder_LivePlan_SupplierFacing";
 
 /**
  * SupplierLiveDashboardPage.jsx
@@ -2017,22 +2018,15 @@ export default function SupplierLiveDashboardPage() {
           asyncApi={{ run, isPending }}
         />
 
-        <LiveBuilderDrawer
+        <SupplierFacingLiveBuilderDrawer
           open={builderOpen}
           onClose={() => {
             setBuilderOpen(false);
             setBuilderSessionId(undefined);
             setPrefillDealId(undefined);
           }}
+          sessionId={builderSessionId}
           dealId={prefillDealId}
-          session={sessions.find((s) => s.id === (builderSessionId || "")) || null}
-          campaign={
-            builderSessionId
-              ? campaigns.find((c) => c.id === sessions.find((s) => s.id === builderSessionId)?.campaignId)
-              : null
-          }
-          toastApi={toastApi}
-          asyncApi={{ run, isPending }}
           zIndex={130}
         />
       </div>

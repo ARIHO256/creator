@@ -101,6 +101,45 @@ type HomePageData = {
   insights: InsightData[];
 };
 
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function buildInitials(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("") || "CR"
+  );
+}
+
+function resolveSessionIdentity() {
+  const session = readAuthSession();
+  const creatorProfile = readRecord(session?.creatorProfile);
+  const sellerProfile = readRecord(session?.sellerProfile);
+  const email = readString(session?.email);
+  const phone = readString(session?.phone);
+
+  const name =
+    email ||
+    phone ||
+    readString(creatorProfile.name) ||
+    readString(sellerProfile.displayName) ||
+    readString(sellerProfile.name);
+
+  return {
+    name,
+    initials: buildInitials(name)
+  };
+}
+
 
 
 function FeedItem({
@@ -215,6 +254,7 @@ function FeedItem({
 export function CreatorLiveDealzFeedPage() {
   const { showSuccess } = useNotification();
   const navigate = useNavigate();
+  const sessionIdentity = resolveSessionIdentity();
   const onChangePage = (page: PageId) => {
     navigate("/" + page);
   };
@@ -288,6 +328,12 @@ export function CreatorLiveDealzFeedPage() {
     return true;
   });
 
+  const heroData = {
+    ...homeData.hero,
+    name: sessionIdentity.name || homeData.hero.name,
+    initials: sessionIdentity.name ? sessionIdentity.initials : homeData.hero.initials
+  };
+
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <PageHeader
@@ -322,7 +368,7 @@ export function CreatorLiveDealzFeedPage() {
         <div className="w-full max-w-full flex flex-col gap-4">
           {/* Top hero row: profile summary + Today at a glance */}
           <div className="flex flex-col md:flex-row gap-4 items-stretch">
-            <HeroSummaryCard hero={homeData.hero} onChangePage={onChangePage} />
+            <HeroSummaryCard hero={heroData} onChangePage={onChangePage} />
             <TodayAtGlanceCard items={homeData.todayItems} />
           </div>
 

@@ -41,6 +41,13 @@ interface Toast {
 type AuthMode = "signin" | "signup" | null;
 type IdentifierMode = "email" | "phone";
 
+function parseAuthMode(search: string): AuthMode {
+  const mode = new URLSearchParams(search).get("mode")?.trim().toLowerCase();
+  if (mode === "signup" || mode === "register" || mode === "sign-up") return "signup";
+  if (mode === "signin" || mode === "login" || mode === "sign-in") return "signin";
+  return null;
+}
+
 function cx(...xs: (string | boolean | undefined | null)[]): string {
   return xs.filter(Boolean).join(" ");
 }
@@ -306,6 +313,7 @@ export default function CreatorAuthRedirectNotice() {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { toasts, push } = useToasts();
+  const requestedMode = useMemo(() => parseAuthMode(location.search), [location.search]);
 
   const [showWhy, setShowWhy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
@@ -324,15 +332,9 @@ export default function CreatorAuthRedirectNotice() {
   const [noticeContent, setNoticeContent] = useState<AuthNoticeContent | null>(null);
 
   useEffect(() => {
-    const nextMode = new URLSearchParams(location.search).get("mode");
-    if (nextMode === "register") {
-      setAuthMode("signup");
-      return;
-    }
-    if (nextMode === "login") {
-      setAuthMode("signin");
-    }
-  }, [location.search]);
+    if (!requestedMode) return;
+    setAuthMode(requestedMode);
+  }, [requestedMode]);
 
   useEffect(() => {
     let active = true;
@@ -365,6 +367,15 @@ export default function CreatorAuthRedirectNotice() {
   useEffect(() => {
     let active = true;
 
+    // Explicit auth intent from query param should always show the selected form.
+    // Do not auto-redirect to dashboard/onboarding from stored session in this case.
+    if (requestedMode) {
+      setInitializing(false);
+      return () => {
+        active = false;
+      };
+    }
+
     if (!hasPersistedAuthSession()) {
       setInitializing(false);
       return () => {
@@ -392,7 +403,7 @@ export default function CreatorAuthRedirectNotice() {
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [navigate, requestedMode]);
 
   const statusLabel = useMemo(() => {
     if (queueMessage) return queueMessage;
