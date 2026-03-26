@@ -281,7 +281,7 @@ function HeroSummaryCard({ onChangePage, hero }) {
             🏷️ {hero.tier}
           </span>
           <button
-            onClick={() => onChangePage?.("supplier-settings")}
+            onClick={() => onChangePage?.("supplier-public-profile")}
             className="px-4 py-0.5 rounded-lg bg-gradient-to-r from-[#f77f00] via-[#ff8c1a] to-[#f77f00] text-white text-sm font-medium hover:from-[#e26f00] hover:via-[#e67a0f] hover:to-[#e26f00] transition-all shadow-sm"
           >
             Supplier Profile
@@ -303,7 +303,7 @@ function HeroSummaryCard({ onChangePage, hero }) {
 
       <div className="md:hidden flex items-center justify-end gap-1.5 mt-2">
         <button
-          onClick={() => onChangePage?.("supplier-settings")}
+          onClick={() => onChangePage?.("supplier-public-profile")}
           className="px-4 py-0.5 rounded-lg bg-gradient-to-r from-[#f77f00] via-[#ff8c1a] to-[#f77f00] text-white text-sm font-medium hover:from-[#e26f00] hover:via-[#e67a0f] hover:to-[#e26f00] transition-all shadow-sm"
         >
           Supplier Profile

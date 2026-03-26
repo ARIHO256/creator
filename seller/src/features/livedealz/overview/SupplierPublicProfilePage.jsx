@@ -125,6 +125,103 @@ function normalizeSupplierProfilePayload(payload) {
   };
 }
 
+function mergeSupplierSettingsIntoProfile(profileData, settingsPayload) {
+  const supplierSettings = settingsPayload?.profile?.supplierSettings;
+  if (!supplierSettings || typeof supplierSettings !== "object") return profileData;
+
+  const profile = supplierSettings?.profile && typeof supplierSettings.profile === "object" ? supplierSettings.profile : {};
+  const social = supplierSettings?.social && typeof supplierSettings.social === "object" ? supplierSettings.social : {};
+  const preferences =
+    supplierSettings?.preferences && typeof supplierSettings.preferences === "object" ? supplierSettings.preferences : {};
+
+  const targetRegions = Array.isArray(profile.targetRegions)
+    ? profile.targetRegions.map((entry) => String(entry || "").trim()).filter(Boolean)
+    : [];
+  const categories = [
+    ...(Array.isArray(preferences.productCategories) ? preferences.productCategories : []),
+    ...(Array.isArray(preferences.serviceCategories) ? preferences.serviceCategories : [])
+  ]
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean);
+
+  const socialColorByName = {
+    instagram: "bg-pink-500",
+    tiktok: "bg-slate-900",
+    youtube: "bg-rose-600",
+    linkedin: "bg-blue-700",
+    facebook: "bg-blue-600",
+    website: "bg-slate-600"
+  };
+  const existingSocials = Array.isArray(profileData.socials) ? profileData.socials : [];
+  const byId = new Map(existingSocials.map((entry) => [String(entry?.id || "").toLowerCase(), entry]));
+  const pushOrReplaceSocial = (id, name, handle) => {
+    const clean = String(handle || "").trim();
+    if (!clean) return;
+    byId.set(String(id).toLowerCase(), {
+      id,
+      name,
+      handle: clean,
+      tag: String(name || id).charAt(0).toUpperCase(),
+      color: socialColorByName[String(id).toLowerCase()] || "bg-slate-500"
+    });
+  };
+  pushOrReplaceSocial("instagram", "Instagram", social.instagram);
+  pushOrReplaceSocial("tiktok", "TikTok", social.tiktok);
+  pushOrReplaceSocial("youtube", "YouTube", social.youtube);
+
+  if (Array.isArray(social.extra)) {
+    social.extra.forEach((entry, index) => {
+      const platform = String(entry?.platform || "").trim();
+      const handle = String(entry?.handle || "").trim();
+      if (!platform || !handle) return;
+      pushOrReplaceSocial(`extra-${index}`, platform, handle);
+    });
+  }
+
+  const primaryPlatform = String(social.primaryPlatform || "").trim();
+  if (primaryPlatform) {
+    const label =
+      primaryPlatform === "other"
+        ? String(social.primaryOtherCustomName || social.primaryOtherPlatform || "").trim()
+        : primaryPlatform;
+    const handle = String(social.primaryOtherHandle || "").trim();
+    if (label && handle) {
+      pushOrReplaceSocial(`primary-${label.toLowerCase()}`, label, handle);
+    }
+  }
+
+  const name = String(profile.businessName || "").trim();
+  const handleRaw = String(profile.handle || "").trim();
+  const tagline = String(profile.tagline || "").trim();
+  const country = String(profile.country || "").trim();
+  const supplierModel = String(profile.supplierModel || "").trim().toLowerCase();
+  const bio = String(profile.bio || "").trim();
+  const creatorNotes = String(preferences.notesToCreators || "").trim();
+
+  return {
+    ...profileData,
+    supplier: {
+      ...profileData.supplier,
+      ...(name ? { name } : {}),
+      ...(handleRaw ? { handle: `@${handleRaw.replace(/^@/, "")}` } : {}),
+      ...(country ? { region: country } : {}),
+      ...(tagline ? { categoryLine: tagline } : {}),
+      ...(targetRegions.length ? { shipsTo: `Targets ${targetRegions.join(" / ")}` } : {}),
+      ...(supplierModel
+        ? { type: supplierModel.includes("service") ? "Services" : "Products (Wholesale + Retail)" }
+        : {})
+    },
+    about: {
+      ...profileData.about,
+      ...(bio ? { text: bio } : {}),
+      ...(creatorNotes ? { collabPreferences: creatorNotes } : {}),
+      categories: categories.length ? categories : profileData.about?.categories || []
+    },
+    socials: Array.from(byId.values()),
+    tags: categories.length ? categories : profileData.tags
+  };
+}
+
 /* ----------------------------- Toast ----------------------------- */
 
 function Toast({ text, tone = "info", onClose }) {
@@ -749,9 +846,13 @@ export default function SupplierPublicProfilePage() {
 
     const load = async () => {
       try {
-        const payload = await sellerBackendApi.getSellerPublicProfile();
+        const [payload, settingsPayload] = await Promise.all([
+          sellerBackendApi.getSellerPublicProfile(),
+          sellerBackendApi.getSettings().catch(() => null)
+        ]);
         if (!active) return;
-        setProfileData(normalizeSupplierProfilePayload(payload));
+        const normalized = normalizeSupplierProfilePayload(payload);
+        setProfileData(mergeSupplierSettingsIntoProfile(normalized, settingsPayload));
       } catch {
         return;
       }
@@ -1180,7 +1281,7 @@ function Review({ brand, quote }) {
         <span className="text-sm font-semibold">{brand}</span>
         <span className="text-xs text-amber-500 dark:text-amber-400">★★★★★</span>
       </div>
-      <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">"{quote}"</p>
+      <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">&quot;{quote}&quot;</p>
     </li>
   );
 }
