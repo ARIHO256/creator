@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { CampaignStatus, Prisma } from '@prisma/client';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
@@ -17,6 +17,8 @@ import { UpdateTaskDto } from './dto/update-task.dto.js';
 
 @Injectable()
 export class CollaborationService {
+  private readonly logger = new Logger(CollaborationService.name);
+
   constructor(
     private readonly prisma: PrismaService
   ) {}
@@ -103,22 +105,64 @@ export class CollaborationService {
   }
 
   async dealzMarketplace(userId: string) {
-    const payload = await this.readDealzMarketplace(userId, 'seller_dealz_marketplace') as Record<string, unknown>;
-    const [suppliers, creators, campaigns] = await Promise.all([
-      this.loadDealzMarketplaceSuppliers(userId),
-      this.loadDealzMarketplaceCreators(userId),
-      this.loadDealzMarketplaceCampaigns(userId)
-    ]);
-    const mergedSuppliers = this.mergeMarketplaceActors(payload.suppliers, suppliers, 'name');
-    const mergedCreators = this.mergeMarketplaceActors(payload.creators, creators, 'handle');
-    const mergedDeals = this.mergeMarketplaceDeals(payload.deals, campaigns, mergedCreators);
+    try {
+      const payload = await this.readDealzMarketplace(userId, 'seller_dealz_marketplace') as Record<string, unknown>;
+      const [suppliers, creators, campaigns] = await Promise.all([
+        this.loadDealzMarketplaceSuppliers(userId),
+        this.loadDealzMarketplaceCreators(userId),
+        this.loadDealzMarketplaceCampaigns(userId)
+      ]);
+      const mergedSuppliers = this.mergeMarketplaceActors(payload.suppliers, suppliers, 'name');
+      const mergedCreators = this.mergeMarketplaceActors(payload.creators, creators, 'handle');
+      const mergedDeals = this.mergeMarketplaceDeals(payload.deals, campaigns, mergedCreators);
 
-    return {
-      ...payload,
-      deals: mergedDeals,
-      suppliers: mergedSuppliers,
-      creators: mergedCreators
-    };
+      return {
+        ...payload,
+        deals: mergedDeals,
+        suppliers: mergedSuppliers,
+        creators: mergedCreators
+      };
+    } catch (error) {
+      if (!this.isRetryableConnectionError(error)) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `Returning fallback dealz marketplace workspace for ${userId} after transient DB error: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+
+      return {
+        deals: [],
+        selectedId: '',
+        cart: {},
+        liveCart: {},
+        suppliers: [],
+        creators: [],
+        templates: {}
+      };
+    }
+  }
+
+  private isRetryableConnectionError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.toLowerCase();
+    if (
+      normalized.includes('server has closed the connection') ||
+      normalized.includes("can't reach database server") ||
+      normalized.includes('connection terminated unexpectedly') ||
+      normalized.includes('socket hang up') ||
+      normalized.includes('broken pipe')
+    ) {
+      return true;
+    }
+
+    return (
+      error instanceof Prisma.PrismaClientInitializationError ||
+      (error instanceof Prisma.PrismaClientKnownRequestError &&
+        ['P1001', 'P1017'].includes(String(error.code || '')))
+    );
   }
 
   async updateDealzMarketplace(userId: string, payload: Record<string, unknown>) {

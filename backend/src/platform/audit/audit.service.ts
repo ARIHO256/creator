@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -22,6 +22,8 @@ export type AuditEventInput = {
 
 @Injectable()
 export class AuditService {
+  private readonly logger = new Logger(AuditService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -43,17 +45,31 @@ export class AuditService {
     const asyncEnabled = !['0', 'false', 'no', 'off'].includes(
       String(this.configService.get('audit.async') ?? 'true').toLowerCase()
     );
-    if (asyncEnabled && this.jobsService) {
-      await this.jobsService.enqueue({
-        queue: 'audit',
-        type: 'AUDIT_EVENT',
-        payload: event as Record<string, unknown>,
-        dedupeKey: event.requestId ? `audit:${event.requestId}` : null
-      });
-      return;
-    }
+    try {
+      if (asyncEnabled && this.jobsService) {
+        try {
+          await this.jobsService.enqueue({
+            queue: 'audit',
+            type: 'AUDIT_EVENT',
+            payload: event as Record<string, unknown>,
+            dedupeKey: event.requestId ? `audit:${event.requestId}` : null
+          });
+          return;
+        } catch (error) {
+          this.logger.warn(
+            `Failed to enqueue audit event; falling back to direct persistence: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
 
-    await this.persist(event);
+      await this.persist(event);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist audit event: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
   }
 
   async persist(event: AuditEventInput) {

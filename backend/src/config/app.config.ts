@@ -1,6 +1,6 @@
 export default () => ({
   app: {
-    port: Number(process.env.PORT ?? "4010"),
+    port: Number(process.env.PORT ?? "5000"),
     host: process.env.HOST ?? "0.0.0.0",
     requestTimeoutMs: Number(process.env.REQUEST_TIMEOUT_MS ?? "15000"),
     keepAliveTimeoutMs: Number(process.env.KEEP_ALIVE_TIMEOUT_MS ?? "72000"),

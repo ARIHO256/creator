@@ -105,6 +105,7 @@ type Ad = {
   id: string;
   rank: number;
   status: AdStatus;
+  saved: boolean;
 
   campaignName: string;
   campaignSubtitle: string;
@@ -588,10 +589,12 @@ function CountdownPill({ startsAt, endsAt }: { startsAt: Date; endsAt: Date }) {
 /** Full Shoppable Ad Preview (buyer-first; phone-sized; internal scroll) */
 function ShoppableAdPreview({
   ad,
+  saved,
   cart,
   modeByOffer,
   onSetOfferMode,
   shareEnabled,
+  onToggleSaved,
   onPlayHero,
   onPlayOffer,
   onBuy,
@@ -601,11 +604,13 @@ function ShoppableAdPreview({
   onShare,
 }: {
   ad: Ad;
+  saved: boolean;
   cart: CartState;
   modeByOffer: Record<string, SellingMode>;
   onSetOfferMode: (offerId: string, mode: SellingMode) => void;
 
   shareEnabled?: boolean;
+  onToggleSaved: () => void;
   onPlayHero: () => void;
   onPlayOffer: (offerId: string) => void;
   onBuy: (offerId: string, mode: SellingMode) => void;
@@ -619,7 +624,6 @@ function ShoppableAdPreview({
 
   const state = computeCountdownState(Date.now(), startsAt.getTime(), endsAt.getTime());
 
-  const [saved, setSaved] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
 
   const cartLines = useMemo(() => {
@@ -741,7 +745,7 @@ function ShoppableAdPreview({
                   <div className="absolute right-3 top-3">
                     <button
                       type="button"
-                      onClick={() => setSaved((s) => !s)}
+                      onClick={onToggleSaved}
                       className={cx(
                         "rounded-full p-2 backdrop-blur ring-1",
                         saved ? "bg-white/35 ring-white/40" : "bg-white/20 ring-white/30 hover:bg-white/30",
@@ -1128,6 +1132,7 @@ function mapShoppableDeal(raw: unknown, index: number): Ad | null {
     id: asString(deal.id, `ad_${index + 1}`),
     rank: 0,
     status: adzStatus(shoppable.status ?? deal.status),
+    saved: asBool(shoppable.saved, false),
     campaignName: asString(shoppable.campaignName, asString(deal.title, "")),
     campaignSubtitle: asString(shoppable.campaignSubtitle, asString(deal.tagline, "")),
     supplier: {
@@ -1289,6 +1294,22 @@ export default function AdzMarketplace() {
       });
     }
     if (o?.type === "PRODUCT" && mode === "WHOLESALE") setToast("Wholesale mode enabled (MOQ & tier rules apply).");
+  }
+
+  function toggleSelectedSaved() {
+    if (!selected) return;
+    const adId = selected.id;
+    const nextSaved = !selected.saved;
+
+    setAds((prev) => prev.map((ad) => (ad.id === adId ? { ...ad, saved: nextSaved } : ad)));
+
+    void persistDealPatch(adId, (shoppable) => ({
+      ...shoppable,
+      saved: nextSaved,
+    })).catch(() => {
+      setAds((prev) => prev.map((ad) => (ad.id === adId ? { ...ad, saved: !nextSaved } : ad)));
+      setToast("Failed to save ad.");
+    });
   }
 
   function addToCart(offerId: string, mode: SellingMode) {
@@ -1768,10 +1789,12 @@ export default function AdzMarketplace() {
                 <div className="bg-neutral-50 dark:bg-slate-950 p-4 rounded-2xl transition-colors">
                   <ShoppableAdPreview
                     ad={selected}
+                    saved={selected.saved}
                     cart={cart}
                     modeByOffer={modeByOffer}
                     onSetOfferMode={setOfferMode}
                     shareEnabled={selected.status === "Generated"}
+                    onToggleSaved={toggleSelectedSaved}
                     onPlayHero={openHeroViewer}
                     onPlayOffer={openOfferViewer}
                     onBuy={buyNow}

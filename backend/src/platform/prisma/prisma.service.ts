@@ -20,6 +20,7 @@ const WRAPPER_PROPERTIES = new Set([
   'enableShutdownHooks',
   'readConnectionStatus'
 ]);
+const RETRYABLE_RECONNECT_ATTEMPTS = 3;
 
 function resolveDatasourceUrl(configService: ConfigService | undefined, role: PrismaRole) {
   const preferredKey = role === 'read' ? 'database.readUrl' : 'database.writeUrl';
@@ -151,20 +152,32 @@ abstract class BasePrismaService extends PrismaClient implements OnModuleInit, O
       this.reconnectPromise = (async () => {
         const reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(`Reconnecting ${this.role} database client after connection failure: ${reason}`);
+        let lastReconnectError: unknown = null;
 
-        if (this.activeClient === this) {
-          await this.disconnectPrimaryClient().catch(() => undefined);
-          await this.connectClient(this);
-          return;
+        for (let attempt = 1; attempt <= RETRYABLE_RECONNECT_ATTEMPTS; attempt += 1) {
+          try {
+            if (this.activeClient === this) {
+              await this.disconnectPrimaryClient().catch(() => undefined);
+              await this.connectClient(this);
+            } else if (this.fallbackClient) {
+              await this.fallbackClient.$disconnect().catch(() => undefined);
+              await this.connectClient(this.fallbackClient);
+            } else {
+              await this.connectClient(this);
+            }
+            return;
+          } catch (reconnectError) {
+            lastReconnectError = reconnectError;
+            if (attempt >= RETRYABLE_RECONNECT_ATTEMPTS) {
+              break;
+            }
+            const backoffMs = 200 * attempt;
+            this.logger.warn(`Retrying ${this.role} database reconnect in ${backoffMs}ms (attempt ${attempt + 1}/${RETRYABLE_RECONNECT_ATTEMPTS})`);
+            await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          }
         }
 
-        if (this.fallbackClient) {
-          await this.fallbackClient.$disconnect().catch(() => undefined);
-          await this.connectClient(this.fallbackClient);
-          return;
-        }
-
-        await this.connectClient(this);
+        throw lastReconnectError ?? error;
       })().finally(() => {
         this.reconnectPromise = null;
       });
@@ -175,16 +188,24 @@ abstract class BasePrismaService extends PrismaClient implements OnModuleInit, O
 
   private wrapMethod<T extends (...args: any[]) => any>(source: unknown, method: T) {
     return (async (...args: Parameters<T>) => {
-      try {
-        return await method.apply(source, args);
-      } catch (error) {
-        if (!this.isRetryableConnectionError(error)) {
-          throw error;
-        }
+      let lastError: unknown = null;
 
-        await this.reconnectActiveClient(error);
-        return method.apply(source, args);
+      for (let attempt = 1; attempt <= RETRYABLE_RECONNECT_ATTEMPTS; attempt += 1) {
+        try {
+          return await method.apply(source, args);
+        } catch (error) {
+          lastError = error;
+          if (!this.isRetryableConnectionError(error) || attempt >= RETRYABLE_RECONNECT_ATTEMPTS) {
+            throw error;
+          }
+
+          await this.reconnectActiveClient(error);
+          const backoffMs = 100 * attempt;
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
       }
+
+      throw lastError;
     }) as T;
   }
 

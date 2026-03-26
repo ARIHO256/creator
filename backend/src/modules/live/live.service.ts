@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
@@ -14,6 +14,8 @@ import { UpsertLiveSessionDto } from './dto/upsert-live-session.dto.js';
 
 @Injectable()
 export class LiveService {
+  private readonly logger = new Logger(LiveService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   // builder
@@ -332,11 +334,20 @@ export class LiveService {
   }
 
   async replays(userId: string) {
-    const replays = await this.prisma.liveReplay.findMany({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' }
-    });
-    return replays.map((replay) => this.serializeReplay(replay));
+    try {
+      const replays = await this.prisma.liveReplay.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      });
+      return replays.map((replay) => this.serializeReplay(replay));
+    } catch (error) {
+      if (!this.isRecoverableReplayListError(error)) {
+        throw error;
+      }
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Returning empty replay list for user ${userId} after recoverable storage error: ${detail}`);
+      return [];
+    }
   }
   async replay(userId: string, id: string) {
     const replay = await this.prisma.liveReplay.findFirst({
@@ -591,6 +602,26 @@ export class LiveService {
       return `default-${userId}`;
     }
     return normalized;
+  }
+
+  private isRecoverableReplayListError(error: unknown) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === 'P2021' || code === 'P2022') {
+      return true;
+    }
+
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      return true;
+    }
+
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    return (
+      message.includes('server has closed the connection') ||
+      message.includes("can't reach database server") ||
+      message.includes('connection terminated unexpectedly') ||
+      message.includes('socket hang up') ||
+      message.includes('broken pipe')
+    );
   }
 
   private async resolveStudioSessionId(userId: string, studioIdentifier: string) {

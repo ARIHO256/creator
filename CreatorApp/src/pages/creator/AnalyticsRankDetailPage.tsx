@@ -189,42 +189,14 @@ export default function AnalyticsRankDetailPage() {
     void reload();
   }, [timeRange, category, reload]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--page-bg,#f2f2f2)] text-sm text-slate-600">
-        Loading analytics…
-      </div>
-    );
-  }
+  const rank = analyticsSeed?.rank;
+  const metrics = analyticsSeed?.metrics;
+  const campaigns = analyticsSeed?.campaigns ?? [];
+  const goals = analyticsSeed?.goals ?? [];
+  const seedTrend = analyticsSeed?.trend ?? [];
+  const benchmarks = analyticsSeed?.benchmarks;
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--page-bg,#f2f2f2)] p-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          Analytics data is unavailable.
-        </div>
-      </div>
-    );
-  }
-
-  if (!analyticsSeed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--page-bg,#f2f2f2)] p-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          Analytics data is unavailable.
-        </div>
-      </div>
-    );
-  }
-
-  const rank = analyticsSeed.rank;
-  const metrics = analyticsSeed.metrics;
-  const campaigns = analyticsSeed.campaigns;
-  const goals = analyticsSeed.goals;
-  const seedTrend = analyticsSeed.trend;
-  const benchmarks = analyticsSeed.benchmarks;
-
-  const filteredCampaigns = useMemo(() => {
+  const filteredCampaigns = useMemo<CampaignRow[]>(() => {
     const arr = [...campaigns];
     const scoped = category === "All" ? arr : arr.filter((c) => c.category === category);
     scoped.sort((a, b) => {
@@ -232,7 +204,7 @@ export default function AnalyticsRankDetailPage() {
       return b.sales - a.sales;
     });
     return scoped.slice(0, 6);
-  }, [category, leaderboardMode]);
+  }, [campaigns, category, leaderboardMode]);
 
   const trend = useMemo<TrendPoint[]>(() => {
     const needed = timeRange === "7" ? 7 : timeRange === "30" ? 30 : 90;
@@ -248,6 +220,24 @@ export default function AnalyticsRankDetailPage() {
       return Math.round(runningXp);
     });
   }, [trend]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--page-bg,#f2f2f2)] text-sm text-slate-600">
+        Loading analytics…
+      </div>
+    );
+  }
+
+  if (error || !analyticsSeed || !rank || !metrics || !benchmarks) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[var(--page-bg,#f2f2f2)] p-6">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          Analytics data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   function onExport() {
     const rows: Record<string, string | number>[] = trend.map((t) => ({
