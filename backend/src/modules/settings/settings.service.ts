@@ -792,16 +792,21 @@ export class SettingsService {
     }
   }
   async payoutMethods(userId: string) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
-    await this.migrateLegacyPayoutMethods(userId, workspace.workspace.id);
-    const [stored, derived] = await Promise.all([
-      this.readPayoutMethods(workspace.workspace.id),
-      this.derivePayoutMethods(userId)
-    ]);
-    return this.deepMerge(derived, stored ?? {});
+    const derived = await this.derivePayoutMethods(userId);
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.migrateLegacyPayoutMethods(userId, workspace.workspace.id);
+      const stored = await this.readPayoutMethods(workspace.workspace.id);
+      return this.deepMerge(derived, stored ?? {});
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
+      }
+      const legacy = await this.readLegacyPayoutMethods(userId);
+      return this.deepMerge(derived, legacy ?? { methods: [] });
+    }
   }
   async updatePayoutMethods(userId: string, body: UpdatePayoutMethodsDto) {
-    const workspace = await this.ensureWorkspaceSeed(userId);
     const methods = Array.isArray(body.methods) ? body.methods : [];
     const normalized = methods.map((method, index) => ({
       ...method,
@@ -812,38 +817,69 @@ export class SettingsService {
     if (!hasDefault && normalized.length > 0) {
       normalized[0].isDefault = true;
     }
-    await this.prisma.$transaction(async (tx) => {
-      const settings = await tx.workspacePayoutSettings.upsert({
-        where: { workspaceId: workspace.workspace.id },
-        update: {
-          metadata: this.ensurePayload(body.metadata ?? {}) as Prisma.InputJsonValue
-        },
-        create: {
-          workspaceId: workspace.workspace.id,
-          metadata: this.ensurePayload(body.metadata ?? {}) as Prisma.InputJsonValue
+    try {
+      const workspace = await this.ensureWorkspaceSeed(userId);
+      await this.prisma.$transaction(async (tx) => {
+        const settings = await tx.workspacePayoutSettings.upsert({
+          where: { workspaceId: workspace.workspace.id },
+          update: {
+            metadata: this.ensurePayload(body.metadata ?? {}) as Prisma.InputJsonValue
+          },
+          create: {
+            workspaceId: workspace.workspace.id,
+            metadata: this.ensurePayload(body.metadata ?? {}) as Prisma.InputJsonValue
+          }
+        });
+        await tx.workspacePayoutMethod.deleteMany({
+          where: { settingsDbId: settings.dbId }
+        });
+        if (normalized.length > 0) {
+          await tx.workspacePayoutMethod.createMany({
+            data: normalized.map((method, index) => {
+              const payload = this.ensureObjectPayload(method);
+              return {
+                settingsDbId: settings.dbId,
+                externalId: this.readString(payload.id) || randomUUID(),
+                type: this.readString(payload.type) || 'provider',
+                label: this.readString(payload.label) || null,
+                currency: this.readString(payload.currency) || null,
+                isDefault: Boolean(payload.isDefault),
+                position: index,
+                payload: payload as Prisma.InputJsonValue
+              };
+            })
+          });
         }
       });
-      await tx.workspacePayoutMethod.deleteMany({
-        where: { settingsDbId: settings.dbId }
-      });
-      if (normalized.length > 0) {
-        await tx.workspacePayoutMethod.createMany({
-          data: normalized.map((method, index) => {
-            const payload = this.ensureObjectPayload(method);
-            return {
-              settingsDbId: settings.dbId,
-              externalId: this.readString(payload.id) || randomUUID(),
-              type: this.readString(payload.type) || 'provider',
-              label: this.readString(payload.label) || null,
-              currency: this.readString(payload.currency) || null,
-              isDefault: Boolean(payload.isDefault),
-              position: index,
-              payload: payload as Prisma.InputJsonValue
-            };
-          })
-        });
+    } catch (error) {
+      if (!this.isMissingSchemaObjectError(error)) {
+        throw error;
       }
-    });
+      const fallbackMethods = normalized.map((method, index) => {
+        const payload = this.ensureObjectPayload(method);
+        const next: Record<string, unknown> = {
+          id: this.readString(payload.id) || randomUUID(),
+          type: this.readString(payload.type) || 'provider',
+          isDefault: payload.isDefault === undefined ? index === 0 : Boolean(payload.isDefault)
+        };
+        const label = this.readString(payload.label);
+        if (label) {
+          next.label = label;
+        }
+        const currency = this.readString(payload.currency);
+        if (currency) {
+          next.currency = currency;
+        }
+        if (this.isPlainObject(payload.details)) {
+          next.details = payload.details as Record<string, unknown>;
+        }
+        return next;
+      });
+      await this.upsertWorkspaceSetting(userId, 'payout_methods', {
+        methods: fallbackMethods,
+        ...(this.isPlainObject(body.metadata) ? { metadata: body.metadata as Record<string, unknown> } : {})
+      });
+    }
     await this.audit.log({
       userId,
       action: 'settings.payout_methods_updated',
@@ -2862,6 +2898,29 @@ export class SettingsService {
     return {
       methods: (settings?.methods ?? []).map((method) => this.serializeStructuredPayload(method.payload, method.externalId)),
       ...(this.isPlainObject(settings?.metadata) ? { metadata: settings?.metadata as Record<string, unknown> } : {})
+    };
+  }
+
+  private async readLegacyPayoutMethods(userId: string) {
+    const payload = await this.findWorkspaceSetting(userId, 'payout_methods');
+    const methods = this.extractList(payload ?? { methods: [] }, 'methods')
+      .map((entry, index) => {
+        if (!this.isPlainObject(entry)) {
+          return null;
+        }
+        const record = entry as Record<string, unknown>;
+        return this.serializeStructuredPayload(record, this.readString(record.id) || `legacy-payout-${index + 1}`);
+      })
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+
+    const metadata =
+      payload && this.isPlainObject((payload as Record<string, unknown>).metadata)
+        ? ((payload as Record<string, unknown>).metadata as Record<string, unknown>)
+        : undefined;
+
+    return {
+      methods,
+      ...(metadata ? { metadata } : {})
     };
   }
 

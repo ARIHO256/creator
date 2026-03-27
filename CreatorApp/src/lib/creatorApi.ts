@@ -50,6 +50,66 @@ export type PayoutMethodsResponse = {
   metadata?: Record<string, unknown>;
 };
 
+type UpdatePayoutMethodRecord = {
+  id?: string;
+  type?: string;
+  label?: string;
+  currency?: string;
+  isDefault?: boolean;
+  details?: Record<string, unknown>;
+  kind?: string;
+};
+
+type UpdatePayoutMethodsRequest = {
+  methods: UpdatePayoutMethodRecord[];
+  metadata?: Record<string, unknown>;
+};
+
+function sanitizePayoutMethodsRequest(body: PayoutMethodsResponse | UpdatePayoutMethodsRequest): UpdatePayoutMethodsRequest {
+  const methods = Array.isArray(body?.methods) ? body.methods : [];
+  const sanitizedMethods = methods.map((method, index) => {
+    const id =
+      typeof method?.id === "string" && method.id.trim()
+        ? method.id.trim()
+        : `payout-method-${index + 1}`;
+    const rawType =
+      typeof method?.type === "string" && method.type.trim()
+        ? method.type.trim()
+        : typeof method?.kind === "string" && method.kind.trim()
+          ? method.kind.trim()
+          : "provider";
+    const label = typeof method?.label === "string" ? method.label.trim().slice(0, 120) : "";
+    const currency = typeof method?.currency === "string" ? method.currency.trim().slice(0, 16) : "";
+    const details =
+      method?.details && typeof method.details === "object" && !Array.isArray(method.details)
+        ? method.details
+        : undefined;
+
+    return {
+      id,
+      type: rawType.slice(0, 40),
+      ...(label ? { label } : {}),
+      ...(currency ? { currency } : {}),
+      ...(method?.isDefault !== undefined ? { isDefault: Boolean(method.isDefault) } : {}),
+      ...(details ? { details } : {})
+    };
+  });
+
+  if (sanitizedMethods.length > 0 && !sanitizedMethods.some((method) => method.isDefault)) {
+    sanitizedMethods[0].isDefault = true;
+  }
+
+  const metadata =
+    body?.metadata && typeof body.metadata === "object" && !Array.isArray(body.metadata)
+      ? body.metadata
+      : undefined;
+
+  return {
+    methods: sanitizedMethods,
+    ...(metadata ? { metadata } : {})
+  };
+}
+
 export type SubscriptionResponse = {
   plan: string;
   cycle: string;
@@ -1077,8 +1137,8 @@ export const creatorApi = {
   payoutMethods() {
     return api.get<PayoutMethodsResponse>("/settings/payout-methods");
   },
-  updatePayoutMethods(body: PayoutMethodsResponse) {
-    return api.patch<PayoutMethodsResponse>("/settings/payout-methods", body);
+  updatePayoutMethods(body: PayoutMethodsResponse | UpdatePayoutMethodsRequest) {
+    return api.patch<PayoutMethodsResponse>("/settings/payout-methods", sanitizePayoutMethodsRequest(body));
   },
 
   subscription() {
