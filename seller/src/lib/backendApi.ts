@@ -187,7 +187,7 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-async function fetchAuthMe(token: string) {
+async function fetchAuthMe(token: string): Promise<{ ok: boolean; status: number; data: Record<string, unknown> | null }> {
   const url = await resolveApiUrl("/api/auth/me");
   const response = await fetch(url, {
     method: "GET",
@@ -198,11 +198,13 @@ async function fetchAuthMe(token: string) {
   });
   const payload = await parsePayload(response);
   if (!response.ok) {
-    return null;
+    return { ok: false, status: response.status, data: null };
   }
-  return payload && typeof payload === "object" && "data" in payload && "success" in payload
-    ? ((payload as { data: Record<string, unknown> }).data ?? null)
-    : ((payload as Record<string, unknown> | null) ?? null);
+  const data =
+    payload && typeof payload === "object" && "data" in payload && "success" in payload
+      ? ((payload as { data: Record<string, unknown> }).data ?? null)
+      : ((payload as Record<string, unknown> | null) ?? null);
+  return { ok: true, status: response.status, data };
 }
 
 async function switchWorkspaceRole(targetRole: UserRole): Promise<string | null> {
@@ -212,12 +214,28 @@ async function switchWorkspaceRole(targetRole: UserRole): Promise<string | null>
 
   roleSwitchPromise = (async () => {
     const current = readSession();
-    const token = current?.accessToken || current?.token || "";
+    let token = current?.accessToken || current?.token || "";
     if (!token) {
       return null;
     }
 
-    const authMe = await fetchAuthMe(token);
+    if (isAccessTokenExpired(token)) {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        token = refreshedToken;
+      }
+    }
+
+    let authMeResponse = await fetchAuthMe(token);
+    if (!authMeResponse.ok && authMeResponse.status === 401) {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        token = refreshedToken;
+        authMeResponse = await fetchAuthMe(token);
+      }
+    }
+
+    const authMe = authMeResponse.data;
     const availableRoles = normalizeRoles(authMe?.roles ?? current?.roles, targetRole);
     if (!availableRoles.includes(targetRole)) {
       return null;
@@ -233,16 +251,28 @@ async function switchWorkspaceRole(targetRole: UserRole): Promise<string | null>
     }
 
     const url = await resolveApiUrl("/api/auth/switch-role");
-    const response = await fetch(url, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ role: preferredBackendRole(targetRole) }),
-    });
-    const payload = await parsePayload(response);
+    const makeSwitchRequest = async (bearer: string) => {
+      const response = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Authorization: `Bearer ${bearer}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ role: preferredBackendRole(targetRole) }),
+      });
+      const payload = await parsePayload(response);
+      return { response, payload };
+    };
+
+    let { response, payload } = await makeSwitchRequest(token);
+    if (!response.ok && response.status === 401) {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        token = refreshedToken;
+        ({ response, payload } = await makeSwitchRequest(token));
+      }
+    }
     if (!response.ok) {
       return null;
     }
