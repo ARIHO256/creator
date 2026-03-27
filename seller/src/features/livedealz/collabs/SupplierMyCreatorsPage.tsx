@@ -137,7 +137,7 @@ function getStopAction(creator) {
 
 const INITIAL_CREATORS = [
   {
-    id: 1,
+    id: "1",
     name: "Amina K.",
     initials: "AK",
     handle: "@amina.dealz",
@@ -167,7 +167,7 @@ const INITIAL_CREATORS = [
     ],
   },
   {
-    id: 2,
+    id: "2",
     name: "Chris M.",
     initials: "CM",
     handle: "@chris.finds",
@@ -197,7 +197,7 @@ const INITIAL_CREATORS = [
     ],
   },
   {
-    id: 3,
+    id: "3",
     name: "Grace W.",
     initials: "GW",
     handle: "@gracefaithwellness",
@@ -224,7 +224,7 @@ const INITIAL_CREATORS = [
     activeCampaigns: [],
   },
   {
-    id: 4,
+    id: "4",
     name: "Ama S.",
     initials: "AS",
     handle: "@stylebyama",
@@ -893,7 +893,7 @@ function ProposalTextArea(props) {
 
 function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) {
   const fileRef = useRef(null);
-  const [selectedCreatorId, setSelectedCreatorId] = useState(initialCreator?.id || creators[0]?.id || 0);
+  const [selectedCreatorId, setSelectedCreatorId] = useState(initialCreator?.id || creators[0]?.id || "");
   const [selectedCampaignId, setSelectedCampaignId] = useState(campaigns[0]?.id || "");
   const [scope, setScope] = useState("Hybrid");
   const [pricingModel, setPricingModel] = useState("Hybrid");
@@ -924,7 +924,7 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
   useEffect(() => {
     if (!open) return;
     const next = initialCreator || creators[0] || null;
-    setSelectedCreatorId(next?.id || 0);
+    setSelectedCreatorId(next?.id || "");
     setSelectedCampaignId(campaigns[0]?.id || "");
     setScope("Hybrid");
     setPricingModel("Hybrid");
@@ -1073,7 +1073,7 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
 
                 <div className="mt-4">
                   <ProposalFieldShell label="Creator">
-                    <ProposalSelect value={selectedCreatorId} onChange={(e) => setSelectedCreatorId(Number(e.target.value))}>
+                    <ProposalSelect value={selectedCreatorId} onChange={(e) => setSelectedCreatorId(e.target.value)}>
                       {creators.map((item) => (
                         <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
