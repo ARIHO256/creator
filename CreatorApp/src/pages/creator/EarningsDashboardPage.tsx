@@ -139,40 +139,15 @@ function EarningsDashboardPage() {
     }
   });
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950">
-        <CircularProgress size={28} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 p-6">
-        <PageHeader pageTitle="Earnings Dashboard" />
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-          Earnings data is unavailable.
-        </div>
-      </div>
-    );
-  }
-
-  if (!dataset) {
-    return (
-      <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 p-6">
-        <PageHeader pageTitle="Earnings Dashboard" />
-        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
-          Earnings data is unavailable.
-        </div>
-      </div>
-    );
-  }
-
-  const summary = dataset.summary;
+  const safeDataset: EarningsDataset = dataset ?? {
+    summary: { available: 0, pending: 0, lifetime: 0 },
+    payouts: [],
+    contracts: []
+  };
+  const summary = safeDataset.summary;
   const rangeStart = useMemo(() => getRangeStart(dateRange), [dateRange]);
   const contractRows = useMemo(() => {
-    return dataset.contracts
+    return safeDataset.contracts
       .map((contract) => {
         const metadata =
           contract.metadata && typeof contract.metadata === "object" && !Array.isArray(contract.metadata)
@@ -188,7 +163,7 @@ function EarningsDashboardPage() {
         };
       })
       .filter((record) => record.amount > 0 && record.createdAt);
-  }, [dataset.contracts]);
+  }, [safeDataset.contracts]);
 
   const rangedContracts = useMemo(
     () => contractRows.filter((record) => (record.createdAt as Date) >= rangeStart),
@@ -271,7 +246,7 @@ function EarningsDashboardPage() {
   }, [rangedContracts, summary.lifetime]);
 
   const payoutRows = useMemo(() => {
-    return dataset.payouts.map((payout) => {
+    return safeDataset.payouts.map((payout) => {
       const metadata =
         payout.metadata && typeof payout.metadata === "object" && !Array.isArray(payout.metadata)
           ? (payout.metadata as Record<string, unknown>)
@@ -294,7 +269,7 @@ function EarningsDashboardPage() {
           || ""
       } satisfies Payout;
     });
-  }, [dataset.payouts]);
+  }, [safeDataset.payouts]);
 
   // Forecast: simple extrapolation based on monthly data
   const forecast = useMemo(() => {
@@ -336,6 +311,25 @@ function EarningsDashboardPage() {
 
   const percent = (value: number): number =>
     totalComposition > 0 ? Math.round((value / totalComposition) * 100) : 0;
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#f2f2f2] dark:bg-slate-950">
+        <CircularProgress size={28} />
+      </div>
+    );
+  }
+
+  if (error || !dataset) {
+    return (
+      <div className="min-h-screen bg-[#f2f2f2] dark:bg-slate-950 p-6">
+        <PageHeader pageTitle="Earnings Dashboard" />
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-sm text-slate-600 dark:text-slate-300">
+          Earnings data is unavailable.
+        </div>
+      </div>
+    );
+  }
 
   const handleRequestPayout = () => {
     navigate("/request-payout");

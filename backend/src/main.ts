@@ -68,9 +68,24 @@ async function bootstrap() {
 
   const fastify = app.getHttpAdapter().getInstance();
   const configService = app.get(ConfigService);
+  const expectedClient404Paths = new Set(['/', '/favicon.ico']);
   const securityHeaders = buildSecurityHeaders(
     configService.get<boolean>('security.enableHeaders') ?? true
   );
+  fastify.get('/', (_request: any, reply: any) => {
+    reply.status(200).send({
+      success: true,
+      data: {
+        service: 'mldz-backend',
+        status: 'ok',
+        health: '/health',
+        apiBase: '/api'
+      }
+    });
+  });
+  fastify.get('/favicon.ico', (_request: any, reply: any) => {
+    reply.status(204).send();
+  });
   fastify.addHook('onRequest', (request: any, reply: any, done: () => void) => {
     request.requestStartedAt = process.hrtime.bigint();
     reply.header('x-request-id', request.id);
@@ -107,10 +122,15 @@ async function bootstrap() {
         statusCode: reply.statusCode,
         durationMs: Number(durationMs.toFixed(1))
       };
+      const requestPath = String(request.url ?? '').split('?')[0];
       if (reply.statusCode >= 500) {
         request.log.error(logPayload, 'request failed');
       } else if (reply.statusCode >= 400) {
-        request.log.warn(logPayload, 'request completed with client error');
+        if (reply.statusCode === 404 && expectedClient404Paths.has(requestPath)) {
+          request.log.info(logPayload, 'request completed with expected client miss');
+        } else {
+          request.log.warn(logPayload, 'request completed with client error');
+        }
       } else {
         request.log.info(logPayload, 'request completed successfully');
       }
