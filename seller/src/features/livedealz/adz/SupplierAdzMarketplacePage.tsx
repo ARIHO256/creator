@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import AdBuilder from "./AdBuilder_SupplierFacing";
+import { sellerBackendApi } from "../../../lib/backendApi";
 import {
   BadgeCheck,
   CalendarClock,
@@ -45,7 +46,6 @@ import {
  * - Viewer (hero + offer) modal/fullscreen with overlays: Buy/Add, stock warnings, countdown, love/share + mode toggle (if applicable)
  *
  * Notes:
- * - This is a premium UI shell with mock data. Wire to your real API + routing as needed.
  * - Supplier naming is used (not Supplier).
  */
 
@@ -208,6 +208,124 @@ function fmtLocal(d: Date) {
 }
 function pad2(n: number) {
   return String(n).padStart(2, "0");
+}
+function toNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+function toStatus(value: unknown): AdStatus {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["generated", "published", "active", "live", "running"].includes(normalized)) return "Generated";
+  if (["scheduled", "queued", "pending_approval"].includes(normalized)) return "Scheduled";
+  return "Draft";
+}
+function mapAdzMarketplaceRecord(record: Record<string, unknown>, index: number): Ad {
+  const data =
+    record?.data && typeof record.data === "object" && !Array.isArray(record.data)
+      ? (record.data as Record<string, unknown>)
+      : record;
+  const offersRaw = Array.isArray(data.offers) ? (data.offers as Array<Record<string, unknown>>) : [];
+  const impressions = toNumber(data.impressions ?? data.impressions7d);
+  const clicks = toNumber(data.clicks ?? data.clicks7d);
+  const ctr = impressions > 0 ? `${((clicks / impressions) * 100).toFixed(1)}%` : "0%";
+  const startISO = String(data.startISO || data.startsAtISO || record.createdAt || new Date().toISOString());
+  const endISO = String(data.endISO || data.endsAtISO || record.updatedAt || new Date(Date.now() + 24 * 3600 * 1000).toISOString());
+  const creatorData =
+    data.creator && typeof data.creator === "object" && !Array.isArray(data.creator)
+      ? (data.creator as Record<string, unknown>)
+      : {};
+  const supplierData =
+    data.supplier && typeof data.supplier === "object" && !Array.isArray(data.supplier)
+      ? (data.supplier as Record<string, unknown>)
+      : {};
+
+  const offers: Offer[] = offersRaw.map((offer, offerIndex) => {
+    const type = String(offer.type || "PRODUCT").toUpperCase() === "SERVICE" ? "SERVICE" : "PRODUCT";
+    const tiersRaw = offer?.wholesale && typeof offer.wholesale === "object" && !Array.isArray(offer.wholesale)
+      ? ((offer.wholesale as Record<string, unknown>).tiers as Array<Record<string, unknown>> | undefined)
+      : undefined;
+    const tiers: WholesaleTier[] = Array.isArray(tiersRaw)
+      ? tiersRaw
+          .map((tier) => ({
+            minQty: toNumber(tier?.minQty, 1),
+            unitPrice: toNumber(tier?.unitPrice, 0),
+          }))
+          .filter((tier) => tier.minQty > 0 && tier.unitPrice >= 0)
+      : [];
+    const wholesale =
+      offer?.wholesale && typeof offer.wholesale === "object" && !Array.isArray(offer.wholesale)
+        ? {
+            moq: toNumber((offer.wholesale as Record<string, unknown>).moq, 1),
+            step: toNumber((offer.wholesale as Record<string, unknown>).step, 1),
+            tiers,
+            leadTimeLabel: String((offer.wholesale as Record<string, unknown>).leadTimeLabel || ""),
+            businessOnly: Boolean((offer.wholesale as Record<string, unknown>).businessOnly),
+          }
+        : undefined;
+    return {
+      id: String(offer.id || `offer-${index + 1}-${offerIndex + 1}`),
+      type,
+      name: String(offer.name || `Offer ${offerIndex + 1}`),
+      price: toNumber(offer.price, 0),
+      basePrice: toNumber(offer.basePrice, 0) || undefined,
+      currency: String(offer.currency || data.currency || "USD").toUpperCase() === "UGX" ? "UGX" : "USD",
+      stockLeft: toNumber(offer.stockLeft, type === "SERVICE" ? -1 : 0),
+      sold: toNumber(offer.sold, 0),
+      posterUrl: String(offer.posterUrl || data.heroImageUrl || ""),
+      videoUrl: String(offer.videoUrl || SAMPLE_VIDEO),
+      desktopMode: String(offer.desktopMode || "modal") === "fullscreen" ? "fullscreen" : "modal",
+      sellingModes: Array.isArray(offer.sellingModes)
+        ? (offer.sellingModes as unknown[])
+            .map((mode) => String(mode).toUpperCase())
+            .filter((mode): mode is SellingMode => mode === "RETAIL" || mode === "WHOLESALE")
+        : undefined,
+      defaultSellingMode: String(offer.defaultSellingMode || "").toUpperCase() === "WHOLESALE" ? "WHOLESALE" : "RETAIL",
+      wholesale,
+    };
+  });
+
+  return {
+    id: String(record.id || data.id || `adz-${index + 1}`),
+    rank: toNumber(data.rank, index + 1),
+    status: toStatus(record.status ?? data.status),
+    campaignName: String(data.campaignName || data.name || data.title || `Ad ${index + 1}`),
+    campaignSubtitle: String(data.campaignSubtitle || data.subtitle || ""),
+    supplier: {
+      name: String(supplierData.name || "Supplier"),
+      category: String(supplierData.category || "General"),
+      logoUrl: String(supplierData.logoUrl || ""),
+    },
+    creator: {
+      name: String(creatorData.name || "Creator"),
+      handle: String(creatorData.handle || "@creator"),
+      avatarUrl: String(creatorData.avatarUrl || ""),
+      verified: Boolean(creatorData.verified),
+    },
+    hostRole: String(data.hostRole || "Creator").toLowerCase() === "supplier" ? "Supplier" : "Creator",
+    creatorUsage: String(data.creatorUsage || "I will use a Creator") as CreatorUsageDecision,
+    collabMode: String(data.collabMode || "Open for Collabs") as CollaborationMode,
+    approvalMode: String(data.approvalMode || "Manual") === "Auto" ? "Auto" : "Manual",
+    platforms: Array.isArray(data.platforms) ? data.platforms.map((platform) => String(platform)) : [],
+    startISO,
+    endISO,
+    heroImageUrl: String(data.heroImageUrl || data.coverImageUrl || ""),
+    heroIntroVideoUrl: String(data.heroIntroVideoUrl || SAMPLE_VIDEO),
+    heroIntroVideoPosterUrl: String(data.heroIntroVideoPosterUrl || data.heroImageUrl || data.coverImageUrl || ""),
+    heroDesktopMode: String(data.heroDesktopMode || "modal") === "fullscreen" ? "fullscreen" : "modal",
+    ctaPrimaryLabel: String(data.ctaPrimaryLabel || "Buy now"),
+    ctaSecondaryLabel: String(data.ctaSecondaryLabel || "Add to cart"),
+    offers,
+    kpis: Array.isArray(data.kpis)
+      ? (data.kpis as Array<Record<string, unknown>>).map((kpi) => ({
+          label: String(kpi.label || "Metric"),
+          value: String(kpi.value || "0"),
+        }))
+      : [
+          { label: "Views", value: `${Math.round(impressions / 1000)}K` },
+          { label: "Clicks", value: `${Math.round(clicks / 1000)}K` },
+          { label: "CTR", value: ctr },
+        ],
+  };
 }
 function computeCountdownState(nowMs: number, startMs: number, endMs: number): CountdownState {
   if (nowMs < startMs) return "upcoming";
@@ -1067,240 +1185,9 @@ function ShoppableAdPreview({
   );
 }
 
-/** ------------------------------ Mock data ------------------------------ */
+/** ------------------------------ Data mapping ------------------------------ */
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
-
-const DEMO_ADS: Ad[] = [
-  {
-    id: "ad_1",
-    rank: 1,
-    status: "Generated",
-    campaignName: "Valentine Glow Week",
-    campaignSubtitle: "GlowUp Hub · Limited-time drops",
-    supplier: {
-      name: "GlowUp Hub",
-      category: "Beauty",
-      logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=256&auto=format&fit=crop",
-    },
-    creator: {
-      name: "Amina K.",
-      handle: "@amina.dealz",
-      avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop",
-      verified: true,
-    },
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    platforms: ["Instagram", "TikTok"],
-    startISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroDesktopMode: "fullscreen",
-    ctaPrimaryLabel: "Buy now",
-    ctaSecondaryLabel: "Add to cart",
-    kpis: [
-      { label: "Views", value: "410K" },
-      { label: "Saves", value: "18K" },
-      { label: "CTR", value: "3.6%" },
-    ],
-    offers: [
-      {
-        id: "o1",
-        type: "PRODUCT",
-        name: "Glow Serum (30ml)",
-        price: 38000,
-        basePrice: 52000,
-        currency: "UGX",
-        stockLeft: 12,
-        sold: 86,
-        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 10,
-          step: 5,
-          leadTimeLabel: "Ships in 3–5 days",
-          tiers: [
-            { minQty: 10, unitPrice: 32000 },
-            { minQty: 25, unitPrice: 29500 },
-            { minQty: 50, unitPrice: 27000 },
-          ],
-        },
-      },
-      {
-        id: "o2",
-        type: "PRODUCT",
-        name: "Hydra Cleanser",
-        price: 24000,
-        basePrice: 32000,
-        currency: "UGX",
-        stockLeft: 5,
-        sold: 123,
-        posterUrl: "https://images.unsplash.com/photo-1601612628452-9e99ced43524?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL",
-      },
-      {
-        id: "o3",
-        type: "SERVICE",
-        name: "Skin consult (30min)",
-        price: 60000,
-        currency: "UGX",
-        stockLeft: -1,
-        sold: 44,
-        posterUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-      },
-      {
-        id: "o4",
-        type: "PRODUCT",
-        name: "Bundle: Glow Kit",
-        price: 120000,
-        basePrice: 160000,
-        currency: "UGX",
-        stockLeft: 0,
-        sold: 210,
-        posterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 6,
-          step: 2,
-          leadTimeLabel: "Ships in 5–7 days",
-          tiers: [
-            { minQty: 6, unitPrice: 98000 },
-            { minQty: 12, unitPrice: 92000 },
-            { minQty: 24, unitPrice: 88000 },
-          ],
-        },
-      },
-    ],
-  },
-  {
-    id: "ad_2",
-    rank: 2,
-    status: "Scheduled",
-    campaignName: "Back-to-Work Essentials",
-    campaignSubtitle: "Urban Supply · Bags & Accessories",
-    supplier: {
-      name: "Urban Supply",
-      category: "Accessories",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop",
-    },
-    creator: {
-      name: "Chris M.",
-      handle: "@chris.finds",
-      avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=256&auto=format&fit=crop",
-      verified: false,
-    },
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Manual",
-    platforms: ["Instagram"],
-    startISO: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 40 * 3600 * 1000).toISOString(),
-    heroImageUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroIntroVideoPosterUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    heroDesktopMode: "modal",
-    ctaPrimaryLabel: "Buy now",
-    ctaSecondaryLabel: "Add to cart",
-    kpis: [
-      { label: "Views", value: "92K" },
-      { label: "Saves", value: "3.2K" },
-      { label: "CTR", value: "2.1%" },
-    ],
-    offers: [
-      {
-        id: "o5",
-        type: "PRODUCT",
-        name: "Laptop Backpack",
-        price: 180000,
-        basePrice: 220000,
-        currency: "UGX",
-        stockLeft: 18,
-        sold: 51,
-        posterUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 5,
-          step: 1,
-          leadTimeLabel: "Ships in 2–4 days",
-          tiers: [
-            { minQty: 5, unitPrice: 155000 },
-            { minQty: 10, unitPrice: 149000 },
-            { minQty: 25, unitPrice: 139000 },
-          ],
-        },
-      },
-      {
-        id: "o6",
-        type: "PRODUCT",
-        name: "Daily Tote",
-        price: 95000,
-        currency: "UGX",
-        stockLeft: 4,
-        sold: 98,
-        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL",
-      },
-      {
-        id: "o7",
-        type: "SERVICE",
-        name: "Personal styling consult",
-        price: 120000,
-        currency: "UGX",
-        stockLeft: -1,
-        sold: 12,
-        posterUrl: "https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-      },
-      {
-        id: "o8",
-        type: "PRODUCT",
-        name: "Gift Wrap (pack of 10)",
-        price: 25000,
-        currency: "UGX",
-        stockLeft: -1,
-        sold: 210,
-        posterUrl: "https://images.unsplash.com/photo-1543332164-6e82f355bad1?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 10,
-          step: 10,
-          leadTimeLabel: "Ships in 1–2 days",
-          tiers: [
-            { minQty: 10, unitPrice: 2000 },
-            { minQty: 50, unitPrice: 1800 },
-            { minQty: 200, unitPrice: 1600 },
-          ],
-        },
-      },
-    ],
-  },
-];
 
 /** ------------------------------ Page ------------------------------ */
 
@@ -1315,9 +1202,37 @@ export default function SupplierAdzMarketplace() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const [ads] = useState<Ad[]>(DEMO_ADS);
-  const [selectedId, setSelectedId] = useState<string>(DEMO_ADS[0]?.id || "");
-  const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0], [ads, selectedId]);
+  const [ads, setAds] = useState<Ad[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [dataState, setDataState] = useState<"loading" | "ready" | "error">("loading");
+  const selected = useMemo<Ad | null>(() => ads.find((a) => a.id === selectedId) || ads[0] || null, [ads, selectedId]);
+
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    sellerBackendApi
+      .getAdzMarketplace()
+      .then((rows) => {
+        if (!mounted) return;
+        const mapped = Array.isArray(rows)
+          ? rows
+              .map((row, index) => mapAdzMarketplaceRecord(row as Record<string, unknown>, index))
+              .filter((row) => row.id)
+          : [];
+        setAds(mapped);
+        setSelectedId((prev) => (prev && mapped.some((row) => row.id === prev) ? prev : mapped[0]?.id || ""));
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setAds([]);
+        setSelectedId("");
+        setDataState("error");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Per-ad mode selections (Retail/Wholesale) for offers
   const [modeByOffer, setModeByOffer] = useState<Record<string, SellingMode>>({});
@@ -1676,6 +1591,11 @@ export default function SupplierAdzMarketplace() {
       </div>
       {/* Body */}
       <div className="w-full max-w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {dataState === "error" ? (
+          <div className="lg:col-span-12 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
+            Unable to load marketplace ads from the database right now.
+          </div>
+        ) : null}
         {/* Left: ad list */}
         <div className="lg:col-span-5 rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden transition-colors">
           <div className="p-4 border-b border-neutral-200 flex items-start justify-between gap-2">
@@ -1775,6 +1695,11 @@ export default function SupplierAdzMarketplace() {
                 </button>
               );
             })}
+            {filtered.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-neutral-300 dark:border-slate-700 bg-neutral-50 dark:bg-slate-950 px-4 py-6 text-center text-sm text-neutral-600 dark:text-slate-300">
+                {dataState === "loading" ? "Loading ads…" : "No ads found for the current filters."}
+              </div>
+            ) : null}
           </div>
         </div>
 

@@ -7,6 +7,7 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 const ORANGE = "#f77f00";
 const ROUTES = {
@@ -46,160 +47,79 @@ function getStopAction(creator) {
   return { label: "Stop Collaboration", type: "stop" };
 }
 
-const INITIAL_CREATORS = [
-  {
-    id: 1,
-    name: "Amina K.",
-    initials: "AK",
-    handle: "@amina.dealz",
-    tagline: "Beauty dealz, live routines, and product-first hooks.",
-    categories: ["Beauty", "Skincare"],
-    relationship: "Active collab",
-    collabInviteStatus: "none",
-    lifetimeRevenue: 4800,
-    currentValue: 1400,
-    avgConversion: 4.8,
-    campaignsCount: 4,
-    lastCampaign: "Autumn Beauty Flash",
-    lastResult: "500 units sold in 45 mins",
-    openProposals: 1,
-    activeContracts: 1,
-    rating: 4.8,
-    trustBadges: ["Verified", "On-time delivery"],
-    primaryContact: "Amina · WhatsApp",
-    nextLive: "Today · 18:30",
-    nextAction: "Approve caption + pin the hero offer",
-    following: true,
-    favourite: true,
-    queues: { pendingSupplier: 2, pendingAdmin: 1, changesRequested: 1 },
-    activeCampaigns: [
-      { id: "CAMP-21", name: "GlowUp Serum Promo", type: "Shoppable Adz", stage: "Supplier Review", approvalMode: "Manual" },
-      { id: "CAMP-11", name: "Beauty Flash Dealz", type: "Live Sessionz", stage: "Scheduled", approvalMode: "Manual" },
-    ],
-  },
-  {
-    id: 2,
-    name: "Chris M.",
-    initials: "CM",
-    handle: "@chris.finds",
-    tagline: "Tech demos, unboxings, and bundle-driven closes.",
-    categories: ["Tech", "Gadgets"],
-    relationship: "Active collab",
-    collabInviteStatus: "none",
-    lifetimeRevenue: 3900,
-    currentValue: 2100,
-    avgConversion: 4.2,
-    campaignsCount: 3,
-    lastCampaign: "Tech Friday Mega Live",
-    lastResult: "Bundle upsells performed best",
-    openProposals: 0,
-    activeContracts: 1,
-    rating: 4.7,
-    trustBadges: ["Verified", "Low disputes"],
-    primaryContact: "Chris · Telegram",
-    nextLive: "Fri · 19:00",
-    nextAction: "Review product order + delivery schedule",
-    following: true,
-    favourite: false,
-    queues: { pendingSupplier: 1, pendingAdmin: 2, changesRequested: 0 },
-    activeCampaigns: [
-      { id: "CAMP-07", name: "Tech Friday Mega", type: "Live Sessionz", stage: "Admin Review", approvalMode: "Auto" },
-      { id: "CAMP-31", name: "Gadget Unboxing Marathon", type: "Shoppable Adz", stage: "Content Submission", approvalMode: "Manual" },
-    ],
-  },
-  {
-    id: 3,
-    name: "Grace W.",
-    initials: "GW",
-    handle: "@gracefaithwellness",
-    tagline: "Faith-compatible wellness. Calm and trust-first storytelling.",
-    categories: ["Faith", "Wellness"],
-    relationship: "Past collab",
-    collabInviteStatus: "none",
-    lifetimeRevenue: 1200,
-    currentValue: 0,
-    avgConversion: 3.9,
-    campaignsCount: 2,
-    lastCampaign: "Faith & Wellness Morning Dealz",
-    lastResult: "High trust; slower close",
-    openProposals: 0,
-    activeContracts: 0,
-    rating: 4.9,
-    trustBadges: ["High trust"],
-    primaryContact: "Grace · WhatsApp",
-    nextLive: "Not scheduled",
-    nextAction: "Re-engage for Q3 wellness campaign",
-    following: false,
-    favourite: false,
-    queues: { pendingSupplier: 0, pendingAdmin: 0, changesRequested: 0 },
-    activeCampaigns: [],
-  },
-  {
-    id: 4,
-    name: "Ama S.",
-    initials: "AS",
-    handle: "@stylebyama",
-    tagline: "Try-ons and fashion haul lives. Strong hooks, faster edits.",
-    categories: ["Fashion"],
-    relationship: "Active collab",
-    collabInviteStatus: "none",
-    lifetimeRevenue: 980,
-    currentValue: 680,
-    avgConversion: 2.7,
-    campaignsCount: 1,
-    lastCampaign: "Style Haul Weekend",
-    lastResult: "High engagement; moderate conversion",
-    openProposals: 1,
-    activeContracts: 0,
-    rating: 4.4,
-    trustBadges: [],
-    primaryContact: "Ama · Instagram DM",
-    nextLive: "Sat · 16:00",
-    nextAction: "No active contract · collaboration can be stopped if needed",
-    following: false,
-    favourite: false,
-    queues: { pendingSupplier: 3, pendingAdmin: 0, changesRequested: 2 },
-    activeCampaigns: [
-      { id: "CAMP-44", name: "Style Bundle Promo", type: "Shoppable Adz", stage: "Supplier Review", approvalMode: "Manual" },
-    ],
-  },
-];
+function initialsFromName(value, fallback = "CR") {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("");
+  return initials || fallback;
+}
 
-const SUPPLIER_CAMPAIGNS = [
-  {
-    id: "CMP-101",
-    title: "Autumn Beauty Flash",
-    subtitle: "Beauty & Skincare",
-    summary: "Fast-moving promo focused on serum bundles, live education and audience-driven urgency.",
-    type: "Shoppable Adz + Live",
-    fitLabel: "Best for beauty creators",
-    timelineLabel: "7 day cycle",
-    suggestedFee: 400,
-    suggestedCommission: 6,
-  },
-  {
-    id: "CMP-202",
-    title: "Tech Friday Mega Live",
-    subtitle: "Tech & Gadgets",
-    summary: "Creator-led live series for gadget launches, mid-session bundle pushes and stronger cart conversion.",
-    type: "Live series",
-    fitLabel: "Strong for demo-led creators",
-    timelineLabel: "3 episode run",
-    suggestedFee: 1200,
-    suggestedCommission: 4,
-  },
-  {
-    id: "CMP-303",
-    title: "Creator Partnership Retainer",
-    subtitle: "Always-on relationship",
-    summary: "Use when you want to build a broader creator collaboration beyond one campaign, with recurring deliverables and approval loops.",
-    type: "Ongoing partnership",
-    fitLabel: "Long-term collaboration",
-    timelineLabel: "Custom timing",
-    suggestedFee: 800,
-    suggestedCommission: 5,
-  },
-];
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function mapWorkspaceCreator(record) {
+  const name = String(record?.name || "Creator");
+  const handle = String(record?.handle || `@${String(record?.id || "creator")}`);
+  return {
+    id: record?.id || handle,
+    name,
+    initials: String(record?.initials || initialsFromName(name)),
+    handle: handle.startsWith("@") ? handle : `@${handle}`,
+    tagline: String(record?.tagline || "Creator relationship profile."),
+    categories: Array.isArray(record?.categories) ? record.categories.filter(Boolean).map((item) => String(item)) : [],
+    relationship: String(record?.relationship || "Past collab"),
+    collabInviteStatus: String(record?.collabInviteStatus || "none"),
+    lifetimeRevenue: toNumber(record?.lifetimeRevenue),
+    currentValue: toNumber(record?.currentValue),
+    avgConversion: toNumber(record?.avgConversion),
+    campaignsCount: toNumber(record?.campaignsCount),
+    lastCampaign: String(record?.lastCampaign || "No campaigns yet"),
+    lastResult: String(record?.lastResult || "No recent result"),
+    openProposals: toNumber(record?.openProposals),
+    activeContracts: toNumber(record?.activeContracts),
+    activeContractIds: Array.isArray(record?.activeContractIds) ? record.activeContractIds.filter(Boolean).map((item) => String(item)) : [],
+    rating: toNumber(record?.rating),
+    trustBadges: Array.isArray(record?.trustBadges) ? record.trustBadges.filter(Boolean).map((item) => String(item)) : [],
+    primaryContact: String(record?.primaryContact || handle),
+    nextLive: String(record?.nextLive || "Not scheduled"),
+    nextAction: String(record?.nextAction || "No action required"),
+    following: Boolean(record?.following),
+    favourite: Boolean(record?.favourite),
+    queues: {
+      pendingSupplier: toNumber(record?.queues?.pendingSupplier),
+      pendingAdmin: toNumber(record?.queues?.pendingAdmin),
+      changesRequested: toNumber(record?.queues?.changesRequested),
+    },
+    activeCampaigns: Array.isArray(record?.activeCampaigns)
+      ? record.activeCampaigns.map((campaign) => ({
+          id: String(campaign?.id || ""),
+          name: String(campaign?.name || "Campaign"),
+          type: String(campaign?.type || "Campaign"),
+          stage: String(campaign?.stage || "Draft"),
+          approvalMode: String(campaign?.approvalMode || "Manual"),
+        }))
+      : [],
+  };
+}
+
+function mapSupplierCampaign(record) {
+  const metadata = record?.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata : {};
+  return {
+    id: String(record?.id || ""),
+    title: String(record?.title || "Campaign"),
+    subtitle: String(record?.category || metadata?.category || "MyLiveDealz"),
+    summary: String(record?.description || metadata?.summary || "Campaign summary"),
+    type: String(metadata?.campaignType || metadata?.type || metadata?.promoType || "Campaign"),
+    fitLabel: String(metadata?.fitLabel || "Best-match creator profile"),
+    timelineLabel: String(metadata?.timelineLabel || "Custom timeline"),
+    suggestedFee: toNumber(metadata?.suggestedFee ?? record?.budget ?? 0),
+    suggestedCommission: toNumber(metadata?.suggestedCommission ?? metadata?.commission ?? 0),
+  };
+}
 
 function currency(value) {
   return `$${Number(value || 0).toLocaleString()}`;
@@ -1214,11 +1134,13 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
 
 export default function SupplierMyCreatorsPreviewCanvas() {
   const navigate = useNavigate();
-  const [creators, setCreators] = useState(INITIAL_CREATORS);
+  const [creators, setCreators] = useState([]);
+  const [supplierCampaigns, setSupplierCampaigns] = useState([]);
+  const [dataState, setDataState] = useState("loading");
   const [search, setSearch] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState("All");
   const [viewTab, setViewTab] = useState("all");
-  const [selectedCreatorId, setSelectedCreatorId] = useState(INITIAL_CREATORS[0]?.id ?? null);
+  const [selectedCreatorId, setSelectedCreatorId] = useState(null);
   const [expandedCreatorId, setExpandedCreatorId] = useState(null);
   const [stopModalOpen, setStopModalOpen] = useState(false);
   const [stopTarget, setStopTarget] = useState(null);
@@ -1227,7 +1149,37 @@ export default function SupplierMyCreatorsPreviewCanvas() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteTarget, setInviteTarget] = useState(null);
   const [proposalOpen, setProposalOpen] = useState(false);
-  const [proposalRecipient, setProposalRecipient] = useState(INITIAL_CREATORS[0] || null);
+  const [proposalRecipient, setProposalRecipient] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    Promise.all([sellerBackendApi.getMyCreatorsWorkspace(), sellerBackendApi.getCampaigns()])
+      .then(([workspace, campaigns]) => {
+        if (!mounted) return;
+        const nextCreators = Array.isArray(workspace?.creators) ? workspace.creators.map(mapWorkspaceCreator) : [];
+        const nextCampaigns = Array.isArray(campaigns) ? campaigns.map(mapSupplierCampaign).filter((campaign) => campaign.id) : [];
+        setCreators(nextCreators);
+        setSupplierCampaigns(nextCampaigns);
+        setSelectedCreatorId((prev) => (prev && nextCreators.some((creator) => creator.id === prev) ? prev : nextCreators[0]?.id ?? null));
+        setProposalRecipient((prev) => {
+          if (prev && nextCreators.some((creator) => creator.id === prev.id)) return prev;
+          return nextCreators[0] || null;
+        });
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCreators([]);
+        setSupplierCampaigns([]);
+        setSelectedCreatorId(null);
+        setProposalRecipient(null);
+        setDataState("error");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const stats = useMemo(() => {
     const active = creators.filter((c) => c.relationship === "Active collab");
@@ -1414,6 +1366,11 @@ export default function SupplierMyCreatorsPreviewCanvas() {
 
       <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-4">
+          {dataState === "error" ? (
+            <section className="rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
+              Unable to load creators from the database.
+            </section>
+          ) : null}
           <section className="bg-white dark:bg-slate-900 rounded-3xl transition-colors shadow-sm p-4 md:p-5 flex flex-col gap-4 text-sm border border-slate-200/80 dark:border-slate-800">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <div>
@@ -1640,7 +1597,7 @@ export default function SupplierMyCreatorsPreviewCanvas() {
         onClose={() => setProposalOpen(false)}
         creators={creators}
         initialCreator={proposalRecipient}
-        campaigns={SUPPLIER_CAMPAIGNS}
+        campaigns={supplierCampaigns}
       />
     </div>
   );

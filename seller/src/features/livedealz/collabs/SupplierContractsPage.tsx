@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierContractsPage.jsx
@@ -40,6 +41,70 @@ function money(n, currency = "USD") {
   } catch {
     return `${currency} ${Math.round(v).toLocaleString()}`;
   }
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeContractStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "COMPLETED") return "Completed";
+  if (normalized === "TERMINATED" || normalized === "TERMINATION_REQUESTED" || normalized === "CANCELLED") return "Terminated";
+  if (normalized === "ACTIVE" || normalized === "PENDING_APPROVAL" || normalized === "EXECUTING" || normalized === "SIGNED") return "Active";
+  return "Upcoming";
+}
+
+function normalizeDeliverableStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "APPROVED" || normalized === "DONE") return "Approved";
+  if (normalized === "SUBMITTED" || normalized === "IN_REVIEW") return "Submitted";
+  if (normalized === "CHANGES_REQUESTED") return "Changes Requested";
+  if (normalized === "REJECTED") return "Rejected";
+  return "Pending";
+}
+
+function mapContractRecord(record) {
+  const deliverableSource = Array.isArray(record?.deliverables) ? record.deliverables : [];
+  const deliverables = deliverableSource.map((entry, index) => {
+    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      return {
+        id: String(entry.id || `D-${index + 1}`),
+        label: String(entry.label || entry.title || `Deliverable ${index + 1}`),
+        due: String(entry.due || entry.dueAt || entry.date || "TBD"),
+        status: normalizeDeliverableStatus(entry.status),
+      };
+    }
+    return {
+      id: `D-${index + 1}`,
+      label: String(entry || `Deliverable ${index + 1}`),
+      due: "TBD",
+      status: "Pending",
+    };
+  });
+  const remainingTasks = deliverables.filter((entry) => !["Approved", "Rejected"].includes(entry.status)).length;
+  return {
+    id: String(record?.id || ""),
+    creator: String(record?.creatorName || record?.creator || "Creator"),
+    campaign: String(record?.campaignName || record?.campaign || "Campaign"),
+    period: String(record?.period || "Current term"),
+    status: normalizeContractStatus(record?.status),
+    currency: String(record?.currency || "USD"),
+    value: toNumber(record?.value),
+    remainingTasks,
+    totalTasks: toNumber(record?.totalTasks, deliverables.length),
+    payoutStatus: String(record?.payoutStatus || "In progress"),
+    health: String(record?.health || "On track"),
+    healthScore: toNumber(record?.healthScore, 80),
+    approvalMode: String(record?.approvalMode || "Manual"),
+    collabMode: String(record?.collabMode || "Open for Collabs"),
+    creatorUsageDecision: String(record?.creatorUsageDecision || "I will use a Creator"),
+    multiCreatorCampaign: Boolean(record?.multiCreatorCampaign),
+    deliverables,
+    schedule: Array.isArray(record?.schedule) ? record.schedule : [],
+    timeline: Array.isArray(record?.timeline) ? record.timeline : [],
+  };
 }
 
 /* -------------------------------- Toast -------------------------------- */
@@ -129,180 +194,6 @@ function ConfirmModal({ isOpen, title, message, confirmText = "Confirm", confirm
 /* ------------------------------- Data ----------------------------------- */
 
 const CONTRACT_FILTERS = ["All", "Active", "Upcoming", "Completed", "Terminated"];
-
-const MOCK_CONTRACTS = [
-  {
-    id: "SC-201",
-    creator: "Lilian Beauty Plug",
-    campaign: "GlowUp Serum Promo",
-    period: "Feb 25 – Mar 20, 2026",
-    status: "Active",
-    currency: "USD",
-    value: 1200,
-    remainingTasks: 2,
-    totalTasks: 7,
-    payoutStatus: "Milestone 1 paid · Milestone 2 pending",
-    health: "On track",
-    healthScore: 84,
-
-    // Supplier campaign-level context
-    approvalMode: "Manual", // Manual | Auto
-    collabMode: "Open for Collabs",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: true,
-
-    deliverables: [
-      { id: "D-01", label: "Product brief sync call", due: "Feb 25", status: "Approved" },
-      { id: "D-02", label: "Live outline + CTA plan", due: "Feb 27", status: "Approved" },
-      { id: "D-03", label: "Clip #1 (hook + offer)", due: "Feb 29", status: "Submitted" },
-      { id: "D-04", label: "Clip #2 (routine demo)", due: "Mar 02", status: "Changes Requested" },
-      { id: "D-05", label: "Live session (60–75 mins)", due: "Mar 05", status: "Pending" },
-      { id: "D-06", label: "Replay captions + timestamps", due: "Mar 06", status: "Pending" },
-      { id: "D-07", label: "Performance report (48h post-live)", due: "Mar 08", status: "Pending" }
-    ],
-
-    schedule: [
-      { label: "Brief", start: 4, end: 18 },
-      { label: "Asset build", start: 18, end: 44 },
-      { label: "Live", start: 44, end: 56 },
-      { label: "Post", start: 56, end: 70 },
-      { label: "Reporting", start: 70, end: 86 }
-    ],
-
-    timeline: [
-      { date: "Feb 24", label: "Proposal accepted" },
-      { date: "Feb 25", label: "Contract signed + kickoff" },
-      { date: "Feb 27", label: "Outline approved" },
-      { date: "Feb 29", label: "Clip #1 submitted" },
-      { date: "Mar 02", label: "Changes requested on Clip #2" },
-      { date: "Mar 05", label: "Live scheduled" }
-    ]
-  },
-  {
-    id: "SC-202",
-    creator: "TechWithBrian",
-    campaign: "Tech Friday Mega",
-    period: "Mar 01 – Apr 05, 2026",
-    status: "Upcoming",
-    currency: "USD",
-    value: 1600,
-    remainingTasks: 5,
-    totalTasks: 9,
-    payoutStatus: "Deposit pending",
-    health: "At risk",
-    healthScore: 63,
-
-    approvalMode: "Auto",
-    collabMode: "Invite-Only",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: false,
-
-    deliverables: [
-      { id: "D-11", label: "Product list confirmation", due: "Mar 01", status: "Pending" },
-      { id: "D-12", label: "Episode #1 run-sheet", due: "Mar 03", status: "Pending" },
-      { id: "D-13", label: "Episode #1 live", due: "Mar 06", status: "Pending" },
-      { id: "D-14", label: "Episode #2 live", due: "Mar 13", status: "Pending" },
-      { id: "D-15", label: "Episode #3 live", due: "Mar 20", status: "Pending" },
-      { id: "D-16", label: "Series recap clip", due: "Mar 22", status: "Pending" },
-      { id: "D-17", label: "Final performance report", due: "Mar 25", status: "Pending" }
-    ],
-
-    schedule: [
-      { label: "Prep", start: 8, end: 28 },
-      { label: "Series", start: 28, end: 74 },
-      { label: "Recap", start: 74, end: 84 }
-    ],
-
-    timeline: [
-      { date: "Feb 20", label: "Invite accepted" },
-      { date: "Feb 22", label: "Contract drafted" },
-      { date: "Feb 25", label: "Awaiting deposit" }
-    ]
-  },
-  {
-    id: "SC-203",
-    creator: "Amina K.",
-    campaign: "Beauty Flash Dealz",
-    period: "Feb 10 – Feb 18, 2026",
-    status: "Completed",
-    currency: "USD",
-    value: 950,
-    remainingTasks: 0,
-    totalTasks: 6,
-    payoutStatus: "Fully paid",
-    health: "On track",
-    healthScore: 96,
-
-    approvalMode: "Manual",
-    collabMode: "Invite-Only",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: false,
-
-    deliverables: [
-      { id: "D-21", label: "Kickoff call", due: "Feb 10", status: "Approved" },
-      { id: "D-22", label: "Live outline", due: "Feb 11", status: "Approved" },
-      { id: "D-23", label: "Live session", due: "Feb 12", status: "Approved" },
-      { id: "D-24", label: "Clip #1", due: "Feb 13", status: "Approved" },
-      { id: "D-25", label: "Clip #2", due: "Feb 14", status: "Approved" },
-      { id: "D-26", label: "Final report", due: "Feb 16", status: "Approved" }
-    ],
-
-    schedule: [
-      { label: "Prep", start: 10, end: 30 },
-      { label: "Live", start: 30, end: 45 },
-      { label: "Post", start: 45, end: 70 },
-      { label: "Report", start: 70, end: 85 }
-    ],
-
-    timeline: [
-      { date: "Feb 09", label: "Proposal accepted" },
-      { date: "Feb 10", label: "Contract signed" },
-      { date: "Feb 12", label: "Live executed" },
-      { date: "Feb 16", label: "Report delivered" },
-      { date: "Feb 18", label: "Payout settled" }
-    ]
-  },
-  {
-    id: "SC-204",
-    creator: "EV Gadgets Daily",
-    campaign: "EV Accessories Launch",
-    period: "Jan 20 – Feb 01, 2026",
-    status: "Terminated",
-    currency: "USD",
-    value: 600,
-    remainingTasks: 0,
-    totalTasks: 5,
-    payoutStatus: "Partial pay · Dispute resolved",
-    health: "Terminated",
-    healthScore: 28,
-
-    approvalMode: "Manual",
-    collabMode: "Open for Collabs",
-    creatorUsageDecision: "I will use a Creator",
-    multiCreatorCampaign: true,
-
-    deliverables: [
-      { id: "D-31", label: "Kickoff", due: "Jan 20", status: "Approved" },
-      { id: "D-32", label: "Ad Creative #1", due: "Jan 22", status: "Rejected" },
-      { id: "D-33", label: "Ad Creative #2", due: "Jan 24", status: "Rejected" },
-      { id: "D-34", label: "Live demo", due: "Jan 28", status: "Pending" },
-      { id: "D-35", label: "Close-out report", due: "Jan 30", status: "Pending" }
-    ],
-
-    schedule: [
-      { label: "Prep", start: 6, end: 26 },
-      { label: "Assets", start: 26, end: 48 },
-      { label: "Live", start: 48, end: 60 }
-    ],
-
-    timeline: [
-      { date: "Jan 19", label: "Contract signed" },
-      { date: "Jan 22", label: "Creative rejected" },
-      { date: "Jan 25", label: "Renegotiation started" },
-      { date: "Jan 31", label: "Termination resolved" }
-    ]
-  }
-];
 
 /* ----------------------------- Subcomponents ---------------------------- */
 
@@ -919,11 +810,37 @@ function ContractDetail({ contract, onUpdateContract }) {
 
 export default function SupplierContractsPage() {
   const [activeFilter, setActiveFilter] = useState("Active");
-  const [selectedContractId, setSelectedContractId] = useState("SC-201");
+  const [selectedContractId, setSelectedContractId] = useState(null);
 
-  const [dataState, setDataState] = useState("ready"); // ready | loading | error
+  const [dataState, setDataState] = useState("loading"); // ready | loading | error
 
-  const [contracts, setContracts] = useState(MOCK_CONTRACTS);
+  const [contracts, setContracts] = useState([]);
+
+  async function loadContracts() {
+    const rows = await sellerBackendApi.getCollaborationContracts();
+    const mapped = Array.isArray(rows) ? rows.map(mapContractRecord).filter((record) => record.id) : [];
+    setContracts(mapped);
+    setSelectedContractId((prev) => (prev && mapped.some((record) => record.id === prev) ? prev : mapped[0]?.id ?? null));
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    loadContracts()
+      .then(() => {
+        if (!mounted) return;
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setContracts([]);
+        setSelectedContractId(null);
+        setDataState("error");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filteredContracts = useMemo(() => {
     return contracts.filter((c) => {
@@ -1002,7 +919,12 @@ export default function SupplierContractsPage() {
                   <button
                     type="button"
                     className="px-4 py-2 rounded-full bg-slate-900 text-white text-[11px] font-extrabold"
-                    onClick={() => setDataState("ready")}
+                    onClick={() => {
+                      setDataState("loading");
+                      loadContracts()
+                        .then(() => setDataState("ready"))
+                        .catch(() => setDataState("error"));
+                    }}
                   >
                     Retry
                   </button>
@@ -1065,7 +987,7 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
 
   assert(cx("a", false && "b", "c") === "a c", "cx joins truthy");
-  assert(Array.isArray(MOCK_CONTRACTS) && MOCK_CONTRACTS.length > 0, "mock contracts exist");
+  assert(normalizeContractStatus("ACTIVE") === "Active", "status normalization works");
 
   console.log("✅ SupplierContractsPage self-tests passed");
 }

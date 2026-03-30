@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 const ORANGE = "#f77f00";
 const ROUTES = {
@@ -107,184 +108,6 @@ function PageHeader({ pageTitle, badge, right }) {
   );
 }
 
-const PROPOSALS = [
-  {
-    id: "SP-901",
-    creator: "Lilian Beauty Plug",
-    initials: "LB",
-    campaign: "GlowUp Serum Promo",
-    origin: "from-creator",
-    offerType: "Live + Clips package",
-    category: "Beauty",
-    region: "East Africa",
-    baseFeeMin: 320,
-    baseFeeMax: 480,
-    currency: "USD",
-    commissionPct: 5,
-    estimatedValue: 1200,
-    status: "In negotiation",
-    lastActivity: "Negotiation updated · 2h ago",
-    notesShort: "Creator proposes 60–90 min live + 3 clips with 5% commission during flash dealz.",
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    proposalSource: "Open Collabs",
-    deliverables: ["Live", "Clips", "Posts"],
-    scheduleHint: "Next Friday",
-    reviewSlaHours: 6,
-  },
-  {
-    id: "SP-902",
-    creator: "TechWithBrian",
-    initials: "TB",
-    campaign: "Tech Friday Mega",
-    origin: "my-proposal",
-    offerType: "Launch live series (3 episodes)",
-    category: "Tech",
-    region: "Africa / Asia",
-    baseFeeMin: 900,
-    baseFeeMax: 1400,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 1600,
-    status: "New",
-    lastActivity: "Proposal sent · Yesterday",
-    notesShort: "You proposed a 3-episode Tech Friday series with mid-ticket gadgets and bundle closes.",
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Auto",
-    proposalSource: "Invite-Only",
-    deliverables: ["Live", "Posts"],
-    scheduleHint: "Next week",
-    reviewSlaHours: 6,
-  },
-  {
-    id: "SP-903",
-    creator: "Grace Faith Wellness",
-    initials: "GW",
-    campaign: "Faith & Wellness Morning Dealz",
-    origin: "my-proposal",
-    offerType: "Morning lives + Shoppable Adz",
-    category: "Faith-compatible",
-    region: "Africa",
-    baseFeeMin: 260,
-    baseFeeMax: 360,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 520,
-    status: "Draft",
-    lastActivity: "Draft saved · 1 day ago",
-    notesShort: "Draft proposal – not yet sent. Waiting for campaign collaboration mode confirmation.",
-    creatorUsageDecision: "I am NOT SURE yet",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    proposalSource: "Open Collabs",
-    deliverables: ["Live", "Adz"],
-    scheduleHint: "This month",
-    reviewSlaHours: 6,
-  },
-  {
-    id: "SP-904",
-    creator: "Amina K.",
-    initials: "AK",
-    campaign: "Beauty Flash Dealz",
-    origin: "from-creator",
-    offerType: "Live (1x) + 2 clips",
-    category: "Beauty",
-    region: "East Africa",
-    baseFeeMin: 280,
-    baseFeeMax: 280,
-    currency: "USD",
-    commissionPct: 6,
-    estimatedValue: 950,
-    status: "Accepted",
-    lastActivity: "Accepted · 4 days ago",
-    notesShort: "Accepted. Next step is Contract + scheduling. Creator requested faster approvals for clips.",
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Manual",
-    proposalSource: "Invites from Creators",
-    deliverables: ["Live", "Clips"],
-    scheduleHint: "This week",
-    reviewSlaHours: 6,
-  },
-  {
-    id: "SP-905",
-    creator: "EV Gadgets Daily",
-    initials: "EG",
-    campaign: "EV Accessories Launch",
-    origin: "from-creator",
-    offerType: "Shoppable Adz + Live",
-    category: "EV",
-    region: "Global",
-    baseFeeMin: 350,
-    baseFeeMax: 500,
-    currency: "USD",
-    commissionPct: 4,
-    estimatedValue: 600,
-    status: "Declined",
-    lastActivity: "Declined · last week",
-    notesShort: "Declined due to timing. Consider revisiting when supplier campaign window opens.",
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Auto",
-    proposalSource: "Open Collabs",
-    deliverables: ["Adz", "Live"],
-    scheduleHint: "Next quarter",
-    reviewSlaHours: 6,
-  },
-  {
-    id: "SP-906",
-    creator: "Supplier-hosted opportunity",
-    initials: "SO",
-    campaign: "Supplier-hosted EV Accessories Showcase",
-    origin: "from-creator",
-    offerType: "Creator wants to join supplier-hosted live",
-    category: "EV",
-    region: "Global",
-    baseFeeMin: 200,
-    baseFeeMax: 350,
-    currency: "USD",
-    commissionPct: 3,
-    estimatedValue: 480,
-    status: "New",
-    lastActivity: "New proposal · Today",
-    notesShort: "This campaign is configured as supplier-hosted. You must switch Creator Usage to accept creator involvement.",
-    creatorUsageDecision: "I will NOT use a Creator",
-    collabMode: "n/a",
-    approvalMode: "Manual",
-    proposalSource: "N/A",
-    deliverables: ["Live"],
-    scheduleHint: "Next month",
-    reviewSlaHours: 6,
-  },
-  {
-    id: "SP-907",
-    creator: "HomeWithRuth",
-    initials: "HR",
-    campaign: "Home & Living Weekend Push",
-    origin: "my-proposal",
-    offerType: "Creator-led demo bundle",
-    category: "Home & Living",
-    region: "East Africa",
-    baseFeeMin: 180,
-    baseFeeMax: 240,
-    currency: "USD",
-    commissionPct: 5,
-    estimatedValue: 420,
-    status: "Expired",
-    lastActivity: "Expired · 10 days ago",
-    notesShort: "Supplier never received a final response before the campaign timing closed.",
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Manual",
-    proposalSource: "Invite-Only",
-    deliverables: ["Live", "Posts"],
-    scheduleHint: "Closed",
-    reviewSlaHours: 6,
-  },
-];
-
 const CREATOR_META = {
   "Lilian Beauty Plug": {
     tagline: "Beauty creator focused on live tutorials, skincare routines and conversion-led product storytelling.",
@@ -330,41 +153,98 @@ const CREATOR_META = {
   },
 };
 
-const SUPPLIER_CAMPAIGNS = [
-  {
-    id: "CMP-101",
-    title: "Autumn Beauty Flash",
-    subtitle: "Beauty & Skincare",
-    summary: "Fast-moving promo focused on serum bundles, live education and audience-driven urgency.",
-    type: "Shoppable Adz + Live",
-    fitLabel: "Best for beauty creators",
-    timelineLabel: "7 day cycle",
-    suggestedFee: 400,
-    suggestedCommission: 6,
-  },
-  {
-    id: "CMP-202",
-    title: "Tech Friday Mega Live",
-    subtitle: "Tech & Gadgets",
-    summary: "Creator-led live series for gadget launches, mid-session bundle pushes and stronger cart conversion.",
-    type: "Live series",
-    fitLabel: "Strong for demo-led creators",
-    timelineLabel: "3 episode run",
-    suggestedFee: 1200,
-    suggestedCommission: 4,
-  },
-  {
-    id: "CMP-303",
-    title: "Creator Partnership Retainer",
-    subtitle: "Always-on relationship",
-    summary: "Use when you want to build a broader creator collaboration beyond one campaign, with recurring deliverables and approval loops.",
-    type: "Ongoing partnership",
-    fitLabel: "Long-term collaboration",
-    timelineLabel: "Custom timing",
-    suggestedFee: 800,
-    suggestedCommission: 5,
-  },
-];
+function initialsFromName(value, fallback = "CR") {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("");
+  return initials || fallback;
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeProposalStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "DRAFT") return "Draft";
+  if (normalized === "NEGOTIATING") return "In negotiation";
+  if (normalized === "ACCEPTED") return "Accepted";
+  if (normalized === "REJECTED" || normalized === "WITHDRAWN") return "Declined";
+  if (normalized === "EXPIRED") return "Expired";
+  return "New";
+}
+
+function normalizeProposalOrigin(record) {
+  const metadata = record?.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata : {};
+  const source = String(metadata?.inviteDirection || metadata?.proposalSource || "").toLowerCase();
+  if (source.includes("creator_to_seller") || source.includes("creator")) {
+    return "from-creator";
+  }
+  return "my-proposal";
+}
+
+function mapProposalRecord(record) {
+  const metadata = record?.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata : {};
+  const creator = String(record?.creatorName || record?.creator || "Creator");
+  const estimated = toNumber(metadata?.estimatedValue ?? record?.amount ?? 0);
+  const status = normalizeProposalStatus(record?.status);
+  return {
+    id: String(record?.id || ""),
+    creator,
+    initials: String(metadata?.creatorInitials || initialsFromName(creator)),
+    campaign: String(record?.campaignTitle || record?.campaign || record?.title || "Campaign"),
+    origin: normalizeProposalOrigin(record),
+    offerType: String(metadata?.offerType || metadata?.type || "Collaboration package"),
+    category: String(metadata?.category || "General"),
+    region: String(metadata?.region || "Global"),
+    baseFeeMin: toNumber(metadata?.baseFeeMin ?? metadata?.baseFee ?? record?.amount ?? 0),
+    baseFeeMax: toNumber(metadata?.baseFeeMax ?? metadata?.baseFee ?? record?.amount ?? 0),
+    currency: String(record?.currency || metadata?.currency || "USD"),
+    commissionPct: toNumber(metadata?.commissionPct),
+    estimatedValue: estimated,
+    status,
+    lastActivity: String(
+      metadata?.lastActivity ||
+        (status === "Accepted"
+          ? "Accepted · Recently"
+          : status === "Declined"
+            ? "Declined · Recently"
+            : status === "In negotiation"
+              ? "Negotiation updated · Recently"
+              : "Updated recently")
+    ),
+    notesShort: String(record?.summary || metadata?.messageShort || "Proposal terms available in detail."),
+    creatorUsageDecision: String(metadata?.creatorUsageDecision || "I will use a Creator"),
+    collabMode: String(metadata?.collabMode || "Open for Collabs"),
+    approvalMode: String(metadata?.approvalMode || "Manual"),
+    proposalSource: String(metadata?.proposalSource || "Open Collabs"),
+    deliverables: Array.isArray(metadata?.deliverablesList)
+      ? metadata.deliverablesList.map((entry) => String(entry))
+      : Array.isArray(metadata?.deliverables)
+        ? metadata.deliverables.map((entry) => String(entry))
+        : [],
+    scheduleHint: String(metadata?.scheduleHint || "To be agreed"),
+    reviewSlaHours: toNumber(metadata?.reviewSlaHours, 6),
+  };
+}
+
+function mapSupplierCampaign(record) {
+  const metadata = record?.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata : {};
+  return {
+    id: String(record?.id || ""),
+    title: String(record?.title || "Campaign"),
+    subtitle: String(record?.category || metadata?.category || "MyLiveDealz"),
+    summary: String(record?.description || metadata?.summary || "Campaign summary"),
+    type: String(metadata?.campaignType || metadata?.type || metadata?.promoType || "Campaign"),
+    fitLabel: String(metadata?.fitLabel || "Best-match creator profile"),
+    timelineLabel: String(metadata?.timelineLabel || "Custom timeline"),
+    suggestedFee: toNumber(metadata?.suggestedFee ?? record?.budget ?? 0),
+    suggestedCommission: toNumber(metadata?.suggestedCommission ?? metadata?.commission ?? 0),
+  };
+}
 
 const TABS = [
   { id: "all", label: "All" },
@@ -374,7 +254,6 @@ const TABS = [
 
 const STATUS_FILTERS = ["All", "Draft", "New", "In negotiation", "Accepted", "Declined", "Expired"];
 const NEGOTIABLE_STATUSES = ["New", "In negotiation"];
-const CATEGORIES = ["All", "Beauty", "Tech", "Faith-compatible", "EV", "Home & Living"];
 
 function buildCreatorsFromProposals(proposals) {
   const grouped = new Map();
@@ -1547,19 +1426,58 @@ function ProposalDetailPanel({ proposal, onOpenNegotiate, onOpenContracts, onAcc
 
 export default function SupplierProposalsPreviewCanvas() {
   const navigate = useNavigate();
-  const [proposals, setProposals] = useState(PROPOSALS);
+  const [proposals, setProposals] = useState([]);
+  const [supplierCampaigns, setSupplierCampaigns] = useState([]);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [minBudget, setMinBudget] = useState("");
-  const [selectedProposalId, setSelectedProposalId] = useState(PROPOSALS[0]?.id ?? null);
+  const [selectedProposalId, setSelectedProposalId] = useState(null);
   const [expandedProposalId, setExpandedProposalId] = useState(null);
   const [proposalDrawerOpen, setProposalDrawerOpen] = useState(false);
   const [proposalRecipientId, setProposalRecipientId] = useState(null);
-  const [dataState, setDataState] = useState("ready");
+  const [dataState, setDataState] = useState("loading");
   const { run, isPending } = useAsyncAction();
 
   const creators = useMemo(() => buildCreatorsFromProposals(proposals), [proposals]);
+  const categories = useMemo(
+    () => ["All", ...Array.from(new Set(proposals.map((proposal) => proposal.category).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [proposals]
+  );
+
+  async function loadWorkspaceData() {
+    const [proposalRows, campaignRows] = await Promise.all([
+      sellerBackendApi.getCollaborationProposals(),
+      sellerBackendApi.getCampaigns(),
+    ]);
+    const mappedProposals = Array.isArray(proposalRows) ? proposalRows.map(mapProposalRecord).filter((proposal) => proposal.id) : [];
+    const mappedCampaigns = Array.isArray(campaignRows) ? campaignRows.map(mapSupplierCampaign).filter((campaign) => campaign.id) : [];
+    setProposals(mappedProposals);
+    setSupplierCampaigns(mappedCampaigns);
+    setSelectedProposalId((prev) =>
+      prev && mappedProposals.some((proposal) => proposal.id === prev) ? prev : mappedProposals[0]?.id ?? null
+    );
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    loadWorkspaceData()
+      .then(() => {
+        if (!mounted) return;
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setProposals([]);
+        setSupplierCampaigns([]);
+        setSelectedProposalId(null);
+        setDataState("error");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const selectedProposal = useMemo(() => {
     if (!selectedProposalId) return proposals[0] ?? null;
@@ -1605,20 +1523,8 @@ export default function SupplierProposalsPreviewCanvas() {
   function handleAccept(id) {
     run(
       async () => {
-        await new Promise((resolve) => window.setTimeout(resolve, 850));
-        setProposals((prev) =>
-          prev.map((proposal) => {
-            if (proposal.id !== id) return proposal;
-            return {
-              ...proposal,
-              status: "Accepted",
-              lastActivity: "Accepted · just now",
-              creatorUsageDecision:
-                proposal.creatorUsageDecision === "I am NOT SURE yet" ? "I will use a Creator" : proposal.creatorUsageDecision,
-              collabMode: proposal.collabMode === "Open for Collabs" ? "Open for Collabs" : "Invite-Only",
-            };
-          })
-        );
+        await sellerBackendApi.transitionCollaborationProposal(id, { status: "ACCEPTED" });
+        await loadWorkspaceData();
       },
       { successMessage: "Proposal accepted." }
     );
@@ -1627,12 +1533,8 @@ export default function SupplierProposalsPreviewCanvas() {
   function handleDecline(id) {
     run(
       async () => {
-        await new Promise((resolve) => window.setTimeout(resolve, 750));
-        setProposals((prev) =>
-          prev.map((proposal) =>
-            proposal.id === id ? { ...proposal, status: "Declined", lastActivity: "Declined · just now" } : proposal
-          )
-        );
+        await sellerBackendApi.transitionCollaborationProposal(id, { status: "REJECTED" });
+        await loadWorkspaceData();
       },
       { successMessage: "Proposal declined." }
     );
@@ -1717,7 +1619,7 @@ export default function SupplierProposalsPreviewCanvas() {
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
                   >
-                    {CATEGORIES.map((item) => (
+                    {categories.map((item) => (
                       <option key={item} value={item} className="bg-white dark:bg-slate-900">
                         {item}
                       </option>
@@ -1771,7 +1673,12 @@ export default function SupplierProposalsPreviewCanvas() {
                     <button
                       type="button"
                       className="px-4 py-2 rounded-full bg-slate-900 text-white text-[11px] font-extrabold"
-                      onClick={() => setDataState("ready")}
+                      onClick={() => {
+                        setDataState("loading");
+                        loadWorkspaceData()
+                          .then(() => setDataState("ready"))
+                          .catch(() => setDataState("error"));
+                      }}
                     >
                       Retry
                     </button>
@@ -1843,7 +1750,7 @@ export default function SupplierProposalsPreviewCanvas() {
         onClose={() => setProposalDrawerOpen(false)}
         creators={creators}
         initialCreator={creators.find((item) => item.id === proposalRecipientId) || creators[0] || null}
-        campaigns={SUPPLIER_CAMPAIGNS}
+        campaigns={supplierCampaigns}
       />
 
       <ToastArea />

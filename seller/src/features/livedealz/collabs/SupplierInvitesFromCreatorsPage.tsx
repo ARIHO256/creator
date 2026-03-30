@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 const ORANGE = "#f77f00";
 const GENERAL_COLLAB_TITLE = "General collaboration invite";
@@ -30,142 +31,68 @@ function getInviteContextSubLabel(invite) {
   return hasSpecificCampaign(invite) ? null : NO_CAMPAIGN_NOTE;
 }
 
-const INVITES = [
-  {
-    id: "INV-C101",
-    creator: "Lilian Beauty Plug",
-    initials: "LB",
-    campaign: "GlowUp Serum Promo",
-    inviteType: "Live + Shoppable Adz",
-    category: "Beauty",
-    region: "East Africa",
-    baseFee: 320,
-    currency: "USD",
-    commissionPct: 4,
-    estimatedValue: 950,
-    status: "New",
-    daysAgo: 0,
-    expiresIn: "3 days",
-    fitScore: 92,
-    fitReason: "Your Beauty products align with my audience. I convert strongly on skincare routines.",
-    messageShort: "I’d love to host a 60 min Beauty Flash live and run 2 shoppable ad creatives for your serum.",
-    lastActivity: "New invite · 2h ago",
-    creatorBio:
-      "Beauty creator focused on live tutorials and routine-based storytelling. Strong conversion when offers are pinned early.",
-    creatorRating: 4.8,
-  },
-  {
-    id: "INV-C102",
-    creator: "TechWithBrian",
-    initials: "TB",
-    campaign: "Tech Friday Mega",
-    inviteType: "Live series (3 episodes)",
-    category: "Tech",
-    region: "Africa / Asia",
-    baseFee: 900,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 1600,
-    status: "New",
-    daysAgo: 1,
-    expiresIn: "5 days",
-    fitScore: 86,
-    fitReason: "I have a proven format for mid-ticket gadgets and bundle closes.",
-    messageShort: "I can host a 3-episode Tech Friday series if we align on products and delivery timeline.",
-    lastActivity: "New invite · Yesterday",
-    creatorBio: "Tech creator specializing in live demos, unboxings and bundle-driven closes.",
-    creatorRating: 4.7,
-  },
-  {
-    id: "INV-C103",
-    creator: "Grace Faith Wellness",
-    initials: "GW",
-    campaign: "Faith & Wellness Morning Dealz",
-    inviteType: "Morning lives",
-    category: "Faith-compatible",
-    region: "Africa",
-    baseFee: 260,
-    currency: "USD",
-    commissionPct: 0,
-    estimatedValue: 520,
-    status: "Accepted",
-    daysAgo: 3,
-    expiresIn: "Starts next week",
-    fitScore: 88,
-    fitReason: "Your offers align with faith-based values. My audience responds well to trust-first messaging.",
-    messageShort: "Thanks for accepting. Let’s finalize dates, deliverables and CTA phrasing.",
-    lastActivity: "Accepted · 3 days ago",
-    creatorBio: "Faith-compatible wellness creator with calm, trust-first delivery.",
-    creatorRating: 4.9,
-  },
-  {
-    id: "INV-C104",
-    creator: "EV Gadgets Daily",
-    initials: "EG",
-    campaign: "EV Accessories Launch",
-    inviteType: "Shoppable Adz + Live",
-    category: "EV",
-    region: "Global",
-    baseFee: 300,
-    currency: "USD",
-    commissionPct: 3,
-    estimatedValue: 640,
-    status: "Declined",
-    daysAgo: 7,
-    expiresIn: "Closed",
-    fitScore: 70,
-    fitReason: "Good niche fit, but your current campaigns are scheduled for other categories.",
-    messageShort: "Thanks for considering. Happy to revisit next quarter.",
-    lastActivity: "Declined · 7 days ago",
-    creatorBio: "EV accessory creator with a focus on charging, interior tech and practical demos.",
-    creatorRating: 4.3,
-  },
-  {
-    id: "INV-C105",
-    creator: "Ama Style Studio",
-    initials: "AS",
-    campaign: "",
-    inviteType: "Creator partnership",
-    category: "Fashion",
-    region: "Africa / GCC",
-    baseFee: 650,
-    currency: "USD",
-    commissionPct: 6,
-    estimatedValue: 950,
-    status: "New",
-    daysAgo: 0,
-    expiresIn: "4 days",
-    fitScore: 84,
-    fitReason: "Strong creator-brand fit even before campaign scoping.",
-    messageShort: "I want to collaborate with you and shape the best live or shoppable format together.",
-    lastActivity: "New invite · 40m ago",
-    creatorBio:
-      "Fashion creator focused on styling, try-ons, and short-form demand generation. Open to shaping the right campaign model together.",
-    creatorRating: 4.6,
-  },
-  {
-    id: "INV-C106",
-    creator: "HomeWithRuth",
-    initials: "HR",
-    campaign: "Living Essentials Weekend Push",
-    inviteType: "Shoppable Adz",
-    category: "Home & Living",
-    region: "East Africa",
-    baseFee: 180,
-    currency: "USD",
-    commissionPct: 5,
-    estimatedValue: 420,
-    status: "Declined",
-    daysAgo: 10,
-    expiresIn: "Closed",
-    fitScore: 74,
-    fitReason: "Good fit, but the response window closed before the brand acted.",
-    messageShort: "Please let me know if you would like to reopen this later with a refreshed scope.",
-    lastActivity: "Declined · 10 days ago",
-    creatorBio: "Home & living creator with short-form product explainers and calm demo style.",
-    creatorRating: 4.4,
-  },
-];
+function initialsFromName(value, fallback = "CR") {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("");
+  return initials || fallback;
+}
+
+function toDate(value) {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function daysSince(value) {
+  const date = toDate(value);
+  if (!date) return 0;
+  const delta = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(delta / (1000 * 60 * 60 * 24)));
+}
+
+function normalizeInviteStatus(value) {
+  const normalized = String(value || "").trim().toUpperCase();
+  if (normalized === "ACCEPTED") return "Accepted";
+  if (normalized === "DECLINED" || normalized === "REJECTED" || normalized === "CANCELLED" || normalized === "EXPIRED") {
+    return "Declined";
+  }
+  return "New";
+}
+
+function mapInviteRecord(record) {
+  const creatorName = String(record?.creatorName || record?.sender || record?.creator || "Creator");
+  const status = normalizeInviteStatus(record?.status);
+  return {
+    id: String(record?.id || ""),
+    creator: creatorName,
+    initials: String(record?.creatorInitials || record?.senderInitials || initialsFromName(creatorName)),
+    campaign: String(record?.campaign || record?.campaignTitle || ""),
+    inviteType: String(record?.type || "Live collaboration"),
+    category: String(record?.category || "General"),
+    region: String(record?.region || "Global"),
+    baseFee: Number(record?.baseFee || 0),
+    currency: String(record?.currency || "USD"),
+    commissionPct: Number(record?.commissionPct || 0),
+    estimatedValue: Number(record?.estimatedValue || 0),
+    status,
+    daysAgo: daysSince(record?.updatedAt || record?.createdAt),
+    expiresIn:
+      status === "Accepted"
+        ? "Active"
+        : status === "Declined"
+          ? "Closed"
+          : "Open",
+    fitScore: Number(record?.fitScore || 70),
+    fitReason: String(record?.fitReason || "Matched by campaign preferences."),
+    messageShort: String(record?.messageShort || record?.message || "New invite from creator."),
+    lastActivity: String(record?.lastActivity || "Updated recently"),
+    creatorBio: String(record?.creatorBio || "Creator profile details are available in profile."),
+    creatorRating: Number(record?.creatorRating || 0),
+  };
+}
 
 const TABS = [
   { id: "all", label: "All" },
@@ -175,7 +102,6 @@ const TABS = [
 ];
 
 const STATUS_FILTERS = ["All", "New", "Accepted", "Declined"];
-const CATEGORIES = ["All", "Beauty", "Tech", "Faith-compatible", "EV", "Fashion", "Home & Living"];
 
 let __toastTimer = null;
 
@@ -1173,18 +1099,51 @@ function InviteDetailPanel({
 
 export default function InvitesFromCreatorsPreviewCanvas() {
   const navigate = useNavigate();
-  const [invites, setInvites] = useState(INVITES);
+  const [invites, setInvites] = useState([]);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [minBudget, setMinBudget] = useState("");
-  const [selectedInviteId, setSelectedInviteId] = useState(INVITES[0]?.id || null);
+  const [selectedInviteId, setSelectedInviteId] = useState(null);
   const [counterDrawerOpen, setCounterDrawerOpen] = useState(false);
   const [counterInvite, setCounterInvite] = useState(null);
   const [proposalDrawerOpen, setProposalDrawerOpen] = useState(false);
   const [proposalInvite, setProposalInvite] = useState(null);
   const [declineConfirmId, setDeclineConfirmId] = useState(null);
+  const [dataState, setDataState] = useState("loading");
   const { run, isPending } = useAsyncAction();
+
+  async function loadInvites() {
+    const rows = await sellerBackendApi.getInvites();
+    const mapped = Array.isArray(rows) ? rows.map(mapInviteRecord).filter((row) => row.id) : [];
+    setInvites(mapped);
+    setSelectedInviteId((prev) => (prev && mapped.some((row) => row.id === prev) ? prev : mapped[0]?.id || null));
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    loadInvites()
+      .then(() => {
+        if (!mounted) return;
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setInvites([]);
+        setSelectedInviteId(null);
+        setDataState("error");
+        toast("Failed to load invites.");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const categories = useMemo(
+    () => ["All", ...Array.from(new Set(invites.map((invite) => invite.category).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [invites]
+  );
 
   const filteredInvites = useMemo(() => {
     return invites.filter((invite) => {
@@ -1222,19 +1181,8 @@ export default function InvitesFromCreatorsPreviewCanvas() {
   function handleAccept(id) {
     run(
       async () => {
-        await new Promise((resolve) => window.setTimeout(resolve, 850));
-        setInvites((prev) =>
-          prev.map((invite) =>
-            invite.id === id
-              ? {
-                  ...invite,
-                  status: "Accepted",
-                  lastActivity: "Accepted · just now",
-                  expiresIn: hasSpecificCampaign(invite) ? "Starts next week" : "General collaboration active",
-                }
-              : invite
-          )
-        );
+        await sellerBackendApi.respondInvite(id, "ACCEPTED");
+        await loadInvites();
       },
       { successMessage: "Invite accepted. Collaboration started." }
     );
@@ -1245,14 +1193,8 @@ export default function InvitesFromCreatorsPreviewCanvas() {
     const id = declineConfirmId;
     run(
       async () => {
-        await new Promise((resolve) => window.setTimeout(resolve, 700));
-        setInvites((prev) =>
-          prev.map((invite) =>
-            invite.id === id
-              ? { ...invite, status: "Declined", lastActivity: "Declined · just now", expiresIn: "Closed" }
-              : invite
-          )
-        );
+        await sellerBackendApi.respondInvite(id, "DECLINED");
+        await loadInvites();
       },
       { successMessage: "Invite declined." }
     );
@@ -1357,6 +1299,11 @@ export default function InvitesFromCreatorsPreviewCanvas() {
           </section>
 
           <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
+            {dataState === "error" ? (
+              <div className="rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+                Unable to load invites from the database.
+              </div>
+            ) : null}
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-slate-500 dark:text-slate-300">View:</span>
@@ -1387,7 +1334,7 @@ export default function InvitesFromCreatorsPreviewCanvas() {
                   ))}
                 </select>
                 <select className="border border-slate-200 dark:border-slate-700 rounded-full px-2 py-1 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 transition-colors" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-                  {CATEGORIES.map((item) => (
+                  {categories.map((item) => (
                     <option key={item} value={item}>{item}</option>
                   ))}
                 </select>

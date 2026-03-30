@@ -7,8 +7,6 @@ import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.s
 import { JobsService } from '../jobs/jobs.service.js';
 import { JobsWorker } from '../jobs/jobs.worker.js';
 
-const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
-
 @Injectable()
 export class DashboardService {
   constructor(
@@ -220,14 +218,12 @@ export class DashboardService {
     });
 
     if (user?.role === UserRole.SELLER) {
-      const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
       const [activeListings, openOrders] = await Promise.all([
         this.prisma.marketplaceListing.count({ where: { userId, status: 'ACTIVE' } }),
         this.prisma.order.count({
           where: {
             seller: { userId },
-            status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] },
-            ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+            status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] }
           }
         })
       ]);
@@ -1811,7 +1807,6 @@ export class DashboardService {
   }
 
   private async buildSellerMetrics(userId: string, sellerId: string) {
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const openOrderStatuses: OrderStatus[] = [
       OrderStatus.NEW,
       OrderStatus.CONFIRMED,
@@ -1827,8 +1822,7 @@ export class DashboardService {
       this.prisma.order.count({
         where: {
           sellerId,
-          status: { in: openOrderStatuses },
-          ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+          status: { in: openOrderStatuses }
         }
       }),
       this.prisma.sellerReturn.count({
@@ -1869,38 +1863,6 @@ export class DashboardService {
         paid: totalsByStatus.get(TransactionStatus.PAID) ?? 0
       }
     };
-  }
-
-  private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: {
-        domain: 'sellerfront',
-        entityType: 'mockdb',
-        entityId: { in: SELLERFRONT_COMPAT_RECORD_IDS }
-      },
-      select: { payload: true }
-    });
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload = record.payload;
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        continue;
-      }
-      const orders = (payload as Record<string, unknown>).orders;
-      if (!Array.isArray(orders)) {
-        continue;
-      }
-      for (const order of orders) {
-        if (!order || typeof order !== 'object' || Array.isArray(order)) {
-          continue;
-        }
-        const id = (order as Record<string, unknown>).id;
-        if (typeof id === 'string' && id.trim()) {
-          ids.add(id.trim());
-        }
-      }
-    }
-    return Array.from(ids);
   }
 
   private async buildProviderMetrics(userId: string) {

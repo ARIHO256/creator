@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "../../../auth/session";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierAssetLibraryPage.jsx
@@ -154,201 +155,122 @@ function mediaEmoji(mt) {
   }
 }
 
-/* --------------------------------- Mock ---------------------------------- */
-
-const creators = [
-  { id: "cr_1", name: "Amina K.", handle: "@amina.dealz", avatarUrl: "https://i.pravatar.cc/120?img=32" },
-  { id: "cr_2", name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
-  { id: "cr_3", name: "Luna Ade", handle: "@lunaade", avatarUrl: "https://i.pravatar.cc/120?img=7" }
-];
-
-const suppliers = [
-  { id: "sp_1", name: "GlowUp Hub", kind: "Seller", brand: "GlowUp" },
-  { id: "sp_2", name: "Urban Supply", kind: "Seller", brand: "Urban" },
-  { id: "sp_3", name: "EV World Store", kind: "Seller", brand: "EV World" }
-];
-
-const campaigns = [
-  {
-    id: "cp_1",
-    supplierId: "sp_1",
-    name: "Valentine Glow Week",
-    brand: "GlowUp",
-    status: "Active",
-    // Supplier review control (asset-level): Manual means creators go to pending_supplier.
-    supplierReviewMode: "Manual"
-  },
-  {
-    id: "cp_2",
-    supplierId: "sp_2",
-    name: "Back-to-Work Essentials",
-    brand: "Urban",
-    status: "Active",
-    supplierReviewMode: "Manual"
-  },
-  {
-    id: "cp_3",
-    supplierId: "sp_3",
-    name: "EV Charger Flash Drop",
-    brand: "EV World",
-    status: "Paused",
-    supplierReviewMode: "Auto"
-  }
-];
+/* --------------------------------- Data mapping ---------------------------------- */
 
 const ALL_TEAM_ID = "all_team";
 const ALL_CREATORS_ID = "all_creators";
 const NO_CREATORS_ASSIGNED_ID = "no_creators_assigned";
 
-const campaignTeams = [
-  { id: "tm_cp1_brand", campaignId: "cp_1", name: "Brand Team", creatorIds: ["cr_1", "cr_3"] },
-  { id: "tm_cp1_content", campaignId: "cp_1", name: "Content Team", creatorIds: ["cr_1"] },
-  { id: "tm_cp1_ops", campaignId: "cp_1", name: "Creator Ops", creatorIds: ["cr_3"] },
-  { id: "tm_cp2_content", campaignId: "cp_2", name: "Content Team", creatorIds: ["cr_2"] },
-  { id: "tm_cp2_perf", campaignId: "cp_2", name: "Performance Team", creatorIds: ["cr_2"] },
-  { id: "tm_cp3_ops", campaignId: "cp_3", name: "Creator Ops", creatorIds: ["cr_3"] }
-];
+function relativeUpdatedLabel(value) {
+  const parsed = value ? new Date(value) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return "Last updated: Recently";
+  const diffMs = Date.now() - parsed.getTime();
+  if (diffMs < 60 * 1000) return "Last updated: Just now";
+  const diffMins = Math.floor(diffMs / (60 * 1000));
+  if (diffMins < 60) return `Last updated: ${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `Last updated: ${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `Last updated: ${diffDays}d ago`;
+  return "Last updated: Recently";
+}
 
-const deliverables = [
-  { id: "dv_1", campaignId: "cp_1", label: "Hero intro video", dueDateLabel: "Tomorrow" },
-  { id: "dv_2", campaignId: "cp_1", label: "Featured item poster", dueDateLabel: "In 2 days" },
-  { id: "dv_3", campaignId: "cp_2", label: "Unboxing clip", dueDateLabel: "In 3 days" },
-  { id: "dv_4", campaignId: "cp_3", label: "Live opener", dueDateLabel: "Today" }
-];
+function normalizeMediaType(value) {
+  const mediaType = String(value || "").toLowerCase();
+  return MEDIA_TYPES.includes(mediaType) ? mediaType : "image";
+}
 
-const seedAssets = [
-  {
-    id: "as_1",
-    creatorScope: "cr_3",
-    teamScope: "tm_cp3_ops",
-    title: "Hero intro (vertical)",
-    subtitle: "EV Charger Flash Drop · EV World",
-    campaignId: "cp_3",
-    supplierId: "sp_3",
-    brand: "EV World",
-    tags: ["hero", "intro", "vertical"],
-    mediaType: "video",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "pending_admin", // auto campaign
-    lastUpdatedLabel: "Last updated: 2h ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "hero",
-    aspect: "vertical",
-    desktopMode: "fullscreen",
-    usageNotes: "Best for TikTok / Shorts. Add price overlay at 00:05.",
-    restrictions: "No third-party logos."
-  },
-  {
-    id: "as_2",
-    creatorScope: "cr_1",
-    teamScope: "tm_cp1_brand",
-    title: "Featured item poster (500×500)",
-    subtitle: "Valentine Glow Week · GlowUp",
-    campaignId: "cp_1",
-    supplierId: "sp_1",
-    brand: "GlowUp",
-    tags: ["poster", "product", "square"],
-    mediaType: "image",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "pending_supplier",
-    lastUpdatedLabel: "Last updated: Yesterday",
-    thumbnailUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=1200&auto=format&fit=crop",
-    previewKind: "image",
-    dimensions: { width: 500, height: 500 },
-    role: "item_poster",
-    aspect: "horizontal",
-    desktopMode: "modal",
-    usageNotes: "Use as poster behind play icon.",
-    restrictions: "Must show disclaimer: results may vary."
-  },
-  {
-    id: "as_3",
-    creatorScope: "cr_2",
-    teamScope: "tm_cp2_content",
-    title: "Unboxing clip (30s)",
-    subtitle: "Back-to-Work Essentials · Urban",
-    campaignId: "cp_2",
-    supplierId: "sp_2",
-    brand: "Urban",
-    tags: ["unboxing", "clip", "hook"],
-    mediaType: "video",
-    source: "creator",
-    ownerLabel: "Owner: Creator",
-    status: "changes_requested",
-    lastUpdatedLabel: "Last updated: 3 days ago",
-    thumbnailUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=256&auto=format&fit=crop",
-    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
-    previewKind: "video",
-    role: "offer",
-    aspect: "horizontal",
-    desktopMode: "modal",
-    usageNotes: "Need stronger hook in first 2 seconds.",
-    restrictions: "No music unless licensed."
-  },
-  {
-    id: "as_4",
-    creatorScope: "all",
+function normalizeSource(value) {
+  const source = String(value || "").toLowerCase();
+  return SOURCES.includes(source) ? source : "supplier";
+}
+
+function normalizeAssetStatus(value) {
+  const status = String(value || "").trim().toLowerCase();
+  if (!status) return "draft";
+  if (status === "pending" || status === "in_review") return "pending_supplier";
+  return status;
+}
+
+function mapCampaignRecord(record) {
+  const data = record?.data && typeof record.data === "object" && !Array.isArray(record.data) ? record.data : {};
+  const supplierId = String(
+    record?.sellerId ||
+      data?.sellerId ||
+      record?.supplierId ||
+      data?.supplierId ||
+      record?.storeId ||
+      data?.storeId ||
+      "supplier"
+  );
+  const name = String(record?.title || data?.name || data?.title || "Untitled campaign");
+  const brand = String(data?.brand || data?.brandName || name);
+  return {
+    id: String(record?.id || data?.id || `camp-${Math.random().toString(16).slice(2, 8)}`),
+    supplierId,
+    supplierName: String(data?.supplierName || data?.sellerName || "Supplier"),
+    name,
+    brand,
+    status: String(record?.status || data?.status || "Draft").toLowerCase() === "active" ? "Active" : String(record?.status || data?.status || "Draft"),
+    supplierReviewMode: String(data?.supplierReviewMode || data?.approvalMode || "Manual").toLowerCase() === "auto" ? "Auto" : "Manual",
+  };
+}
+
+function mapWorkspaceCreators(workspace) {
+  const asArray = Array.isArray(workspace?.creators)
+    ? workspace.creators
+    : Array.isArray(workspace?.recommendedCreators)
+      ? workspace.recommendedCreators
+      : [];
+  return asArray
+    .map((creator, index) => ({
+      id: String(creator?.id || creator?.creatorId || `creator-${index + 1}`),
+      name: String(creator?.name || creator?.displayName || "Creator"),
+      handle: String(creator?.handle || creator?.username || "@creator"),
+      avatarUrl: String(creator?.avatarUrl || creator?.imageUrl || ""),
+    }))
+    .filter((creator) => creator.id);
+}
+
+function mapMediaAssetRecord(record, campaignById, supplierId) {
+  const data = record?.data && typeof record.data === "object" && !Array.isArray(record.data) ? record.data : {};
+  const campaignId = String(record?.campaignId || data?.campaignId || data?.campaign?.id || "");
+  const campaign = campaignById.get(campaignId);
+  const source = normalizeSource(record?.source || data?.source || data?.ownerType);
+  const mediaType = normalizeMediaType(record?.mediaType || data?.mediaType || data?.kind);
+  const previewUrl = String(record?.previewUrl || data?.previewUrl || record?.url || data?.url || data?.fileUrl || "");
+  const thumbnailUrl = String(record?.thumbnailUrl || data?.thumbnailUrl || previewUrl || "");
+  const creatorScope = String(record?.creatorId || data?.creatorId || "all");
+  const status = normalizeAssetStatus(record?.status || data?.status);
+  const dimensionsRaw = data?.dimensions && typeof data.dimensions === "object" ? data.dimensions : null;
+  const width = Number(dimensionsRaw?.width);
+  const height = Number(dimensionsRaw?.height);
+  return {
+    id: String(record?.id || data?.id || ""),
+    creatorScope,
     teamScope: ALL_TEAM_ID,
-    title: "Brand overlay: Price drop frame",
-    subtitle: "Reusable overlay pack",
-    campaignId: "cp_1",
-    supplierId: "sp_1",
-    brand: "GlowUp",
-    tags: ["overlay", "price"],
-    mediaType: "overlay",
-    source: "supplier",
-    ownerLabel: "Owner: Supplier",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 5 days ago",
-    previewKind: "image",
-    previewUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1200&auto=format&fit=crop",
-    dimensions: { width: 1920, height: 1080 },
-    role: "overlay",
-    usageNotes: "Use with countdown badge.",
-    restrictions: "Do not alter logo." 
-  },
-  {
-    id: "as_5",
-    creatorScope: "all",
-    teamScope: ALL_TEAM_ID,
-    title: "Catalog hero image (1920×1080)",
-    subtitle: "Catalog media · auto-imported",
-    campaignId: "cp_2",
-    supplierId: "sp_2",
-    brand: "Urban",
-    tags: ["hero", "catalog"],
-    mediaType: "image",
-    source: "catalog",
-    ownerLabel: "Owner: Catalog",
-    status: "approved",
-    lastUpdatedLabel: "Last updated: 1 week ago",
-    previewKind: "image",
-    previewUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
-    dimensions: { width: 1920, height: 1080 },
-    role: "hero",
-    usageNotes: "Recommended hero for the campaign.",
-    restrictions: "Catalog license applies." 
-  }
-];
-
-const smartPacks = [
-  {
-    id: "pk_1",
-    name: "Starter pack (hero + poster + overlay)",
-    campaignId: "cp_1",
-    brand: "GlowUp",
-    autoGrouped: true,
-    items: [
-      { title: "Featured item poster", assetId: "as_2" },
-      { title: "Price drop overlay", assetId: "as_4" }
-    ]
-  }
-];
+    title: String(record?.title || data?.title || data?.name || "Untitled asset"),
+    subtitle: `${campaign?.name || "Campaign"} · ${campaign?.brand || "Brand"}`,
+    campaignId,
+    supplierId: String(record?.supplierId || data?.supplierId || campaign?.supplierId || supplierId || "supplier"),
+    brand: String(campaign?.brand || data?.brand || "Brand"),
+    tags: Array.isArray(record?.tags) ? record.tags.map((tag) => String(tag)) : Array.isArray(data?.tags) ? data.tags.map((tag) => String(tag)) : [],
+    mediaType,
+    source,
+    ownerLabel: source === "creator" ? "Owner: Creator" : source === "catalog" ? "Owner: Catalog" : "Owner: Supplier",
+    status,
+    lastUpdatedLabel: relativeUpdatedLabel(record?.updatedAt || data?.updatedAt || record?.createdAt || data?.createdAt),
+    thumbnailUrl,
+    previewUrl,
+    previewKind: mediaType === "video" ? "video" : "image",
+    dimensions: Number.isFinite(width) && Number.isFinite(height) ? { width, height } : undefined,
+    role: String(data?.role || record?.role || ""),
+    aspect: String(data?.aspect || ""),
+    desktopMode: String(data?.desktopMode || "modal"),
+    usageNotes: String(data?.usageNotes || ""),
+    restrictions: String(data?.restrictions || ""),
+  };
+}
 
 /* --------------------------------- UI Primitives -------------------------- */
 
@@ -935,7 +857,10 @@ export default function SupplierAssetLibraryPage() {
   const pickerTarget = target === "live" ? "live" : "shoppable";
   const session = useSession();
 
-  const [assets, setAssets] = useState(seedAssets);
+  const [assets, setAssets] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [creators, setCreators] = useState([]);
+  const [dataState, setDataState] = useState("loading");
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState(ALL_TEAM_ID);
   const [selectedCreatorId, setSelectedCreatorId] = useState(ALL_CREATORS_ID);
@@ -945,28 +870,114 @@ export default function SupplierAssetLibraryPage() {
   const [filterStatus, setFilterStatus] = useState("all"); // includes "pending" alias
   const [filterSource, setFilterSource] = useState("all");
 
-  const [activeAssetId, setActiveAssetId] = useState(seedAssets[0]?.id || null);
+  const [activeAssetId, setActiveAssetId] = useState(null);
 
   const [toast, setToast] = useState(null);
 
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
+  const suppliers = useMemo(() => {
+    const entries = new Map();
+    campaigns.forEach((campaign) => {
+      const supplierId = String(campaign.supplierId || "");
+      if (!supplierId) return;
+      if (entries.has(supplierId)) return;
+      entries.set(supplierId, {
+        id: supplierId,
+        name: String(campaign.supplierName || "Supplier"),
+        kind: "Seller",
+        brand: String(campaign.brand || campaign.name || "Brand"),
+      });
+    });
+    return Array.from(entries.values());
+  }, [campaigns]);
+  const campaignById = useMemo(() => new Map(campaigns.map((campaign) => [campaign.id, campaign])), [campaigns]);
+
   const implicitSupplierId = useMemo(() => {
-    const sessionLike = (session || {}) as Record<string, unknown>;
+    const sessionLike = session || {};
     const supplierKeys = ["supplierId", "sellerId", "storeId", "brandId"];
     for (const key of supplierKeys) {
       const value = sessionLike[key];
-      if (typeof value === "string" && suppliers.some((s) => s.id === value)) {
+      if (typeof value === "string" && suppliers.some((supplier) => supplier.id === value)) {
         return value;
       }
     }
     return campaigns[0]?.supplierId || suppliers[0]?.id || "";
-  }, [session]);
+  }, [session, suppliers, campaigns]);
 
-  const campaignsForSupplier = useMemo(() => campaigns.filter((c) => c.supplierId === implicitSupplierId), [implicitSupplierId]);
-  const deliverablesForCampaign = useMemo(() => deliverables.filter((d) => d.campaignId === selectedCampaignId), [selectedCampaignId]);
-  const teamsForCampaign = useMemo(() => campaignTeams.filter((team) => team.campaignId === selectedCampaignId), [selectedCampaignId]);
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    Promise.all([
+      sellerBackendApi.getMediaAssets(),
+      sellerBackendApi.getCampaigns(),
+      sellerBackendApi.getMyCreatorsWorkspace(),
+    ])
+      .then(([mediaRows, campaignRows, creatorWorkspace]) => {
+        if (!mounted) return;
+        const mappedCampaigns = Array.isArray(campaignRows) ? campaignRows.map(mapCampaignRecord).filter((campaign) => campaign.id) : [];
+        const campaignById = new Map(mappedCampaigns.map((campaign) => [campaign.id, campaign]));
+        const defaultSupplierId = mappedCampaigns[0]?.supplierId || "";
+        const mappedAssets = Array.isArray(mediaRows)
+          ? mediaRows
+              .map((row) => mapMediaAssetRecord(row, campaignById, defaultSupplierId))
+              .filter((asset) => asset.id)
+          : [];
+        const mappedCreators = mapWorkspaceCreators(creatorWorkspace);
+        setCampaigns(mappedCampaigns);
+        setAssets(mappedAssets);
+        setCreators(mappedCreators);
+        setActiveAssetId((prev) => (prev && mappedAssets.some((asset) => asset.id === prev) ? prev : mappedAssets[0]?.id || null));
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCampaigns([]);
+        setAssets([]);
+        setCreators([]);
+        setActiveAssetId(null);
+        setDataState("error");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const campaignTeams = useMemo(
+    () =>
+      campaigns.map((campaign) => ({
+        id: `tm_${campaign.id}_content`,
+        campaignId: campaign.id,
+        name: "Content Team",
+        creatorIds: creators.map((creator) => creator.id),
+      })),
+    [campaigns, creators]
+  );
+
+  const deliverables = useMemo(
+    () =>
+      campaigns.map((campaign) => ({
+        id: `dv_${campaign.id}_asset_submission`,
+        campaignId: campaign.id,
+        label: "Campaign asset submission",
+        dueDateLabel: "TBD",
+      })),
+    [campaigns]
+  );
+
+  const campaignsForSupplier = useMemo(
+    () => campaigns.filter((campaign) => campaign.supplierId === implicitSupplierId),
+    [campaigns, implicitSupplierId]
+  );
+  const deliverablesForCampaign = useMemo(
+    () => deliverables.filter((deliverable) => deliverable.campaignId === selectedCampaignId),
+    [deliverables, selectedCampaignId]
+  );
+  const teamsForCampaign = useMemo(
+    () => campaignTeams.filter((team) => team.campaignId === selectedCampaignId),
+    [campaignTeams, selectedCampaignId]
+  );
 
   const creatorsForScope = useMemo(() => {
     if (!selectedCampaignId) return [];
@@ -982,10 +993,10 @@ export default function SupplierAssetLibraryPage() {
       ids.add(asset.creatorScope);
     });
     return creators.filter((creator) => ids.has(creator.id));
-  }, [selectedCampaignId, selectedTeamId, teamsForCampaign, assets]);
+  }, [selectedCampaignId, selectedTeamId, teamsForCampaign, assets, creators]);
 
-  const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) || null, [selectedCreatorId]);
-  const selectedSupplier = useMemo(() => suppliers.find((s) => s.id === implicitSupplierId) || suppliers[0], [implicitSupplierId]);
+  const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) || null, [selectedCreatorId, creators]);
+  const selectedSupplier = useMemo(() => suppliers.find((s) => s.id === implicitSupplierId) || suppliers[0], [implicitSupplierId, suppliers]);
   const selectedCampaign = useMemo(
     () => campaignsForSupplier.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0],
     [selectedCampaignId, campaignsForSupplier]
@@ -1073,26 +1084,41 @@ export default function SupplierAssetLibraryPage() {
     if (typeof window !== "undefined" && window.innerWidth < 1024) setIsMobilePreviewOpen(true);
   }
 
-  function setStatus(assetId, status, note) {
-    setAssets((prev) => prev.map((a) => (a.id === assetId ? { ...a, status } : a)));
-    if (note != null) setReviewNotes((prev) => ({ ...prev, [assetId]: note }));
+  async function setStatus(assetId, status, note) {
+    try {
+      await sellerBackendApi.patchMediaAsset(assetId, {
+        status,
+        reviewNote: note || undefined,
+      });
+      setAssets((prev) => prev.map((asset) => (asset.id === assetId ? { ...asset, status } : asset)));
+      if (note != null) setReviewNotes((prev) => ({ ...prev, [assetId]: note }));
+      return true;
+    } catch {
+      setToast({ title: "Update failed", body: "Could not update asset status. Please retry." });
+      return false;
+    }
   }
 
-  function supplierApprove(asset) {
-    // Supplier approves a creator submission: move to Admin review.
+  async function supplierApprove(asset) {
     const next = supplierAutoApprove ? "pending_admin" : "pending_admin";
-    setStatus(asset.id, next, activeReviewNote);
-    setToast({ title: "Approved", body: "Sent to Admin review (demo)." });
+    const ok = await setStatus(asset.id, next, activeReviewNote);
+    if (ok) {
+      setToast({ title: "Approved", body: "Sent to Admin review." });
+    }
   }
 
-  function supplierRequestChanges(asset) {
-    setStatus(asset.id, "changes_requested", activeReviewNote);
-    setToast({ title: "Changes requested", body: "The creator must update and resubmit." });
+  async function supplierRequestChanges(asset) {
+    const ok = await setStatus(asset.id, "changes_requested", activeReviewNote);
+    if (ok) {
+      setToast({ title: "Changes requested", body: "The creator must update and resubmit." });
+    }
   }
 
-  function supplierReject(asset) {
-    setStatus(asset.id, "rejected", activeReviewNote);
-    setToast({ title: "Rejected", body: "Submission rejected. Creator can submit a new version." });
+  async function supplierReject(asset) {
+    const ok = await setStatus(asset.id, "rejected", activeReviewNote);
+    if (ok) {
+      setToast({ title: "Rejected", body: "Submission rejected. Creator can submit a new version." });
+    }
   }
 
   function onUseActive() {
@@ -1142,7 +1168,7 @@ export default function SupplierAssetLibraryPage() {
       campaignId: selectedCampaignId,
       deliverableId: deliverables.find((x) => x.campaignId === selectedCampaignId)?.id || d.deliverableId
     }));
-  }, [selectedCampaignId]);
+  }, [selectedCampaignId, deliverables]);
 
   function resetSubmitDraft() {
     const firstDeliverable = deliverables.find((d) => d.campaignId === selectedCampaignId)?.id || "";
@@ -1212,7 +1238,7 @@ export default function SupplierAssetLibraryPage() {
     }
   }
 
-  function submitForReview() {
+  async function submitForReview() {
     const missingRights = !submitDraft.rightsConfirmed || !submitDraft.noCopyrightedMusicConfirmed;
     const hasAnyMedia =
       submitDraft.mediaType === "link" ? Boolean((submitDraft.linkUrl || "").trim()) : submitDraft.files.length > 0 || Boolean((submitDraft.postUrl || "").trim());
@@ -1267,51 +1293,55 @@ export default function SupplierAssetLibraryPage() {
       }
     }
 
-    // Supplier uploads: go straight to Admin review (or approved depending on your policy).
     const finalStatus = "pending_admin";
     setSubmitStatus(finalStatus);
 
-    const id = `as_${Math.random().toString(16).slice(2, 7)}`;
     const tags = (submitDraft.tagsCsv || "")
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const previewKind = submitDraft.mediaType === "video" ? "video" : "image";
     const previewUrl =
       submitDraft.mediaType === "link" ? submitDraft.linkUrl : submitDraft.files[0] ? URL.createObjectURL(submitDraft.files[0]) : submitDraft.postUrl;
-
     const dims = submitImageMeta ? { width: submitImageMeta.width, height: submitImageMeta.height } : undefined;
-
-    setAssets((prev) => [
-      {
-        id,
-        creatorScope: "all",
-        teamScope: selectedTeamId === ALL_TEAM_ID ? ALL_TEAM_ID : selectedTeamId,
+    try {
+      const created = await sellerBackendApi.createMediaAsset({
         title: submitDraft.title || "Untitled submission",
-        subtitle: `${selectedCampaign?.name || "Campaign"} · ${selectedSupplier?.brand || selectedSupplier?.name}`,
         campaignId: submitDraft.campaignId,
         supplierId: implicitSupplierId,
-        brand: selectedSupplier?.brand || selectedSupplier?.name,
-        tags,
         mediaType: submitDraft.mediaType,
         source: "supplier",
-        ownerLabel: "Owner: Supplier",
         status: finalStatus,
-        lastUpdatedLabel: "Last updated: Just now",
-        thumbnailUrl: previewKind === "image" ? previewUrl : undefined,
-        previewUrl,
-        previewKind,
-        dimensions: dims,
         role: submitDraft.role || undefined,
-        usageNotes: submitDraft.notes,
-        restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required"
-      },
-      ...prev
-    ]);
-
-    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review (demo)." });
-    setIsSubmitOpen(false);
+        tags,
+        previewUrl,
+        thumbnailUrl: submitDraft.mediaType === "video" ? undefined : previewUrl,
+        dimensions: dims,
+        usageNotes: submitDraft.notes || "",
+        restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required",
+        rightsConfirmed: submitDraft.rightsConfirmed,
+        noCopyrightedMusicConfirmed: submitDraft.noCopyrightedMusicConfirmed,
+        disclosureConfirmed: submitDraft.disclosureConfirmed,
+        fileNames: (submitDraft.files || []).map((file) => file?.name).filter(Boolean),
+      });
+      const createdId = String(created?.id || created?.data?.id || "");
+      const refreshedRows = await sellerBackendApi.getMediaAssets();
+      const refreshedAssets = Array.isArray(refreshedRows)
+        ? refreshedRows
+            .map((row) => mapMediaAssetRecord(row, campaignById, implicitSupplierId))
+            .filter((asset) => asset.id)
+        : [];
+      setAssets(refreshedAssets);
+      setActiveAssetId((prev) => {
+        if (createdId && refreshedAssets.some((asset) => asset.id === createdId)) return createdId;
+        if (prev && refreshedAssets.some((asset) => asset.id === prev)) return prev;
+        return refreshedAssets[0]?.id || null;
+      });
+      setToast({ title: "Submitted", body: "Supplier content submitted for Admin review." });
+      setIsSubmitOpen(false);
+    } catch {
+      setToast({ title: "Submit failed", body: "Could not submit content. Please retry." });
+    }
   }
 
   return (
@@ -1398,6 +1428,11 @@ export default function SupplierAssetLibraryPage() {
       ) : null}
 
       <div className="w-full px-[0.55%] py-6">
+        {dataState === "error" ? (
+          <div className="mb-4 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300">
+            Unable to load campaign assets from the database right now.
+          </div>
+        ) : null}
         {/* Controls */}
         <div className="rounded-2xl border bg-white dark:bg-slate-900 p-4">
           <div className="grid gap-3 lg:grid-cols-12 lg:items-center">
@@ -1431,7 +1466,9 @@ export default function SupplierAssetLibraryPage() {
                           </option>
                         ))
                       ) : (
-                        <option value="">Campaign: No campaigns available</option>
+                        <option value="">
+                          {dataState === "loading" ? "Campaign: Loading campaigns..." : "Campaign: No campaigns available"}
+                        </option>
                       )}
                     </select>
                     <span className="text-slate-400">▾</span>
@@ -1646,7 +1683,7 @@ export default function SupplierAssetLibraryPage() {
 
                 {filteredAssets.length === 0 ? (
                   <div className="col-span-full rounded-2xl border border-slate-300 dark:border-slate-700 border-dashed bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-6 text-center text-sm text-slate-700 dark:text-slate-200">
-                    No assets match your filters.
+                    {dataState === "loading" ? "Loading assets..." : "No assets match your filters."}
                     <div className="mt-2 text-xs text-slate-500 dark:text-slate-300">Try clearing filters or uploading new content for this campaign.</div>
                   </div>
                 ) : null}

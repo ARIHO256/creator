@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierAdzManagerPage.jsx
@@ -210,241 +211,98 @@ function Avatar({ src, alt }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
-const DEMO_ADS = [
-  {
-    id: "ADZ-10021",
-    name: "Flash Dealz: Power Bank",
-    status: "Live",
-    platforms: ["TikTok"],
-    supplier: {
-      name: "BBS",
-      category: "Electronics",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Flash Dealz", subtitle: "Limited-time drops" },
-    startISO: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "fullscreen",
-    // Supplier governance
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
-    creator: { name: "Kofi Mensah", handle: "@kofi_live", avatarUrl: "https://i.pravatar.cc/100?img=11", verified: true },
-    owner: "Producer",
-    compensation: { type: "Commission", commissionRate: 0.12 },
-    offers: [
-      {
-        id: "O-1",
-        type: "PRODUCT",
-        name: "20,000mAh Power Bank",
-        currency: "UGX",
-        price: 65000,
-        basePrice: 80000,
-        stockLeft: 8,
-        posterUrl: "https://images.unsplash.com/photo-1580915411954-282cb1f69d1c?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "RETAIL",
-        wholesale: {
-          moq: 10,
-          step: 5,
-          leadTimeLabel: "Ships in 2–4 days",
-          tiers: [
-            { minQty: 10, unitPrice: 56000 },
-            { minQty: 25, unitPrice: 52000 },
-            { minQty: 50, unitPrice: 49000 }
-          ]
+function titleCaseStatus(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "Draft";
+  return normalized
+    .split("_")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function mapAdzCampaignToManagerAd(record) {
+  const data = record?.data && typeof record.data === "object" && !Array.isArray(record.data) ? record.data : {};
+  const offers = Array.isArray(data?.offers) ? data.offers : [];
+  const status = titleCaseStatus(record?.status || data?.status);
+  const computedLowStock = offers.some((offer) => offer?.type === "PRODUCT" && toNumber(offer?.stockLeft, 0) > 0 && toNumber(offer?.stockLeft, 0) <= 5);
+  return {
+    id: String(record?.id || ""),
+    name: String(data?.name || data?.campaignName || data?.title || record?.title || "Untitled ad"),
+    status,
+    platforms: Array.isArray(data?.platforms) ? data.platforms.map((item) => String(item)) : [],
+    supplier: data?.supplier && typeof data.supplier === "object"
+      ? {
+          name: String(data.supplier.name || "Supplier"),
+          category: String(data.supplier.category || "General"),
+          logoUrl: String(data.supplier.logoUrl || ""),
         }
-      },
-      {
-        id: "O-2",
-        type: "SERVICE",
-        name: "Device setup support (15min)",
-        currency: "UGX",
-        price: 15000,
-        stockLeft: -1,
-        posterUrl: "https://images.unsplash.com/photo-1556741533-f6acd647d2c4?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        serviceMeta: { durationMins: 15, bookingType: "Instant" }
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: true,
-    needsApproval: false,
-    lock: { locked: true, label: "Locked by Ops", reason: "Live ads cannot be edited." },
-    impressions: 182400,
-    clicks: 9720,
-    orders: 412,
-    earnings: 1860,
-    earningsCurrency: "USD",
-    generated: true
-  },
-  {
-    id: "ADZ-10022",
-    name: "Beauty Drop: Glow Serum",
-    status: "Pending approval",
-    platforms: ["Instagram"],
-    supplier: {
-      name: "GlowCo",
-      category: "Beauty",
-      logoUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=256&auto=format&fit=crop"
+      : { name: "Supplier", category: "General", logoUrl: "" },
+    campaign: {
+      name: String(data?.campaign?.name || data?.campaignName || record?.title || "Campaign"),
+      subtitle: String(data?.campaign?.subtitle || data?.campaignSubtitle || ""),
     },
-    campaign: { name: "Beauty Drop", subtitle: "Host-first content" },
-    startISO: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 37 * 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    hostRole: "Creator",
-    creatorUsage: "I will use a Creator",
-    collabMode: "Invite-Only",
-    approvalMode: "Manual",
-    creator: { name: "Nala Okoye", handle: "@nala.skin", avatarUrl: "https://i.pravatar.cc/100?img=32", verified: true },
-    owner: "Editor",
-    compensation: { type: "Flat fee", flatFee: 550, currency: "GBP" },
-    offers: [
-      {
-        id: "O-3",
-        type: "PRODUCT",
-        name: "Vitamin C Serum",
-        currency: "UGX",
-        price: 38000,
-        basePrice: 52000,
-        stockLeft: 12,
-        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL"
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: false,
-    needsApproval: true,
-    impressions: 0,
-    clicks: 0,
-    orders: 0,
-    earnings: 0,
-    earningsCurrency: "USD",
-    generated: false
-  },
-  {
-    id: "ADZ-10023",
-    name: "Home Picks: Blender",
-    status: "Paused",
-    platforms: ["YouTube"],
-    supplier: {
-      name: "HomePro",
-      category: "Home",
-      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "Home Essentials", subtitle: "Kitchen upgrade" },
-    startISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    hostRole: "Supplier",
-    creatorUsage: "I will NOT use a Creator",
-    collabMode: "(n/a)",
-    approvalMode: "Manual",
-    creator: { name: "(Supplier-hosted)", handle: "@homepro", avatarUrl: "https://i.pravatar.cc/100?img=47" },
-    owner: "Owner",
-    compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 200, currency: "GBP" },
-    offers: [
-      {
-        id: "O-4",
-        type: "PRODUCT",
-        name: "6-Speed Blender",
-        currency: "UGX",
-        price: 240000,
-        stockLeft: 18,
-        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL", "WHOLESALE"],
-        defaultSellingMode: "WHOLESALE",
-        wholesale: {
-          moq: 3,
-          step: 1,
-          leadTimeLabel: "Ships in 3–6 days",
-          tiers: [
-            { minQty: 3, unitPrice: 210000 },
-            { minQty: 6, unitPrice: 199000 },
-            { minQty: 12, unitPrice: 189000 }
-          ]
+    startISO: String(data?.startISO || data?.startsAtISO || record?.createdAt || new Date().toISOString()),
+    endISO: String(data?.endISO || data?.endsAtISO || record?.updatedAt || new Date().toISOString()),
+    timezone: String(data?.timezone || "Africa/Kampala"),
+    heroImageUrl: String(data?.heroImageUrl || ""),
+    heroIntroVideoUrl: String(data?.heroIntroVideoUrl || SAMPLE_VIDEO),
+    heroDesktopMode: String(data?.heroDesktopMode || "modal"),
+    hostRole: String(data?.hostRole || "Supplier"),
+    creatorUsage: String(data?.creatorUsage || "I will use a Creator"),
+    collabMode: String(data?.collabMode || "Open for Collabs"),
+    approvalMode: String(data?.approvalMode || "Manual"),
+    creator: data?.creator && typeof data.creator === "object"
+      ? {
+          name: String(data.creator.name || "Creator"),
+          handle: String(data.creator.handle || "@creator"),
+          avatarUrl: String(data.creator.avatarUrl || ""),
+          verified: Boolean(data.creator.verified),
         }
-      }
-    ],
-    hasBrokenLink: true,
-    lowStock: false,
-    needsApproval: false,
-    impressions: 60200,
-    clicks: 1100,
-    orders: 21,
-    earnings: 95,
-    earningsCurrency: "USD",
-    generated: true
-  },
-  {
-    id: "ADZ-10024",
-    name: "EV Accessories: Helmet",
-    status: "Rejected",
-    platforms: ["TikTok"],
-    supplier: {
-      name: "MotoGear",
-      category: "Auto",
-      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
-    },
-    campaign: { name: "EV Accessories", subtitle: "Safety picks" },
-    startISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
-    timezone: "Africa/Kampala",
-    heroImageUrl: "https://images.unsplash.com/photo-1495555961986-6d4c1ecb7be3?q=80&w=1600&auto=format&fit=crop",
-    heroIntroVideoUrl: SAMPLE_VIDEO,
-    heroDesktopMode: "modal",
-    hostRole: "Creator",
-    creatorUsage: "I am NOT SURE yet",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    creator: { name: "Sade Bello", handle: "@sade.style", avatarUrl: "https://i.pravatar.cc/100?img=37" },
-    owner: "Editor",
-    compensation: { type: "Commission", commissionRate: 0.1 },
-    offers: [
-      {
-        id: "O-5",
-        type: "PRODUCT",
-        name: "Rider Helmet (ECE)",
-        currency: "UGX",
-        price: 165000,
-        stockLeft: 0,
-        posterUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=900&auto=format&fit=crop",
-        videoUrl: SAMPLE_VIDEO,
-        desktopMode: "modal",
-        sellingModes: ["RETAIL"],
-        defaultSellingMode: "RETAIL"
-      }
-    ],
-    hasBrokenLink: false,
-    lowStock: false,
-    needsApproval: false,
-    impressions: 3000,
-    clicks: 55,
-    orders: 1,
-    earnings: 4,
-    earningsCurrency: "USD",
-    generated: false
-  }
-];
+      : { name: "(Supplier-hosted)", handle: "@supplier", avatarUrl: "", verified: false },
+    owner: String(data?.owner || "Supplier"),
+    compensation: data?.compensation && typeof data.compensation === "object"
+      ? data.compensation
+      : { type: "Commission", commissionRate: 0 },
+    offers: offers.map((offer, index) => ({
+      id: String(offer?.id || `O-${index + 1}`),
+      type: String(offer?.type || "PRODUCT"),
+      name: String(offer?.name || `Offer ${index + 1}`),
+      currency: String(offer?.currency || record?.currency || "USD"),
+      price: toNumber(offer?.price),
+      basePrice: toNumber(offer?.basePrice),
+      stockLeft: toNumber(offer?.stockLeft, -1),
+      posterUrl: String(offer?.posterUrl || ""),
+      videoUrl: String(offer?.videoUrl || SAMPLE_VIDEO),
+      desktopMode: String(offer?.desktopMode || "modal"),
+      sellingModes: Array.isArray(offer?.sellingModes) ? offer.sellingModes : undefined,
+      defaultSellingMode: offer?.defaultSellingMode,
+      wholesale: offer?.wholesale,
+      serviceMeta: offer?.serviceMeta,
+    })),
+    generated: Boolean(data?.generated || ["Generated", "Scheduled", "Live"].includes(status)),
+    needsApproval: Boolean(data?.needsApproval || status === "Pending approval"),
+    hasBrokenLink: Boolean(data?.hasBrokenLink),
+    lowStock: Boolean(data?.lowStock ?? computedLowStock),
+    lock:
+      data?.lock && typeof data.lock === "object"
+        ? {
+            locked: Boolean(data.lock.locked),
+            label: String(data.lock.label || ""),
+            reason: String(data.lock.reason || ""),
+          }
+        : { locked: false, label: "", reason: "" },
+    impressions: toNumber(data?.impressions ?? data?.impressions7d),
+    clicks: toNumber(data?.clicks ?? data?.clicks7d),
+    orders: toNumber(data?.orders ?? data?.orders7d),
+    earnings: toNumber(data?.earnings ?? data?.revenue7d),
+    earningsCurrency: String(data?.earningsCurrency || data?.currency || record?.currency || "USD"),
+  };
+}
 
 /* ------------------------------ Mini charts (no libs) ---------------------- */
 
@@ -520,9 +378,33 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useState(DEMO_ADS);
-  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
+  const [ads, setAds] = useState([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [dataState, setDataState] = useState("loading");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0] || null, [ads, selectedId]);
+
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    sellerBackendApi
+      .getAdzCampaigns()
+      .then((rows) => {
+        if (!mounted) return;
+        const mapped = Array.isArray(rows) ? rows.map(mapAdzCampaignToManagerAd).filter((ad) => ad.id) : [];
+        setAds(mapped);
+        setSelectedId((prev) => (prev && mapped.some((ad) => ad.id === prev) ? prev : mapped[0]?.id || ""));
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setAds([]);
+        setSelectedId("");
+        setDataState("error");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Filters
   const [statusTab, setStatusTab] = useState("All");
@@ -755,6 +637,11 @@ export default function SupplierAdzManagerPage() {
 
       {/* Body */}
       <div className="w-full px-[0.55%] py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {dataState === "error" ? (
+          <div className="lg:col-span-12 rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
+            Unable to load Adz manager data from the database.
+          </div>
+        ) : null}
         {/* List */}
         <div className="lg:col-span-5 rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden transition-colors">
           <div className="p-4 border-b border-neutral-200 dark:border-slate-800 flex items-start justify-between gap-2">

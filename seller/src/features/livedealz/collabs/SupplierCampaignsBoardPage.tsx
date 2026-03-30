@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierCampaignsBoardPage.jsx
@@ -78,6 +79,97 @@ const formatRange = (min, max, currency = "USD") => {
   if (!a && !b) return "—";
   return `${money(a, currency)} – ${money(b, currency)}`;
 };
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+function normalizeCampaignStage(status, collabMode, metadata) {
+  const explicit = String(metadata?.stage || "").trim();
+  if (explicit) return explicit;
+  const normalizedStatus = String(status || "").trim().toUpperCase();
+  if (normalizedStatus === "COMPLETED") return "Completed";
+  if (normalizedStatus === "ACTIVE") return "Running";
+  if (normalizedStatus === "DRAFT") return "Draft";
+  if (String(collabMode || "").toLowerCase() === "open for collabs") return "Open for Collabs";
+  if (String(collabMode || "").toLowerCase() === "invite-only") return "Invite-only";
+  return "Draft";
+}
+
+function mapCampaignRecord(record, proposalRows, inviteRows) {
+  const metadata = record?.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata : {};
+  const campaignId = String(record?.id || "");
+  const relatedProposals = proposalRows.filter((proposal) => String(proposal?.campaignId || "") === campaignId);
+  const relatedInvites = inviteRows.filter((invite) => String(invite?.campaignId || "") === campaignId);
+  const acceptedCreators = [
+    ...relatedProposals
+      .filter((proposal) => String(proposal?.status || "").toUpperCase() === "ACCEPTED")
+      .map((proposal) => ({
+        name: String(proposal?.creatorName || proposal?.creator || "Creator"),
+        handle: String((proposal?.metadata && typeof proposal.metadata === "object" ? proposal.metadata.creatorHandle : "") || ""),
+      })),
+    ...relatedInvites
+      .filter((invite) => String(invite?.status || "").toUpperCase() === "ACCEPTED")
+      .map((invite) => ({
+        name: String(invite?.sender || invite?.creatorName || "Creator"),
+        handle: String((invite?.metadata && typeof invite.metadata === "object" ? invite.metadata.senderHandle : "") || ""),
+      })),
+  ];
+
+  const collabMode = String(metadata?.collabMode || "Open for Collabs");
+  const creatorUsageDecision = String(metadata?.creatorUsageDecision || "I will use a Creator");
+  const approvalMode = String(metadata?.approvalMode || "Manual");
+  const budget = toNumber(record?.budget);
+  const budgetMin = toNumber(metadata?.budgetMin ?? metadata?.baseFeeMin ?? budget);
+  const budgetMax = toNumber(metadata?.budgetMax ?? metadata?.baseFeeMax ?? budget);
+  const commission = toNumber(metadata?.commission ?? metadata?.commissionPct);
+
+  return {
+    id: campaignId,
+    code: String(metadata?.code || campaignId),
+    name: String(record?.title || metadata?.name || "Campaign"),
+    category: String(metadata?.category || "General"),
+    categories: Array.isArray(metadata?.categories) ? metadata.categories.map((item) => String(item)) : [],
+    region: String(metadata?.region || "Global"),
+    language: String(metadata?.language || "English"),
+    payBand: `${money(budgetMin, String(record?.currency || "USD"))} – ${money(budgetMax, String(record?.currency || "USD"))}`,
+    budgetMin,
+    budgetMax,
+    commission,
+    deliverables: Array.isArray(metadata?.deliverables)
+      ? metadata.deliverables.map((item) => String(item))
+      : Array.isArray(metadata?.deliverablesList)
+        ? metadata.deliverablesList.map((item) => String(item))
+        : [],
+    liveWindow: String(metadata?.liveWindow || "To be scheduled"),
+    timeline: Array.isArray(metadata?.timeline)
+      ? metadata.timeline.map((item) => (typeof item === "string" ? item : String(item?.label || item?.title || "Timeline item")))
+      : [],
+    summary: String(record?.description || metadata?.summary || "Campaign summary"),
+    tags: Array.isArray(metadata?.tags) ? metadata.tags.map((item) => String(item)) : [],
+    creatorUsageDecision,
+    collabMode,
+    approvalMode,
+    stage: normalizeCampaignStage(record?.status, collabMode, metadata),
+    pitchesCount: relatedProposals.length,
+    invitedCreators: relatedInvites.length,
+    acceptedCreators,
+    queue: {
+      pendingSupplier: toNumber(metadata?.queue?.pendingSupplier),
+      pendingAdmin: toNumber(metadata?.queue?.pendingAdmin),
+      changes: toNumber(metadata?.queue?.changes),
+    },
+    kpis: {
+      views: toNumber(metadata?.kpis?.views),
+      ctr: toNumber(metadata?.kpis?.ctr),
+      conv: toNumber(metadata?.kpis?.conv),
+      sales: toNumber(metadata?.kpis?.sales),
+    },
+    pitches: Array.isArray(metadata?.pitches) ? metadata.pitches : [],
+    invites: Array.isArray(metadata?.invites) ? metadata.invites : [],
+  };
+}
 
 /* -------------------------- Toast (minimal) -------------------------- */
 
@@ -183,232 +275,6 @@ function makeId(prefix = "ID") {
 }
 
 /* ----------------------------- Seed data ----------------------------- */
-
-const INITIAL_CAMPAIGNS = [
-  {
-    id: 1,
-    code: "CAMP-11",
-    name: "GlowUp Serum Promo",
-    category: "Beauty & Skincare",
-    categories: ["Beauty", "Skincare"],
-    region: "Africa",
-    language: "English",
-    payBand: "$200–$400 + 5%",
-    budgetMin: 200,
-    budgetMax: 400,
-    commission: 5,
-    deliverables: ["Live", "VOD", "Posts"],
-    liveWindow: "This Friday · 20:00–21:30",
-    timeline: ["Brief call", "Asset handoff", "Live", "Post clips"],
-    summary: "Launch live for GlowUp serum line with flash dealz and limited bundlez.",
-    tags: ["Flash dealz", "New launch", "High volume"],
-
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    stage: "Open for Collabs",
-
-    pitchesCount: 6,
-    invitedCreators: 0,
-    acceptedCreators: [{ name: "Lilian Beauty Plug", handle: "@lilianbeauty" }],
-
-    queue: { pendingSupplier: 2, pendingAdmin: 1, changes: 1 },
-
-    kpis: { views: 192000, ctr: 3.7, conv: 4.8, sales: 2600 },
-
-    pitches: [
-      {
-        id: "P-001",
-        creator: "Lilian Beauty Plug",
-        handle: "@lilianbeauty",
-        fee: 320,
-        currency: "USD",
-        commissionPct: 5,
-        status: "New",
-        message: "I’ll run a 60–75 min live with strong routine story + pinned flash offer. Expect high conversion on bundles."
-      },
-      {
-        id: "P-002",
-        creator: "Amina K.",
-        handle: "@amina.dealz",
-        fee: 280,
-        currency: "USD",
-        commissionPct: 6,
-        status: "Countered",
-        message: "I can do 2 clips + 1 live, but need 48h for delivery confirmation."
-      },
-      {
-        id: "P-003",
-        creator: "StyleByAma",
-        handle: "@stylebyama",
-        fee: 260,
-        currency: "USD",
-        commissionPct: 4,
-        status: "Rejected by creator",
-        message: "Timing conflict this week. Open to next month if slot is Saturday."
-      }
-    ],
-
-    invites: []
-  },
-  {
-    id: 2,
-    code: "CAMP-07",
-    name: "Tech Friday Mega",
-    category: "Tech & Gadgets",
-    categories: ["Tech", "Gadgets"],
-    region: "Africa / Asia",
-    language: "English",
-    payBand: "$600–$900 + 3%",
-    budgetMin: 600,
-    budgetMax: 900,
-    commission: 3,
-    deliverables: ["Live", "Posts"],
-    liveWindow: "Next week · 2-part Tech Friday series",
-    timeline: ["Script prep", "Series 1", "Series 2"],
-    summary: "Two-part Tech Friday series focusing on EV-friendly gadgets and accessories.",
-    tags: ["Series", "EV gadgets", "Q&A heavy"],
-
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Invite-only",
-    approvalMode: "Auto",
-    stage: "Negotiation",
-
-    pitchesCount: 0,
-    invitedCreators: 3,
-    acceptedCreators: [{ name: "TechWithBrian", handle: "@techwithbrian" }],
-
-    queue: { pendingSupplier: 0, pendingAdmin: 2, changes: 0 },
-
-    kpis: { views: 121000, ctr: 4.4, conv: 4.2, sales: 3100 },
-
-    pitches: [],
-
-    invites: [
-      { id: "I-001", creator: "TechWithBrian", handle: "@techwithbrian", status: "Accepted" },
-      { id: "I-002", creator: "Chris M.", handle: "@chris.finds", status: "Pending" },
-      { id: "I-003", creator: "NewWave Creator", handle: "@newwavecreator", status: "Declined" }
-    ]
-  },
-  {
-    id: 3,
-    code: "CAMP-33",
-    name: "Repair Booking Offer",
-    category: "Services / Consultations",
-    categories: ["Services"],
-    region: "Africa",
-    language: "English",
-    payBand: "$0 + commission",
-    budgetMin: 0,
-    budgetMax: 0,
-    commission: 10,
-    deliverables: ["Live", "VOD"],
-    liveWindow: "This month · Flexible slot",
-    timeline: ["Brief", "Service listing", "Live", "Follow-up clips"],
-    summary: "Supplier-hosted service promotion for repair bookings. Light creator involvement possible.",
-    tags: ["Bookings", "Lead-gen", "Evergreen"],
-
-    creatorUsageDecision: "I am NOT SURE yet",
-    collabMode: "Open for Collabs",
-    approvalMode: "Manual",
-    stage: "Draft",
-
-    pitchesCount: 1,
-    invitedCreators: 0,
-    acceptedCreators: [],
-
-    queue: { pendingSupplier: 0, pendingAdmin: 0, changes: 0 },
-
-    kpis: { views: 22000, ctr: 2.1, conv: 4.5, sales: 900 },
-
-    pitches: [
-      {
-        id: "P-010",
-        creator: "LocalFix Live",
-        handle: "@localfix",
-        fee: 120,
-        currency: "USD",
-        commissionPct: 8,
-        status: "New",
-        message: "I can do a demo + testimonial segment. Need clarified pricing and region links."
-      }
-    ],
-
-    invites: []
-  },
-  {
-    id: 4,
-    code: "CAMP-44",
-    name: "Style Bundle Promo",
-    category: "Fashion",
-    categories: ["Fashion"],
-    region: "West Africa",
-    language: "English",
-    payBand: "$150–$250 + 8%",
-    budgetMin: 150,
-    budgetMax: 250,
-    commission: 8,
-    deliverables: ["Posts", "VOD"],
-    liveWindow: "Sat · 16:00",
-    timeline: ["Outfits selection", "Clips", "Scheduling"],
-    summary: "Fashion bundle promo with sizing guidance and region-based links.",
-    tags: ["Bundles", "Try-on", "Sizing"],
-
-    creatorUsageDecision: "I will use a Creator",
-    collabMode: "Invite-only",
-    approvalMode: "Manual",
-    stage: "Supplier Review",
-
-    pitchesCount: 0,
-    invitedCreators: 2,
-    acceptedCreators: [{ name: "StyleByAma", handle: "@stylebyama" }],
-
-    queue: { pendingSupplier: 3, pendingAdmin: 0, changes: 2 },
-
-    kpis: { views: 68000, ctr: 3.0, conv: 2.7, sales: 680 },
-
-    pitches: [],
-
-    invites: [
-      { id: "I-010", creator: "StyleByAma", handle: "@stylebyama", status: "Accepted" },
-      { id: "I-011", creator: "Ama S.", handle: "@stylebyama", status: "Accepted" }
-    ]
-  },
-  {
-    id: 5,
-    code: "CAMP-50",
-    name: "Supplier-hosted EV Accessories Showcase",
-    category: "EV & Mobility",
-    categories: ["EV", "Mobility"],
-    region: "Global",
-    language: "English",
-    payBand: "$0 (Supplier-hosted)",
-    budgetMin: 0,
-    budgetMax: 0,
-    commission: 0,
-    deliverables: ["Live"],
-    liveWindow: "Next month · Flexible slot",
-    timeline: ["Concept", "Supplier content", "Live", "Replay"],
-    summary: "No creator planned. Supplier will host the live directly (acts as creator).",
-    tags: ["Supplier as Creator", "Accessories", "Evergreen"],
-
-    creatorUsageDecision: "I will NOT use a Creator",
-    collabMode: "n/a",
-    approvalMode: "Manual",
-    stage: "Content Submission",
-
-    pitchesCount: 0,
-    invitedCreators: 0,
-    acceptedCreators: [{ name: "(Supplier)", handle: "(you)" }],
-
-    queue: { pendingSupplier: 1, pendingAdmin: 0, changes: 0 },
-
-    kpis: { views: 0, ctr: 0, conv: 0, sales: 0 },
-
-    pitches: [],
-    invites: []
-  }
-];
 
 /* -------------------------- Row + KPI pills -------------------------- */
 
@@ -1610,7 +1476,8 @@ export default function SupplierCampaignsBoardPage() {
     minPitches: ""
   });
 
-  const [campaigns, setCampaigns] = useState(INITIAL_CAMPAIGNS);
+  const [campaigns, setCampaigns] = useState([]);
+  const [dataState, setDataState] = useState("loading");
 
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -1619,6 +1486,42 @@ export default function SupplierCampaignsBoardPage() {
   const [batchSelection, setBatchSelection] = useState([]);
   const [showBatchPanel, setShowBatchPanel] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+
+  async function loadCampaignsBoard() {
+    const [campaignRows, proposalRows, inviteRows] = await Promise.all([
+      sellerBackendApi.getCampaigns(),
+      sellerBackendApi.getCollaborationProposals(),
+      sellerBackendApi.getInvites(),
+    ]);
+    const campaignsList = Array.isArray(campaignRows) ? campaignRows : [];
+    const proposalsList = Array.isArray(proposalRows) ? proposalRows : [];
+    const invitesList = Array.isArray(inviteRows) ? inviteRows : [];
+    const mapped = campaignsList.map((campaign) => mapCampaignRecord(campaign, proposalsList, invitesList));
+    setCampaigns(mapped);
+    setSelectedCampaign((prev) => {
+      if (!prev) return mapped[0] || null;
+      return mapped.find((entry) => entry.id === prev.id) || mapped[0] || null;
+    });
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    setDataState("loading");
+    loadCampaignsBoard()
+      .then(() => {
+        if (!mounted) return;
+        setDataState("ready");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCampaigns([]);
+        setSelectedCampaign(null);
+        setDataState("error");
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filteredCampaigns = useMemo(() => {
     return campaigns.filter((c) => {
@@ -1684,6 +1587,33 @@ export default function SupplierCampaignsBoardPage() {
   const updateCampaign = (nextCampaign) => {
     setCampaigns((prev) => prev.map((c) => (c.id === nextCampaign.id ? nextCampaign : c)));
     setSelectedCampaign(nextCampaign);
+    sellerBackendApi.patchCampaign(String(nextCampaign.id), {
+      title: nextCampaign.name,
+      description: nextCampaign.summary,
+      metadata: {
+        category: nextCampaign.category,
+        categories: nextCampaign.categories,
+        region: nextCampaign.region,
+        language: nextCampaign.language,
+        budgetMin: nextCampaign.budgetMin,
+        budgetMax: nextCampaign.budgetMax,
+        commission: nextCampaign.commission,
+        deliverables: nextCampaign.deliverables,
+        liveWindow: nextCampaign.liveWindow,
+        timeline: nextCampaign.timeline,
+        tags: nextCampaign.tags,
+        creatorUsageDecision: nextCampaign.creatorUsageDecision,
+        collabMode: nextCampaign.collabMode,
+        approvalMode: nextCampaign.approvalMode,
+        stage: nextCampaign.stage,
+        queue: nextCampaign.queue,
+        kpis: nextCampaign.kpis,
+        pitches: nextCampaign.pitches,
+        invites: nextCampaign.invites,
+      },
+    }).catch(() => {
+      toast("Campaign update failed to sync.");
+    });
   };
 
   const handlePrimaryAction = (campaign) => {
@@ -1960,6 +1890,11 @@ export default function SupplierCampaignsBoardPage() {
 
           <div className="flex-1 overflow-auto">
             <div className="min-w-[1100px]">
+              {dataState === "error" ? (
+                <div className="mx-4 md:mx-6 mt-4 rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 px-4 py-3 text-xs text-rose-700 dark:text-rose-300">
+                  Unable to load campaigns from the database.
+                </div>
+              ) : null}
               <div className="px-4 md:px-6 py-3 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/30 border-b border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400">
                 <div className="grid grid-cols-6 gap-2">
                   <div>Campaign</div>
@@ -1989,7 +1924,7 @@ export default function SupplierCampaignsBoardPage() {
                   {filteredCampaigns.length === 0 ? (
                     <tr>
                       <td className="px-6 py-14 text-center text-sm text-slate-500" colSpan={6}>
-                        No campaigns match your filters.
+                        {dataState === "loading" ? "Loading campaigns…" : "No campaigns match your filters."}
                       </td>
                     </tr>
                   ) : null}
