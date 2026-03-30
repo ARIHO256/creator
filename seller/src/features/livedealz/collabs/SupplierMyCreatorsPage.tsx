@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Briefcase,
   FileText,
@@ -6,110 +7,20 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 const ORANGE = "#f77f00";
+const ROUTES = {
+  discoverCreators: "/mldz/creators/directory",
+  myCampaigns: "/mldz/campaigns",
+  proposals: "/mldz/collab/proposals",
+  contracts: "/mldz/collab/contracts",
+  taskBoard: "/mldz/deliverables/task-board",
+  analytics: "/mldz/insights/analytics-status",
+  messages: "/messages",
+};
 
 function cx(...items) {
   return items.filter(Boolean).join(" ");
-}
-
-function asRecord(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function asString(value, fallback = "") {
-  return typeof value === "string" ? value : fallback;
-}
-
-function asNumber(value, fallback = 0) {
-  const next = Number(value);
-  return Number.isFinite(next) ? next : fallback;
-}
-
-function asBoolean(value, fallback = false) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function asStringArray(value) {
-  return Array.isArray(value) ? value.map((entry) => String(entry)).filter(Boolean) : [];
-}
-
-function buildInitials(name, handle) {
-  const label = String(name || "").trim();
-  if (label) {
-    const parts = label.split(/\s+/g).filter(Boolean);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return `${parts[0]?.[0] || ""}${parts[1]?.[0] || ""}`.toUpperCase();
-  }
-  return String(handle || "").replace(/^@/, "").slice(0, 2).toUpperCase() || "CR";
-}
-
-function normalizeWorkspaceCampaign(campaign, index) {
-  const row = asRecord(campaign);
-  return {
-    id: asString(row.id, `CAMP-${index + 1}`),
-    name: asString(row.name, "Campaign"),
-    type: asString(row.type, "Campaign"),
-    stage: asString(row.stage, "Planned"),
-    approvalMode: asString(row.approvalMode, "Manual"),
-  };
-}
-
-function normalizeWorkspaceCreator(creator, index) {
-  const row = asRecord(creator);
-  const queues = asRecord(row.queues);
-  const handleRaw = asString(row.handle, "");
-  const handle = handleRaw.startsWith("@") ? handleRaw : handleRaw ? `@${handleRaw}` : "@creator";
-  const name = asString(row.name, "Creator");
-  const relationship = asString(row.relationship, "Past collab") === "Active collab" ? "Active collab" : "Past collab";
-  const rating = Math.max(0, asNumber(row.rating, 0));
-  const activeCampaigns = Array.isArray(row.activeCampaigns)
-    ? row.activeCampaigns.map((campaign, campaignIndex) => normalizeWorkspaceCampaign(campaign, campaignIndex))
-    : [];
-
-  return {
-    id: asString(row.id, `creator-${index + 1}`),
-    name,
-    initials: asString(row.initials, buildInitials(name, handle)),
-    handle,
-    tagline: asString(row.tagline, "Creator collaboration profile."),
-    categories: asStringArray(row.categories),
-    relationship,
-    collabInviteStatus: asString(row.collabInviteStatus, "none") === "pending" ? "pending" : "none",
-    lifetimeRevenue: asNumber(row.lifetimeRevenue, 0),
-    currentValue: asNumber(row.currentValue, 0),
-    avgConversion: asNumber(row.avgConversion, 0),
-    campaignsCount: asNumber(row.campaignsCount, 0),
-    lastCampaign: asString(row.lastCampaign, "No campaigns yet"),
-    lastResult: asString(row.lastResult, "Awaiting next collaboration"),
-    openProposals: asNumber(row.openProposals, 0),
-    activeContracts: asNumber(row.activeContracts, 0),
-    rating,
-    trustBadges: asStringArray(row.trustBadges),
-    primaryContact: asString(row.primaryContact, handle),
-    nextLive: asString(row.nextLive, "Not scheduled"),
-    nextAction: asString(row.nextAction, "No active deliverables"),
-    following: asBoolean(row.following, false),
-    favourite: asBoolean(row.favourite, false),
-    queues: {
-      pendingSupplier: asNumber(queues.pendingSupplier, 0),
-      pendingAdmin: asNumber(queues.pendingAdmin, 0),
-      changesRequested: asNumber(queues.changesRequested, 0),
-    },
-    activeCampaigns,
-    hasAcceptedInvite: asBoolean(row.hasAcceptedInvite, false),
-    acceptedInviteCount: asNumber(row.acceptedInviteCount, 0),
-  };
-}
-
-function hasAcceptedRelationship(creator) {
-  return (
-    creator.relationship === "Active collab" ||
-    creator.hasAcceptedInvite ||
-    creator.lifetimeRevenue > 0 ||
-    creator.campaignsCount > 0
-  );
 }
 
 function getPrimaryAction(creator) {
@@ -130,14 +41,14 @@ function getPrimaryAction(creator) {
 function getStopAction(creator) {
   if (!creator || creator.relationship !== "Active collab") return null;
   if ((creator.activeContracts || 0) > 0) {
-    return { label: "Terminate Contract", type: "terminate" };
+    return { label: "Stop Collaboration", type: "terminate" };
   }
   return { label: "Stop Collaboration", type: "stop" };
 }
 
 const INITIAL_CREATORS = [
   {
-    id: "1",
+    id: 1,
     name: "Amina K.",
     initials: "AK",
     handle: "@amina.dealz",
@@ -167,7 +78,7 @@ const INITIAL_CREATORS = [
     ],
   },
   {
-    id: "2",
+    id: 2,
     name: "Chris M.",
     initials: "CM",
     handle: "@chris.finds",
@@ -197,7 +108,7 @@ const INITIAL_CREATORS = [
     ],
   },
   {
-    id: "3",
+    id: 3,
     name: "Grace W.",
     initials: "GW",
     handle: "@gracefaithwellness",
@@ -224,7 +135,7 @@ const INITIAL_CREATORS = [
     activeCampaigns: [],
   },
   {
-    id: "4",
+    id: 4,
     name: "Ama S.",
     initials: "AS",
     handle: "@stylebyama",
@@ -515,7 +426,7 @@ function CreatorRow({
             onClick={onTerminateContracts}
             type="button"
           >
-            Terminate Contract
+            {stopAction.label}
           </button>
         ) : null}
 
@@ -625,7 +536,7 @@ function CreatorRow({
             }}
             type="button"
           >
-            Terminate Contract
+            {stopAction.label}
           </button>
         ) : null}
         {stopAction?.type === "stop" ? (
@@ -835,7 +746,7 @@ function CreatorDetailPanel({ creator, onNavigate, onOpenProposal, onInviteToCol
           className="px-3 py-2 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-300 text-[11px] font-extrabold hover:bg-amber-100 dark:hover:bg-amber-900/20"
           onClick={onTerminateContracts}
         >
-          Terminate Contract
+          {stopAction.label}
         </button>
       ) : null}
 
@@ -893,7 +804,7 @@ function ProposalTextArea(props) {
 
 function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) {
   const fileRef = useRef(null);
-  const [selectedCreatorId, setSelectedCreatorId] = useState(initialCreator?.id || creators[0]?.id || "");
+  const [selectedCreatorId, setSelectedCreatorId] = useState(initialCreator?.id || creators[0]?.id || 0);
   const [selectedCampaignId, setSelectedCampaignId] = useState(campaigns[0]?.id || "");
   const [scope, setScope] = useState("Hybrid");
   const [pricingModel, setPricingModel] = useState("Hybrid");
@@ -924,7 +835,7 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
   useEffect(() => {
     if (!open) return;
     const next = initialCreator || creators[0] || null;
-    setSelectedCreatorId(next?.id || "");
+    setSelectedCreatorId(next?.id || 0);
     setSelectedCampaignId(campaigns[0]?.id || "");
     setScope("Hybrid");
     setPricingModel("Hybrid");
@@ -1073,7 +984,7 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
 
                 <div className="mt-4">
                   <ProposalFieldShell label="Creator">
-                    <ProposalSelect value={selectedCreatorId} onChange={(e) => setSelectedCreatorId(e.target.value)}>
+                    <ProposalSelect value={selectedCreatorId} onChange={(e) => setSelectedCreatorId(Number(e.target.value))}>
                       {creators.map((item) => (
                         <option key={item.id} value={item.id}>{item.name}</option>
                       ))}
@@ -1302,11 +1213,12 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
 }
 
 export default function SupplierMyCreatorsPreviewCanvas() {
-  const [creators, setCreators] = useState(INITIAL_CREATORS.slice(0, 0));
+  const navigate = useNavigate();
+  const [creators, setCreators] = useState(INITIAL_CREATORS);
   const [search, setSearch] = useState("");
   const [relationshipFilter, setRelationshipFilter] = useState("All");
   const [viewTab, setViewTab] = useState("all");
-  const [selectedCreatorId, setSelectedCreatorId] = useState(null);
+  const [selectedCreatorId, setSelectedCreatorId] = useState(INITIAL_CREATORS[0]?.id ?? null);
   const [expandedCreatorId, setExpandedCreatorId] = useState(null);
   const [stopModalOpen, setStopModalOpen] = useState(false);
   const [stopTarget, setStopTarget] = useState(null);
@@ -1315,9 +1227,7 @@ export default function SupplierMyCreatorsPreviewCanvas() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteTarget, setInviteTarget] = useState(null);
   const [proposalOpen, setProposalOpen] = useState(false);
-  const [proposalRecipient, setProposalRecipient] = useState(null);
-  const [loadingCreators, setLoadingCreators] = useState(true);
-  const [loadingError, setLoadingError] = useState("");
+  const [proposalRecipient, setProposalRecipient] = useState(INITIAL_CREATORS[0] || null);
 
   const stats = useMemo(() => {
     const active = creators.filter((c) => c.relationship === "Active collab");
@@ -1353,49 +1263,6 @@ export default function SupplierMyCreatorsPreviewCanvas() {
   }, [filteredCreators, selectedCreatorId]);
 
   const selectedPrimaryAction = getPrimaryAction(selectedCreator);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadMyCreatorsWorkspace() {
-      setLoadingCreators(true);
-      setLoadingError("");
-      try {
-        const response = await sellerBackendApi.getMyCreatorsWorkspace();
-        if (!active) return;
-
-        const payload = asRecord(response);
-        const rows = Array.isArray(payload.creators) ? payload.creators : [];
-        const normalized = rows.map((entry, index) => normalizeWorkspaceCreator(entry, index)).filter(hasAcceptedRelationship);
-
-        setCreators(normalized);
-        setSelectedCreatorId((current) => {
-          if (current != null && normalized.some((creator) => creator.id === current)) return current;
-          return normalized[0]?.id ?? null;
-        });
-        setProposalRecipient((current) => {
-          if (current && normalized.some((creator) => creator.id === current.id)) return current;
-          return normalized[0] ?? null;
-        });
-      } catch (error) {
-        if (!active) return;
-        setCreators([]);
-        setSelectedCreatorId(null);
-        setProposalRecipient(null);
-        setLoadingError(error instanceof Error && error.message ? error.message : "Failed to load My Creators.");
-      } finally {
-        if (active) {
-          setLoadingCreators(false);
-        }
-      }
-    }
-
-    void loadMyCreatorsWorkspace();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!selectedCreator && filteredCreators[0]) {
@@ -1461,6 +1328,10 @@ export default function SupplierMyCreatorsPreviewCanvas() {
   function openTerminateModal(creator) {
     const target = creator || selectedCreator || null;
     if (!target) return;
+    if ((target.activeContracts || 0) <= 0) {
+      openStopModal(target);
+      return;
+    }
     setSelectedCreatorId(target.id);
     setTerminateTarget(target);
     setTerminateModalOpen(true);
@@ -1508,8 +1379,19 @@ export default function SupplierMyCreatorsPreviewCanvas() {
     );
   }
 
-  function navigateStub(dest) {
-    console.log(`Navigate to ${dest}`);
+  function navigateTo(dest) {
+    const routeMap = {
+      "discover-creators": ROUTES.discoverCreators,
+      "my-campaigns": ROUTES.myCampaigns,
+      proposals: ROUTES.proposals,
+      contracts: ROUTES.contracts,
+      messages: ROUTES.messages,
+      "task-board": ROUTES.taskBoard,
+      analytics: ROUTES.analytics,
+    };
+    const target = routeMap[dest];
+    if (!target) return;
+    navigate(target);
   }
 
   function triggerTopPrimaryAction() {
@@ -1542,7 +1424,11 @@ export default function SupplierMyCreatorsPreviewCanvas() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-xs">
-                <button className="px-3 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors font-semibold" type="button">
+                <button
+                  className="px-3 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors font-semibold"
+                  onClick={() => navigateTo("discover-creators")}
+                  type="button"
+                >
                   Discover creators
                 </button>
                 <button
@@ -1622,13 +1508,7 @@ export default function SupplierMyCreatorsPreviewCanvas() {
 
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-300">
               <span>
-                {loadingCreators ? (
-                  <span className="font-semibold dark:font-bold">Loading accepted creators...</span>
-                ) : (
-                  <>
-                    Showing <span className="font-semibold dark:font-bold">{filteredCreators.length}</span> of {creators.length} My Creators
-                  </>
-                )}
+                Showing <span className="font-semibold dark:font-bold">{filteredCreators.length}</span> of {creators.length} My Creators
               </span>
               <button
                 className="px-2.5 py-1 rounded-full border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors font-semibold"
@@ -1671,20 +1551,8 @@ export default function SupplierMyCreatorsPreviewCanvas() {
               <div className="space-y-3">
                 {filteredCreators.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60 p-10 text-center">
-                    <div className="text-base font-black text-slate-900 dark:text-slate-50">
-                      {loadingCreators
-                        ? "Loading My Creators..."
-                        : loadingError
-                          ? "Could not load My Creators"
-                          : "No My Creators match this view yet"}
-                    </div>
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                      {loadingCreators
-                        ? "Fetching creators with accepted collaboration from your workspace."
-                        : loadingError
-                          ? loadingError
-                          : "Try resetting filters or search to surface your accepted creator relationships."}
-                    </p>
+                    <div className="text-base font-black text-slate-900 dark:text-slate-50">No My Creators match this view yet</div>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Try resetting filters or search to surface your accepted creator relationships.</p>
                   </div>
                 ) : (
                   filteredCreators.map((creator) => (
@@ -1701,7 +1569,7 @@ export default function SupplierMyCreatorsPreviewCanvas() {
                       onInviteToCollaborate={() => openInviteModal(creator)}
                       onStopCollaboration={() => openStopModal(creator)}
                       onTerminateContracts={() => openTerminateModal(creator)}
-                      onNavigate={navigateStub}
+                      onNavigate={navigateTo}
                     />
                   ))
                 )}
@@ -1712,7 +1580,7 @@ export default function SupplierMyCreatorsPreviewCanvas() {
               <div className="bg-white dark:bg-slate-900 rounded-3xl transition-colors shadow-sm p-4 md:p-5 border border-slate-200/80 dark:border-slate-800">
                 <CreatorDetailPanel
                   creator={selectedCreator}
-                  onNavigate={navigateStub}
+                  onNavigate={navigateTo}
                   onOpenProposal={() => openProposal(selectedCreator)}
                   onInviteToCollaborate={() => openInviteModal(selectedCreator)}
                   onStopCollaboration={() => openStopModal(selectedCreator)}
@@ -1743,15 +1611,13 @@ export default function SupplierMyCreatorsPreviewCanvas() {
         isOpen={terminateModalOpen}
         onClose={closeTerminateModal}
         onConfirm={() => {
-          if (terminateTarget) {
-            terminateContracts(terminateTarget.id);
-          }
+          navigate(ROUTES.contracts);
           closeTerminateModal();
         }}
-        title="Terminate active contract?"
-        message={`Terminate the active contract for ${terminateTarget?.name || "this creator"}. After termination, Stop Collaboration will become available.`}
-        confirmLabel="Terminate Contract"
-        confirmClass="bg-amber-600 hover:bg-amber-700"
+        title="Stop collaboration unavailable"
+        message={`Stop Collaboration cannot proceed while active contracts still exist with ${terminateTarget?.name || "this creator"}. End all active contracts first, then return here to stop collaboration.`}
+        confirmLabel="Open Contracts"
+        confirmClass="bg-[#f77f00] hover:bg-[#e26f00]"
       />
 
       <ConfirmationModal

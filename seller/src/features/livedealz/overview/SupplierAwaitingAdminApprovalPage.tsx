@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierAwaitingAdminApprovalPremium.tsx (Previewable Canvas)
@@ -12,7 +11,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Premium hero header with status-based title/desc + pill strip (ETA, submitted, flags)
  * - ToastStack + Modal system
  * - Step timeline: Submitted → Under review → Action required → Back in review → Approved
- * - Submission snapshot modal
+ * - Submission snapshot modal (pulled from localStorage when available)
  * - Notification preferences card + refresh status simulation
  * - “What we check” card + “While you wait” coaching card
  * - Action Required section: admin feedback, reference docs, checklist, message, uploads, resubmit gating
@@ -32,6 +31,9 @@ import { sellerBackendApi } from "../../../lib/backendApi";
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
+
+const STORAGE_STATUS_KEY = "mldz_supplier_admin_approval_status";
+const STORAGE_DRAFT_KEY = "mldz_supplier_admin_approval_draft";
 
 const SUBMISSION_KEYS_TO_TRY = [
   "mldz_supplier_campaign_submission_v1",
@@ -129,54 +131,6 @@ function safeJsonParse<T>(s: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-function readApprovalQueryParams(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  return Object.fromEntries(new URLSearchParams(window.location.search).entries());
-}
-
-function createEmptySupplierAwaitingAdminApprovalSubmission(): CampaignSubmission {
-  return {
-    campaignId: "",
-    campaignTitle: "",
-    promoType: "",
-    surfaces: [],
-    region: "",
-    currency: "",
-    plannedBudget: 0,
-    creatorUsageDecision: "I will NOT use a Creator",
-    collabMode: "—",
-    contentApprovalMode: "Auto",
-    supplierApprovalComplete: false,
-    submittedAt: "",
-    itemsCount: 0,
-    landingLinks: [],
-  };
-}
-
-function createInitialSupplierAwaitingAdminApprovalStatus(): ApprovalStatus {
-  return "UnderReview";
-}
-
-function createInitialSupplierAwaitingAdminApprovalEtaMin() {
-  return 90;
-}
-
-function createInitialSupplierAwaitingAdminApprovalReason() {
-  return "";
-}
-
-function createEmptySupplierAwaitingAdminApprovalDocs(): AdminDoc[] {
-  return [];
-}
-
-function createEmptySupplierAwaitingAdminApprovalItems(): ChecklistItem[] {
-  return [];
-}
-
-function createInitialSupplierAwaitingAdminApprovalNote() {
-  return "";
 }
 
 function formatEta(mins: number): string {
@@ -337,13 +291,13 @@ const I = {
 function useToasts() {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = useCallback((message: string, tone: "default" | "success" | "error" = "default") => {
+  const push = (message: string, tone: "default" | "success" | "error" = "default") => {
     const id = `${Date.now()}_${Math.random()}`;
     setToasts((t) => [...t, { id, message, tone }]);
     window.setTimeout(() => {
       setToasts((t) => t.filter((x) => x.id !== id));
     }, 3200);
-  }, []);
+  };
 
   return { toasts, push };
 }
@@ -729,27 +683,89 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const go = (path: string) => goTo(navigate, path);
   const { toasts, push } = useToasts();
 
-  const qp = useMemo<Record<string, string>>(() => readApprovalQueryParams(), []);
-  const [submission, setSubmission] = useState<CampaignSubmission>(
-    createEmptySupplierAwaitingAdminApprovalSubmission()
-  );
+  const qp = useMemo<Record<string, string>>(() => {
+    if (typeof window === "undefined") return {};
+    return Object.fromEntries(new URLSearchParams(window.location.search).entries());
+  }, []);
+
+  // Pull submission snapshot if available
+  const submission = useMemo<CampaignSubmission>(() => {
+    if (typeof window === "undefined") return {};
+
+    for (const k of SUBMISSION_KEYS_TO_TRY) {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const parsed = safeJsonParse<CampaignSubmission | null>(raw, null);
+        if (parsed && typeof parsed === "object") return parsed;
+      }
+    }
+
+    // fallback preview payload (complete enough to avoid forced send-back)
+    return {
+      campaignId: qp.campaignId || "S-203",
+      campaignTitle: qp.title || "Supplier-only Promo Sprint",
+      promoType: qp.promoType || "Discount + Limited Stock",
+      surfaces: (qp.surfaces || "SHOPPABLE_ADZ").split(",").filter(Boolean),
+      region: qp.region || "East Africa",
+      currency: qp.currency || "USD",
+      plannedBudget: Number(qp.plannedBudget || 800),
+      creatorUsageDecision: (qp.creatorPlan as CampaignSubmission["creatorUsageDecision"]) || "I will NOT use a Creator",
+      collabMode: (qp.collabMode as CampaignSubmission["collabMode"]) || "—",
+      contentApprovalMode: (qp.approvalMode as CampaignSubmission["contentApprovalMode"]) || "Auto",
+      supplierApprovalComplete: qp.supplierApprovalComplete === "1" ? true : true,
+      submittedAt: localStorage.getItem("mldz_supplier_admin_approval_submittedAt") || nowIso(),
+      itemsCount: Number(qp.itemsCount || 2),
+      landingLinks: [
+        { label: "Campaign page", url: `https://mylivedealz.com/a/${encodeURIComponent(qp.slug || "supplier-only-promo-sprint")}` },
+        { label: "Catalog", url: "https://mylivedealz.com/catalog" }
+      ]
+    };
+  }, [qp]);
 
   const displayTitle = submission?.campaignTitle || "Campaign";
   const campaignId = submission?.campaignId || "pending";
   const submittedAt = submission?.submittedAt || nowIso();
 
   // status
-  const [status, setStatus] = useState<ApprovalStatus>(createInitialSupplierAwaitingAdminApprovalStatus());
-  const [etaMin, setEtaMin] = useState<number>(createInitialSupplierAwaitingAdminApprovalEtaMin());
-  const [adminReason, setAdminReason] = useState<string>(createInitialSupplierAwaitingAdminApprovalReason());
-  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(createEmptySupplierAwaitingAdminApprovalDocs());
-  const [items, setItems] = useState<ChecklistItem[]>(createEmptySupplierAwaitingAdminApprovalItems());
+  const [status, setStatus] = useState<ApprovalStatus>(() => {
+    if (typeof window === "undefined") return "UnderReview";
+    return (qp.status as ApprovalStatus) || (localStorage.getItem(STORAGE_STATUS_KEY) as ApprovalStatus) || "UnderReview";
+  });
+
+  const [etaMin, setEtaMin] = useState(() => {
+    const v = Number(qp.etaMin || localStorage.getItem("mldz_supplier_admin_approval_etaMin") || 90);
+    return Number.isFinite(v) ? v : 90;
+  });
+
+  // Admin feedback and checklist (used for SendBack)
+  const [adminReason, setAdminReason] = useState(() => {
+    return qp.reason || localStorage.getItem("mldz_supplier_admin_approval_reason") || "";
+  });
+
+  const [adminDocs, setAdminDocs] = useState<AdminDoc[]>(() => {
+    if (typeof window === "undefined") return [];
+    return safeJsonParse<AdminDoc[]>(localStorage.getItem("mldz_supplier_admin_approval_docs") || "[]", []);
+  });
+
+  const [items, setItems] = useState<ChecklistItem[]>(() => {
+    if (typeof window === "undefined") return [];
+
+    const cached = safeJsonParse<ChecklistItem[]>(localStorage.getItem("mldz_supplier_admin_approval_items") || "[]", []);
+    if (Array.isArray(cached) && cached.length) return cached;
+
+    const itemsFromQ = (qp.items || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((t, i) => ({ id: `item-${i}`, text: t, done: false }));
+
+    return itemsFromQ;
+  });
 
   const [newItem, setNewItem] = useState("");
-  const [note, setNote] = useState<string>(createInitialSupplierAwaitingAdminApprovalNote());
+  const [note, setNote] = useState(() => localStorage.getItem("mldz_supplier_admin_approval_note") || submission?.notes || "");
   const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
-  const [hydrated, setHydrated] = useState(false);
 
   const [prefEmail, setPrefEmail] = useState(true);
   const [prefInApp, setPrefInApp] = useState(true);
@@ -757,54 +773,6 @@ export default function SupplierAwaitingAdminApprovalPremium() {
   const [showSubmission, setShowSubmission] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const hydrateStartedRef = useRef(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const hydrate = async () => {
-      try {
-        const payload = await sellerBackendApi.getWorkflowScreenState(
-          "supplier-awaiting-admin-approval"
-        );
-        if (cancelled || !payload || typeof payload !== "object") return;
-
-        const nextSubmission =
-          payload.submission && typeof payload.submission === "object"
-            ? (payload.submission as CampaignSubmission)
-            : null;
-        const nextReview =
-          payload.review && typeof payload.review === "object"
-            ? (payload.review as Record<string, unknown>)
-            : {};
-
-        if (nextSubmission) {
-          setSubmission((prev) => ({ ...prev, ...nextSubmission }));
-        }
-        setStatus(String(nextReview.status || "UnderReview") as ApprovalStatus);
-        setEtaMin(Number(nextReview.etaMin || 90));
-        setAdminReason(String(nextReview.adminReason || ""));
-        setAdminDocs(Array.isArray(nextReview.adminDocs) ? (nextReview.adminDocs as AdminDoc[]) : []);
-        setItems(Array.isArray(nextReview.items) ? (nextReview.items as ChecklistItem[]) : []);
-        setNote(String(nextReview.note || ""));
-        setPrefEmail(nextReview.prefEmail !== false);
-        setPrefInApp(nextReview.prefInApp !== false);
-      } catch {
-        return;
-      } finally {
-        if (!cancelled) {
-          setHydrated(true);
-        }
-      }
-    };
-
-    if (hydrateStartedRef.current) return;
-    hydrateStartedRef.current = true;
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
-  }, [push]);
 
   const currentIndex = useMemo(() => {
     const map: Record<ApprovalStatus, number> = {
@@ -847,31 +815,22 @@ export default function SupplierAwaitingAdminApprovalPremium() {
     }
   }, [status, adminReason, items.length, adminDocs.length]);
 
+  // Persist (status + draft)
   useEffect(() => {
-    if (!hydrated) return;
-    const timeoutId = window.setTimeout(() => {
-      void sellerBackendApi
-        .patchWorkflowScreenState("supplier-awaiting-admin-approval", {
-          submission: {
-            ...submission,
-            submittedAt,
-          },
-          review: {
-            status,
-            etaMin,
-            adminReason,
-            adminDocs,
-            items,
-            note,
-            prefEmail,
-            prefInApp,
-          },
-        })
-        .catch(() => undefined);
-    }, 250);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [adminDocs, adminReason, etaMin, hydrated, items, note, prefEmail, prefInApp, status, submission, submittedAt]);
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(STORAGE_STATUS_KEY, status);
+      localStorage.setItem("mldz_supplier_admin_approval_etaMin", String(etaMin));
+      localStorage.setItem("mldz_supplier_admin_approval_submittedAt", submittedAt);
+      localStorage.setItem("mldz_supplier_admin_approval_reason", adminReason || "");
+      localStorage.setItem("mldz_supplier_admin_approval_docs", JSON.stringify(adminDocs || []));
+      localStorage.setItem("mldz_supplier_admin_approval_items", JSON.stringify(items || []));
+      localStorage.setItem("mldz_supplier_admin_approval_note", note || "");
+      localStorage.setItem(STORAGE_DRAFT_KEY, JSON.stringify({ adminReason, adminDocs, items, note }));
+    } catch {
+      // ignore
+    }
+  }, [status, etaMin, submittedAt, adminReason, adminDocs, items, note]);
 
   function toggleItem(id: string) {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, done: !it.done } : it)));
@@ -1016,7 +975,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
 
         <Modal open={showSubmission} title="Submitted payload snapshot" onClose={() => setShowSubmission(false)}>
           <div className="text-[12px] text-slate-600 dark:text-slate-400">
-            Preview snapshot for the submitted application.
+            This preview is pulled from localStorage when available. In production, this is fetched from your API.
           </div>
           <pre className="mt-3 text-[11px] bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 overflow-auto max-h-[420px] text-slate-700 dark:text-slate-300">
             {JSON.stringify(submission || { note: "No submission data found" }, null, 2)}
@@ -1031,7 +990,7 @@ export default function SupplierAwaitingAdminApprovalPremium() {
                 <Button
                   variant="dark"
                   onClick={() => {
-                    push("Support chat opened (demo).", "success");
+                    push("Support chat opened.", "success");
                     setShowSupport(false);
                   }}
                 >

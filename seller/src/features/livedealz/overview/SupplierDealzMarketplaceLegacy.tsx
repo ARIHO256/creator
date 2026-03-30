@@ -3,11 +3,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 import { PageHeader } from "../../components/PageHeader";
-import AdBuilder from "../adz/SupplierAdBuilderPage";
-import { LiveBuilderDrawer } from "../live/LiveBuilder_LivePlan_SupplierFacing";
-import { SupplierAdzPerformanceDrawer as AdzPerformanceDrawer } from "../adz/SupplierAdzPerformancePage";
+import AdBuilder from "./AdBuilder_SupplierFacing";
+import { LiveBuilderDrawer } from "./LiveBuilder2";
+import { AdzPerformanceDrawer } from "./AdzPerformance";
 import {
   Calendar,
   CalendarClock,
@@ -46,9 +45,7 @@ import {
 } from "lucide-react";
 
 /**
- * Dealz Marketplace (Supplier-facing Premium) — Regenerated
- * ---------------------------------------------------
- * Seller-platform module for supplier hosts who act like creators.
+ * Dealz Marketplace (Premium) — Regenerated
  * ----------------------------------------
  * Hub for:
  * - Shoppable Adz
@@ -73,7 +70,7 @@ const ROUTES = {
   adBuilder: "/ad-builder",
   liveBuilder: "/live-builder",
   adzPerformance: "/adz-performance",
-  assetLibrary: "/mldz/deliverables/asset-library"
+  assetLibrary: "/supplier/deliverables/assets"
 };
 
 // function safeNav(url: string) {
@@ -86,6 +83,11 @@ type CountdownState = "upcoming" | "live" | "ended";
 
 type Creator = { name: string; handle: string; avatarUrl: string; verified?: boolean };
 type Supplier = { name: string; category: string; logoUrl: string };
+
+type HostRole = "Creator" | "Supplier";
+type CreatorUsageDecision = "I will use a Creator" | "I will NOT use a Creator" | "I am NOT SURE yet";
+type CollaborationMode = "Open for Collabs" | "Invite-Only" | "(n/a)";
+type ApprovalMode = "Manual" | "Auto";
 
 type OfferType = "PRODUCT" | "SERVICE";
 
@@ -167,6 +169,10 @@ type Deal = {
   tagline: string;
   supplier: Supplier;
   creator: Creator;
+  hostRole?: HostRole;
+  creatorUsage?: CreatorUsageDecision;
+  collabMode?: CollaborationMode;
+  approvalMode?: ApprovalMode;
   startISO: string;
   endISO: string;
 
@@ -175,56 +181,6 @@ type Deal = {
 
   notes?: string;
 };
-
-type LegacyMarketplaceTemplates = {
-  shoppable: ShoppableAd;
-  live: LiveInvite;
-};
-
-function createEmptySupplier(): Supplier {
-  return { name: "", category: "", logoUrl: "" };
-}
-
-function createEmptyCreator(): Creator {
-  return { name: "", handle: "", avatarUrl: "", verified: false };
-}
-
-function createEmptyShoppableTemplate(): ShoppableAd {
-  return {
-    id: "",
-    status: "Draft",
-    campaignName: "New Campaign",
-    campaignSubtitle: "New deal draft",
-    supplier: createEmptySupplier(),
-    creator: createEmptyCreator(),
-    platforms: ["Instagram", "TikTok"],
-    startISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
-    heroImageUrl: "",
-    offers: [],
-    ctaPrimaryLabel: "Shop now",
-    ctaSecondaryLabel: "View details",
-    kpis: []
-  };
-}
-
-function createEmptyLiveTemplate(): LiveInvite {
-  return {
-    id: "",
-    status: "Draft",
-    title: "New Campaign Live",
-    description: "Draft live session created from Dealz Marketplace. Add run-of-show, featured items, and destinations in Live Builder.",
-    host: createEmptyCreator(),
-    supplier: createEmptySupplier(),
-    platforms: ["Instagram", "TikTok"],
-    startISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
-    endISO: new Date(Date.now() + 25 * 3600 * 1000).toISOString(),
-    timezoneLabel: "GMT+3",
-    promoLink: "",
-    heroImageUrl: "",
-    featured: []
-  };
-}
 
 function money(currency: string, amount: number) {
   try {
@@ -279,6 +235,558 @@ function useCountdown(targetISO: string) {
   const sec = Math.floor((diff % (1000 * 60)) / 1000);
   return { d, h, m, sec, diff };
 }
+
+
+function supplierHandle(name: string) {
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return `@${normalized || "supplier"}`;
+}
+
+function supplierAsHost(supplier: Supplier): Creator {
+  return {
+    name: supplier.name,
+    handle: supplierHandle(supplier.name),
+    avatarUrl: supplier.logoUrl,
+    verified: true
+  };
+}
+
+function getHostRole(deal: Deal): HostRole {
+  return deal.hostRole || "Creator";
+}
+
+function getCreatorUsage(deal: Deal): CreatorUsageDecision {
+  return deal.creatorUsage || "I will use a Creator";
+}
+
+function getCollabMode(deal: Deal): CollaborationMode {
+  return deal.collabMode || "Open for Collabs";
+}
+
+function getApprovalMode(deal: Deal): ApprovalMode {
+  return deal.approvalMode || "Manual";
+}
+
+function hostRoleLabel(deal: Deal) {
+  return getHostRole(deal) === "Supplier" ? "Supplier-hosted" : "Creator-hosted";
+}
+
+function creatorUsageTone(value: CreatorUsageDecision): "neutral" | "good" | "warn" {
+  if (value === "I will NOT use a Creator") return "warn";
+  if (value === "I will use a Creator") return "good";
+  return "neutral";
+}
+
+function hostRoleTone(value: HostRole): "brand" | "good" {
+  return value === "Supplier" ? "brand" : "good";
+}
+
+function approvalTone(value: ApprovalMode): "good" | "warn" {
+  return value === "Auto" ? "good" : "warn";
+}
+
+function GovernancePills({ deal }: { deal: Deal }) {
+  const hostRole = getHostRole(deal);
+  const creatorUsage = getCreatorUsage(deal);
+  const collabMode = getCollabMode(deal);
+  const approvalMode = getApprovalMode(deal);
+
+  return (
+    <>
+      <Pill tone={hostRoleTone(hostRole)}>{hostRoleLabel(deal)}</Pill>
+      <Pill tone={creatorUsageTone(creatorUsage)}>{creatorUsage}</Pill>
+      <Pill tone="neutral">Collab: {collabMode}</Pill>
+      <Pill tone={approvalTone(approvalMode)}>Approval: {approvalMode}</Pill>
+    </>
+  );
+}
+
+function applySupplierDealDefaults(deal: Deal): Deal {
+  const supplierHostedDealIds = new Set(["deal_6", "deal_7", "deal_10"]);
+  const hostRole: HostRole = supplierHostedDealIds.has(deal.id) ? "Supplier" : (deal.hostRole || "Creator");
+  const creatorUsage: CreatorUsageDecision =
+    deal.creatorUsage || (hostRole === "Supplier" ? "I will NOT use a Creator" : "I will use a Creator");
+  const collabMode: CollaborationMode =
+    deal.collabMode || (hostRole === "Supplier" ? "(n/a)" : deal.type === "Live Sessionz" ? "Invite-Only" : "Open for Collabs");
+  const approvalMode: ApprovalMode =
+    deal.approvalMode || (deal.type === "Live Sessionz" ? "Auto" : "Manual");
+  const host = hostRole === "Supplier" ? supplierAsHost(deal.supplier) : deal.creator;
+
+  return {
+    ...deal,
+    creator: host,
+    hostRole,
+    creatorUsage,
+    collabMode,
+    approvalMode,
+    shoppable: deal.shoppable ? { ...deal.shoppable, creator: host } : deal.shoppable,
+    live: deal.live ? { ...deal.live, host, supplier: deal.supplier } : deal.live
+  };
+}
+
+const SUPPLIERS: Supplier[] = [
+  { name: "Acme Co", category: "Retail", logoUrl: "https://images.unsplash.com/photo-1560179707-f14e90ef3623?w=100&h=100&fit=crop" },
+  { name: "Global Traders", category: "Wholesale", logoUrl: "https://images.unsplash.com/photo-1554774853-719586f8c277?w=100&h=100&fit=crop" }
+];
+
+const CREATORS: Creator[] = [
+  { name: "Jane Doe", handle: "@jane", avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop", verified: true },
+  { name: "John Smith", handle: "@john", avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" }
+];
+
+const DEALZ_SEED: Deal[] = [
+  {
+    id: "deal_1",
+    type: "Shoppable Adz",
+    title: "Summer Sale",
+    tagline: "Best dealz of the season",
+    supplier: SUPPLIERS[0],
+    creator: CREATORS[0],
+    startISO: new Date().toISOString(),
+    endISO: new Date(Date.now() + 86400000).toISOString(),
+    notes: "Sample deal",
+    shoppable: {
+      id: "ad_1",
+      status: "Generated",
+      campaignName: "Summer Sale",
+      campaignSubtitle: "Best dealz",
+      supplier: SUPPLIERS[0],
+      creator: CREATORS[0],
+      platforms: ["Instagram"],
+      startISO: new Date().toISOString(),
+      endISO: new Date(Date.now() + 86400000).toISOString(),
+      heroImageUrl: "https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=800&q=80",
+      ctaPrimaryLabel: "Shop Now",
+      ctaSecondaryLabel: "Add to Cart",
+      offers: [
+        {
+          id: "offer_1",
+          type: "PRODUCT",
+          name: "Summer Dress",
+          price: 50,
+          currency: "USD",
+          stockLeft: 10,
+          sold: 5,
+          posterUrl: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&q=80"
+        }
+      ],
+      kpis: [{ label: "CTR", value: "2.5%" }]
+    }
+  },
+  {
+    id: "deal_2",
+    type: "Live Sessionz",
+    title: "Tech Unboxing Live",
+    tagline: "First look at the latest gadgets",
+    supplier: SUPPLIERS[1],
+    creator: CREATORS[1],
+    startISO: new Date(Date.now() + 3600000).toISOString(),
+    endISO: new Date(Date.now() + 7200000).toISOString(),
+    live: {
+      id: "live_2",
+      status: "Scheduled",
+      title: "Tech Unboxing Live",
+      description: "Unboxing the newest smartphones and laptops from Global Traders.",
+      host: CREATORS[1],
+      supplier: SUPPLIERS[1],
+      platforms: ["YouTube", "TikTok"],
+      startISO: new Date(Date.now() + 3600000).toISOString(),
+      endISO: new Date(Date.now() + 7200000).toISOString(),
+      timezoneLabel: "GMT+3",
+      heroImageUrl: "https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=800&q=80",
+      promoLink: "https://example.com/live/2",
+      featured: [
+        {
+          id: "item_2_1",
+          kind: "product",
+          name: "Pro Smartphone X",
+          priceLabel: "$999",
+          stockLeft: 20,
+          posterUrl: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?w=400&q=80"
+        }
+      ]
+    }
+  },
+  {
+    id: "deal_3",
+    type: "Live + Shoppables",
+    title: "Eco-Friendly Fashion",
+    tagline: "Sustainable style for everyone",
+    supplier: SUPPLIERS[0],
+    creator: CREATORS[0],
+    startISO: new Date().toISOString(),
+    endISO: new Date(Date.now() + 172800000).toISOString(),
+    shoppable: {
+      id: "ad_3",
+      status: "Generated",
+      campaignName: "Eco Fashion Hub",
+      campaignSubtitle: "Wear the future",
+      supplier: SUPPLIERS[0],
+      creator: CREATORS[0],
+      platforms: ["Instagram", "Pinterest"],
+      startISO: new Date().toISOString(),
+      endISO: new Date(Date.now() + 172800000).toISOString(),
+      heroImageUrl: "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=800&q=80",
+      ctaPrimaryLabel: "Shop Sustainable",
+      ctaSecondaryLabel: "Sustainability Guide",
+      offers: [
+        {
+          id: "offer_3_1",
+          type: "PRODUCT",
+          name: "Organic Cotton Tee",
+          price: 35,
+          currency: "USD",
+          stockLeft: 50,
+          sold: 12,
+          posterUrl: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&q=80"
+        }
+      ],
+      kpis: [{ label: "Conversion", value: "3.2%" }]
+    },
+    live: {
+      id: "live_3",
+      status: "Live",
+      title: "Sustainable Styling",
+      description: "Live styling session with eco-friendly clothes.",
+      host: CREATORS[0],
+      supplier: SUPPLIERS[0],
+      platforms: ["Instagram"],
+      startISO: new Date().toISOString(),
+      endISO: new Date(Date.now() + 7200000).toISOString(),
+      timezoneLabel: "GMT+3",
+      heroImageUrl: "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=800&q=80",
+      promoLink: "https://example.com/live/3",
+      featured: [
+        {
+          id: "item_3_1",
+          kind: "product",
+          name: "Organic Cotton Tee",
+          priceLabel: "$35",
+          stockLeft: 50,
+          posterUrl: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400&q=80"
+        }
+      ]
+    }
+  },
+  {
+    id: "deal_4",
+    type: "Shoppable Adz",
+    title: "Masterclass: Video Editing",
+    tagline: "Learn from the best",
+    supplier: SUPPLIERS[1],
+    creator: CREATORS[1],
+    startISO: new Date(Date.now() - 86400000).toISOString(),
+    endISO: new Date(Date.now() + 604800000).toISOString(),
+    shoppable: {
+      id: "ad_4",
+      status: "Generated",
+      campaignName: "Editor's Masterclass",
+      campaignSubtitle: "Advanced techniques",
+      supplier: SUPPLIERS[1],
+      creator: CREATORS[1],
+      platforms: ["LinkedIn", "YouTube"],
+      startISO: new Date(Date.now() - 86400000).toISOString(),
+      endISO: new Date(Date.now() + 604800000).toISOString(),
+      heroImageUrl: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&q=80",
+      ctaPrimaryLabel: "Enroll Now",
+      ctaSecondaryLabel: "Free Preview",
+      offers: [
+        {
+          id: "offer_4_1",
+          type: "SERVICE",
+          name: "Full Masterclass Access",
+          price: 199,
+          currency: "USD",
+          stockLeft: -1,
+          sold: 450,
+          posterUrl: "https://images.unsplash.com/photo-1492724441997-5dc865305da7?w=400&q=80"
+        }
+      ],
+      kpis: [{ label: "ROAS", value: "4.8x" }]
+    }
+  },
+  {
+    id: "deal_5",
+    type: "Live + Shoppables",
+    title: "Gamer's Setup Live",
+    tagline: "Performance gear for pros",
+    supplier: SUPPLIERS[1],
+    creator: CREATORS[1],
+    startISO: new Date(Date.now() + 7200000).toISOString(),
+    endISO: new Date(Date.now() + 10800000).toISOString(),
+    shoppable: {
+      id: "ad_5",
+      status: "Generated",
+      campaignName: "Gaming Excellence",
+      campaignSubtitle: "Level up your game",
+      supplier: SUPPLIERS[1],
+      creator: CREATORS[1],
+      platforms: ["Twitch", "YouTube"],
+      startISO: new Date(Date.now() + 7200000).toISOString(),
+      endISO: new Date(Date.now() + 10800000).toISOString(),
+      heroImageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80",
+      ctaPrimaryLabel: "View Hardware",
+      ctaSecondaryLabel: "Setup Guide",
+      offers: [
+        {
+          id: "offer_5_1",
+          type: "PRODUCT",
+          name: "Mechanical Keyboard",
+          price: 120,
+          currency: "USD",
+          stockLeft: 15,
+          sold: 8,
+          posterUrl: "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?w=400&q=80"
+        }
+      ],
+      kpis: [{ label: "CTR", value: "4.1%" }]
+    },
+    live: {
+      id: "live_5",
+      status: "Scheduled",
+      title: "Pro Gaming Setup",
+      description: "Live review of the best gaming peripherals available.",
+      host: CREATORS[1],
+      supplier: SUPPLIERS[1],
+      platforms: ["Twitch"],
+      startISO: new Date(Date.now() + 7200000).toISOString(),
+      endISO: new Date(Date.now() + 10800000).toISOString(),
+      timezoneLabel: "GMT+3",
+      heroImageUrl: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&q=80",
+      promoLink: "https://example.com/live/5",
+      featured: [
+        {
+          id: "item_5_1",
+          kind: "product",
+          name: "Mechanical Keyboard",
+          priceLabel: "$120",
+          stockLeft: 15,
+          posterUrl: "https://images.unsplash.com/photo-1511467687858-23d96c32e4ae?w=400&q=80"
+        }
+      ]
+    }
+  },
+  {
+    id: "deal_6",
+    type: "Shoppable Adz",
+    title: "Organic Skincare Routine",
+    tagline: "Glowing skin naturally",
+    supplier: SUPPLIERS[0],
+    creator: CREATORS[0],
+    startISO: new Date(Date.now() - 43200000).toISOString(),
+    endISO: new Date(Date.now() + 43200000).toISOString(),
+    shoppable: {
+      id: "ad_6",
+      status: "Generated",
+      campaignName: "Nature's Glow",
+      campaignSubtitle: "Organic solutions",
+      supplier: SUPPLIERS[0],
+      creator: CREATORS[0],
+      platforms: ["Instagram", "TikTok"],
+      startISO: new Date(Date.now() - 43200000).toISOString(),
+      endISO: new Date(Date.now() + 43200000).toISOString(),
+      heroImageUrl: "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&q=80",
+      ctaPrimaryLabel: "Get Serum",
+      ctaSecondaryLabel: "Routine Tips",
+      offers: [
+        {
+          id: "offer_6_1",
+          type: "PRODUCT",
+          name: "Vitamin C Serum",
+          price: 45,
+          currency: "USD",
+          stockLeft: 30,
+          sold: 110,
+          posterUrl: "https://images.unsplash.com/photo-1594125355935-db633f815b3c?w=400&q=80"
+        }
+      ],
+      kpis: [{ label: "ROAS", value: "3.5x" }]
+    }
+  },
+  {
+    id: "deal_7",
+    type: "Live Sessionz",
+    title: "Home Office Refresh",
+    tagline: "Workspace for productivity",
+    supplier: SUPPLIERS[1],
+    creator: CREATORS[0],
+    startISO: new Date(Date.now() + 86400000).toISOString(),
+    endISO: new Date(Date.now() + 90000000).toISOString(),
+    live: {
+      id: "live_7",
+      status: "Scheduled",
+      title: "Office Productivity Live",
+      description: "Upgrade your home office with these professional tools.",
+      host: CREATORS[0],
+      supplier: SUPPLIERS[1],
+      platforms: ["YouTube"],
+      startISO: new Date(Date.now() + 86400000).toISOString(),
+      endISO: new Date(Date.now() + 90000000).toISOString(),
+      timezoneLabel: "GMT+3",
+      heroImageUrl: "https://images.unsplash.com/photo-1499750310107-5fef28a66643?w=800&q=80",
+      promoLink: "https://example.com/live/7",
+      featured: [
+        {
+          id: "item_7_1",
+          kind: "product",
+          name: "Ergonomic Desk Chair",
+          priceLabel: "$250",
+          stockLeft: 5,
+          posterUrl: "https://images.unsplash.com/photo-1505843490701-515a00ae48f0?w=400&q=80"
+        }
+      ]
+    }
+  },
+  {
+    id: "deal_8",
+    type: "Shoppable Adz",
+    title: "Healthy Cooking Masterclass",
+    tagline: "Quick & delicious meals",
+    supplier: SUPPLIERS[0],
+    creator: CREATORS[1],
+    startISO: new Date(Date.now() + 172800000).toISOString(),
+    endISO: new Date(Date.now() + 259200000).toISOString(),
+    shoppable: {
+      id: "ad_8",
+      status: "Generated",
+      campaignName: "Healthy Eats",
+      campaignSubtitle: "Cook like a pro",
+      supplier: SUPPLIERS[0],
+      creator: CREATORS[1],
+      platforms: ["Facebook", "Instagram"],
+      startISO: new Date(Date.now() + 172800000).toISOString(),
+      endISO: new Date(Date.now() + 259200000).toISOString(),
+      heroImageUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80",
+      ctaPrimaryLabel: "Browse Recipes",
+      ctaSecondaryLabel: "Get Ingredients",
+      offers: [
+        {
+          id: "offer_8_1",
+          type: "SERVICE",
+          name: "Live Cooking Class Access",
+          price: 50,
+          currency: "USD",
+          stockLeft: 100,
+          sold: 5,
+          posterUrl: "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=400&q=80"
+        }
+      ],
+      kpis: [{ label: "CTR", value: "2.8%" }]
+    }
+  },
+  {
+    id: "deal_9",
+    type: "Live Sessionz",
+    title: "Eco-Home Workshop",
+    tagline: "Sustainable living tips",
+    supplier: SUPPLIERS[0],
+    creator: CREATORS[0],
+    startISO: new Date(Date.now() + 345600000).toISOString(),
+    endISO: new Date(Date.now() + 349200000).toISOString(),
+    live: {
+      id: "live_9",
+      status: "Scheduled",
+      title: "Eco-Home Workshop",
+      description: "Learn how to make your home more sustainable with simple changes.",
+      host: CREATORS[0],
+      supplier: SUPPLIERS[0],
+      platforms: ["LinkedIn"],
+      startISO: new Date(Date.now() + 345600000).toISOString(),
+      endISO: new Date(Date.now() + 349200000).toISOString(),
+      timezoneLabel: "GMT+3",
+      heroImageUrl: "https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=800&q=80",
+      promoLink: "https://example.com/live/9",
+      featured: [
+        {
+          id: "item_9_1",
+          kind: "product",
+          name: "Bamboo Utensil Set",
+          priceLabel: "$15",
+          stockLeft: 100,
+          posterUrl: "https://images.unsplash.com/photo-1610557870699-a46737482812?w=400&q=80"
+        }
+      ]
+    }
+  },
+  {
+    id: "deal_10",
+    type: "Live + Shoppables",
+    title: "Yoga & Mindfulness",
+    tagline: "Find your balance",
+    supplier: SUPPLIERS[1],
+    creator: CREATORS[0],
+    startISO: new Date().toISOString(),
+    endISO: new Date(Date.now() + 604800000).toISOString(),
+    shoppable: {
+      id: "ad_10",
+      status: "Generated",
+      campaignName: "Zen Lifestyle",
+      campaignSubtitle: "Mindful movements",
+      supplier: SUPPLIERS[1],
+      creator: CREATORS[0],
+      platforms: ["Instagram", "Meta"],
+      startISO: new Date().toISOString(),
+      endISO: new Date(Date.now() + 604800000).toISOString(),
+      heroImageUrl: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&q=80",
+      ctaPrimaryLabel: "View Mats",
+      ctaSecondaryLabel: "Free Session",
+      offers: [
+        {
+          id: "offer_10_1",
+          type: "PRODUCT",
+          name: "Premium Yoga Mat",
+          price: 60,
+          currency: "USD",
+          stockLeft: 40,
+          sold: 150,
+          posterUrl: "https://images.unsplash.com/photo-1592176372045-2199e8006241?w=400&q=80"
+        }
+      ],
+      kpis: [{ label: "Conversion", value: "5.4%" }]
+    },
+    live: {
+      id: "live_10",
+      status: "Live",
+      title: "Morning Yoga Flow",
+      description: "Start your day with a calming yoga session.",
+      host: CREATORS[0],
+      supplier: SUPPLIERS[1],
+      platforms: ["Instagram"],
+      startISO: new Date().toISOString(),
+      endISO: new Date(Date.now() + 3600000).toISOString(),
+      timezoneLabel: "GMT+3",
+      heroImageUrl: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&q=80",
+      promoLink: "https://example.com/live/10",
+      featured: [
+        {
+          id: "item_10_1",
+          kind: "product",
+          name: "Premium Yoga Mat",
+          priceLabel: "$60",
+          stockLeft: 40,
+          posterUrl: "https://images.unsplash.com/photo-1592176372045-2199e8006241?w=400&q=80"
+        }
+      ]
+    }
+  }
+].map((deal) => applySupplierDealDefaults(deal));
+
+const shoppable1 = DEALZ_SEED[0].shoppable!;
+const live1: LiveInvite = {
+  id: "live_1",
+  status: "Draft",
+  title: "Summer Sale Live",
+  description: "Join us for the summer sale live event!",
+  supplier: SUPPLIERS[0],
+  host: CREATORS[0],
+  platforms: ["Instagram", "TikTok"],
+  startISO: new Date().toISOString(),
+  endISO: new Date(Date.now() + 3600000).toISOString(),
+  heroImageUrl: "https://images.unsplash.com/photo-1555529669-e69e7aa0ba9a?w=800&q=80",
+  promoLink: "https://example.com/live/1",
+  timezoneLabel: "GMT+3",
+  featured: []
+};
 
 function Pill({
   tone = "neutral",
@@ -337,7 +845,7 @@ function Btn({
       ? "text-white hover:brightness-95"
       : tone === "ghost"
         ? "bg-transparent text-neutral-900 hover:bg-neutral-100 dark:text-slate-100 dark:hover:bg-slate-800"
-        : "bg-white dark:bg-slate-900 text-neutral-900 ring-1 ring-neutral-200 hover:bg-neutral-50 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700 dark:hover:bg-slate-700";
+        : "bg-white text-neutral-900 ring-1 ring-neutral-200 hover:bg-neutral-50 dark:bg-slate-800 dark:text-slate-100 dark:ring-slate-700 dark:hover:bg-slate-700";
 
   return (
     <button
@@ -457,27 +965,6 @@ function Modal({
 
   if (!open) return null;
 
-  if (mode === "modal") {
-    return (
-      <div className="fixed inset-0 z-[99]">
-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-        <div className="absolute inset-0 flex items-center justify-center p-3 sm:p-4">
-          <div className="h-[min(88vh,860px)] w-[min(92vw,420px)] rounded-[36px] bg-black p-2.5 shadow-[0_30px_110px_rgba(0,0,0,0.55)]">
-            <div className="h-full overflow-hidden rounded-[30px] bg-[#071534] dark:bg-[#071534] ring-1 ring-white/10 shadow-2xl transition-colors">
-              <div className="flex items-center justify-between border-b border-slate-700/70 px-4 py-3 shrink-0">
-                <div className="truncate text-sm font-extrabold text-white">{title}</div>
-                <Btn tone="ghost" onClick={onClose} left={<X className="h-4 w-4" />}>
-                  Close
-                </Btn>
-              </div>
-              <div className="h-[calc(100%-54px)] overflow-auto p-2 sm:p-3">{children}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 z-[99]">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
@@ -500,18 +987,35 @@ function AdBuilderDrawer({ open, onClose, adId }: { open: boolean; onClose: () =
   // AdBuilder typically uses URL search params or local storage for its context.
   // We can wrap it in a custom drawer.
   return (
-    <Drawer open={open} onClose={onClose} title="Ad Builder" width="w-full max-w-[1240px]" zIndex="z-[100]">
+    <Drawer open={open} onClose={onClose} title="Ad Builder (Supplier)" width="w-full max-w-[1240px]" zIndex="z-[100]">
       <AdBuilder />
     </Drawer>
   );
 }
 
-function PlayOverlayButton({ onClick, label }: { onClick: () => void; label: string }) {
+function PlayOverlayButton({
+  onClick,
+  label,
+  size = "lg"
+}: {
+  onClick: () => void;
+  label: string;
+  size?: "lg" | "md";
+}) {
+  const outer = size === "md" ? "h-12 w-12" : "h-14 w-14";
+  const inner = size === "md" ? "h-10 w-10" : "h-12 w-12";
+  const icon = size === "md" ? "h-5 w-5" : "h-6 w-6";
+
   return (
-    <button type="button" onClick={onClick} aria-label={label} className="absolute inset-0 grid place-items-center active:scale-[0.99]">
-      <span className="h-14 w-14 rounded-full bg-white dark:bg-slate-900/90 dark:bg-slate-800/90 backdrop-blur border border-neutral-200 dark:border-slate-700 grid place-items-center shadow transition-colors">
-        <span className="h-12 w-12 rounded-full bg-neutral-900 dark:bg-slate-100 grid place-items-center">
-          <Play className="h-6 w-6 text-white dark:text-slate-900" fill="currentColor" />
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="absolute left-1/2 top-1/2 z-10 grid -translate-x-1/2 -translate-y-1/2 place-items-center active:scale-[0.99]"
+    >
+      <span className={cx(outer, "rounded-full bg-white/90 dark:bg-slate-800/90 backdrop-blur border border-neutral-200 dark:border-slate-700 grid place-items-center shadow transition-colors")}>
+        <span className={cx(inner, "rounded-full bg-neutral-900 dark:bg-slate-100 grid place-items-center")}>
+          <Play className={cx(icon, "text-white dark:text-slate-900")} fill="currentColor" />
         </span>
       </span>
     </button>
@@ -622,7 +1126,7 @@ function UnifiedMediaViewer({
 
   return (
     <Modal open={open} onClose={onClose} title={ctx.title} mode={mode}>
-      <div className={cx("relative overflow-hidden rounded-3xl bg-black", mode === "fullscreen" ? "h-[70vh] md:h-[78vh]" : "aspect-[9/19] h-[min(72vh,760px)]")}>
+      <div className={cx("relative overflow-hidden rounded-3xl bg-black", mode === "fullscreen" ? "h-[70vh] md:h-[78vh]" : "aspect-video")}>
         <video src={ctx.videoUrl} poster={ctx.posterUrl} controls playsInline autoPlay className="absolute inset-0 h-full w-full object-contain bg-black" />
 
         <div className="pointer-events-none absolute inset-0">
@@ -767,13 +1271,12 @@ function ShoppableAdPreview({
   const cartTotal = cartLines.reduce((sum, l) => sum + l.offer.price * l.qty, 0);
 
   return (
-    <div className="w-full mt-4 mb-4 px-[0.55%] lg:px-0">
-      <div className="mx-auto w-full max-w-[430px] rounded-[34px] bg-neutral-950 dark:bg-black p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-colors">
-        <div className="relative overflow-hidden rounded-[28px] bg-[#071534] dark:bg-[#071534] transition-colors">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 w-24 h-5 bg-black rounded-b-2xl" />
+    <div className="mx-auto w-full max-w-full sm:max-w-[440px] mt-4 mb-4 px-2 sm:px-0">
+      <div className="rounded-[34px] bg-neutral-950 dark:bg-black p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-colors">
+        <div className="relative overflow-hidden rounded-[28px] bg-neutral-50 dark:bg-slate-950 transition-colors">
           <div className="h-[760px] flex flex-col">
             {/* Top bar */}
-            <div className="relative xl:sticky xl:top-0 z-20 border-b border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur transition-colors">
+            <div className="relative xl:sticky xl:top-0 z-20 border-b border-neutral-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur transition-colors">
               <div className="px-4 py-3 flex items-center gap-2">
                 <button
                   type="button"
@@ -789,7 +1292,7 @@ function ShoppableAdPreview({
                     {ad.campaignName || "Shoppable Adz"}
                   </div>
                   <div className="text-xs text-neutral-500 dark:text-slate-400 truncate">
-                    Shared by supplier host {ad.creator?.handle || "@"} {ad.platforms?.length ? `· ${ad.platforms.join(" · ")}` : ""}
+                    Shared by {ad.creator?.handle || "@"} {ad.platforms?.length ? `· ${ad.platforms.join(" · ")}` : ""}
                   </div>
                 </div>
 
@@ -856,7 +1359,7 @@ function ShoppableAdPreview({
                       onClick={() => setSaved((s) => !s)}
                       className={cx(
                         "rounded-full p-2 backdrop-blur ring-1",
-                        saved ? "bg-white dark:bg-slate-900/35 ring-white/40" : "bg-white dark:bg-slate-900/20 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
+                        saved ? "bg-white/35 ring-white/40" : "bg-white/20 ring-white/30 hover:bg-white/30"
                       )}
                       aria-label="Save"
                       title={saved ? "Saved" : "Save"}
@@ -866,17 +1369,11 @@ function ShoppableAdPreview({
                   </div>
 
                   {/* play */}
-                  {heroIntroVideo ? (
-                    <button
-                      type="button"
-                      onClick={onPlayHero}
-                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white dark:bg-slate-900/20 p-4 backdrop-blur ring-1 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
-                      aria-label="Play hero intro"
-                      title="Play intro video"
-                    >
-                      <Video className="h-6 w-6 text-white" />
-                    </button>
-                  ) : null}
+                  <PlayOverlayButton
+                    onClick={onPlayHero}
+                    label={heroIntroVideo ? "Play hero intro" : "Preview hero video"}
+                    size="lg"
+                  />
 
                   {/* bottom metrics chips (template-like) */}
                   <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
@@ -947,17 +1444,11 @@ function ShoppableAdPreview({
                           <img src={poster} alt={o.name} className="h-full w-full object-cover" />
                           <div className="absolute inset-0 bg-gradient-to-b from-black/0 via-black/10 to-black/65" />
 
-                          {perOfferVideo[o.id] ? (
-                            <button
-                              type="button"
-                              onClick={() => onPlayOffer(o.id)}
-                              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white dark:bg-slate-900/20 p-3 backdrop-blur ring-1 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
-                              aria-label={`Play ${o.name}`}
-                              title="Play offer video"
-                            >
-                              <Video className="h-5 w-5 text-white" />
-                            </button>
-                          ) : null}
+                          <PlayOverlayButton
+                            onClick={() => onPlayOffer(o.id)}
+                            label={perOfferVideo[o.id] ? `Play ${o.name}` : `Preview ${o.name}`}
+                            size="md"
+                          />
 
                           <div className="absolute left-2 top-2 flex flex-wrap gap-2">
                             <Pill tone="neutral">{o.type === "SERVICE" ? "Service" : "Product"}</Pill>
@@ -969,7 +1460,7 @@ function ShoppableAdPreview({
                             onClick={() => toggleLoved(o.id)}
                             className={cx(
                               "absolute right-2 top-2 rounded-full p-2 backdrop-blur ring-1",
-                              isLoved ? "bg-white dark:bg-slate-900/35 ring-white/40" : "bg-white dark:bg-slate-900/20 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
+                              isLoved ? "bg-white/35 ring-white/40" : "bg-white/20 ring-white/30 hover:bg-white/30"
                             )}
                             aria-label={isLoved ? "Unsave" : "Save"}
                             title={isLoved ? "Saved" : "Save"}
@@ -979,7 +1470,7 @@ function ShoppableAdPreview({
 
                           {primaryOfferId && o.id === primaryOfferId ? (
                             <div className="absolute bottom-2 left-2">
-                              <span className="rounded-full bg-white dark:bg-slate-900/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur ring-1 ring-white/30">
+                              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur ring-1 ring-white/30">
                                 Primary
                               </span>
                             </div>
@@ -1016,17 +1507,17 @@ function ShoppableAdPreview({
                 </div>
 
                 <div className="mt-4 text-center text-[11px] text-neutral-500">
-                  Curated by the supplier host. Media is approved in the Asset Library before it can be attached to a deal.
+                  Curated by the host. Media is approved before it can be attached to a deal.
                 </div>
               </div>
             </div>
 
             {/* Cart dock INSIDE preview (matches Adz Builder preview) */}
-            <div className="border-t border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900/95 dark:bg-slate-900/95 backdrop-blur transition-colors">
+            <div className="border-t border-neutral-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur transition-colors">
               <div className="px-3 py-3">
                 <button
                   type="button"
-                  className="w-full flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 hover:bg-neutral-50 dark:hover:bg-slate-700 transition-colors"
+                  className="w-full flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 hover:bg-neutral-50 dark:hover:bg-slate-700 transition-colors"
                   onClick={() => setCartOpen((v) => !v)}
                   aria-label="Toggle cart"
                 >
@@ -1057,7 +1548,7 @@ function ShoppableAdPreview({
                 </button>
 
                 {cartOpen ? (
-                  <div className="mt-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 p-3 transition-colors">
+                  <div className="mt-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 transition-colors">
                     {cartLines.length ? (
                       <div className="max-h-[220px] overflow-auto pr-1">
                         <div className="space-y-2">
@@ -1079,7 +1570,7 @@ function ShoppableAdPreview({
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
-                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
+                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
                                   onClick={() => onDecCart(offer.id)}
                                   aria-label="Decrease quantity"
                                 >
@@ -1088,7 +1579,7 @@ function ShoppableAdPreview({
                                 <div className="w-7 text-center text-xs font-extrabold text-neutral-900 dark:text-slate-100">{qty}</div>
                                 <button
                                   type="button"
-                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
+                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
                                   onClick={() => onAdd(offer.id)}
                                   aria-label="Increase quantity"
                                 >
@@ -1164,14 +1655,14 @@ function formatDuration(startISO: string, endISO: string) {
 
 function TimePill({ n, label }: { n: number; label: string }) {
   return (
-    <span className="inline-flex items-center justify-center gap-1 rounded-md bg-white dark:bg-slate-900/10 px-1.5 py-0.5 text-white min-w-[42px]">
+    <span className="inline-flex items-center justify-center gap-1 rounded-md bg-white/10 px-1.5 py-0.5 text-white min-w-[42px]">
       <span className="tabular-nums font-mono">{pad2(n)}</span>
       <span className="opacity-80">{label}</span>
     </span>
   );
 }
 
-function SupplierHostPreviewCard({ host }: { host: Creator }) {
+function HostPreviewCard({ host }: { host: Creator }) {
   return (
     <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 shadow-sm ring-1 ring-slate-100 dark:ring-slate-800 transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -1181,7 +1672,7 @@ function SupplierHostPreviewCard({ host }: { host: Creator }) {
             <div className="flex items-center gap-1 text-[13px] font-bold text-slate-900 dark:text-slate-100 truncate">
               {host.name} {host.verified ? <BadgeCheck className="h-4 w-4 text-emerald-600" /> : null}
             </div>
-            <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{host.handle} • Supplier Host</div>
+            <div className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{host.handle} • Host</div>
           </div>
         </div>
         <button
@@ -1261,17 +1752,18 @@ function LiveInvitePreviewPhone({
   const promoGiveaways = useMemo(() => giveaways.filter((g) => g && (g.showOnPromo ?? true)), [giveaways]);
 
   const visibleItems = live.featured || [];
+  const showSupplierCard = !!live.supplier && live.host.handle !== supplierAsHost(live.supplier).handle;
 
   return (
-    <div className="w-full mt-4 mb-4 px-[0.55%] lg:px-0">
-      <div className="mx-auto w-full max-w-[430px] rounded-[34px] bg-neutral-950 dark:bg-black p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-colors">
-        <div className="relative overflow-hidden rounded-[28px] bg-white dark:bg-slate-900 transition-colors">
+    <div className="mx-auto w-full max-w-full sm:max-w-[440px] mt-4 mb-4 px-2 sm:px-0">
+      <div className="rounded-[34px] bg-neutral-950 dark:bg-black p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-colors">
+        <div className="relative overflow-hidden rounded-[28px] bg-neutral-50 dark:bg-slate-950 transition-colors">
           {/* notch */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 w-24 h-5 bg-black rounded-b-2xl" />
 
           <div className="h-[760px] overflow-y-auto">
             {/* Top bar */}
-            <div className="sticky top-0 z-20 flex items-center justify-between bg-white dark:bg-slate-900/90 dark:bg-slate-950/90 px-3 py-2 backdrop-blur shadow-sm transition-colors ring-1 ring-slate-100 dark:ring-slate-800">
+            <div className="sticky top-0 z-20 flex items-center justify-between bg-white/90 dark:bg-slate-950/90 px-3 py-2 backdrop-blur shadow-sm transition-colors ring-1 ring-slate-100 dark:ring-slate-800">
               <div className="min-w-0 truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{live.title || "Untitled session"}</div>
               <button
                 onClick={onSharePromo}
@@ -1291,11 +1783,11 @@ function LiveInvitePreviewPhone({
 
               <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/80 via-black/40 to-transparent" />
 
-              {live.heroVideoUrl ? (
-                <div className="absolute inset-0">
-                  <PlayOverlayButton onClick={onPlayHero} label="Play live hero video" />
-                </div>
-              ) : null}
+              <PlayOverlayButton
+                onClick={onPlayHero}
+                label={live.heroVideoUrl ? "Play live hero video" : "Preview live hero video"}
+                size="lg"
+              />
 
               <div className="absolute inset-x-0 bottom-2 px-3">
                 <div className="text-white/95 text-lg font-extrabold drop-shadow-sm line-clamp-2">{live.title}</div>
@@ -1312,12 +1804,12 @@ function LiveInvitePreviewPhone({
               <div className="absolute left-3 top-3">
                 {isLiveWindow ? (
                   <span className="inline-flex items-center gap-2 rounded-xl bg-red-600/90 px-2 py-1 text-xs font-bold">
-                    <span className="h-2 w-2 rounded-full bg-white dark:bg-slate-900" /> Live now
+                    <span className="h-2 w-2 rounded-full bg-white" /> Live now
                   </span>
                 ) : isEnded ? (
                   <span className="inline-flex items-center gap-2 rounded-xl bg-slate-900/80 px-2 py-1 text-xs font-bold">Session ended</span>
                 ) : (
-                  <div className="flex items-center gap-1 rounded-xl bg-white dark:bg-slate-900/10 px-2 py-1 text-xs font-bold backdrop-blur">
+                  <div className="flex items-center gap-1 rounded-xl bg-white/10 px-2 py-1 text-xs font-bold backdrop-blur">
                     <TimePill n={cd.d} label="d" />:<TimePill n={cd.h} label="h" />:<TimePill n={cd.m} label="m" />:<TimePill n={cd.sec} label="s" />
                   </div>
                 )}
@@ -1325,7 +1817,7 @@ function LiveInvitePreviewPhone({
 
               <button
                 type="button"
-                className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-2xl bg-white dark:bg-slate-900/10 px-2 py-1 text-xs font-bold backdrop-blur hover:bg-gray-50 dark:hover:bg-slate-800/20"
+                className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-2xl bg-white/10 px-2 py-1 text-xs font-bold backdrop-blur hover:bg-white/20"
                 onClick={() => {
                   if (live.promoLink) window.open(live.promoLink, "_blank");
                 }}
@@ -1335,10 +1827,10 @@ function LiveInvitePreviewPhone({
               </button>
             </div>
 
-            {/* Supplier host + supplier cards */}
+            {/* Host / supplier cards */}
             <div className="mt-2 grid grid-cols-1 gap-2 px-3">
-              <SupplierHostPreviewCard host={live.host} />
-              {live.supplier ? <SupplierPreviewCard supplier={live.supplier} /> : null}
+              <HostPreviewCard host={live.host} />
+              {showSupplierCard && live.supplier ? <SupplierPreviewCard supplier={live.supplier} /> : null}
             </div>
 
             {/* Description */}
@@ -1423,17 +1915,11 @@ function LiveInvitePreviewPhone({
                     <div key={it.id} className="min-w-[210px] max-w-[210px] rounded-2xl bg-white dark:bg-slate-900 p-3 shadow-sm ring-1 ring-slate-100 dark:ring-slate-800 transition-colors">
                       <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
                         <img src={it.posterUrl} alt={it.name} loading="lazy" className="h-full w-full object-cover" />
-                        {it.videoUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => onPlayItem(it.id)}
-                            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white dark:bg-slate-900/20 p-3 backdrop-blur ring-1 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
-                            aria-label={`Play ${it.name}`}
-                            title="Play item video"
-                          >
-                            <Video className="h-5 w-5 text-white" />
-                          </button>
-                        ) : null}
+                        <PlayOverlayButton
+                          onClick={() => onPlayItem(it.id)}
+                          label={it.videoUrl ? `Play ${it.name}` : `Preview ${it.name}`}
+                          size="md"
+                        />
 
                         <div className="absolute left-2 top-2 flex flex-wrap gap-2">
                           <span className="rounded-full bg-black/55 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur">
@@ -1473,19 +1959,19 @@ function LiveInvitePreviewPhone({
               </div>
             </div>
 
-            {/* Ask supplier host */}
+            {/* Ask host */}
             <div className="mt-4 px-3">
               <div className="rounded-2xl bg-white dark:bg-slate-900 p-3 shadow-sm ring-1 ring-slate-100 dark:ring-slate-800 transition-colors">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-[12px] font-extrabold text-slate-900 dark:text-slate-100">Ask the supplier host</div>
+                    <div className="text-[12px] font-extrabold text-slate-900 dark:text-slate-100">Ask the host</div>
                     <div className="text-[11px] text-slate-500 dark:text-slate-400">Questions show up during the live.</div>
                   </div>
                   <MessageSquare className="h-4 w-4 text-slate-600 dark:text-slate-400" />
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <input
-                    className="flex-1 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[12px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600"
+                    className="flex-1 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-[12px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-600"
                     placeholder="Type a question…"
                     disabled
                   />
@@ -1497,7 +1983,7 @@ function LiveInvitePreviewPhone({
             </div>
 
             {/* Sticky bottom bar */}
-            <div className="sticky bottom-0 z-20 bg-white dark:bg-slate-900/95 dark:bg-slate-950/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 mt-6">
+            <div className="sticky bottom-0 z-20 bg-white/95 dark:bg-slate-950/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 mt-6">
               <div className="px-3 py-3">
                 <button
                   type="button"
@@ -1577,13 +2063,13 @@ function DealDetailsDrawer({
       open={open}
       onClose={onClose}
       title={deal.title}
-      subtitle={`${deal.type} · Supplier: ${deal.supplier.name} · Supplier Host: ${deal.creator.handle}`}
+      subtitle={`${deal.type} · Supplier: ${deal.supplier.name} · Host: ${deal.creator.handle}`}
       width="w-full max-w-[980px]"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 transition-colors">
         <div className="lg:col-span-2 space-y-3">
           <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
-            <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100 text-neutral-900">Schedule</div>
+            <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Schedule</div>
             <div className="mt-2 flex flex-wrap gap-2">
               <Pill tone="neutral">
                 <Calendar className="h-3.5 w-3.5" />
@@ -1593,6 +2079,13 @@ function DealDetailsDrawer({
                 <Calendar className="h-3.5 w-3.5" />
                 End: {fmtLocal(end)}
               </Pill>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
+            <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Governance</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <GovernancePills deal={deal} />
             </div>
           </div>
 
@@ -1646,7 +2139,7 @@ function DealDetailsDrawer({
               <img src={deal.creator.avatarUrl} alt={deal.creator.name} className="h-10 w-10 rounded-2xl object-cover ring-1 ring-neutral-200 dark:ring-slate-800" />
               <div className="min-w-0">
                 <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{deal.creator.name}</div>
-                <div className="truncate text-xs text-neutral-600 dark:text-slate-400">{deal.creator.handle} · Supplier Host</div>
+                <div className="truncate text-xs text-neutral-600 dark:text-slate-400">{deal.creator.handle} · Host</div>
               </div>
             </div>
             <div className="mt-3 flex items-center gap-3">
@@ -1658,10 +2151,10 @@ function DealDetailsDrawer({
             </div>
           </div>
 
-          <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
+          <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-neutral-50 dark:bg-slate-950 p-4 transition-colors">
             <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Notes</div>
             <div className="mt-2 text-sm text-neutral-700 dark:text-slate-400">
-              {deal.notes || "Premium deal hub: browse, preview, and handoff into the correct builders without losing context."}
+              {deal.notes || "Supplier workspace: browse, preview, and handoff into the correct builders without changing buyer-facing preview surfaces."}
             </div>
           </div>
         </div>
@@ -1676,23 +2169,15 @@ type WizardType = DealType | "";
 function NewDealzWizard({
   open,
   onClose,
-  onCreate,
-  suppliers,
-  creators,
-  templates
+  onCreate
 }: {
   open: boolean;
   onClose: () => void;
   onCreate: (d: Deal, behavior: "open-builder" | "stay") => void;
-  suppliers: Supplier[];
-  creators: Creator[];
-  templates: LegacyMarketplaceTemplates;
 }) {
   const [step, setStep] = useState(0);
   const [type, setType] = useState<WizardType>("");
   const [supplierIdx, setSupplierIdx] = useState(0);
-  // Default to first supplier host since selection is removed
-  const [creatorIdx] = useState(0);
   const [campaignName, setCampaignName] = useState("New Campaign");
 
   // Default timing (next 24h) since selection is removed
@@ -1722,22 +2207,26 @@ function NewDealzWizard({
   }
 
   function create(behavior: "open-builder" | "stay") {
-    if (!type || !suppliers.length || !creators.length) return;
+    if (!type) return;
 
-    const supplier = suppliers[supplierIdx] || suppliers[0];
-    const creator = creators[creatorIdx] || creators[0];
+    const supplier = SUPPLIERS[supplierIdx];
+    const host = supplierAsHost(supplier);
     const id = `dz_${Math.floor(Date.now() / 1000)}`;
 
     const base: Deal = {
       id,
       type,
       title: type === "Shoppable Adz" ? campaignName : type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
-      tagline: type === "Shoppable Adz" ? "Supplier-led shoppable clips" : type === "Live Sessionz" ? "Live run-of-show + drops" : "Live session + shoppable clips",
+      tagline: type === "Shoppable Adz" ? "Supplier-managed shoppable clips" : type === "Live Sessionz" ? "Supplier-run live session" : "Supplier-run live session + shoppable clips",
       supplier,
-      creator,
+      creator: host,
+      hostRole: "Supplier",
+      creatorUsage: "I will NOT use a Creator",
+      collabMode: "(n/a)",
+      approvalMode: "Manual",
       startISO,
       endISO,
-      notes: "Created from +New Dealz."
+      notes: "Created from +New Dealz (demo)."
     };
 
     const withShoppable =
@@ -1745,11 +2234,11 @@ function NewDealzWizard({
         ? {
           ...base,
           shoppable: {
-            ...templates.shoppable,
+            ...shoppable1,
             id: `ad_${id}`,
             status: "Draft",
             supplier,
-            creator,
+            creator: host,
             startISO,
             endISO,
             campaignName,
@@ -1764,13 +2253,13 @@ function NewDealzWizard({
         ? {
           ...withShoppable,
           live: {
-            ...templates.live,
+            ...live1,
             id: `live_${id}`,
             status: "Draft",
             title: type === "Live Sessionz" ? `${campaignName} Live` : `${campaignName} Live + Drops`,
             description: "Draft live session created from Dealz Marketplace. Add run-of-show, featured items, and destinations in Live Builder.",
             supplier,
-            host: creator,
+            host,
             startISO,
             endISO,
             promoLink: `https://mldz.link/live_${id}`
@@ -1782,25 +2271,25 @@ function NewDealzWizard({
     onClose();
   }
 
-  const supplier = suppliers[supplierIdx] || suppliers[0] || createEmptySupplier();
-  const creator = creators[creatorIdx] || creators[0] || createEmptyCreator();
+  const supplier = SUPPLIERS[supplierIdx];
+  const host = supplierAsHost(supplier);
 
   return (
     <Drawer
       open={open}
       onClose={onClose}
       title="+ New Dealz"
-      subtitle="Onboard a Shoppable Adz, Live Sessionz, or Live + Shoppables deal"
+      subtitle="Create supplier-managed Shoppable Adz, Live Sessionz, or hybrid dealz"
       width="w-full max-w-[980px]"
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Steps */}
-        <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 dark:bg-slate-900/70 p-4 transition-colors">
+        <div className="rounded-3xl border border-neutral-200 dark:border-slate-800 bg-neutral-50 dark:bg-slate-950/50 p-4 transition-colors">
           <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Steps</div>
           <div className="mt-3 space-y-2 text-xs">
             {[
               { t: "Deal type", d: "Shoppable / Live / Hybrid" },
-              { t: "Supplier", d: "Supplier or provider" },
+              { t: "Supplier", d: "Seller or provider" },
               { t: "Campaign", d: "Name / scope" }
             ].map((s, i) => (
               <div
@@ -1808,8 +2297,8 @@ function NewDealzWizard({
                 className={cx(
                   "rounded-2xl border p-3 transition-colors",
                   step === i
-                    ? "border-orange-200 bg-white dark:bg-slate-900 dark:border-orange-900/50 dark:bg-slate-900"
-                    : "border-neutral-200 bg-white dark:bg-slate-900/60 dark:border-slate-800/50 dark:bg-slate-900/40"
+                    ? "border-orange-200 bg-white dark:border-orange-900/50 dark:bg-slate-900"
+                    : "border-neutral-200 bg-white/60 dark:border-slate-800/50 dark:bg-slate-900/40"
                 )}
               >
                 <div className="font-extrabold text-neutral-900 dark:text-slate-100 flex items-center justify-between">
@@ -1850,7 +2339,7 @@ function NewDealzWizard({
                     onClick={() => setType(t)}
                     className={cx(
                       "rounded-3xl border p-4 text-left hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors",
-                      type === t ? "border-orange-200 bg-orange-50 dark:border-orange-900/50 dark:bg-orange-900/20" : "border-neutral-200 bg-white dark:bg-slate-900 dark:border-slate-800 dark:bg-slate-900"
+                      type === t ? "border-orange-200 bg-orange-50 dark:border-orange-900/50 dark:bg-orange-900/20" : "border-neutral-200 bg-white dark:border-slate-800 dark:bg-slate-900"
                     )}
                   >
                     <div className="flex items-center gap-2">
@@ -1859,10 +2348,10 @@ function NewDealzWizard({
                     </div>
                     <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
                       {t === "Shoppable Adz"
-                        ? "Supplier-led shoppable clips + share links."
+                        ? "Supplier-managed shoppable clips + share links."
                         : t === "Live Sessionz"
                           ? "Promo link preview + multistream destinations."
-                          : "Live session + shoppable clips in one deal."}
+                          : "Supplier-run live session + shoppable clips in one deal."}
                     </div>
                   </button>
                 ))}
@@ -1874,14 +2363,14 @@ function NewDealzWizard({
             <div>
               <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Select supplier</div>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {suppliers.map((s, i) => (
+                {SUPPLIERS.map((s, i) => (
                   <button
                     key={s.name}
                     type="button"
                     onClick={() => setSupplierIdx(i)}
                     className={cx(
                       "rounded-3xl border p-4 text-left hover:bg-neutral-50 dark:hover:bg-slate-800 transition-colors",
-                      supplierIdx === i ? "border-orange-200 bg-orange-50 dark:border-orange-900/50 dark:bg-orange-900/20" : "border-neutral-200 bg-white dark:bg-slate-900 dark:border-slate-800 dark:bg-slate-900"
+                      supplierIdx === i ? "border-orange-200 bg-orange-50 dark:border-orange-900/50 dark:bg-orange-900/20" : "border-neutral-200 bg-white dark:border-slate-800 dark:bg-slate-900"
                     )}
                   >
                     <div className="flex items-center gap-3">
@@ -1900,7 +2389,7 @@ function NewDealzWizard({
           {step === 2 ? (
             <div>
               <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Campaign</div>
-              <div className="mt-3 rounded-3xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 transition-colors">
+              <div className="mt-3 rounded-3xl border border-neutral-200 dark:border-slate-800 bg-neutral-50 dark:bg-slate-950 p-4 transition-colors">
                 <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Campaign name</div>
                 <input
                   className="mt-2 w-full rounded-2xl border border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-700 text-neutral-900 dark:text-slate-100 placeholder:text-neutral-400 dark:placeholder:text-slate-600 transition-all"
@@ -1910,8 +2399,11 @@ function NewDealzWizard({
                 />
                 <div className="mt-3 text-[11px] text-neutral-600 dark:text-slate-400">
                   Supplier: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
-                  {/* Supplier host is implicitly selected as current user, or 0 index for demo */}
-                  {/* · Supplier Host: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{creator.handle}</span> */}
+                  <span className="mx-2 text-neutral-300">•</span>
+                  Host: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{host.handle}</span>
+                </div>
+                <div className="mt-2 text-[11px] text-neutral-600 dark:text-slate-400">
+                  New deals default to supplier-hosted. You can attach a creator later in the supplier workflow if needed.
                 </div>
               </div>
 
@@ -1919,7 +2411,14 @@ function NewDealzWizard({
                 <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Create</div>
                 <div className="mt-2 text-sm text-neutral-700 dark:text-slate-300">
                   Deal type: <span className="font-extrabold text-neutral-900 dark:text-slate-100">{type || "—"}</span> · Supplier:{" "}
-                  <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span>
+                  <span className="font-extrabold text-neutral-900 dark:text-slate-100">{supplier.name}</span> · Host:{" "}
+                  <span className="font-extrabold text-neutral-900 dark:text-slate-100">{host.handle}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Pill tone="brand">Supplier-hosted</Pill>
+                  <Pill tone="warn">I will NOT use a Creator</Pill>
+                  <Pill tone="neutral">Collab: (n/a)</Pill>
+                  <Pill tone="warn">Approval: Manual</Pill>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Btn tone="primary" onClick={() => create("open-builder")} left={<Sparkles className="h-4 w-4" />}>
@@ -1940,7 +2439,7 @@ function NewDealzWizard({
 
 /** ------------------------------ Page ------------------------------ */
 
-export default function SupplierDealzMarketplace() {
+export default function DealzMarketplace() {
   const [toast, setToast] = useState<string | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -1948,15 +2447,8 @@ export default function SupplierDealzMarketplace() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
-  const [dealz, setDealz] = useState<Deal[]>([]);
-  const [selectedId, setSelectedId] = useState<string>("");
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [creators, setCreators] = useState<Creator[]>([]);
-  const [templates, setTemplates] = useState<LegacyMarketplaceTemplates>({
-    shoppable: createEmptyShoppableTemplate(),
-    live: createEmptyLiveTemplate()
-  });
-  const [marketplaceReady, setMarketplaceReady] = useState(false);
+  const [dealz, setDealz] = useState<Deal[]>(DEALZ_SEED);
+  const [selectedId, setSelectedId] = useState<string>(DEALZ_SEED[0]?.id || "");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedHeroOfferId, setSelectedHeroOfferId] = useState<string>("");
 
@@ -1986,49 +2478,6 @@ export default function SupplierDealzMarketplace() {
   // Cart state for the Live Session invite preview (per selected deal)
   const [liveCart, setLiveCart] = useState<Record<string, number>>({});
   const navigate = useNavigate();
-
-  useEffect(() => {
-    let active = true;
-
-    void sellerBackendApi.getDealzMarketplace().then((payload) => {
-      if (!active) return;
-      setDealz(Array.isArray((payload as { deals?: unknown[] }).deals) ? ((payload as { deals?: Deal[] }).deals ?? []) : []);
-      setSelectedId(String((payload as { selectedId?: unknown }).selectedId ?? ""));
-      setCart((((payload as { cart?: unknown }).cart ?? {}) as Record<string, number>));
-      setLiveCart((((payload as { liveCart?: unknown }).liveCart ?? {}) as Record<string, number>));
-      setSuppliers(Array.isArray((payload as { suppliers?: unknown[] }).suppliers) ? ((payload as { suppliers?: Supplier[] }).suppliers ?? []) : []);
-      setCreators(Array.isArray((payload as { creators?: unknown[] }).creators) ? ((payload as { creators?: Creator[] }).creators ?? []) : []);
-      const templatePayload = (payload as { templates?: Record<string, unknown> }).templates;
-      setTemplates({
-        shoppable:
-          templatePayload?.shoppable && typeof templatePayload.shoppable === "object"
-            ? ({ ...createEmptyShoppableTemplate(), ...(templatePayload.shoppable as Partial<ShoppableAd>) })
-            : createEmptyShoppableTemplate(),
-        live:
-          templatePayload?.live && typeof templatePayload.live === "object"
-            ? ({ ...createEmptyLiveTemplate(), ...(templatePayload.live as Partial<LiveInvite>) })
-            : createEmptyLiveTemplate()
-      });
-      setMarketplaceReady(true);
-    });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!marketplaceReady) return;
-    void sellerBackendApi.patchDealzMarketplace({
-      deals: dealz,
-      selectedId,
-      cart,
-      liveCart,
-      suppliers,
-      creators,
-      templates
-    }).catch(() => {});
-  }, [cart, creators, dealz, liveCart, marketplaceReady, selectedId, suppliers, templates]);
 
   function safeNav(url: string) {
     navigate(url);
@@ -2098,6 +2547,10 @@ export default function SupplierDealzMarketplace() {
           d.title.toLowerCase().includes(q) ||
           d.supplier.name.toLowerCase().includes(q) ||
           d.creator.handle.toLowerCase().includes(q) ||
+          hostRoleLabel(d).toLowerCase().includes(q) ||
+          getCreatorUsage(d).toLowerCase().includes(q) ||
+          getCollabMode(d).toLowerCase().includes(q) ||
+          getApprovalMode(d).toLowerCase().includes(q) ||
           (d.shoppable?.campaignName || "").toLowerCase().includes(q) ||
           (d.live?.title || "").toLowerCase().includes(q)
         );
@@ -2111,9 +2564,7 @@ export default function SupplierDealzMarketplace() {
 
   // chooser for shoppable hero viewer
   useEffect(() => {
-    const ad = selected?.shoppable;
-    if (!ad) return;
-    if (!selectedHeroOfferId) setSelectedHeroOfferId(ad.offers[0]?.id || "");
+    setSelectedHeroOfferId(selected?.shoppable?.offers[0]?.id || "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
@@ -2192,10 +2643,10 @@ export default function SupplierDealzMarketplace() {
     setViewerCtx({
       domain: "shoppable",
       kind: "hero",
-      title: "Intro video (supplier host)",
+      title: "Intro video (host)",
       videoUrl: ad.heroIntroVideoUrl,
       posterUrl: ad.heroIntroVideoPosterUrl || ad.heroImageUrl,
-      desktopMode: ad.heroDesktopMode || "modal"
+      desktopMode: ad.heroDesktopMode || "fullscreen"
     });
     setViewerOpen(true);
   }
@@ -2223,7 +2674,7 @@ export default function SupplierDealzMarketplace() {
       title: "Live invite hero",
       videoUrl: live.heroVideoUrl,
       posterUrl: live.heroImageUrl,
-      desktopMode: live.heroDesktopMode || "modal"
+      desktopMode: live.heroDesktopMode || "fullscreen"
     });
     setViewerOpen(true);
   }
@@ -2243,10 +2694,10 @@ export default function SupplierDealzMarketplace() {
     setViewerOpen(true);
   }
 
-  // checkout/cart actions
+  // checkout/cart actions (demo)
   function shoppableBuy(ad: ShoppableAd, offerId: string) {
     const url = `/checkout?source=shoppable&adId=${encodeURIComponent(ad.id)}&offerId=${encodeURIComponent(offerId)}&qty=1`;
-    setToast(`Checkout: ${url}`);
+    setToast(`Checkout (demo): ${url}`);
   }
   function shoppableAdd(ad: ShoppableAd, offerId: string) {
     const o = ad.offers.find((x) => x.id === offerId);
@@ -2257,7 +2708,7 @@ export default function SupplierDealzMarketplace() {
   }
   function liveBuy(live: LiveInvite, itemId: string) {
     const url = `/checkout?source=live&sessionId=${encodeURIComponent(live.id)}&itemId=${encodeURIComponent(itemId)}&qty=1`;
-    setToast(`Checkout: ${url}`);
+    setToast(`Checkout (demo): ${url}`);
   }
   function liveAdd(live: LiveInvite, itemId: string) {
     const it = live.featured.find((x) => x.id === itemId);
@@ -2317,7 +2768,7 @@ export default function SupplierDealzMarketplace() {
               onClick={() => setSelectedHeroOfferId(o.id)}
               className={cx(
                 "flex min-w-[240px] items-center gap-2 rounded-2xl border px-2.5 py-2 text-left",
-                active ? "border-white bg-white dark:bg-slate-900/15" : "border-white/20 bg-white dark:bg-slate-900/10 hover:bg-gray-50 dark:hover:bg-slate-800/15"
+                active ? "border-white bg-white/15" : "border-white/20 bg-white/10 hover:bg-white/15"
               )}
             >
               <img src={o.posterUrl} className="h-12 w-12 rounded-xl object-cover ring-1 ring-white/10" alt={o.name} />
@@ -2381,7 +2832,7 @@ export default function SupplierDealzMarketplace() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 transition-colors">
+    <div className="min-h-screen bg-neutral-50 dark:bg-slate-950 transition-colors">
       <PageHeader
         pageTitle="Dealz Marketplace"
         rightContent={
@@ -2398,7 +2849,7 @@ export default function SupplierDealzMarketplace() {
 
       {/* Tabs + Filters */}
       <div className="border-t border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-colors">
-        <div className="w-full max-w-full px-[0.55%] py-3">
+        <div className="w-full max-w-full px-3 sm:px-4 md:px-6 lg:px-8 py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               {segmentTabs.map((t) => (
@@ -2420,12 +2871,12 @@ export default function SupplierDealzMarketplace() {
             </div>
 
             <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="flex flex-1 items-center gap-2 rounded-2xl bg-white dark:bg-slate-900 px-3 py-2 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+              <div className="flex flex-1 items-center gap-2 rounded-2xl bg-neutral-50 dark:bg-slate-950 px-3 py-2 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                 <Search className="h-4 w-4 text-neutral-500 dark:text-slate-400" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search dealz, suppliers, supplier hosts…"
+                  placeholder="Search dealz, suppliers, hosts…"
                   className="w-full bg-transparent text-sm outline-none text-neutral-900 dark:text-slate-100 placeholder:text-neutral-500 dark:placeholder:text-slate-500"
                 />
               </div>
@@ -2441,7 +2892,7 @@ export default function SupplierDealzMarketplace() {
                 </select>
               </div>
 
-              <Btn tone="ghost" onClick={() => setToast("More filters")} left={<MoreHorizontal className="h-4 w-4" />}>
+              <Btn tone="ghost" onClick={() => setToast("More filters (demo)")} left={<MoreHorizontal className="h-4 w-4" />}>
                 More
               </Btn>
             </div>
@@ -2450,7 +2901,7 @@ export default function SupplierDealzMarketplace() {
       </div>
 
       {/* Body */}
-      <div className="w-full max-w-full px-[0.55%] py-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="w-full max-w-full px-3 sm:px-4 md:px-6 lg:px-8 py-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
         {/* List */}
         <div className="lg:col-span-7 space-y-3">
           <div className="flex items-center justify-between gap-2">
@@ -2505,7 +2956,7 @@ export default function SupplierDealzMarketplace() {
                           <span>•</span>
                           <span>{d.supplier.category}</span>
                           <span>•</span>
-                          <span className="truncate">Supplier Host: {d.creator.handle}</span>
+                          <span className="truncate">Host: {d.creator.handle}</span>
                         </div>
 
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -2520,6 +2971,10 @@ export default function SupplierDealzMarketplace() {
                           <Pill tone="pro">
                             <Sparkles className="h-3.5 w-3.5" />
                             {d.type}
+                          </Pill>
+                          <Pill tone={getHostRole(d) === "Supplier" ? "brand" : "good"}>
+                            <BadgeCheck className="h-3.5 w-3.5" />
+                            {hostRoleLabel(d)}
                           </Pill>
                         </div>
 
@@ -2577,6 +3032,9 @@ export default function SupplierDealzMarketplace() {
                   {/* Inline expansion for mobile */}
                   {isExpanded && (
                     <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 lg:hidden">
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        <GovernancePills deal={d} />
+                      </div>
                       {d.type === "Live + Shoppables" && d.shoppable && d.live ? (
                         <div className="mb-3 flex gap-2 px-1">
                           <button
@@ -2609,7 +3067,7 @@ export default function SupplierDealzMarketplace() {
                               <ShoppableAdPreview
                                 ad={d.shoppable}
                                 cart={cart}
-                                shareEnabled={true}
+                                shareEnabled={d.shoppable.status === "Generated"}
                                 onPlayHero={() => playShoppableHero(d.shoppable!)}
                                 onPlayOffer={(id) => playShoppableOffer(d.shoppable!, id)}
                                 onBuy={(id) => shoppableBuy(d.shoppable!, id)}
@@ -2679,7 +3137,7 @@ export default function SupplierDealzMarketplace() {
               <div className="min-w-0">
                 <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">Preview</div>
                 <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">
-                  Selected deal preview. Hybrid dealz can switch between Live Invite and Shoppable preview.
+                  Selected deal preview. Hybrid dealz can switch between Live Invite and Shoppable preview while supplier governance stays outside the buyer-facing shell.
                 </div>
               </div>
               <Pill tone="neutral">
@@ -2720,7 +3178,7 @@ export default function SupplierDealzMarketplace() {
                   <ShoppableAdPreview
                     ad={selected.shoppable}
                     cart={cart}
-                    shareEnabled={true}
+                    shareEnabled={selected.shoppable.status === "Generated"}
                     onPlayHero={() => playShoppableHero(selected.shoppable!)}
                     onPlayOffer={(id) => playShoppableOffer(selected.shoppable!, id)}
                     onBuy={(id) => shoppableBuy(selected.shoppable!, id)}
@@ -2774,7 +3232,7 @@ export default function SupplierDealzMarketplace() {
                 ) : null}
               </div>
             ) : (
-              <div className="mt-3 rounded-2xl bg-white dark:bg-slate-900 p-4 text-sm text-neutral-700 dark:text-slate-400 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">Select a deal to preview.</div>
+              <div className="mt-3 rounded-2xl bg-neutral-50 dark:bg-slate-950 p-4 text-sm text-neutral-700 dark:text-slate-400 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">Select a deal to preview.</div>
             )}
           </div>
 
@@ -2786,7 +3244,7 @@ export default function SupplierDealzMarketplace() {
                   <div className="text-xs text-neutral-600 dark:text-white/80">Selected deal</div>
                   <div className="truncate text-base font-extrabold">{selected.title}</div>
                   <div className="mt-1 text-xs text-neutral-500 dark:text-white/70">
-                    Supplier: {selected.supplier.name} · Supplier Host: {selected.creator.handle}
+                    Supplier: {selected.supplier.name} · Host: {selected.creator.handle}
                   </div>
                 </div>
 
@@ -2805,6 +3263,10 @@ export default function SupplierDealzMarketplace() {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
+                <GovernancePills deal={selected} />
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
                 {selected.shoppable ? (
                   <Btn
                     tone="neutral"
@@ -2818,7 +3280,7 @@ export default function SupplierDealzMarketplace() {
 
                 {selected.shoppable ? (
                   <Btn tone="neutral" onClick={() => shareShoppable(selected.shoppable!)} left={<Copy className="h-4 w-4" />} disabled={selected.shoppable.status !== "Generated"} title={selected.shoppable.status !== "Generated" ? "Generate the ad first" : undefined}>
-                    Copy Shoppable link
+                    Copy supplier link
                   </Btn>
                 ) : null}
 
@@ -2830,9 +3292,9 @@ export default function SupplierDealzMarketplace() {
               </div>
 
               {selected.shoppable && selected.shoppable.status !== "Generated" ? (
-                <div className="mt-3 rounded-2xl bg-neutral-200 dark:bg-white dark:bg-slate-900/10 p-3">
+                <div className="mt-3 rounded-2xl bg-neutral-200 dark:bg-white/10 p-3">
                   <div className="text-xs font-extrabold">Shoppable share links are disabled</div>
-                  <div className="mt-1 text-xs text-neutral-600 dark:text-white/70">Generate the Shoppable Ad in Ad Builder to enable platform share links.</div>
+                  <div className="mt-1 text-xs text-neutral-600 dark:text-white/70">Generate the Shoppable Ad in Supplier Ad Builder to enable platform share links.</div>
                 </div>
               ) : null}
             </div>
@@ -2855,41 +3317,10 @@ export default function SupplierDealzMarketplace() {
       <NewDealzWizard
         open={newOpen}
         onClose={() => setNewOpen(false)}
-        suppliers={suppliers}
-        creators={creators}
-        templates={templates}
         onCreate={(d, behavior) => {
-          const nextDealz = [d, ...dealz];
-          setDealz(nextDealz);
+          setDealz((prev) => [d, ...prev]);
           setSelectedId(d.id);
-          void sellerBackendApi.createCampaign({
-            id: d.id,
-            title: d.title,
-            description: d.tagline,
-            status: "DRAFT",
-            startAt: d.startISO,
-            endAt: d.endISO,
-            metadata: {
-              source: "dealz-marketplace",
-              marketplaceType: d.type,
-              tagline: d.tagline,
-              notes: d.notes,
-              supplier: d.supplier,
-              creator: d.creator,
-              shoppable: d.shoppable ?? null,
-              live: d.live ?? null,
-            },
-          }).catch(() => {});
-          void sellerBackendApi.patchDealzMarketplace({
-            deals: nextDealz,
-            selectedId: d.id,
-            cart,
-            liveCart,
-            suppliers,
-            creators,
-            templates,
-          }).catch(() => {});
-          setToast("Deal created.");
+          setToast("Deal created (demo).");
           if (behavior === "open-builder") {
             if (d.type === "Shoppable Adz") openAdBuilderFor(d);
             else if (d.type === "Live Sessionz") openLiveBuilderFor(d);

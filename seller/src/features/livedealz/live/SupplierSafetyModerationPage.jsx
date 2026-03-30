@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { sellerBackendApi } from "../../../lib/backendApi";
-
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/live/SupplierSafetyModerationPage").catch(() => undefined);
-
 /**
  * SupplierSafetyModerationPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)
@@ -1141,7 +1136,7 @@ export default function SupplierSafetyModerationPage() {
                   <div className="text-xs font-bold text-rose-900 dark:text-rose-400 uppercase tracking-widest">Caution</div>
                   <div className="mt-1 text-xs text-rose-800/80 dark:text-rose-400/80 font-semibold leading-relaxed">
                     {canModerateDirect
-                      ? "Actions will be pushed to the primary destination API immediately."
+                      ? "Actions will be pushed to the primary destination API immediately (demo)."
                       : "This will create a moderation request for the host (Creator) and Support Ops."}
                   </div>
                 </div>

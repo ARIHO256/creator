@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierPublicProfilePage.jsx
@@ -74,154 +73,6 @@ function todayYMD() {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-function normalizeSupplierProfilePayload(payload) {
-  const supplier = payload?.supplier || {};
-  return {
-    supplier: {
-      id: supplier.id || "",
-      name: supplier.name || "Supplier",
-      handle: supplier.handle || "@supplier",
-      initials: supplier.initials || "SP",
-      type: supplier.type || "Products",
-      region: supplier.region || "Global",
-      verified: Boolean(supplier.verified),
-      kyb: Boolean(supplier.kyb),
-      categoryLine: supplier.categoryLine || "Catalog-backed supplier",
-      shipsTo: supplier.shipsTo || "Ships to Africa / Asia"
-    },
-    about: {
-      text: payload?.about?.text || "",
-      collabPreferences: payload?.about?.collabPreferences || "",
-      categories: Array.isArray(payload?.about?.categories) ? payload.about.categories : [],
-      trustNote: payload?.about?.trustNote || ""
-    },
-    heroMetrics: {
-      avgCreatorPayout: payload?.heroMetrics?.avgCreatorPayout || "—",
-      rating: payload?.heroMetrics?.rating || "—",
-      fulfillment: payload?.heroMetrics?.fulfillment || "—",
-      skuCount: payload?.heroMetrics?.skuCount || "0",
-      responseTime: payload?.heroMetrics?.responseTime || "—"
-    },
-    performance: payload?.performance || {},
-    portfolio: Array.isArray(payload?.portfolio) ? payload.portfolio : [],
-    opportunities: Array.isArray(payload?.opportunities) ? payload.opportunities : [],
-    reviews: {
-      average: Number(payload?.reviews?.average || 0),
-      total: Number(payload?.reviews?.total || 0),
-      items: Array.isArray(payload?.reviews?.items) ? payload.reviews.items : []
-    },
-    socials: Array.isArray(payload?.socials) ? payload.socials : [],
-    campaigns: Array.isArray(payload?.campaigns) ? payload.campaigns : [],
-    tags: Array.isArray(payload?.tags) ? payload.tags : [],
-    compatibility: {
-      score: Number(payload?.compatibility?.score || 0),
-      summary: payload?.compatibility?.summary || "",
-      bullets: Array.isArray(payload?.compatibility?.bullets) ? payload.compatibility.bullets : []
-    },
-    quickFacts: {
-      facts: Array.isArray(payload?.quickFacts?.facts) ? payload.quickFacts.facts : [],
-      deckContent: payload?.quickFacts?.deckContent || ""
-    }
-  };
-}
-
-function mergeSupplierSettingsIntoProfile(profileData, settingsPayload) {
-  const supplierSettings = settingsPayload?.profile?.supplierSettings;
-  if (!supplierSettings || typeof supplierSettings !== "object") return profileData;
-
-  const profile = supplierSettings?.profile && typeof supplierSettings.profile === "object" ? supplierSettings.profile : {};
-  const social = supplierSettings?.social && typeof supplierSettings.social === "object" ? supplierSettings.social : {};
-  const preferences =
-    supplierSettings?.preferences && typeof supplierSettings.preferences === "object" ? supplierSettings.preferences : {};
-
-  const targetRegions = Array.isArray(profile.targetRegions)
-    ? profile.targetRegions.map((entry) => String(entry || "").trim()).filter(Boolean)
-    : [];
-  const categories = [
-    ...(Array.isArray(preferences.productCategories) ? preferences.productCategories : []),
-    ...(Array.isArray(preferences.serviceCategories) ? preferences.serviceCategories : [])
-  ]
-    .map((entry) => String(entry || "").trim())
-    .filter(Boolean);
-
-  const socialColorByName = {
-    instagram: "bg-pink-500",
-    tiktok: "bg-slate-900",
-    youtube: "bg-rose-600",
-    linkedin: "bg-blue-700",
-    facebook: "bg-blue-600",
-    website: "bg-slate-600"
-  };
-  const existingSocials = Array.isArray(profileData.socials) ? profileData.socials : [];
-  const byId = new Map(existingSocials.map((entry) => [String(entry?.id || "").toLowerCase(), entry]));
-  const pushOrReplaceSocial = (id, name, handle) => {
-    const clean = String(handle || "").trim();
-    if (!clean) return;
-    byId.set(String(id).toLowerCase(), {
-      id,
-      name,
-      handle: clean,
-      tag: String(name || id).charAt(0).toUpperCase(),
-      color: socialColorByName[String(id).toLowerCase()] || "bg-slate-500"
-    });
-  };
-  pushOrReplaceSocial("instagram", "Instagram", social.instagram);
-  pushOrReplaceSocial("tiktok", "TikTok", social.tiktok);
-  pushOrReplaceSocial("youtube", "YouTube", social.youtube);
-
-  if (Array.isArray(social.extra)) {
-    social.extra.forEach((entry, index) => {
-      const platform = String(entry?.platform || "").trim();
-      const handle = String(entry?.handle || "").trim();
-      if (!platform || !handle) return;
-      pushOrReplaceSocial(`extra-${index}`, platform, handle);
-    });
-  }
-
-  const primaryPlatform = String(social.primaryPlatform || "").trim();
-  if (primaryPlatform) {
-    const label =
-      primaryPlatform === "other"
-        ? String(social.primaryOtherCustomName || social.primaryOtherPlatform || "").trim()
-        : primaryPlatform;
-    const handle = String(social.primaryOtherHandle || "").trim();
-    if (label && handle) {
-      pushOrReplaceSocial(`primary-${label.toLowerCase()}`, label, handle);
-    }
-  }
-
-  const name = String(profile.businessName || "").trim();
-  const handleRaw = String(profile.handle || "").trim();
-  const tagline = String(profile.tagline || "").trim();
-  const country = String(profile.country || "").trim();
-  const supplierModel = String(profile.supplierModel || "").trim().toLowerCase();
-  const bio = String(profile.bio || "").trim();
-  const creatorNotes = String(preferences.notesToCreators || "").trim();
-
-  return {
-    ...profileData,
-    supplier: {
-      ...profileData.supplier,
-      ...(name ? { name } : {}),
-      ...(handleRaw ? { handle: `@${handleRaw.replace(/^@/, "")}` } : {}),
-      ...(country ? { region: country } : {}),
-      ...(tagline ? { categoryLine: tagline } : {}),
-      ...(targetRegions.length ? { shipsTo: `Targets ${targetRegions.join(" / ")}` } : {}),
-      ...(supplierModel
-        ? { type: supplierModel.includes("service") ? "Services" : "Products (Wholesale + Retail)" }
-        : {})
-    },
-    about: {
-      ...profileData.about,
-      ...(bio ? { text: bio } : {}),
-      ...(creatorNotes ? { collabPreferences: creatorNotes } : {}),
-      categories: categories.length ? categories : profileData.about?.categories || []
-    },
-    socials: Array.from(byId.values()),
-    tags: categories.length ? categories : profileData.tags
-  };
-}
-
 /* ----------------------------- Toast ----------------------------- */
 
 function Toast({ text, tone = "info", onClose }) {
@@ -256,7 +107,7 @@ function Toast({ text, tone = "info", onClose }) {
 
 function PageHeader({ pageTitle, subtitle, rightContent, onBack }) {
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
+    <header className="z-40 w-full bg-white/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
       <div className="w-full px-[0.55%] py-3 flex items-start md:items-center justify-between gap-3">
         <div className="min-w-0 flex items-center gap-2">
           <button
@@ -395,7 +246,13 @@ function MetricCard({ label, value, sub }) {
 
 /* ----------------------------- Cards ----------------------------- */
 
-function SocialLinksCard({ socials, onAction }) {
+function SocialLinksCard({ onAction }) {
+  const socials = [
+    { id: "web", name: "Website", handle: "glowuphub.example", tag: "WEB", color: "bg-slate-900" },
+    { id: "ig", name: "Instagram", handle: "@glowuphub", tag: "IG", color: "bg-pink-500" },
+    { id: "tt", name: "TikTok", handle: "@glowuphub", tag: "TT", color: "bg-slate-900" }
+  ];
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Social links</h2>
@@ -425,7 +282,13 @@ function SocialLinksCard({ socials, onAction }) {
   );
 }
 
-function PastCampaignsCard({ campaigns, onAction }) {
+function PastCampaignsCard({ onAction }) {
+  const campaigns = [
+    { id: 1, title: "Autumn Beauty Flash", period: "Feb 10 – Feb 23 · Combo", gmv: "$12,400", payout: "<48h", rating: "4.9" },
+    { id: 2, title: "Weekend Mask Bar", period: "Jan 18 – Jan 21 · Live", gmv: "$7,800", payout: "<72h", rating: "4.7" },
+    { id: 3, title: "Holiday Bundle Drop", period: "Nov 23 – Nov 25 · Shoppable Adz", gmv: "$18,900", payout: "<48h", rating: "4.8" }
+  ];
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -462,7 +325,8 @@ function PastCampaignsCard({ campaigns, onAction }) {
   );
 }
 
-function TagsCard({ tags }) {
+function TagsCard() {
+  const tags = ["#Beauty", "#Skincare", "#FastPayouts", "#Bundles", "#FlashDealz"];
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Tags</h2>
@@ -483,7 +347,7 @@ function TagsCard({ tags }) {
   );
 }
 
-function CompatibilityCard({ compatibility, onAction }) {
+function CompatibilityCard({ onAction }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <div className="flex items-center justify-between mb-1">
@@ -496,17 +360,16 @@ function CompatibilityCard({ compatibility, onAction }) {
       <div className="flex items-center gap-3 mb-2">
         <div className="relative h-14 w-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center transition-colors">
           <div className="h-11 w-11 rounded-full bg-[#03cd8c] text-white flex items-center justify-center text-sm font-semibold dark:text-slate-50 dark:font-bold">
-            {Math.max(0, Math.round(compatibility?.score || 0))}%
+            86%
           </div>
         </div>
         <div className="flex-1 text-xs text-slate-600 dark:text-slate-200 font-medium">
           <p className="mb-1">
-            {compatibility?.summary || "Compatibility details are available in workspace."}
+            Strong fit for creators who do <span className="font-semibold">beauty flash dealz</span> and short clips.
           </p>
           <ul className="list-disc pl-4 space-y-0.5">
-            {(compatibility?.bullets || []).map((bullet) => (
-              <li key={bullet}>{bullet}</li>
-            ))}
+            <li>Fast payouts and clear briefs.</li>
+            <li>High conversion with bundles and discounts.</li>
           </ul>
         </div>
       </div>
@@ -520,14 +383,15 @@ function CompatibilityCard({ compatibility, onAction }) {
   );
 }
 
-function QuickFactsCard({ facts, onDownload }) {
+function QuickFactsCard({ onDownload }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-xs font-semibold mb-2">Quick collaboration facts</h2>
       <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-200 font-medium">
-        {(facts || []).map((fact) => (
-          <li key={fact}>{fact}</li>
-        ))}
+        <li>KYB verified supplier account.</li>
+        <li>Typical payout to creators: 48–72 hours after Admin approval.</li>
+        <li>Strong preference: bundles, limited-time discounts, clear claims.</li>
+        <li>Supports multi-creator campaigns and split deliverables.</li>
       </ul>
       <button
         className="mt-3 w-full py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-sm hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 transition-colors"
@@ -824,7 +688,18 @@ function InviteSupplierDrawer({ open, onClose, supplier, toast }) {
 export default function SupplierPublicProfilePage() {
   const navigate = useNavigate();
   const go = (path) => goTo(navigate, path);
-  const [profileData, setProfileData] = useState(() => normalizeSupplierProfilePayload({}));
+  const supplier = useMemo(
+    () => ({
+      name: "GlowUp Hub",
+      handle: "@glowuphub",
+      initials: "GH",
+      type: "Products (Wholesale + Retail)",
+      region: "East Africa",
+      verified: true,
+      kyb: true
+    }),
+    []
+  );
 
   const [viewerMode, setViewerMode] = useState("Creator"); // Creator | Supplier
 
@@ -841,52 +716,18 @@ export default function SupplierPublicProfilePage() {
     setToastText(msg);
   };
 
-  useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      try {
-        const [payload, settingsPayload] = await Promise.all([
-          sellerBackendApi.getSellerPublicProfile(),
-          sellerBackendApi.getSettings().catch(() => null)
-        ]);
-        if (!active) return;
-        const normalized = normalizeSupplierProfilePayload(payload);
-        setProfileData(mergeSupplierSettingsIntoProfile(normalized, settingsPayload));
-      } catch {
-        return;
-      }
-    };
-
-    load();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const supplier = profileData.supplier;
-
   const toggleFollow = async () => {
     setPendingFollow(true);
-    try {
-      if (supplier.id) {
-        await sellerBackendApi.followSeller(supplier.id, { follow: !isFollowing });
-      } else {
-        await sleep(300);
-      }
-      setIsFollowing((s) => !s);
-      toast(!isFollowing ? "Supplier saved to My Suppliers 🎉" : "Removed from My Suppliers", "success");
-    } catch {
-      return;
-    } finally {
-      setPendingFollow(false);
-    }
+    await sleep(650);
+    setPendingFollow(false);
+    setIsFollowing((s) => !s);
+    toast(!isFollowing ? "Supplier saved to My Suppliers 🎉" : "Removed from My Suppliers", "success");
   };
 
   const downloadBrandKit = async () => {
     toast("Preparing brand kit…", "info");
     await sleep(850);
-    const dummy = profileData.quickFacts.deckContent || `Supplier Brand Kit\n\nBrand: ${supplier.name}\nHandle: ${supplier.handle}\n`;
+    const dummy = `Supplier Brand Kit\n\nBrand: ${supplier.name}\nHandle: ${supplier.handle}\n\nIncludes:\n- Logos\n- Color palette\n- Claims guidance\n- Product list summary\n`;
     const blob = new Blob([dummy], { type: "text/plain" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -997,9 +838,9 @@ export default function SupplierPublicProfilePage() {
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700 transition-colors">
                       ✓ {supplier.kyb ? "KYB Verified" : "Verification pending"}
                     </span>
-                    <span className="text-slate-500 dark:text-slate-300">{supplier.categoryLine}</span>
+                    <span className="text-slate-500 dark:text-slate-300">Beauty · Skincare · Bundles</span>
                   </div>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">Based in {supplier.region} · {supplier.shipsTo}</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">Based in {supplier.region} · Ships to Africa / Asia</div>
                 </div>
               </div>
 
@@ -1007,11 +848,11 @@ export default function SupplierPublicProfilePage() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col items-start md:items-end">
                     <span className="text-xs text-slate-500 dark:text-slate-300">Avg creator payout</span>
-                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">{profileData.heroMetrics.avgCreatorPayout}</span>
+                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">48–72h</span>
                   </div>
                   <div className="flex flex-col items-start md:items-end">
                     <span className="text-xs text-slate-500 dark:text-slate-300">Rating</span>
-                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">{profileData.heroMetrics.rating}</span>
+                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">4.8/5</span>
                   </div>
                 </div>
 
@@ -1050,9 +891,9 @@ export default function SupplierPublicProfilePage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-200 font-medium">
-                  <span className="inline-flex items-center gap-1">🚚 <span className="text-slate-500 dark:text-slate-300">Fulfillment</span> <span className="font-semibold">{profileData.heroMetrics.fulfillment}</span></span>
-                  <span className="inline-flex items-center gap-1">📦 <span className="text-slate-500 dark:text-slate-300">SKU</span> <span className="font-semibold">{profileData.heroMetrics.skuCount}</span></span>
-                  <span className="inline-flex items-center gap-1">💬 <span className="text-slate-500 dark:text-slate-300">Response</span> <span className="font-semibold">{profileData.heroMetrics.responseTime}</span></span>
+                  <span className="inline-flex items-center gap-1">🚚 <span className="text-slate-500 dark:text-slate-300">Fulfillment</span> <span className="font-semibold">Fast</span></span>
+                  <span className="inline-flex items-center gap-1">📦 <span className="text-slate-500 dark:text-slate-300">SKU</span> <span className="font-semibold">120+</span></span>
+                  <span className="inline-flex items-center gap-1">💬 <span className="text-slate-500 dark:text-slate-300">Response</span> <span className="font-semibold">~2h</span></span>
                 </div>
 
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
@@ -1082,21 +923,23 @@ export default function SupplierPublicProfilePage() {
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
                 <SectionTitle>About this supplier</SectionTitle>
                 <p className="text-sm text-slate-700 dark:text-slate-100 mb-2">
-                  {profileData.about.text}
+                  GlowUp Hub is a beauty and skincare brand specializing in bundle offers and flash discounts.
+                  We collaborate with creators to launch seasonal drops, limited-time dealz, and education-driven live sessionz.
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Collab preferences</h3>
                     <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
-                      {profileData.about.collabPreferences}
+                      Bundles + discounts, clear claims, before/after demos, and audience Q&A.
                     </p>
                   </div>
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Categories</h3>
                     <div className="flex flex-wrap gap-1.5">
-                      {profileData.about.categories.map((category) => (
-                        <Chip key={category}>{category}</Chip>
-                      ))}
+                      <Chip>Beauty</Chip>
+                      <Chip>Skincare</Chip>
+                      <Chip>Bundles</Chip>
+                      <Chip>Flash dealz</Chip>
                     </div>
                   </div>
                 </div>
@@ -1104,7 +947,7 @@ export default function SupplierPublicProfilePage() {
                 <div className="mt-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-950/40 p-3">
                   <div className="text-xs font-extrabold text-slate-700 dark:text-slate-200">Trust & compliance</div>
                   <div className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">
-                    Supplier notes: {profileData.about.trustNote}
+                    Supplier notes: avoid medical claims; use compliant language; link tracking is required for conversion attribution.
                     {viewerMode === "Supplier" ? " (Supplier can edit these guidelines in Settings.)" : ""}
                   </div>
                 </div>
@@ -1113,12 +956,12 @@ export default function SupplierPublicProfilePage() {
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
                 <SectionTitle>Performance snapshot</SectionTitle>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <MetricCard label="Creator payouts" value={profileData.performance.payoutWindow || "—"} sub="After approval" />
-                  <MetricCard label="Return rate" value={profileData.performance.returnRate || "—"} sub="Low refunds" />
-                  <MetricCard label="Avg conversion" value={profileData.performance.conversionRate || "—"} sub="Across campaigns" />
-                  <MetricCard label="Completed collabs" value={String(profileData.performance.completedCollabs || 0)} sub="Across creator contracts" />
-                  <MetricCard label="Creator rating" value={profileData.performance.rating || "—"} sub={`${profileData.reviews.total || 0} reviews`} />
-                  <MetricCard label="Fulfillment SLA" value={profileData.performance.fulfillmentSla || "—"} sub="In-region" />
+                  <MetricCard label="Creator payouts" value="48–72h" sub="After approval" />
+                  <MetricCard label="Return rate" value="1.8%" sub="Low refunds" />
+                  <MetricCard label="Avg conversion" value="3.9%" sub="Across campaigns" />
+                  <MetricCard label="Completed collabs" value="42" sub="Across 27 creators" />
+                  <MetricCard label="Creator rating" value="4.8/5" sub="31 reviews" />
+                  <MetricCard label="Fulfillment SLA" value="24–48h" sub="In-region" />
                 </div>
               </div>
 
@@ -1137,16 +980,27 @@ export default function SupplierPublicProfilePage() {
                 </SectionTitle>
 
                 <div className="space-y-2.5">
-                  {profileData.portfolio.map((entry) => (
-                    <PortfolioRow
-                      key={entry.id}
-                      title={entry.title}
-                      meta={entry.meta}
-                      body={entry.body}
-                      kpis={entry.kpis}
-                      onAction={() => handleAction("View Dealz")}
-                    />
-                  ))}
+                  <PortfolioRow
+                    title="Autumn Beauty Flash"
+                    meta="Combo · East Africa"
+                    body="Bundles + 15% discount. Strong conversions in first 30 minutes."
+                    kpis={["GMV $12.4k", "Payout <48h", "Rating 4.9"]}
+                    onAction={() => handleAction("View Dealz")}
+                  />
+                  <PortfolioRow
+                    title="Weekend Mask Bar"
+                    meta="Live Sessionz · East Africa"
+                    body="Education-first demo. Low return rate and high repeat orders."
+                    kpis={["GMV $7.8k", "Return 1.4%", "Rating 4.7"]}
+                    onAction={() => handleAction("View Dealz")}
+                  />
+                  <PortfolioRow
+                    title="Holiday Bundle Drop"
+                    meta="Shoppable Adz · Global"
+                    body="Short clips + CTA pack. Best performing SKU was the serum duo bundle."
+                    kpis={["GMV $18.9k", "CTR 4.2%", "Conv 3.1%"]}
+                    onAction={() => handleAction("View Dealz")}
+                  />
                 </div>
               </div>
 
@@ -1168,7 +1022,24 @@ export default function SupplierPublicProfilePage() {
                 </SectionTitle>
 
                 <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                  {profileData.opportunities.map((op) => (
+                  {[
+                    {
+                      id: "OP-11",
+                      title: "Serum Launch Live",
+                      type: "Live Sessionz",
+                      region: "East Africa",
+                      budget: 800,
+                      status: "Open for Collabs"
+                    },
+                    {
+                      id: "OP-12",
+                      title: "Bundle Discount Sprint",
+                      type: "Shoppable Adz",
+                      region: "Africa / Asia",
+                      budget: 600,
+                      status: "Open for Collabs"
+                    }
+                  ].map((op) => (
                     <div
                       key={op.id}
                       className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950"
@@ -1216,27 +1087,27 @@ export default function SupplierPublicProfilePage() {
                   right={
                     <div className="flex items-center gap-1 text-xs text-amber-600">
                       <span>★★★★★</span>
-                      <span className="text-slate-500 dark:text-slate-300">{profileData.reviews.average.toFixed(1)} average ({profileData.reviews.total} reviews)</span>
+                      <span className="text-slate-500 dark:text-slate-300">4.8 average (31 reviews)</span>
                     </div>
                   }
                 >
                   Creator reviews
                 </SectionTitle>
                 <ul className="space-y-2">
-                  {profileData.reviews.items.map((review) => (
-                    <Review key={review.id} brand={review.brand} quote={review.quote} />
-                  ))}
+                  <Review brand="Creator: @ayesha.live" quote="Clear briefs, fast payouts, and no last-minute changes. Loved the bundle strategy." />
+                  <Review brand="Creator: @techmike" quote="They respect creator input and provide good tracking links. Easy negotiation." />
+                  <Review brand="Creator: @faithstyle" quote="Brand guidelines were clear and compliant. Smooth approval process." />
                 </ul>
               </div>
             </div>
 
             {/* Right */}
             <aside className="flex flex-col gap-4">
-              <SocialLinksCard socials={profileData.socials} onAction={handleAction} />
-              <PastCampaignsCard campaigns={profileData.campaigns} onAction={handleAction} />
-              <TagsCard tags={profileData.tags} />
-              <CompatibilityCard compatibility={profileData.compatibility} onAction={handleAction} />
-              <QuickFactsCard facts={profileData.quickFacts.facts} onDownload={downloadBrandKit} />
+              <SocialLinksCard onAction={handleAction} />
+              <PastCampaignsCard onAction={handleAction} />
+              <TagsCard />
+              <CompatibilityCard onAction={handleAction} />
+              <QuickFactsCard onDownload={downloadBrandKit} />
             </aside>
           </div>
         </section>
@@ -1281,7 +1152,7 @@ function Review({ brand, quote }) {
         <span className="text-sm font-semibold">{brand}</span>
         <span className="text-xs text-amber-500 dark:text-amber-400">★★★★★</span>
       </div>
-      <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">&quot;{quote}&quot;</p>
+      <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">"{quote}"</p>
     </li>
   );
 }

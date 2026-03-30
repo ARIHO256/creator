@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierLiveReplaysClipsPage.jsx
@@ -23,112 +22,6 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  */
 
 const ORANGE = "#f77f00";
-
-function asObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function formatReplayDate(iso) {
-  if (!iso) return "Unknown date";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "Unknown date";
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "2-digit",
-    year: "numeric",
-  });
-}
-
-function formatReplayDuration(totalSeconds) {
-  const safe = Math.max(0, Number(totalSeconds || 0));
-  const hours = Math.floor(safe / 3600);
-  const minutes = Math.floor((safe % 3600) / 60);
-  const seconds = safe % 60;
-  if (hours > 0) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function defaultReplaySuggestions(replay) {
-  const totalDurationSec = Math.max(90, Number(replay?.totalDurationSec || 0));
-  const firstEnd = Math.min(totalDurationSec, 75);
-  const midStart = Math.max(15, Math.round(totalDurationSec * 0.35));
-  const midEnd = Math.min(totalDurationSec, midStart + 45);
-  const lateStart = Math.max(30, Math.round(totalDurationSec * 0.75));
-  const lateEnd = Math.min(totalDurationSec, lateStart + 45);
-  return [
-    {
-      id: `${replay.id}-hook`,
-      label: "Hook + opening moment",
-      start: 15,
-      end: firstEnd,
-      tags: ["Early retention", "Top replay moment"],
-    },
-    {
-      id: `${replay.id}-proof`,
-      label: "Product proof moment",
-      start: midStart,
-      end: midEnd,
-      tags: ["Proof", "Conversion intent"],
-    },
-    {
-      id: `${replay.id}-countdown`,
-      label: "Countdown + CTA moment",
-      start: lateStart,
-      end: lateEnd,
-      tags: ["Urgency", "Replay-ready"],
-    },
-  ].filter((entry) => entry.end > entry.start);
-}
-
-function normalizeReplay(value) {
-  const data = asObject(value?.data);
-  const totalDurationSec = Math.max(
-    90,
-    Number(data.totalDurationSec ?? data.durationSec ?? data.durationSeconds ?? 1200)
-  );
-  const performanceTags = asArray(data.performanceTags).map((tag) => String(tag)).filter(Boolean);
-  const aiSuggestions = asArray(data.aiSuggestions).map((entry, index) => {
-    const safe = asObject(entry);
-    return {
-      id: String(safe.id ?? `${value.id}-suggestion-${index + 1}`),
-      label: String(safe.label ?? `Highlight ${index + 1}`),
-      start: Number(safe.start ?? 0),
-      end: Number(safe.end ?? 0),
-      tags: asArray(safe.tags).map((tag) => String(tag)).filter(Boolean),
-    };
-  }).filter((entry) => entry.end > entry.start);
-
-  return {
-    id: String(value.id || ""),
-    title: String(data.title || value.title || "Replay"),
-    status:
-      String(value.status || "draft").toLowerCase() === "published"
-        ? "Published"
-        : String(value.status || "draft").toLowerCase() === "archived"
-          ? "Private"
-          : "Draft",
-    date: formatReplayDate(data.endedISO || value.updatedAt || value.createdAt),
-    duration: String(data.durationLabel || formatReplayDuration(totalDurationSec)),
-    totalDurationSec,
-    views: Number(data.views ?? data.viewers ?? 0),
-    sales: Number(data.sales ?? data.orders ?? 0),
-    supplier: String(data.supplier || data.supplierName || "Supplier"),
-    campaign: String(data.campaign || data.campaignName || "Campaign"),
-    host: String(data.host || data.hostName || "Host"),
-    hostRole: String(data.hostRole || "Supplier"),
-    approvalMode: String(data.approvalMode || "Manual"),
-    performanceTags: performanceTags.length ? performanceTags : ["Replay"],
-    thumbColor: String(data.thumbColor || "bg-amber-100 dark:bg-amber-900/30"),
-    aiSuggestions: aiSuggestions.length ? aiSuggestions : defaultReplaySuggestions({ id: value.id, totalDurationSec }),
-    raw: value,
-  };
-}
 
 function PageHeader({ pageTitle, badge, right }) {
   return (
@@ -205,13 +98,13 @@ export default function SupplierLiveReplaysClipsPage() {
     navigate(destination);
   };
 
-  const [selectedReplayId, setSelectedReplayId] = useState("");
+  const [selectedReplayId, setSelectedReplayId] = useState("R-101");
   const [shareReplay, setShareReplay] = useState(null);
 
   const [clipStart, setClipStart] = useState(30);
   const [clipEnd, setClipEnd] = useState(90);
-  const [overlayText, setOverlayText] = useState("");
-  const [ctaSticker, setCtaSticker] = useState("");
+  const [overlayText, setOverlayText] = useState("EV Charger Bundle – Limited offer");
+  const [ctaSticker, setCtaSticker] = useState("Tap to shop");
 
   const [exportTargets, setExportTargets] = useState({
     campaigns: true,
@@ -219,58 +112,134 @@ export default function SupplierLiveReplaysClipsPage() {
     assetLibrary: true
   });
 
-  const [replays, setReplays] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [replays, setReplays] = useState([
+    {
+      id: "R-101",
+      title: "EV Charger Flash – Bundles + Install Tips",
+      campaign: "EV Charger Flash Drop",
+      supplier: "EV World Store",
+      host: "@lunaade",
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual",
+      date: "Oct 10, 2025",
+      views: 1543,
+      sales: 62,
+      duration: "01:12:45",
+      status: "Published",
+      thumbColor: "bg-emerald-100",
+      performanceTags: ["Strong hook", "High retention", "Bundle focus"]
+    },
+    {
+      id: "R-102",
+      title: "Supplier-hosted Tech Friday – Gadgets Q&A",
+      campaign: "Tech Friday Mega Live",
+      supplier: "GadgetMart Africa",
+      host: "@gadgetmart",
+      hostRole: "Supplier",
+      creatorUsage: "I will NOT use a Creator",
+      collabMode: "(n/a)",
+      approvalMode: "Manual",
+      date: "Oct 11, 2025",
+      views: 2310,
+      sales: 87,
+      duration: "01:28:03",
+      status: "Draft replay",
+      thumbColor: "bg-sky-100",
+      performanceTags: ["Q&A heavy", "Late peak", "Bundle upsells"]
+    },
+    {
+      id: "R-103",
+      title: "Faith & Wellness Morning Dealz",
+      campaign: "Faith & Wellness Morning Dealz",
+      supplier: "Grace Living Store",
+      host: "@noahknows",
+      hostRole: "Creator",
+      creatorUsage: "I am NOT SURE yet",
+      collabMode: "Open for Collabs",
+      approvalMode: "Auto",
+      date: "Oct 12, 2025",
+      views: 987,
+      sales: 29,
+      duration: "00:54:10",
+      status: "Published",
+      thumbColor: "bg-rose-100",
+      performanceTags: ["Soft opener", "High replay", "Community chat"]
+    }
+  ]);
 
   const selectedReplay = replays.find((r) => r.id === selectedReplayId) || replays[0] || null;
 
   const aiClipSuggestions = useMemo(() => {
     if (!selectedReplay) return [];
-    return selectedReplay.aiSuggestions || [];
-  }, [selectedReplay]);
 
-  useEffect(() => {
-    let cancelled = false;
+    if (selectedReplay.id === "R-101") {
+      return [
+        {
+          id: 1,
+          label: "Hook + first charger demo",
+          start: 15,
+          end: 75,
+          tags: ["Hook within first 3 seconds", "Demo clarity"]
+        },
+        {
+          id: 2,
+          label: "Installation moment",
+          start: 420,
+          end: 465,
+          tags: ["Proof", "High comments"]
+        },
+        {
+          id: 3,
+          label: "Flash deal countdown",
+          start: 900,
+          end: 945,
+          tags: ["Urgency", "Sales spike"]
+        }
+      ];
+    }
 
-    const load = async () => {
-      try {
-        setLoading(true);
-        let replayRows = await sellerBackendApi.getLiveReplays();
-        if (!replayRows.length) {
-          const sessions = await sellerBackendApi.getLiveSessions();
-          const endedSessions = sessions.filter((session) => {
-            const status = String(session.status || "").toLowerCase();
-            return status === "ended" || status === "live" || status === "scheduled";
-          });
-          replayRows = await Promise.all(
-            endedSessions.slice(0, 12).map((session) => sellerBackendApi.getLiveReplayBySession(String(session.id || "")))
-          );
+    if (selectedReplay.id === "R-102") {
+      return [
+        {
+          id: 1,
+          label: "Gadget unboxing moment",
+          start: 120,
+          end: 180,
+          tags: ["Unboxing", "Reactions spike"]
+        },
+        {
+          id: 2,
+          label: "Top 3 gadgets summary",
+          start: 2100,
+          end: 2160,
+          tags: ["Summary", "Shareable"]
         }
-        if (cancelled) return;
-        const next = replayRows.map((entry) => normalizeReplay(entry));
-        setReplays(next);
-        setSelectedReplayId((prev) => (prev && next.some((entry) => entry.id === prev) ? prev : next[0]?.id || ""));
-      } catch {
-        if (!cancelled) {
-          setReplays([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+      ];
+    }
+
+    return [
+      {
+        id: 1,
+        label: "Warm welcome + show outline",
+        start: 30,
+        end: 90,
+        tags: ["Warm opener", "Faith-compatible tone"]
       }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    ];
+  }, [selectedReplay]);
 
   const handleApplySuggestion = (suggestion) => {
     setClipStart(suggestion.start);
     setClipEnd(suggestion.end);
+  };
+
+  const handleAddToAssetLibrary = (suggestion) => {
+    if (suggestion) {
+      handleApplySuggestion(suggestion);
+    }
+    setExportTargets((prev) => ({ ...prev, assetLibrary: true }));
   };
 
   const handleToggleExportTarget = (key) => {
@@ -288,48 +257,11 @@ export default function SupplierLiveReplaysClipsPage() {
   };
 
   const handlePublishReplay = (id) => {
-    const replay = replays.find((entry) => entry.id === id);
-    if (!replay) return;
-    void sellerBackendApi
-      .publishLiveReplay(id, {
-        ...replay.raw?.data,
-        title: replay.title,
-        campaignName: replay.campaign,
-        supplierName: replay.supplier,
-        hostName: replay.host,
-        hostRole: replay.hostRole,
-        approvalMode: replay.approvalMode,
-        totalDurationSec: replay.totalDurationSec,
-        aiSuggestions: replay.aiSuggestions,
-      })
-      .then((updated) => {
-        const normalized = normalizeReplay(updated);
-        setReplays((prev) => prev.map((entry) => (entry.id === id ? normalized : entry)));
-      })
-      .catch(() => undefined);
+    setReplays((prev) => prev.map((r) => (r.id === id ? { ...r, status: "Published" } : r)));
   };
 
   const handleSetPrivate = (id) => {
-    const replay = replays.find((entry) => entry.id === id);
-    if (!replay) return;
-    void sellerBackendApi
-      .patchLiveReplay(id, {
-        ...replay.raw?.data,
-        status: "archived",
-        title: replay.title,
-        campaignName: replay.campaign,
-        supplierName: replay.supplier,
-        hostName: replay.host,
-        hostRole: replay.hostRole,
-        approvalMode: replay.approvalMode,
-        totalDurationSec: replay.totalDurationSec,
-        aiSuggestions: replay.aiSuggestions,
-      })
-      .then((updated) => {
-        const normalized = normalizeReplay(updated);
-        setReplays((prev) => prev.map((entry) => (entry.id === id ? normalized : entry)));
-      })
-      .catch(() => undefined);
+    setReplays((prev) => prev.map((r) => (r.id === id ? { ...r, status: "Private" } : r)));
   };
 
   const handleExportClip = () => {
@@ -496,13 +428,22 @@ export default function SupplierLiveReplaysClipsPage() {
                           ))}
                         </div>
                       </div>
-                      <button
-                        className="px-2.5 py-1 rounded-full bg-[#f77f00] text-white text-xs font-semibold dark:font-bold hover:bg-[#e26f00]"
-                        onClick={() => handleApplySuggestion(s)}
-                        type="button"
-                      >
-                        Use as clip
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          className="px-2.5 py-1 rounded-full border border-[#f77f00] bg-white dark:bg-slate-900 text-[#f77f00] text-xs font-semibold dark:font-bold hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                          onClick={() => handleApplySuggestion(s)}
+                          type="button"
+                        >
+                          Use as Clip
+                        </button>
+                        <button
+                          className="px-2.5 py-1 rounded-full bg-[#f77f00] text-white text-xs font-semibold dark:font-bold hover:bg-[#e26f00]"
+                          onClick={() => handleAddToAssetLibrary(s)}
+                          type="button"
+                        >
+                          Add to Asset Library
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -528,7 +469,12 @@ export default function SupplierLiveReplaysClipsPage() {
               onChangeCta={setCtaSticker}
               secondsToTime={secondsToTime}
             />
-            <DistributionPanel exportTargets={exportTargets} onToggleTarget={handleToggleExportTarget} onExport={handleExportClip} />
+            <DistributionPanel
+              exportTargets={exportTargets}
+              onToggleTarget={handleToggleExportTarget}
+              onExport={handleExportClip}
+              onAddToAssetLibrary={() => handleAddToAssetLibrary()}
+            />
           </section>
         </div>
       </main>
@@ -748,7 +694,7 @@ function ClipEditorPanel({
   onChangeCta,
   secondsToTime
 }) {
-  const totalDurationSec = Math.max(90, Number(replay?.totalDurationSec || 1200));
+  const totalDurationSec = 1200; // pretend 20 min timeline for demo
   const clamp = (val) => Math.min(Math.max(val, 0), totalDurationSec);
 
   const handleStartChange = (e) => {
@@ -997,7 +943,7 @@ function ClipEditorPanel({
 
 /* ------------------------------ Distribution ------------------------------ */
 
-function DistributionPanel({ exportTargets, onToggleTarget, onExport }) {
+function DistributionPanel({ exportTargets, onToggleTarget, onExport, onAddToAssetLibrary }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4 flex flex-col gap-2 text-sm">
       <div className="flex items-center justify-between mb-1">
@@ -1026,17 +972,26 @@ function DistributionPanel({ exportTargets, onToggleTarget, onExport }) {
         />
       </div>
 
-      <div className="flex items-center justify-between mt-2">
+      <div className="flex items-center justify-between mt-2 gap-3">
         <p className="text-xs text-slate-500 dark:text-slate-300 max-w-sm">
           In the full Studio, each target opens export configuration (format, ratio, caption templates, approvals).
         </p>
-        <button
-          type="button"
-          className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white text-sm font-semibold dark:font-bold hover:bg-[#e26f00]"
-          onClick={onExport}
-        >
-          Export clip
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-full border border-[#f77f00] bg-white dark:bg-slate-900 text-[#f77f00] text-sm font-semibold dark:font-bold hover:bg-orange-50 dark:hover:bg-orange-950/20"
+            onClick={onExport}
+          >
+            Export Clip
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white text-sm font-semibold dark:font-bold hover:bg-[#e26f00]"
+            onClick={onAddToAssetLibrary}
+          >
+            Add to Asset Library
+          </button>
+        </div>
       </div>
     </div>
   );

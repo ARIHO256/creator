@@ -1,5 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { sellerBackendApi } from "../../../lib/backendApi";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 /**
  * SupplierLiveAlertsManagerPage.jsx
@@ -23,7 +22,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  *
  * Notes:
  * - Canvas-safe: no MUI, no lucide-react, no external contexts/hooks.
- * - Replace live data with real Campaign/Session state from your store + routing.
+ * - Replace mock data with real Campaign/Session state from your store + routing.
  * - RBAC comments included where you’d gate send/manage actions.
  */
 
@@ -271,12 +270,6 @@ const Zap = ({ className }) => (
   </Icon>
 );
 
-function alertIcon(key) {
-  if (key === "flash_deal") return <Flame className="h-4 w-4" />;
-  if (key === "last_chance") return <Timer className="h-4 w-4" />;
-  return <Bell className="h-4 w-4" />;
-}
-
 
 
 /* ------------------------------ UI primitives ------------------------------ */
@@ -372,40 +365,134 @@ function Modal({ open, title, onClose, children }) {
 export default function SupplierLiveAlertsManagerPage() {
   const { toasts, push } = useToasts();
   const { run, isPending } = useAsyncAction((msg, tone) => push(msg, tone));
-  const toolHydratedRef = useRef(false);
-  const toolAutosaveRef = useRef(null);
 
-  const [session, setSession] = useState({
-    id: "",
-    title: "",
-    status: "Draft",
-    startedISO: new Date().toISOString(),
-    endsISO: new Date().toISOString(),
-  });
-  const [campaign, setCampaign] = useState({
-    id: "",
-    name: "",
-    creatorUsageDecision: "",
-    creators: [],
-  });
+  // Demo: Session + Campaign context
+  const session = useMemo(
+    () => ({
+      id: "LS-20418",
+      title: "Autumn Beauty Flash",
+      status: "Live", // Draft | Scheduled | Live | Ended
+      startedISO: new Date(Date.now() - 9 * 60 * 1000).toISOString(),
+      endsISO: new Date(Date.now() + 51 * 60 * 1000).toISOString(),
+    }),
+    []
+  );
+
+  const campaign = useMemo(
+    () => ({
+      id: "S-201",
+      name: "Beauty Flash Week (Combo)",
+      creatorUsageDecision: "I will use a Creator", // supplier flow hint
+      creators: [
+        { id: "CR-01", name: "Amina K", handle: "amina_live" },
+        { id: "CR-02", name: "Kofi Mensah", handle: "kofi_live" },
+      ],
+    }),
+    []
+  );
 
   const liveLink = useMemo(() => buildLiveLink(session.id), [session.id]);
 
   // Supplier add-on: also request creators to send an alert to their own audience
-  const [alsoRequestCreator, setAlsoRequestCreator] = useState(false);
-  const [selectedCreatorIds, setSelectedCreatorIds] = useState([]);
-  const [channels, setChannels] = useState([]);
-  const [templates, setTemplates] = useState([]);
+  const [alsoRequestCreator, setAlsoRequestCreator] = useState(campaign.creatorUsageDecision === "I will use a Creator");
+  const [selectedCreatorIds, setSelectedCreatorIds] = useState(() => campaign.creators.map((c) => c.id));
 
-  const [enabledDest, setEnabledDest] = useState({});
+  const channels = useMemo(
+    () => [
+      {
+        key: "whatsapp",
+        name: "WhatsApp",
+        short: "WA",
+        status: "Connected",
+        supportsPin: true,
+        pinHint: "Pin the live link message so late joiners can tap it quickly.",
+      },
+      {
+        key: "telegram",
+        name: "Telegram",
+        short: "TG",
+        status: "Connected",
+        supportsPin: true,
+        pinHint: "Pin the latest message in the channel/group to keep the link visible.",
+      },
+      {
+        key: "line",
+        name: "LINE",
+        short: "LINE",
+        status: "Needs re-auth",
+        supportsPin: true,
+        pinHint: "Reconnect your LINE account, then pin the live link message.",
+      },
+      {
+        key: "viber",
+        name: "Viber",
+        short: "Viber",
+        status: "Connected",
+        supportsPin: true,
+        pinHint: "Pin one live link message so it stays visible while you’re live.",
+      },
+      {
+        key: "rcs",
+        name: "RCS",
+        short: "RCS",
+        status: "Connected",
+        supportsPin: false,
+        pinHint: "Pinning varies by device. Keep alerts spaced out and resend sparingly.",
+      },
+    ],
+    []
+  );
+
+  const templates = useMemo(
+    () => [
+      {
+        key: "were_live",
+        title: "We’re live",
+        subtitle: "Kick off attendance fast.",
+        minIntervalMinutes: 8,
+        icon: <Bell className="h-4 w-4" />,
+        build: ({ sessionTitle, link }) => `🔴 We’re LIVE: ${sessionTitle}\nTap to join: ${link}`,
+      },
+      {
+        key: "flash_deal",
+        title: "Flash deal",
+        subtitle: "Announce a drop (with caps).",
+        minIntervalMinutes: 10,
+        icon: <Flame className="h-4 w-4" />,
+        build: ({ sessionTitle, link, dealName, endsIn }) =>
+          `⚡ Flash deal: ${dealName}\nLive in: ${sessionTitle}\nEnds in ${endsIn} • Tap: ${link}`,
+      },
+      {
+        key: "last_chance",
+        title: "Last chance",
+        subtitle: "Final push before end.",
+        minIntervalMinutes: 12,
+        icon: <Timer className="h-4 w-4" />,
+        build: ({ sessionTitle, link, endsIn }) => `⏳ Last chance!\n${sessionTitle}\nEnding in ${endsIn} • Join: ${link}`,
+      },
+    ],
+    []
+  );
+
+  const [enabledDest, setEnabledDest] = useState({
+    whatsapp: true,
+    telegram: true,
+    line: false,
+    viber: false,
+    rcs: false,
+  });
 
   const enabledChannels = useMemo(() => channels.filter((c) => enabledDest[c.key]), [channels, enabledDest]);
 
-  const [dealName, setDealName] = useState("");
+  const [dealName, setDealName] = useState("GlowUp Serum Bundle");
   const [dealEndsMinutes, setDealEndsMinutes] = useState(10);
 
-  // cap timestamps
-  const [lastSent, setLastSent] = useState({});
+  // cap timestamps (demo)
+  const [lastSent, setLastSent] = useState({
+    were_live: Date.now() - 11 * 60 * 1000,
+    flash_deal: Date.now() - 20 * 60 * 1000,
+    last_chance: Date.now() - 40 * 60 * 1000,
+  });
 
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -414,88 +501,23 @@ export default function SupplierLiveAlertsManagerPage() {
   }, []);
 
   const canSend = useCallback(
-    (t) => Boolean(t) && Date.now() - (lastSent[t.key] ?? 0) >= Number(t.minIntervalMinutes ?? 0) * 60 * 1000,
+    (t) => Date.now() - (lastSent[t.key] ?? 0) >= t.minIntervalMinutes * 60 * 1000,
     [lastSent]
   );
   const nextWaitMs = (t) =>
-    Math.max(0, Number(t?.minIntervalMinutes ?? 0) * 60 * 1000 - (Date.now() - (lastSent[t?.key] ?? 0)));
+    Math.max(0, t.minIntervalMinutes * 60 * 1000 - (Date.now() - (lastSent[t.key] ?? 0)));
 
   const buildBody = (t) =>
-    String(t?.template || "")
-      .replaceAll("{{sessionTitle}}", session.title)
-      .replaceAll("{{link}}", liveLink)
-      .replaceAll("{{dealName}}", dealName)
-      .replaceAll("{{endsIn}}", `${dealEndsMinutes}m`);
+    t.build({
+      sessionTitle: session.title,
+      link: liveLink,
+      dealName,
+      endsIn: `${dealEndsMinutes}m`,
+    });
 
-  const [active, setActive] = useState(null);
+  const [active, setActive] = useState(templates[0]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
-
-  useEffect(() => {
-    let activeRequest = true;
-
-    void sellerBackendApi
-      .getLiveToolConfig("live-alerts")
-      .then((payload) => {
-        if (!activeRequest) return;
-        const nextSession = payload.session && typeof payload.session === "object" && !Array.isArray(payload.session) ? payload.session : {};
-        const nextCampaign = payload.campaign && typeof payload.campaign === "object" && !Array.isArray(payload.campaign) ? payload.campaign : {};
-        const nextTemplates = Array.isArray(payload.templates) ? payload.templates : [];
-        setSession({
-          id: String(nextSession.id ?? ""),
-          title: String(nextSession.title ?? ""),
-          status: String(nextSession.status ?? "Draft"),
-          startedISO: String(nextSession.startedISO ?? new Date().toISOString()),
-          endsISO: String(nextSession.endsISO ?? new Date().toISOString()),
-        });
-        setCampaign({
-          id: String(nextCampaign.id ?? ""),
-          name: String(nextCampaign.name ?? ""),
-          creatorUsageDecision: String(nextCampaign.creatorUsageDecision ?? ""),
-          creators: Array.isArray(nextCampaign.creators) ? nextCampaign.creators : [],
-        });
-        setAlsoRequestCreator(Boolean(payload.alsoRequestCreator));
-        setSelectedCreatorIds(Array.isArray(payload.selectedCreatorIds) ? payload.selectedCreatorIds : []);
-        setChannels(Array.isArray(payload.channels) ? payload.channels : []);
-        setTemplates(nextTemplates);
-        setEnabledDest(payload.enabledDest && typeof payload.enabledDest === "object" && !Array.isArray(payload.enabledDest) ? payload.enabledDest : {});
-        setDealName(String(payload.dealName ?? ""));
-        setDealEndsMinutes(Number(payload.dealEndsMinutes ?? 10));
-        setLastSent(payload.lastSent && typeof payload.lastSent === "object" && !Array.isArray(payload.lastSent) ? payload.lastSent : {});
-        setActive(nextTemplates[0] ?? null);
-        toolHydratedRef.current = true;
-      })
-      .catch(() => {
-        toolHydratedRef.current = true;
-      });
-
-    return () => {
-      activeRequest = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!toolHydratedRef.current) return;
-    if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
-    toolAutosaveRef.current = window.setTimeout(() => {
-      void sellerBackendApi.patchLiveToolConfig("live-alerts", {
-        session,
-        campaign,
-        alsoRequestCreator,
-        selectedCreatorIds,
-        channels,
-        templates,
-        enabledDest,
-        dealName,
-        dealEndsMinutes,
-        lastSent,
-      }).catch(() => undefined);
-    }, 450);
-
-    return () => {
-      if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
-    };
-  }, [session, campaign, alsoRequestCreator, selectedCreatorIds, channels, templates, enabledDest, dealName, dealEndsMinutes, lastSent]);
 
   const openConfirm = (t) => {
     setActive(t);
@@ -515,7 +537,7 @@ export default function SupplierLiveAlertsManagerPage() {
     if (session.status !== "Live") issues.push("Session is not Live. Use Audience Notifications for scheduled alerts.");
     if (enabledChannels.length === 0) issues.push("Enable at least one destination.");
     if (enabledChannels.some((c) => c.status !== "Connected")) issues.push("Some enabled destinations need re-auth or are blocked.");
-    if (active && !canSend(active)) issues.push("Frequency cap active for this alert.");
+    if (!canSend(active)) issues.push("Frequency cap active for this alert.");
 
     if (campaign.creatorUsageDecision === "I will use a Creator" && alsoRequestCreator && selectedCreatorIds.length === 0) {
       issues.push("Select at least one creator to request a send.");
@@ -532,11 +554,9 @@ export default function SupplierLiveAlertsManagerPage() {
       async () => {
         // simulate network
         await new Promise((r) => setTimeout(r, 600));
-        if (active?.key) {
-          setLastSent((s) => ({ ...s, [active.key]: Date.now() }));
-        }
+        setLastSent((s) => ({ ...s, [active.key]: Date.now() }));
 
-        // Supplier add-on: create creator request tasks
+        // Supplier add-on: create creator request tasks (demo)
         if (campaign.creatorUsageDecision === "I will use a Creator" && alsoRequestCreator && selectedCreatorIds.length > 0) {
           await new Promise((r) => setTimeout(r, 250));
         }
@@ -544,7 +564,7 @@ export default function SupplierLiveAlertsManagerPage() {
         setConfirmOpen(false);
       },
       {
-        successMessage: `Sent “${active?.title || "Alert"}” to ${enabledChannels.length} destination(s)` +
+        successMessage: `Sent “${active.title}” to ${enabledChannels.length} destination(s)` +
           (campaign.creatorUsageDecision === "I will use a Creator" && alsoRequestCreator
             ? ` + requested ${selectedCreatorIds.length} creator(s)`
             : ""),
@@ -612,8 +632,8 @@ export default function SupplierLiveAlertsManagerPage() {
             </div>
             <Btn
               tone="primary"
-              onClick={() => templates[0] && openConfirm(templates[0])}
-              disabled={!templates[0] || !canSend(templates[0])}
+              onClick={() => openConfirm(templates[0])}
+              disabled={!canSend(templates[0])}
               left={<Zap className="h-4 w-4" />}
             >
               <span className="hidden sm:inline">Quick “We’re live”</span>
@@ -712,7 +732,7 @@ export default function SupplierLiveAlertsManagerPage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex items-start gap-2">
                           <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-neutral-200 dark:ring-slate-800">
-                            {alertIcon(t.key)}
+                            {t.icon}
                           </div>
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold text-neutral-900 dark:text-slate-50">{t.title}</div>
@@ -739,11 +759,11 @@ export default function SupplierLiveAlertsManagerPage() {
                         <Btn
                           tone="primary"
                           disabled={!ok || isPending}
-                          loading={isPending && active?.key === t.key}
+                          loading={isPending && active.key === t.key}
                           onClick={() => openConfirm(t)}
                           left={<Send className="h-4 w-4" />}
                         >
-                          {isPending && active?.key === t.key ? "Sending..." : "Send"}
+                          {isPending && active.key === t.key ? "Sending..." : "Send"}
                         </Btn>
                         <button
                           type="button"
@@ -867,7 +887,7 @@ export default function SupplierLiveAlertsManagerPage() {
                           />
                           <Btn
                             tone="ghost"
-                            onClick={() => push("Manage account", "info")}
+                            onClick={() => push("Manage account (demo)", "info")}
                             left={<Link2 className="h-4 w-4" />}
                             title="RBAC: supplier.live.alerts.manage"
                           >
@@ -922,7 +942,7 @@ export default function SupplierLiveAlertsManagerPage() {
               <div className="mt-3 rounded-3xl bg-neutral-900 dark:bg-black p-3 transition">
                 <div className="rounded-2xl bg-white dark:bg-slate-900 p-3">
                   <div className="mb-2 flex items-center justify-between">
-                    <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">{active?.title || "Select alert"}</div>
+                    <div className="text-xs font-semibold text-neutral-700 dark:text-slate-400">{active.title}</div>
                     <Pill tone={canSend(active) ? "good" : "warn"}>
                       {canSend(active) ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Timer className="h-3.5 w-3.5" />}
                       {canSend(active) ? "Ready" : `Wait ${msToLabel(nextWaitMs(active))}`}
@@ -930,19 +950,19 @@ export default function SupplierLiveAlertsManagerPage() {
                   </div>
 
                   <div className="rounded-2xl bg-neutral-50 dark:bg-slate-800 p-3 ring-1 ring-neutral-200 dark:ring-slate-700 transition">
-                    <div className="whitespace-pre-wrap text-sm text-neutral-800 dark:text-slate-100">{active ? buildBody(active) : ""}</div>
+                    <div className="whitespace-pre-wrap text-sm text-neutral-800 dark:text-slate-100">{buildBody(active)}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Btn
                         tone="primary"
-                        onClick={() => active && openConfirm(active)}
-                        disabled={!active || !canSend(active)}
+                        onClick={() => openConfirm(active)}
+                        disabled={!canSend(active)}
                         left={<Send className="h-4 w-4" />}
                       >
                         Send with confirm
                       </Btn>
                       <Btn
                         onClick={async () => {
-                          const ok = await safeCopy(active ? buildBody(active) : "");
+                          const ok = await safeCopy(buildBody(active));
                           push(ok ? "Copied message body" : "Copy failed", ok ? "success" : "error");
                         }}
                         left={<Copy className="h-4 w-4" />}
@@ -982,7 +1002,7 @@ export default function SupplierLiveAlertsManagerPage() {
         </div>
 
         {/* Confirm modal */}
-        <Modal open={confirmOpen} title={`Confirm send: ${active?.title || "Alert"}`} onClose={() => setConfirmOpen(false)}>
+        <Modal open={confirmOpen} title={`Confirm send: ${active.title}`} onClose={() => setConfirmOpen(false)}>
           <div className="space-y-4">
             <div
               className={cn(

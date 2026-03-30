@@ -1,10 +1,4 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-
-import { sellerBackendApi } from "../../../lib/backendApi";
-
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/collabs/SupplierContractsPage").catch(() => undefined);
 
 /**
  * SupplierContractsPage.jsx
@@ -31,11 +25,6 @@ void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/collabs/S
  * - Replace toast/navigation stubs with react-router + API in the Vite project.
  */
 
-const ORANGE = "#f77f00";
-const ROUTES = {
-  proposals: "/mldz/collab/proposals",
-};
-
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
@@ -51,126 +40,6 @@ function money(n, currency = "USD") {
   } catch {
     return `${currency} ${Math.round(v).toLocaleString()}`;
   }
-}
-
-function formatContractDate(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-function mapContractStatus(value) {
-  const normalized = String(value || "").trim().toUpperCase();
-  if (normalized === "COMPLETED") return "Completed";
-  if (normalized === "TERMINATED" || normalized === "CANCELLED") return "Terminated";
-  if (normalized === "TERMINATION_REQUESTED") return "Terminated";
-  if (normalized === "DRAFT" || normalized === "PENDING" || normalized === "UPCOMING") return "Upcoming";
-  return "Active";
-}
-
-function mapContractDeliverables(deliverables, totalTasks) {
-  const mapped = (Array.isArray(deliverables) ? deliverables : [])
-    .map((entry, index) => {
-      if (!entry || typeof entry !== "object") return null;
-      return {
-        id: String(entry.id || index + 1),
-        label: String(entry.label || entry.title || `Deliverable ${index + 1}`),
-        due: String(entry.due || entry.dueAt || "TBD"),
-        status: String(entry.status || (entry.done || entry.completed ? "Approved" : "Pending"))
-      };
-    })
-    .filter(Boolean);
-
-  if (mapped.length) return mapped;
-
-  return Array.from({ length: Math.max(0, Number(totalTasks || 0)) }).map((_, index) => ({
-    id: String(index + 1),
-    label: `Deliverable ${index + 1}`,
-    due: "TBD",
-    status: "Pending"
-  }));
-}
-
-function mapContractSchedule(metadata, record) {
-  if (Array.isArray(metadata.schedule)) {
-    return metadata.schedule
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") return null;
-        return {
-          label: String(entry.label || "Stage"),
-          start: Number(entry.start || 0),
-          end: Number(entry.end || 0)
-        };
-      })
-      .filter(Boolean);
-  }
-
-  if (record.startAt || record.endAt) {
-    return [{ label: "Delivery window", start: 0, end: 100 }];
-  }
-
-  return [];
-}
-
-function mapContractTimeline(metadata, record) {
-  if (Array.isArray(metadata.timeline)) {
-    return metadata.timeline
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") return null;
-        return {
-          date: String(entry.date || formatContractDate(record.createdAt) || "—"),
-          label: String(entry.label || "Contract updated")
-        };
-      })
-      .filter(Boolean);
-  }
-
-  const events = [];
-  if (record.createdAt) {
-    events.push({ date: formatContractDate(record.createdAt), label: "Contract created" });
-  }
-  if (record.terminationRequestedAt) {
-    events.push({ date: formatContractDate(record.terminationRequestedAt), label: "Termination requested" });
-  } else if (record.updatedAt && record.updatedAt !== record.createdAt) {
-    events.push({ date: formatContractDate(record.updatedAt), label: "Contract updated" });
-  }
-  return events;
-}
-
-function toContract(record) {
-  const metadata = record?.metadata && typeof record.metadata === "object" ? record.metadata : {};
-  const status = mapContractStatus(record.status);
-  const deliverables = mapContractDeliverables(record.deliverables, record.totalTasks || 0);
-  const approvedCount = deliverables.filter((item) => item.status === "Approved").length;
-  const totalTasks = Number(record.totalTasks || deliverables.length || 0);
-
-  return {
-    id: String(record.id || ""),
-    creator: String(record.creatorName || record.creator || ""),
-    campaign: String(record.campaignName || record.campaign || record.title || ""),
-    period:
-      String(metadata.period || "").trim() ||
-      [formatContractDate(record.startAt), formatContractDate(record.endAt)].filter(Boolean).join(" – ") ||
-      [formatContractDate(record.createdAt), formatContractDate(record.updatedAt)].filter(Boolean).join(" – ") ||
-      "Current term",
-    status,
-    value: Number(record.value || 0),
-    currency: String(record.currency || "USD"),
-    remainingTasks: Math.max(0, totalTasks - approvedCount),
-    totalTasks,
-    payoutStatus: String(record.payoutStatus || metadata.payoutStatus || (status === "Completed" ? "Ready for payout" : "In progress")),
-    health: String(record.health || metadata.health || (status === "Terminated" ? "Terminated" : "On track")),
-    healthScore: Number(record.healthScore || metadata.healthScore || (status === "Terminated" ? 25 : 80)),
-    schedule: mapContractSchedule(metadata, record),
-    deliverables,
-    timeline: mapContractTimeline(metadata, record),
-    approvalMode: String(record.approvalMode || metadata.approvalMode || "Manual"),
-    collabMode: String(record.collabMode || metadata.collabMode || "Invite-Only"),
-    creatorUsageDecision: String(record.creatorUsageDecision || metadata.creatorUsageDecision || "I will use a Creator"),
-    multiCreatorCampaign: Boolean(record.multiCreatorCampaign || metadata.multiCreatorCampaign),
-    _rawStatus: String(record.status || "")
-  };
 }
 
 /* -------------------------------- Toast -------------------------------- */
@@ -260,6 +129,180 @@ function ConfirmModal({ isOpen, title, message, confirmText = "Confirm", confirm
 /* ------------------------------- Data ----------------------------------- */
 
 const CONTRACT_FILTERS = ["All", "Active", "Upcoming", "Completed", "Terminated"];
+
+const MOCK_CONTRACTS = [
+  {
+    id: "SC-201",
+    creator: "Lilian Beauty Plug",
+    campaign: "GlowUp Serum Promo",
+    period: "Feb 25 – Mar 20, 2026",
+    status: "Active",
+    currency: "USD",
+    value: 1200,
+    remainingTasks: 2,
+    totalTasks: 7,
+    payoutStatus: "Milestone 1 paid · Milestone 2 pending",
+    health: "On track",
+    healthScore: 84,
+
+    // Supplier campaign-level context
+    approvalMode: "Manual", // Manual | Auto
+    collabMode: "Open for Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    multiCreatorCampaign: true,
+
+    deliverables: [
+      { id: "D-01", label: "Product brief sync call", due: "Feb 25", status: "Approved" },
+      { id: "D-02", label: "Live outline + CTA plan", due: "Feb 27", status: "Approved" },
+      { id: "D-03", label: "Clip #1 (hook + offer)", due: "Feb 29", status: "Submitted" },
+      { id: "D-04", label: "Clip #2 (routine demo)", due: "Mar 02", status: "Changes Requested" },
+      { id: "D-05", label: "Live session (60–75 mins)", due: "Mar 05", status: "Pending" },
+      { id: "D-06", label: "Replay captions + timestamps", due: "Mar 06", status: "Pending" },
+      { id: "D-07", label: "Performance report (48h post-live)", due: "Mar 08", status: "Pending" }
+    ],
+
+    schedule: [
+      { label: "Brief", start: 4, end: 18 },
+      { label: "Asset build", start: 18, end: 44 },
+      { label: "Live", start: 44, end: 56 },
+      { label: "Post", start: 56, end: 70 },
+      { label: "Reporting", start: 70, end: 86 }
+    ],
+
+    timeline: [
+      { date: "Feb 24", label: "Proposal accepted" },
+      { date: "Feb 25", label: "Contract signed + kickoff" },
+      { date: "Feb 27", label: "Outline approved" },
+      { date: "Feb 29", label: "Clip #1 submitted" },
+      { date: "Mar 02", label: "Changes requested on Clip #2" },
+      { date: "Mar 05", label: "Live scheduled" }
+    ]
+  },
+  {
+    id: "SC-202",
+    creator: "TechWithBrian",
+    campaign: "Tech Friday Mega",
+    period: "Mar 01 – Apr 05, 2026",
+    status: "Upcoming",
+    currency: "USD",
+    value: 1600,
+    remainingTasks: 5,
+    totalTasks: 9,
+    payoutStatus: "Deposit pending",
+    health: "At risk",
+    healthScore: 63,
+
+    approvalMode: "Auto",
+    collabMode: "Invite-Only",
+    creatorUsageDecision: "I will use a Creator",
+    multiCreatorCampaign: false,
+
+    deliverables: [
+      { id: "D-11", label: "Product list confirmation", due: "Mar 01", status: "Pending" },
+      { id: "D-12", label: "Episode #1 run-sheet", due: "Mar 03", status: "Pending" },
+      { id: "D-13", label: "Episode #1 live", due: "Mar 06", status: "Pending" },
+      { id: "D-14", label: "Episode #2 live", due: "Mar 13", status: "Pending" },
+      { id: "D-15", label: "Episode #3 live", due: "Mar 20", status: "Pending" },
+      { id: "D-16", label: "Series recap clip", due: "Mar 22", status: "Pending" },
+      { id: "D-17", label: "Final performance report", due: "Mar 25", status: "Pending" }
+    ],
+
+    schedule: [
+      { label: "Prep", start: 8, end: 28 },
+      { label: "Series", start: 28, end: 74 },
+      { label: "Recap", start: 74, end: 84 }
+    ],
+
+    timeline: [
+      { date: "Feb 20", label: "Invite accepted" },
+      { date: "Feb 22", label: "Contract drafted" },
+      { date: "Feb 25", label: "Awaiting deposit" }
+    ]
+  },
+  {
+    id: "SC-203",
+    creator: "Amina K.",
+    campaign: "Beauty Flash Dealz",
+    period: "Feb 10 – Feb 18, 2026",
+    status: "Completed",
+    currency: "USD",
+    value: 950,
+    remainingTasks: 0,
+    totalTasks: 6,
+    payoutStatus: "Fully paid",
+    health: "On track",
+    healthScore: 96,
+
+    approvalMode: "Manual",
+    collabMode: "Invite-Only",
+    creatorUsageDecision: "I will use a Creator",
+    multiCreatorCampaign: false,
+
+    deliverables: [
+      { id: "D-21", label: "Kickoff call", due: "Feb 10", status: "Approved" },
+      { id: "D-22", label: "Live outline", due: "Feb 11", status: "Approved" },
+      { id: "D-23", label: "Live session", due: "Feb 12", status: "Approved" },
+      { id: "D-24", label: "Clip #1", due: "Feb 13", status: "Approved" },
+      { id: "D-25", label: "Clip #2", due: "Feb 14", status: "Approved" },
+      { id: "D-26", label: "Final report", due: "Feb 16", status: "Approved" }
+    ],
+
+    schedule: [
+      { label: "Prep", start: 10, end: 30 },
+      { label: "Live", start: 30, end: 45 },
+      { label: "Post", start: 45, end: 70 },
+      { label: "Report", start: 70, end: 85 }
+    ],
+
+    timeline: [
+      { date: "Feb 09", label: "Proposal accepted" },
+      { date: "Feb 10", label: "Contract signed" },
+      { date: "Feb 12", label: "Live executed" },
+      { date: "Feb 16", label: "Report delivered" },
+      { date: "Feb 18", label: "Payout settled" }
+    ]
+  },
+  {
+    id: "SC-204",
+    creator: "EV Gadgets Daily",
+    campaign: "EV Accessories Launch",
+    period: "Jan 20 – Feb 01, 2026",
+    status: "Terminated",
+    currency: "USD",
+    value: 600,
+    remainingTasks: 0,
+    totalTasks: 5,
+    payoutStatus: "Partial pay · Dispute resolved",
+    health: "Terminated",
+    healthScore: 28,
+
+    approvalMode: "Manual",
+    collabMode: "Open for Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    multiCreatorCampaign: true,
+
+    deliverables: [
+      { id: "D-31", label: "Kickoff", due: "Jan 20", status: "Approved" },
+      { id: "D-32", label: "Ad Creative #1", due: "Jan 22", status: "Rejected" },
+      { id: "D-33", label: "Ad Creative #2", due: "Jan 24", status: "Rejected" },
+      { id: "D-34", label: "Live demo", due: "Jan 28", status: "Pending" },
+      { id: "D-35", label: "Close-out report", due: "Jan 30", status: "Pending" }
+    ],
+
+    schedule: [
+      { label: "Prep", start: 6, end: 26 },
+      { label: "Assets", start: 26, end: 48 },
+      { label: "Live", start: 48, end: 60 }
+    ],
+
+    timeline: [
+      { date: "Jan 19", label: "Contract signed" },
+      { date: "Jan 22", label: "Creative rejected" },
+      { date: "Jan 25", label: "Renegotiation started" },
+      { date: "Jan 31", label: "Termination resolved" }
+    ]
+  }
+];
 
 /* ----------------------------- Subcomponents ---------------------------- */
 
@@ -507,7 +550,7 @@ function ContractRow({ contract, active, onSelect }) {
   );
 }
 
-function ContractDetail({ contract, onUpdateContract, onRequestTermination }) {
+function ContractDetail({ contract, onUpdateContract }) {
   const [terminationReason, setTerminationReason] = useState("for-cause");
   const [terminationExplanation, setTerminationExplanation] = useState("");
   const [terminationError, setTerminationError] = useState("");
@@ -518,10 +561,6 @@ function ContractDetail({ contract, onUpdateContract, onRequestTermination }) {
 
   const [rejectId, setRejectId] = useState(null);
 
-  useEffect(() => {
-    setTerminationStatus(contract?._rawStatus === "TERMINATION_REQUESTED" ? "Requested" : "Idle");
-  }, [contract?.id, contract?._rawStatus]);
-
   const handleRequestTermination = async () => {
     if (!terminationExplanation.trim()) {
       setTerminationError("Please provide a clear explanation before requesting termination.");
@@ -530,19 +569,13 @@ function ContractDetail({ contract, onUpdateContract, onRequestTermination }) {
     setTerminationError("");
     setIsSimulating(true);
 
-    try {
-      const next = await onRequestTermination(contract.id, {
-        reason: `${terminationReason}: ${terminationExplanation.trim()}`
-      });
-      onUpdateContract(next);
+    setTimeout(() => {
+      // Supplier-side: notify Creator + EVzone Admin
       setNotificationsSentTo(["Creator", "EVzone Admin"]);
       setTerminationStatus("Requested");
-      toast("Termination request sent");
-    } catch {
-      setTerminationError("Termination request failed. Check backend connectivity and retry.");
-    } finally {
       setIsSimulating(false);
-    }
+      toast("Termination request sent");
+    }, 1200);
   };
 
   const printContract = () => {
@@ -824,7 +857,7 @@ function ContractDetail({ contract, onUpdateContract, onRequestTermination }) {
                     className="px-3 py-1.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[11px] font-extrabold"
                     onClick={() => {
                       setTerminationStatus("Resolved");
-                      toast("Termination resolved");
+                      toast("Termination resolved (demo)");
                     }}
                     disabled={terminationStatus === "Resolved"}
                   >
@@ -838,7 +871,7 @@ function ContractDetail({ contract, onUpdateContract, onRequestTermination }) {
                       setNotificationsSentTo([]);
                       setTerminationExplanation("");
                       setTerminationReason("for-cause");
-                      toast("Termination flow reset");
+                      toast("Termination flow reset (demo)");
                     }}
                   >
                     Reset
@@ -885,37 +918,12 @@ function ContractDetail({ contract, onUpdateContract, onRequestTermination }) {
 /* -------------------------------- Main ---------------------------------- */
 
 export default function SupplierContractsPage() {
-  const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState("Active");
-  const [selectedContractId, setSelectedContractId] = useState("");
+  const [selectedContractId, setSelectedContractId] = useState("SC-201");
 
-  const [dataState, setDataState] = useState("loading"); // ready | loading | error
+  const [dataState, setDataState] = useState("ready"); // ready | loading | error
 
-  const [contracts, setContracts] = useState<Array<Record<string, any>>>([]);
-
-  useEffect(() => {
-    let active = true;
-
-    const loadContracts = async () => {
-      setDataState("loading");
-      try {
-        const records = await sellerBackendApi.getCollaborationContracts();
-        if (!active) return;
-        setContracts(Array.isArray(records) ? records.map(toContract) : []);
-        setDataState("ready");
-      } catch {
-        if (!active) return;
-        setContracts([]);
-        setDataState("error");
-        toast("Contracts failed to load");
-      }
-    };
-
-    void loadContracts();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const [contracts, setContracts] = useState(MOCK_CONTRACTS);
 
   const filteredContracts = useMemo(() => {
     return contracts.filter((c) => {
@@ -931,11 +939,6 @@ export default function SupplierContractsPage() {
     setContracts((prev) => prev.map((c) => (c.id === next.id ? next : c)));
   };
 
-  const requestTermination = async (id, payload) => {
-    const updated = await sellerBackendApi.terminateCollaborationContract(id, payload);
-    return toContract(updated);
-  };
-
   const badge = (
     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-100 border border-slate-200 dark:border-slate-800 transition-colors">
       <span>📑</span>
@@ -948,20 +951,6 @@ export default function SupplierContractsPage() {
       <PageHeader
         pageTitle="Contracts"
         badge={badge}
-        right={
-          <>
-            <span className="hidden md:inline-flex px-2.5 py-1 rounded-full bg-slate-900 text-white text-[11px] font-extrabold border border-slate-800">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: ORANGE }} /> Orange + Black
-            </span>
-            <button
-              type="button"
-              className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 transition-colors"
-              onClick={() => navigate(ROUTES.proposals)}
-            >
-              Proposals
-            </button>
-          </>
-        }
       />
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
@@ -1008,25 +997,21 @@ export default function SupplierContractsPage() {
             {dataState === "error" ? (
               <div className="rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50 dark:bg-rose-900/10 p-3">
                 <div className="text-sm font-extrabold text-rose-900 dark:text-rose-200">Contracts failed to load</div>
-                <div className="text-xs text-rose-800 dark:text-rose-300 mt-1">Check connectivity or retry.</div>
+                <div className="text-xs text-rose-800 dark:text-rose-300 mt-1">Check connectivity or retry. (Demo error state)</div>
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
                     className="px-4 py-2 rounded-full bg-slate-900 text-white text-[11px] font-extrabold"
-                    onClick={async () => {
-                      setDataState("loading");
-                      try {
-                        const records = await sellerBackendApi.getCollaborationContracts();
-                        setContracts(Array.isArray(records) ? records.map(toContract) : []);
-                        setDataState("ready");
-                      } catch {
-                        setContracts([]);
-                        setDataState("error");
-                        toast("Contracts failed to load");
-                      }
-                    }}
+                    onClick={() => setDataState("ready")}
                   >
                     Retry
+                  </button>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-full border border-rose-200 dark:border-rose-800 bg-white dark:bg-slate-900 text-[11px] font-extrabold text-rose-700 dark:text-rose-300"
+                    onClick={() => toast("Open AI helper (demo)")}
+                  >
+                    Open AI helper
                   </button>
                 </div>
               </div>
@@ -1061,11 +1046,7 @@ export default function SupplierContractsPage() {
                 <p className="text-xs max-w-xs text-center">You will see scope, deliverable schedule, health and payout status for the selected contract.</p>
               </div>
             ) : (
-              <ContractDetail
-                contract={selectedContract}
-                onUpdateContract={updateContract}
-                onRequestTermination={requestTermination}
-              />
+              <ContractDetail contract={selectedContract} onUpdateContract={updateContract} />
             )}
           </section>
         </div>
@@ -1084,5 +1065,7 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
 
   assert(cx("a", false && "b", "c") === "a c", "cx joins truthy");
+  assert(Array.isArray(MOCK_CONTRACTS) && MOCK_CONTRACTS.length > 0, "mock contracts exist");
+
   console.log("✅ SupplierContractsPage self-tests passed");
 }

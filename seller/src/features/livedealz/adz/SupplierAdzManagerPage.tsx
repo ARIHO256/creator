@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
-import { buildAdzCampaignPayload, deriveMetricSeries, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzManagerPage.jsx
@@ -212,6 +210,242 @@ function Avatar({ src, alt }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
+const DEMO_ADS = [
+  {
+    id: "ADZ-10021",
+    name: "Flash Dealz: Power Bank",
+    status: "Live",
+    platforms: ["TikTok"],
+    supplier: {
+      name: "BBS",
+      category: "Electronics",
+      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
+    },
+    campaign: { name: "Flash Dealz", subtitle: "Limited-time drops" },
+    startISO: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    heroDesktopMode: "fullscreen",
+    // Supplier governance
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+
+    creator: { name: "Kofi Mensah", handle: "@kofi_live", avatarUrl: "https://i.pravatar.cc/100?img=11", verified: true },
+    owner: "Producer",
+    compensation: { type: "Commission", commissionRate: 0.12 },
+    offers: [
+      {
+        id: "O-1",
+        type: "PRODUCT",
+        name: "20,000mAh Power Bank",
+        currency: "UGX",
+        price: 65000,
+        basePrice: 80000,
+        stockLeft: 8,
+        posterUrl: "https://images.unsplash.com/photo-1580915411954-282cb1f69d1c?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "RETAIL",
+        wholesale: {
+          moq: 10,
+          step: 5,
+          leadTimeLabel: "Ships in 2–4 days",
+          tiers: [
+            { minQty: 10, unitPrice: 56000 },
+            { minQty: 25, unitPrice: 52000 },
+            { minQty: 50, unitPrice: 49000 }
+          ]
+        }
+      },
+      {
+        id: "O-2",
+        type: "SERVICE",
+        name: "Device setup support (15min)",
+        currency: "UGX",
+        price: 15000,
+        stockLeft: -1,
+        posterUrl: "https://images.unsplash.com/photo-1556741533-f6acd647d2c4?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        serviceMeta: { durationMins: 15, bookingType: "Instant" }
+      }
+    ],
+    hasBrokenLink: false,
+    lowStock: true,
+    needsApproval: false,
+    lock: { locked: true, label: "Locked by Ops", reason: "Live ads cannot be edited." },
+    impressions: 182400,
+    clicks: 9720,
+    orders: 412,
+    earnings: 1860,
+    earningsCurrency: "USD",
+    generated: true
+  },
+  {
+    id: "ADZ-10022",
+    name: "Beauty Drop: Glow Serum",
+    status: "Pending approval",
+    platforms: ["Instagram"],
+    supplier: {
+      name: "GlowCo",
+      category: "Beauty",
+      logoUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=256&auto=format&fit=crop"
+    },
+    campaign: { name: "Beauty Drop", subtitle: "Host-first content" },
+    startISO: new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 37 * 60 * 60 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    heroDesktopMode: "modal",
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Invite-Only",
+    approvalMode: "Manual",
+    creator: { name: "Nala Okoye", handle: "@nala.skin", avatarUrl: "https://i.pravatar.cc/100?img=32", verified: true },
+    owner: "Editor",
+    compensation: { type: "Flat fee", flatFee: 550, currency: "GBP" },
+    offers: [
+      {
+        id: "O-3",
+        type: "PRODUCT",
+        name: "Vitamin C Serum",
+        currency: "UGX",
+        price: 38000,
+        basePrice: 52000,
+        stockLeft: 12,
+        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL"],
+        defaultSellingMode: "RETAIL"
+      }
+    ],
+    hasBrokenLink: false,
+    lowStock: false,
+    needsApproval: true,
+    impressions: 0,
+    clicks: 0,
+    orders: 0,
+    earnings: 0,
+    earningsCurrency: "USD",
+    generated: false
+  },
+  {
+    id: "ADZ-10023",
+    name: "Home Picks: Blender",
+    status: "Paused",
+    platforms: ["YouTube"],
+    supplier: {
+      name: "HomePro",
+      category: "Home",
+      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop"
+    },
+    campaign: { name: "Home Essentials", subtitle: "Kitchen upgrade" },
+    startISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+    endISO: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    heroDesktopMode: "modal",
+    hostRole: "Supplier",
+    creatorUsage: "I will NOT use a Creator",
+    collabMode: "(n/a)",
+    approvalMode: "Manual",
+    creator: { name: "(Supplier-hosted)", handle: "@homepro", avatarUrl: "https://i.pravatar.cc/100?img=47" },
+    owner: "Owner",
+    compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 200, currency: "GBP" },
+    offers: [
+      {
+        id: "O-4",
+        type: "PRODUCT",
+        name: "6-Speed Blender",
+        currency: "UGX",
+        price: 240000,
+        stockLeft: 18,
+        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 3,
+          step: 1,
+          leadTimeLabel: "Ships in 3–6 days",
+          tiers: [
+            { minQty: 3, unitPrice: 210000 },
+            { minQty: 6, unitPrice: 199000 },
+            { minQty: 12, unitPrice: 189000 }
+          ]
+        }
+      }
+    ],
+    hasBrokenLink: true,
+    lowStock: false,
+    needsApproval: false,
+    impressions: 60200,
+    clicks: 1100,
+    orders: 21,
+    earnings: 95,
+    earningsCurrency: "USD",
+    generated: true
+  },
+  {
+    id: "ADZ-10024",
+    name: "EV Accessories: Helmet",
+    status: "Rejected",
+    platforms: ["TikTok"],
+    supplier: {
+      name: "MotoGear",
+      category: "Auto",
+      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
+    },
+    campaign: { name: "EV Accessories", subtitle: "Safety picks" },
+    startISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1495555961986-6d4c1ecb7be3?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    heroDesktopMode: "modal",
+    hostRole: "Creator",
+    creatorUsage: "I am NOT SURE yet",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    creator: { name: "Sade Bello", handle: "@sade.style", avatarUrl: "https://i.pravatar.cc/100?img=37" },
+    owner: "Editor",
+    compensation: { type: "Commission", commissionRate: 0.1 },
+    offers: [
+      {
+        id: "O-5",
+        type: "PRODUCT",
+        name: "Rider Helmet (ECE)",
+        currency: "UGX",
+        price: 165000,
+        stockLeft: 0,
+        posterUrl: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        desktopMode: "modal",
+        sellingModes: ["RETAIL"],
+        defaultSellingMode: "RETAIL"
+      }
+    ],
+    hasBrokenLink: false,
+    lowStock: false,
+    needsApproval: false,
+    impressions: 3000,
+    clicks: 55,
+    orders: 1,
+    earnings: 4,
+    earningsCurrency: "USD",
+    generated: false
+  }
+];
+
 /* ------------------------------ Mini charts (no libs) ---------------------- */
 
 function MiniTrend({ title, subtitle, seriesA, seriesB }) {
@@ -270,7 +504,6 @@ function MiniTrend({ title, subtitle, seriesA, seriesB }) {
 export default function SupplierAdzManagerPage() {
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
-  const [syncedAds, setSyncedAds] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2600);
@@ -287,43 +520,8 @@ export default function SupplierAdzManagerPage() {
     navigate(target);
   };
 
-  const [ads, setAds] = useState<Array<Record<string, any>>>([]);
-  const [selectedId, setSelectedId] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-
-    void sellerBackendApi
-      .getAdzCampaigns()
-      .then((payload) => {
-        if (cancelled) return;
-        const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
-        if (nextAds.length) {
-          setAds(nextAds as Array<Record<string, any>>);
-          setSyncedAds(Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)])));
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    ads.forEach((ad) => {
-      const nextHash = hashAdzCampaign(ad);
-      if (syncedAds[String(ad.id)] === nextHash) return;
-      setSyncedAds((prev) => ({ ...prev, [String(ad.id)]: nextHash }));
-      void sellerBackendApi.patchAdzCampaign(String(ad.id), buildAdzCampaignPayload(ad));
-    });
-  }, [ads, syncedAds]);
-
-  useEffect(() => {
-    if (!ads.length) return;
-    if (!ads.find((ad) => ad.id === selectedId)) {
-      setSelectedId(ads[0]?.id || "");
-    }
-  }, [ads, selectedId]);
+  const [ads, setAds] = useState(DEMO_ADS);
+  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0] || null, [ads, selectedId]);
 
   // Filters
@@ -448,14 +646,8 @@ export default function SupplierAdzManagerPage() {
     setToast("Resubmitted for review (demo).");
   }
 
-  const trendImpr = useMemo(
-    () => deriveMetricSeries(Number(selected?.impressions7d ?? selected?.impressions ?? 0), 14, `${selected?.id || "impressions"}`),
-    [selected?.id, selected?.impressions, selected?.impressions7d]
-  );
-  const trendOrders = useMemo(
-    () => deriveMetricSeries(Number(selected?.orders7d ?? selected?.orders ?? 0), 14, `${selected?.id || "orders"}-orders`),
-    [selected?.id, selected?.orders, selected?.orders7d]
-  );
+  const trendImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
+  const trendOrders = useMemo(() => [3, 4, 5, 4, 6, 7, 8, 7, 10, 9, 12, 13, 14, 15], []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 transition-colors">

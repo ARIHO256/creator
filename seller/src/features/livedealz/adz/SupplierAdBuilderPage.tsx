@@ -1,247 +1,37 @@
-
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
-import { sellerBackendApi as backendApi } from "../../../lib/backendApi";
-import type { ListingAdzPrefill } from "../../listings/adzPrefill";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  buildAdzBuilderPayload,
-  buildDefaultAdzBuilder,
-  mapAdzBuilderScope,
-  mapBackendAdzBuilder,
-  mapMediaAssetToAdBuilderAsset,
-} from "./runtime";
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/adz/SupplierAdBuilderPage").catch(() => undefined);
-
-/**
- * Dependency-free stubs for China-CDN safety and simple drop-in.
- * - Removes framer-motion + lucide-react hard dependencies.
- * - If your project already includes these packages, you can delete this block
- *   and restore the original imports.
- */
-
-// ---- framer-motion stubs ----
-type MotionLikeProps = {
-  initial?: unknown;
-  animate?: unknown;
-  exit?: unknown;
-  transition?: unknown;
-  layout?: unknown;
-  layoutId?: unknown;
-  whileHover?: unknown;
-  whileTap?: unknown;
-  variants?: unknown;
-} & React.HTMLAttributes<HTMLDivElement>;
-
-function __stripMotionProps<T extends Record<string, any>>(props: T) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { initial, animate, exit, transition, layout, layoutId, whileHover, whileTap, variants, ...rest } = props;
-  return rest as Omit<T, "initial" | "animate" | "exit" | "transition" | "layout" | "layoutId" | "whileHover" | "whileTap" | "variants">;
-}
-
-const AnimatePresence: React.FC<{ children?: React.ReactNode }> = ({ children }) => <>{children}</>;
-
-const motion = {
-  // Only motion.div is used in this file
-  div: React.forwardRef<HTMLDivElement, MotionLikeProps>((props, ref) => {
-    const clean = __stripMotionProps(props);
-    return <div ref={ref} {...clean} />;
-  }),
-} as const;
-
-// ---- lucide-react icon stubs ----
-type IconProps = React.SVGProps<SVGSVGElement> & { title?: string };
-
-function __IconBase({ title, children, ...props }: IconProps & { children: React.ReactNode }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-label={title}
-      {...props}
-    >
-      {children}
-    </svg>
-  );
-}
-
-const __makeIcon =
-  (children: React.ReactNode) =>
-  (props: IconProps) =>
-    <__IconBase {...props}>{children}</__IconBase>;
-
-const BadgeCheck = __makeIcon(
-  <>
-    <path d="M12 2 20 6v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4Z" />
-    <path d="M9 12l2 2 4-4" />
-  </>
-);
-const Check = __makeIcon(<path d="M20 6 9 17l-5-5" />);
-const CheckCircle2 = __makeIcon(
-  <>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M8.5 12l2.3 2.3L15.8 9.3" />
-  </>
-);
-const ChevronDown = __makeIcon(<path d="m6 9 6 6 6-6" />);
-const ChevronLeft = __makeIcon(<path d="m15 18-6-6 6-6" />);
-const ChevronRight = __makeIcon(<path d="m9 18 6-6-6-6" />);
-const Copy = __makeIcon(
-  <>
-    <rect x="9" y="9" width="10" height="10" rx="2" />
-    <rect x="5" y="5" width="10" height="10" rx="2" />
-  </>
-);
-const Film = __makeIcon(
-  <>
-    <rect x="3" y="6" width="18" height="12" rx="2" />
-    <path d="M7 6v12" />
-    <path d="M17 6v12" />
-  </>
-);
-
-// Heart needs optional fill support (some UIs use className like "fill-white")
-const Heart = (props: IconProps) => {
-  const cls = props.className || "";
-  const shouldFill = cls.includes("fill") || cls.includes("fill-");
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      fill={shouldFill ? "currentColor" : "none"}
-      {...props}
-    >
-      <path d="M12 21s-7-4.6-9.2-8.6C1.1 9 3.4 6 7 6c2 0 3.3 1.1 4 2 0.7-0.9 2-2 4-2 3.6 0 5.9 3 4.2 6.4C19 16.4 12 21 12 21Z" />
-    </svg>
-  );
-};
-
-const Info = __makeIcon(
-  <>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 10v7" />
-    <path d="M12 7h.01" />
-  </>
-);
-const Lock = __makeIcon(
-  <>
-    <rect x="3" y="11" width="18" height="11" rx="2" />
-    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-  </>
-);
-const Minus = __makeIcon(<path d="M5 12h14" />);
-const Package = __makeIcon(
-  <>
-    <path d="M21 16V8a2 2 0 0 0-1-1.73L13 2.27a2 2 0 0 0-2 0L4 6.27A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
-    <path d="M3.3 7 12 12l8.7-5" />
-    <path d="M12 22V12" />
-  </>
-);
-const Play = __makeIcon(<path d="M8 5v14l11-7-11-7Z" />);
-const Plus = __makeIcon(
-  <>
-    <path d="M12 5v14" />
-    <path d="M5 12h14" />
-  </>
-);
-const Search = __makeIcon(
-  <>
-    <circle cx="11" cy="11" r="7" />
-    <path d="M21 21l-4.3-4.3" />
-  </>
-);
-const Share2 = __makeIcon(
-  <>
-    <circle cx="18" cy="5" r="2" />
-    <circle cx="6" cy="12" r="2" />
-    <circle cx="18" cy="19" r="2" />
-    <path d="M8 12l8-6" />
-    <path d="M8 12l8 6" />
-  </>
-);
-const ShoppingCart = __makeIcon(
-  <>
-    <path d="M6 6h15l-2 9H7L6 6Z" />
-    <path d="M6 6 5 3H2" />
-    <circle cx="8.5" cy="19" r="1.5" />
-    <circle cx="18" cy="19" r="1.5" />
-  </>
-);
-const Sparkles = __makeIcon(
-  <>
-    <path d="M12 2l1.5 5 5 1.5-5 1.5L12 15l-1.5-5-5-1.5 5-1.5L12 2Z" />
-    <path d="M19 13l.8 2.6L22 16l-2.2.4L19 19l-.8-2.6L16 16l2.2-.4L19 13Z" />
-  </>
-);
-const Timer = __makeIcon(
-  <>
-    <path d="M10 2h4" />
-    <path d="M12 14 9 11" />
-    <circle cx="12" cy="14" r="7" />
-  </>
-);
-const Upload = __makeIcon(
-  <>
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <path d="M7 10l5-5 5 5" />
-    <path d="M12 5v12" />
-  </>
-);
-const Video = __makeIcon(
-  <>
-    <rect x="3" y="7" width="13" height="10" rx="2" />
-    <path d="M16 10l5-3v10l-5-3" />
-  </>
-);
-const X = __makeIcon(
-  <>
-    <path d="M18 6 6 18" />
-    <path d="M6 6l12 12" />
-  </>
-);
-const Zap = __makeIcon(
-  <>
-    <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z" />
-  </>
-);
-const QrCode = __makeIcon(
-  <>
-    <rect x="3" y="3" width="7" height="7" rx="1" />
-    <rect x="14" y="3" width="7" height="7" rx="1" />
-    <rect x="3" y="14" width="7" height="7" rx="1" />
-    <path d="M14 14h3v3h-3z" />
-    <path d="M17 17h4v4h-4z" />
-  </>
-);
-const Instagram = __makeIcon(
-  <>
-    <rect x="3" y="3" width="18" height="18" rx="5" />
-    <circle cx="12" cy="12" r="4" />
-    <path d="M17.5 6.5h.01" />
-  </>
-);
-const MessageCircle = __makeIcon(
-  <>
-    <path d="M21 11.5a8.5 8.5 0 0 1-9 8.5 8.5 8.5 0 0 1-4-1l-4 1 1-4a8.5 8.5 0 0 1-1-4A8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5Z" />
-  </>
-);
-const AlertTriangle = __makeIcon(
-  <>
-    <path d="M10.3 3.2 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.2a2 2 0 0 0-3.4 0Z" />
-    <path d="M12 9v4" />
-    <path d="M12 17h.01" />
-  </>
-);
+  BadgeCheck,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Film,
+  Heart,
+  Info,
+  Lock,
+  Minus,
+  Package,
+  Play,
+  Plus,
+  Search,
+  Share2,
+  ShoppingCart,
+  Sparkles,
+  Timer,
+  Upload,
+  Video,
+  X,
+  Zap,
+  QrCode,
+  Instagram,
+  MessageCircle,
+  AlertTriangle,
+} from "lucide-react";
 
 /**
  * Ad Builder (Independent Page) — Premium
@@ -264,10 +54,10 @@ const AlertTriangle = __makeIcon(
  * - Tracking includes short links + UTM presets library
  * - Schedule time selection uses a scrollable time list (vertical scroll)
  * - Shows explicit "Ad ends" time
- * - Asset Library wiring: opens /supplier/deliverables/assets in picker mode and restores state via backend draft persistence
+ * - Asset Library wiring: opens /supplier/deliverables/assets in picker mode and restores state via sessionStorage
  *
  * Notes:
- * - This file is self-contained UI module (TailwindCSS + lucide-react).
+ * - This file is self-contained UI demo (TailwindCSS + lucide-react).
  * - Wire real APIs, persistence, routing, and Asset Library return payload as needed.
  */
 
@@ -277,57 +67,9 @@ const ORANGE = "#f77f00";
 const HERO_IMAGE_REQUIRED = { width: 1920, height: 1080 } as const;
 const ITEM_POSTER_REQUIRED = { width: 500, height: 500 } as const;
 
-const SELLER_ADZ_BUILDER_ID = "seller_adz_builder_default";
-
-function normalizeMatchValue(value: unknown) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
-function offerMatchesListingPrefill(offer: Offer, listing: ListingAdzPrefill) {
-  const listingId = normalizeMatchValue(listing.listingId);
-  const listingSku = normalizeMatchValue(listing.sku);
-  const listingTitle = normalizeMatchValue(listing.title);
-
-  const offerId = normalizeMatchValue(offer.id);
-  const offerListingId = normalizeMatchValue(offer.listingId);
-  const offerSku = normalizeMatchValue(offer.sku);
-  const offerName = normalizeMatchValue(offer.name);
-  const offerListingTitle = normalizeMatchValue(offer.listingTitle);
-
-  if (
-    listingId &&
-    (offerId === listingId ||
-      offerListingId === listingId ||
-      offerId.includes(listingId) ||
-      offerListingId.includes(listingId))
-  ) {
-    return true;
-  }
-
-  if (listingSku && offerSku === listingSku) {
-    return true;
-  }
-
-  if (listingTitle) {
-    if (offerName === listingTitle || offerListingTitle === listingTitle) {
-      return true;
-    }
-
-    if (
-      listingTitle.length >= 6 &&
-      ((offerName && (offerName.includes(listingTitle) || listingTitle.includes(offerName))) ||
-        (offerListingTitle &&
-          (offerListingTitle.includes(listingTitle) || listingTitle.includes(offerListingTitle))))
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
+// Storage keys for Asset Library picker round-trip
+const BUILDER_DRAFT_KEY = "mldz:adBuilder:builderDraft:v1";
+const ASSET_PICK_KEY = "mldz:assetPicker:payload:v1";
 
 type ViewerMode = "fullscreen" | "modal";
 type MediaKind = "image" | "video";
@@ -359,9 +101,6 @@ type Offer = {
   campaignId: string;
   type: OfferType;
   name: string;
-  listingId?: string;
-  listingTitle?: string;
-  sku?: string;
   price: number;
   basePrice?: number;
   currency: "UGX" | "USD";
@@ -424,51 +163,6 @@ type BuilderState = {
   endTime: string;
 };
 
-function createInitialSupplierAdBuilderStep() {
-  return "offer" as BuilderStep;
-}
-
-function createInitialSupplierAdBuilderApprovalState() {
-  return "Draft" as "Draft" | "Submitted" | "Approved";
-}
-
-function createEmptySupplierAdBuilderState(): BuilderState {
-  return {
-    supplierId: "",
-    campaignId: "",
-    selectedOfferIds: [],
-    primaryOfferId: "",
-    platforms: [],
-    platformOtherList: [],
-    platformOtherDraft: "",
-    heroImageAssetId: undefined,
-    heroIntroVideoAssetId: undefined,
-    itemPosterByOfferId: {},
-    itemVideoByOfferId: {},
-    ctaText: "",
-    primaryCtaLabel: "",
-    secondaryCtaLabel: "",
-    landingBehavior: "Checkout",
-    landingUrl: "",
-    shortDomain: "",
-    shortSlug: "",
-    utmPresetId: "",
-    utmCustom: {},
-    startDate: "",
-    startTime: "",
-    endDate: "",
-    endTime: "",
-  };
-}
-
-function createEmptySupplierAdBuilderExternalAssets() {
-  return {} as Record<string, Asset>;
-}
-
-function createEmptySupplierAdBuilderCart() {
-  return {} as Record<string, number>;
-}
-
 const cx = (...xs: Array<string | false | null | undefined>) => xs.filter(Boolean).join(" ");
 
 // clamp01 removed (unused)
@@ -504,6 +198,30 @@ function parseLocalDateTime(dateStr: string, timeStr: string) {
   const [y, m, d] = dateStr.split("-").map(Number);
   const [hh, mm] = timeStr.split(":").map(Number);
   return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0, 0);
+}
+
+/**
+ * Mock backend validation call.
+ * In a real system, this would be an async API call.
+ */
+function mockValidateSchedule(campaignId: string, start: Date, end: Date) {
+  const campaign = CAMPAIGNS.find((c) => c.id === campaignId);
+  if (!campaign) return { ok: false, error: "Invalid campaign selected" };
+
+  const campStart = new Date(campaign.startsAtISO);
+  const campEnd = new Date(campaign.endsAtISO);
+
+  if (start < campStart) {
+    return { ok: false, error: `Schedule starts before campaign window (${fmtLocal(campStart)})` };
+  }
+  if (end > campEnd) {
+    return { ok: false, error: `Schedule ends after campaign window (${fmtLocal(campEnd)})` };
+  }
+  if (start >= end) {
+    return { ok: false, error: "Start time must be before end time" };
+  }
+
+  return { ok: true };
 }
 
 function toDateInputValue(d: Date) {
@@ -613,7 +331,7 @@ function Btn({
         ? "bg-rose-600 text-white hover:brightness-95"
         : tone === "ghost"
           ? "bg-transparent text-neutral-900 dark:text-slate-100 hover:bg-neutral-100 dark:hover:bg-slate-800"
-          : "bg-white dark:bg-slate-900 dark:bg-slate-800 text-neutral-900 dark:text-slate-100 ring-1 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700";
+          : "bg-white dark:bg-slate-800 text-neutral-900 dark:text-slate-100 ring-1 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700";
   return (
     <button
       className={cx(base, cls, className)}
@@ -651,7 +369,7 @@ function Btn({
 //       aria-pressed={value}
 //       title={title}
 //     >
-//       <span className={cx("inline-block h-5 w-5 transform rounded-full bg-white dark:bg-slate-900 shadow-sm transition", value ? "translate-x-5" : "translate-x-1")} />
+//       <span className={cx("inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition", value ? "translate-x-5" : "translate-x-1")} />
 //     </button>
 //   );
 // }
@@ -830,8 +548,8 @@ function ScrollTimePicker({
         disabled={disabled}
         onClick={() => setOpen((s) => !s)}
         className={cx(
-          "w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-left text-sm ring-1 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700 transition-colors",
-          disabled && "opacity-50 cursor-not-allowed hover:bg-gray-50 dark:hover:bg-slate-800",
+          "w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-left text-sm ring-1 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700 transition-colors",
+          disabled && "opacity-50 cursor-not-allowed hover:bg-white dark:hover:bg-slate-800",
         )}
         title={label}
       >
@@ -845,7 +563,7 @@ function ScrollTimePicker({
       </button>
 
       {open ? (
-        <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 shadow-xl ring-1 ring-neutral-200 dark:ring-slate-700">
+        <div className="absolute z-30 mt-2 w-full overflow-hidden rounded-2xl bg-white dark:bg-slate-800 shadow-xl ring-1 ring-neutral-200 dark:ring-slate-700">
           <div className="flex items-center justify-between border-b border-neutral-200 dark:border-slate-700 px-3 py-2">
             <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Pick time</div>
             <button className="text-xs font-bold text-neutral-600 dark:text-slate-400 hover:text-neutral-900 dark:hover:text-slate-200" onClick={() => setOpen(false)}>
@@ -896,10 +614,221 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
   return <div className={cx("rounded-2xl bg-white dark:bg-slate-900/80 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors", className)}>{children}</div>;
 }
 
+/** ------------------------------ Demo Data ------------------------------ */
+
+const SUPPLIERS: Supplier[] = [
+  {
+    id: "p1",
+    name: "Kampala Beauty Hub",
+    avatarUrl: "https://images.unsplash.com/photo-1520975958225-9277a0c1998f?q=80&w=512&auto=format&fit=crop",
+    category: "Beauty",
+  },
+  {
+    id: "p2",
+    name: "City Fitness Lab",
+    avatarUrl: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=512&auto=format&fit=crop",
+    category: "Wellness",
+  },
+  {
+    id: "p3",
+    name: "Gourmet Basket UG",
+    avatarUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=512&auto=format&fit=crop",
+    category: "Food",
+  },
+];
+
+const CAMPAIGNS: Campaign[] = [
+  {
+    id: "c1",
+    supplierId: "p1",
+    name: "Valentine Glow Week",
+    status: "Active",
+    startsAtISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+    endsAtISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: "c2",
+    supplierId: "p1",
+    name: "Weekend Flash Dealz",
+    status: "Active",
+    startsAtISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    endsAtISO: new Date(Date.now() + 48 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: "c3",
+    supplierId: "p2",
+    name: "New Year Fitness Push",
+    status: "Paused",
+    startsAtISO: new Date(Date.now() + 24 * 3600 * 1000).toISOString(),
+    endsAtISO: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
+  },
+  {
+    id: "c4",
+    supplierId: "p3",
+    name: "Basket Bonanza",
+    status: "Active",
+    startsAtISO: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
+    endsAtISO: new Date(Date.now() + 9 * 3600 * 1000).toISOString(),
+  },
+];
+
+const OFFERS: Offer[] = [
+  {
+    id: "o1",
+    supplierId: "p1",
+    campaignId: "c1",
+    type: "PRODUCT",
+    name: "Glow Serum (30ml)",
+    price: 38000,
+    basePrice: 52000,
+    currency: "UGX",
+    stockLeft: 12,
+    sold: 86,
+    catalogPosterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=800&auto=format&fit=crop",
+    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  },
+  {
+    id: "o2",
+    supplierId: "p1",
+    campaignId: "c1",
+    type: "PRODUCT",
+    name: "Hydra Cleanser",
+    price: 24000,
+    basePrice: 32000,
+    currency: "UGX",
+    stockLeft: 3,
+    sold: 44,
+    catalogPosterUrl: "https://images.unsplash.com/photo-1612817152414-857f7b8872d9?q=80&w=800&auto=format&fit=crop",
+    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  },
+  {
+    id: "o3",
+    supplierId: "p1",
+    campaignId: "c1",
+    type: "SERVICE",
+    name: "Facial Session (45min)",
+    price: 60000,
+    basePrice: 80000,
+    currency: "UGX",
+    stockLeft: -1,
+    sold: 18,
+    catalogPosterUrl: "https://images.unsplash.com/photo-1582095133179-bfd08e2fc6b3?q=80&w=800&auto=format&fit=crop",
+    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  },
+  {
+    id: "o4",
+    supplierId: "p3",
+    campaignId: "c4",
+    type: "PRODUCT",
+    name: "Gourmet Snack Box",
+    price: 95000,
+    basePrice: 120000,
+    currency: "UGX",
+    stockLeft: 0,
+    sold: 31,
+    catalogPosterUrl: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?q=80&w=800&auto=format&fit=crop",
+    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  },
+  {
+    id: "o5",
+    supplierId: "p3",
+    campaignId: "c4",
+    type: "PRODUCT",
+    name: "Fruit Basket (Large)",
+    price: 65000,
+    basePrice: 78000,
+    currency: "UGX",
+    stockLeft: 9,
+    sold: 57,
+    catalogPosterUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=800&auto=format&fit=crop",
+    catalogVideoUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+  },
+];
+
+const ASSETS: Asset[] = [
+  {
+    id: "a_hero_img_1",
+    title: "Hero (Supplier Approved) — 1920×1080",
+    owner: "Supplier",
+    kind: "image",
+    status: "approved",
+    roleHint: "hero_image",
+    width: 1920,
+    height: 1080,
+    url: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
+  },
+  {
+    id: "a_hero_vid_1",
+    title: "Intro Opener (Supplier)",
+    owner: "Supplier",
+    kind: "video",
+    status: "approved",
+    roleHint: "hero_video",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    posterUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
+    desktopMode: "fullscreen",
+  },
+  {
+    id: "a_item_poster_1",
+    title: "Item Poster — 500×500 (Supplier)",
+    owner: "Supplier",
+    kind: "image",
+    status: "approved",
+    roleHint: "item_poster",
+    width: 500,
+    height: 500,
+    url: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
+  },
+  {
+    id: "a_item_vid_1",
+    title: "Product Demo Clip (Supplier)",
+    owner: "Supplier",
+    kind: "video",
+    status: "approved",
+    roleHint: "item_video",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
+    desktopMode: "modal",
+  },
+  {
+    id: "a_pending_1",
+    title: "New Upload — Pending Review",
+    owner: "Supplier",
+    kind: "video",
+    status: "pending",
+    roleHint: "item_video",
+    url: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    posterUrl: "https://images.unsplash.com/photo-1582095133179-bfd08e2fc6b3?q=80&w=900&auto=format&fit=crop",
+    desktopMode: "fullscreen",
+  },
+];
+
+/** UTM presets library (premium) */
+const UTM_PRESETS: UTMTemplate[] = [
+  {
+    id: "utm1",
+    name: "Supplier IG Story",
+    description: "Strong supplier attribution for IG story swipes.",
+    params: { utm_source: "instagram", utm_medium: "story", utm_campaign: "supplier_creator", utm_content: "supplier" },
+  },
+  {
+    id: "utm2",
+    name: "Supplier TikTok Bio Link",
+    description: "Bio link tracking for supplier-led TikTok traffic.",
+    params: { utm_source: "tiktok", utm_medium: "bio", utm_campaign: "supplier_creator", utm_content: "supplier" },
+  },
+  {
+    id: "utm3",
+    name: "Marketplace Featured",
+    description: "Marketplace featured slot traffic.",
+    params: { utm_source: "marketplace", utm_medium: "featured", utm_campaign: "dealz", utm_content: "hero" },
+  },
+];
+
 // function PlayOverlayButton({ onClick, label }: { onClick: () => void; label: string }) {
 //   return (
 //     <button type="button" onClick={onClick} aria-label={label} className="absolute inset-0 grid place-items-center active:scale-[0.99]">
-//       <span className="h-14 w-14 rounded-full bg-white dark:bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur border border-neutral-200 dark:border-slate-800 grid place-items-center shadow">
+//       <span className="h-14 w-14 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur border border-neutral-200 dark:border-slate-800 grid place-items-center shadow">
 //         <span className="h-12 w-12 rounded-full bg-neutral-900 grid place-items-center">
 //           <Play className="h-6 w-6 text-white" fill="currentColor" />
 //         </span>
@@ -1047,7 +976,7 @@ function MediaViewer({
                         onClick={() => onSelectHeroOfferId?.(p.id)}
                         className={cx(
                           "pointer-events-auto flex min-w-[220px] items-center gap-2 rounded-2xl border px-2.5 py-2 text-left",
-                          active ? "border-white bg-white dark:bg-slate-900/15" : "border-white/20 bg-white dark:bg-slate-900/10 hover:bg-gray-50 dark:hover:bg-slate-800/15",
+                          active ? "border-white bg-white/15" : "border-white/20 bg-white/10 hover:bg-white/15",
                         )}
                       >
                         <img src={p.posterUrl} className="h-12 w-12 rounded-xl object-cover ring-1 ring-white/10" alt={p.name} />
@@ -1084,7 +1013,7 @@ function MediaViewer({
 
 function ShoppableAdPreview({
   title,
-  sharedByCreatorLabel,
+  sharedByLabel,
   supplierName,
   campaignStatus,
   ctaHelperText,
@@ -1107,10 +1036,9 @@ function ShoppableAdPreview({
   onDecCart,
   onClearCart,
   onShare,
-  onClose,
 }: {
   title: string;
-  sharedByCreatorLabel: string;
+  sharedByLabel: string;
   supplierName?: string;
   campaignStatus?: string;
   ctaHelperText?: string;
@@ -1144,7 +1072,6 @@ function ShoppableAdPreview({
   onClearCart: () => void;
 
   onShare: () => void;
-  onClose?: () => void;
 }) {
   const [lovedOfferIds, setLovedOfferIds] = useState<string[]>([]);
   const [saved, setSaved] = useState(false);
@@ -1195,35 +1122,35 @@ function ShoppableAdPreview({
   }, [cartLines, multiCurrency]);
 
   return (
-    <div className="w-full">
-      <div className="rounded-[17px] bg-neutral-950 dark:bg-black p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-colors">
-        <div className="relative overflow-hidden rounded-[14px] bg-white dark:bg-slate-900 transition-colors">
+    <div className="mx-auto w-full max-w-[440px]">
+      <div className="rounded-[34px] bg-neutral-950 dark:bg-black p-3 shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-colors">
+        <div className="relative overflow-hidden rounded-[28px] bg-neutral-50 dark:bg-slate-950 transition-colors">
           {/* fixed phone viewport */}
           <div className="h-[760px] flex flex-col">
             {/* top bar (share + cart reinstated) */}
-            <div className="relative xl:sticky xl:top-0 z-20 border-b border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 dark:bg-slate-900/90 px-3 py-3 backdrop-blur transition-colors">
+            <div className="relative xl:sticky xl:top-0 z-20 border-b border-neutral-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-3 py-3 backdrop-blur transition-colors">
               <div className="flex items-center justify-between gap-2">
                 <button
                   type="button"
-                  className="rounded-xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900/95 dark:bg-slate-800/95 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
+                  className="rounded-xl border border-neutral-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 p-2 hover:bg-white dark:hover:bg-slate-800 transition-colors"
                   aria-label="Back"
-                  onClick={onClose}
+                  onClick={() => { }}
                 >
                   <ChevronLeft className="h-5 w-5" />
                 </button>
 
                 <div className="min-w-0 flex-1 text-center">
                   <div className="truncate text-[13px] font-extrabold text-neutral-900 dark:text-slate-100">{title}</div>
-                  <div className="truncate text-[11px] font-semibold text-neutral-600 dark:text-slate-400">{sharedByCreatorLabel}</div>
+                  <div className="truncate text-[11px] font-semibold text-neutral-600 dark:text-slate-400">{sharedByLabel}</div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className={`rounded-xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900/95 dark:bg-slate-800/95 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors ${!shareEnabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                    className={`rounded-xl border border-neutral-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 p-2 hover:bg-white dark:hover:bg-slate-800 transition-colors ${!shareEnabled ? "opacity-50 cursor-not-allowed" : ""}`}
                     aria-label="Share"
                     onClick={() => (shareEnabled ? onShare() : undefined)}
-                    title={shareEnabled ? "Share" : "Submit for Admin approval to enable share links"}
+                    title={shareEnabled ? "Share" : "Generate the ad to enable share links"}
                     disabled={!shareEnabled}
                   >
                     <Share2 className="h-5 w-5" />
@@ -1231,7 +1158,7 @@ function ShoppableAdPreview({
 
                   <button
                     type="button"
-                    className="relative rounded-xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900/95 dark:bg-slate-800/95 p-2 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
+                    className="relative rounded-xl border border-neutral-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 p-2 hover:bg-white dark:hover:bg-slate-800 transition-colors"
                     aria-label="Open cart"
                     onClick={() => setCartOpen((v) => !v)}
                     title="Cart"
@@ -1257,10 +1184,10 @@ function ShoppableAdPreview({
 
                   {/* chips + countdown INSIDE hero */}
                   <div className="absolute left-3 top-3 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-white dark:bg-slate-900/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur">
+                    <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur">
                       Top Shoppable Adz
                     </span>
-                    <span className="rounded-full bg-white dark:bg-slate-900/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur">
+                    <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur">
                       {servicesCount > 0 && productsCount > 0 ? "Mixed" : servicesCount > 0 ? "Services" : "Products"}
                     </span>
                     <span className="rounded-full bg-black/50 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur">
@@ -1273,7 +1200,7 @@ function ShoppableAdPreview({
                     <button
                       type="button"
                       onClick={() => setSaved((s) => !s)}
-                      className={`rounded-full p-2 backdrop-blur ring-1 ${saved ? "bg-white dark:bg-slate-900/35 ring-white/40" : "bg-white dark:bg-slate-900/20 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
+                      className={`rounded-full p-2 backdrop-blur ring-1 ${saved ? "bg-white/35 ring-white/40" : "bg-white/20 ring-white/30 hover:bg-white/30"
                         }`}
                       aria-label="Save"
                       title={saved ? "Saved" : "Save"}
@@ -1287,7 +1214,7 @@ function ShoppableAdPreview({
                     <button
                       type="button"
                       onClick={onPlayHero}
-                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white dark:bg-slate-900/20 p-4 backdrop-blur ring-1 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
+                      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20 p-4 backdrop-blur ring-1 ring-white/30 hover:bg-white/30"
                       aria-label="Play hero intro"
                       title="Play intro video"
                     >
@@ -1378,7 +1305,7 @@ function ShoppableAdPreview({
                             <button
                               type="button"
                               onClick={() => onPlayOffer(o.id)}
-                              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white dark:bg-slate-900/20 p-3 backdrop-blur ring-1 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
+                              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/20 p-3 backdrop-blur ring-1 ring-white/30 hover:bg-white/30"
                               aria-label={`Play ${o.name}`}
                               title="Play offer video"
                             >
@@ -1394,7 +1321,7 @@ function ShoppableAdPreview({
                           <button
                             type="button"
                             onClick={() => toggleLoved(o.id)}
-                            className={`absolute right-2 top-2 rounded-full p-2 backdrop-blur ring-1 ${isLoved ? "bg-white dark:bg-slate-900/35 ring-white/40" : "bg-white dark:bg-slate-900/20 ring-white/30 hover:bg-gray-50 dark:hover:bg-slate-800/30"
+                            className={`absolute right-2 top-2 rounded-full p-2 backdrop-blur ring-1 ${isLoved ? "bg-white/35 ring-white/40" : "bg-white/20 ring-white/30 hover:bg-white/30"
                               }`}
                             aria-label={isLoved ? "Unsave" : "Save"}
                             title={isLoved ? "Saved" : "Save"}
@@ -1404,7 +1331,7 @@ function ShoppableAdPreview({
 
                           {o.id === primaryOfferId ? (
                             <div className="absolute bottom-2 left-2">
-                              <span className="rounded-full bg-white dark:bg-slate-900/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur ring-1 ring-white/30">
+                              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-extrabold text-white backdrop-blur ring-1 ring-white/30">
                                 Primary
                               </span>
                             </div>
@@ -1440,17 +1367,17 @@ function ShoppableAdPreview({
                 </div>
 
                 <div className="mt-4 text-center text-[11px] text-neutral-500">
-                  Curated by the supplier (acting as Creator). Media is approved in the Asset Library before it can be attached to a deal.
+                  Curated by the supplier (acting as creator). Media is approved in the Asset Library before it can be attached to a deal.
                 </div>
               </div>
             </div>
 
             {/* Cart dock INSIDE preview (replaces checkout dock) */}
-            <div className="border-t border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900/95 dark:bg-slate-900/95 backdrop-blur transition-colors">
+            <div className="border-t border-neutral-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur transition-colors">
               <div className="px-3 py-3">
                 <button
                   type="button"
-                  className="w-full flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 hover:bg-neutral-50 dark:hover:bg-slate-700 transition-colors"
+                  className="w-full flex items-center justify-between gap-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 hover:bg-neutral-50 dark:hover:bg-slate-700 transition-colors"
                   onClick={() => setCartOpen((v) => !v)}
                   aria-label="Toggle cart"
                 >
@@ -1481,7 +1408,7 @@ function ShoppableAdPreview({
                 </button>
 
                 {cartOpen ? (
-                  <div className="mt-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 p-3 transition-colors">
+                  <div className="mt-3 rounded-2xl border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3 transition-colors">
                     {cartLines.length ? (
                       <div className="max-h-[220px] overflow-auto pr-1">
                         <div className="space-y-2">
@@ -1500,7 +1427,7 @@ function ShoppableAdPreview({
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
-                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
+                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
                                   onClick={() => onDecCart(offer.id)}
                                   aria-label="Decrease quantity"
                                 >
@@ -1509,7 +1436,7 @@ function ShoppableAdPreview({
                                 <div className="w-7 text-center text-xs font-extrabold text-neutral-900 dark:text-slate-100">{qty}</div>
                                 <button
                                   type="button"
-                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
+                                  className="rounded-lg border border-neutral-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2 hover:bg-neutral-100 dark:hover:bg-slate-700 transition-colors"
                                   onClick={() => onAdd(offer.id)}
                                   aria-label="Increase quantity"
                                 >
@@ -1575,19 +1502,6 @@ export default function AdBuilder({
   onClose?: () => void;
   initialAdId?: string;
 }) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const prefillListing =
-    ((location.state as { prefillListing?: ListingAdzPrefill } | null)?.prefillListing as ListingAdzPrefill | undefined) ||
-    null;
-  const go = (destination: string) => {
-    if (!destination) return;
-    if (/^https?:\/\//i.test(destination)) {
-      window.open(destination, "_blank", "noreferrer");
-      return;
-    }
-    navigate(destination);
-  };
   const isMobile = useIsMobile();
 
   // "Drawer-like route" support (optional)
@@ -1620,27 +1534,9 @@ export default function AdBuilder({
     { key: "creative", label: "Creative", desc: "Hero media + item posters/videos + CTA" },
     { key: "tracking", label: "Tracking", desc: "Short links + UTM presets" },
     { key: "schedule", label: "Schedule", desc: "Start + End times (scroll picker)" },
-    { key: "review", label: "Review", desc: "Preflight + submit" },
+    { key: "review", label: "Review", desc: "Preflight + generate" },
   ];
-  const [step, setStep] = useState<BuilderStep>(createInitialSupplierAdBuilderStep());
-  const [runtimeLoading, setRuntimeLoading] = useState(true);
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
-  const [scope, setScope] = useState<{
-    suppliers: Supplier[];
-    campaigns: Campaign[];
-    offers: Offer[];
-    campaignCreators: Record<string, { name: string; handle: string }>;
-  }>({
-    suppliers: [],
-    campaigns: [],
-    offers: [],
-    campaignCreators: {},
-  });
-  const [assetLibraryAssets, setAssetLibraryAssets] = useState<Asset[]>([]);
-  const [utmPresets, setUtmPresets] = useState<UTMTemplate[]>([]);
-  const [scheduleValidation, setScheduleValidation] = useState<{ ok: boolean; error?: string }>({ ok: false });
-  const persistHashRef = useRef("");
-  const appliedPrefillKeyRef = useRef<string | null>(null);
+  const [step, setStep] = useState<BuilderStep>("offer");
 
   const stepKeys: BuilderStep[] = ["offer", "creative", "tracking", "schedule", "review"];
 
@@ -1660,66 +1556,74 @@ export default function AdBuilder({
     }
   };
 
-  const [approvalState, setApprovalState] = useState<"Draft" | "Submitted" | "Approved">(
-    createInitialSupplierAdBuilderApprovalState()
-  );
-  const isSubmitted = approvalState !== "Draft";
-  const isApproved = approvalState === "Approved";
+  const [isGenerated, setIsGenerated] = useState(false);
   const [showSharePanel, setShowSharePanel] = useState(false);
 
   // Preflight is collapsible and collapsed by default (per requirement)
   const [preflightOpen, setPreflightOpen] = useState(false);
 
-  const [builder, setBuilder] = useState<BuilderState>(createEmptySupplierAdBuilderState());
+  const defaultSupplierId = SUPPLIERS[0]?.id || "p1";
+  const defaultCampaignId = CAMPAIGNS.find((c) => c.supplierId === defaultSupplierId)?.id || CAMPAIGNS[0]?.id || "c1";
+
+  // default schedule: tomorrow 18:00-19:00
+  const defaultStart = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(18, 0, 0, 0);
+    return d;
+  }, []);
+  const defaultEnd = useMemo(() => {
+    const d = new Date(defaultStart);
+    d.setHours(d.getHours() + 1);
+    return d;
+  }, [defaultStart]);
+
+  const [builder, setBuilder] = useState<BuilderState>(() => ({
+    supplierId: defaultSupplierId,
+    campaignId: defaultCampaignId,
+    selectedOfferIds: [OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1"].filter(Boolean),
+    primaryOfferId: OFFERS.find((o) => o.campaignId === defaultCampaignId)?.id || OFFERS[0]?.id || "o1",
+    platforms: ["Instagram"],
+    platformOtherList: [],
+    platformOtherDraft: "",
+    heroImageAssetId: ASSETS.find((a) => a.roleHint === "hero_image" && a.status === "approved")?.id,
+    heroIntroVideoAssetId: ASSETS.find((a) => a.roleHint === "hero_video" && a.status === "approved")?.id,
+    itemPosterByOfferId: {},
+    itemVideoByOfferId: {},
+    ctaText: "Shop the featured dealz before they end.",
+    primaryCtaLabel: "Buy now",
+    secondaryCtaLabel: "Add to cart",
+    landingBehavior: "Checkout",
+    landingUrl: "",
+    shortDomain: "mldz.link",
+    shortSlug: "adz-" + Math.random().toString(36).slice(2, 7),
+    utmPresetId: UTM_PRESETS[0].id,
+    utmCustom: {},
+    startDate: toDateInputValue(defaultStart),
+    startTime: toTimeInputValue(defaultStart),
+    endDate: toDateInputValue(defaultEnd),
+    endTime: toTimeInputValue(defaultEnd),
+  }));
 
   // External assets from Asset Library picker roundtrip
-  const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>(
-    createEmptySupplierAdBuilderExternalAssets()
-  );
+  const [externalAssets, setExternalAssets] = useState<Record<string, Asset>>({});
 
-  const supplier = useMemo(
-    () => scope.suppliers.find((p) => p.id === builder.supplierId) || scope.suppliers[0],
-    [builder.supplierId, scope.suppliers]
-  );
-  const campaignOptions = useMemo(
-    () => scope.campaigns.filter((c) => c.supplierId === builder.supplierId),
-    [builder.supplierId, scope.campaigns]
-  );
-  const campaign = useMemo(
-    () => scope.campaigns.find((c) => c.id === builder.campaignId) || campaignOptions[0],
-    [builder.campaignId, campaignOptions, scope.campaigns]
-  );
-  const campaignCreator = useMemo(
-    () => scope.campaignCreators[builder.campaignId] || { name: "Supplier-hosted", handle: "" },
-    [builder.campaignId, scope.campaignCreators]
-  );
+  const supplier = useMemo(() => SUPPLIERS.find((p) => p.id === builder.supplierId) || SUPPLIERS[0], [builder.supplierId]);
+  const campaignOptions = useMemo(() => CAMPAIGNS.filter((c) => c.supplierId === builder.supplierId), [builder.supplierId]);
+  const campaign = useMemo(() => CAMPAIGNS.find((c) => c.id === builder.campaignId) || campaignOptions[0], [builder.campaignId, campaignOptions]);
 
-  const scopedOffers = useMemo(
-    () =>
-      scope.offers.filter(
-        (o) => o.supplierId === builder.supplierId && o.campaignId === builder.campaignId
-      ),
-    [builder.campaignId, builder.supplierId, scope.offers]
-  );
-  const selectedOffers = useMemo(
-    () =>
-      builder.selectedOfferIds
-        .map(
-          (id) => scopedOffers.find((o) => o.id === id) || scope.offers.find((o) => o.id === id)
-        )
-        .filter(Boolean) as Offer[],
-    [builder.selectedOfferIds, scope.offers, scopedOffers]
-  );
+  const scopedOffers = useMemo(() => OFFERS.filter((o) => o.supplierId === builder.supplierId && o.campaignId === builder.campaignId), [builder.supplierId, builder.campaignId]);
+  const selectedOffers = useMemo(() => builder.selectedOfferIds.map((id) => scopedOffers.find((o) => o.id === id) || OFFERS.find((o) => o.id === id)).filter(Boolean) as Offer[], [builder.selectedOfferIds, scopedOffers]);
   const primaryOffer = useMemo(() => selectedOffers.find((o) => o.id === builder.primaryOfferId) || selectedOffers[0], [selectedOffers, builder.primaryOfferId]);
 
   // Cart state (shared between the preview cards and the fullscreen viewer)
-  const [cart, setCart] = useState<Record<string, number>>(createEmptySupplierAdBuilderCart());
-  // Keep cart clean if selected offers change (e.g., creator edits selection)
+  const [cart, setCart] = useState<Record<string, number>>({});
+  // Keep cart clean if selected offers change (e.g., supplier edits selection)
   useEffect(() => {
     setCart((prev) => {
       const allowed = new Set(selectedOffers.map((o) => o.id));
       const next: Record<string, number> = {};
-      for (const [id, qty] of Object.entries(prev)) {
+      for (const [id, qty] of Object.entries(prev) as Array<[string, number]>) {
         if (allowed.has(id) && qty > 0) next[id] = qty;
       }
       return next;
@@ -1728,186 +1632,19 @@ export default function AdBuilder({
 
   // Approved assets: base + external
   const approvedAssets = useMemo(() => {
-    const base = assetLibraryAssets.filter((a) => a.status === "approved");
-    const ext = Object.values(externalAssets).filter((a) => a.status === "approved");
+    const base = ASSETS.filter((a) => a.status === "approved");
+    const ext = (Object.values(externalAssets) as Asset[]).filter((a) => a.status === "approved");
     const map = new Map<string, Asset>();
     [...base, ...ext].forEach((a) => map.set(a.id, a));
     return Array.from(map.values());
-  }, [assetLibraryAssets, externalAssets]);
+  }, [externalAssets]);
   console.log("Approved assets:", approvedAssets.length); // Use it or remove it (using it for now to avoid lint error if needed elsewhere)
 
   const assetById = useMemo(() => {
     const map = new Map<string, Asset>();
-    [...assetLibraryAssets, ...Object.values(externalAssets)].forEach((a) => map.set(a.id, a));
+    [...ASSETS, ...(Object.values(externalAssets) as Asset[])].forEach((a) => map.set(a.id, a));
     return map;
-  }, [assetLibraryAssets, externalAssets]);
-
-  const adzBuilderPayload = useMemo(
-    () =>
-      buildAdzBuilderPayload({
-        id: SELLER_ADZ_BUILDER_ID,
-        step,
-        approvalState,
-        builder: builder as unknown as Record<string, unknown>,
-        cart,
-        externalAssets: externalAssets as unknown as Record<string, unknown>,
-      }),
-    [approvalState, builder, cart, externalAssets, step]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadRuntime() {
-      setRuntimeLoading(true);
-      setRuntimeError(null);
-
-      try {
-        const [campaignRecordsResult, mediaAssetsResult, builderRecordResult, builderConfigResult] = await Promise.allSettled([
-          backendApi.getAdzCampaigns(),
-          backendApi.getMediaAssets(),
-          backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID),
-          backendApi.getAdzBuilderConfig(),
-        ]);
-
-        if (cancelled) return;
-        if (campaignRecordsResult.status !== "fulfilled" || mediaAssetsResult.status !== "fulfilled") {
-          throw new Error("Failed to load ad builder runtime");
-        }
-        const campaignRecords = campaignRecordsResult.value;
-        const mediaAssets = mediaAssetsResult.value;
-        const builderRecord =
-          builderRecordResult.status === "fulfilled" ? builderRecordResult.value : null;
-        const builderConfig =
-          builderConfigResult.status === "fulfilled" ? builderConfigResult.value : null;
-
-        const mappedScope = mapAdzBuilderScope(campaignRecords);
-        const mappedAssets = mediaAssets
-          .map((entry) => mapMediaAssetToAdBuilderAsset(entry))
-          .filter((entry) => entry.id && entry.url) as Asset[];
-
-        setScope({
-          suppliers: mappedScope.suppliers as Supplier[],
-          campaigns: mappedScope.campaigns as Campaign[],
-          offers: mappedScope.offers as Offer[],
-          campaignCreators: Object.fromEntries(
-            campaignRecords.map((entry) => {
-              const payload = entry.data && typeof entry.data === "object" && !Array.isArray(entry.data)
-                ? (entry.data as Record<string, unknown>)
-                : entry;
-              const creator = payload.creator && typeof payload.creator === "object" && !Array.isArray(payload.creator)
-                ? (payload.creator as Record<string, unknown>)
-                : {};
-              return [
-                String(entry.id || payload.id || ""),
-                {
-                  name: String(creator.name || "Supplier-hosted"),
-                  handle: String(creator.handle || ""),
-                },
-              ];
-            })
-          ),
-        });
-        setAssetLibraryAssets(mappedAssets);
-        setUtmPresets(Array.isArray(builderConfig?.utmPresets) ? (builderConfig.utmPresets as UTMTemplate[]) : []);
-
-        if (builderRecord) {
-          const mappedBuilder = mapBackendAdzBuilder(builderRecord);
-          if (mappedBuilder.step) setStep(mappedBuilder.step as BuilderStep);
-          if (
-            mappedBuilder.approvalState === "Draft" ||
-            mappedBuilder.approvalState === "Submitted" ||
-            mappedBuilder.approvalState === "Approved"
-          ) {
-            setApprovalState(mappedBuilder.approvalState as "Draft" | "Submitted" | "Approved");
-          }
-          if (mappedBuilder.builder && Object.keys(mappedBuilder.builder).length) {
-            setBuilder(mappedBuilder.builder as unknown as BuilderState);
-          } else {
-            setBuilder(buildDefaultAdzBuilder(campaignRecords, mappedAssets) as BuilderState);
-          }
-          setCart(mappedBuilder.cart as Record<string, number>);
-          setExternalAssets(mappedBuilder.externalAssets as Record<string, Asset>);
-          persistHashRef.current = JSON.stringify(
-            buildAdzBuilderPayload({
-              id: mappedBuilder.id,
-              step: mappedBuilder.step,
-              approvalState: mappedBuilder.approvalState,
-              builder: mappedBuilder.builder,
-              cart: mappedBuilder.cart,
-              externalAssets: mappedBuilder.externalAssets,
-            })
-          );
-        } else {
-          setBuilder(buildDefaultAdzBuilder(campaignRecords, mappedAssets) as BuilderState);
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setRuntimeError(null);
-      } finally {
-        if (!cancelled) {
-          setRuntimeLoading(false);
-        }
-      }
-    }
-
-    void loadRuntime();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (runtimeLoading) return;
-    const nextHash = JSON.stringify(adzBuilderPayload);
-    if (nextHash === persistHashRef.current) return;
-
-    const timer = window.setTimeout(() => {
-      void backendApi
-        .saveAdzBuilder(adzBuilderPayload)
-        .then(() => {
-          persistHashRef.current = nextHash;
-        })
-        .catch(() => undefined);
-    }, 350);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [adzBuilderPayload, runtimeLoading]);
-
-  useEffect(() => {
-    if (runtimeLoading || !prefillListing || scope.offers.length === 0) return;
-
-    const prefillKey = JSON.stringify(prefillListing);
-    if (appliedPrefillKeyRef.current === prefillKey) return;
-    appliedPrefillKeyRef.current = prefillKey;
-
-    const matchedOffer = scope.offers.find((offer) => offerMatchesListingPrefill(offer, prefillListing));
-    if (!matchedOffer) {
-      setToast(`No matching Adz offer found for ${prefillListing.title || "that listing"}.`);
-      navigate(`${location.pathname}${location.search}`, { replace: true, state: {} });
-      return;
-    }
-
-    setBuilder((prev) => ({
-      ...prev,
-      supplierId: matchedOffer.supplierId,
-      campaignId: matchedOffer.campaignId,
-      selectedOfferIds: [matchedOffer.id],
-      primaryOfferId: matchedOffer.id,
-      landingBehavior: "Product detail",
-      ctaText: prev.ctaText || `Shop ${prefillListing.title || matchedOffer.name} now.`,
-      primaryCtaLabel: prev.primaryCtaLabel || "Buy now",
-      secondaryCtaLabel: prev.secondaryCtaLabel || "Add to cart",
-      itemPosterByOfferId: {},
-      itemVideoByOfferId: {},
-    }));
-    setStep("offer");
-    setToast(`Ad builder linked to ${prefillListing.title || matchedOffer.name}.`);
-    navigate(`${location.pathname}${location.search}`, { replace: true, state: {} });
-  }, [location.pathname, location.search, navigate, prefillListing, runtimeLoading, scope.offers]);
+  }, [externalAssets]);
 
   const heroImageAsset = useMemo(() => (builder.heroImageAssetId ? assetById.get(builder.heroImageAssetId) : undefined), [builder.heroImageAssetId, assetById]);
   const heroVideoAsset = useMemo(() => (builder.heroIntroVideoAssetId ? assetById.get(builder.heroIntroVideoAssetId) : undefined), [builder.heroIntroVideoAssetId, assetById]);
@@ -1941,11 +1678,8 @@ export default function AdBuilder({
   const countdownLabel = useMemo(() => (countdownState === "upcoming" ? "Starts in" : countdownState === "live" ? "Ends in" : "Session ended"), [countdownState]);
 
   // Tracking URL
-  const utmPreset = useMemo(
-    () => utmPresets.find((p) => p.id === builder.utmPresetId) || utmPresets[0] || { id: "", name: "", description: "", params: {} },
-    [builder.utmPresetId, utmPresets]
-  );
-  const mergedUtm = useMemo(() => ({ ...(utmPreset.params || {}), ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
+  const utmPreset = useMemo(() => UTM_PRESETS.find((p) => p.id === builder.utmPresetId) || UTM_PRESETS[0], [builder.utmPresetId]);
+  const mergedUtm = useMemo(() => ({ ...utmPreset.params, ...builder.utmCustom }), [utmPreset, builder.utmCustom]);
   const shortLink = useMemo(() => buildShortLink(builder.shortDomain, builder.shortSlug, mergedUtm), [builder.shortDomain, builder.shortSlug, mergedUtm]);
 
   const effectivePlatforms = useMemo(() => {
@@ -1964,36 +1698,6 @@ export default function AdBuilder({
     });
   }, [effectivePlatforms, mergedUtm, builder.shortDomain, builder.shortSlug, builder.ctaText]);
 
-  useEffect(() => {
-    if (!builder.campaignId || !builder.startDate || !builder.startTime || !builder.endDate || !builder.endTime) {
-      setScheduleValidation({ ok: false, error: "Schedule is incomplete" });
-      return;
-    }
-    let active = true;
-    void backendApi
-      .validateAdzSchedule({
-        campaignId: builder.campaignId,
-        startAt: startsAt.toISOString(),
-        endAt: endsAt.toISOString(),
-      })
-      .then((result) => {
-        if (!active) return;
-        setScheduleValidation({
-          ok: Boolean(result.ok),
-          error: typeof result.error === "string" ? result.error : undefined,
-        });
-      })
-      .catch(() => {
-        if (active) {
-          setScheduleValidation({ ok: false, error: "Unable to validate schedule" });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [builder.campaignId, builder.startDate, builder.startTime, builder.endDate, builder.endTime, startsAt, endsAt]);
-
   // Viewer state
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerCtx, setViewerCtx] = useState<ViewerContext | null>(null);
@@ -2011,7 +1715,7 @@ export default function AdBuilder({
     }
     setViewerCtx({
       kind: "hero",
-      title: "Intro video (creator)",
+      title: "Intro video (supplier)",
       videoUrl: heroVideoAsset.url,
       posterUrl: heroVideoAsset.posterUrl || heroImageAsset?.url,
       desktopMode: heroVideoAsset.desktopMode || "fullscreen",
@@ -2059,7 +1763,7 @@ export default function AdBuilder({
     if (!o) return;
     // In production: route to checkout page with item preloaded
     const url = `/checkout?offerId=${encodeURIComponent(offerId)}&qty=1`;
-    setToast(`Buy now → ${url}`);
+    setToast(`Buy now → ${url} (demo)`);
   }
 
   function addToCart(offerId: string) {
@@ -2085,12 +1789,12 @@ export default function AdBuilder({
   }
 
   function copyText(text: string, msg = "Copied") {
-    if (!isSubmitted) {
-      setToast("Submit for Admin approval to enable share links");
+    if (!isGenerated) {
+      setToast("Generate the ad to enable share links");
       return;
     }
-    navigator.clipboard?.writeText(text).catch(() => {});
-    setToast(isApproved ? msg : "Copied (pending approval)");
+    navigator.clipboard?.writeText(text).catch(() => { });
+    setToast(msg);
   }
 
   function shareCurrent() {
@@ -2098,9 +1802,20 @@ export default function AdBuilder({
   }
 
   // Asset library picker wiring (independent page)
-  async function persistDraftForPicker() {
-    await backendApi.saveAdzBuilder(adzBuilderPayload);
-    persistHashRef.current = JSON.stringify(adzBuilderPayload);
+  function persistDraftForPicker() {
+    try {
+      sessionStorage.setItem(
+        BUILDER_DRAFT_KEY,
+        JSON.stringify({
+          ts: Date.now(),
+          step,
+          builder,
+          externalAssets,
+        }),
+      );
+    } catch {
+      // ignore
+    }
   }
 
   function buildReturnToUrl() {
@@ -2115,14 +1830,14 @@ export default function AdBuilder({
 
   function openAssetLibraryPicker(applyTo: string) {
     if (typeof window === "undefined") return;
-    void persistDraftForPicker().then(() => {
-      const picker = new URL("/supplier/deliverables/assets", window.location.origin);
-      picker.searchParams.set("mode", "picker");
-      picker.searchParams.set("target", "shoppable");
-      picker.searchParams.set("applyTo", applyTo);
-      picker.searchParams.set("returnTo", buildReturnToUrl());
-      go(`${picker.pathname}?${picker.searchParams.toString()}`);
-    });
+    persistDraftForPicker();
+    const picker = new URL("/supplier/deliverables/assets", window.location.origin);
+    picker.searchParams.set("mode", "picker");
+    picker.searchParams.set("target", "shoppable");
+    picker.searchParams.set("applyTo", applyTo);
+    picker.searchParams.set("returnTo", buildReturnToUrl());
+    // Mini-step exists inside picker mode, so this is treated as "suggested applyTo"
+    window.location.assign(picker.toString());
   }
 
   function coerceAssetFromPickerPayload(payload: Record<string, unknown>): Asset | null {
@@ -2132,8 +1847,8 @@ export default function AdBuilder({
 
     // AssetLibrary_updated emits: { id, title, subtitle, ownerLabel, mediaType, status, previewKind, previewUrl, thumbnailUrl, desktopMode, ... }
     const title = String(payload.title || payload.name || "Asset");
-    const ownerLabel = String(payload.ownerLabel || payload.owner || "Supplier");
-    const owner: AssetOwner = ownerLabel.toLowerCase().includes("supplier") || ownerLabel.toLowerCase().includes("seller") ? "Supplier" : ownerLabel.toLowerCase().includes("catalog") ? "Catalog" : "Supplier";
+    const ownerLabel = String(payload.ownerLabel || payload.owner || "Supplier").toLowerCase();
+    const owner: AssetOwner = ownerLabel.includes("catalog") ? "Catalog" : "Supplier";
 
     const kind: MediaKind = payload.previewKind === "video" || payload.mediaType === "video" ? "video" : "image";
     const status: AssetStatus = payload.status === "approved" ? "approved" : payload.status === "rejected" ? "rejected" : "pending";
@@ -2183,64 +1898,47 @@ export default function AdBuilder({
     const assetId = sp.get("assetId") || "";
     const applyTo = sp.get("applyTo") || "";
 
-    void (async () => {
-        if (shouldRestore) {
-          const savedResult = await Promise.allSettled([backendApi.getAdzBuilder(SELLER_ADZ_BUILDER_ID)]);
-          const saved =
-            savedResult[0].status === "fulfilled" ? savedResult[0].value : null;
-          if (saved) {
-            const mapped = mapBackendAdzBuilder(saved);
-          if (mapped.builder && Object.keys(mapped.builder).length) {
-            setBuilder(mapped.builder as unknown as BuilderState);
-          }
-          if (mapped.step) {
-            setStep(mapped.step as BuilderStep);
-          }
-          setExternalAssets(mapped.externalAssets as Record<string, Asset>);
-          if (
-            mapped.approvalState === "Draft" ||
-            mapped.approvalState === "Submitted" ||
-            mapped.approvalState === "Approved"
-          ) {
-            setApprovalState(mapped.approvalState as "Draft" | "Submitted" | "Approved");
+    if (shouldRestore) {
+      try {
+        const raw = sessionStorage.getItem(BUILDER_DRAFT_KEY);
+        if (raw) {
+          const saved = JSON.parse(raw);
+          if (saved?.builder) setBuilder(saved.builder);
+          if (saved?.step) setStep(saved.step);
+          if (saved?.externalAssets) setExternalAssets(saved.externalAssets);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (assetId) {
+      try {
+        const pickRaw = sessionStorage.getItem(ASSET_PICK_KEY);
+        if (pickRaw) {
+          const parsed = JSON.parse(pickRaw);
+          const payload = parsed?.payload || parsed;
+          if (payload?.id === assetId) {
+            const a = coerceAssetFromPickerPayload(payload);
+            if (a) applyPickedAssetToBuilder(a, applyTo || "");
           }
         }
+      } catch {
+        // ignore
       }
-
-      if (assetId) {
-        const rawAssets = await backendApi.getMediaAssets();
-        const picked = rawAssets.find((entry) => String(entry.id || "") === assetId);
-        if (picked) {
-          const asset = coerceAssetFromPickerPayload({
-            id: picked.id,
-            title: picked.name,
-            owner: "Supplier",
-            mediaType: picked.kind,
-            status: "approved",
-            previewUrl: picked.url,
-            thumbnailUrl:
-              typeof picked.metadata === "object" && picked.metadata && !Array.isArray(picked.metadata)
-                ? (picked.metadata as Record<string, unknown>).posterUrl
-                : undefined,
-          });
-          if (asset) {
-            applyPickedAssetToBuilder(asset, applyTo || "");
-          }
-        }
-
-        const clean = new URL(window.location.href);
-        clean.searchParams.delete("assetId");
-        clean.searchParams.delete("applyTo");
-        clean.searchParams.delete("restore");
-        clean.searchParams.delete("step");
-        window.history.replaceState({}, "", clean.pathname + (clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : ""));
-      }
-    })();
-  }, [adzBuilderPayload]);
+      // Clean query params to prevent re-apply on refresh
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("assetId");
+      clean.searchParams.delete("applyTo");
+      clean.searchParams.delete("restore");
+      clean.searchParams.delete("step");
+      window.history.replaceState({}, "", clean.pathname + (clean.searchParams.toString() ? `?${clean.searchParams.toString()}` : ""));
+    }
+  }, []);
 
   // Supplier -> campaign resets offers
   function resetScope(nextSupplierId: string, nextCampaignId: string) {
-    const offers = scope.offers.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
+    const offers = OFFERS.filter((o) => o.supplierId === nextSupplierId && o.campaignId === nextCampaignId);
     const ids = offers.slice(0, 2).map((o) => o.id);
     const primary = ids[0] || offers[0]?.id || "";
     setBuilder((prev) => ({
@@ -2312,20 +2010,21 @@ export default function AdBuilder({
     });
 
     issues.push({ label: "CTA labels set", ok: !!builder.primaryCtaLabel && !!builder.secondaryCtaLabel, fix: "Fill CTA Builder." });
-    issues.push({ label: "Short link configured", ok: !!builder.shortSlug && !!builder.shortDomain, fix: "Fill Tracking step." });
+    issues.push({ label: "Short link generated", ok: !!builder.shortSlug && !!builder.shortDomain, fix: "Fill Tracking step." });
 
     issues.push({ label: "Start date/time set", ok: !!builder.startDate && !!builder.startTime });
     issues.push({ label: "End date/time set", ok: !!builder.endDate && !!builder.endTime });
     issues.push({ label: "End after start", ok: endsAt.getTime() > startsAt.getTime(), fix: "Adjust schedule." });
 
+    const scheduleValidation = mockValidateSchedule(builder.campaignId, startsAt, endsAt);
     issues.push({ label: "Schedule within campaign window", ok: scheduleValidation.ok, fix: scheduleValidation.error });
 
     const ok = issues.every((i) => i.ok);
     return { ok, issues };
-  }, [assetById, builder, scheduleValidation, selectedOffers, startsAt, endsAt]);
+  }, [builder, selectedOffers, startsAt, endsAt, assetById]);
 
-  const statusLabel = isApproved ? "Approved" : isSubmitted ? "Awaiting Admin" : preflight.ok ? "Ready" : "Draft";
-  const statusTone: "good" | "warn" = isApproved ? "good" : isSubmitted ? "warn" : preflight.ok ? "good" : "warn";
+  const statusLabel = isGenerated ? "Generated" : preflight.ok ? "Ready" : "Draft";
+  const statusTone: "good" | "warn" = isGenerated ? "good" : preflight.ok ? "good" : "warn";
 
   // Viewer props: for hero viewer, we need product chooser and selected product info
   const heroProducts = useMemo(() => {
@@ -2382,34 +2081,17 @@ export default function AdBuilder({
 
   function closeBuilder() {
     if (returnTo) {
-      go(returnTo);
+      window.location.assign(returnTo);
       return;
     }
-    navigate(-1);
-  }
-
-  if (runtimeLoading) {
-    return (
-      <div className="min-h-screen grid place-items-center bg-gray-50 dark:bg-slate-950 text-neutral-900 dark:text-slate-100">
-        <div className="rounded-3xl bg-white dark:bg-slate-900 px-6 py-5 ring-1 ring-neutral-200 dark:ring-slate-800 text-sm font-bold">
-          Loading Ad Builder…
-        </div>
-      </div>
-    );
+    window.history.back();
   }
 
   const content = (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 transition-colors">
-      {runtimeError ? (
-        <div className="mx-auto max-w-7xl px-4 pt-4 md:px-6 lg:px-8">
-          <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-            {runtimeError}
-          </div>
-        </div>
-      ) : null}
+    <div className="min-h-screen bg-neutral-50 dark:bg-slate-950 transition-colors">
       {/* Header */}
-      <div className="relative xl:sticky xl:top-0 z-40 border-b border-neutral-200 dark:border-slate-800 bg-white dark:bg-slate-900/90 dark:bg-slate-900/90 backdrop-blur transition-colors">
-        <div className="flex flex-col gap-3 px-[0.55%] py-5 md:flex-row md:items-center md:justify-between">
+      <div className="relative xl:sticky xl:top-0 z-40 border-b border-neutral-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur transition-colors">
+        <div className="flex flex-col gap-3 px-3 sm:px-4 md:px-6 lg:px-8 py-5 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600 dark:text-slate-400">
               <span className="font-bold text-neutral-900 dark:text-slate-100">Shoppable Adz</span>
@@ -2440,34 +2122,17 @@ export default function AdBuilder({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Btn tone="neutral" onClick={() => setToast("Draft saved")} left={<CheckCircle2 className="h-4 w-4" />}>
+            <Btn tone="neutral" onClick={() => setToast("Draft saved (demo)")} left={<CheckCircle2 className="h-4 w-4" />}>
               Save draft
             </Btn>
             <Btn
               tone="neutral"
               onClick={shareCurrent}
-              disabled={!isSubmitted}
-              title={!isSubmitted ? "Submit for Admin approval to enable share links" : undefined}
+              disabled={!isGenerated}
+              title={!isGenerated ? "Generate the ad to enable share links" : undefined}
               left={<Copy className="h-4 w-4" />}
             >
               Copy link
-            </Btn>
-
-            <Btn
-              tone="neutral"
-              onClick={() => {
-                if (!isSubmitted) {
-                  setToast("Submit for Admin approval first.");
-                  return;
-                }
-                setApprovalState("Approved");
-                setToast("Admin approved (simulation). Share links enabled.");
-              }}
-              disabled={!isSubmitted || isApproved}
-              title={!isSubmitted ? "Submit for Admin approval first" : isApproved ? "Already approved" : "Simulate Admin approval"}
-              left={<BadgeCheck className="h-4 w-4" />}
-            >
-              Simulate Approved
             </Btn>
             <Btn tone="primary" onClick={() => setStep("review")} left={<BadgeCheck className="h-4 w-4" />}>
               Review
@@ -2485,7 +2150,7 @@ export default function AdBuilder({
                   onClick={() => setStep(s.key)}
                   className={cx(
                     "rounded-2xl border px-3 py-2 text-xs font-extrabold transition",
-                    step === s.key ? "text-white" : "bg-white dark:bg-slate-900 dark:bg-slate-800/80 text-neutral-700 dark:text-slate-200 border-neutral-200 dark:border-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700",
+                    step === s.key ? "text-white" : "bg-white dark:bg-slate-800/80 text-neutral-700 dark:text-slate-200 border-neutral-200 dark:border-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700",
                   )}
                   style={step === s.key ? { background: ORANGE, borderColor: ORANGE } : undefined}
                   title={s.desc}
@@ -2556,7 +2221,7 @@ export default function AdBuilder({
                 <>
                   <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                     {preflight.issues.slice(0, 8).map((i) => (
-                      <div key={i.label} className="flex items-start justify-between gap-2 rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                      <div key={i.label} className="flex items-start justify-between gap-2 rounded-2xl bg-white dark:bg-slate-950 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold text-neutral-900 dark:text-slate-100">{i.label}</div>
                           {!i.ok && i.fix ? <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">{i.fix}</div> : null}
@@ -2578,18 +2243,15 @@ export default function AdBuilder({
                   <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Supplier (seller/provider)</div>
                   <div className="mt-2 space-y-2">
                     <select
-                      className="w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                      className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                       value={builder.supplierId}
                       onChange={(e) => {
                         const nextSupplier = e.target.value;
-                        const nextCampaign =
-                          scope.campaigns.find((c) => c.supplierId === nextSupplier)?.id ||
-                          scope.campaigns[0]?.id ||
-                          "";
+                        const nextCampaign = CAMPAIGNS.find((c) => c.supplierId === nextSupplier)?.id || CAMPAIGNS[0]?.id;
                         resetScope(nextSupplier, nextCampaign);
                       }}
                     >
-                      {scope.suppliers.map((p) => (
+                      {SUPPLIERS.map((p) => (
                         <option key={p.id} value={p.id} className="dark:bg-slate-800">
                           {p.name}
                         </option>
@@ -2598,7 +2260,7 @@ export default function AdBuilder({
 
                     <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Campaign</div>
                     <select
-                      className="w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                      className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                       value={builder.campaignId}
                       onChange={(e) => resetScope(builder.supplierId, e.target.value)}
                     >
@@ -2652,7 +2314,7 @@ export default function AdBuilder({
                             "rounded-full px-3 py-1.5 text-xs font-extrabold ring-1 transition",
                             active
                               ? "text-white"
-                              : "bg-white dark:bg-slate-900 dark:bg-slate-800 text-neutral-800 dark:text-slate-300 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700",
+                              : "bg-white dark:bg-slate-800 text-neutral-800 dark:text-slate-300 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700",
                           )}
                           style={active ? { background: ORANGE, borderColor: ORANGE } : undefined}
                         >
@@ -2671,7 +2333,7 @@ export default function AdBuilder({
                         <input
                           value={builder.platformOtherDraft || ""}
                           onChange={(e) => setBuilder((s) => ({ ...s, platformOtherDraft: e.target.value }))}
-                          className="w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                          className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                           placeholder="Type platform name…"
                         />
                         <Btn
@@ -2693,7 +2355,7 @@ export default function AdBuilder({
                       {(builder.platformOtherList || []).length ? (
                         <div className="mt-3 flex flex-wrap gap-2">
                           {(builder.platformOtherList || []).map((p) => (
-                            <span key={p} className="inline-flex items-center gap-2 rounded-full bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-1.5 text-xs font-extrabold ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors dark:text-slate-200">
+                            <span key={p} className="inline-flex items-center gap-2 rounded-full bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-extrabold ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors dark:text-slate-200">
                               {p}
                               <button
                                 type="button"
@@ -2743,7 +2405,7 @@ export default function AdBuilder({
                     const locked = !selected && builder.selectedOfferIds.length >= 6;
                     const stockNote = o.stockLeft === 0 ? "Sold out" : o.stockLeft > 0 && o.stockLeft <= 5 ? "Low stock" : o.stockLeft > 0 ? `${o.stockLeft} left` : "Unlimited";
                     return (
-                      <div key={o.id} className={cx("rounded-2xl p-3 ring-1", selected ? "bg-neutral-50 dark:bg-slate-900/50 ring-neutral-200 dark:ring-slate-800" : "bg-white dark:bg-slate-900 ring-neutral-200 dark:ring-slate-800")}>
+                      <div key={o.id} className={cx("rounded-2xl p-3 ring-1", selected ? "bg-neutral-50 dark:bg-slate-900/50 ring-neutral-200 dark:ring-slate-800" : "bg-white dark:bg-slate-950 ring-neutral-200 dark:ring-slate-800")}>
                         <div className="flex items-start justify-between gap-3">
                           <div className="flex items-start gap-3 min-w-0">
                             <img src={o.catalogPosterUrl} alt={o.name} className="h-12 w-12 rounded-2xl object-cover ring-1 ring-neutral-200 dark:ring-slate-700" />
@@ -2791,7 +2453,7 @@ export default function AdBuilder({
           ) : null}
 
           {step === "creative" ? (
-            <Section title="2) Creative" subtitle="Pick hero media and item media from the Creator Asset Library (approved).">
+            <Section title="2) Creative" subtitle="Pick hero media and item media from the Supplier Asset Library (approved).">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Card>
                   <div className="flex items-start justify-between gap-2">
@@ -2828,7 +2490,7 @@ export default function AdBuilder({
 
                 <Card>
                   <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Hero intro video</div>
-                  <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Plays when the hero play icon is tapped. This should be creator-produced content from the Asset Library.</div>
+                  <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Plays when the hero play icon is tapped. This should be supplier-created content from the Asset Library.</div>
                   <div className="mt-3 rounded-2xl bg-neutral-50 dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
@@ -2884,7 +2546,7 @@ export default function AdBuilder({
                     const videoAsset = videoId ? assetById.get(videoId) : undefined;
 
                     return (
-                      <div key={o.id} className="rounded-3xl bg-white dark:bg-slate-900 p-4 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                      <div key={o.id} className="rounded-3xl bg-white dark:bg-slate-950 p-4 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{o.name}</div>
@@ -2930,7 +2592,7 @@ export default function AdBuilder({
                                 {videoAsset?.status || "catalog"}
                               </Pill>
                             </div>
-                            <div className="mt-2 rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 p-3 ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors">
+                            <div className="mt-2 rounded-2xl bg-white dark:bg-slate-800 p-3 ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors">
                               <div className="truncate text-sm font-extrabold text-neutral-900 dark:text-slate-100">{videoAsset?.title || (o.catalogVideoUrl ? "Catalog video (fallback)" : "No video")}</div>
                               <div className="mt-1 text-xs text-neutral-600 dark:text-slate-400">Desktop viewer: {(videoAsset?.desktopMode || "modal").toUpperCase()}</div>
                             </div>
@@ -2962,7 +2624,7 @@ export default function AdBuilder({
                       <input
                         value={builder.ctaText}
                         onChange={(e) => setBuilder((p) => ({ ...p, ctaText: e.target.value }))}
-                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                         placeholder="e.g. Shop the featured dealz before they end…"
                       />
                     </label>
@@ -2971,7 +2633,7 @@ export default function AdBuilder({
                       <select
                         value={builder.landingBehavior}
                         onChange={(e) => setBuilder((p) => ({ ...p, landingBehavior: e.target.value as BuilderState["landingBehavior"] }))}
-                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                       >
                         {["Checkout", "Product detail", "External link"].map((x) => (
                           <option key={x} value={x}>
@@ -2985,7 +2647,7 @@ export default function AdBuilder({
                       <input
                         value={builder.primaryCtaLabel}
                         onChange={(e) => setBuilder((p) => ({ ...p, primaryCtaLabel: e.target.value }))}
-                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                         placeholder="Buy now"
                       />
                     </label>
@@ -2994,7 +2656,7 @@ export default function AdBuilder({
                       <input
                         value={builder.secondaryCtaLabel}
                         onChange={(e) => setBuilder((p) => ({ ...p, secondaryCtaLabel: e.target.value }))}
-                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                         placeholder="Add to cart"
                       />
                     </label>
@@ -3004,7 +2666,7 @@ export default function AdBuilder({
                         <input
                           value={builder.landingUrl || ""}
                           onChange={(e) => setBuilder((p) => ({ ...p, landingUrl: e.target.value }))}
-                          className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                          className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                           placeholder="https://…"
                         />
                       </label>
@@ -3039,7 +2701,7 @@ export default function AdBuilder({
                       <select
                         value={builder.shortDomain}
                         onChange={(e) => setBuilder((p) => ({ ...p, shortDomain: e.target.value as BuilderState["shortDomain"] }))}
-                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                       >
                         {["mldz.link", "dealz.africa", "shp.adz"].map((d) => (
                           <option key={d} value={d}>
@@ -3054,25 +2716,25 @@ export default function AdBuilder({
                       <input
                         value={builder.shortSlug}
                         onChange={(e) => setBuilder((p) => ({ ...p, shortSlug: e.target.value }))}
-                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
+                        className="mt-2 w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100"
                         placeholder="e.g. adz-glow-1"
                       />
                     </label>
 
                     <div className="rounded-2xl bg-neutral-900 p-3 text-white">
-                      <div className="text-xs text-white/80">Preview link (activates after approval)</div>
+                      <div className="text-xs text-white/80">Generated link</div>
                       <div className="mt-1 break-all text-sm font-extrabold">{shortLink}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <Btn
                           tone="primary"
-                          disabled={!isSubmitted}
-                          title={!isSubmitted ? "Submit for Admin approval to enable share links" : undefined}
+                          disabled={!isGenerated}
+                          title={!isGenerated ? "Generate the ad to enable share links" : undefined}
                           onClick={() => copyText(shortLink, "Copied short link")}
                           left={<Copy className="h-4 w-4" />}
                         >
                           Copy
                         </Btn>
-                        <Btn tone="neutral" onClick={() => setToast("Regenerated link")} left={<Zap className="h-4 w-4" />}>
+                        <Btn tone="neutral" onClick={() => setToast("Regenerated link (demo)")} left={<Zap className="h-4 w-4" />}>
                           Regenerate
                         </Btn>
                       </div>
@@ -3105,7 +2767,7 @@ export default function AdBuilder({
                   </div>
 
                   <div className="mt-3 space-y-2">
-                    {utmPresets.map((p) => {
+                    {UTM_PRESETS.map((p) => {
                       const active = p.id === builder.utmPresetId;
                       return (
                         <button
@@ -3113,7 +2775,7 @@ export default function AdBuilder({
                           onClick={() => setBuilder((s) => ({ ...s, utmPresetId: p.id }))}
                           className={cx(
                             "w-full rounded-2xl p-3 text-left ring-1 transition",
-                            active ? "bg-neutral-900 dark:bg-slate-100 text-white dark:text-slate-900 ring-neutral-900 dark:ring-slate-100" : "bg-white dark:bg-slate-900 dark:bg-slate-800 text-neutral-900 dark:text-slate-100 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700",
+                            active ? "bg-neutral-900 dark:bg-slate-100 text-white dark:text-slate-900 ring-neutral-900 dark:ring-slate-100" : "bg-white dark:bg-slate-800 text-neutral-900 dark:text-slate-100 ring-neutral-200 dark:ring-slate-700 hover:bg-neutral-50 dark:hover:bg-slate-700",
                           )}
                         >
                           <div className="flex items-start justify-between gap-2">
@@ -3137,7 +2799,7 @@ export default function AdBuilder({
                     <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Effective UTM</div>
                     <div className="mt-2 grid grid-cols-1 gap-2">
                       {Object.entries(mergedUtm).map(([k, v]) => (
-                        <div key={k} className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors">
+                        <div key={k} className="flex items-center justify-between gap-2 rounded-xl bg-white dark:bg-slate-800 px-3 py-2 ring-1 ring-neutral-200 dark:ring-slate-700 transition-colors">
                           <div className="text-xs font-bold text-neutral-700 dark:text-slate-300">{k}</div>
                           <div className="truncate text-xs font-semibold text-neutral-900 dark:text-slate-100">{v}</div>
                         </div>
@@ -3165,7 +2827,7 @@ export default function AdBuilder({
           {step === "schedule" ? (
             <Section title="4) Schedule" subtitle="Basic start and end time.">
               {/* Campaign window info */}
-              <div className="mb-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 p-3 text-xs ring-1 ring-slate-400/40 dark:ring-slate-500/50 dark:ring-slate-400/40 dark:ring-slate-500/50 transition-colors">
+              <div className="mb-4 rounded-2xl bg-blue-50 dark:bg-blue-900/20 p-3 text-xs ring-1 ring-blue-200 dark:ring-blue-800 transition-colors">
                 <div className="flex items-start gap-2">
                   <Info className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
                   <div>
@@ -3186,13 +2848,13 @@ export default function AdBuilder({
                         type="date"
                         min={toDateInputValue(new Date(campaign.startsAtISO))}
                         max={toDateInputValue(new Date(campaign.endsAtISO))}
-                        className="w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
+                        className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
                         value={builder.startDate}
                         onChange={(e) => setBuilder((prev) => ({ ...prev, startDate: e.target.value }))}
                       />
                       <input
                         type="time"
-                        className="w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
+                        className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
                         value={builder.startTime}
                         onChange={(e) => setBuilder((prev) => ({ ...prev, startTime: e.target.value }))}
                       />
@@ -3205,13 +2867,13 @@ export default function AdBuilder({
                         type="date"
                         min={toDateInputValue(new Date(campaign.startsAtISO))}
                         max={toDateInputValue(new Date(campaign.endsAtISO))}
-                        className="w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
+                        className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
                         value={builder.endDate}
                         onChange={(e) => setBuilder((prev) => ({ ...prev, endDate: e.target.value }))}
                       />
                       <input
                         type="time"
-                        className="w-full rounded-2xl bg-white dark:bg-slate-900 dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
+                        className="w-full rounded-2xl bg-white dark:bg-slate-800 px-3 py-2 text-sm ring-1 ring-neutral-200 dark:ring-slate-700 focus:outline-none focus:ring-2 focus:ring-neutral-300 dark:focus:ring-slate-600 transition-colors dark:text-slate-100 dark:[color-scheme:dark]"
                         value={builder.endTime}
                         onChange={(e) => setBuilder((prev) => ({ ...prev, endTime: e.target.value }))}
                       />
@@ -3223,7 +2885,7 @@ export default function AdBuilder({
                 </div>
 
                 {(() => {
-                  const val = scheduleValidation;
+                  const val = mockValidateSchedule(builder.campaignId, startsAt, endsAt);
                   if (!val.ok) {
                     return (
                       <div className="mt-4 flex items-start gap-2 rounded-2xl bg-rose-50 dark:bg-rose-900/20 p-3 text-xs text-rose-900 dark:text-rose-300 ring-1 ring-rose-200 dark:ring-rose-800 transition-colors">
@@ -3247,8 +2909,8 @@ export default function AdBuilder({
                   tone="primary"
                   onClick={handleNext}
                   right={<ChevronRight className="h-4 w-4" />}
-                  disabled={!scheduleValidation.ok}
-                  title={!scheduleValidation.ok ? "Fix schedule issues" : undefined}
+                  disabled={!mockValidateSchedule(builder.campaignId, startsAt, endsAt).ok}
+                  title={!mockValidateSchedule(builder.campaignId, startsAt, endsAt).ok ? "Fix schedule issues" : undefined}
                 >
                   Next: Review
                 </Btn>
@@ -3257,7 +2919,7 @@ export default function AdBuilder({
           ) : null}
 
           {step === "review" ? (
-            <Section title="5) Review & Submit" subtitle="Confirm everything matches the Shoppable Ad template and passes preflight before Admin review.">
+            <Section title="5) Review & Generate" subtitle="Confirm everything matches the Shoppable Ad template and passes preflight.">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Card>
                   <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Summary</div>
@@ -3293,10 +2955,10 @@ export default function AdBuilder({
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Btn tone="neutral" onClick={() => setToast("Exported creative pack")} left={<Upload className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => setToast("Exported creative pack (demo)")} left={<Upload className="h-4 w-4" />}>
                       Export pack
                     </Btn>
-                    <Btn tone="neutral" onClick={() => setToast("Shared preview")} left={<Share2 className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => setToast("Shared preview (demo)")} left={<Share2 className="h-4 w-4" />}>
                       Share preview
                     </Btn>
                   </div>
@@ -3328,38 +2990,17 @@ export default function AdBuilder({
                       tone="primary"
                       disabled={!preflight.ok}
                       onClick={() => {
-                        const nextApprovalState: "Submitted" = "Submitted";
-                        const nextPayload = buildAdzBuilderPayload({
-                          id: SELLER_ADZ_BUILDER_ID,
-                          step,
-                          approvalState: nextApprovalState,
-                          builder: builder as unknown as Record<string, unknown>,
-                          cart,
-                          externalAssets: externalAssets as unknown as Record<string, unknown>,
-                        });
-                        void backendApi
-                          .publishAdzBuilder(SELLER_ADZ_BUILDER_ID, nextPayload)
-                          .then(() => {
-                            persistHashRef.current = JSON.stringify(nextPayload);
-                            setApprovalState(nextApprovalState);
-                            setToast(
-                              isApproved
-                                ? "Update submitted for Admin re-approval."
-                                : isSubmitted
-                                  ? "Update resubmitted to Admin."
-                                  : "Submitted for Admin approval."
-                            );
-                            setShowSharePanel(true);
-                          })
-                          .catch(() => undefined);
+                        setIsGenerated(true);
+                        setToast(isGenerated ? "Ad updated" : "Success! Your ad is now visible to shoppers.");
+                        setShowSharePanel(true);
                       }}
                       left={<BadgeCheck className="h-4 w-4" />}
                       className="w-full"
                       title={!preflight.ok ? "Fix preflight issues" : undefined}
                     >
-                      {isApproved ? "Update Ad (re-approval)" : isSubmitted ? "Resubmit Update" : "Submit for Approval"}
+                      {isGenerated ? "Update Ad" : "Publish Ad"}
                     </Btn>
-                    <Btn tone="neutral" onClick={() => setToast("Saved as template")} left={<Sparkles className="h-4 w-4" />} className="w-full">
+                    <Btn tone="neutral" onClick={() => setToast("Saved as template (demo)")} left={<Sparkles className="h-4 w-4" />} className="w-full">
                       Save template
                     </Btn>
                   </div>
@@ -3369,13 +3010,13 @@ export default function AdBuilder({
                 <Card>
                   <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Share packs (per platform)</div>
                   <div className="mt-1 text-xs text-neutral-600">
-                    Share packs are generated after submission; they become public once Admin approves.
+                    Each selected platform gets its own share link (unique <span className="font-semibold">utm_source</span>) once you generate.
                   </div>
 
                   {platformSharePacks.length ? (
                     <div className="mt-3 space-y-2">
                       {platformSharePacks.map((p) => (
-                        <div key={p.platform} className="rounded-2xl bg-white dark:bg-slate-900 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
+                        <div key={p.platform} className="rounded-2xl bg-white dark:bg-slate-950 p-3 ring-1 ring-neutral-200 dark:ring-slate-800 transition-colors">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="text-sm font-extrabold text-neutral-900 dark:text-slate-100">{p.platform}</div>
@@ -3385,8 +3026,8 @@ export default function AdBuilder({
                               <Btn
                                 tone="neutral"
                                 onClick={() => copyText(p.link, "Copied platform link")}
-                                disabled={!isSubmitted}
-                                title={!isSubmitted ? "Submit for Admin approval to enable share links" : undefined}
+                                disabled={!isGenerated}
+                                title={!isGenerated ? "Generate the ad to enable share links" : undefined}
                                 left={<Copy className="h-4 w-4" />}
                               >
                                 Copy link
@@ -3394,8 +3035,8 @@ export default function AdBuilder({
                               <Btn
                                 tone="neutral"
                                 onClick={() => copyText(p.text, "Copied share text")}
-                                disabled={!isSubmitted}
-                                title={!isSubmitted ? "Submit for Admin approval to enable share text" : undefined}
+                                disabled={!isGenerated}
+                                title={!isGenerated ? "Generate the ad to enable share text" : undefined}
                                 left={<Share2 className="h-4 w-4" />}
                               >
                                 Copy share text
@@ -3411,7 +3052,7 @@ export default function AdBuilder({
                         <Info className="mt-0.5 h-4 w-4 text-amber-900 dark:text-amber-300" />
                         <div>
                           <div className="font-extrabold">Select platforms first</div>
-                          <div className="mt-1">Go to step 1 and choose one or more platforms to prepare share packs.</div>
+                          <div className="mt-1">Go to step 1 and choose one or more platforms to generate share packs.</div>
                         </div>
                       </div>
                     </div>
@@ -3419,9 +3060,9 @@ export default function AdBuilder({
                 </Card>
 
                 <Card>
-                  <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Approval notes</div>
+                  <div className="text-xs font-extrabold text-neutral-900 dark:text-slate-100">Generation notes</div>
                   <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-neutral-700 dark:text-slate-300">
-                    <li>Share packs are created after submission; they become public after Admin approval.</li>
+                    <li>Share packs appear after your Ad is ready and generated (preflight pass).</li>
                     <li>If “Other” platforms are selected, you’ll also get share packs for those custom platforms.</li>
                     <li>Remember to include required disclosures (e.g., <span className="font-semibold">#ad</span>, <span className="font-semibold">#sponsored</span>) where applicable.</li>
                   </ul>
@@ -3456,20 +3097,20 @@ export default function AdBuilder({
             <div className="mt-3">
               <ShoppableAdPreview
                 title={campaign?.name ? `${campaign.name}` : "Shoppable Adz"}
-                sharedByCreatorLabel={`Shared by Supplier (Creator) ${campaignCreator.handle || campaignCreator.name} · Platforms: ${effectivePlatforms.length ? effectivePlatforms.join(" · ") : "—"}`}
+                sharedByLabel={`Presented by ${supplier?.name || "Supplier"} · Platforms: ${effectivePlatforms.length ? effectivePlatforms.join(" · ") : "—"}`}
                 supplierName={supplier?.name}
                 campaignStatus={campaign?.status}
                 ctaHelperText={builder.ctaText}
                 primaryCtaLabel={builder.primaryCtaLabel}
                 secondaryCtaLabel={builder.secondaryCtaLabel}
-                heroImageUrl={heroImageAsset?.url || assetLibraryAssets[0]?.url || ""}
+                heroImageUrl={heroImageAsset?.url || ASSETS[0].url}
                 heroIntroVideo={heroVideoAsset?.kind === "video" ? { url: heroVideoAsset.url, poster: heroVideoAsset.posterUrl } : undefined}
                 offers={selectedOffers}
                 primaryOfferId={builder.primaryOfferId}
                 perOfferPosterUrl={perOfferPosterUrl}
                 perOfferVideo={Object.fromEntries(
-                  Object.entries(perOfferVideoUrl).map(([k, v]) => [k, v ? { url: v } : undefined])
-                )}
+                  (Object.entries(perOfferVideoUrl) as Array<[string, string | undefined]>).map(([k, v]) => [k, v ? { url: v } : undefined])
+                ) as Record<string, { url: string; poster?: string } | undefined>}
                 startsAt={startsAt}
                 endsAt={endsAt}
                 onPlayHero={openHeroViewer}
@@ -3477,11 +3118,10 @@ export default function AdBuilder({
                 onBuy={buyNow}
                 onAdd={addToCart}
                 cart={cart}
-                shareEnabled={isSubmitted}
+                shareEnabled={isGenerated}
                 onDecCart={decCart}
                 onClearCart={clearCart}
                 onShare={shareCurrent}
-                onClose={closeBuilder}
               />
             </div>
           </div>
@@ -3498,8 +3138,8 @@ export default function AdBuilder({
               <Btn
                 tone="primary"
                 onClick={shareCurrent}
-                disabled={!isSubmitted}
-                title={!isSubmitted ? "Submit for Admin approval to enable share links" : undefined}
+                disabled={!isGenerated}
+                title={!isGenerated ? "Generate the ad to enable share links" : undefined}
                 left={<Copy className="h-4 w-4" />}
               >
                 Copy
@@ -3557,7 +3197,7 @@ export default function AdBuilder({
   // If opened as drawer-route, render as a drawer shell
   if (drawerMode) {
     return (
-      <DrawerShell open={true} title="Ad Builder" subtitle="Offer → Creative → Tracking → Schedule → Review (supplier-as-creator)" onClose={onClose || (() => navigate(-1))}>
+      <DrawerShell open={true} title="Ad Builder" subtitle="Offer → Creative → Tracking → Schedule → Review (supplier-as-creator)" onClose={onClose || (() => window.history.back())}>
         {content}
       </DrawerShell>
     );
@@ -3595,7 +3235,7 @@ function SharePanel({
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-md overflow-hidden rounded-[16px] bg-white dark:bg-slate-900 p-8 shadow-2xl dark:bg-slate-900 transition-colors"
+        className="relative w-full max-w-md overflow-hidden rounded-[32px] bg-white p-8 shadow-2xl dark:bg-slate-900 transition-colors"
       >
         <button
           onClick={onClose}
@@ -3610,7 +3250,7 @@ function SharePanel({
           </div>
           <h3 className="text-xl font-extrabold text-neutral-900 dark:text-slate-100">Success!</h3>
           <p className="mt-2 text-sm text-neutral-500 dark:text-slate-400">
-            Your ad has been <span className="font-bold text-amber-600 dark:text-amber-400">submitted for Admin approval</span>. It will go live after approval.
+            Your ad is now live and <span className="font-bold text-emerald-600 dark:text-emerald-400">Visible to Shoppers</span>.
           </p>
         </div>
 
@@ -3635,7 +3275,7 @@ function SharePanel({
           <div className="space-y-3">
             <label className="text-xs font-bold uppercase tracking-wider text-neutral-400 dark:text-slate-500">QR Code Entry</label>
             <div className="flex items-center gap-4 rounded-3xl border-2 border-dashed border-neutral-100 p-4 dark:border-slate-800 transition-colors">
-              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white dark:bg-slate-900 transition-colors">
+              <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-neutral-50 dark:bg-slate-950 transition-colors">
                 <QrCode className="h-10 w-10 text-neutral-300 dark:text-slate-700" />
               </div>
               <div className="flex-1">

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { sellerBackendApi } from "../../../lib/backendApi";
+import { useSession } from "../../../auth/session";
 
 /**
  * SupplierAssetLibraryPage.jsx
@@ -10,7 +10,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * Mirror-first preserved:
  * - Top header + brand strip
  * - Context banner when opened as picker (query params)
- * - Controls card: search + creator/supplier/campaign selectors + filter chips
+ * - Controls card: search + campaign/team/creator selectors + filter chips
  * - Main split: Assets grid (left) + Preview/Details (right) with mobile preview modal
  * - Collections section + mini analytics card
  * - Add Content drawer with rights/licensing safeguards + size validations (hero 1920×1080, poster 500×500)
@@ -154,148 +154,187 @@ function mediaEmoji(mt) {
   }
 }
 
-const EMPTY_ASSET_LIBRARY_CONTEXT = {
-  creators: [],
-  suppliers: [],
-  campaigns: [],
-  deliverables: [],
-  collections: {
-    starterPack: { assetCount: 0, status: "needs_review" },
-    priceDropOverlays: { assetCount: 0, status: "needs_review" }
+/* --------------------------------- Mock ---------------------------------- */
+
+const creators = [
+  { id: "cr_1", name: "Amina K.", handle: "@amina.dealz", avatarUrl: "https://i.pravatar.cc/120?img=32" },
+  { id: "cr_2", name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
+  { id: "cr_3", name: "Luna Ade", handle: "@lunaade", avatarUrl: "https://i.pravatar.cc/120?img=7" }
+];
+
+const suppliers = [
+  { id: "sp_1", name: "GlowUp Hub", kind: "Seller", brand: "GlowUp" },
+  { id: "sp_2", name: "Urban Supply", kind: "Seller", brand: "Urban" },
+  { id: "sp_3", name: "EV World Store", kind: "Seller", brand: "EV World" }
+];
+
+const campaigns = [
+  {
+    id: "cp_1",
+    supplierId: "sp_1",
+    name: "Valentine Glow Week",
+    brand: "GlowUp",
+    status: "Active",
+    // Supplier review control (asset-level): Manual means creators go to pending_supplier.
+    supplierReviewMode: "Manual"
   },
-  activity: {
-    points: Array.from({ length: 14 }, () => 0),
-    newCount: 0,
-    approvedCount: 0,
-    pendingCount: 0
+  {
+    id: "cp_2",
+    supplierId: "sp_2",
+    name: "Back-to-Work Essentials",
+    brand: "Urban",
+    status: "Active",
+    supplierReviewMode: "Manual"
+  },
+  {
+    id: "cp_3",
+    supplierId: "sp_3",
+    name: "EV Charger Flash Drop",
+    brand: "EV World",
+    status: "Paused",
+    supplierReviewMode: "Auto"
   }
-};
+];
 
-async function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-      reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
-      reader.readAsDataURL(file);
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
+const ALL_TEAM_ID = "all_team";
+const ALL_CREATORS_ID = "all_creators";
+const NO_CREATORS_ASSIGNED_ID = "no_creators_assigned";
 
-function extensionFromName(name) {
-  const match = String(name || "").match(/\.([a-z0-9]{1,12})$/i);
-  return match ? match[1].toLowerCase() : undefined;
-}
+const campaignTeams = [
+  { id: "tm_cp1_brand", campaignId: "cp_1", name: "Brand Team", creatorIds: ["cr_1", "cr_3"] },
+  { id: "tm_cp1_content", campaignId: "cp_1", name: "Content Team", creatorIds: ["cr_1"] },
+  { id: "tm_cp1_ops", campaignId: "cp_1", name: "Creator Ops", creatorIds: ["cr_3"] },
+  { id: "tm_cp2_content", campaignId: "cp_2", name: "Content Team", creatorIds: ["cr_2"] },
+  { id: "tm_cp2_perf", campaignId: "cp_2", name: "Performance Team", creatorIds: ["cr_2"] },
+  { id: "tm_cp3_ops", campaignId: "cp_3", name: "Creator Ops", creatorIds: ["cr_3"] }
+];
 
-function inferUploadKind(file, fallbackType) {
-  const mime = String(file?.type || "").toLowerCase();
-  if (mime.startsWith("image/")) return "image";
-  if (mime.startsWith("video/")) return "video";
-  if (
-    mime === "application/pdf" ||
-    mime.startsWith("text/") ||
-    mime.includes("msword") ||
-    mime.includes("officedocument") ||
-    mime.includes("spreadsheet") ||
-    mime.includes("presentation")
-  ) {
-    return "document";
+const deliverables = [
+  { id: "dv_1", campaignId: "cp_1", label: "Hero intro video", dueDateLabel: "Tomorrow" },
+  { id: "dv_2", campaignId: "cp_1", label: "Featured item poster", dueDateLabel: "In 2 days" },
+  { id: "dv_3", campaignId: "cp_2", label: "Unboxing clip", dueDateLabel: "In 3 days" },
+  { id: "dv_4", campaignId: "cp_3", label: "Live opener", dueDateLabel: "Today" }
+];
+
+const seedAssets = [
+  {
+    id: "as_1",
+    creatorScope: "cr_3",
+    teamScope: "tm_cp3_ops",
+    title: "Hero intro (vertical)",
+    subtitle: "EV Charger Flash Drop · EV World",
+    campaignId: "cp_3",
+    supplierId: "sp_3",
+    brand: "EV World",
+    tags: ["hero", "intro", "vertical"],
+    mediaType: "video",
+    source: "creator",
+    ownerLabel: "Owner: Creator",
+    status: "pending_admin", // auto campaign
+    lastUpdatedLabel: "Last updated: 2h ago",
+    thumbnailUrl: "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?q=80&w=256&auto=format&fit=crop",
+    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    previewKind: "video",
+    role: "hero",
+    aspect: "vertical",
+    desktopMode: "fullscreen",
+    usageNotes: "Best for TikTok / Shorts. Add price overlay at 00:05.",
+    restrictions: "No third-party logos."
+  },
+  {
+    id: "as_2",
+    creatorScope: "cr_1",
+    teamScope: "tm_cp1_brand",
+    title: "Featured item poster (500×500)",
+    subtitle: "Valentine Glow Week · GlowUp",
+    campaignId: "cp_1",
+    supplierId: "sp_1",
+    brand: "GlowUp",
+    tags: ["poster", "product", "square"],
+    mediaType: "image",
+    source: "creator",
+    ownerLabel: "Owner: Creator",
+    status: "pending_supplier",
+    lastUpdatedLabel: "Last updated: Yesterday",
+    thumbnailUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=256&auto=format&fit=crop",
+    previewUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=1200&auto=format&fit=crop",
+    previewKind: "image",
+    dimensions: { width: 500, height: 500 },
+    role: "item_poster",
+    aspect: "horizontal",
+    desktopMode: "modal",
+    usageNotes: "Use as poster behind play icon.",
+    restrictions: "Must show disclaimer: results may vary."
+  },
+  {
+    id: "as_3",
+    creatorScope: "cr_2",
+    teamScope: "tm_cp2_content",
+    title: "Unboxing clip (30s)",
+    subtitle: "Back-to-Work Essentials · Urban",
+    campaignId: "cp_2",
+    supplierId: "sp_2",
+    brand: "Urban",
+    tags: ["unboxing", "clip", "hook"],
+    mediaType: "video",
+    source: "creator",
+    ownerLabel: "Owner: Creator",
+    status: "changes_requested",
+    lastUpdatedLabel: "Last updated: 3 days ago",
+    thumbnailUrl: "https://images.unsplash.com/photo-1523413651479-597eb2da0ad6?q=80&w=256&auto=format&fit=crop",
+    previewUrl: "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
+    previewKind: "video",
+    role: "offer",
+    aspect: "horizontal",
+    desktopMode: "modal",
+    usageNotes: "Need stronger hook in first 2 seconds.",
+    restrictions: "No music unless licensed."
+  },
+  {
+    id: "as_4",
+    creatorScope: "all",
+    teamScope: ALL_TEAM_ID,
+    title: "Brand overlay: Price drop frame",
+    subtitle: "Reusable overlay pack",
+    campaignId: "cp_1",
+    supplierId: "sp_1",
+    brand: "GlowUp",
+    tags: ["overlay", "price"],
+    mediaType: "overlay",
+    source: "supplier",
+    ownerLabel: "Owner: Supplier",
+    status: "approved",
+    lastUpdatedLabel: "Last updated: 5 days ago",
+    previewKind: "image",
+    previewUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1200&auto=format&fit=crop",
+    dimensions: { width: 1920, height: 1080 },
+    role: "overlay",
+    usageNotes: "Use with countdown badge.",
+    restrictions: "Do not alter logo." 
+  },
+  {
+    id: "as_5",
+    creatorScope: "all",
+    teamScope: ALL_TEAM_ID,
+    title: "Catalog hero image (1920×1080)",
+    subtitle: "Catalog media · auto-imported",
+    campaignId: "cp_2",
+    supplierId: "sp_2",
+    brand: "Urban",
+    tags: ["hero", "catalog"],
+    mediaType: "image",
+    source: "catalog",
+    ownerLabel: "Owner: Catalog",
+    status: "approved",
+    lastUpdatedLabel: "Last updated: 1 week ago",
+    previewKind: "image",
+    previewUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=1600&auto=format&fit=crop",
+    dimensions: { width: 1920, height: 1080 },
+    role: "hero",
+    usageNotes: "Recommended hero for the campaign.",
+    restrictions: "Catalog license applies." 
   }
-
-  if (fallbackType === "video") return "video";
-  if (fallbackType === "image" || fallbackType === "overlay") return "image";
-  if (fallbackType === "doc" || fallbackType === "script" || fallbackType === "template") return "document";
-  return "other";
-}
-
-function inferAssetPreviewKind(mediaType, explicit) {
-  const normalized = String(explicit || "").toLowerCase();
-  if (normalized === "video") return "video";
-  if (normalized === "document" || normalized === "doc" || normalized === "pdf") return "document";
-  if (normalized === "image") return "image";
-  if (mediaType === "video") return "video";
-  if (mediaType === "doc" || mediaType === "script" || mediaType === "template") return "document";
-  return "image";
-}
-
-function canRenderAssetImage(asset) {
-  return asset.previewKind === "image" && Boolean(asset.previewUrl);
-}
-
-function renderAssetThumbnail(asset) {
-  if (canRenderAssetImage(asset) && (asset.thumbnailUrl || asset.previewUrl)) {
-    return <img src={asset.thumbnailUrl || asset.previewUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />;
-  }
-
-  return (
-    <div className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
-      {asset.previewKind === "video" ? "🎬" : asset.previewKind === "document" ? "📄" : mediaEmoji(asset.mediaType)}
-    </div>
-  );
-}
-
-function mapBackendAsset(asset) {
-  const metadata = asset?.metadata && typeof asset.metadata === "object" ? asset.metadata : {};
-  const tags = Array.isArray(metadata.tags) ? metadata.tags.map((tag) => String(tag)) : [];
-  const width = Number(metadata.width);
-  const height = Number(metadata.height);
-  const mediaType = String(asset.kind || metadata.mediaType || "image");
-  const previewKind = inferAssetPreviewKind(mediaType, metadata.previewKind);
-  return {
-    id: String(asset.id || ""),
-    creatorScope: String(metadata.creatorScope || "all"),
-    title: String(asset.name || "Untitled asset"),
-    subtitle: String(metadata.subtitle || ""),
-    campaignId: String(metadata.campaignId || ""),
-    supplierId: String(metadata.supplierId || ""),
-    brand: String(metadata.brand || ""),
-    tags,
-    mediaType,
-    source: String(metadata.source || "supplier"),
-    ownerLabel: String(metadata.ownerLabel || `Owner: ${metadata.owner || "Supplier"}`),
-    status: String(metadata.status || "draft"),
-    lastUpdatedLabel: `Last updated: ${new Date(asset.updatedAt || asset.createdAt || Date.now()).toLocaleString()}`,
-    thumbnailUrl: String(metadata.thumbnailUrl || metadata.posterUrl || asset.url || ""),
-    previewUrl: String(asset.url || metadata.previewUrl || metadata.posterUrl || ""),
-    previewKind,
-    dimensions:
-      Number.isFinite(width) && Number.isFinite(height)
-        ? { width, height }
-        : undefined,
-    role: typeof metadata.role === "string" ? metadata.role : undefined,
-    aspect: typeof metadata.aspect === "string" ? metadata.aspect : undefined,
-    desktopMode: typeof metadata.desktopMode === "string" ? metadata.desktopMode : undefined,
-    usageNotes: typeof metadata.usageNotes === "string" ? metadata.usageNotes : "",
-    restrictions: typeof metadata.restrictions === "string" ? metadata.restrictions : "",
-  };
-}
-
-function buildAssetMetadata(asset, note) {
-  return {
-    creatorScope: asset.creatorScope || "all",
-    subtitle: asset.subtitle || "",
-    campaignId: asset.campaignId || "",
-    supplierId: asset.supplierId || "",
-    brand: asset.brand || "",
-    tags: Array.isArray(asset.tags) ? asset.tags : [],
-    source: asset.source || "supplier",
-    ownerLabel: asset.ownerLabel || "Owner: Supplier",
-    status: asset.status || "draft",
-    previewKind: asset.previewKind || inferAssetPreviewKind(asset.mediaType, null),
-    thumbnailUrl: asset.thumbnailUrl || "",
-    posterUrl: asset.thumbnailUrl || "",
-    role: asset.role || null,
-    aspect: asset.aspect || null,
-    desktopMode: asset.desktopMode || null,
-    usageNotes: asset.usageNotes || "",
-    restrictions: asset.restrictions || "",
-    width: asset.dimensions?.width ?? null,
-    height: asset.dimensions?.height ?? null,
-    reviewNote: typeof note === "string" ? note : "",
-  };
-}
+];
 
 const smartPacks = [
   {
@@ -815,20 +854,6 @@ function PreviewPane({
               playsInline
             />
           </div>
-        ) : asset.previewKind === "document" && asset.previewUrl ? (
-          /\.pdf($|\?)/i.test(asset.previewUrl) ? (
-            <iframe
-              src={asset.previewUrl}
-              title={asset.title}
-              className="h-[420px] w-full bg-white"
-            />
-          ) : (
-            <div className="flex min-h-[220px] flex-col items-center justify-center p-6 text-center text-sm text-slate-600 dark:text-slate-300">
-              <div className="text-4xl">📄</div>
-              <div className="mt-2 font-semibold text-slate-900 dark:text-slate-50">{asset.title}</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">Document preview is not inline for this file type.</div>
-            </div>
-          )
         ) : asset.previewKind === "image" && asset.previewUrl ? (
           <div className="relative aspect-video bg-slate-200">
             <img src={asset.previewUrl} alt={asset.title} className="absolute inset-0 h-full w-full object-cover" />
@@ -908,111 +933,107 @@ export default function SupplierAssetLibraryPage() {
   const { dealId, mode, target, returnTo, applyTo } = useQueryParams();
   const pickerMode = mode === "picker";
   const pickerTarget = target === "live" ? "live" : "shoppable";
+  const session = useSession();
 
-  const [assets, setAssets] = useState([]);
-  const [workspace, setWorkspace] = useState(EMPTY_ASSET_LIBRARY_CONTEXT);
-  const [loadError, setLoadError] = useState(null);
-
-  const creators = Array.isArray(workspace.creators) ? workspace.creators : [];
-  const suppliers = Array.isArray(workspace.suppliers) ? workspace.suppliers : [];
-  const campaigns = Array.isArray(workspace.campaigns) ? workspace.campaigns : [];
-  const deliverables = Array.isArray(workspace.deliverables) ? workspace.deliverables : [];
-  const collections = workspace.collections && typeof workspace.collections === "object" ? workspace.collections : EMPTY_ASSET_LIBRARY_CONTEXT.collections;
-  const activity = workspace.activity && typeof workspace.activity === "object" ? workspace.activity : EMPTY_ASSET_LIBRARY_CONTEXT.activity;
-
-  const [selectedCreatorId, setSelectedCreatorId] = useState("");
-  const [selectedSupplierId, setSelectedSupplierId] = useState("");
+  const [assets, setAssets] = useState(seedAssets);
   const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState(ALL_TEAM_ID);
+  const [selectedCreatorId, setSelectedCreatorId] = useState(ALL_CREATORS_ID);
 
   const [search, setSearch] = useState("");
   const [filterMedia, setFilterMedia] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all"); // includes "pending" alias
   const [filterSource, setFilterSource] = useState("all");
 
-  const [activeAssetId, setActiveAssetId] = useState(null);
+  const [activeAssetId, setActiveAssetId] = useState(seedAssets[0]?.id || null);
 
   const [toast, setToast] = useState(null);
 
   const [isSubmitOpen, setIsSubmitOpen] = useState(false);
   const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false);
 
-  const campaignsForSupplier = useMemo(() => campaigns.filter((c) => c.supplierId === selectedSupplierId), [selectedSupplierId]);
-  const deliverablesForCampaign = useMemo(() => deliverables.filter((d) => d.campaignId === selectedCampaignId), [selectedCampaignId]);
-
-  const selectedCreator = useMemo(
-    () => creators.find((c) => c.id === selectedCreatorId) || creators[0] || null,
-    [creators, selectedCreatorId]
-  );
-  const selectedSupplier = useMemo(
-    () => suppliers.find((s) => s.id === selectedSupplierId) || suppliers[0] || null,
-    [selectedSupplierId, suppliers]
-  );
-  const selectedCampaign = useMemo(
-    () => campaigns.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0] || null,
-    [campaigns, campaignsForSupplier, selectedCampaignId]
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const [workspacePayload, assetPayload] = await Promise.all([
-          sellerBackendApi.getMediaWorkspace(),
-          sellerBackendApi.getMediaAssets()
-        ]);
-        if (cancelled) return;
-        const rows = Array.isArray(assetPayload) ? assetPayload : [];
-        setWorkspace({
-          creators: Array.isArray(workspacePayload?.creators) ? workspacePayload.creators : [],
-          suppliers: Array.isArray(workspacePayload?.suppliers) ? workspacePayload.suppliers : [],
-          campaigns: Array.isArray(workspacePayload?.campaigns) ? workspacePayload.campaigns : [],
-          deliverables: Array.isArray(workspacePayload?.deliverables) ? workspacePayload.deliverables : [],
-          collections: workspacePayload?.collections && typeof workspacePayload.collections === "object" ? workspacePayload.collections : EMPTY_ASSET_LIBRARY_CONTEXT.collections,
-          activity: workspacePayload?.activity && typeof workspacePayload.activity === "object" ? workspacePayload.activity : EMPTY_ASSET_LIBRARY_CONTEXT.activity
-        });
-        setAssets(rows.map(mapBackendAsset));
-        setLoadError(null);
-      } catch {
-        if (!cancelled) {
-          setLoadError("Asset library data is unavailable from the backend right now.");
-        }
+  const implicitSupplierId = useMemo(() => {
+    const sessionLike = (session || {}) as Record<string, unknown>;
+    const supplierKeys = ["supplierId", "sellerId", "storeId", "brandId"];
+    for (const key of supplierKeys) {
+      const value = sessionLike[key];
+      if (typeof value === "string" && suppliers.some((s) => s.id === value)) {
+        return value;
       }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedCreatorId && creators[0]?.id) {
-      setSelectedCreatorId(creators[0].id);
     }
-  }, [creators, selectedCreatorId]);
+    return campaigns[0]?.supplierId || suppliers[0]?.id || "";
+  }, [session]);
 
-  useEffect(() => {
-    if (!selectedSupplierId && suppliers[0]?.id) {
-      setSelectedSupplierId(suppliers[0].id);
-    }
-  }, [selectedSupplierId, suppliers]);
+  const campaignsForSupplier = useMemo(() => campaigns.filter((c) => c.supplierId === implicitSupplierId), [implicitSupplierId]);
+  const deliverablesForCampaign = useMemo(() => deliverables.filter((d) => d.campaignId === selectedCampaignId), [selectedCampaignId]);
+  const teamsForCampaign = useMemo(() => campaignTeams.filter((team) => team.campaignId === selectedCampaignId), [selectedCampaignId]);
 
-  useEffect(() => {
-    if (!activeAssetId && assets[0]?.id) {
-      setActiveAssetId(assets[0].id);
-    }
-  }, [activeAssetId, assets]);
+  const creatorsForScope = useMemo(() => {
+    if (!selectedCampaignId) return [];
+    const ids = new Set();
+    const scopedTeams =
+      selectedTeamId === ALL_TEAM_ID ? teamsForCampaign : teamsForCampaign.filter((team) => team.id === selectedTeamId);
+    scopedTeams.forEach((team) => {
+      (team.creatorIds || []).forEach((id) => ids.add(id));
+    });
+    assets.forEach((asset) => {
+      if (asset.campaignId !== selectedCampaignId || asset.creatorScope === "all") return;
+      if (selectedTeamId !== ALL_TEAM_ID && asset.teamScope !== ALL_TEAM_ID && asset.teamScope !== selectedTeamId) return;
+      ids.add(asset.creatorScope);
+    });
+    return creators.filter((creator) => ids.has(creator.id));
+  }, [selectedCampaignId, selectedTeamId, teamsForCampaign, assets]);
 
-  // Auto-select first campaign when supplier changes
+  const selectedCreator = useMemo(() => creators.find((c) => c.id === selectedCreatorId) || null, [selectedCreatorId]);
+  const selectedSupplier = useMemo(() => suppliers.find((s) => s.id === implicitSupplierId) || suppliers[0], [implicitSupplierId]);
+  const selectedCampaign = useMemo(
+    () => campaignsForSupplier.find((c) => c.id === selectedCampaignId) || campaignsForSupplier[0],
+    [selectedCampaignId, campaignsForSupplier]
+  );
+
+  // Ensure campaign is always in supplier scope and defaults to active.
   useEffect(() => {
-    const first = campaigns.find((c) => c.supplierId === selectedSupplierId);
-    if (first && first.id !== selectedCampaignId) {
-      setSelectedCampaignId(first.id);
+    if (!campaignsForSupplier.length) {
+      if (selectedCampaignId) setSelectedCampaignId("");
+      if (selectedTeamId !== ALL_TEAM_ID) setSelectedTeamId(ALL_TEAM_ID);
+      if (selectedCreatorId !== ALL_CREATORS_ID) setSelectedCreatorId(ALL_CREATORS_ID);
       return;
     }
-    if (!first && selectedCampaignId) {
-      setSelectedCampaignId("");
+    const inScope = campaignsForSupplier.some((campaign) => campaign.id === selectedCampaignId);
+    if (!inScope) {
+      const nextDefault = campaignsForSupplier.find((campaign) => campaign.status === "Active") || campaignsForSupplier[0];
+      if (nextDefault?.id) setSelectedCampaignId(nextDefault.id);
+      if (selectedTeamId !== ALL_TEAM_ID) setSelectedTeamId(ALL_TEAM_ID);
+      if (selectedCreatorId !== ALL_CREATORS_ID) setSelectedCreatorId(ALL_CREATORS_ID);
     }
-  }, [campaigns, selectedCampaignId, selectedSupplierId]);
+  }, [campaignsForSupplier, selectedCampaignId, selectedTeamId, selectedCreatorId]);
+
+  // Reset Team/Creators if campaign scope changes.
+  useEffect(() => {
+    if (selectedTeamId !== ALL_TEAM_ID && !teamsForCampaign.some((team) => team.id === selectedTeamId)) {
+      setSelectedTeamId(ALL_TEAM_ID);
+      if (selectedCreatorId !== ALL_CREATORS_ID) setSelectedCreatorId(ALL_CREATORS_ID);
+    }
+  }, [teamsForCampaign, selectedTeamId, selectedCreatorId]);
+
+  // Reset creator to All if creator no longer belongs to current scope.
+  useEffect(() => {
+    if (selectedCreatorId === ALL_CREATORS_ID) return;
+    if (!creatorsForScope.some((creator) => creator.id === selectedCreatorId)) {
+      setSelectedCreatorId(ALL_CREATORS_ID);
+    }
+  }, [creatorsForScope, selectedCreatorId]);
+
+  function handleCampaignChange(nextCampaignId) {
+    setSelectedCampaignId(nextCampaignId);
+    setSelectedTeamId(ALL_TEAM_ID);
+    setSelectedCreatorId(ALL_CREATORS_ID);
+  }
+
+  function handleTeamChange(nextTeamId) {
+    setSelectedTeamId(nextTeamId);
+    setSelectedCreatorId(ALL_CREATORS_ID);
+  }
 
   const pendingSupplierCount = useMemo(
     () => assets.filter((a) => a.campaignId === selectedCampaignId && a.status === "pending_supplier").length,
@@ -1025,7 +1046,8 @@ export default function SupplierAssetLibraryPage() {
     const q = search.trim().toLowerCase();
     return assets
       .filter((a) => (selectedCampaignId ? a.campaignId === selectedCampaignId : true))
-      .filter((a) => a.creatorScope === "all" || a.creatorScope === selectedCreatorId)
+      .filter((a) => (selectedTeamId === ALL_TEAM_ID ? true : a.teamScope === ALL_TEAM_ID || a.teamScope === selectedTeamId))
+      .filter((a) => (selectedCreatorId === ALL_CREATORS_ID ? true : a.creatorScope === "all" || a.creatorScope === selectedCreatorId))
       .filter((a) => (filterMedia === "all" ? true : a.mediaType === filterMedia))
       .filter((a) => {
         if (filterStatus === "all") return true;
@@ -1038,11 +1060,11 @@ export default function SupplierAssetLibraryPage() {
         const hay = `${a.title} ${a.subtitle || ""} ${(a.tags || []).join(" ")} ${a.ownerLabel || ""} ${a.brand || ""}`.toLowerCase();
         return hay.includes(q);
       });
-  }, [assets, selectedCampaignId, selectedCreatorId, filterMedia, filterStatus, filterSource, search]);
+  }, [assets, selectedCampaignId, selectedTeamId, selectedCreatorId, filterMedia, filterStatus, filterSource, search]);
 
   const activeAsset = useMemo(() => assets.find((a) => a.id === activeAssetId) || null, [assets, activeAssetId]);
 
-  // Supplier review note per asset
+  // Supplier review note per asset (demo)
   const [reviewNotes, setReviewNotes] = useState(() => ({}));
   const activeReviewNote = reviewNotes[activeAssetId || ""] || "";
 
@@ -1051,38 +1073,25 @@ export default function SupplierAssetLibraryPage() {
     if (typeof window !== "undefined" && window.innerWidth < 1024) setIsMobilePreviewOpen(true);
   }
 
-  async function setStatus(assetId, status, note) {
-    const current = assets.find((asset) => asset.id === assetId);
-    if (!current) return;
-    const nextAsset = { ...current, status };
-    try {
-      await sellerBackendApi.patchMediaAsset(assetId, {
-        name: nextAsset.title,
-        kind: nextAsset.mediaType,
-        url: nextAsset.previewUrl,
-        metadata: buildAssetMetadata(nextAsset, note),
-      });
-    } catch {
-      return;
-    }
-    setAssets((prev) => prev.map((a) => (a.id === assetId ? nextAsset : a)));
+  function setStatus(assetId, status, note) {
+    setAssets((prev) => prev.map((a) => (a.id === assetId ? { ...a, status } : a)));
     if (note != null) setReviewNotes((prev) => ({ ...prev, [assetId]: note }));
   }
 
   function supplierApprove(asset) {
     // Supplier approves a creator submission: move to Admin review.
     const next = supplierAutoApprove ? "pending_admin" : "pending_admin";
-    void setStatus(asset.id, next, activeReviewNote);
-    setToast({ title: "Approved", body: "Sent to Admin review." });
+    setStatus(asset.id, next, activeReviewNote);
+    setToast({ title: "Approved", body: "Sent to Admin review (demo)." });
   }
 
   function supplierRequestChanges(asset) {
-    void setStatus(asset.id, "changes_requested", activeReviewNote);
+    setStatus(asset.id, "changes_requested", activeReviewNote);
     setToast({ title: "Changes requested", body: "The creator must update and resubmit." });
   }
 
   function supplierReject(asset) {
-    void setStatus(asset.id, "rejected", activeReviewNote);
+    setStatus(asset.id, "rejected", activeReviewNote);
     setToast({ title: "Rejected", body: "Submission rejected. Creator can submit a new version." });
   }
 
@@ -1093,17 +1102,12 @@ export default function SupplierAssetLibraryPage() {
       return;
     }
 
-    if (pickerMode && returnTo) {
-      const targetUrl = new URL(returnTo, window.location.origin);
-      targetUrl.searchParams.set("assetId", activeAsset.id);
-      if (applyTo) {
-        targetUrl.searchParams.set("applyTo", applyTo);
-      }
-      window.location.assign(targetUrl.toString());
+    if (pickerMode) {
+      setToast({ title: "Use asset", body: `Return to builder with assetId=${activeAsset.id} (demo)` });
       return;
     }
 
-    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached.` });
+    setToast({ title: "Attached", body: `Asset ${activeAsset.id} attached (demo).` });
   }
 
   // ---------------- Submission drawer (Supplier uploads) ----------------
@@ -1208,7 +1212,7 @@ export default function SupplierAssetLibraryPage() {
     }
   }
 
-  async function submitForReview() {
+  function submitForReview() {
     const missingRights = !submitDraft.rightsConfirmed || !submitDraft.noCopyrightedMusicConfirmed;
     const hasAnyMedia =
       submitDraft.mediaType === "link" ? Boolean((submitDraft.linkUrl || "").trim()) : submitDraft.files.length > 0 || Boolean((submitDraft.postUrl || "").trim());
@@ -1273,89 +1277,40 @@ export default function SupplierAssetLibraryPage() {
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const previewKind = inferAssetPreviewKind(submitDraft.mediaType, null);
+    const previewKind = submitDraft.mediaType === "video" ? "video" : "image";
+    const previewUrl =
+      submitDraft.mediaType === "link" ? submitDraft.linkUrl : submitDraft.files[0] ? URL.createObjectURL(submitDraft.files[0]) : submitDraft.postUrl;
 
     const dims = submitImageMeta ? { width: submitImageMeta.width, height: submitImageMeta.height } : undefined;
 
-    const nextAsset = {
-      id,
-      creatorScope: "all",
-      title: submitDraft.title || "Untitled submission",
-      subtitle: `${selectedCampaign?.name || "Campaign"} · ${selectedSupplier?.brand || selectedSupplier?.name}`,
-      campaignId: submitDraft.campaignId,
-      supplierId: selectedSupplierId,
-      brand: selectedSupplier?.brand || selectedSupplier?.name,
-      tags,
-      mediaType: submitDraft.mediaType,
-      source: "supplier",
-      ownerLabel: "Owner: Supplier",
-      status: finalStatus,
-      lastUpdatedLabel: "Last updated: Just now",
-      thumbnailUrl: undefined,
-      previewUrl: "",
-      previewKind,
-      dimensions: dims,
-      role: submitDraft.role || undefined,
-      usageNotes: submitDraft.notes,
-      restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required"
-    };
+    setAssets((prev) => [
+      {
+        id,
+        creatorScope: "all",
+        teamScope: selectedTeamId === ALL_TEAM_ID ? ALL_TEAM_ID : selectedTeamId,
+        title: submitDraft.title || "Untitled submission",
+        subtitle: `${selectedCampaign?.name || "Campaign"} · ${selectedSupplier?.brand || selectedSupplier?.name}`,
+        campaignId: submitDraft.campaignId,
+        supplierId: implicitSupplierId,
+        brand: selectedSupplier?.brand || selectedSupplier?.name,
+        tags,
+        mediaType: submitDraft.mediaType,
+        source: "supplier",
+        ownerLabel: "Owner: Supplier",
+        status: finalStatus,
+        lastUpdatedLabel: "Last updated: Just now",
+        thumbnailUrl: previewKind === "image" ? previewUrl : undefined,
+        previewUrl,
+        previewKind,
+        dimensions: dims,
+        role: submitDraft.role || undefined,
+        usageNotes: submitDraft.notes,
+        restrictions: submitDraft.disclosureConfirmed ? "Disclosure confirmed" : "Disclosure may be required"
+      },
+      ...prev
+    ]);
 
-    try {
-      let uploadedMediaRecord = null;
-      if (submitDraft.mediaType !== "link" && submitDraft.files[0]) {
-        const file = submitDraft.files[0];
-        uploadedMediaRecord = await sellerBackendApi.uploadMediaFile({
-          name: file.name,
-          dataUrl: await readFileAsDataUrl(file),
-          kind: inferUploadKind(file, submitDraft.mediaType),
-          mimeType: file.type || undefined,
-          sizeBytes: file.size,
-          extension: extensionFromName(file.name),
-          purpose: "supplier_asset_library",
-          isPublic: true,
-          visibility: "PUBLIC",
-          metadata: {
-            campaignId: submitDraft.campaignId,
-            deliverableId: submitDraft.deliverableId,
-            uploadedFrom: "supplier-asset-library"
-          }
-        });
-      }
-
-      const previewUrl =
-        (uploadedMediaRecord && String(uploadedMediaRecord.publicUrl || uploadedMediaRecord.url || "")) ||
-        (submitDraft.mediaType === "link" ? submitDraft.linkUrl : submitDraft.postUrl);
-      nextAsset.thumbnailUrl = previewKind === "image" ? previewUrl : undefined;
-      nextAsset.previewUrl = previewUrl;
-
-      const created = uploadedMediaRecord?.id
-        ? await sellerBackendApi.patchMediaAsset(String(uploadedMediaRecord.id), {
-            name: nextAsset.title,
-            kind: nextAsset.mediaType,
-            url: nextAsset.previewUrl,
-            metadata: {
-              ...buildAssetMetadata(nextAsset, ""),
-              mediaAssetId: uploadedMediaRecord.id,
-              deliverableId: submitDraft.deliverableId
-            },
-          })
-        : await sellerBackendApi.createMediaAsset({
-            name: nextAsset.title,
-            kind: nextAsset.mediaType,
-            url: nextAsset.previewUrl,
-            isPublic: true,
-            metadata: {
-              ...buildAssetMetadata(nextAsset, ""),
-              deliverableId: submitDraft.deliverableId
-            },
-          });
-      setAssets((prev) => [mapBackendAsset(created), ...prev]);
-      setActiveAssetId(String(created.id || nextAsset.id));
-    } catch {
-      return;
-    }
-
-    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review." });
+    setToast({ title: "Submitted", body: "Supplier content submitted for Admin review (demo)." });
     setIsSubmitOpen(false);
   }
 
@@ -1377,10 +1332,11 @@ export default function SupplierAssetLibraryPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Btn
               tone="neutral"
-              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates" })}
+              onClick={() => setToast({ title: "Info", body: "Seller assets & creator templates (demo)" })}
               className="hidden sm:inline-flex"
             >
-              ✨ Supplier assets & Creator templates
+              <span aria-hidden="true">✨</span>
+              <span>Open Creative Editor</span>
             </Btn>
 
             <Btn
@@ -1422,7 +1378,7 @@ export default function SupplierAssetLibraryPage() {
                   </span>
                 ) : null}
                 {returnTo ? (
-                  <Btn tone="neutral" onClick={() => window.location.assign(returnTo)}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Back", body: "Return to builder (demo)" })}>
                     ← Back
                   </Btn>
                 ) : null}
@@ -1430,7 +1386,7 @@ export default function SupplierAssetLibraryPage() {
                   tone="neutral"
                   onClick={() => {
                     safeCopy(window.location.href);
-                    setToast({ title: "Shared", body: "Link copied." });
+                    setToast({ title: "Shared", body: "Link copied (demo)." });
                   }}
                 >
                   ↗ Share link
@@ -1442,11 +1398,6 @@ export default function SupplierAssetLibraryPage() {
       ) : null}
 
       <div className="w-full px-[0.55%] py-6">
-        {loadError ? (
-          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-            {loadError}
-          </div>
-        ) : null}
         {/* Controls */}
         <div className="rounded-2xl border bg-white dark:bg-slate-900 p-4">
           <div className="grid gap-3 lg:grid-cols-12 lg:items-center">
@@ -1465,75 +1416,71 @@ export default function SupplierAssetLibraryPage() {
             <div className="lg:col-span-6">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* Creator selector */}
+                  {/* Campaign selector */}
                   <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
-                    {selectedCreator?.avatarUrl ? (
-                      <img
-                        src={selectedCreator.avatarUrl}
-                        alt={selectedCreator.name || "Creator"}
-                        className="h-6 w-6 rounded-full object-cover shrink-0"
-                      />
-                    ) : (
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-                        {selectedCreator?.name?.slice(0, 1)?.toUpperCase() || "C"}
-                      </div>
-                    )}
+                    <span className="text-slate-400">🎯</span>
                     <select
-                      value={selectedCreatorId}
-                      onChange={(e) => setSelectedCreatorId(e.target.value)}
-                      disabled={creators.length === 0}
+                      value={selectedCampaignId}
+                      onChange={(e) => handleCampaignChange(e.target.value)}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {creators.length > 0 ? (
-                        creators.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name} ({c.handle})
+                      {campaignsForSupplier.length ? (
+                        campaignsForSupplier.map((campaign) => (
+                          <option key={campaign.id} value={campaign.id}>
+                            Campaign: {campaign.name} · {campaign.brand} ({campaign.status})
                           </option>
                         ))
                       ) : (
-                        <option value="">No creators available</option>
-                      )}
-                    </select>
-                  </div>
-
-                  {/* Supplier selector */}
-                  <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
-                    <span className="text-slate-400">🧰</span>
-                    <select
-                      value={selectedSupplierId}
-                      onChange={(e) => setSelectedSupplierId(e.target.value)}
-                      disabled={suppliers.length === 0}
-                      className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
-                    >
-                      {suppliers.length > 0 ? (
-                        suppliers.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            Supplier: {p.name} ({p.kind})
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">No suppliers available</option>
+                        <option value="">Campaign: No campaigns available</option>
                       )}
                     </select>
                     <span className="text-slate-400">▾</span>
                   </div>
 
-                  {/* Campaign selector */}
+                  {/* Team selector */}
                   <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
+                    <span className="text-slate-400">🧩</span>
                     <select
-                      value={selectedCampaignId}
-                      onChange={(e) => setSelectedCampaignId(e.target.value)}
-                      disabled={campaignsForSupplier.length === 0}
+                      value={selectedTeamId}
+                      onChange={(e) => handleTeamChange(e.target.value)}
                       className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
                     >
-                      {campaignsForSupplier.length > 0 ? (
-                        campaignsForSupplier.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            Campaign: {c.name} · {c.brand} ({c.status})
-                          </option>
-                        ))
+                      <option value={ALL_TEAM_ID}>Team: All Team</option>
+                      {teamsForCampaign.map((team) => (
+                        <option key={team.id} value={team.id}>
+                          Team: {team.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-slate-400">▾</span>
+                  </div>
+
+                  {/* Creators selector */}
+                  <div className="flex items-center gap-2 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm transition-colors max-w-full">
+                    {selectedCreatorId !== ALL_CREATORS_ID && selectedCreator ? (
+                      <img src={selectedCreator.avatarUrl} alt={selectedCreator.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-300">
+                        👥
+                      </span>
+                    )}
+                    <select
+                      value={creatorsForScope.length ? selectedCreatorId : NO_CREATORS_ASSIGNED_ID}
+                      onChange={(e) => setSelectedCreatorId(e.target.value)}
+                      disabled={!creatorsForScope.length}
+                      className="bg-transparent text-sm text-slate-900 dark:text-slate-50 outline-none w-full truncate"
+                    >
+                      {creatorsForScope.length ? (
+                        <>
+                          <option value={ALL_CREATORS_ID}>Creators: All Creators</option>
+                          {creatorsForScope.map((creator) => (
+                            <option key={creator.id} value={creator.id}>
+                              Creators: {creator.name} ({creator.handle})
+                            </option>
+                          ))}
+                        </>
                       ) : (
-                        <option value="">No campaigns available</option>
+                        <option value={NO_CREATORS_ASSIGNED_ID}>No creators assigned</option>
                       )}
                     </select>
                     <span className="text-slate-400">▾</span>
@@ -1626,7 +1573,7 @@ export default function SupplierAssetLibraryPage() {
                 </div>
 
                 <div className="hidden items-center gap-2 sm:flex">
-                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs" })}>
+                  <Btn tone="neutral" onClick={() => setToast({ title: "Saved packs", body: "Open saved packs (demo)" })}>
                     ⭐ Saved packs
                   </Btn>
                 </div>
@@ -1635,7 +1582,13 @@ export default function SupplierAssetLibraryPage() {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {filteredAssets.map((a) => {
                   const selected = a.id === activeAssetId;
-                  const thumb = renderAssetThumbnail(a);
+                  const thumb = a.thumbnailUrl || a.previewUrl ? (
+                    <img src={a.thumbnailUrl || a.previewUrl} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                  ) : (
+                    <div className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+                      <span className="text-lg">{mediaEmoji(a.mediaType)}</span>
+                    </div>
+                  );
 
                   return (
                     <button
@@ -1707,7 +1660,7 @@ export default function SupplierAssetLibraryPage() {
                   <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Collections</div>
                   <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">Group assets into reusable packs for Adz or Live.</div>
                 </div>
-                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection" })}>
+                <Btn tone="neutral" onClick={() => setToast({ title: "New collection", body: "Create a new collection (demo)" })}>
                   ➕ New collection
                 </Btn>
               </div>
@@ -1717,21 +1670,15 @@ export default function SupplierAssetLibraryPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Starter pack</div>
-                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">{collections.starterPack?.assetCount ?? 0} assets · poster + overlay</div>
+                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">2 assets · poster + overlay</div>
                     </div>
-                    {collections.starterPack?.status === "ready" ? (
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800">
-                        Ready
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800">
-                        Needs review
-                      </span>
-                    )}
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800">
+                      Ready
+                    </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Use for shoppable ads and short lives.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Use pack", body: "Applied pack (demo)" })}>
                       Use pack →
                     </Btn>
                   </div>
@@ -1741,21 +1688,15 @@ export default function SupplierAssetLibraryPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">Price-drop overlays</div>
-                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">{collections.priceDropOverlays?.assetCount ?? 0} assets · overlay variants</div>
+                      <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-300">2 assets · overlay variants</div>
                     </div>
-                    {collections.priceDropOverlays?.status === "ready" ? (
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-200 dark:ring-emerald-800">
-                        Ready
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800">
-                        Needs review
-                      </span>
-                    )}
+                    <span className="inline-flex items-center rounded-full bg-amber-50 dark:bg-amber-900/30 px-2 py-1 text-xs text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800">
+                      Needs review
+                    </span>
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className="text-xs text-slate-500 dark:text-slate-300">Complete review to unlock this collection.</div>
-                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection" })}>
+                    <Btn tone="neutral" onClick={() => setToast({ title: "Open", body: "Open collection (demo)" })}>
                       Open ↗
                     </Btn>
                   </div>
@@ -1794,20 +1735,20 @@ export default function SupplierAssetLibraryPage() {
                 </span>
               </div>
               <div className="mt-3 rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3 text-slate-700 dark:text-slate-100">
-                <MiniChart points={Array.isArray(activity.points) ? activity.points : EMPTY_ASSET_LIBRARY_CONTEXT.activity.points} />
+                <MiniChart points={[4, 3, 2, 5, 7, 6, 5, 8, 7, 6, 9, 10, 8, 11]} />
               </div>
               <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
                 <div className="rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">New</div>
-                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">+{Number(activity.newCount || 0)}</div>
+                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">+11</div>
                 </div>
                 <div className="rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">Approved</div>
-                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">{Number(activity.approvedCount || 0)}</div>
+                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">8</div>
                 </div>
                 <div className="rounded-xl bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 p-3">
                   <div className="text-xs text-slate-500 dark:text-slate-300">Pending</div>
-                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">{Number(activity.pendingCount || 0)}</div>
+                  <div className="mt-1 font-extrabold text-slate-900 dark:text-slate-50">3</div>
                 </div>
               </div>
             </div>
@@ -1860,7 +1801,7 @@ export default function SupplierAssetLibraryPage() {
         open={isSubmitOpen}
         onClose={() => setIsSubmitOpen(false)}
         title="Add content"
-        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default."
+        subtitle="Upload or link media, then submit for review. Supplier uploads go to Admin review by default (demo)."
         footer={
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">

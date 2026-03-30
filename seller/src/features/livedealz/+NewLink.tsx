@@ -1,9 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState, type ReactNode, type ChangeEvent } from "react";
-import { sellerBackendApi } from "../../lib/backendApi";
-
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/+NewLink").catch(() => undefined);
-
 /*************************************************
  * Link Tools (Supplier) — Previewable (Orange Primary)
  * Controlled Mirroring Mode (Creator → Supplier)
@@ -723,7 +718,7 @@ export default function SupplierLinkToolsOrangePrimaryPreviewable() {
       // fall through
     }
     await safeCopy(urlToShare);
-    showToast("Copied (share)");
+    showToast("Copied (share fallback)");
   };
 
   const canCreateCreatorLinks = campaign?.creatorUsageDecision === "I will use a Creator";
@@ -998,7 +993,7 @@ export default function SupplierLinkToolsOrangePrimaryPreviewable() {
               >
                 Copy link
               </BrandOutlineButton>
-              <Button variant="primary" onClick={() => shareLink(link)} disabled={!link} title="Share via system share (share if available)">
+              <Button variant="primary" onClick={() => shareLink(link)} disabled={!link} title="Share via system share (fallback copies)">
                 <Icon.Share className="w-4 h-4" /> Share
               </Button>
             </div>
@@ -1049,7 +1044,7 @@ export default function SupplierLinkToolsOrangePrimaryPreviewable() {
               <Button variant="neutral" onClick={() => copy(link, "Link copied")} disabled={!link} title="Copy link">
                 <Icon.Copy className="w-4 h-4" /> Copy link
               </Button>
-              <Button variant="primary" onClick={() => shareLink(qrUrl)} disabled={!qrUrl} title="Share QR image link (share if available)">
+              <Button variant="primary" onClick={() => shareLink(qrUrl)} disabled={!qrUrl} title="Share QR image link (fallback copies)">
                 <Icon.Share className="w-4 h-4" /> Share QR
               </Button>
             </div>

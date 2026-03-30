@@ -17,7 +17,6 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierMyLiveDealzSubscriptionPage.tsx (Premium)
@@ -36,6 +35,22 @@ const THEME = {
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
+}
+
+function safeReadLS(key: string) {
+  try {
+    return typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeWriteLS(key: string, value: string) {
+  try {
+    if (typeof window !== "undefined") window.localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
 }
 
 function fmtMoney(amount: number) {
@@ -169,7 +184,7 @@ const PageHeader: React.FC<PageHeaderProps> = ({
 };
 
 // -----------------------------------------------------------------------------
-// Toasts — replace with NotificationContext if you have it
+// Toasts (demo) — replace with NotificationContext if you have it
 // -----------------------------------------------------------------------------
 
 type ToastKind = "success" | "info" | "warning" | "error";
@@ -481,6 +496,9 @@ type ComparisonRow = {
   pro: PlanCell;
   enterprise: PlanCell;
 };
+
+const LS_PLAN_KEY = "mldz_supplier_subscription_plan_v1";
+const LS_CYCLE_KEY = "mldz_supplier_subscription_cycle_v1";
 
 function valueBadge(v: PlanValue) {
   if (v === "included")
@@ -878,7 +896,6 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
 
   const [plan, setPlan] = useState<PlanKey>("basic");
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
-  const [subscriptionHydrated, setSubscriptionHydrated] = useState(false);
 
   // Side drawers
   const [drawerBilling, setDrawerBilling] = useState(false);
@@ -900,33 +917,15 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
   const [salesMessage, setSalesMessage] = useState("We'd like Enterprise for our supplier team.");
 
   useEffect(() => {
-    let cancelled = false;
+    const storedPlan = safeReadLS(LS_PLAN_KEY);
+    const storedCycle = safeReadLS(LS_CYCLE_KEY);
 
-    void sellerBackendApi
-      .getSubscription()
-      .then((subscription) => {
-        if (cancelled) return;
-        if (subscription.plan === "basic" || subscription.plan === "pro" || subscription.plan === "enterprise") {
-          setPlan(subscription.plan);
-        }
-        if (subscription.cycle === "monthly" || subscription.cycle === "yearly") {
-          setCycle(subscription.cycle);
-        }
-        setBillingName(typeof subscription.billingName === "string" ? subscription.billingName : "Supplier Admin");
-        setBillingEmail(typeof subscription.billingEmail === "string" ? subscription.billingEmail : "billing@supplier.com");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setBillingName("Supplier Admin");
-        setBillingEmail("billing@supplier.com");
-      })
-      .finally(() => {
-        if (!cancelled) setSubscriptionHydrated(true);
-      });
+    if (storedPlan === "basic" || storedPlan === "pro" || storedPlan === "enterprise") setPlan(storedPlan);
+    if (storedCycle === "monthly" || storedCycle === "yearly") setCycle(storedCycle);
 
-    return () => {
-      cancelled = true;
-    };
+    // seed demo billing fields
+    setBillingName("Supplier Admin");
+    setBillingEmail("billing@supplier.com");
   }, []);
 
   const meta = PLAN_META[plan];
@@ -947,17 +946,12 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
 
   function applyPlan(next: PlanKey) {
     setPlan(next);
-    void sellerBackendApi.patchSubscription({
-      plan: next,
-      cycle,
-      status: next === "basic" ? "inactive" : "active",
-      metadata: { billingName, billingEmail },
-    });
+    safeWriteLS(LS_PLAN_KEY, next);
 
     if (next === "basic") {
       showWarning("Switched to Basic (Free). Pro tools remain visible in demo but are intended to be gated.");
     } else if (next === "pro") {
-      showSuccess("Welcome to Pro. Unlimited supplier Dealz and premium commerce tools are now unlocked.");
+      showSuccess("Welcome to Pro. Unlimited supplier Dealz and premium commerce tools are now unlocked (demo).");
     } else {
       showInfo("Enterprise is typically provisioned by Sales for supplier teams. Demo mode applied.");
     }
@@ -965,23 +959,8 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
 
   function applyCycle(next: BillingCycle) {
     setCycle(next);
-    void sellerBackendApi.patchSubscription({
-      plan,
-      cycle: next,
-      status: plan === "basic" ? "inactive" : "active",
-      metadata: { billingName, billingEmail },
-    });
+    safeWriteLS(LS_CYCLE_KEY, next);
   }
-
-  useEffect(() => {
-    if (!subscriptionHydrated) return;
-    void sellerBackendApi.patchSubscription({
-      plan,
-      cycle,
-      status: plan === "basic" ? "inactive" : "active",
-      metadata: { billingName, billingEmail },
-    });
-  }, [billingEmail, billingName, cycle, plan, subscriptionHydrated]);
 
   const topProUpsell = useMemo(
     () => [
@@ -1602,7 +1581,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
               </div>
 
               <div className="mt-4 text-xs text-slate-600 dark:text-slate-300">
-                Note: This page is live-ready. Wire it to your real billing backend and enforce supplier-plan limits at the API / feature-gate layer.
+                Note: This page is demo-ready. Wire it to your real billing backend and enforce supplier-plan limits at the API / feature-gate layer.
               </div>
             </div>
           </div>
@@ -1618,7 +1597,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
         footer={
           <div className="flex items-center justify-between gap-2">
             <div className="text-xs text-slate-600 dark:text-slate-300">
-              Changes here are live-only.
+              Changes here are demo-only.
             </div>
             <div className="flex items-center gap-2">
               <GhostButton onClick={() => setDrawerBilling(false)}>Cancel</GhostButton>
@@ -1628,7 +1607,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
                     showWarning("Add billing on Pro/Enterprise. Upgrade to continue.");
                     return;
                   }
-                  showSuccess("Billing updated successfully.");
+                  showSuccess("Billing updated successfully (demo).");
                   setDrawerBilling(false);
                 }}
               >
@@ -1738,7 +1717,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
                 <div className="col-span-1 flex justify-end">
                   <button
                     className="h-9 w-9 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-900 transition-colors flex items-center justify-center"
-                    onClick={() => showInfo(`Downloading ${inv.id}.`)}
+                    onClick={() => showInfo(`Downloading ${inv.id} (demo).`)}
                     aria-label="Download invoice"
                   >
                     <Receipt className="h-4 w-4 text-slate-700 dark:text-slate-200" />
@@ -1770,7 +1749,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
         subtitle="Tell us about your supplier team, catalogs, or branches — we’ll set up the right workspace"
         footer={
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-slate-600 dark:text-slate-300">We reply fast.</div>
+            <div className="text-xs text-slate-600 dark:text-slate-300">We reply fast (demo).</div>
             <div className="flex items-center gap-2">
               <GhostButton onClick={() => setDrawerSales(false)}>Cancel</GhostButton>
               <SecondaryButton
@@ -1779,7 +1758,7 @@ function SupplierMyLiveDealzSubscriptionPageInner() {
                     showWarning("Please add an email address.");
                     return;
                   }
-                  showSuccess("Sales request sent. We'll reach out soon.");
+                  showSuccess("Sales request sent (demo). We'll reach out soon.");
                   setDrawerSales(false);
                 }}
               >

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 import { LiveBuilderDrawer as SupplierFacingLiveBuilderDrawer } from "./LiveBuilder_LivePlan_SupplierFacing";
 
 /**
@@ -45,15 +44,6 @@ const ROUTES = {
 };
 
 const cx = (...xs) => xs.filter(Boolean).join(" ");
-
-function normalizeLiveDashboardWorkspace(payload) {
-  return {
-    sessions: Array.isArray(payload?.sessions) ? payload.sessions : [],
-    suppliers: Array.isArray(payload?.suppliers) ? payload.suppliers : [],
-    campaigns: Array.isArray(payload?.campaigns) ? payload.campaigns : [],
-    hosts: Array.isArray(payload?.hosts) ? payload.hosts : []
-  };
-}
 
 /* --------------------------------- Helpers -------------------------------- */
 
@@ -323,9 +313,172 @@ function BarList({ items }) {
   );
 }
 
+/* ---------------------------------- Seed ---------------------------------- */
+
+const suppliersSeed = [
+  {
+    id: "sp_evworld",
+    name: "EV World Store",
+    kind: "Seller",
+    avatarUrl: "https://images.unsplash.com/photo-1603791440384-56cd371ee9a7?auto=format&fit=crop&w=120&q=60"
+  },
+  {
+    id: "sp_glowup",
+    name: "GlowUp Hub",
+    kind: "Seller",
+    avatarUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?auto=format&fit=crop&w=120&q=60"
+  },
+  {
+    id: "sp_grace",
+    name: "Grace Living Studio",
+    kind: "Provider",
+    avatarUrl: "https://images.unsplash.com/photo-1556228578-0d85b1a4d571?auto=format&fit=crop&w=120&q=60"
+  }
+];
+
+const campaignsSeed = [
+  {
+    id: "cp_ev_flash",
+    supplierId: "sp_evworld",
+    name: "EV Charger Flash Drop",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual"
+  },
+  {
+    id: "cp_tech_friday",
+    supplierId: "sp_evworld",
+    name: "Tech Friday Supplier-Hosted",
+    creatorUsage: "I will NOT use a Creator",
+    collabMode: "(n/a)",
+    approvalMode: "Manual"
+  },
+  {
+    id: "cp_wellness",
+    supplierId: "sp_grace",
+    name: "Wellness Booking Sprint",
+    creatorUsage: "I am NOT SURE yet",
+    collabMode: "Open for Collabs",
+    approvalMode: "Auto"
+  }
+];
+
+const hostsSeed = [
+  {
+    id: "cr_1",
+    name: "Luna Ade",
+    handle: "@lunaade",
+    followers: "410k",
+    verified: true,
+    role: "Creator",
+    avatarUrl: "https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=256&q=60"
+  },
+  {
+    id: "cr_2",
+    name: "Noah K.",
+    handle: "@noahknows",
+    followers: "680k",
+    verified: true,
+    role: "Creator",
+    avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=256&q=60"
+  },
+  {
+    id: "sp_host_1",
+    name: "EV World Host Team",
+    handle: "@evworld",
+    followers: "—",
+    verified: true,
+    role: "Supplier",
+    avatarUrl: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=256&q=60"
+  }
+];
+
 function isoNowPlus(ms) {
   return new Date(Date.now() + ms).toISOString();
 }
+
+const SAMPLE_VIDEO_1 = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
+
+const sessionsSeed = [
+  {
+    id: "ls_9001",
+    title: "EV Charger Flash Live: bundles + install tips",
+    status: "Scheduled",
+    supplierId: "sp_evworld",
+    campaignId: "cp_ev_flash",
+    hostId: "cr_1",
+    hostRole: "Creator",
+    platforms: ["TikTok Live", "Instagram Live"],
+    heroImageUrl: "https://images.unsplash.com/photo-1615906655593-ad0386982aef?auto=format&fit=crop&w=1200&q=60",
+    heroVideoUrl: SAMPLE_VIDEO_1,
+    desktopMode: "modal",
+    startISO: isoNowPlus(1000 * 60 * 60 * 3),
+    endISO: isoNowPlus(1000 * 60 * 60 * 4),
+    peakViewers: 12400,
+    avgWatchMin: 11.2,
+    chatRate: 180,
+    gmv: 32840,
+    crewConflicts: 2
+  },
+  {
+    id: "ls_9002",
+    title: "Supplier-hosted Tech Friday: gadgets under $50",
+    status: "Draft",
+    supplierId: "sp_evworld",
+    campaignId: "cp_tech_friday",
+    hostId: "sp_host_1",
+    hostRole: "Supplier",
+    platforms: ["YouTube Live"],
+    heroImageUrl: "https://images.unsplash.com/photo-1518441902117-f0a80e5b0c17?auto=format&fit=crop&w=1200&q=60",
+    heroVideoUrl: SAMPLE_VIDEO_1,
+    desktopMode: "fullscreen",
+    startISO: isoNowPlus(1000 * 60 * 60 * 28),
+    endISO: isoNowPlus(1000 * 60 * 60 * 29),
+    peakViewers: 0,
+    avgWatchMin: 0,
+    chatRate: 0,
+    gmv: 0,
+    crewConflicts: 0
+  },
+  {
+    id: "ls_9003",
+    title: "Wellness booking live: before/after + Q&A",
+    status: "Live",
+    supplierId: "sp_grace",
+    campaignId: "cp_wellness",
+    hostId: "cr_2",
+    hostRole: "Creator",
+    platforms: ["Instagram Live", "Facebook Live"],
+    heroImageUrl: "https://images.unsplash.com/photo-1524503033411-f7a2fe8c7b1f?auto=format&fit=crop&w=1200&q=60",
+    heroVideoUrl: SAMPLE_VIDEO_1,
+    desktopMode: "modal",
+    startISO: isoNowPlus(-1000 * 60 * 15),
+    endISO: isoNowPlus(1000 * 60 * 45),
+    peakViewers: 3100,
+    avgWatchMin: 7.4,
+    chatRate: 92,
+    gmv: 5400
+  },
+  {
+    id: "ls_9004",
+    title: "Replay: pricing breakdown + honest Q&A",
+    status: "Ended",
+    supplierId: "sp_evworld",
+    campaignId: "cp_ev_flash",
+    hostId: "cr_1",
+    hostRole: "Creator",
+    platforms: ["TikTok Live"],
+    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=60",
+    heroVideoUrl: SAMPLE_VIDEO_1,
+    desktopMode: "modal",
+    startISO: isoNowPlus(-1000 * 60 * 60 * 36),
+    endISO: isoNowPlus(-1000 * 60 * 60 * 35),
+    peakViewers: 11200,
+    avgWatchMin: 9.8,
+    chatRate: 150,
+    gmv: 27900
+  }
+];
 
 /* ------------------------------ UI primitives ------------------------------ */
 
@@ -334,7 +487,6 @@ function PageHeader({ pageTitle, rightContent }) {
     <header className="sticky top-0 z-30 w-full bg-white dark:bg-slate-900/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
       <div className="w-full max-w-full px-3 sm:px-4 md:px-5 lg:px-6 py-3 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-400 dark:text-slate-500 font-semibold">Supplier App</div>
           <h1 className="truncate text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
             {pageTitle}
           </h1>
@@ -479,6 +631,26 @@ function NewLiveSessionDrawer({ open, onClose, suppliers, campaigns, hosts, onCr
     setPlatforms((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
   };
 
+  const handleCreateAndOpenBuilder = () => {
+    const id = `ls_${Math.random().toString(16).slice(2, 8)}`;
+    const startISO = new Date(Date.now() + 3600 * 1000).toISOString();
+    const endISO = new Date(Date.now() + 7200 * 1000).toISOString();
+    const host = hosts.find((h) => h.id === hostId);
+    onCreate({
+      id,
+      title,
+      supplierId,
+      campaignId,
+      hostId,
+      hostRole: host?.role || "Creator",
+      startISO,
+      endISO,
+      desktopMode: "modal",
+      platforms
+    });
+    onClose();
+  };
+
   return (
     <Drawer open={open} onClose={onClose} title="New Live Session" subtitle="Create a session and jump straight into Live Builder (Supplier).">
       <div className="grid sm:grid-cols-2 gap-3">
@@ -566,35 +738,15 @@ function NewLiveSessionDrawer({ open, onClose, suppliers, campaigns, hosts, onCr
               </div>
               <div className="mt-3 text-[11px] text-slate-500 dark:text-slate-400">Select where you intend to stream. Keys and health checks are configured in Live Builder.</div>
             </div>
-
-            <div className="flex items-center justify-end gap-2 mt-auto pt-4">
-              <SoftButton onClick={onClose}>Cancel</SoftButton>
-              <PrimaryButton
-                onClick={() => {
-                  const id = `ls_${Math.random().toString(16).slice(2, 8)}`;
-                  const startISO = new Date(Date.now() + 3600 * 1000).toISOString();
-                  const endISO = new Date(Date.now() + 7200 * 1000).toISOString();
-                  const host = hosts.find((h) => h.id === hostId);
-                  onCreate({
-                    id,
-                    title,
-                    supplierId,
-                    campaignId,
-                    hostId,
-                    hostRole: host?.role || "Creator",
-                    startISO,
-                    endISO,
-                    desktopMode: "modal",
-                    platforms
-                  });
-                  onClose();
-                }}
-              >
-                Create & open builder <span className="text-sm">⚡</span>
-              </PrimaryButton>
-            </div>
           </div>
         </Card>
+      </div>
+
+      <div className="mt-4 flex items-center justify-end gap-2">
+        <SoftButton onClick={onClose}>Cancel</SoftButton>
+        <PrimaryButton onClick={handleCreateAndOpenBuilder}>
+          Create & Open Builder
+        </PrimaryButton>
       </div>
     </Drawer>
 
@@ -784,7 +936,7 @@ export function LiveBuilderDrawer({
   const [startTime, setStartTime] = useState("20:00");
   const [endTime, setEndTime] = useState("21:00");
 
-  // Streaming keys
+  // Streaming keys (demo)
   const [keys, setKeys] = useState({
     "TikTok Live": "",
     "Instagram Live": "",
@@ -1228,11 +1380,7 @@ export default function SupplierLiveDashboardPage() {
   const toastApi = useToast();
   const { run, isPending } = useAsyncAction(toastApi);
 
-  const [workspace, setWorkspace] = useState(() => normalizeLiveDashboardWorkspace({}));
-  const sessions = workspace.sessions;
-  const suppliers = workspace.suppliers;
-  const campaigns = workspace.campaigns;
-  const hosts = workspace.hosts;
+  const [sessions, setSessions] = useState(sessionsSeed);
 
   // Filters
   const [tab, setTab] = useState("All");
@@ -1250,16 +1398,11 @@ export default function SupplierLiveDashboardPage() {
   const [builderSessionId, setBuilderSessionId] = useState(undefined);
 
   // Pro hub context
-  const [toolSessionId, setToolSessionId] = useState("");
+  const [toolSessionId, setToolSessionId] = useState(sessionsSeed[0]?.id || "");
 
   // Active path highlight (mirrors isActivePath behavior)
   const [pathname, setPathname] = useState("");
   const currentPath = pathname || (typeof window !== "undefined" ? window.location.pathname : "");
-
-  const loadWorkspace = async () => {
-    const payload = await sellerBackendApi.getLiveDashboardWorkspace();
-    setWorkspace(normalizeLiveDashboardWorkspace(payload));
-  };
 
   const isActivePath = (route) => {
     if (!route) return false;
@@ -1289,25 +1432,6 @@ export default function SupplierLiveDashboardPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     setPathname(window.location.pathname);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      try {
-        const payload = await sellerBackendApi.getLiveDashboardWorkspace();
-        if (!active) return;
-        setWorkspace(normalizeLiveDashboardWorkspace(payload));
-      } catch {
-        return;
-      }
-    };
-
-    load();
-    return () => {
-      active = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -1352,9 +1476,9 @@ export default function SupplierLiveDashboardPage() {
   }, [sessions, tab, supplierId, q]);
 
   const active = useMemo(() => (activeId ? sessions.find((s) => s.id === activeId) || null : null), [sessions, activeId]);
-  const activeSupplier = useMemo(() => (active ? suppliers.find((p) => p.id === active.supplierId) : undefined), [active, suppliers]);
-  const activeCampaign = useMemo(() => (active?.campaignId ? campaigns.find((c) => c.id === active.campaignId) : undefined), [active, campaigns]);
-  const activeHost = useMemo(() => (active ? hosts.find((h) => h.id === active.hostId) : undefined), [active, hosts]);
+  const activeSupplier = useMemo(() => (active ? suppliersSeed.find((p) => p.id === active.supplierId) : undefined), [active]);
+  const activeCampaign = useMemo(() => (active?.campaignId ? campaignsSeed.find((c) => c.id === active.campaignId) : undefined), [active]);
+  const activeHost = useMemo(() => (active ? hostsSeed.find((h) => h.id === active.hostId) : undefined), [active]);
 
   const kpis = useMemo(() => {
     const live = sessions.filter((s) => s.status === "Live").length;
@@ -1364,12 +1488,7 @@ export default function SupplierLiveDashboardPage() {
     return { live, upcoming, drafts, gmv };
   }, [sessions]);
 
-  const viewersTrend = useMemo(() => {
-    if (!sessions.length) return Array.from({ length: 14 }, () => 0);
-    const total = sessions.reduce((sum, session) => sum + Number(session.peakViewers || 0), 0);
-    const average = Math.round(total / Math.max(1, sessions.length));
-    return Array.from({ length: 14 }, (_, index) => Math.max(0, Math.round((average * (index + 1)) / 14)));
-  }, [sessions]);
+  const viewersTrend = useMemo(() => [9, 12, 14, 11, 15, 18, 16, 17, 20, 18, 22, 19, 24, 21], []);
 
   const byPlatform = useMemo(() => {
     const m = new Map();
@@ -1385,9 +1504,9 @@ export default function SupplierLiveDashboardPage() {
   }, [sessions]);
 
   const toolSession = useMemo(() => sessions.find((s) => s.id === toolSessionId) || null, [sessions, toolSessionId]);
-  const toolSupplier = useMemo(() => (toolSession ? suppliers.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession, suppliers]);
-  const toolHost = useMemo(() => (toolSession ? hosts.find((h) => h.id === toolSession.hostId) : undefined), [toolSession, hosts]);
-  const toolCampaign = useMemo(() => (toolSession?.campaignId ? campaigns.find((c) => c.id === toolSession.campaignId) : undefined), [toolSession, campaigns]);
+  const toolSupplier = useMemo(() => (toolSession ? suppliersSeed.find((p) => p.id === toolSession.supplierId) : undefined), [toolSession]);
+  const toolHost = useMemo(() => (toolSession ? hostsSeed.find((h) => h.id === toolSession.hostId) : undefined), [toolSession]);
+  const toolCampaign = useMemo(() => (toolSession?.campaignId ? campaignsSeed.find((c) => c.id === toolSession.campaignId) : undefined), [toolSession]);
 
   const waPrompt = useMemo(() => {
     if (!toolSession) return null;
@@ -1470,22 +1589,29 @@ export default function SupplierLiveDashboardPage() {
   async function onCreateSession(payload) {
     await run(
       async () => {
-        const created = await sellerBackendApi.createLiveSession({
+        const heroImageUrl = "https://images.unsplash.com/photo-1520975958225-82284e3d2e52?auto=format&fit=crop&w=1200&q=60";
+        const created = {
           id: payload.id,
           title: payload.title,
-          status: "draft",
-          scheduledAt: payload.startISO,
+          status: "Draft",
+          supplierId: payload.supplierId,
           campaignId: payload.campaignId,
           hostId: payload.hostId,
           hostRole: payload.hostRole,
-          supplierId: payload.supplierId,
+          platforms: payload.platforms,
+          heroImageUrl,
+          heroVideoUrl: SAMPLE_VIDEO_1,
+          desktopMode: payload.desktopMode,
           startISO: payload.startISO,
           endISO: payload.endISO,
-          desktopMode: payload.desktopMode,
-          platforms: payload.platforms
-        });
+          peakViewers: 0,
+          avgWatchMin: 0,
+          chatRate: 0,
+          gmv: 0,
+          crewConflicts: 0
+        };
 
-        await loadWorkspace();
+        setSessions((prev) => [created, ...prev]);
         openBuilderPage(created.id);
       },
       {
@@ -1511,7 +1637,7 @@ export default function SupplierLiveDashboardPage() {
               Live Schedule <span className="text-sm">📅</span>
             </SoftButton>
             <PrimaryButton onClick={() => setNewOpen(true)}>
-              New Live Session <span className="text-sm">＋</span>
+              <span className="text-sm">+</span> New Live Session
             </PrimaryButton>
           </div>
         }
@@ -1868,7 +1994,7 @@ export default function SupplierLiveDashboardPage() {
                   onChange={(e) => setSupplierId(e.target.value)}
                 >
                   <option value="all">All suppliers</option>
-                  {suppliers.map((p) => (
+                  {suppliersSeed.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -1900,8 +2026,8 @@ export default function SupplierLiveDashboardPage() {
 
                   <tbody className="divide-y divide-slate-100">
                     {filtered.map((s) => {
-                      const p = suppliers.find((x) => x.id === s.supplierId);
-                      const h = hosts.find((x) => x.id === s.hostId);
+                      const p = suppliersSeed.find((x) => x.id === s.supplierId);
+                      const h = hostsSeed.find((x) => x.id === s.hostId);
                       const tone = s.status === "Live" ? "good" : s.status === "Scheduled" ? "warn" : s.status === "Ended" ? "neutral" : "neutral";
 
                       return (
@@ -1931,7 +2057,7 @@ export default function SupplierLiveDashboardPage() {
                               {p?.avatarUrl ? <img src={p.avatarUrl} className="h-7 w-7 rounded-full border border-slate-200 object-cover" alt={p.name} /> : null}
                               <div className="min-w-0">
                                 <div className="text-[12px] font-bold truncate text-slate-900 dark:text-slate-100">{p?.name || "—"}</div>
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaigns.find((c) => c.id === s.campaignId)?.name || "—"}</div>
+                                <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{campaignsSeed.find((c) => c.id === s.campaignId)?.name || "—"}</div>
                               </div>
                             </div>
                           </td>
@@ -1999,9 +2125,9 @@ export default function SupplierLiveDashboardPage() {
         <NewLiveSessionDrawer
           open={newOpen}
           onClose={() => setNewOpen(false)}
-          suppliers={suppliers}
-          campaigns={campaigns}
-          hosts={hosts}
+          suppliers={suppliersSeed}
+          campaigns={campaignsSeed}
+          hosts={hostsSeed}
           onCreate={onCreateSession}
         />
 

@@ -1,7 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
-import { buildAdzCampaignPayload, deriveMetricSeries, hashAdzCampaign, mapBackendAdzCampaign } from "./runtime";
 
 /**
  * SupplierAdzDashboardPage.jsx
@@ -450,6 +448,217 @@ function BarList({ title, subtitle, rows }) {
 
 const SAMPLE_VIDEO = "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4";
 
+const DEMO_ADS = [
+  {
+    id: "ADZ-2201",
+    campaignName: "Valentine Glow Week",
+    campaignSubtitle: "Limited-time drops · Host-first",
+    supplier: {
+      name: "GlowUp Hub",
+      category: "Beauty",
+      logoUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "Amina K.",
+      handle: "@amina.dealz",
+      avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    status: "Generated",
+    platforms: ["Instagram", "TikTok"],
+    startISO: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    compensation: { type: "Commission", commissionRate: 0.12 },
+    offers: [
+      {
+        id: "O-100",
+        type: "PRODUCT",
+        name: "Glow Serum (30ml)",
+        currency: "UGX",
+        price: 38000,
+        basePrice: 52000,
+        stockLeft: 12,
+        posterUrl: "https://images.unsplash.com/photo-1611930022073-84fb62f4ea9d?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "RETAIL",
+        wholesale: {
+          moq: 10,
+          step: 5,
+          leadTimeLabel: "Ships in 3–5 days",
+          tiers: [
+            { minQty: 10, unitPrice: 32000 },
+            { minQty: 25, unitPrice: 29500 },
+            { minQty: 50, unitPrice: 27000 }
+          ]
+        }
+      },
+      {
+        id: "O-101",
+        type: "SERVICE",
+        name: "Skin consult (30min)",
+        currency: "UGX",
+        price: 60000,
+        stockLeft: -1,
+        posterUrl: "https://images.unsplash.com/photo-1556228453-efd6c1ff04f6?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        serviceMeta: { durationMins: 30, bookingType: "Instant" }
+      }
+    ],
+    generated: true,
+    hasBrokenLink: false,
+    lowStock: false,
+    lock: { locked: false, label: "", reason: "" },
+    impressions7d: 410000,
+    clicks7d: 14800,
+    orders7d: 920,
+    revenue7d: 34500000,
+    currency: "UGX"
+  },
+  {
+    id: "ADZ-2202",
+    campaignName: "Back-to-Work Essentials",
+    campaignSubtitle: "Bags & Accessories · Campus-ready",
+    supplier: {
+      name: "Urban Supply",
+      category: "Accessories",
+      logoUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "Chris M.",
+      handle: "@chrismarket",
+      avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    hostRole: "Creator",
+    creatorUsage: "I will use a Creator",
+    collabMode: "Invite-Only",
+    approvalMode: "Manual",
+    status: "Live",
+    platforms: ["TikTok", "YouTube"],
+    startISO: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 8 * 3600 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1520975692290-9d0a3d460c22?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    compensation: { type: "Hybrid", commissionRate: 0.1, flatFee: 250, currency: "USD" },
+    offers: [
+      {
+        id: "O-110",
+        type: "PRODUCT",
+        name: "Laptop Backpack",
+        currency: "UGX",
+        price: 145000,
+        basePrice: 190000,
+        stockLeft: 4,
+        posterUrl: "https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL"],
+        defaultSellingMode: "RETAIL"
+      },
+      {
+        id: "O-111",
+        type: "PRODUCT",
+        name: "USB-C Hub",
+        currency: "UGX",
+        price: 68000,
+        stockLeft: 33,
+        posterUrl: "https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 10,
+          step: 5,
+          leadTimeLabel: "Ships in 2–4 days",
+          tiers: [
+            { minQty: 10, unitPrice: 52000 },
+            { minQty: 25, unitPrice: 49000 },
+            { minQty: 50, unitPrice: 46500 }
+          ]
+        }
+      }
+    ],
+    generated: true,
+    hasBrokenLink: false,
+    lowStock: true,
+    lock: { locked: false, label: "", reason: "" },
+    impressions7d: 580000,
+    clicks7d: 19200,
+    orders7d: 1140,
+    revenue7d: 49800000,
+    currency: "UGX"
+  },
+  {
+    id: "ADZ-2203",
+    campaignName: "Home Essentials Drop",
+    campaignSubtitle: "Kitchen upgrade · Bundles",
+    supplier: {
+      name: "HomePro",
+      category: "Home",
+      logoUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=256&auto=format&fit=crop"
+    },
+    creator: {
+      name: "(Supplier-hosted)",
+      handle: "@homepro",
+      avatarUrl: "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=256&auto=format&fit=crop",
+      verified: true
+    },
+    hostRole: "Supplier",
+    creatorUsage: "I will NOT use a Creator",
+    collabMode: "(n/a)",
+    approvalMode: "Manual",
+    status: "Pending approval",
+    platforms: ["TikTok"],
+    startISO: new Date(Date.now() + 34 * 3600 * 1000).toISOString(),
+    endISO: new Date(Date.now() + 35 * 3600 * 1000).toISOString(),
+    timezone: "Africa/Kampala",
+    heroImageUrl: "https://images.unsplash.com/photo-1486611367184-17759508999c?q=80&w=1600&auto=format&fit=crop",
+    heroIntroVideoUrl: SAMPLE_VIDEO,
+    compensation: { type: "Flat fee", flatFee: 150, currency: "GBP" },
+    offers: [
+      {
+        id: "O-120",
+        type: "PRODUCT",
+        name: "6-Speed Blender",
+        currency: "UGX",
+        price: 240000,
+        stockLeft: 10,
+        posterUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=900&auto=format&fit=crop",
+        videoUrl: SAMPLE_VIDEO,
+        sellingModes: ["RETAIL", "WHOLESALE"],
+        defaultSellingMode: "WHOLESALE",
+        wholesale: {
+          moq: 3,
+          step: 1,
+          leadTimeLabel: "Ships in 3–6 days",
+          tiers: [
+            { minQty: 3, unitPrice: 210000 },
+            { minQty: 6, unitPrice: 199000 },
+            { minQty: 12, unitPrice: 189000 }
+          ]
+        }
+      }
+    ],
+    generated: false,
+    hasBrokenLink: true,
+    lowStock: false,
+    lock: { locked: true, label: "Edit locked", reason: "Locked while pending approval (manual)." },
+    impressions7d: 18000,
+    clicks7d: 430,
+    orders7d: 18,
+    revenue7d: 2100000,
+    currency: "UGX"
+  }
+];
+
 /* ----------------------------- Performance drawer --------------------------- */
 
 function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder, onOpenMarketplace, onCopyLink }) {
@@ -462,14 +671,8 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
     setPlatform("All");
   }, [open, ad?.id]);
 
-  const sImpr = useMemo(
-    () => deriveMetricSeries(Number(ad?.impressions7d ?? ad?.impressions ?? 0), 14, `${ad?.id || "drawer-impressions"}`),
-    [ad?.id, ad?.impressions, ad?.impressions7d]
-  );
-  const sOrders = useMemo(
-    () => deriveMetricSeries(Number(ad?.orders7d ?? ad?.orders ?? 0), 14, `${ad?.id || "drawer-orders"}-orders`),
-    [ad?.id, ad?.orders, ad?.orders7d]
-  );
+  const sImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
+  const sOrders = useMemo(() => [3, 4, 5, 4, 6, 7, 8, 7, 10, 9, 12, 13, 14, 15], []);
 
   const kpis = useMemo(() => {
     if (!ad) return null;
@@ -493,14 +696,12 @@ function PerformanceDrawer({ open, onClose, ad, allAds, toastApi, onOpenBuilder,
 
   const offerRows = useMemo(() => {
     if (!ad) return [];
+    // demo derived offer performance
     return ad.offers.map((o, idx) => {
-      const sold = Math.max(0, Number(o.sold ?? 0));
-      const estClicks =
-        Math.max(
-          0,
-          Number((o as Record<string, unknown>).clicks ?? 0)
-            || Math.round((ad.clicks7d || 0) / Math.max(1, ad.offers.length))
-        );
+      const base = Math.max(1, ad.orders7d);
+      const w = idx === 0 ? 0.62 : 0.38;
+      const sold = Math.max(1, Math.round(base * w));
+      const estClicks = Math.max(1, Math.round(ad.clicks7d * (idx === 0 ? 0.55 : 0.45)));
       const conv = estClicks ? sold / estClicks : 0;
       return {
         ...o,
@@ -1069,50 +1270,14 @@ export default function SupplierAdzDashboardPage() {
   const navigate = useNavigate();
   const toastApi = useToasts();
   const { run, isPending } = useAsyncAction(toastApi);
-  const syncedAdsRef = useRef<Record<string, string>>({});
 
   const isMobile = useMemo(() => (typeof window !== "undefined" ? window.innerWidth < 480 : false), []);
 
   const [drawer, setDrawer] = useState(null); // null | calendar | quickLinks | performance | builder
   const [drawerData, setDrawerData] = useState(undefined); // adId
 
-  const [ads, setAds] = useState<Array<Record<string, any>>>([]);
-  const [selectedId, setSelectedId] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-
-    void sellerBackendApi
-      .getAdzCampaigns()
-      .then((payload) => {
-        if (cancelled) return;
-        const nextAds = payload.map((entry) => mapBackendAdzCampaign(entry));
-        if (nextAds.length) {
-          setAds(nextAds as Array<Record<string, any>>);
-          syncedAdsRef.current = Object.fromEntries(nextAds.map((ad) => [String(ad.id), hashAdzCampaign(ad)]));
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    ads.forEach((ad) => {
-      const nextHash = hashAdzCampaign(ad);
-      if (syncedAdsRef.current[String(ad.id)] === nextHash) return;
-      syncedAdsRef.current[String(ad.id)] = nextHash;
-      void sellerBackendApi.patchAdzCampaign(String(ad.id), buildAdzCampaignPayload(ad));
-    });
-  }, [ads]);
-
-  useEffect(() => {
-    if (!ads.length) return;
-    if (!ads.find((ad) => ad.id === selectedId)) {
-      setSelectedId(ads[0]?.id || "");
-    }
-  }, [ads, selectedId]);
+  const [ads, setAds] = useState(DEMO_ADS);
+  const [selectedId, setSelectedId] = useState(DEMO_ADS[0]?.id || "");
   const selected = useMemo(() => ads.find((a) => a.id === selectedId) || ads[0] || null, [ads, selectedId]);
 
   const [q, setQ] = useState("");
@@ -1150,15 +1315,9 @@ export default function SupplierAdzDashboardPage() {
       });
   }, [ads, q, status, onlyWholesaleReady]);
 
-  // Global dashboard analytics
-  const seriesImpr = useMemo(
-    () => deriveMetricSeries(ads.reduce((sum, ad) => sum + Number(ad.impressions7d ?? ad.impressions ?? 0), 0), 14, "dashboard-impressions"),
-    [ads]
-  );
-  const seriesOrders = useMemo(
-    () => deriveMetricSeries(ads.reduce((sum, ad) => sum + Number(ad.orders7d ?? ad.orders ?? 0), 0), 14, "dashboard-orders"),
-    [ads]
-  );
+  // Global dashboard analytics (demo)
+  const seriesImpr = useMemo(() => [80, 92, 110, 105, 120, 150, 170, 160, 210, 205, 230, 245, 260, 275], []);
+  const seriesOrders = useMemo(() => [3, 4, 5, 4, 6, 7, 8, 7, 10, 9, 12, 13, 14, 15], []);
 
   const retailWholesaleSplit = useMemo(() => {
     let retail = 0;

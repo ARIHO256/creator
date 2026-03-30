@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierLiveDealzFeedPage (Controlled Mirroring Mode)
@@ -31,23 +30,23 @@ function useToast() {
   const [toast, setToast] = useState(null);
   const timerRef = React.useRef(null);
 
-  const dismiss = useCallback(() => {
+  const dismiss = () => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
     setToast(null);
-  }, []);
+  };
 
-  const show = useCallback((tone, message) => {
+  const show = (tone, message) => {
     setToast({ tone, message });
     if (timerRef.current) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => setToast(null), 2600);
-  }, []);
+  };
 
   return {
     toast,
     dismiss,
-    showSuccess: useCallback((m) => show("success", m), [show]),
-    showInfo: useCallback((m) => show("info", m), [show]),
-    showWarning: useCallback((m) => show("warning", m), [show])
+    showSuccess: (m) => show("success", m),
+    showInfo: (m) => show("info", m),
+    showWarning: (m) => show("warning", m)
   };
 }
 
@@ -83,30 +82,6 @@ function Toast({ tone, message, onClose }) {
       </div>
     </div>
   );
-}
-
-function normalizeLiveFeedPayload(payload) {
-  return {
-    supplierActsAsCreator: Boolean(payload?.supplierActsAsCreator),
-    hero: {
-      initials: payload?.hero?.initials || "SP",
-      name: payload?.hero?.name || "Seller workspace",
-      subtitle: payload?.hero?.subtitle || "Verified Supplier",
-      tier: payload?.hero?.tier || "Supplier Tier · Pro",
-      kpis: Array.isArray(payload?.hero?.kpis) ? payload.hero.kpis : []
-    },
-    todayItems: Array.isArray(payload?.todayItems) ? payload.todayItems : [],
-    feedItems: Array.isArray(payload?.feedItems) ? payload.feedItems : [],
-    followedCreators: Array.isArray(payload?.followedCreators) ? payload.followedCreators : [],
-    pipeline: Array.isArray(payload?.pipeline?.stages) ? payload.pipeline.stages : [],
-    crew: {
-      title: payload?.crew?.title || "No scheduled live session",
-      rows: Array.isArray(payload?.crew?.rows) ? payload.crew.rows : []
-    },
-    aiSuggestions: Array.isArray(payload?.aiSuggestions) ? payload.aiSuggestions : [],
-    categoryInsights: Array.isArray(payload?.categoryInsights) ? payload.categoryInsights : [],
-    topCategory: payload?.topCategory || "General"
-  };
 }
 
 /* -------------------------------- Feed Item -------------------------------- */
@@ -256,29 +231,101 @@ function FeedItem({
   );
 }
 
+/* ------------------------------ Mock Feed Data ------------------------------ */
+
+const allFeedItems = [
+  {
+    id: 201,
+    type: "live",
+    title: "Creator Spotlight: Tech Friday Mega Live (Cross-border orders)",
+    brand: "@TechWithBrian · Creator",
+    viewers: "842",
+    time: "Live now · 32 min",
+    tag: "High match · Tech",
+    category: "Tech"
+  },
+  {
+    id: 202,
+    type: "upcoming",
+    title: "Upcoming: Beauty Flash Dealz (Pitch window closes soon)",
+    brand: "@GlowUpHub · Creator",
+    viewers: "Scheduled",
+    time: "Today · 18:30",
+    tag: "Recommended · Beauty",
+    category: "Beauty"
+  },
+  {
+    id: 203,
+    type: "replay",
+    title: "Replay: EV Charger Deals · 500 units moved (B2B + Retail)",
+    brand: "EV World Store · Supplier",
+    viewers: "2.3k views",
+    time: "Replay · 1 day ago",
+    tag: "Your top converting line",
+    category: "EV"
+  }
+];
+
+/* ------------------------- Followed Creators "DB" -------------------------- */
+
+const allCreatorsDb = [
+  {
+    id: 1,
+    name: "TechWithBrian",
+    type: "Creator",
+    category: "Tech & Gadgets",
+    status: "Live now · Tech Friday",
+    viewers: 320
+  },
+  {
+    id: 2,
+    name: "GlowUpHub",
+    type: "Creator",
+    category: "Beauty & Skincare",
+    status: "Upcoming · Today 18:30",
+    viewers: null
+  },
+  {
+    id: 3,
+    name: "FaithWithGrace",
+    type: "Creator",
+    category: "Faith & Wellness",
+    status: "Offline",
+    viewers: null
+  },
+  {
+    id: 4,
+    name: "MotoDealsEast",
+    type: "Creator",
+    category: "Mobility & EV",
+    status: "Offline",
+    viewers: null
+  }
+];
+
 /* ----------------------------- Page Components ------------------------------ */
 
-function HeroSummaryCard({ onChangePage, hero }) {
+function HeroSummaryCard({ onChangePage, supplierActsAsCreator }) {
   return (
     <div className="flex-1 min-w-0 flex flex-col gap-3">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-600 transition-colors flex items-center justify-center text-sm font-semibold text-slate-600 dark:text-slate-300">
-            {hero.initials}
+            EW
           </div>
           <div className="min-w-0">
             <div className="text-sm font-semibold dark:font-bold dark:text-slate-50">
-              {hero.name}
+              EV World Store
             </div>
             <div className="text-sm leading-5 text-slate-500 dark:text-slate-300">
-              {hero.subtitle}
+              Verified Supplier · East Africa, Global
             </div>
           </div>
         </div>
 
         <div className="hidden md:flex items-center gap-1.5 text-sm lg:max-w-[28rem] lg:justify-end lg:self-start xl:max-w-none flex-wrap">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700">
-            🏷️ {hero.tier}
+            🏷️ Supplier Tier · Pro
           </span>
           <button
             onClick={() => onChangePage?.("supplier-public-profile")}
@@ -290,15 +337,19 @@ function HeroSummaryCard({ onChangePage, hero }) {
             onClick={() => onChangePage?.("my-campaigns")}
             className="px-4 py-0.5 rounded-lg bg-[#f77f00] text-white text-sm font-medium hover:bg-[#e26f00]"
           >
-            Create Campaign
+            My Campaigns
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2 text-sm">
-        {hero.kpis.map((kpi) => (
-          <HeroKpi key={kpi.label} label={kpi.label} value={kpi.value} sub={kpi.sub} />
-        ))}
+        <HeroKpi label="Active campaigns" value="5" sub="2 in execution" />
+        <HeroKpi
+          label="Pending approvals"
+          value={supplierActsAsCreator ? "1" : "3"}
+          sub={supplierActsAsCreator ? "Self-content review" : "Creator deliverables"}
+        />
+        <HeroKpi label="Open collabs" value="4" sub="2 pitches need reply" />
       </div>
 
       <div className="md:hidden flex items-center justify-end gap-1.5 mt-2">
@@ -312,7 +363,7 @@ function HeroSummaryCard({ onChangePage, hero }) {
           onClick={() => onChangePage?.("my-campaigns")}
           className="px-4 py-0.5 rounded-lg bg-[#f77f00] text-white text-sm font-medium hover:bg-[#e26f00]"
         >
-          Create Campaign
+          My Campaigns
         </button>
       </div>
     </div>
@@ -321,7 +372,7 @@ function HeroSummaryCard({ onChangePage, hero }) {
 
 function HeroKpi({ label, value, sub }) {
   return (
-    <div className="w-full min-h-[5.25rem] border border-slate-300 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 rounded-xl transition-colors px-3 py-2 flex flex-col justify-between">
+    <div className="w-full aspect-[20/7] bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl transition-colors px-3 py-3 flex flex-col justify-between">
       <div className="text-xs text-slate-500 dark:text-slate-300 mb-1">{label}</div>
       <div className="text-sm font-semibold dark:font-bold dark:text-slate-50 mb-1">{value}</div>
       <div className="text-xs text-emerald-600 dark:text-emerald-400">{sub}</div>
@@ -329,7 +380,7 @@ function HeroKpi({ label, value, sub }) {
   );
 }
 
-function TodayAtGlanceCard({ items }) {
+function TodayAtGlanceCard() {
   return (
     <div className="w-full xl:w-[32rem] xl:shrink-0 xl:pl-4 xl:border-l border-slate-200 dark:border-slate-800 flex flex-col justify-between text-sm">
       <div>
@@ -338,15 +389,22 @@ function TodayAtGlanceCard({ items }) {
           <span className="text-xs text-slate-500 dark:text-slate-300">Fri</span>
         </div>
         <ul className="space-y-2">
-          {items.map((item) => (
-            <TimelineItem
-              key={`${item.time}-${item.label}`}
-              time={item.time}
-              label={item.label}
-              badge={item.badge}
-              badgeColor={item.badgeColor}
-            />
-          ))}
+          <TimelineItem
+            time="10:00"
+            label="Review creator pitches (Open Collabs)"
+            badge="Due soon"
+            badgeColor="bg-emerald-500"
+          />
+          <TimelineItem
+            time="14:00"
+            label="Approve content (Manual approval campaigns)"
+            badge="Approval"
+            badgeColor="bg-amber-500"
+          />
+          <TimelineItem
+            time="18:30"
+            label="Schedule Live Sessionz (or publish Shoppable Adz)"
+          />
         </ul>
       </div>
     </div>
@@ -447,7 +505,73 @@ function FollowedCreatorsStrip({ creators, onToggleFollow, onChangePage }) {
   );
 }
 
-function PipelineCard({ stages }) {
+function PipelineCard({ supplierActsAsCreator }) {
+  // Role-awareness note:
+  // - If supplier acts as creator (campaign CreatorUsageDecision = "I will NOT use a Creator"),
+  //   pipeline emphasizes self-production stages (content submission, scheduling, execution).
+  // - Otherwise pipeline emphasizes collaboration stages (pitches, negotiation, contracts, approvals).
+  const stages = supplierActsAsCreator
+    ? [
+        {
+          label: "Briefs created",
+          value: "7",
+          amount: "$6.2k",
+          progress: "w-10/12",
+          highlight: false
+        },
+        {
+          label: "Content in review",
+          value: "2",
+          amount: "$1.9k",
+          progress: "w-7/12",
+          highlight: true
+        },
+        {
+          label: "Scheduled",
+          value: "3",
+          amount: "$2.8k",
+          progress: "w-8/12",
+          highlight: false
+        },
+        {
+          label: "Executing",
+          value: "2",
+          amount: "$1.6k",
+          progress: "w-6/12",
+          highlight: false
+        }
+      ]
+    : [
+        {
+          label: "Open collabs",
+          value: "18",
+          amount: "$8.4k",
+          progress: "w-11/12",
+          highlight: false
+        },
+        {
+          label: "Pitches received",
+          value: "12",
+          amount: "$5.1k",
+          progress: "w-9/12",
+          highlight: false
+        },
+        {
+          label: "Negotiating",
+          value: "6",
+          amount: "$3.2k",
+          progress: "w-7/12",
+          highlight: false
+        },
+        {
+          label: "Active contracts",
+          value: "3",
+          amount: "$2.0k",
+          progress: "w-5/12",
+          highlight: true
+        }
+      ];
+
   return (
     <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-3 bg-gray-50 dark:bg-slate-950 dark:bg-slate-900/60 text-sm transition-colors">
       <div className="flex items-center justify-between mb-2">
@@ -463,7 +587,7 @@ function PipelineCard({ stages }) {
   );
 }
 
-function PipelineStage({ label, value, amount, progressPct, highlight }) {
+function PipelineStage({ label, value, amount, progress, highlight }) {
   return (
     <div className="cursor-default">
       <div className="flex items-center justify-between mb-0.5">
@@ -478,26 +602,31 @@ function PipelineStage({ label, value, amount, progressPct, highlight }) {
         <div
           className={classNames(
             "h-full rounded-full",
-            highlight ? "bg-[#f77f00]" : "bg-slate-500"
+            highlight ? "bg-[#f77f00]" : "bg-slate-500",
+            progress
           )}
-          style={{ width: `${Math.max(0, Math.min(100, Number(progressPct || 0)))}%` }}
         />
       </div>
     </div>
   );
 }
 
-function CrewCard({ onChangePage, crew }) {
+function CrewCard({ onChangePage, supplierActsAsCreator }) {
+  // Permission note:
+  // - Crew management should be visible to Supplier Owner/Admin and assigned Campaign Managers.
+  // - Read-only roles can view assignments but cannot modify.
+  const hostName = supplierActsAsCreator ? "You (Supplier acting as Creator)" : "Assigned Creator";
+
   return (
     <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-3 bg-white dark:bg-slate-900 text-sm transition-colors">
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold dark:font-bold">Next execution crew</span>
-        <span className="text-xs text-slate-500 dark:text-slate-300">{crew.title}</span>
+        <span className="text-xs text-slate-500 dark:text-slate-300">Tech Friday Mega Live</span>
       </div>
       <ul className="space-y-1.5">
-        {crew.rows.map((row) => (
-          <CrewRow key={row.role} role={row.role} name={row.name} status={row.status} />
-        ))}
+        <CrewRow role="Host" name={hostName} status="Confirmed" />
+        <CrewRow role="Producer" name="Dacy" status="Assigned" />
+        <CrewRow role="Moderator" name="Not assigned" status="Missing" />
       </ul>
       <button
         onClick={() => onChangePage?.("crew-manager")}
@@ -552,7 +681,7 @@ function CrewRow({ role, name, status }) {
   );
 }
 
-function AIAssistantCard({ suggestions, onAsk }) {
+function AIAssistantCard({ onAsk }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -563,9 +692,18 @@ function AIAssistantCard({ suggestions, onAsk }) {
         Smart moves you can make today based on your catalog and campaign performance.
       </p>
       <ul className="space-y-2">
-        {suggestions.map((entry) => (
-          <AIAssistantSuggestion key={entry.title} title={entry.title} body={entry.body} />
-        ))}
+        <AIAssistantSuggestion
+          title="Open Collabs: respond to 2 pitches"
+          body="Fast replies increase creator acceptance and reduce contract lag."
+        />
+        <AIAssistantSuggestion
+          title="Best publish window: 20:00–21:00"
+          body="High overlap between East Africa and diaspora buyers."
+        />
+        <AIAssistantSuggestion
+          title="Add a 15% timed drop"
+          body="Past flash windows boosted conversion by 1.9×."
+        />
       </ul>
       <button
         onClick={onAsk}
@@ -589,7 +727,7 @@ function AIAssistantSuggestion({ title, body }) {
   );
 }
 
-function CategoryInsightsCard({ insights, onChangePage }) {
+function CategoryInsightsCard({ onChangePage }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -597,20 +735,21 @@ function CategoryInsightsCard({ insights, onChangePage }) {
         <span className="text-xs text-slate-400 dark:text-slate-400">Last 90 days</span>
       </div>
       <div className="space-y-2">
-        {insights.map((entry) => (
-          <CategoryRow
-            key={entry.label}
-            label={entry.label}
-            badge={entry.badge}
-            badgeColor={
-              entry.badgeTone === "sky"
-                ? "bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400"
-                : entry.badgeTone === "amber"
-                  ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
-                  : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
-            }
-          />
-        ))}
+        <CategoryRow
+          label="EV & Charging"
+          badge="3.1× conversion"
+          badgeColor="bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
+        />
+        <CategoryRow
+          label="Tech & Gadgets"
+          badge="1.4× conversion"
+          badgeColor="bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400"
+        />
+        <CategoryRow
+          label="Beauty & Skincare"
+          badge="High repeat orders"
+          badgeColor="bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+        />
       </div>
       <button
         onClick={() => onChangePage?.("analytics-status")}
@@ -669,7 +808,6 @@ function CreatorsDiscoveryCard({ onChangePage }) {
 export default function SupplierLiveDealzFeedPage() {
   const navigate = useNavigate();
   const { toast, showSuccess, showInfo, dismiss } = useToast();
-  const [feedData, setFeedData] = useState(() => normalizeLiveFeedPayload({}));
 
   const [activePage, setActivePage] = useState("home");
   const pageRouteMap = {
@@ -710,45 +848,20 @@ export default function SupplierLiveDealzFeedPage() {
 
   // Supplier role awareness: simulate "Supplier acting as Creator" toggle.
   // In the real app this is driven by campaign Creator Usage Decision.
+  const [supplierActsAsCreator, setSupplierActsAsCreator] = useState(false);
+
   // Follow state (mirrors Creator useCreator + followedSellerIds pattern)
-  const [followedCreatorIds, setFollowedCreatorIds] = useState<Array<string | number>>([]);
+  const [followedCreatorIds, setFollowedCreatorIds] = useState([1, 2]);
   const followedCreators = useMemo(
-    () => feedData.followedCreators.filter((c) => followedCreatorIds.includes(c.id)),
-    [feedData.followedCreators, followedCreatorIds]
+    () => allCreatorsDb.filter((c) => followedCreatorIds.includes(c.id)),
+    [followedCreatorIds]
   );
 
-  useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      try {
-        const payload = await sellerBackendApi.getLiveFeedWorkspace();
-        if (!active) return;
-        const normalized = normalizeLiveFeedPayload(payload);
-        setFeedData(normalized);
-        setFollowedCreatorIds(normalized.followedCreators.map((creator) => creator.id));
-      } catch {
-        return;
-      }
-    };
-
-    load();
-    return () => {
-      active = false;
-    };
-  }, [showInfo]);
-
-  const toggleFollowCreator = async (id) => {
-    const following = followedCreatorIds.includes(id);
-    try {
-      await sellerBackendApi.followCreator(String(id), { follow: !following });
-      setFollowedCreatorIds((prev) =>
-        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-      );
-      showSuccess("Follow list updated");
-    } catch {
-      return;
-    }
+  const toggleFollowCreator = (id) => {
+    setFollowedCreatorIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+    showSuccess("Follow list updated");
   };
 
   const [activeTab, setActiveTab] = useState("For You");
@@ -765,7 +878,7 @@ export default function SupplierLiveDealzFeedPage() {
     showSuccess("Joined stream successfully");
   };
 
-  const filteredFeed = feedData.feedItems.filter((item) => {
+  const filteredFeed = allFeedItems.filter((item) => {
     if (activeTab === "For You") return true;
     if (activeTab === "My Campaigns") return ["live", "upcoming"].includes(item.type);
     if (activeTab === "Platform Highlights") return item.type === "replay";
@@ -790,9 +903,9 @@ export default function SupplierLiveDealzFeedPage() {
             <div className="flex flex-col xl:flex-row gap-4 items-start">
               <HeroSummaryCard
                 onChangePage={onChangePage}
-                hero={feedData.hero}
+                supplierActsAsCreator={supplierActsAsCreator}
               />
-              <TodayAtGlanceCard items={feedData.todayItems} />
+              <TodayAtGlanceCard />
             </div>
           </section>
 
@@ -868,8 +981,11 @@ export default function SupplierLiveDealzFeedPage() {
 
               {/* Pipeline + crew */}
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <PipelineCard stages={feedData.pipeline} />
-                <CrewCard onChangePage={onChangePage} crew={feedData.crew} />
+                <PipelineCard supplierActsAsCreator={supplierActsAsCreator} />
+                <CrewCard
+                  onChangePage={onChangePage}
+                  supplierActsAsCreator={supplierActsAsCreator}
+                />
               </div>
             </section>
 
@@ -877,10 +993,9 @@ export default function SupplierLiveDealzFeedPage() {
             <section className="space-y-3">
               <CreatorsDiscoveryCard onChangePage={onChangePage} />
               <AIAssistantCard
-                suggestions={feedData.aiSuggestions}
                 onAsk={() => showInfo("AI Assistant prompt sent (demo)")}
               />
-              <CategoryInsightsCard insights={feedData.categoryInsights} onChangePage={onChangePage} />
+              <CategoryInsightsCard onChangePage={onChangePage} />
             </section>
           </div>
         </div>

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
+import { useNavigate } from "react-router-dom";
 
 /**
  * SupplierCreatorProfilePage.jsx
@@ -21,7 +20,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Invite-only correction: creators ACCEPT invites to collaborate (not proposal response).
  * - Drawer supports selecting a Supplier campaign (must be “Use Creator” or “Not sure yet”).
  * - Campaign governance surfaced: Collab Mode + Content Approval Mode (Manual/Auto).
- * - Simulation button kept: “Mark Accepted” to emulate acceptance → negotiation entry.
+ * - Simulation button kept: “Mark Accepted (demo)” to emulate acceptance → negotiation entry.
  *
  * Canvas-safe:
  * - No MUI. Uses lightweight toast + drawer.
@@ -68,59 +67,6 @@ function pad2(n) {
 function todayYMD() {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-
-function resolveCreatorInitials(name, handle) {
-  const label = String(name || "").trim();
-  if (label) {
-    const parts = label.split(/\s+/g).filter(Boolean);
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return `${parts[0]?.[0] || ""}${parts[1]?.[0] || ""}`.toUpperCase();
-  }
-  return String(handle || "").replace(/^@/, "").slice(0, 2).toUpperCase() || "CR";
-}
-
-function normalizeCreatorPayload(payload) {
-  const creatorRecord = payload?.creator && typeof payload.creator === "object" ? payload.creator : {};
-  const categories = Array.isArray(creatorRecord?.categories) ? creatorRecord.categories.map(String) : [];
-  const languages = Array.isArray(creatorRecord?.languages) ? creatorRecord.languages.map(String) : [];
-  const markets = Array.isArray(creatorRecord?.markets) ? creatorRecord.markets.map(String) : [];
-  return {
-    creator: {
-      id: String(creatorRecord?.id || ""),
-      profileId: String(creatorRecord?.profileId || ""),
-      avatarUrl: String(creatorRecord?.avatarUrl || ""),
-      name: String(creatorRecord?.name || "Creator"),
-      handle: String(creatorRecord?.handle || "@creator"),
-      tier: String(creatorRecord?.tier || "Bronze Tier"),
-      verified: Boolean(creatorRecord?.verified),
-      region: String(creatorRecord?.region || "Global"),
-      initials: String(creatorRecord?.initials || resolveCreatorInitials(creatorRecord?.name, creatorRecord?.handle)),
-      categories,
-      tagline: String(creatorRecord?.tagline || ""),
-      bio: String(creatorRecord?.bio || ""),
-      languages,
-      markets,
-      followersLabel: String(creatorRecord?.followersLabel || "0"),
-      avgLiveViewersLabel: String(creatorRecord?.avgLiveViewersLabel || "0"),
-      reviewCount: Number(creatorRecord?.reviewCount || 0),
-      isFollowing: Boolean(creatorRecord?.isFollowing),
-    },
-    performance: Array.isArray(payload?.performance) ? payload.performance : [],
-    portfolio: Array.isArray(payload?.portfolio) ? payload.portfolio : [],
-    liveSlots: Array.isArray(payload?.liveSlots) ? payload.liveSlots : [],
-    reviews: Array.isArray(payload?.reviews) ? payload.reviews : [],
-    socials: Array.isArray(payload?.socials) ? payload.socials : [],
-    pastCampaigns: Array.isArray(payload?.pastCampaigns) ? payload.pastCampaigns : [],
-    tags: Array.isArray(payload?.tags) ? payload.tags.map(String) : categories,
-    compatibility:
-      payload?.compatibility && typeof payload.compatibility === "object"
-        ? payload.compatibility
-        : { score: 0, summary: "", bullets: [] },
-    quickFacts: Array.isArray(payload?.quickFacts) ? payload.quickFacts.map(String) : [],
-    deckContent: String(payload?.deckContent || ""),
-    deliverablePacks: Array.isArray(payload?.deliverablePacks) ? payload.deliverablePacks : [],
-  };
 }
 
 /* ----------------------------- Toast ----------------------------- */
@@ -355,9 +301,97 @@ function SocialStat({ icon, label, value }) {
   );
 }
 
+/* ----------------------------- Supplier domain mocks ----------------------------- */
+
+const MOCK_CAMPAIGNS = [
+  {
+    id: "S-201",
+    name: "Beauty Flash Week (Combo)",
+    stage: "Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-only",
+    approvalMode: "Manual",
+    currency: "USD",
+    budget: 2400,
+    region: "East Africa",
+    type: "Live + Shoppables.",
+    startDate: "2026-02-10",
+    endDate: "2026-02-23"
+  },
+  {
+    id: "S-204",
+    name: "ShopNow Groceries Soft Promo",
+    stage: "Collabs",
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Auto",
+    currency: "USD",
+    budget: 1200,
+    region: "East Africa",
+    type: "Shoppable Adz",
+    startDate: "2026-03-01",
+    endDate: "2026-03-21"
+  },
+  {
+    id: "S-203",
+    name: "Supplier-only Promo Sprint",
+    stage: "Execution",
+    creatorUsageDecision: "I will NOT use a Creator",
+    collabMode: "—",
+    approvalMode: "Auto",
+    currency: "USD",
+    budget: 800,
+    region: "East Africa",
+    type: "Shoppable Adz",
+    startDate: "2026-02-23",
+    endDate: "2026-02-27"
+  },
+  {
+    id: "S-212",
+    name: "New Launch (Creator plan pending)",
+    stage: "Draft",
+    creatorUsageDecision: "I am NOT SURE yet",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    currency: "USD",
+    budget: 1600,
+    region: "Africa / Asia",
+    type: "Live Sessionz",
+    startDate: todayYMD(),
+    endDate: ""
+  }
+];
+
+const DELIVERABLE_PACKS = [
+  {
+    id: "pack-live",
+    name: "Live session pack",
+    description: "1 live (60–90 mins) + 3 highlight clips",
+    items: ["1x Live Session", "3x Clips (15–30s)"]
+  },
+  {
+    id: "pack-ads",
+    name: "Shoppable Adz bundle",
+    description: "3 ad creatives + CTA + caption pack",
+    items: ["3x Ad Creatives", "CTA + Captions", "Link Pack"]
+  },
+  {
+    id: "pack-full",
+    name: "Full launch package",
+    description: "Live + 3 clips + 2 stories + 1 post",
+    items: ["1x Live Session", "3x Clips", "2x Stories", "1x Post"]
+  }
+];
+
 /* ----------------------------- Cards (Right column) ----------------------------- */
 
-function SocialLinksCard({ socials, onAction }) {
+function SocialLinksCard({ onAction }) {
+  const socials = [
+    { id: "tiktok", name: "TikTok", handle: "@ronald.creates", tag: "TT", color: "bg-slate-900" },
+    { id: "instagram", name: "Instagram", handle: "@ronald.creates", tag: "IG", color: "bg-pink-500" },
+    { id: "youtube", name: "YouTube", handle: "Ronald Creates", tag: "YT", color: "bg-red-600" }
+  ];
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Social links</h2>
@@ -387,7 +421,13 @@ function SocialLinksCard({ socials, onAction }) {
   );
 }
 
-function PastCampaignsCard({ campaigns, onAction }) {
+function PastCampaignsCard({ onAction }) {
+  const campaigns = [
+    { id: 1, title: "Glow Essentials – Serum + Toner Bundle", period: "Mar 14 – Mar 18 · Host", gmv: "$6,200", ctr: "4.1%", conv: "2.8%" },
+    { id: 2, title: "Weekend Mask Bar Live", period: "Feb 3 – Feb 4 · Guest creator", gmv: "$4,200", ctr: "3.5%", conv: "2.2%" },
+    { id: 3, title: "Black Friday Beauty Mega Stream", period: "Nov 23 – Nov 25 · Lead host", gmv: "$11,150", ctr: "4.8%", conv: "3.1%" }
+  ];
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <div className="flex items-center justify-between mb-2">
@@ -422,7 +462,8 @@ function PastCampaignsCard({ campaigns, onAction }) {
   );
 }
 
-function InterestTagsCard({ tags }) {
+function InterestTagsCard() {
+  const tags = ["#EV", "#Tech", "#Live shopping", "#Discount hunts", "#Cross-border"];
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-sm font-semibold tracking-tight mb-2 uppercase text-slate-600 dark:text-slate-200 font-medium">Interest tags</h2>
@@ -440,7 +481,7 @@ function InterestTagsCard({ tags }) {
   );
 }
 
-function CompatibilityCard({ compatibility, onAction }) {
+function CompatibilityCard({ onAction }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <div className="flex items-center justify-between mb-1">
@@ -453,17 +494,16 @@ function CompatibilityCard({ compatibility, onAction }) {
       <div className="flex items-center gap-3 mb-2">
         <div className="relative h-14 w-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center transition-colors">
           <div className="h-11 w-11 rounded-full bg-[#f77f00] text-white flex items-center justify-center text-sm font-semibold dark:text-slate-50 dark:font-bold">
-            {`${Math.round(Number(compatibility?.score || 0))}%`}
+            82%
           </div>
         </div>
         <div className="flex-1 text-xs text-slate-600 dark:text-slate-200 font-medium">
           <p className="mb-1">
-            {String(compatibility?.summary || "")}
+            Strong fit for <span className="font-semibold">EV</span> and <span className="font-semibold">tech gadget</span> campaigns in East Africa and cross-border buyers.
           </p>
           <ul className="list-disc pl-4 space-y-0.5">
-            {(Array.isArray(compatibility?.bullets) ? compatibility.bullets : []).map((item) => (
-              <li key={item}>{item}</li>
-            ))}
+            <li>High conversions in flash dealz.</li>
+            <li>Audience overlap with your markets.</li>
           </ul>
         </div>
       </div>
@@ -477,14 +517,15 @@ function CompatibilityCard({ compatibility, onAction }) {
   );
 }
 
-function QuickFactsCard({ quickFacts, onAction, onDownload }) {
+function QuickFactsCard({ onAction, onDownload }) {
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
       <h2 className="text-xs font-semibold mb-2">Quick collaboration facts</h2>
       <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-200 font-medium">
-        {quickFacts.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
+        <li>Typical live duration: 60–90 minutes.</li>
+        <li>Preferred collaboration: flat fee + performance bonus.</li>
+        <li>Comfortable with multi-language guidance (EN + local notes).</li>
+        <li>Open to long-term partnerships and product series.</li>
       </ul>
       <button
         className="mt-3 w-full py-1.5 rounded-full border border-slate-200 dark:border-slate-800 text-sm hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100 transition-colors"
@@ -498,7 +539,7 @@ function QuickFactsCard({ quickFacts, onAction, onDownload }) {
 
 /* ----------------------------- Invite Drawer (Supplier) ----------------------------- */
 
-function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onInviteSent, toast }) {
+function InviteDrawer({ open, onClose, creator, campaigns, onInviteSent, toast }) {
   const navigate = useNavigate();
   const go = (path) => goTo(navigate, path);
   const eligible = useMemo(() => {
@@ -508,11 +549,8 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
   const [campaignId, setCampaignId] = useState(eligible[0]?.id || "");
   const selectedCampaign = useMemo(() => eligible.find((c) => c.id === campaignId) || null, [eligible, campaignId]);
 
-  const [packId, setPackId] = useState(deliverablePacks?.[0]?.id || "");
-  const pack = useMemo(
-    () => deliverablePacks.find((p) => p.id === packId) || deliverablePacks[0] || null,
-    [deliverablePacks, packId]
-  );
+  const [packId, setPackId] = useState("pack-live");
+  const pack = useMemo(() => DELIVERABLE_PACKS.find((p) => p.id === packId) || DELIVERABLE_PACKS[0], [packId]);
 
   const [approvalMode, setApprovalMode] = useState("Manual");
   const [collabMode, setCollabMode] = useState("Invite-only");
@@ -543,29 +581,19 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
     setApprovalMode(sc?.approvalMode || "Manual");
     setCollabMode(sc?.collabMode === "Open for Collabs" ? "Open for Collabs" : "Invite-only");
 
-    const firstPack = deliverablePacks[0] || null;
-    setPackId(firstPack?.id || "");
-    setFee(Number(firstPack?.fee || 400));
-    setCommission(Number(firstPack?.commissionPct || 5));
+    setPackId("pack-live");
+    setFee(400);
+    setCommission(5);
     setPaymentSplit("50/50");
-    setExclusivityDays(Number(firstPack?.exclusivityDays || 7));
-    setUsageRightsDays(Number(firstPack?.usageRightsDays || 90));
+    setExclusivityDays(7);
+    setUsageRightsDays(90);
     setMessage(
       `Hi ${creator?.name || ""},\n\nWe’d like to invite you to collaborate on “${sc?.name || "(campaign)"}”.\n\nPlease review the deliverables and terms, then ACCEPT the invite to collaborate to open the negotiation room.\n\nThank you.`
     );
     setAttachments([]);
     setInviteRecord(null);
     setPending(false);
-  }, [deliverablePacks, open, creator?.name, eligible]);
-
-  useEffect(() => {
-    if (!pack) return;
-    setFee(Number(pack?.fee || 0));
-    setCommission(Number(pack?.commissionPct || 0));
-    setPaymentSplit(String(pack?.paymentSplit || "50/50"));
-    setExclusivityDays(Number(pack?.exclusivityDays || 0));
-    setUsageRightsDays(Number(pack?.usageRightsDays || 0));
-  }, [pack]);
+  }, [open]);
 
   // When campaign changes, sync governance defaults
   useEffect(() => {
@@ -584,73 +612,37 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
       toast?.("Select a campaign first.", "error");
       return;
     }
-    if (!pack) {
-      toast?.("Select a deliverables package first.", "error");
-      return;
-    }
 
     // Permission note (RBAC): In production, only Supplier Owner/Collabs Manager can send invites.
 
     setPending(true);
-    try {
-      const response = await sellerBackendApi.createCreatorInvite({
-        creatorHandle: creator?.handle,
-        campaignId: selectedCampaign.id,
-        campaignTitle: selectedCampaign.name,
-        title: `Invite to collaborate on ${selectedCampaign.name}`,
-        message,
-        type: pack.name,
-        category: creator?.categories?.[0] || "General",
-        region: creator?.region || "Global",
-        baseFee: fee,
-        currency: "USD",
-        commissionPct: commission,
-        estimatedValue: fee,
-        fitScore: creator?.fitScore || 80,
-        fitReason: creator?.fitReason || "Strong campaign and audience alignment.",
-        messageShort: `Invitation from supplier for ${selectedCampaign.name}.`,
-        supplierDescription: "Seller invite from MyLiveDealz supplier workspace.",
-        metadata: {
-          collabMode,
-          approvalMode,
-          creatorUsageDecision: selectedCampaign.creatorUsageDecision,
-          paymentSplit,
-          exclusivityDays,
-          usageRightsDays,
-          packId: pack?.id || "",
-          packName: pack?.name || "",
-          attachments
-        }
-      });
+    await sleep(900);
 
-      const record = {
-        id: String(response?.id || ""),
-        campaignId: selectedCampaign.id,
-        campaignName: selectedCampaign.name,
-        status: "Pending acceptance",
-        sentAt: new Date().toLocaleString(),
-        collabMode,
-        approvalMode,
-        packName: pack?.name || "",
-        fee,
-        commission
-      };
+    const record = {
+      id: `INV-${Math.random().toString(16).slice(2, 7).toUpperCase()}`,
+      campaignId: selectedCampaign.id,
+      campaignName: selectedCampaign.name,
+      status: "Pending acceptance",
+      sentAt: new Date().toLocaleString(),
+      collabMode,
+      approvalMode,
+      packName: pack.name,
+      fee,
+      commission
+    };
 
-      setInviteRecord(record);
-      onInviteSent?.(record);
-      toast?.("Invite sent. Waiting for creator to accept.", "success");
-    } catch (error) {
-      toast?.(error instanceof Error ? error.message : "Failed to send invite.", "error");
-    } finally {
-      setPending(false);
-    }
+    setInviteRecord(record);
+    setPending(false);
+
+    onInviteSent?.(record);
+    toast?.("Invite sent. Waiting for creator to accept.", "success");
   };
 
   const markAccepted = () => {
     if (!inviteRecord) return;
     const next = { ...inviteRecord, status: "Accepted" };
     setInviteRecord(next);
-    toast?.("Invite accepted. You can now negotiate terms.", "success");
+    toast?.("Invite accepted (demo). You can now negotiate terms.", "success");
   };
 
   const openNegotiation = () => {
@@ -696,11 +688,7 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-extrabold text-slate-600 dark:text-slate-200">
-              {creator?.avatarUrl ? (
-                <img src={creator.avatarUrl} alt={creator.name} className="h-full w-full rounded-full object-cover" />
-              ) : (
-                String(creator?.initials || "CR")
-              )}
+              {String(creator?.initials || "CR")}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50 truncate">{creator?.name}</div>
@@ -762,7 +750,7 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
           </div>
 
           <div className="mt-2 grid grid-cols-1 gap-2">
-            {deliverablePacks.map((p) => (
+            {DELIVERABLE_PACKS.map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -777,9 +765,9 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{p.name}</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">{p.description || ""}</div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">{p.description}</div>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {(Array.isArray(p.items) ? p.items : Array.isArray(p.deliverables) ? p.deliverables : []).map((it) => (
+                      {p.items.map((it) => (
                         <Chip key={it}>{it}</Chip>
                       ))}
                     </div>
@@ -926,7 +914,7 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
             <div className="mt-3 flex flex-wrap gap-2">
               {/* ✅ Keep simulation button */}
               <Btn onClick={markAccepted} disabled={inviteRecord.status === "Accepted"} title="Simulate creator acceptance">
-                ✅ Mark Accepted
+                ✅ Mark Accepted (demo)
               </Btn>
               <Btn
                 tone="primary"
@@ -955,13 +943,25 @@ function InviteDrawer({ open, onClose, creator, campaigns, deliverablePacks, onI
 /* ----------------------------- Main Page ----------------------------- */
 
 export default function SupplierCreatorProfilePage() {
-  const location = useLocation();
   const navigate = useNavigate();
   const go = (path) => goTo(navigate, path);
-  const [profileData, setProfileData] = useState(() => normalizeCreatorPayload({}));
-  const [campaigns, setCampaigns] = useState([]);
+  const creator = useMemo(
+    () => ({
+      name: "Ronald Isabirye",
+      handle: "@ronald.creates",
+      tier: "Silver Tier",
+      verified: true,
+      region: "East Africa",
+      initials: "RI"
+    }),
+    []
+  );
+
+  const [isFollowing, setIsFollowing] = useState(false);
   const [pendingFollow, setPendingFollow] = useState(false);
+
   const [inviteOpen, setInviteOpen] = useState(false);
+
   const [toastText, setToastText] = useState(null);
   const [toastTone, setToastTone] = useState("info");
 
@@ -970,88 +970,19 @@ export default function SupplierCreatorProfilePage() {
     setToastText(msg);
   };
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      try {
-        const params = new URLSearchParams(location.search);
-        let creatorId = params.get("id") || params.get("handle") || "";
-        if (!creatorId) {
-          const creators = await sellerBackendApi.getAllCreators();
-          creatorId = String((Array.isArray(creators) ? creators[0] : null)?.id || "");
-        }
-
-        const [profile, workspace] = await Promise.all([
-          creatorId ? sellerBackendApi.getCreatorProfile(creatorId) : Promise.resolve({}),
-          sellerBackendApi.getCampaignWorkspace()
-        ]);
-
-        if (cancelled) return;
-        setProfileData(normalizeCreatorPayload(profile));
-        const nextCampaigns = Array.isArray(workspace?.campaigns) ? workspace.campaigns : [];
-        setCampaigns(
-          nextCampaigns.map((campaign) => ({
-            id: String(campaign?.id || ""),
-            name: String(campaign?.title || campaign?.name || "MyLiveDealz campaign"),
-            creatorUsageDecision: String(campaign?.metadata?.creatorUsageDecision || campaign?.creatorUsageDecision || "I will use a Creator"),
-            collabMode: String(campaign?.metadata?.collabMode || campaign?.collabMode || "Open for Collabs"),
-            approvalMode: String(campaign?.metadata?.approvalMode || campaign?.approvalMode || "Manual"),
-            type: String(campaign?.type || campaign?.metadata?.type || "Campaign"),
-            stage: String(campaign?.metadata?.stage || campaign?.stage || campaign?.status || "Draft"),
-            region: String(campaign?.metadata?.region || campaign?.region || "Global"),
-            startDate: String(campaign?.startAt || campaign?.metadata?.startDate || ""),
-            endDate: String(campaign?.endAt || campaign?.metadata?.endDate || ""),
-            budget: Number(campaign?.budget || campaign?.metadata?.estValue || 0),
-            currency: String(campaign?.currency || campaign?.metadata?.currency || "USD")
-          }))
-        );
-      } catch (error) {
-        if (cancelled) return;
-        toast(error instanceof Error ? error.message : "Failed to load creator profile.", "error");
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [location.search]);
-
-  const creator = profileData.creator;
-
   const toggleFollow = async () => {
     setPendingFollow(true);
-    const nextFollow = !creator.isFollowing;
-    setProfileData((prev) => ({
-      ...prev,
-      creator: {
-        ...prev.creator,
-        isFollowing: nextFollow
-      }
-    }));
-    try {
-      await sellerBackendApi.followCreator(creator.id, { follow: nextFollow });
-      toast(nextFollow ? "Creator saved to My Creators 🎉" : "Removed from My Creators", "success");
-    } catch (error) {
-      setProfileData((prev) => ({
-        ...prev,
-        creator: {
-          ...prev.creator,
-          isFollowing: !nextFollow
-        }
-      }));
-      return;
-    } finally {
-      setPendingFollow(false);
-    }
+    await sleep(700);
+    setPendingFollow(false);
+    setIsFollowing((s) => !s);
+    toast(!isFollowing ? "Creator saved to My Creators 🎉" : "Removed from My Creators", "success");
   };
 
   const handleDownloadDeck = async () => {
     toast("Preparing deck…", "info");
-    await sleep(300);
-    const blob = new Blob([profileData.deckContent || ""], { type: "text/plain" });
+    await sleep(850);
+    const dummyContent = `Creator Description Deck\n\nName: ${creator.name}\nHandle: ${creator.handle}\nTier: ${creator.tier}\n\nHighlights:\n- Live shopping + tech education\n- Strong East Africa conversions\n- Reliable delivery\n`;
+    const blob = new Blob([dummyContent], { type: "text/plain" });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -1082,7 +1013,7 @@ export default function SupplierCreatorProfilePage() {
     }
   };
 
-  const followLabel = creator.isFollowing ? "Unsave creator" : "Save creator";
+  const followLabel = isFollowing ? "Unsave creator" : "Save creator";
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors relative">
@@ -1092,7 +1023,7 @@ export default function SupplierCreatorProfilePage() {
           <button
             className={cx(
               "px-3 py-1 rounded-full border text-sm transition-colors flex items-center gap-2",
-              creator.isFollowing
+              isFollowing
                 ? "border-slate-300 bg-slate-900 text-white hover:bg-slate-800"
                 : "border-slate-200 text-slate-700 hover:bg-gray-50 dark:bg-slate-950 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100"
             )}
@@ -1116,11 +1047,7 @@ export default function SupplierCreatorProfilePage() {
               <div className="flex items-end gap-3 w-full md:w-auto">
                 <div className="relative">
                   <div className="h-20 w-20 md:h-24 md:w-24 rounded-full border-4 border-white bg-slate-200 dark:bg-slate-600 transition-colors flex items-center justify-center text-lg md:text-xl font-semibold text-slate-600 dark:text-slate-300">
-                    {creator.avatarUrl ? (
-                      <img src={creator.avatarUrl} alt={creator.name} className="h-full w-full rounded-full object-cover" />
-                    ) : (
-                      creator.initials
-                    )}
+                    {creator.initials}
                   </div>
                   <span
                     className="absolute bottom-0 right-0 h-5 w-5 rounded-full border-2 border-white flex items-center justify-center text-xs text-white"
@@ -1142,10 +1069,10 @@ export default function SupplierCreatorProfilePage() {
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-700 transition-colors">
                       ✓ KYC Verified
                     </span>
-                    <span className="text-slate-500 dark:text-slate-300">{creator.categories.join(" · ")}</span>
+                    <span className="text-slate-500 dark:text-slate-300">EVs · Tech · Commerce</span>
                   </div>
                   <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-                    Based in {creator.region} · Audience in {creator.markets.join(", ") || "Global markets"}
+                    Based in East Africa · Audience in Africa, Asia &amp; Global EV community
                   </div>
                 </div>
               </div>
@@ -1154,11 +1081,11 @@ export default function SupplierCreatorProfilePage() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col items-start md:items-end">
                     <span className="text-xs text-slate-500 dark:text-slate-300">Followers (all platforms)</span>
-                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">{creator.followersLabel}</span>
+                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">128k+</span>
                   </div>
                   <div className="flex flex-col items-start md:items-end">
                     <span className="text-xs text-slate-500 dark:text-slate-300">Avg live viewers</span>
-                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">{creator.avgLiveViewersLabel}</span>
+                    <span className="text-sm font-semibold dark:font-bold dark:text-slate-50">3.2k</span>
                   </div>
                 </div>
 
@@ -1174,7 +1101,7 @@ export default function SupplierCreatorProfilePage() {
                   <button
                     className={cx(
                       "flex-1 md:flex-none px-3 py-1.5 rounded-full border text-sm transition-colors flex items-center justify-center gap-2",
-                      creator.isFollowing
+                      isFollowing
                         ? "border-slate-300 bg-slate-900 text-white hover:bg-slate-800"
                         : "border-slate-200 text-slate-700 hover:bg-gray-50 dark:bg-slate-950 dark:bg-slate-700/50 text-slate-900 dark:text-slate-100"
                     )}
@@ -1187,14 +1114,9 @@ export default function SupplierCreatorProfilePage() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-200 font-medium">
-                  {profileData.socials.slice(0, 3).map((social) => (
-                    <SocialStat
-                      key={social.id || social.name}
-                      icon={social.name === "Instagram" ? "📷" : social.name === "TikTok" ? "🎵" : "▶️"}
-                      label={social.name}
-                      value={social.followers}
-                    />
-                  ))}
+                  <SocialStat icon="📷" label="Instagram" value="48k" />
+                  <SocialStat icon="🎵" label="TikTok" value="62k" />
+                  <SocialStat icon="▶️" label="YouTube" value="18k" />
                 </div>
 
                 {/* Supplier-only quick CTA */}
@@ -1224,20 +1146,23 @@ export default function SupplierCreatorProfilePage() {
               {/* About */}
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
                 <SectionTitle>About this creator</SectionTitle>
-                <p className="text-sm text-slate-700 dark:text-slate-100 mb-2">{creator.bio}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-100 mb-2">
+                  Ronald is a creator focused on electric mobility, tech and cross-border commerce.
+                  He blends product education with live shopping to help brands launch into Africa
+                  and Asia.
+                </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Languages &amp; markets</h3>
-                    <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">
-                      {(creator.languages.length ? creator.languages : ["English"]).join(", ")} · {creator.markets.join(", ") || creator.region}
-                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-200 font-medium">English, basic Swahili · East Africa, Southern Africa, China-facing buyers.</p>
                   </div>
                   <div>
                     <h3 className="text-xs font-semibold dark:font-bold text-slate-500 dark:text-slate-300 uppercase mb-1">Category focus</h3>
                     <div className="flex flex-wrap gap-1.5">
-                      {creator.categories.map((category) => (
-                        <Chip key={category}>{category}</Chip>
-                      ))}
+                      <Chip>Beauty &amp; Skincare</Chip>
+                      <Chip>Tech Gadgets</Chip>
+                      <Chip>EV &amp; Mobility</Chip>
+                      <Chip>Faith-compatible</Chip>
                     </div>
                   </div>
                 </div>
@@ -1255,9 +1180,12 @@ export default function SupplierCreatorProfilePage() {
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
                 <SectionTitle>Performance snapshot</SectionTitle>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {profileData.performance.map((metric) => (
-                    <MetricCard key={metric.label} label={metric.label} value={metric.value} sub={metric.sub} />
-                  ))}
+                  <MetricCard label="Total sales driven" value="$180k+" sub="Across 40+ campaigns" />
+                  <MetricCard label="Avg live viewers" value="3.2k" sub="Top 10% in region" />
+                  <MetricCard label="Conversion rate" value="4.8%" sub="3.1× platform avg" />
+                  <MetricCard label="Completed collabs" value="38" sub="Across 21 brands" />
+                  <MetricCard label="Average rating" value="4.9/5" sub="23 supplier reviews" />
+                  <MetricCard label="Return customer rate" value="62%" sub="Strong retention" />
                 </div>
               </div>
 
@@ -1265,16 +1193,27 @@ export default function SupplierCreatorProfilePage() {
               <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-4 md:p-5 text-sm">
                 <SectionTitle>Campaign portfolio</SectionTitle>
                 <div className="space-y-2.5">
-                  {profileData.portfolio.map((item) => (
-                    <PortfolioCard
-                      key={item.id || item.title}
-                      brand={item.brand}
-                      category={item.category}
-                      title={item.title}
-                      body={item.body}
-                      onAction={() => handleAction(item.actionLabel || "View Dealz")}
-                    />
-                  ))}
+                  <PortfolioCard
+                    brand="GlowUp Hub"
+                    category="Beauty & Skincare"
+                    title="Beauty Flash – 500 units in 45 mins"
+                    body="Designed a timed flash segment with tiered bundles. Achieved 2.7× expected sell-through in the first run."
+                    onAction={() => handleAction("View Dealz")}
+                  />
+                  <PortfolioCard
+                    brand="GadgetMart Africa"
+                    category="Tech & Gadgets"
+                    title="Tech Friday Mega Live"
+                    body="Weekly tech format focused on unboxings and Q&A. Added educational blocks on EV charging."
+                    onAction={() => handleAction("View Dealz")}
+                  />
+                  <PortfolioCard
+                    brand="Grace Living Store"
+                    category="Faith-compatible wellness"
+                    title="Faith & Wellness Morning Dealz"
+                    body="Soft-sell morning sessionz for faith-compatible wellness products with high trust and low return rates."
+                    onAction={() => handleAction("View Dealz")}
+                  />
                 </div>
               </div>
 
@@ -1293,16 +1232,9 @@ export default function SupplierCreatorProfilePage() {
                   Upcoming &amp; recent lives
                 </SectionTitle>
                 <div className="flex gap-3 overflow-x-auto pb-1">
-                  {profileData.liveSlots.map((slot) => (
-                    <LiveSlotCard
-                      key={slot.id || slot.title}
-                      label={slot.label}
-                      title={slot.title}
-                      time={slot.time}
-                      cta={slot.cta}
-                      onAction={() => handleAction(slot.cta || "View replay")}
-                    />
-                  ))}
+                  <LiveSlotCard label="Upcoming" title="Beauty Flash – Autumn drop" time="Fri · 20:00 EAT" cta="Set reminder" onAction={() => handleAction("Reminder set! ⏰")} />
+                  <LiveSlotCard label="Upcoming" title="Tech Friday – EV gadgets" time="Sat · 19:30 EAT" cta="Set reminder" onAction={() => handleAction("Reminder set! ⏰")} />
+                  <LiveSlotCard label="Replay" title="Faith & Wellness Morning Dealz" time="Last week · 10:00" cta="Watch replay" onAction={() => handleAction("View replay")} />
                 </div>
               </div>
 
@@ -1312,29 +1244,27 @@ export default function SupplierCreatorProfilePage() {
                   right={
                     <div className="flex items-center gap-1 text-xs text-amber-600">
                       <span>★★★★★</span>
-                      <span className="text-slate-500 dark:text-slate-300">
-                        {`${profileData.performance.find((metric) => metric.label === "Average rating")?.value || "0/5"} average (${creator.reviewCount} reviews)`}
-                      </span>
+                      <span className="text-slate-500 dark:text-slate-300">4.9 average (23 reviews)</span>
                     </div>
                   }
                 >
                   Reviews &amp; endorsements
                 </SectionTitle>
                 <ul className="space-y-2">
-                  {profileData.reviews.map((review) => (
-                    <Review key={review.id || review.brand} brand={review.brand} quote={review.quote} />
-                  ))}
+                  <Review brand="GlowUp Hub" quote="Ronald understands how to keep momentum and still honour our brand voice. Our launch exceeded expectations." />
+                  <Review brand="GadgetMart Africa" quote="Great at explaining technical details in simple language. Viewers stayed engaged until the final call-to-action." />
+                  <Review brand="Grace Living Store" quote="Very respectful of our faith-compatible guidelines and excellent with community Q&A." />
                 </ul>
               </div>
             </div>
 
             {/* Right column */}
             <aside className="flex flex-col gap-4">
-              <SocialLinksCard socials={profileData.socials} onAction={handleAction} />
-              <PastCampaignsCard campaigns={profileData.pastCampaigns} onAction={handleAction} />
-              <InterestTagsCard tags={profileData.tags} />
-              <CompatibilityCard compatibility={profileData.compatibility} onAction={() => handleAction("compatibility")} />
-              <QuickFactsCard quickFacts={profileData.quickFacts} onAction={handleAction} onDownload={handleDownloadDeck} />
+              <SocialLinksCard onAction={handleAction} />
+              <PastCampaignsCard onAction={handleAction} />
+              <InterestTagsCard />
+              <CompatibilityCard onAction={() => handleAction("compatibility")} />
+              <QuickFactsCard onAction={handleAction} onDownload={handleDownloadDeck} />
             </aside>
           </div>
         </section>
@@ -1345,8 +1275,7 @@ export default function SupplierCreatorProfilePage() {
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
         creator={creator}
-        campaigns={campaigns}
-        deliverablePacks={profileData.deliverablePacks}
+        campaigns={MOCK_CAMPAIGNS}
         onInviteSent={() => {
           // Optional: in production, update My Creators / Invites state stores
         }}
@@ -1366,6 +1295,7 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
   };
   assert(typeof ORANGE === "string" && ORANGE.length > 0, "ORANGE exists");
   assert(typeof GREEN === "string" && GREEN.length > 0, "GREEN exists");
-  assert(typeof normalizeCreatorPayload === "function", "profile normalizer exists");
+  assert(Array.isArray(MOCK_CAMPAIGNS) && MOCK_CAMPAIGNS.length > 0, "campaign mocks exist");
+  assert(Array.isArray(DELIVERABLE_PACKS) && DELIVERABLE_PACKS.length > 0, "deliverable packs exist");
   console.log("✅ SupplierCreatorProfilePage self-tests passed");
 }

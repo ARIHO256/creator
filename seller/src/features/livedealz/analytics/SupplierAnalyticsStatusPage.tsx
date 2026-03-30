@@ -1,8 +1,7 @@
 
-
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -14,9 +13,7 @@ import {
   Trophy,
   Users,
 } from "lucide-react";
-import { sellerBackendApi } from "../../../lib/backendApi";
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/analytics/SupplierAnalyticsStatusPage").catch(() => undefined);
+import { useSupplier } from "../../contexts/SupplierContext";
 
 /**
  * AnalyticsRankDetailPage (Supplier View)
@@ -134,121 +131,201 @@ function downloadCsv(filename: string, rows: Record<string, string | number>[]) 
   URL.revokeObjectURL(a.href);
 }
 
-const RANK_BENEFITS: Rank["benefits"] = {
-  Bronze: ["Basic access to campaigns", "Standard support"],
-  Silver: [
-    "Priority placement in campaign searches",
-    "Access to mid-tier budgets",
-    "Basic analytics & reporting",
-  ],
-  Gold: [
-    "Priority support",
-    "High-budget campaigns & early invites",
-    "Deeper analytics & training",
-  ],
+// --- Static Data Moved Outside Component ---
+const baseMetrics: Metrics = {
+  avgViewers: 780,
+  ctr: 3.2,
+  conversion: 4.1,
+  salesDriven: 4200,
 };
 
-const EMPTY_RANK: Rank = {
-  currentTier: "Bronze",
-  nextTier: "Silver",
-  progressPercent: 0,
-  pointsCurrent: 0,
-  pointsToNext: 1000,
-  benefits: RANK_BENEFITS,
-};
-
-const EMPTY_METRICS: Metrics = {
-  avgViewers: 0,
-  ctr: 0,
-  conversion: 0,
-  salesDriven: 0,
-};
-
-const EMPTY_BENCHMARKS: Benchmarks = {
-  viewersPercentile: 0,
-  ctrPercentile: 0,
-  conversionPercentile: 0,
-  salesPercentile: 0,
-};
+const campaigns: CampaignRow[] = [
+  {
+    id: 1,
+    name: "Autumn Beauty Flash",
+    seller: "GlowUp Hub",
+    category: "Beauty",
+    sales: 2600,
+    engagements: 4300,
+    convRate: 4.8,
+  },
+  {
+    id: 2,
+    name: "Tech Friday Mega Live",
+    seller: "GadgetMart Africa",
+    category: "Tech",
+    sales: 3100,
+    engagements: 5200,
+    convRate: 4.2,
+  },
+  {
+    id: 3,
+    name: "Faith & Wellness Morning Dealz",
+    seller: "Grace Living Store",
+    category: "Faith",
+    sales: 1200,
+    engagements: 2100,
+    convRate: 3.9,
+  },
+  {
+    id: 4,
+    name: "Gadget Unboxing Marathon",
+    seller: "GadgetMart Africa",
+    category: "Tech",
+    sales: 1800,
+    engagements: 4800,
+    convRate: 3.1,
+  },
+  {
+    id: 5,
+    name: "Beauty Flash + Night Care",
+    seller: "GlowUp Hub",
+    category: "Beauty",
+    sales: 900,
+    engagements: 1600,
+    convRate: 4.5,
+  },
+];
 
 export default function AnalyticsRankDetailPage() {
+  const { rankTier } = useSupplier();
   const [timeRange, setTimeRange] = useState<Range>("30");
   const [category, setCategory] = useState<Category>("All");
   const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("sales");
-  const [payload, setPayload] = useState<{
-    rank: Rank;
-    metrics: Metrics;
-    benchmarks: Benchmarks;
-    campaigns: CampaignRow[];
-    goals: GoalRow[];
-    trend: TrendPoint[];
-  } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void sellerBackendApi
-      .getAnalyticsRankDetail({ range: timeRange, category })
-      .then((response) => {
-        if (cancelled) return;
-        const rankPayload = (response.rank as Record<string, unknown> | undefined) ?? {};
-        setPayload({
-          rank: {
-            currentTier: String(rankPayload.currentTier || "Bronze") as Rank["currentTier"],
-            nextTier: String(rankPayload.nextTier || "Silver") as Rank["nextTier"],
-            progressPercent: Number(rankPayload.progressPercent ?? 0),
-            pointsCurrent: Number(rankPayload.pointsCurrent ?? 0),
-            pointsToNext: Number(rankPayload.pointsToNext ?? 1000),
-            benefits: RANK_BENEFITS,
-          },
-          metrics: {
-            avgViewers: Number((response.metrics as Record<string, unknown> | undefined)?.avgViewers ?? 0),
-            ctr: Number((response.metrics as Record<string, unknown> | undefined)?.ctr ?? 0),
-            conversion: Number((response.metrics as Record<string, unknown> | undefined)?.conversion ?? 0),
-            salesDriven: Number((response.metrics as Record<string, unknown> | undefined)?.salesDriven ?? 0),
-          },
-          benchmarks: {
-            viewersPercentile: Number((response.benchmarks as Record<string, unknown> | undefined)?.viewersPercentile ?? 0),
-            ctrPercentile: Number((response.benchmarks as Record<string, unknown> | undefined)?.ctrPercentile ?? 0),
-            conversionPercentile: Number((response.benchmarks as Record<string, unknown> | undefined)?.conversionPercentile ?? 0),
-            salesPercentile: Number((response.benchmarks as Record<string, unknown> | undefined)?.salesPercentile ?? 0),
-          },
-          campaigns: Array.isArray(response.campaigns) ? (response.campaigns as CampaignRow[]) : [],
-          goals: Array.isArray(response.goals) ? (response.goals as GoalRow[]) : [],
-          trend: Array.isArray(response.trend) ? (response.trend as TrendPoint[]) : [],
-        });
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
+  // Rank / tier demo data
+  const nextTier: Rank["nextTier"] = rankTier === "Bronze" ? "Silver" : rankTier === "Silver" ? "Gold" : "Platinum";
+  const rank: Rank = {
+    currentTier: rankTier,
+    nextTier,
+    progressPercent: 68,
+    pointsCurrent: 680,
+    pointsToNext: 1000,
+    benefits: {
+      Bronze: ["Basic access to campaigns", "Standard support"],
+      Silver: [
+        "Priority placement in campaign searches",
+        "Access to mid-tier budgets",
+        "Basic analytics & reporting",
+      ],
+      Gold: [
+        "Priority support",
+        "High-budget campaigns & early invites",
+        "Deeper analytics & training",
+      ],
+    },
+  };
+
+
+
+  const metrics: Metrics = useMemo(() => {
+    let factor = 1;
+    if (timeRange === "7") factor = 1.05;
+    if (timeRange === "90") factor = 0.95;
+
+    let categoryBoost = 1;
+    if (category === "Beauty") categoryBoost = 1.2;
+    if (category === "Tech") categoryBoost = 1.1;
+    if (category === "Faith") categoryBoost = 1.05;
+
+    return {
+      avgViewers: Math.round(baseMetrics.avgViewers * factor * categoryBoost),
+      ctr: Number((baseMetrics.ctr * factor * (category === "Tech" ? 1.05 : 1)).toFixed(2)),
+      conversion: Number((baseMetrics.conversion * categoryBoost).toFixed(2)),
+      salesDriven: Math.round(baseMetrics.salesDriven * factor * categoryBoost),
     };
   }, [timeRange, category]);
 
-  const rank = payload?.rank ?? EMPTY_RANK;
-  const metrics = payload?.metrics ?? EMPTY_METRICS;
-  const benchmarks = payload?.benchmarks ?? EMPTY_BENCHMARKS;
-  const trend = payload?.trend ?? [];
+  // Benchmarks vs similar suppliers (percentiles)
+  const benchmarks: Benchmarks = {
+    viewersPercentile: 78,
+    ctrPercentile: 72,
+    conversionPercentile: 83,
+    salesPercentile: 80,
+  };
+
+
 
   const filteredCampaigns = useMemo(() => {
-    const arr = [...(payload?.campaigns ?? [])];
-    arr.sort((a, b) => {
+    const arr = [...campaigns];
+    const scoped = category === "All" ? arr : arr.filter((c) => c.category === category);
+    scoped.sort((a, b) => {
       if (leaderboardMode === "engagement") return b.engagements - a.engagements;
       return b.sales - a.sales;
     });
-    return arr.slice(0, 6);
-  }, [payload?.campaigns, leaderboardMode]);
+    return scoped.slice(0, 6);
+  }, [category, leaderboardMode]);
+
+  const trend = useMemo<TrendPoint[]>(() => {
+    const days = timeRange === "7" ? 7 : timeRange === "30" ? 30 : 90;
+    const now = new Date();
+
+    const cat = category;
+    const categoryBoost = cat === "Beauty" ? 1.2 : cat === "Tech" ? 1.1 : cat === "Faith" ? 1.05 : 1;
+    const factor = timeRange === "7" ? 1.05 : timeRange === "90" ? 0.95 : 1;
+
+    // Sine-ish curve with gentle noise, deterministic by day index.
+    const points: TrendPoint[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const label = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+      const t = (days - i) / Math.max(1, days);
+      const wave = Math.sin(t * Math.PI * 2) * 0.12;
+      const drift = (t - 0.5) * 0.1;
+      const seed = (i * 9301 + 49297) % 233280;
+      const noise = (seed / 233280 - 0.5) * 0.08;
+      const k = (1 + wave + drift + noise) * categoryBoost * factor;
+
+      const views = Math.round(900 * k + 320 * k * Math.sin(t * Math.PI * 3));
+      const clicks = Math.round(views * clamp(metrics.ctr / 100, 0.01, 0.2) * (0.85 + 0.3 * Math.sin(t * Math.PI * 2)));
+      const conversions = Math.round(clicks * clamp(metrics.conversion / 100, 0.01, 0.2) * (0.85 + 0.25 * Math.cos(t * Math.PI * 2)));
+      const sales = Math.round(conversions * (32 + 18 * categoryBoost));
+
+      points.push({ label, views, clicks, conversions, sales });
+    }
+    return points;
+  }, [timeRange, category, metrics.ctr, metrics.conversion]);
 
   const rankMomentum = useMemo(() => {
-    const base = rank?.pointsCurrent ? Math.max(0, rank.pointsCurrent - trend.length * 8) : 0;
+    // Use trend length to build a gentle upward XP series.
+    const base = 520;
     const pts = trend.map((p, idx) => {
       const t = idx / Math.max(1, trend.length - 1);
       const wave = Math.sin(t * Math.PI * 2) * 18;
-      const up = t * Math.max(24, (rank?.pointsCurrent ?? 0) - base);
+      const up = t * 160;
       return Math.round(base + up + wave);
     });
     return pts;
-  }, [rank?.pointsCurrent, trend]);
+  }, [trend]);
 
-  const goals = payload?.goals ?? [];
+  const goals: GoalRow[] = useMemo(
+    () => [
+      {
+        id: "goal-1",
+        label: "Average viewers per live",
+        current: metrics.avgViewers,
+        target: 950,
+        unit: "viewers",
+      },
+      {
+        id: "goal-2",
+        label: "Conversion rate",
+        current: metrics.conversion,
+        target: 4.8,
+        unit: "%",
+      },
+      {
+        id: "goal-3",
+        label: "Monthly sales driven",
+        current: metrics.salesDriven,
+        target: 6000,
+        unit: "USD",
+      },
+    ],
+    [metrics]
+  );
 
   function onExport() {
     const rows: Record<string, string | number>[] = trend.map((t) => ({
@@ -274,16 +351,6 @@ export default function AnalyticsRankDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="hidden md:flex items-center gap-3 text-xs">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
-              <LineChartIcon className="h-3.5 w-3.5" />
-              <span>Trends</span>
-            </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
-              <Trophy className="h-3.5 w-3.5" />
-              <span>Rank</span>
-            </span>
-          </div>
           <button
             onClick={onExport}
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 text-white text-sm hover:bg-slate-800"
@@ -990,7 +1057,7 @@ function MetricCard({
       : card.value.toLocaleString();
 
   const sparkValues = useMemo(() => {
-    // Lightweight spark values. In real use, pass series points.
+    // Lightweight spark values (demo). In real use, pass series points.
     const base = card.series === "views" ? 22 : card.series === "clicks" ? 10 : card.series === "conversions" ? 8 : 14;
     return Array.from({ length: 10 }).map((_, i) => {
       const t = i / 9;
@@ -1090,7 +1157,7 @@ function ConversionsByCampaignPanel({ campaigns, mode }: { campaigns: CampaignRo
   // Convert to a chart-friendly series.
   const items = useMemo(() => {
     return campaigns.map((c) => {
-      // Approx conversions: sales / avg basket. In real, use real conversions.
+      // Approx conversions: sales / avg basket (demo). In real, use real conversions.
       const conversions = Math.max(1, Math.round(c.sales / 120));
       return {
         label: c.name,

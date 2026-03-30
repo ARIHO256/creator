@@ -1,8 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const ORANGE = "#f77f00";
 const GENERAL_COLLAB_TITLE = "General collaboration invite";
 const NO_CAMPAIGN_NOTE = "No specific campaign attached";
+const ROUTES = {
+  creatorProfile: "/mldz/creators/profile",
+  myCreators: "/mldz/creators/my-creators",
+  messages: "/messages",
+};
 
 function cx(...items) {
   return items.filter(Boolean).join(" ");
@@ -318,7 +324,7 @@ function MiniMetric({ label, value }) {
   );
 }
 
-function NegotiationDrawer({ open, onClose, invite }) {
+function NegotiationDrawer({ open, onClose, invite, onSendCounter }) {
   useScrollLock(open);
 
   const [approvalMode, setApprovalMode] = useState("Manual");
@@ -356,7 +362,7 @@ function NegotiationDrawer({ open, onClose, invite }) {
               {invite.initials}
             </div>
             <div className="min-w-0">
-              <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">Counter / Respond</div>
+              <div className="text-[11px] font-black uppercase tracking-widest text-slate-400">Negotiation</div>
               <div className="text-sm font-extrabold text-slate-900 dark:text-slate-100 truncate">{invite.creator}</div>
               <div className="text-[11px] text-slate-500 truncate">{getInviteContextTitle(invite)}</div>
             </div>
@@ -472,6 +478,13 @@ function NegotiationDrawer({ open, onClose, invite }) {
             type="button"
             className="w-full py-2.5 rounded-full bg-[#f77f00] text-white text-sm font-extrabold hover:bg-[#e26f00] disabled:opacity-60"
             onClick={() => {
+              onSendCounter?.({
+                inviteId: invite.id,
+                pricingModel,
+                budget,
+                currencyCode,
+                approvalMode,
+              });
               toast(`Counter sent to ${invite.creator} · ${pricingModel} · ${currencyCode}${budget} · ${approvalMode}`);
               onClose();
             }}
@@ -485,7 +498,7 @@ function NegotiationDrawer({ open, onClose, invite }) {
   );
 }
 
-function ProposalDrawer({ open, onClose, invite }) {
+function ProposalDrawer({ open, onClose, invite, onSendProposal }) {
   useScrollLock(open);
 
   const [linkedContext, setLinkedContext] = useState("invite");
@@ -603,6 +616,7 @@ function ProposalDrawer({ open, onClose, invite }) {
       title: "Proposal sent",
       text: `${invite?.creator || "The creator"} will receive your proposal with linked context, scope, deliverables, pricing and timeline.`,
     });
+    onSendProposal?.(invite);
   }
 
   if (!open || !invite) return null;
@@ -953,7 +967,17 @@ function InviteRow({ invite, selected, onSelect }) {
   );
 }
 
-function InviteDetailPanel({ invite, onOpenCounter, onOpenProposal, onAccept, onRequestDecline, onInviteToCollaborate, isPending }) {
+function InviteDetailPanel({
+  invite,
+  onOpenProposal,
+  onAccept,
+  onRequestDecline,
+  onInviteToCollaborate,
+  onOpenCreatorProfile,
+  onOpenAiAssistant,
+  onOpenMyCreators,
+  isPending
+}) {
   if (!invite) {
     return (
       <div className="flex flex-col items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400 min-h-[260px]">
@@ -1008,7 +1032,12 @@ function InviteDetailPanel({ invite, onOpenCounter, onOpenProposal, onAccept, on
             </div>
           </div>
           <div className="flex items-center gap-1.5 pt-1">
-            <button className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 hover:text-[#f77f00] hover:border-[#f77f00] transition-all shadow-sm" title="View Creator" type="button">
+            <button
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 hover:text-[#f77f00] hover:border-[#f77f00] transition-all shadow-sm"
+              title="View Creator"
+              type="button"
+              onClick={() => onOpenCreatorProfile?.(invite)}
+            >
               <span className="text-sm">👁️</span>
             </button>
             {accepted ? (
@@ -1090,7 +1119,7 @@ function InviteDetailPanel({ invite, onOpenCounter, onOpenProposal, onAccept, on
       <section className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 dark:border-slate-800 pt-4 mt-2">
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Need help?</span>
-          <button className="text-xs font-bold text-[#f77f00] hover:underline flex items-center gap-1 transition-all" type="button" onClick={() => toast("AI Assistant opened (demo)")}>Ask AI Assistant 🪄</button>
+          <button className="text-xs font-bold text-[#f77f00] hover:underline flex items-center gap-1 transition-all" type="button" onClick={() => onOpenAiAssistant?.(invite)}>Ask AI Assistant 🪄</button>
         </div>
 
         {canRespond ? (
@@ -1102,13 +1131,6 @@ function InviteDetailPanel({ invite, onOpenCounter, onOpenProposal, onAccept, on
               type="button"
             >
               Decline Invite
-            </button>
-            <button
-              className="px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-bold text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm"
-              onClick={onOpenCounter}
-              type="button"
-            >
-              Counter / Respond
             </button>
             <button
               className="px-6 py-2.5 rounded-2xl bg-[#f77f00] text-white text-xs font-black hover:bg-[#e26f00] transition-all shadow-lg hover:shadow-orange-200 disabled:opacity-50 flex items-center justify-center gap-2"
@@ -1125,7 +1147,7 @@ function InviteDetailPanel({ invite, onOpenCounter, onOpenProposal, onAccept, on
             <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-full transition-colors">
               <span className="text-xs font-bold text-slate-500 italic uppercase">● {invite.status}</span>
             </div>
-            <button className="px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-black text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm" type="button" onClick={() => toast("Open My Creators (demo)")}>Open My Creators</button>
+            <button className="px-5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 font-black text-xs hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm" type="button" onClick={onOpenMyCreators}>Open My Creators</button>
             <button className="px-5 py-2.5 rounded-2xl border border-orange-100 dark:border-orange-900/40 bg-orange-50 dark:bg-orange-950/20 text-[#f77f00] font-black text-xs hover:bg-orange-100 dark:hover:bg-orange-950/40 transition-all shadow-sm" onClick={onOpenProposal} type="button">+ New Proposal</button>
           </div>
         ) : archived ? (
@@ -1150,6 +1172,7 @@ function InviteDetailPanel({ invite, onOpenCounter, onOpenProposal, onAccept, on
 }
 
 export default function InvitesFromCreatorsPreviewCanvas() {
+  const navigate = useNavigate();
   const [invites, setInvites] = useState(INVITES);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -1189,11 +1212,6 @@ export default function InvitesFromCreatorsPreviewCanvas() {
     if (selectedInvite) return;
     if (filteredInvites[0]) setSelectedInviteId(filteredInvites[0].id);
   }, [selectedInvite, filteredInvites]);
-
-  function openCounterDrawer(invite) {
-    setCounterInvite(invite || null);
-    setCounterDrawerOpen(true);
-  }
 
   function openProposalDrawer(invite) {
     if (!invite || invite.status !== "Accepted") return;
@@ -1246,9 +1264,72 @@ export default function InvitesFromCreatorsPreviewCanvas() {
     run(
       async () => {
         await new Promise((resolve) => window.setTimeout(resolve, 650));
+        setInvites((prev) =>
+          prev.map((item) =>
+            item.id === invite.id
+              ? {
+                  ...item,
+                  lastActivity: "Invite to Collaborate sent · just now",
+                  expiresIn: "Awaiting creator response",
+                }
+              : item
+          )
+        );
       },
       { successMessage: `Invite to Collaborate sent to ${invite.creator}.` }
     );
+  }
+
+  function handleCounterSent(payload) {
+    if (!payload?.inviteId) return;
+    setInvites((prev) =>
+      prev.map((invite) =>
+        invite.id === payload.inviteId
+          ? {
+              ...invite,
+              lastActivity: `Counter sent · just now`,
+              expiresIn: "Awaiting creator response",
+            }
+          : invite
+      )
+    );
+  }
+
+  function handleProposalSent(invite) {
+    if (!invite?.id) return;
+    setInvites((prev) =>
+      prev.map((item) =>
+        item.id === invite.id
+          ? {
+              ...item,
+              lastActivity: "Proposal sent · just now",
+            }
+          : item
+      )
+    );
+  }
+
+  function openCreatorProfile(invite) {
+    if (!invite) return;
+    const params = new URLSearchParams({
+      creator: invite.creator,
+      inviteId: invite.id,
+      from: "invites-from-creators",
+    });
+    navigate(`${ROUTES.creatorProfile}?${params.toString()}`);
+  }
+
+  function openAiAssistant(invite) {
+    const params = new URLSearchParams({
+      source: "invites-from-creators",
+      context: invite?.id || "",
+      creator: invite?.creator || "",
+    });
+    navigate(`${ROUTES.messages}?${params.toString()}`);
+  }
+
+  function openMyCreators() {
+    navigate(ROUTES.myCreators);
   }
 
   return (
@@ -1269,8 +1350,6 @@ export default function InvitesFromCreatorsPreviewCanvas() {
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {selectedInvite?.status === "Accepted" ? (
                 <button className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white font-extrabold hover:bg-[#e26f00]" type="button" onClick={() => openProposalDrawer(selectedInvite)}>+ New Proposal</button>
-              ) : selectedInvite?.status === "New" ? (
-                <button className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold" type="button" onClick={() => openCounterDrawer(selectedInvite)}>Counter / Respond</button>
               ) : selectedInvite?.status === "Declined" ? (
                 <button className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white font-extrabold hover:bg-[#e26f00]" type="button" onClick={() => handleInviteToCollaborate(selectedInvite)}>Invite to Collaborate</button>
               ) : null}
@@ -1348,11 +1427,13 @@ export default function InvitesFromCreatorsPreviewCanvas() {
             <div className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 md:p-4">
               <InviteDetailPanel
                 invite={selectedInvite}
-                onOpenCounter={() => openCounterDrawer(selectedInvite)}
                 onOpenProposal={() => openProposalDrawer(selectedInvite)}
                 onAccept={() => selectedInvite && handleAccept(selectedInvite.id)}
                 onRequestDecline={() => selectedInvite && setDeclineConfirmId(selectedInvite.id)}
                 onInviteToCollaborate={() => selectedInvite && handleInviteToCollaborate(selectedInvite)}
+                onOpenCreatorProfile={openCreatorProfile}
+                onOpenAiAssistant={openAiAssistant}
+                onOpenMyCreators={openMyCreators}
                 isPending={isPending}
               />
             </div>
@@ -1360,8 +1441,8 @@ export default function InvitesFromCreatorsPreviewCanvas() {
         </div>
       </main>
 
-      <NegotiationDrawer open={counterDrawerOpen} onClose={() => setCounterDrawerOpen(false)} invite={counterInvite} />
-      <ProposalDrawer open={proposalDrawerOpen} onClose={() => setProposalDrawerOpen(false)} invite={proposalInvite} />
+      <NegotiationDrawer open={counterDrawerOpen} onClose={() => setCounterDrawerOpen(false)} invite={counterInvite} onSendCounter={handleCounterSent} />
+      <ProposalDrawer open={proposalDrawerOpen} onClose={() => setProposalDrawerOpen(false)} invite={proposalInvite} onSendProposal={handleProposalSent} />
 
       <ConfirmDeclineModal
         open={!!declineConfirmId}

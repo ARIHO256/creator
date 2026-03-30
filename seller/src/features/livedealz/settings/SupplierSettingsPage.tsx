@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierSettingsSafetyPage.jsx
@@ -12,7 +11,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  * - Sticky header with status badges + completeness progress
  * - Left anchor sidebar navigation with identical section depth
  * - Scroll-to-bottom policy review gating inside a modal (compliance-friendly)
- * - Autosave to backend settings + export data (JSON)
+ * - Autosave to localStorage + export data (JSON)
  * - Devices management + sign-out
  *
  * Supplier adaptations (minimal + required):
@@ -35,6 +34,9 @@ import { sellerBackendApi } from "../../../lib/backendApi";
 
 const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
+
+const STORAGE_KEY = "mldz_supplier_settings_v2_4";
+const STORAGE_KEY_LEGACY = "mldz_supplier_onboarding_v2_3";
 
 /* ------------------------- Icon stubs (replace with your icon system in-app) ------------------------- */
 
@@ -70,6 +72,21 @@ const Upload = (p) => <Icon {...p}>⬆️</Icon>;
 const User = (p) => <Icon {...p}>👤</Icon>;
 const Users = (p) => <Icon {...p}>👥</Icon>;
 const X = (p) => <Icon {...p}>✕</Icon>;
+
+const SETTINGS_NAV_ITEMS = [
+  { id: "account", label: "Account", icon: <User className="h-4 w-4" /> },
+  { id: "profile", label: "Business Profile", icon: <FileText className="h-4 w-4" /> },
+  { id: "team", label: "Team & Access", icon: <Users className="h-4 w-4" /> },
+  { id: "socials", label: "Socials", icon: <Globe className="h-4 w-4" /> },
+  { id: "collab", label: "Campaign Defaults", icon: <Sparkles className="h-4 w-4" /> },
+  { id: "availability", label: "Availability", icon: <Calendar className="h-4 w-4" /> },
+  { id: "kyb", label: "Verification & Security", icon: <IdCard className="h-4 w-4" /> },
+  { id: "payouts", label: "Payouts & Tax", icon: <CreditCard className="h-4 w-4" /> },
+  { id: "notifications", label: "Notifications", icon: <Bell className="h-4 w-4" /> },
+  { id: "privacy", label: "Privacy & Blocking", icon: <Lock className="h-4 w-4" /> },
+  { id: "policies", label: "Policies & Consent", icon: <ScrollText className="h-4 w-4" /> },
+  { id: "data", label: "Data & Support", icon: <Download className="h-4 w-4" /> }
+];
 
 /* ------------------------- Utils ------------------------- */
 
@@ -116,193 +133,6 @@ function clampNumber(n, min, max) {
   const v = Number(n);
   if (Number.isNaN(v)) return min;
   return Math.max(min, Math.min(max, v));
-}
-
-function asRecord(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function asArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-
-function readString(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function mapOnboardingLanguage(code) {
-  const normalized = readString(code).toLowerCase();
-  if (normalized === "en") return "English";
-  if (normalized === "sw") return "Swahili";
-  if (normalized === "fr") return "French";
-  if (normalized === "ar") return "Arabic";
-  if (normalized === "zh-cn" || normalized === "zh") return "Chinese (Simplified)";
-  if (normalized === "pt") return "Portuguese";
-  if (normalized === "es") return "Spanish";
-  if (normalized === "de") return "German";
-  return "";
-}
-
-function inferRegionFromCountry(country) {
-  const normalized = readString(country).toLowerCase();
-  if (["uganda", "kenya", "tanzania", "rwanda", "burundi", "south sudan"].includes(normalized)) {
-    return "East Africa";
-  }
-  if (["south africa", "zambia", "zimbabwe", "botswana", "namibia", "mozambique"].includes(normalized)) {
-    return "Southern Africa";
-  }
-  if (["nigeria", "ghana", "senegal", "ivory coast", "cote d'ivoire", "cameroon"].includes(normalized)) {
-    return "West Africa";
-  }
-  if (["egypt", "morocco", "tunisia", "algeria", "libya"].includes(normalized)) {
-    return "North Africa";
-  }
-  if (["china", "india", "uae", "japan"].includes(normalized)) {
-    return "Asia";
-  }
-  if (["united kingdom", "france", "germany", "italy", "spain"].includes(normalized)) {
-    return "Europe";
-  }
-  if (["united states", "canada", "mexico"].includes(normalized)) {
-    return "North America";
-  }
-  return "";
-}
-
-function mapOnboardingPayoutMethod(method) {
-  const normalized = readString(method).toLowerCase();
-  if (normalized === "bank_account") return "Bank";
-  if (normalized === "mobile_money") return "Mobile Money";
-  if (normalized === "alipay") return "AliPay";
-  if (normalized === "wechat_pay") return "WeChat Pay";
-  if (normalized === "other_local") return "PayPal / Wallet";
-  return "";
-}
-
-function mapOnboardingPayoutSchedule(value) {
-  const normalized = readString(value).toLowerCase();
-  if (normalized === "daily") return "Daily";
-  if (normalized === "weekly") return "Weekly";
-  if (normalized === "biweekly") return "Biweekly";
-  if (normalized === "monthly") return "Monthly";
-  if (normalized === "on_threshold") return "When balance reaches a threshold";
-  return "";
-}
-
-function mapOnboardingKybStatus(value) {
-  const normalized = readString(value).toUpperCase();
-  if (normalized === "APPROVED") return "verified";
-  if (normalized === "SUBMITTED" || normalized === "IN_REVIEW") return "in_review";
-  if (normalized === "REJECTED") return "rejected";
-  return "unverified";
-}
-
-function buildAddress(parts) {
-  return parts.map(readString).filter(Boolean).join(", ");
-}
-
-function mapOnboardingToSupplierSettings(baseForm, onboardingPayload) {
-  const onboarding = asRecord(onboardingPayload);
-  if (!Object.keys(onboarding).length) {
-    return baseForm;
-  }
-
-  const support = asRecord(onboarding.support);
-  const shipFrom = asRecord(onboarding.shipFrom);
-  const payout = asRecord(onboarding.payout);
-  const tax = asRecord(onboarding.tax);
-  const docs = asRecord(onboarding.docs);
-  const docList = asArray(docs.list);
-  const languages = asArray(onboarding.languages)
-    .map(mapOnboardingLanguage)
-    .filter(Boolean);
-  const country = readString(shipFrom.country);
-  const region = inferRegionFromCountry(country);
-  const accountType = readString(tax.taxpayerType).toLowerCase() === "business" ? "Business" : "Individual";
-  const businessAddress = buildAddress([
-    shipFrom.address1,
-    shipFrom.address2,
-    shipFrom.city,
-    shipFrom.province,
-    shipFrom.country,
-    shipFrom.postalCode,
-  ]);
-
-  return deepMerge(baseForm, {
-    profile: {
-      businessName: readString(onboarding.storeName),
-      handle: readString(onboarding.storeSlug),
-      tagline: readString(onboarding.about),
-      country,
-      currency: readString(payout.currency),
-      bio: readString(onboarding.about),
-      brandLanguages: languages,
-      targetRegions: region ? [region] : baseForm.profile.targetRegions,
-      accountType,
-      business: {
-        legalName: readString(tax.legalName) || readString(onboarding.storeName),
-        registrationNumber: readString(tax.taxId),
-        website: readString(onboarding.website),
-        address: businessAddress,
-      },
-    },
-    kyb: {
-      status: mapOnboardingKybStatus(onboarding.status),
-      entityType: accountType,
-      representativeName: readString(onboarding.owner) || readString(tax.contact),
-      documentType: docList.length ? readString(asRecord(docList[0]).type) || baseForm.kyb.documentType : baseForm.kyb.documentType,
-      idFileName: readString(asRecord(docList.find((entry) => readString(asRecord(entry).type).toLowerCase().includes("id"))).name),
-      idUploaded: docList.some((entry) => readString(asRecord(entry).type).toLowerCase().includes("id")),
-      registrationFileName: readString(
-        asRecord(
-          docList.find((entry) => {
-            const type = readString(asRecord(entry).type).toLowerCase();
-            return type.includes("registration") || type.includes("license");
-          })
-        ).name
-      ),
-      registrationUploaded: docList.some((entry) => {
-        const type = readString(asRecord(entry).type).toLowerCase();
-        return type.includes("registration") || type.includes("license");
-      }),
-      taxFileName: readString(
-        asRecord(docList.find((entry) => readString(asRecord(entry).type).toLowerCase().includes("tax"))).name
-      ),
-      taxUploaded: docList.some((entry) => readString(asRecord(entry).type).toLowerCase().includes("tax")),
-      addressUploaded: Boolean(businessAddress),
-    },
-    payout: {
-      method: mapOnboardingPayoutMethod(payout.method),
-      currency: readString(payout.currency),
-      schedule: mapOnboardingPayoutSchedule(payout.rhythm),
-      minThreshold: Number(payout.thresholdAmount) || 0,
-      bank: {
-        bankName: readString(payout.bankName),
-        accountName: readString(payout.accountName),
-        accountNumber: readString(payout.accountNo),
-        swift: readString(payout.swiftBic),
-      },
-      mobile: {
-        provider: readString(payout.mobileProvider),
-        number: [readString(payout.mobileCountryCode), readString(payout.mobileNo)].filter(Boolean).join(" "),
-      },
-      wallet: {
-        provider: readString(payout.otherProvider) || readString(payout.otherMethod),
-        email: readString(payout.notificationsEmail) || readString(onboarding.email),
-      },
-      alipay: { accountId: readString(payout.alipayLogin) },
-      wechat: { accountId: readString(payout.wechatId) },
-      tax: {
-        residency: readString(tax.taxCountry),
-        taxId: readString(tax.taxId),
-      },
-    },
-    settings: {
-      notifications: {
-        payouts: Boolean(readString(payout.notificationsEmail) || readString(payout.notificationsWhatsApp)),
-      },
-    },
-  });
 }
 
 /* ------------------------- Toasts ------------------------- */
@@ -598,16 +428,7 @@ function UploadMini({ title, helper, value, onPick, accept = "*/*" }) {
 
 /* ------------------------- Options (Supplier) ------------------------- */
 
-const LANGUAGE_OPTIONS = [
-  "English",
-  "Swahili",
-  "French",
-  "Arabic",
-  "Portuguese",
-  "Spanish",
-  "German",
-  "Chinese (Simplified)"
-];
+const LANGUAGE_OPTIONS = ["English", "Swahili", "French", "Arabic", "Chinese", "Portuguese"];
 const REGION_OPTIONS = ["East Africa", "Southern Africa", "West Africa", "North Africa", "Asia", "Europe", "North America"];
 
 const OTHER_SOCIAL_OPTIONS = ["Facebook", "X (Twitter)", "Snapchat", "Kwai", "LinkedIn", "Twitch", "Pinterest", "Other"];
@@ -651,95 +472,6 @@ const PAYOUT_METHODS = [
   { key: "AliPay", title: "AliPay", desc: "China payment method for cross-border payments." },
   { key: "WeChat Pay", title: "WeChat Pay", desc: "China payment method for cross-border payments." }
 ];
-
-const PAYOUT_CURRENCIES = ["USD", "EUR", "CNY", "UGX", "KES", "TZS", "RWF", "ZAR"];
-const PAYOUT_RHYTHMS = ["Daily", "Weekly", "Biweekly", "Monthly", "When balance reaches a threshold"];
-
-const DEFAULT_SUPPLIER_SETTINGS_LOOKUPS = {
-  languages: [],
-  supplierModels: [],
-  supplierTargetRegions: [],
-  productCategories: [],
-  serviceCategories: [],
-  contentFormats: [],
-  creatorUsageDecisions: [],
-  collabModes: [],
-  approvalModes: [],
-  payoutMethodCards: [],
-  payoutCurrencies: [],
-  payoutRhythms: []
-};
-
-function normalizeStringOptions(value, fallback) {
-  if (!Array.isArray(value)) return fallback;
-  const rows = value.map((entry) => String(entry || "").trim()).filter(Boolean);
-  return rows.length ? rows : fallback;
-}
-
-function normalizeCodeLabelList(value, fallback) {
-  if (!Array.isArray(value)) return fallback;
-  const rows = value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return "";
-      const item = entry;
-      return String(item.label || item.value || item.code || "").trim();
-    })
-    .filter(Boolean);
-  return rows.length ? rows : fallback;
-}
-
-function normalizePayoutMethodCards(value, fallback) {
-  if (!Array.isArray(value)) return fallback;
-  const rows = value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const item = entry;
-      const key = String(item.key || "").trim();
-      const title = String(item.title || key || "").trim();
-      const desc = String(item.desc || "").trim();
-      if (!key || !title) return null;
-      return { key, title, desc };
-    })
-    .filter(Boolean);
-  return rows.length ? rows : fallback;
-}
-
-function normalizeSupplierSettingsLookups(payload) {
-  const source = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-
-  return {
-    languages: normalizeCodeLabelList(source.languages, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.languages),
-    supplierModels: normalizeStringOptions(source.supplierModels, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.supplierModels),
-    supplierTargetRegions: normalizeStringOptions(
-      source.supplierTargetRegions,
-      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.supplierTargetRegions
-    ),
-    productCategories: normalizeStringOptions(
-      source.productCategories,
-      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.productCategories
-    ),
-    serviceCategories: normalizeStringOptions(
-      source.serviceCategories,
-      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.serviceCategories
-    ),
-    contentFormats: normalizeStringOptions(source.contentFormats, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.contentFormats),
-    creatorUsageDecisions: normalizeStringOptions(
-      source.creatorUsageDecisions,
-      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.creatorUsageDecisions
-    ),
-    collabModes: normalizeStringOptions(source.collabModes, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.collabModes),
-    approvalModes: normalizeStringOptions(source.approvalModes, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.approvalModes),
-    payoutMethodCards: normalizePayoutMethodCards(
-      source.payoutMethodCards,
-      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.payoutMethodCards
-    ),
-    payoutCurrencies: normalizeStringOptions(
-      source.payoutCurrencies,
-      DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.payoutCurrencies
-    ),
-    payoutRhythms: normalizeCodeLabelList(source.payoutRhythms, DEFAULT_SUPPLIER_SETTINGS_LOOKUPS.payoutRhythms)
-  };
-}
 
 /* ------------------------- Policies (Supplier summaries) ------------------------- */
 
@@ -865,7 +597,7 @@ function policyAllSeen(form) {
 
 /* ------------------------- Default form (Supplier) ------------------------- */
 
-function createEmptySupplierSettingsForm() {
+function defaultForm() {
   return {
     profile: {
       businessName: "",
@@ -997,11 +729,8 @@ function createEmptySupplierSettingsForm() {
 export default function SupplierSettingsSafetyPage() {
   const { toasts, push } = useToasts();
 
-  const [form, setForm] = useState(createEmptySupplierSettingsForm());
-  const [lookups, setLookups] = useState(DEFAULT_SUPPLIER_SETTINGS_LOOKUPS);
+  const [form, setForm] = useState(() => defaultForm());
   const [saved, setSaved] = useState(true);
-  const [hydrated, setHydrated] = useState(false);
-  const [loadError, setLoadError] = useState("");
 
   const [openPolicy, setOpenPolicy] = useState(null); // platform | content | payout | full | null
   const [policyScrollPct, setPolicyScrollPct] = useState(0);
@@ -1011,6 +740,11 @@ export default function SupplierSettingsSafetyPage() {
   const [newBlockedCreator, setNewBlockedCreator] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [activeNavId, setActiveNavId] = useState(() => {
+    if (typeof window === "undefined") return "account";
+    const hashId = String(window.location.hash || "").replace(/^#/, "");
+    return hashId || "account";
+  });
 
   const accountType = form.profile.accountType;
   const primarySocial = useMemo(() => getPrimarySocialDisplay(form), [form]);
@@ -1032,77 +766,45 @@ export default function SupplierSettingsSafetyPage() {
     return { done, total, pct: Math.round((done / total) * 100) };
   }, [form, primarySocial]);
 
+  // Load from onboarding storage
   useEffect(() => {
-    let cancelled = false;
-
-    const hydrate = async () => {
-      try {
-        const [settingsResult, onboardingResult, lookupResult] = await Promise.allSettled([
-          sellerBackendApi.getSettings(),
-          sellerBackendApi.getOnboarding(),
-          sellerBackendApi.getOnboardingLookups(),
-        ]);
-        if (cancelled) return;
-        const baseForm = createEmptySupplierSettingsForm();
-        const lookupPayload =
-          lookupResult.status === "fulfilled" && lookupResult.value && typeof lookupResult.value === "object"
-            ? lookupResult.value
-            : null;
-        setLookups(normalizeSupplierSettingsLookups(lookupPayload));
-        const onboardingPayload =
-          onboardingResult.status === "fulfilled" && onboardingResult.value && typeof onboardingResult.value === "object"
-            ? (onboardingResult.value as Record<string, unknown>)
-            : null;
-        const hydratedFromOnboarding = mapOnboardingToSupplierSettings(baseForm, onboardingPayload);
-        const settingsPayload =
-          settingsResult.status === "fulfilled" && settingsResult.value && typeof settingsResult.value === "object"
-            ? (settingsResult.value as Record<string, unknown>)
-            : null;
-        const savedSupplierSettings =
-          settingsPayload &&
-          settingsPayload.profile &&
-          typeof settingsPayload.profile === "object" &&
-          (settingsPayload.profile as { supplierSettings?: unknown }).supplierSettings &&
-          typeof (settingsPayload.profile as { supplierSettings?: unknown }).supplierSettings === "object"
-            ? ((settingsPayload.profile as { supplierSettings: unknown }).supplierSettings as Record<string, unknown>)
-            : null;
-        const nextForm = savedSupplierSettings
-          ? deepMerge(hydratedFromOnboarding, savedSupplierSettings)
-          : hydratedFromOnboarding;
-        setForm(nextForm);
-        setLoadError("");
-      } catch {
-        if (!cancelled) {
-          setLoadError("Settings data is unavailable from the backend right now.");
-        }
-      } finally {
-        if (!cancelled) {
-          setHydrated(true);
-        }
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY_LEGACY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setForm(deepMerge(defaultForm(), parsed));
+        push("Settings loaded from onboarding.", "success");
       }
-    };
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    void hydrate();
-    return () => {
-      cancelled = true;
-    };
-  }, [push]);
-
+  // Autosave
   useEffect(() => {
-    if (!hydrated) return;
     setSaved(false);
     const t = setTimeout(() => {
-      void sellerBackendApi
-        .patchSettings({
-          profile: {
-            supplierSettings: form,
-          },
-        })
-        .then(() => setSaved(true))
-        .catch(() => undefined);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
+      } catch {
+        // ignore
+      }
+      setSaved(true);
     }, 450);
     return () => clearTimeout(t);
-  }, [form, hydrated, push]);
+  }, [form]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const syncActiveNav = () => {
+      const hashId = String(window.location.hash || "").replace(/^#/, "");
+      if (hashId) setActiveNavId(hashId);
+    };
+    syncActiveNav();
+    window.addEventListener("hashchange", syncActiveNav);
+    return () => window.removeEventListener("hashchange", syncActiveNav);
+  }, []);
 
   function update(path, value) {
     setForm((prev) => setDeep(prev, path, value));
@@ -1239,13 +941,24 @@ export default function SupplierSettingsSafetyPage() {
   }
 
   function resetAll() {
-    setForm(createEmptySupplierSettingsForm());
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    setForm(defaultForm());
     addAudit("Settings reset", "Restored defaults");
     push("Settings reset to defaults.", "success");
     setConfirmReset(false);
   }
 
   function deleteWorkspace() {
+    // UI preview: simulate the action + wipe local storage
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // ignore
+    }
     addAudit("Workspace delete requested", "Support ticket created");
     push("Delete request submitted to Support (demo).", "success");
     setConfirmDelete(false);
@@ -1319,12 +1032,6 @@ export default function SupplierSettingsSafetyPage() {
       </div>
 
       <ToastStack toasts={toasts} />
-
-      {loadError ? (
-        <div className="relative z-[1] mx-4 mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-          {loadError}
-        </div>
-      ) : null}
 
       {/* Policy review modal */}
       <Modal open={!!openPolicy} title={policyTitle} subtitle={policySubtitle} onClose={() => setOpenPolicy(null)} footer={policyFooter}>
@@ -1508,22 +1215,6 @@ export default function SupplierSettingsSafetyPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <GhostButton
-              onClick={() => {
-                window.open("https://support.mylivedealz.com", "_blank", "noreferrer");
-              }}
-            >
-              <HelpCircle className="h-4 w-4" /> Help
-            </GhostButton>
-
-            <GhostButton
-              onClick={() => {
-                push("Opening Supplier onboarding (demo).", "success");
-              }}
-            >
-              <ExternalLink className="h-4 w-4" /> Open onboarding
-            </GhostButton>
-
             <PrimaryButton onClick={downloadData}>
               <Download className="h-4 w-4" /> Export data
             </PrimaryButton>
@@ -1556,30 +1247,27 @@ export default function SupplierSettingsSafetyPage() {
             <div className="px-2 mb-2 text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Settings</div>
             <div className="text-xs text-slate-500 dark:text-slate-400 px-2 mb-3">Jump to a section</div>
             <div className="flex flex-col gap-1">
-              {[
-                { id: "account", label: "Account", icon: <User className="h-4 w-4" /> },
-                { id: "profile", label: "Business Profile", icon: <FileText className="h-4 w-4" /> },
-                { id: "team", label: "Team & Access", icon: <Users className="h-4 w-4" /> },
-                { id: "socials", label: "Socials", icon: <Globe className="h-4 w-4" /> },
-                { id: "collab", label: "Campaign Defaults", icon: <Sparkles className="h-4 w-4" /> },
-                { id: "availability", label: "Availability", icon: <Calendar className="h-4 w-4" /> },
-                { id: "kyb", label: "Verification & Security", icon: <IdCard className="h-4 w-4" /> },
-                { id: "payouts", label: "Payouts & Tax", icon: <CreditCard className="h-4 w-4" /> },
-                { id: "notifications", label: "Notifications", icon: <Bell className="h-4 w-4" /> },
-                { id: "privacy", label: "Privacy & Blocking", icon: <Lock className="h-4 w-4" /> },
-                { id: "policies", label: "Policies & Consent", icon: <ScrollText className="h-4 w-4" /> },
-                { id: "data", label: "Data & Support", icon: <Download className="h-4 w-4" /> }
-              ].map((item) => (
+              {SETTINGS_NAV_ITEMS.map((item) => {
+                const isActive = activeNavId === item.id;
+                return (
                 <a
                   key={item.id}
                   href={`#${item.id}`}
-                  className="group flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 hover:shadow-sm transition-all"
+                  onClick={() => setActiveNavId(item.id)}
+                  className={cx(
+                    "group flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium border transition-all",
+                    isActive
+                      ? "bg-[#f77f00] text-white border-[#f77f00] shadow-sm"
+                      : "border-transparent text-slate-600 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 hover:shadow-sm"
+                  )}
+                  aria-current={isActive ? "location" : undefined}
                 >
                   {item.icon}
                   {item.label}
-                  <ChevronRight className="ml-auto h-3 w-3 opacity-0 group-hover:opacity-50" />
+                  <ChevronRight className={cx("ml-auto h-3 w-3 transition-opacity", isActive ? "opacity-80" : "opacity-0 group-hover:opacity-50")} />
                 </a>
-              ))}
+                );
+              })}
             </div>
           </div>
         </aside>
@@ -1667,7 +1355,7 @@ export default function SupplierSettingsSafetyPage() {
               </Field>
               <Field label="Supplier model">
                 <Select value={form.profile.supplierModel} onChange={(e) => update("profile.supplierModel", e.target.value)}>
-                  {lookups.supplierModels.map((x) => (
+                  {SUPPLIER_MODELS.map((x) => (
                     <option key={x} value={x}>
                       {x}
                     </option>
@@ -1682,7 +1370,7 @@ export default function SupplierSettingsSafetyPage() {
               </Field>
               <Field label="Currency">
                 <Select value={form.profile.currency} onChange={(e) => update("profile.currency", e.target.value)}>
-                  {lookups.payoutCurrencies.map((c) => (
+                  {["UGX", "KES", "TZS", "USD", "EUR"].map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -1712,7 +1400,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.profile.brandLanguages || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {lookups.languages.map((l) => (
+                  {LANGUAGE_OPTIONS.map((l) => (
                     <Chip key={l} label={l} active={(form.profile.brandLanguages || []).includes(l)} onClick={() => toggleInArray("profile.brandLanguages", l)} />
                   ))}
                 </div>
@@ -1727,7 +1415,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.profile.targetRegions || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {lookups.supplierTargetRegions.map((r) => (
+                  {REGION_OPTIONS.map((r) => (
                     <Chip key={r} label={r} active={(form.profile.targetRegions || []).includes(r)} onClick={() => toggleInArray("profile.targetRegions", r)} />
                   ))}
                 </div>
@@ -2042,7 +1730,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.preferences.productCategories || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {lookups.productCategories.map((x) => (
+                  {PRODUCT_CATEGORIES.map((x) => (
                     <Chip key={x} label={x} active={(form.preferences.productCategories || []).includes(x)} onClick={() => toggleInArray("preferences.productCategories", x)} />
                   ))}
                 </div>
@@ -2057,7 +1745,7 @@ export default function SupplierSettingsSafetyPage() {
                   <Badge tone="neutral">{(form.preferences.serviceCategories || []).length}</Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {lookups.serviceCategories.map((x) => (
+                  {SERVICE_CATEGORIES.map((x) => (
                     <Chip key={x} label={x} active={(form.preferences.serviceCategories || []).includes(x)} onClick={() => toggleInArray("preferences.serviceCategories", x)} />
                   ))}
                 </div>
@@ -2073,7 +1761,7 @@ export default function SupplierSettingsSafetyPage() {
                 <Badge tone="neutral">{(form.preferences.contentFormats || []).length}</Badge>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                {lookups.contentFormats.map((x) => (
+                {CONTENT_FORMATS.map((x) => (
                   <Chip key={x} label={x} active={(form.preferences.contentFormats || []).includes(x)} onClick={() => toggleInArray("preferences.contentFormats", x)} />
                 ))}
               </div>
@@ -2105,7 +1793,7 @@ export default function SupplierSettingsSafetyPage() {
                 <div className="mt-2 grid grid-cols-1 gap-2">
                   <Field label="Creator Usage Decision (default)" hint="Required during campaign creation.">
                     <Select value={form.preferences.creatorUsageDefault} onChange={(e) => update("preferences.creatorUsageDefault", e.target.value)}>
-                      {lookups.creatorUsageDecisions.map((x) => (
+                      {CREATOR_USAGE_DECISIONS.map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>
@@ -2114,7 +1802,7 @@ export default function SupplierSettingsSafetyPage() {
                   </Field>
                   <Field label="Collaboration Mode (default)">
                     <Select value={form.preferences.collabModeDefault} onChange={(e) => update("preferences.collabModeDefault", e.target.value)}>
-                      {lookups.collabModes.map((x) => (
+                      {COLLAB_MODES.map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>
@@ -2123,7 +1811,7 @@ export default function SupplierSettingsSafetyPage() {
                   </Field>
                   <Field label="Content Approval (default)" hint="Manual: supplier approves before Admin. Auto: goes direct to Admin.">
                     <Select value={form.preferences.approvalModeDefault} onChange={(e) => update("preferences.approvalModeDefault", e.target.value)}>
-                      {lookups.approvalModes.map((x) => (
+                      {APPROVAL_MODES.map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>
@@ -2240,7 +1928,7 @@ export default function SupplierSettingsSafetyPage() {
                   <div className="font-semibold">Premium behavior</div>
                   <ul className="mt-1 list-disc pl-4 space-y-1">
                     <li>Producers see warnings if a member is booked in another live session.</li>
-                    <li>Owners can see team availability if they have permission (&quot;View team availability&quot;).</li>
+                    <li>Owners can see team availability if they have permission ("View team availability").</li>
                     <li>Guest creators can share availability without full workspace access (policy-limited).</li>
                   </ul>
                 </div>
@@ -2450,7 +2138,7 @@ export default function SupplierSettingsSafetyPage() {
                 <div className="text-sm">Payout method</div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">Choose where settlements should go.</div>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {lookups.payoutMethodCards.map((m) => {
+                  {PAYOUT_METHODS.map((m) => {
                     const active = form.payout.method === m.key;
                     return (
                       <button
@@ -2479,7 +2167,7 @@ export default function SupplierSettingsSafetyPage() {
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Field label="Currency">
                     <Select value={form.payout.currency} onChange={(e) => update("payout.currency", e.target.value)}>
-                      {lookups.payoutCurrencies.map((c) => (
+                      {["UGX", "KES", "TZS", "USD", "EUR", "CNY"].map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
@@ -2488,7 +2176,7 @@ export default function SupplierSettingsSafetyPage() {
                   </Field>
                   <Field label="Schedule">
                     <Select value={form.payout.schedule} onChange={(e) => update("payout.schedule", e.target.value)}>
-                      {lookups.payoutRhythms.map((x) => (
+                      {["Daily", "Weekly", "Biweekly", "Monthly"].map((x) => (
                         <option key={x} value={x}>
                           {x}
                         </option>

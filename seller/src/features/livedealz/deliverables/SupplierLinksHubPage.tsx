@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import SupplierLinkToolsOrangePrimaryPreviewable from "../+NewLink";
 
-import { sellerBackendApi } from "../../../lib/backendApi";
-
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/deliverables/SupplierLinksHubPage").catch(() => undefined);
-
 /**
  * SupplierLinksHubPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)
@@ -28,7 +23,7 @@ void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/deliverab
  * - Manual review workflow (Supplier) for Creator-submitted link packs:
  *   reviewStatus: Pending Supplier → Approved / Changes Requested / Rejected
  * - Governance pills: hostRole, creatorUsage, collabMode, approvalMode
- * - Creator assignments: send link pack to creators and track by creator
+ * - Creator assignments: send link pack to creators and track by creator (demo)
  *
  * QR Notes:
  * - To stay dependency-free in the canvas, QR uses a remote QR image endpoint.
@@ -127,6 +122,243 @@ function healthWidth(item) {
   if (item.status === "Paused") return "40%";
   return "18%";
 }
+
+/* -------------------------------- Mock Data ------------------------------ */
+
+const INITIAL_ITEMS = [
+  {
+    id: "LIVE-102",
+    tab: "live",
+    title: "Live Sessionz · Beauty Flash",
+    subtitle: "Today 18:30 · Kampala",
+    status: "Scheduled",
+    createdAt: "Today",
+    expiresAt: "Tomorrow",
+    campaign: { id: "CAMP-11", name: "Beauty Flash Dealz" },
+    supplier: { name: "GlowUp Hub", type: "Seller" },
+
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
+    },
+
+    creatorAssignments: [
+      { id: "asg_1", creator: { name: "Amina K.", handle: "@amina.dealz" }, status: "Accepted", region: "Africa", lastSent: "2h ago" },
+      { id: "asg_2", creator: { name: "Luna Ade", handle: "@lunaade" }, status: "Invited", region: "Global", lastSent: "Just now" }
+    ],
+
+    // Supplier review workflow for creator-submitted link packs
+    reviewStatus: "Pending Supplier",
+    createdBy: "Creator",
+
+    primaryUrl: "https://mylivedealz.com/live/beauty-flash?supplier=glowup&camp=CAMP-11",
+    shortUrl: "https://mldz.link/LIVE-102",
+    regionVariants: [
+      { region: "Global", url: "https://mldz.link/LIVE-102" },
+      { region: "Africa", url: "https://mldz.link/LIVE-102?rg=af" },
+      { region: "EU/UK", url: "https://mldz.link/LIVE-102?rg=eu" },
+      { region: "Asia", url: "https://mldz.link/LIVE-102?rg=as" },
+      { region: "China", url: "https://mldz.link/LIVE-102?rg=cn" }
+    ],
+    channels: [
+      { name: "Instagram Story", url: "https://mylivedealz.com/live/beauty-flash?supplier=glowup&camp=CAMP-11&ch=ig_story", hint: "Best for Stories" },
+      { name: "TikTok", url: "https://mylivedealz.com/live/beauty-flash?supplier=glowup&camp=CAMP-11&ch=tiktok", hint: "Best for short hooks" },
+      { name: "YouTube Shorts", url: "https://mylivedealz.com/live/beauty-flash?supplier=glowup&camp=CAMP-11&ch=shorts", hint: "Best for replay discovery" },
+      { name: "WhatsApp", url: "https://mylivedealz.com/live/beauty-flash?supplier=glowup&camp=CAMP-11&ch=whatsapp", hint: "Best for broadcasts" }
+    ],
+    metrics: { clicks: 320, purchases: 0, conversionPct: 0, earnings: 0, currency: "USD" },
+    regionMetrics: [
+      { region: "Global", clicks: 320, purchases: 0, earnings: 0, currency: "USD" },
+      { region: "Africa", clicks: 220, purchases: 0, earnings: 0, currency: "USD" },
+      { region: "Asia", clicks: 60, purchases: 0, earnings: 0, currency: "USD" },
+      { region: "EU/UK", clicks: 25, purchases: 0, earnings: 0, currency: "USD" },
+      { region: "China", clicks: 15, purchases: 0, earnings: 0, currency: "USD" }
+    ],
+    sharePack: {
+      headline: "LIVE TODAY: Beauty Flash Dealz",
+      bullets: ["Limited stock + live-only discounts", "Verified Seller · buyer protections", "Fast checkout and buyer support"],
+      captions: [
+        { platform: "Instagram", text: "Beauty Flash Dealz is going live at 18:30. Join and shop live with verified Seller offers. {LINK}" },
+        { platform: "TikTok", text: "Live at 18:30. Beauty Flash Dealz. Limited stock. Join now: {LINK}" },
+        { platform: "WhatsApp", text: "We’re going live today at 18:30 with Beauty Flash Dealz. Join here: {LINK}" }
+      ],
+      hashtags: ["#MyLiveDealz", "#LiveSessionz", "#BeautyDealz", "#ShopLive"]
+    }
+  },
+  {
+    id: "LIVE-087",
+    tab: "live",
+    title: "Replays & Clips · Tech Friday Mega",
+    subtitle: "Replay available",
+    status: "Active",
+    createdAt: "2 days ago",
+    campaign: { id: "CAMP-07", name: "Tech Friday Mega" },
+    supplier: { name: "GadgetMart Africa", type: "Seller" },
+
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Invite-Only",
+      approvalMode: "Manual"
+    },
+
+    creatorAssignments: [
+      { id: "asg_3", creator: { name: "Chris M.", handle: "@chris.finds" }, status: "Accepted", region: "Global", lastSent: "1 day ago" }
+    ],
+
+    reviewStatus: "Approved",
+    createdBy: "Supplier",
+
+    primaryUrl: "https://mylivedealz.com/replay/tech-friday?supplier=gadgetmart&camp=CAMP-07",
+    shortUrl: "https://mldz.link/LIVE-087",
+    regionVariants: [
+      { region: "Global", url: "https://mldz.link/LIVE-087" },
+      { region: "Africa", url: "https://mldz.link/LIVE-087?rg=af" },
+      { region: "EU/UK", url: "https://mldz.link/LIVE-087?rg=eu" },
+      { region: "Asia", url: "https://mldz.link/LIVE-087?rg=as" },
+      { region: "China", url: "https://mldz.link/LIVE-087?rg=cn" }
+    ],
+    channels: [
+      { name: "Instagram Feed", url: "https://mylivedealz.com/replay/tech-friday?supplier=gadgetmart&camp=CAMP-07&ch=ig_feed", hint: "Best for evergreen" },
+      { name: "TikTok", url: "https://mylivedealz.com/replay/tech-friday?supplier=gadgetmart&camp=CAMP-07&ch=tiktok", hint: "Best for reach" },
+      { name: "WhatsApp", url: "https://mylivedealz.com/replay/tech-friday?supplier=gadgetmart&camp=CAMP-07&ch=whatsapp", hint: "Best for groups" },
+      { name: "Telegram", url: "https://mylivedealz.com/replay/tech-friday?supplier=gadgetmart&camp=CAMP-07&ch=telegram", hint: "Best for communities" }
+    ],
+    metrics: { clicks: 1850, purchases: 96, conversionPct: 5.2, earnings: 820, currency: "USD" },
+    regionMetrics: [
+      { region: "Global", clicks: 1850, purchases: 96, earnings: 820, currency: "USD" },
+      { region: "Africa", clicks: 851, purchases: 44, earnings: 377, currency: "USD" },
+      { region: "Asia", clicks: 518, purchases: 27, earnings: 230, currency: "USD" },
+      { region: "EU/UK", clicks: 296, purchases: 15, earnings: 130, currency: "USD" },
+      { region: "China", clicks: 185, purchases: 10, earnings: 83, currency: "USD" }
+    ],
+    sharePack: {
+      headline: "REPLAY: Tech Friday Mega Live",
+      bullets: ["High-quality gadgets + bundles", "Watch the demo, then shop", "Tracked link supports Supplier & Creator earnings"],
+      captions: [
+        { platform: "Instagram", text: "Replay is up! Tech Friday Mega Live. Watch the demo and shop through this link: {LINK}" },
+        { platform: "YouTube Shorts", text: "Tech Friday replay: best gadgets + bundles. Shop here: {LINK}" },
+        { platform: "WhatsApp", text: "Replay is up (Tech Friday). Watch and shop here: {LINK}" }
+      ],
+      hashtags: ["#MyLiveDealz", "#LiveSessionz", "#TechDealz", "#Gadgets"]
+    }
+  },
+  {
+    id: "SHOP-311",
+    tab: "shoppable",
+    title: "Shoppable Adz · Serum Promo",
+    subtitle: "Link pack + QR",
+    status: "Active",
+    createdAt: "This week",
+    campaign: { id: "CAMP-21", name: "GlowUp Serum Promo" },
+    supplier: { name: "GlowUp Hub", type: "Seller" },
+
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
+    },
+
+    creatorAssignments: [
+      { id: "asg_4", creator: { name: "Amina K.", handle: "@amina.dealz" }, status: "Accepted", region: "Africa", lastSent: "3 days ago" },
+      { id: "asg_5", creator: { name: "Luna Ade", handle: "@lunaade" }, status: "Accepted", region: "EU/UK", lastSent: "2 days ago" }
+    ],
+
+    reviewStatus: "Approved",
+    createdBy: "Supplier",
+
+    primaryUrl: "https://mylivedealz.com/shoppable/serum?supplier=glowup&camp=CAMP-21",
+    shortUrl: "https://mldz.link/SHOP-311",
+    regionVariants: [
+      { region: "Global", url: "https://mldz.link/SHOP-311" },
+      { region: "Africa", url: "https://mldz.link/SHOP-311?rg=af" },
+      { region: "EU/UK", url: "https://mldz.link/SHOP-311?rg=eu" },
+      { region: "Asia", url: "https://mldz.link/SHOP-311?rg=as" },
+      { region: "China", url: "https://mldz.link/SHOP-311?rg=cn" }
+    ],
+    channels: [
+      { name: "Instagram Story", url: "https://mylivedealz.com/shoppable/serum?supplier=glowup&camp=CAMP-21&ch=ig_story", hint: "Best for Stories" },
+      { name: "TikTok", url: "https://mylivedealz.com/shoppable/serum?supplier=glowup&camp=CAMP-21&ch=tiktok", hint: "Best for short hooks" },
+      { name: "YouTube Shorts", url: "https://mylivedealz.com/shoppable/serum?supplier=glowup&camp=CAMP-21&ch=shorts", hint: "Best for replay discovery" },
+      { name: "WhatsApp", url: "https://mylivedealz.com/shoppable/serum?supplier=glowup&camp=CAMP-21&ch=whatsapp", hint: "Best for broadcasts" }
+    ],
+    metrics: { clicks: 980, purchases: 41, conversionPct: 4.2, earnings: 210, currency: "USD" },
+    regionMetrics: [
+      { region: "Global", clicks: 980, purchases: 41, earnings: 210, currency: "USD" },
+      { region: "Africa", clicks: 568, purchases: 24, earnings: 122, currency: "USD" },
+      { region: "Asia", clicks: 196, purchases: 8, earnings: 42, currency: "USD" },
+      { region: "EU/UK", clicks: 137, purchases: 6, earnings: 30, currency: "USD" },
+      { region: "China", clicks: 79, purchases: 3, earnings: 16, currency: "USD" }
+    ],
+    sharePack: {
+      headline: "GlowUp Serum Dealz",
+      bullets: ["Verified Seller · buyer protections", "Fast checkout", "Limited stock"],
+      captions: [
+        { platform: "Instagram", text: "GlowUp Serum Dealz now live. Limited stock. Tap to shop: {LINK}" },
+        { platform: "TikTok", text: "This serum is selling fast. Tap to shop: {LINK}" },
+        { platform: "WhatsApp", text: "GlowUp Serum deal is live. Shop here: {LINK}" }
+      ],
+      hashtags: ["#MyLiveDealz", "#ShoppableAdz", "#BeautyDealz"]
+    }
+  },
+  {
+    id: "SHOP-402",
+    tab: "shoppable",
+    title: "Shoppable Adz · Mobile Repair Booking",
+    subtitle: "Service booking link",
+    status: "Active",
+    createdAt: "This month",
+    campaign: { id: "CAMP-33", name: "Repair Booking Offer" },
+    supplier: { name: "FixNow Mobile", type: "Provider" },
+
+    governance: {
+      hostRole: "Supplier",
+      creatorUsage: "I will NOT use a Creator",
+      collabMode: "(n/a)",
+      approvalMode: "Manual"
+    },
+
+    creatorAssignments: [],
+
+    reviewStatus: "Approved",
+    createdBy: "Supplier",
+
+    primaryUrl: "https://mylivedealz.com/shoppable/repair?supplier=fixnow&camp=CAMP-33",
+    shortUrl: "https://mldz.link/SHOP-402",
+    regionVariants: [
+      { region: "Global", url: "https://mldz.link/SHOP-402" },
+      { region: "Africa", url: "https://mldz.link/SHOP-402?rg=af" },
+      { region: "EU/UK", url: "https://mldz.link/SHOP-402?rg=eu" },
+      { region: "Asia", url: "https://mldz.link/SHOP-402?rg=as" },
+      { region: "China", url: "https://mldz.link/SHOP-402?rg=cn" }
+    ],
+    channels: [
+      { name: "Instagram Feed", url: "https://mylivedealz.com/shoppable/repair?supplier=fixnow&camp=CAMP-33&ch=ig_feed", hint: "Best for evergreen" },
+      { name: "WhatsApp", url: "https://mylivedealz.com/shoppable/repair?supplier=fixnow&camp=CAMP-33&ch=whatsapp", hint: "Best for groups" },
+      { name: "Telegram", url: "https://mylivedealz.com/shoppable/repair?supplier=fixnow&camp=CAMP-33&ch=telegram", hint: "Best for communities" }
+    ],
+    metrics: { clicks: 540, purchases: 16, conversionPct: 3.0, earnings: 95, currency: "USD" },
+    regionMetrics: [
+      { region: "Global", clicks: 540, purchases: 16, earnings: 95, currency: "USD" },
+      { region: "Africa", clicks: 384, purchases: 11, earnings: 67, currency: "USD" },
+      { region: "Asia", clicks: 65, purchases: 2, earnings: 11, currency: "USD" },
+      { region: "EU/UK", clicks: 54, purchases: 2, earnings: 10, currency: "USD" },
+      { region: "China", clicks: 37, purchases: 1, earnings: 7, currency: "USD" }
+    ],
+    sharePack: {
+      headline: "Book Mobile Repair (Trusted Provider)",
+      bullets: ["Verified Provider", "Clear pricing", "Easy booking"],
+      captions: [
+        { platform: "Instagram", text: "Need a quick mobile repair? Book a trusted Provider here: {LINK}" },
+        { platform: "WhatsApp", text: "Trusted mobile repair booking: {LINK}" }
+      ],
+      hashtags: ["#MyLiveDealz", "#ShoppableAdz", "#Services"]
+    }
+  }
+];
 
 /* -------------------------------- UI Primitives -------------------------- */
 
@@ -461,7 +693,7 @@ function FilterDialog({ isOpen, onClose, status, setStatus, groupBy, setGroupBy,
                         : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-700"
                     )}
                     type="button"
-                    onClick={() => toast(`Sort: ${x.label}`)}
+                    onClick={() => toast(`Sort: ${x.label} (demo)`)}
                   >
                     {x.label}
                   </button>
@@ -765,7 +997,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
     downloadQrRemote(regionUrl, `${item.id}-${region.replace("/", "-")}-qr.png`);
   };
 
-  // Creator performance derived from assignments
+  // Creator performance (demo) derived from assignments
   const creatorPerf = useMemo(() => {
     const rows = (item.creatorAssignments || []).map((a, idx) => {
       const baseClicks = Math.max(10, Math.round((item.metrics.clicks || 0) / (Math.max(1, item.creatorAssignments.length) + 0.6)));
@@ -912,7 +1144,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
             right={
               <div className="flex items-center gap-2">
                 <PillBtn label="Copy" icon={<span>📋</span>} onClick={() => copyToClipboard(item.primaryUrl)} />
-                <PillBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening destination for: ${item.title}`)} />
+                <PillBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening destination for: ${item.title} (demo)`)} />
               </div>
             }
           >
@@ -939,7 +1171,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
             right={
               <div className="flex items-center gap-2">
                 <PillBtn label="Download" icon={<span>⬇️</span>} onClick={downloadQr} />
-                <PillBtn label="Add to overlay" icon={<span>🧩</span>} onClick={() => toast("QR added to Live Studio overlay")} />
+                <PillBtn label="Add to overlay" icon={<span>🧩</span>} onClick={() => toast("QR added to Live Studio overlay (demo)")} />
               </div>
             }
           >
@@ -973,7 +1205,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
                       </div>
                       <div className="flex items-center gap-1">
                         <IconBtn label="Copy" icon={<span>📋</span>} onClick={() => copyToClipboard(c.url)} />
-                        <IconBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening ${c.name} link`) } />
+                        <IconBtn label="Open" icon={<span>↗</span>} onClick={() => toast(`Opening ${c.name} link (demo)`) } />
                         <IconBtn label="Share" icon={<span>🔗</span>} onClick={() => shareNative({ title: item.title, text: msg, url: c.url })} />
                         <IconBtn label="WhatsApp" icon={<span>💬</span>} onClick={() => shareWhatsApp(msg)} />
                       </div>
@@ -1040,7 +1272,7 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
 
           <Card
             title="Send pack to creators"
-            subtitle="Assign the correct region link to each creator."
+            subtitle="Assign the correct region link to each creator (demo)."
             right={<PillBtn label="Resend all" icon={<span>✉️</span>} onClick={() => onResendPack("all")} />}
           >
             {(item.creatorAssignments || []).length ? (
@@ -1158,9 +1390,9 @@ function LinkDetail({ item, pinned, onTogglePin, reviewNote, onChangeReviewNote,
           </Card>
 
           <Card
-            title="Creator performance"
+            title="Creator performance (demo)"
             subtitle="Track by creator assignment: clicks, purchases, earnings."
-            right={<PillBtn label="Export" icon={<span>⬇️</span>} onClick={() => toast("Export CSV")} />}
+            right={<PillBtn label="Export" icon={<span>⬇️</span>} onClick={() => toast("Export CSV (demo)")} />}
           >
             {creatorPerf.length ? (
               <div className="mt-2 overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700">
@@ -1230,13 +1462,15 @@ export default function SupplierLinksHubPage() {
   const [groupBy, setGroupBy] = useState("Campaign");
   const [supplierTypeFilter, setSupplierTypeFilter] = useState("All");
   const [selectedId, setSelectedId] = useState(null);
-  const [pinnedIds, setPinnedIds] = useState([]);
+  const [pinnedIds, setPinnedIds] = useState(["LIVE-102", "SHOP-311"]);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
 
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(INITIAL_ITEMS);
 
   // Review note per link
-  const [reviewNotes, setReviewNotes] = useState({});
+  const [reviewNotes, setReviewNotes] = useState({
+    "LIVE-102": "Please verify UTM campaign, ensure WhatsApp caption includes the correct CTA, and confirm region variants."
+  });
 
   // Effective supplier filter when groupBy=Provider (mirror behavior)
   useEffect(() => {
@@ -1336,14 +1570,14 @@ export default function SupplierLinksHubPage() {
       })
     );
 
-    if (action === "approve") toast("Approved. Link pack unlocked");
+    if (action === "approve") toast("Approved. Link pack unlocked (demo)");
     if (action === "changes") toast("Changes requested. Creator must resubmit.");
     if (action === "reject") toast("Rejected.");
   };
 
   const onResendPack = (assignmentId) => {
     if (!selected) return;
-    toast(assignmentId === "all" ? "Resent pack to all creators" : `Resent pack (${assignmentId})`);
+    toast(assignmentId === "all" ? "Resent pack to all creators (demo)" : `Resent pack (${assignmentId}) (demo)`);
   };
 
   const headerTitle = "Links Hub";
@@ -1352,12 +1586,6 @@ export default function SupplierLinksHubPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors">
       <PageHeader
         pageTitle={headerTitle}
-        badge={
-          <span className="hidden md:inline-flex px-2.5 py-1 rounded-full bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-200 items-center gap-2 text-[11px] font-extrabold border border-slate-800 dark:border-slate-700 transition-colors">
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: ORANGE }} />
-            Orange + Black
-          </span>
-        }
         rightContent={
           <button
             className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white hover:bg-[#e26f00] inline-flex items-center gap-2 transition-colors text-xs font-extrabold"

@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierPostLivePublisher.jsx
@@ -459,56 +458,57 @@ export default function SupplierPostLivePublisherPage() {
 
   const sp = useMemo(() => parseSearch(), []);
   const sessionId = sp.get("sessionId") ?? "LS-20418";
-  const [replayId, setReplayId] = useState(sessionId);
-  const [toolHydrated, setToolHydrated] = useState(false);
-  const executionModeSyncRef = useRef(false);
 
-  const [plan, setPlan] = useState("");
+  const [plan, setPlan] = useState("Pro");
   const isPro = plan === "Pro";
 
   // Supplier role awareness
   const [executionMode, setExecutionMode] = useState("creator_hosted"); // creator_hosted | supplier_hosted
-  const [adminReviewRequired, setAdminReviewRequired] = useState(false);
-  const [session, setSession] = useState({
-    id: sessionId,
-    title: "",
-    status: "Ended",
-    endedISO: new Date().toISOString(),
-    replayUrl: "",
-    coverUrl: "",
-  });
+  const [adminReviewRequired, setAdminReviewRequired] = useState(true);
+
+  const session = useMemo(
+    () => ({
+      id: sessionId,
+      title: "Autumn Beauty Flash",
+      status: "Ended",
+      endedISO: new Date(Date.now() - 33 * 60 * 1000).toISOString(),
+      replayUrl: `https://mylivedealz.com/replay/${sessionId}`,
+      coverUrl: "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?auto=format&fit=crop&w=1200&q=70",
+    }),
+    [sessionId]
+  );
 
   // Replay publish & approvals
   const [published, setPublished] = useState(false);
   const [schedulePublish, setSchedulePublish] = useState(false);
-  const [publishAt, setPublishAt] = useState(() => new Date().toISOString());
-  const [allowComments, setAllowComments] = useState(false);
-  const [showProductStrip, setShowProductStrip] = useState(false);
+  const [publishAt, setPublishAt] = useState(() => new Date(Date.now() + 30 * 60 * 1000).toISOString());
+  const [allowComments, setAllowComments] = useState(true);
+  const [showProductStrip, setShowProductStrip] = useState(true);
 
-  const [supplierApproved, setSupplierApproved] = useState(false);
+  const [supplierApproved, setSupplierApproved] = useState(executionMode === "supplier_hosted");
   const [submittedToAdmin, setSubmittedToAdmin] = useState(false);
   const [adminApproved, setAdminApproved] = useState(false);
   const [adminRejected, setAdminRejected] = useState(false);
   const [creatorPublishRequested, setCreatorPublishRequested] = useState(false);
 
   useEffect(() => {
-    if (!toolHydrated) return;
-    if (!executionModeSyncRef.current) {
-      executionModeSyncRef.current = true;
-      return;
-    }
+    // keep a sensible default when switching mode (demo)
     if (executionMode === "supplier_hosted") {
       setSupplierApproved(true);
       setCreatorPublishRequested(false);
     } else {
       setSupplierApproved(false);
     }
-  }, [executionMode, toolHydrated]);
+  }, [executionMode]);
 
   const publishBlocked = (schedulePublish && !publishAt) || isPending;
 
   // Clips
-  const [clips, setClips] = useState([]);
+  const [clips, setClips] = useState([
+    { id: "c1", title: "GlowUp Bundle – Key benefits", startSec: 140, endSec: 210, format: "9:16", status: "Exported" },
+    { id: "c2", title: "Price drop moment", startSec: 520, endSec: 560, format: "9:16", status: "Queued" },
+    { id: "c3", title: "Buyer Q&A – shipping", startSec: 760, endSec: 840, format: "16:9", status: "Draft" },
+  ]);
 
   const [clipModal, setClipModal] = useState(false);
   const [clipTitle, setClipTitle] = useState("");
@@ -536,176 +536,56 @@ export default function SupplierPostLivePublisherPage() {
   };
 
   // Channels
-  const [channels, setChannels] = useState([]);
+  const channels = useMemo(
+    () => [
+      { key: "whatsapp", name: "WhatsApp", short: "WA", connected: "Connected", supportsRich: true, costPerMessageUSD: 0.002 },
+      { key: "telegram", name: "Telegram", short: "TG", connected: "Connected", supportsRich: true, costPerMessageUSD: 0.0 },
+      { key: "line", name: "LINE", short: "LINE", connected: "Needs re-auth", supportsRich: true, costPerMessageUSD: 0.003 },
+      { key: "viber", name: "Viber", short: "Viber", connected: "Connected", supportsRich: false, costPerMessageUSD: 0.0015 },
+      { key: "rcs", name: "RCS", short: "RCS", connected: "Connected", supportsRich: false, costPerMessageUSD: 0.008 },
+    ],
+    []
+  );
 
-  const [enabledChannels, setEnabledChannels] = useState({});
+  const [enabledChannels, setEnabledChannels] = useState({
+    whatsapp: true,
+    telegram: true,
+    line: false,
+    viber: false,
+    rcs: false,
+  });
 
-  const [audience, setAudience] = useState("");
-  const [scheduleSends, setScheduleSends] = useState(false);
+  const [audience, setAudience] = useState("past_buyers");
+  const [scheduleSends, setScheduleSends] = useState(true);
   const [sendNow, setSendNow] = useState(false);
-  const [templatePack, setTemplatePack] = useState("");
+  const [templatePack, setTemplatePack] = useState("Default");
 
   // Supplier add-on: request creator amplification if creator-hosted
-  const [requestCreatorAmplify, setRequestCreatorAmplify] = useState(false);
+  const [requestCreatorAmplify, setRequestCreatorAmplify] = useState(executionMode === "creator_hosted");
 
   useEffect(() => {
-    if (!toolHydrated || !executionModeSyncRef.current) return;
     setRequestCreatorAmplify(executionMode === "creator_hosted");
-  }, [executionMode, toolHydrated]);
-
-  useEffect(() => {
-    let active = true;
-
-    void Promise.all([
-      sellerBackendApi.getLiveToolConfig("post-live"),
-      sellerBackendApi.getLiveReplayBySession(sessionId),
-    ])
-      .then(([payload, replay]) => {
-        if (!active) return;
-        const nextSession =
-          payload.session && typeof payload.session === "object" && !Array.isArray(payload.session) ? payload.session : {};
-        const replayData =
-          replay.data && typeof replay.data === "object" && !Array.isArray(replay.data) ? replay.data : {};
-        const nextMetrics =
-          payload.metrics && typeof payload.metrics === "object" && !Array.isArray(payload.metrics) ? payload.metrics : {};
-        setReplayId(String(replay.id || sessionId));
-        setPlan(String(payload.plan ?? "Pro"));
-        setExecutionMode(String(payload.executionMode ?? "creator_hosted"));
-        setAdminReviewRequired(Boolean(payload.adminReviewRequired ?? true));
-        setSession({
-          id: String(nextSession.id ?? replay.sessionId ?? sessionId),
-          title: String(nextSession.title ?? replayData.title ?? "Replay"),
-          status: String(nextSession.status ?? replay.status ?? "Ended"),
-          endedISO: String(nextSession.endedISO ?? replay.updatedAt ?? new Date().toISOString()),
-          replayUrl: String(nextSession.replayUrl ?? replayData.replayUrl ?? `https://mylivedealz.com/replay/${replay.id}`),
-          coverUrl: String(nextSession.coverUrl ?? replayData.coverUrl ?? ""),
-        });
-        setPublished(Boolean(replay.published ?? payload.published ?? false));
-        setSchedulePublish(Boolean(payload.schedulePublish ?? false));
-        setPublishAt(String(payload.publishAt ?? new Date().toISOString()));
-        setAllowComments(Boolean(payload.allowComments ?? true));
-        setShowProductStrip(Boolean(payload.showProductStrip ?? true));
-        setSupplierApproved(Boolean(payload.supplierApproved ?? false));
-        setSubmittedToAdmin(Boolean(payload.submittedToAdmin ?? false));
-        setAdminApproved(Boolean(payload.adminApproved ?? false));
-        setAdminRejected(Boolean(payload.adminRejected ?? false));
-        setCreatorPublishRequested(Boolean(payload.creatorPublishRequested ?? false));
-        setClips(Array.isArray(payload.clips) ? payload.clips : []);
-        setChannels(Array.isArray(payload.channels) ? payload.channels : []);
-        setEnabledChannels(
-          payload.enabledChannels && typeof payload.enabledChannels === "object" && !Array.isArray(payload.enabledChannels)
-            ? payload.enabledChannels
-            : {}
-        );
-        setAudience(String(payload.audience ?? "past_buyers"));
-        setScheduleSends(Boolean(payload.scheduleSends ?? true));
-        setSendNow(Boolean(payload.sendNow ?? false));
-        setTemplatePack(String(payload.templatePack ?? "Default"));
-        setRequestCreatorAmplify(Boolean(payload.requestCreatorAmplify ?? false));
-        setCartRecovery(Boolean(payload.cartRecovery ?? true));
-        setPriceDrop(Boolean(payload.priceDrop ?? false));
-        setRestock(Boolean(payload.restock ?? true));
-        setMetrics({
-          viewers: Number(nextMetrics.viewers ?? 0),
-          clicks: Number(nextMetrics.clicks ?? 0),
-          orders: Number(nextMetrics.orders ?? 0),
-          gmv: Number(nextMetrics.gmv ?? 0),
-          addToCart: Number(nextMetrics.addToCart ?? 0),
-          cartAbandon: Number(nextMetrics.cartAbandon ?? 0),
-          ctr: Number(nextMetrics.ctr ?? 0),
-          conv: Number(nextMetrics.conv ?? 0),
-          ordersSeries: Array.isArray(nextMetrics.ordersSeries) ? nextMetrics.ordersSeries : [],
-        });
-        setToolHydrated(true);
-      })
-      .catch(() => {
-        if (active) setToolHydrated(true);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!toolHydrated) return;
-    const timeout = window.setTimeout(() => {
-      void sellerBackendApi.patchLiveToolConfig("post-live", {
-        session,
-        plan,
-        executionMode,
-        adminReviewRequired,
-        published,
-        schedulePublish,
-        publishAt,
-        allowComments,
-        showProductStrip,
-        supplierApproved,
-        submittedToAdmin,
-        adminApproved,
-        adminRejected,
-        creatorPublishRequested,
-        clips,
-        channels,
-        enabledChannels,
-        audience,
-        scheduleSends,
-        sendNow,
-        templatePack,
-        requestCreatorAmplify,
-        cartRecovery,
-        priceDrop,
-        restock,
-        metrics,
-      }).catch(() => undefined);
-    }, 450);
-
-    return () => window.clearTimeout(timeout);
-  }, [
-    toolHydrated,
-    session,
-    plan,
-    executionMode,
-    adminReviewRequired,
-    published,
-    schedulePublish,
-    publishAt,
-    allowComments,
-    showProductStrip,
-    supplierApproved,
-    submittedToAdmin,
-    adminApproved,
-    adminRejected,
-    creatorPublishRequested,
-    clips,
-    channels,
-    enabledChannels,
-    audience,
-    scheduleSends,
-    sendNow,
-    templatePack,
-    requestCreatorAmplify,
-    cartRecovery,
-    priceDrop,
-    restock,
-    metrics,
-  ]);
+  }, [executionMode]);
 
   // Booster toggles
-  const [cartRecovery, setCartRecovery] = useState(false);
+  const [cartRecovery, setCartRecovery] = useState(true);
   const [priceDrop, setPriceDrop] = useState(false);
-  const [restock, setRestock] = useState(false);
-  const [metrics, setMetrics] = useState({
-    viewers: 0,
-    clicks: 0,
-    orders: 0,
-    gmv: 0,
-    addToCart: 0,
-    cartAbandon: 0,
-    ctr: 0,
-    conv: 0,
-    ordersSeries: [],
-  });
+  const [restock, setRestock] = useState(true);
+
+  const metrics = useMemo(
+    () => ({
+      viewers: 18420,
+      clicks: 3120,
+      orders: 284,
+      gmv: 9210,
+      addToCart: 740,
+      cartAbandon: 310,
+      ctr: 0.169,
+      conv: 0.091,
+      ordersSeries: [4, 6, 8, 10, 9, 12, 15, 14, 18, 17, 16, 19, 21, 18, 16],
+    }),
+    []
+  );
 
   const enabledChannelList = useMemo(() => channels.filter((c) => enabledChannels[c.key]), [channels, enabledChannels]);
 
@@ -825,7 +705,7 @@ export default function SupplierPostLivePublisherPage() {
                 </Btn>
               </div>
 
-              <Btn tone="neutral" onClick={() => push("Preview replay page", "info")} left={<ExternalLink className="h-4 w-4" />}>
+              <Btn tone="neutral" onClick={() => push("Preview replay page (demo)", "info")} left={<ExternalLink className="h-4 w-4" />}>
                 Preview
               </Btn>
 
@@ -852,19 +732,11 @@ export default function SupplierPostLivePublisherPage() {
                       if (executionMode === "creator_hosted") {
                         setSupplierApproved(true);
                         setCreatorPublishRequested(true);
+                        // demo: creator publishes shortly after
+                        await new Promise((r) => setTimeout(r, 350));
                       }
 
-                      const publishedReplay = await sellerBackendApi.publishLiveReplay(replayId, {
-                        title: session.title,
-                        replayUrl: session.replayUrl,
-                        coverUrl: session.coverUrl,
-                        allowComments,
-                        showProductStrip,
-                        clips,
-                        publishedAt: schedulePublish ? publishAt : new Date().toISOString(),
-                      });
-
-                      setPublished(Boolean(publishedReplay.published));
+                      setPublished(true);
                     },
                     { successMessage: adminReviewRequired ? "Replay approved and published" : "Replay published" }
                   )
@@ -915,7 +787,7 @@ export default function SupplierPostLivePublisherPage() {
                       >
                         Copy
                       </Btn>
-                      <Btn tone="ghost" onClick={() => push("Open replay", "info")} left={<ExternalLink className="h-4 w-4" />}>
+                      <Btn tone="ghost" onClick={() => push("Open replay (demo)", "info")} left={<ExternalLink className="h-4 w-4" />}>
                         Open
                       </Btn>
                     </div>
@@ -986,7 +858,7 @@ export default function SupplierPostLivePublisherPage() {
                               tone="ghost"
                               onClick={() => {
                                 setCreatorPublishRequested(true);
-                                push("Creator publish requested", "success");
+                                push("Creator publish requested (demo)", "success");
                               }}
                               left={<Send className="h-4 w-4" />}
                             >
@@ -1032,7 +904,7 @@ export default function SupplierPostLivePublisherPage() {
                                 setSubmittedToAdmin(true);
                                 setAdminRejected(false);
                                 setAdminApproved(false);
-                                push("Submitted to Admin", "success");
+                                push("Submitted to Admin (demo)", "success");
                               }}
                               left={<Send className="h-4 w-4" />}
                             >
@@ -1043,7 +915,7 @@ export default function SupplierPostLivePublisherPage() {
                               onClick={() => {
                                 setAdminApproved(true);
                                 setAdminRejected(false);
-                                push("Admin approved", "success");
+                                push("Admin approved (demo)", "success");
                               }}
                               left={<CheckCircle2 className="h-4 w-4" />}
                             >
@@ -1054,7 +926,7 @@ export default function SupplierPostLivePublisherPage() {
                               onClick={() => {
                                 setAdminRejected(true);
                                 setAdminApproved(false);
-                                push("Admin rejected", "warn");
+                                push("Admin rejected (demo)", "warn");
                               }}
                               left={<AlertTriangle className="h-4 w-4" />}
                             >
@@ -1105,7 +977,7 @@ export default function SupplierPostLivePublisherPage() {
                   </Btn>
                   <Btn
                     tone="ghost"
-                    onClick={() => push("Auto highlights", "info")}
+                    onClick={() => push("Auto highlights (demo)", "info")}
                     left={<Sparkles className="h-4 w-4" />}
                     disabled={!isPro}
                     title={!isPro ? "Pro required" : ""}
@@ -1147,7 +1019,7 @@ export default function SupplierPostLivePublisherPage() {
                           tone="ghost"
                           onClick={() => {
                             setClips((s) => s.map((x) => (x.id === c.id ? { ...x, status: x.status === "Draft" ? "Queued" : x.status } : x)));
-                            push("Queued export", "success");
+                            push("Queued export (demo)", "success");
                           }}
                           left={<Download className="h-4 w-4" />}
                           disabled={c.status !== "Draft"}
@@ -1294,7 +1166,7 @@ export default function SupplierPostLivePublisherPage() {
                   </div>
 
                   <div className="flex items-center justify-end gap-2">
-                    <Btn tone="neutral" onClick={() => push("Preview message", "info")} left={<Phone className="h-4 w-4" />}>
+                    <Btn tone="neutral" onClick={() => push("Preview message (demo)", "info")} left={<Phone className="h-4 w-4" />}>
                       Preview
                     </Btn>
                     <Btn
@@ -1427,7 +1299,7 @@ export default function SupplierPostLivePublisherPage() {
               </div>
 
               <div className="mt-3 flex items-center justify-end gap-2">
-                <Btn tone="ghost" onClick={() => push("Preview booster plan", "info")} left={<Phone className="h-4 w-4" />}>
+                <Btn tone="ghost" onClick={() => push("Preview booster plan (demo)", "info")} left={<Phone className="h-4 w-4" />}>
                   Preview
                 </Btn>
                 <Btn

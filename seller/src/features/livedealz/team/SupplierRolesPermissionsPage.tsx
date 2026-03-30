@@ -210,6 +210,43 @@ function Toggle({ checked, onChange, disabled, label, hint }) {
   );
 }
 
+function SecurityControlToggle({ checked, onChange, disabled, label, hint }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-1.5">
+      <div className="min-w-0 pr-2">
+        <div className="text-sm font-semibold text-slate-900 dark:text-slate-50">{label}</div>
+        {hint ? <div className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{hint}</div> : null}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={cx(
+          "group relative inline-flex h-7 w-[52px] shrink-0 items-center rounded-full border transition-all duration-200 ease-out",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f77f00]/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900",
+          checked
+            ? "border-transparent shadow-[0_8px_20px_rgba(247,127,0,0.28)] hover:brightness-95"
+            : "border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 hover:border-slate-400 dark:hover:border-slate-500",
+          disabled ? "cursor-not-allowed opacity-45 shadow-none hover:brightness-100 hover:border-slate-300 dark:hover:border-slate-600" : "cursor-pointer active:scale-[0.98]"
+        )}
+        style={checked ? { background: ORANGE } : undefined}
+      >
+        <span
+          className={cx(
+            "pointer-events-none absolute left-[3px] grid h-5 w-5 place-items-center rounded-full bg-white shadow-sm ring-1 ring-slate-200/80 transition-all duration-200 ease-out dark:ring-slate-700/80",
+            checked ? "translate-x-[24px] text-[#f77f00]" : "translate-x-0 text-transparent"
+          )}
+        >
+          <Check className="h-3 w-3" />
+        </span>
+      </button>
+    </div>
+  );
+}
+
 const PERM_GROUPS = [
   {
     id: "campaigns",
@@ -1669,8 +1706,8 @@ export default function SupplierRolesPermissionsPreviewCanvas() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-sm font-bold text-slate-900 dark:text-slate-50">Security controls</div>
                 <div className="mt-3 space-y-2">
-                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3">
-                    <Toggle
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
+                    <SecurityControlToggle
                       checked={require2FA}
                       onChange={(v) => {
                         setRequire2FA(v);
@@ -1682,8 +1719,8 @@ export default function SupplierRolesPermissionsPreviewCanvas() {
                     />
                   </div>
 
-                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3">
-                    <Toggle
+                  <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
+                    <SecurityControlToggle
                       checked={allowExternalInvites}
                       onChange={(v) => {
                         setAllowExternalInvites(v);

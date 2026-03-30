@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
-import { sellerBackendApi } from "../../../lib/backendApi";
+import { useNavigate } from "react-router-dom";
 
 /**
  * SupplierTaskBoardPage.jsx
@@ -38,11 +38,101 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  */
 
 const ORANGE = "#f77f00";
+const ROUTES = {
+  assetLibrary: "/mldz/deliverables/asset-library",
+  linksHub: "/mldz/deliverables/links-hub"
+};
 
 // Minimal, dependency-free className combiner.
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
 }
+
+/* ----------------------------- Mock Contracts ----------------------------- */
+
+const CONTRACTS = [
+  {
+    id: "C-901",
+    status: "Active",
+    campaign: "EV Charger Flash Drop",
+    brand: "EV World Store",
+    currency: "UGX",
+    value: 7200000,
+    totalTasks: 6,
+    creator: { name: "Luna Ade", handle: "@lunaade", avatarUrl: "https://i.pravatar.cc/120?img=7" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Live Session (EV charger demo)", done: false },
+      { id: 2, label: "Video Clip (30s highlight)", done: false },
+      { id: 3, label: "Story (countdown + CTA)", done: false },
+      { id: 4, label: "Post (product grid)", done: true }
+    ]
+  },
+  {
+    id: "C-902",
+    status: "Active",
+    campaign: "Back-to-Work Essentials",
+    brand: "Urban Supply",
+    currency: "UGX",
+    value: 5400000,
+    totalTasks: 5,
+    creator: { name: "Chris M.", handle: "@chris.finds", avatarUrl: "https://i.pravatar.cc/120?img=12" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Invite-Only",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Video Clip (unboxing)", done: false },
+      { id: 2, label: "Story (3-item roundup)", done: false },
+      { id: 3, label: "Post (bundle offer)", done: false }
+    ]
+  },
+  {
+    id: "C-903",
+    status: "Active",
+    campaign: "Home Essentials Drop",
+    brand: "HomePro",
+    currency: "UGX",
+    value: 3600000,
+    totalTasks: 4,
+    creator: { name: "(Supplier-hosted)", handle: "@homepro", avatarUrl: "https://i.pravatar.cc/120?img=46" },
+    governance: {
+      hostRole: "Supplier",
+      creatorUsage: "I will NOT use a Creator",
+      collabMode: "(n/a)",
+      approvalMode: "Manual"
+    },
+    deliverables: [
+      { id: 1, label: "Live Session (kitchen bundle)", done: false },
+      { id: 2, label: "Video Clip (best moments)", done: false },
+      { id: 3, label: "Post (bundle pricing)", done: false }
+    ]
+  },
+  {
+    id: "C-904",
+    status: "Terminated",
+    campaign: "Old Campaign (terminated)",
+    brand: "Do Not Show",
+    currency: "UGX",
+    value: 0,
+    totalTasks: 0,
+    creator: { name: "N/A", handle: "@na", avatarUrl: "https://i.pravatar.cc/120?img=20" },
+    governance: {
+      hostRole: "Creator",
+      creatorUsage: "I will use a Creator",
+      collabMode: "Open for Collabs",
+      approvalMode: "Manual"
+    },
+    deliverables: []
+  }
+];
 
 /* ----------------------------- Types / Config ----------------------------- */
 
@@ -53,6 +143,13 @@ const COLUMNS = [
   { id: "approved", label: "Approved" },
   { id: "needs-changes", label: "Needs changes" }
 ];
+
+function columnTone(columnId) {
+  if (columnId === "approved") return "good";
+  if (columnId === "submitted") return "warn";
+  if (columnId === "needs-changes") return "bad";
+  return "neutral";
+}
 
 const TYPE_CONFIG = {
   live: { icon: "📺", label: "Live" },
@@ -68,236 +165,15 @@ const PRIORITY = [
   { k: "Critical", pill: "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-300" }
 ];
 
-const EMPTY_COLUMNS = {
-  todo: [],
-  "in-progress": [],
-  submitted: [],
-  approved: [],
-  "needs-changes": []
-};
-
-function mapTaskStatusToColumn(status) {
-  const normalized = String(status || "").toUpperCase();
-  if (normalized === "IN_PROGRESS") return "in-progress";
-  if (normalized === "IN_REVIEW") return "submitted";
-  if (normalized === "APPROVED" || normalized === "COMPLETED") return "approved";
-  if (normalized === "BLOCKED") return "needs-changes";
-  return "todo";
-}
-
-function mapColumnToTaskStatus(columnId) {
-  if (columnId === "in-progress") return "IN_PROGRESS";
-  if (columnId === "submitted") return "IN_REVIEW";
-  if (columnId === "approved") return "APPROVED";
-  if (columnId === "needs-changes") return "BLOCKED";
-  return "TODO";
-}
-
-function mapPriority(priority) {
-  const normalized = String(priority || "").toUpperCase();
-  if (normalized === "LOW") return "Low";
-  if (normalized === "HIGH") return "High";
-  if (normalized === "URGENT") return "Critical";
-  return "Normal";
-}
-
-function serializeAttachmentSize(sizeBytes) {
-  if (!sizeBytes) return "1MB";
-  return `${Math.max(1, Math.round(Number(sizeBytes || 0) / (1024 * 1024)))}MB`;
-}
-
-function extensionFromName(name) {
-  const match = String(name || "").match(/\.([a-z0-9]{1,12})$/i);
-  return match ? match[1].toLowerCase() : undefined;
-}
-
-function inferUploadKind(file) {
-  const mime = String(file?.type || "").toLowerCase();
-  if (mime.startsWith("image/")) return "image";
-  if (mime.startsWith("video/")) return "video";
-  if (
-    mime === "application/pdf" ||
-    mime.startsWith("text/") ||
-    mime.includes("msword") ||
-    mime.includes("officedocument") ||
-    mime.includes("spreadsheet") ||
-    mime.includes("presentation")
-  ) {
-    return "document";
-  }
-  return "other";
-}
-
-async function readFileAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    try {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-      reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
-      reader.readAsDataURL(file);
-    } catch (error) {
-      reject(error);
-    }
-  });
-}
-
-function inferAttachmentPreviewKind(file) {
-  const url = String(file?.url || "").toLowerCase();
-  const name = String(file?.name || "").toLowerCase();
-  const kind = String(file?.kind || "").toLowerCase();
-  if (kind === "image" || /\.(png|jpe?g|gif|webp|svg)($|\?)/i.test(url) || /\.(png|jpe?g|gif|webp|svg)$/i.test(name)) {
-    return "image";
-  }
-  if (kind === "video" || /\.(mp4|webm|mov|m4v|ogg)($|\?)/i.test(url) || /\.(mp4|webm|mov|m4v|ogg)$/i.test(name)) {
-    return "video";
-  }
-  if (kind === "document" && (/\.pdf($|\?)/i.test(url) || /\.pdf$/i.test(name))) {
-    return "pdf";
-  }
-  return kind === "document" ? "document" : null;
-}
-
-function TaskAttachmentPreview({ file }) {
-  if (!file?.url) return null;
-  const previewKind = inferAttachmentPreviewKind(file);
-
-  if (previewKind === "image") {
-    return <img src={file.url} alt={file.name} className="mt-2 h-40 w-full rounded-lg object-cover border border-slate-200 dark:border-slate-800" />;
-  }
-
-  if (previewKind === "video") {
-    return (
-      <video
-        src={file.url}
-        controls
-        playsInline
-        className="mt-2 h-48 w-full rounded-lg bg-black border border-slate-200 dark:border-slate-800"
-      />
-    );
-  }
-
-  if (previewKind === "pdf") {
-    return (
-      <iframe
-        src={file.url}
-        title={file.name}
-        className="mt-2 h-64 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white"
-      />
-    );
-  }
-
-  if (previewKind === "document") {
-    return (
-      <div className="mt-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-600 dark:text-slate-300">
-        Document attached. Use `Open` to view it.
-      </div>
-    );
-  }
-
-  return null;
-}
-
-function normalizeTaskRecord(task) {
-  const contract = task?.contract && typeof task.contract === "object" ? task.contract : {};
-  const campaign = task?.campaign && typeof task.campaign === "object" ? task.campaign : {};
-  const metadata = task?.metadata && typeof task.metadata === "object" ? task.metadata : {};
-  const dueAt = task?.dueAt ? new Date(task.dueAt) : null;
-  const dueDaysFromNow = dueAt ? daysFromNowForYMD(toYMD(dueAt)) : 0;
-  const columnId = mapTaskStatusToColumn(task?.status);
-  const normalizedAttachments = Array.isArray(task?.attachments)
-    ? task.attachments.map((attachment) => ({
-        id: String(attachment?.id || ""),
-        name: String(attachment?.name || "attachment"),
-        size: serializeAttachmentSize(attachment?.sizeBytes),
-        sizeLabel: serializeAttachmentSize(attachment?.sizeBytes),
-        url: String(attachment?.url || ""),
-        kind: String(attachment?.kind || "file"),
-      }))
-    : [];
+// Helper to get deterministic due date for demo based on a seed
+const getDeterministicDue = (seed) => {
+  // Range: -2 to 7 days
+  const days = (seed % 10) - 2;
   return {
-    id: String(task?.id || ""),
-    title: String(task?.title || "Untitled task"),
-    campaign: String(campaign?.title || contract?.campaign || contract?.campaignName || "Campaign"),
-    brand: String(contract?.brand || contract?.sellerName || campaign?.sellerName || "Seller workspace"),
-    brandInitials: brandInitials(contract?.brand || contract?.sellerName || campaign?.sellerName || "Seller"),
-    seller: String(task?.assignee?.handle || contract?.creatorHandle || campaign?.creatorHandle || "@creator"),
-    sellerInitials: initialsFromHandle(task?.assignee?.handle || contract?.creatorHandle || campaign?.creatorHandle || "@creator"),
-    type: String(metadata?.type || "post"),
-    dueLabel:
-      columnId === "submitted"
-        ? "Submitted"
-        : columnId === "approved"
-          ? "Approved"
-          : columnId === "needs-changes"
-            ? "Changes requested"
-            : dueAt
-              ? dueLabelFromDays(dueDaysFromNow)
-              : "No due date",
-    dueDaysFromNow,
-    earnings: Number(metadata?.estimatedValue || contract?.value || 0),
-    currency: String(contract?.currency || metadata?.currency || "USD"),
-    overdue: Boolean(dueAt && dueDaysFromNow < 0 && !["submitted", "approved", "needs-changes"].includes(columnId)),
-    hostRole: String(contract?.governance?.hostRole || campaign?.metadata?.hostRole || metadata?.hostRole || "Creator"),
-    creatorUsage: String(contract?.governance?.creatorUsage || campaign?.metadata?.creatorUsageDecision || metadata?.creatorUsage || "I will use a Creator"),
-    collabMode: String(contract?.governance?.collabMode || campaign?.metadata?.collabMode || metadata?.collabMode || "Open for Collabs"),
-    approvalMode: String(contract?.governance?.approvalMode || campaign?.metadata?.approvalMode || metadata?.approvalMode || "Manual"),
-    submission: {
-      status:
-        columnId === "approved"
-          ? "Approved"
-          : columnId === "submitted"
-            ? "Submitted"
-            : columnId === "needs-changes"
-              ? "Needs changes"
-              : "In progress",
-      link: String(metadata?.contentLink || metadata?.submissionLink || task?.attachments?.[0]?.url || ""),
-      files: normalizedAttachments
-    },
-    comments: Array.isArray(task?.comments)
-      ? task.comments.map((comment) => ({
-          id: String(comment?.id || ""),
-          from: comment?.author?.handle ? "creator" : "supplier",
-          name: String(comment?.author?.name || "You"),
-          body: String(comment?.body || ""),
-          time: comment?.createdAt ? new Date(comment.createdAt).toLocaleString() : "Now"
-        }))
-      : [],
-    attachments: normalizedAttachments,
-    contractId: String(task?.contractId || contract?.id || ""),
-    campaignId: String(task?.campaignId || campaign?.id || ""),
-    assigneeUserId: String(task?.assigneeUserId || ""),
-    rawStatus: String(task?.status || "TODO"),
-    meta: {
-      priority: mapPriority(task?.priority),
-      checklist: Array.isArray(metadata?.checklist) ? metadata.checklist : [],
-      dependencies: Array.isArray(metadata?.dependencies) ? metadata.dependencies : [],
-      watchers: Array.isArray(metadata?.watchers) ? metadata.watchers : [],
-      reminders: String(metadata?.reminder || "6h"),
-      requireAdminReview: Boolean(metadata?.requireAdminReview),
-      description: String(task?.description || metadata?.description || ""),
-      scope: String(metadata?.scope || (task?.contractId ? "Linked" : "Internal")),
-      dueDate: dueAt ? toYMD(dueAt) : "",
-      dueTime: dueAt ? dueAt.toTimeString().slice(0, 5) : "18:00",
-      refLinks: Array.isArray(metadata?.refLinks) ? metadata.refLinks : [],
-      contentLink: String(metadata?.contentLink || ""),
-    }
+    days,
+    label: days === 0 ? "Today" : days === 1 ? "Tomorrow" : days < 0 ? "Overdue" : `In ${days} days`
   };
-}
-
-function buildColumnsFromTasks(tasks) {
-  const next = {
-    todo: [],
-    "in-progress": [],
-    submitted: [],
-    approved: [],
-    "needs-changes": []
-  };
-  tasks.forEach((task) => {
-    const columnId = mapTaskStatusToColumn(task?.rawStatus || task?.status);
-    next[columnId].push(task);
-  });
-  return next;
-}
+};
 
 // Simple AI time estimate based on deliverable type
 function estimateTimeMinutes(task) {
@@ -504,9 +380,99 @@ function Toast({ text, onClose }) {
 /* ----------------------------- Main Page ----------------------------- */
 
 export default function SupplierTaskBoardPage() {
-  const [contracts, setContracts] = useState<Array<Record<string, any>>>([]);
-  const [columns, setColumns] = useState(EMPTY_COLUMNS);
-  const [loadError, setLoadError] = useState(null);
+  // 1) Derive all tasks from contracts
+  const allDerivedTasks = useMemo(() => {
+    const tasks = [];
+
+    CONTRACTS.forEach((contract) => {
+      if (contract.status === "Terminated") return;
+
+      (contract.deliverables || []).forEach((d) => {
+        // Map type
+        let tType = "post";
+        const low = String(d.label || "").toLowerCase();
+        if (low.includes("live")) tType = "live";
+        else if (low.includes("video") || low.includes("clip")) tType = "vod";
+        else if (low.includes("story")) tType = "story";
+
+        // Map due date (deterministic)
+        const seed = String(contract.id).charCodeAt(String(contract.id).length - 1) + d.id * 7;
+        const dueInfo = getDeterministicDue(seed);
+
+        const creatorInitials = initialsFromHandle(contract.creator?.handle);
+        const supplierInitials = brandInitials(contract.brand);
+
+        const earnings = contract.totalTasks ? Math.round(contract.value / contract.totalTasks) : 0;
+
+        tasks.push({
+          id: `${contract.id}-${d.id}`,
+          title: d.label,
+          campaign: contract.campaign,
+          brand: contract.brand,
+          brandInitials: supplierInitials,
+          // Keep original property names for layout mirroring
+          seller: contract.creator?.handle || "@creator",
+          sellerInitials: creatorInitials,
+          type: tType,
+          dueLabel: dueInfo.label,
+          dueDaysFromNow: dueInfo.days,
+          earnings,
+          currency: contract.currency,
+          overdue: !d.done && dueInfo.days < 0,
+
+          // Supplier governance
+          hostRole: contract.governance?.hostRole || "Creator",
+          creatorUsage: contract.governance?.creatorUsage || "I will use a Creator",
+          collabMode: contract.governance?.collabMode || "Open for Collabs",
+          approvalMode: contract.governance?.approvalMode || "Manual",
+
+          // Submission mocks
+          submission: {
+            status: d.done ? "Approved" : "In progress",
+            link: `https://drive.example.com/${encodeURIComponent(contract.id)}/${d.id}`,
+            files: [
+              { name: `${tType}_draft_${d.id}.mp4`, size: "48MB" },
+              { name: `caption_${d.id}.txt`, size: "2KB" }
+            ]
+          },
+
+          // extra metadata used by New Task drawer (safe to ignore elsewhere)
+          meta: {
+            priority: "Normal",
+            checklist: [],
+            dependencies: [],
+            watchers: [],
+            reminders: "6h",
+            requireAdminReview: true
+          }
+        });
+      });
+    });
+
+    return tasks;
+  }, []);
+
+  // 2) Distribute into columns (mirrors creator logic)
+  const [columns, setColumns] = useState(() => {
+    const cols = {
+      todo: [],
+      "in-progress": [],
+      submitted: [],
+      approved: [],
+      "needs-changes": []
+    };
+
+    allDerivedTasks.forEach((task, i) => {
+      const mod = i % 5;
+      if (mod === 0) cols.todo.push(task);
+      else if (mod === 1) cols["in-progress"].push(task);
+      else if (mod === 2) cols.submitted.push(task);
+      else if (mod === 3) cols.approved.push(task);
+      else cols["needs-changes"].push(task);
+    });
+
+    return cols;
+  });
 
   const [dragging, setDragging] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
@@ -516,35 +482,30 @@ export default function SupplierTaskBoardPage() {
   const [contentLink, setContentLink] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState([]);
 
-  const [comments, setComments] = useState<Array<Record<string, any>>>([]);
+  const [comments, setComments] = useState([
+    {
+      id: 1,
+      from: "creator",
+      name: "@lunaade",
+      body: "I added the ingredient highlight in the first 30 seconds as requested.",
+      time: "Yesterday"
+    },
+    {
+      id: 2,
+      from: "supplier",
+      name: "You",
+      body: "Looks good. Please tighten the hook and add price overlay at 00:05.",
+      time: "Yesterday"
+    }
+  ]);
   const [commentDraft, setCommentDraft] = useState("");
 
   const [toast, setToast] = useState(null);
+  const navigate = useNavigate();
+  const [viewMode, setViewMode] = useState("list");
 
   // ✅ New Task drawer state
   const [newTaskOpen, setNewTaskOpen] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    void Promise.all([sellerBackendApi.getCollaborationContracts(), sellerBackendApi.getCollaborationTasks()])
-      .then(([contractRecords, taskRecords]) => {
-        if (cancelled) return;
-        const nextContracts = Array.isArray(contractRecords) ? contractRecords : [];
-        const normalizedTasks = Array.isArray(taskRecords) ? taskRecords.map(normalizeTaskRecord) : [];
-        setContracts(nextContracts);
-        setColumns(buildColumnsFromTasks(normalizedTasks));
-        setLoadError(null);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLoadError("Task board data is unavailable from the backend right now.");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const taskToColumn = useMemo(() => {
     const map = new Map();
@@ -558,6 +519,30 @@ export default function SupplierTaskBoardPage() {
     return Object.values(columns).flat();
   }, [columns]);
 
+  const listRows = useMemo(() => {
+    const rows = Object.entries(columns).flatMap(([columnId, tasks]) =>
+      (tasks || []).map((task) => ({
+        task,
+        columnId,
+        columnLabel: COLUMNS.find((col) => col.id === columnId)?.label || columnId
+      }))
+    );
+
+    rows.sort((a, b) => {
+      if (a.task.overdue && !b.task.overdue) return -1;
+      if (!a.task.overdue && b.task.overdue) return 1;
+      const dueDiff = Number(a.task.dueDaysFromNow || 0) - Number(b.task.dueDaysFromNow || 0);
+      if (dueDiff !== 0) return dueDiff;
+      return String(a.task.title || "").localeCompare(String(b.task.title || ""));
+    });
+
+    return rows;
+  }, [columns]);
+
+  function safeNav(url) {
+    navigate(url);
+  }
+
   const handleDragStart = (taskId, fromColumn) => {
     setDragging({ id: taskId, fromColumn });
   };
@@ -566,43 +551,33 @@ export default function SupplierTaskBoardPage() {
     e.preventDefault();
   };
 
-  const replaceTask = (nextTask) => {
-    setColumns((prev) => {
-      const next = {
-        todo: prev.todo.filter((task) => task.id !== nextTask.id),
-        "in-progress": prev["in-progress"].filter((task) => task.id !== nextTask.id),
-        submitted: prev.submitted.filter((task) => task.id !== nextTask.id),
-        approved: prev.approved.filter((task) => task.id !== nextTask.id),
-        "needs-changes": prev["needs-changes"].filter((task) => task.id !== nextTask.id)
-      };
-      const targetColumn = mapTaskStatusToColumn(nextTask.rawStatus || nextTask.status);
-      next[targetColumn] = [...next[targetColumn], nextTask];
-      return next;
-    });
-    setSelectedTask((prev) => (prev?.id === nextTask.id ? nextTask : prev));
-  };
-
   const moveTask = (taskId, toColumn) => {
     const fromColumn = taskToColumn.get(taskId);
     if (!fromColumn || fromColumn === toColumn) return;
-    const task = allTasksFlat.find((entry) => entry.id === taskId);
-    if (!task) return;
-    const metadata = {
-      ...(task.meta || {}),
-      contentLink: contentLink || task?.submission?.link || "",
-      reviewNotes: uploadNote || ""
-    };
 
-    void sellerBackendApi
-      .patchCollaborationTask(taskId, {
-        status: mapColumnToTaskStatus(toColumn),
-        metadata
-      })
-      .then((record) => {
-        replaceTask(normalizeTaskRecord(record));
-        setToast(`Moved to “${COLUMNS.find((c) => c.id === toColumn)?.label || toColumn}”`);
-      })
-      .catch(() => undefined);
+    setColumns((prev) => {
+      const fromTasks = prev[fromColumn] || [];
+      const toTasks = prev[toColumn] || [];
+      const task = fromTasks.find((t) => t.id === taskId);
+      if (!task) return prev;
+
+      const updatedTask = { ...task };
+      if (toColumn === "submitted" || toColumn === "approved") {
+        updatedTask.overdue = false;
+        updatedTask.dueLabel = toColumn === "submitted" ? "Submitted" : "Approved";
+      } else if (toColumn === "needs-changes") {
+        updatedTask.dueLabel = "Changes requested";
+        updatedTask.overdue = false;
+      }
+
+      return {
+        ...prev,
+        [fromColumn]: fromTasks.filter((t) => t.id !== taskId),
+        [toColumn]: [...toTasks, updatedTask]
+      };
+    });
+
+    setToast(`Moved to “${COLUMNS.find((c) => c.id === toColumn)?.label || toColumn}”`);
   };
 
   const handleDrop = (toColumn) => {
@@ -621,79 +596,31 @@ export default function SupplierTaskBoardPage() {
 
   const handleCardClick = (task) => {
     setSelectedTask(task);
-    setUploadNote(task?.meta?.reviewNotes || "");
+    setUploadNote("");
     setContentLink(task?.submission?.link || "");
-    setUploadedFiles(task?.attachments || []);
-    setComments(task?.comments || []);
+    setUploadedFiles([]);
   };
 
   const handleFileUpload = (e) => {
-    if (!selectedTask || !e.target.files || e.target.files.length === 0) return;
-    const files = Array.from(e.target.files || []);
-    void Promise.all(
-      files.map(async (file) => {
-        const uploadKind = inferUploadKind(file);
-        const uploaded = await sellerBackendApi.uploadMediaFile({
-          name: file.name,
-          dataUrl: await readFileAsDataUrl(file),
-          kind: uploadKind,
-          mimeType: file.type || undefined,
-          sizeBytes: file.size,
-          extension: extensionFromName(file.name),
-          purpose: "task_attachment",
-          isPublic: true,
-          visibility: "PUBLIC",
-          metadata: {
-            taskId: selectedTask.id,
-            uploadedFrom: "supplier-task-board"
-          }
-        });
-
-        return sellerBackendApi.createCollaborationTaskAttachment(selectedTask.id, {
-          name: file.name,
-          kind: String(uploaded.kind || uploadKind),
-          mimeType: uploaded.mimeType || file.type || "application/octet-stream",
-          sizeBytes: Number(uploaded.sizeBytes || file.size || 1),
-          extension: uploaded.extension || extensionFromName(file.name),
-          storageProvider: uploaded.storageProvider,
-          storageKey: uploaded.storageKey,
-          url: String(uploaded.publicUrl || uploaded.url || contentLink || ""),
-          metadata: {
-            mediaAssetId: uploaded.id,
-            uploadedFrom: "supplier-task-board"
-          }
-        });
-      })
-    )
-      .then(() => sellerBackendApi.getCollaborationTask(selectedTask.id))
-      .then((record) => {
-        const nextTask = normalizeTaskRecord(record);
-        replaceTask(nextTask);
-        setUploadedFiles(nextTask.attachments || []);
-      })
-      .catch((error) => {
-        setToast(error instanceof Error ? error.message : "Unable to attach file.");
-      });
+    if (e.target.files && e.target.files.length > 0) {
+      setUploadedFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
+    }
   };
 
   const handleAddComment = () => {
-    if (!selectedTask) return;
     const txt = commentDraft.trim();
     if (!txt) return;
-    void sellerBackendApi
-      .createCollaborationTaskComment(selectedTask.id, {
-        body: txt
-      })
-      .then(() => sellerBackendApi.getCollaborationTask(selectedTask.id))
-      .then((record) => {
-        const nextTask = normalizeTaskRecord(record);
-        replaceTask(nextTask);
-        setComments(nextTask.comments || []);
-        setCommentDraft("");
-      })
-      .catch((error) => {
-        setToast(error instanceof Error ? error.message : "Unable to add comment.");
-      });
+    setComments((prev) => [
+      ...prev,
+      {
+        id: prev.length + 1,
+        from: "supplier",
+        name: "You",
+        body: txt,
+        time: "Now"
+      }
+    ]);
+    setCommentDraft("");
   };
 
   const approveTask = (task) => {
@@ -713,60 +640,23 @@ export default function SupplierTaskBoardPage() {
   };
 
   const addNewTaskToBoard = ({ task, initialColumn, openAfter }) => {
-    const contract = contracts.find((entry) => String(entry.id) === String(task?.meta?.contractId || ""));
-    const assigneeHandle = String(task?.seller || "");
-    const assigneeUserId =
-      assigneeHandle && assigneeHandle === contract?.creatorHandle
-        ? contract?.creatorUserId
-        : null;
+    const col = initialColumn || "todo";
+    setColumns((prev) => ({
+      ...prev,
+      [col]: [...(prev[col] || []), task]
+    }));
 
-    void sellerBackendApi
-      .createCollaborationTask({
-        contractId: task?.meta?.scope === "Linked" ? task?.meta?.contractId || null : null,
-        campaignId: contract?.campaignId || task?.campaignId || null,
-        assigneeUserId,
-        title: task?.title,
-        description: task?.meta?.description || "",
-        priority:
-          task?.meta?.priority === "Low"
-            ? "LOW"
-            : task?.meta?.priority === "High"
-              ? "HIGH"
-              : task?.meta?.priority === "Critical"
-                ? "URGENT"
-                : "MEDIUM",
-        status: mapColumnToTaskStatus(initialColumn || "todo"),
-        dueAt: task?.meta?.dueDate ? `${task.meta.dueDate}T${task.meta.dueTime || "18:00"}:00.000Z` : undefined,
-        metadata: {
-          ...task.meta,
-          type: task.type,
-          estimatedValue: task.earnings,
-          currency: task.currency,
-          hostRole: task.hostRole,
-          creatorUsage: task.creatorUsage,
-          collabMode: task.collabMode,
-          approvalMode: task.approvalMode,
-          contentLink: task?.submission?.link || "",
-          checklist: task?.meta?.checklist || [],
-          dependencies: task?.meta?.dependencies || [],
-          watchers: task?.meta?.watchers || [],
-          refLinks: task?.meta?.refLinks || []
-        }
-      })
-      .then((record) => {
-        const nextTask = normalizeTaskRecord(record);
-        replaceTask(nextTask);
-        setToast(`Task created in “${COLUMNS.find((c) => c.id === (initialColumn || "todo"))?.label || initialColumn}”`);
-        setNewTaskOpen(false);
-        if (openAfter) {
-          setTimeout(() => {
-            handleCardClick(nextTask);
-          }, 0);
-        }
-      })
-      .catch((error) => {
-        setToast(error instanceof Error ? error.message : "Unable to create task.");
-      });
+    setToast(`Task created in “${COLUMNS.find((c) => c.id === col)?.label || col}”`);
+
+    // close drawer
+    setNewTaskOpen(false);
+
+    if (openAfter) {
+      // open details panel
+      setTimeout(() => {
+        handleCardClick(task);
+      }, 0);
+    }
   };
 
   return (
@@ -778,16 +668,10 @@ export default function SupplierTaskBoardPage() {
 
       <PageHeader
         pageTitle="Task Board"
-        badge={
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#f77f00] text-white">
-            <span>📦</span>
-            <span>Kanban view · Deliverables & reviews</span>
-          </span>
-        }
         right={
           <>
-            <Btn tone="neutral" onClick={() => setToast("Open Asset Library")}>Asset Library</Btn>
-            <Btn tone="neutral" onClick={() => setToast("Open Links Hub")}>Links Hub</Btn>
+            <Btn tone="neutral" onClick={() => safeNav(ROUTES.assetLibrary)}>Asset Library</Btn>
+            <Btn tone="neutral" onClick={() => safeNav(ROUTES.linksHub)}>Links Hub</Btn>
             <Btn tone="brand" onClick={() => setNewTaskOpen(true)}>New task</Btn>
           </>
         }
@@ -795,11 +679,6 @@ export default function SupplierTaskBoardPage() {
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
-          {loadError ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-              {loadError}
-            </div>
-          ) : null}
           <div className="flex items-center justify-between text-sm">
             <div>
               <p className="text-xs text-slate-500 dark:text-slate-300">
@@ -807,47 +686,151 @@ export default function SupplierTaskBoardPage() {
                 Supplier notes: approve submitted deliverables, request changes, or submit content when you are hosting.
               </p>
             </div>
-            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-300">
-              <span>Columns: To do · In progress · Submitted · Approved · Needs changes</span>
+            <div className="flex items-center gap-2 text-xs">
+              <div className="hidden md:flex items-center gap-2 text-slate-500 dark:text-slate-300">
+                <span>Columns: To do · In progress · Submitted · Approved · Needs changes</span>
+              </div>
+              <div className="inline-flex items-center rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={cx(
+                    "px-3 py-1 rounded-full text-[11px] font-semibold transition-colors",
+                    viewMode === "list"
+                      ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  )}
+                >
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("board")}
+                  className={cx(
+                    "px-3 py-1 rounded-full text-[11px] font-semibold transition-colors",
+                    viewMode === "board"
+                      ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                      : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  )}
+                >
+                  Board
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Kanban columns - Wrap to next line when row is full */}
-          <section className="flex flex-wrap gap-4 items-start text-sm pb-4 h-full">
-            {COLUMNS.map((col) => (
-              <div
-                key={col.id}
-                className="w-full sm:w-[357px] flex flex-col bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-h-full transition-colors"
-                onDragOver={handleDragOver}
-                onDrop={() => handleDrop(col.id)}
-              >
-                <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-inherit rounded-t-2xl z-10">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-slate-800 dark:text-slate-50">{col.label}</span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">{getColumnTasks(columns, col.id).length}</span>
+          {viewMode === "board" ? (
+            <section className="flex flex-wrap gap-4 items-start text-sm pb-4 h-full">
+              {COLUMNS.map((col) => (
+                <div
+                  key={col.id}
+                  className="w-full sm:w-[357px] flex flex-col bg-gray-50 dark:bg-slate-950 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-h-full transition-colors"
+                  onDragOver={handleDragOver}
+                  onDrop={() => handleDrop(col.id)}
+                >
+                  <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-inherit rounded-t-2xl z-10">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-slate-800 dark:text-slate-50">{col.label}</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-normal">{getColumnTasks(columns, col.id).length}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 px-2 py-2 space-y-2 overflow-y-auto min-h-[150px]">
+                    {getColumnTasks(columns, col.id).map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        selected={selectedTask?.id === task.id}
+                        onDragStart={() => handleDragStart(task.id, col.id)}
+                        onClick={() => handleCardClick(task)}
+                      />
+                    ))}
+
+                    {getColumnTasks(columns, col.id).length === 0 && (
+                      <div className="h-24 flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl m-1">
+                        <p className="text-xs text-slate-400 dark:text-slate-600">Drop here</p>
+                      </div>
+                    )}
                   </div>
                 </div>
-
-                <div className="flex-1 px-2 py-2 space-y-2 overflow-y-auto min-h-[150px]">
-                  {getColumnTasks(columns, col.id).map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      selected={selectedTask?.id === task.id}
-                      onDragStart={() => handleDragStart(task.id, col.id)}
-                      onClick={() => handleCardClick(task)}
-                    />
-                  ))}
-
-                  {getColumnTasks(columns, col.id).length === 0 && (
-                    <div className="h-24 flex items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl m-1">
-                      <p className="text-xs text-slate-400 dark:text-slate-600">Drop here</p>
-                    </div>
-                  )}
-                </div>
+              ))}
+            </section>
+          ) : (
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">Task List View</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">{listRows.length} tasks</div>
               </div>
-            ))}
-          </section>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1080px] text-left">
+                  <thead className="bg-slate-50/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
+                    <tr>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Task</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Status</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Type</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Due</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Payout</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Governance</th>
+                      <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {listRows.map(({ task, columnId, columnLabel }) => {
+                      const typeCfg = TYPE_CONFIG[task.type] || TYPE_CONFIG.post;
+                      return (
+                        <tr
+                          key={task.id}
+                          onClick={() => handleCardClick(task)}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{task.title}</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-300 mt-0.5">{task.campaign} · {task.seller} · {task.brand}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Pill tone={columnTone(columnId)}>{columnLabel}</Pill>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 font-medium">
+                              <span>{typeCfg.icon}</span>
+                              <span>{typeCfg.label}</span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={cx("text-xs text-slate-600 dark:text-slate-300", task.overdue && "text-rose-600 dark:text-rose-300 font-semibold")}>
+                              {task.dueLabel}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                            {task.currency} {Number(task.earnings || 0).toLocaleString()}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1.5">
+                              <Pill tone={task.hostRole === "Supplier" ? "warn" : "good"}>
+                                {task.hostRole === "Supplier" ? "Supplier-hosted" : "Creator-hosted"}
+                              </Pill>
+                              <Pill tone={task.approvalMode === "Manual" ? "warn" : "good"}>Approval: {task.approvalMode}</Pill>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Btn
+                              tone="neutral"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCardClick(task);
+                              }}
+                            >
+                              Open
+                            </Btn>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </div>
       </main>
 
@@ -879,7 +862,7 @@ export default function SupplierTaskBoardPage() {
       <NewTaskDrawer
         open={newTaskOpen}
         onClose={() => setNewTaskOpen(false)}
-        contracts={contracts.filter((c) => c.status !== "Terminated")}
+        contracts={CONTRACTS.filter((c) => c.status !== "Terminated")}
         existingTasks={allTasksFlat}
         onCreate={(payload) => addNewTaskToBoard(payload)}
         setToast={setToast}
@@ -1072,7 +1055,7 @@ function TaskSidePanel({
                 <Btn
                   tone="neutral"
                   onClick={() => {
-                    setToast("Queued for Admin review");
+                    setToast("Queued for Admin review (demo)");
                   }}
                   title="After supplier approval (manual), Admin review follows"
                 >
@@ -1091,8 +1074,8 @@ function TaskSidePanel({
             ) : null}
 
             {/* Always available */}
-            <Btn tone="neutral" onClick={() => setToast("Open campaign")}>Open campaign</Btn>
-            <Btn tone="neutral" onClick={() => setToast("Open contract")}>Open contract</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open campaign (demo)")}>Open campaign</Btn>
+            <Btn tone="neutral" onClick={() => setToast("Open contract (demo)")}>Open contract</Btn>
           </div>
 
           <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -1157,38 +1140,24 @@ function TaskSidePanel({
                   {(task.submission?.files || []).map((f) => (
                     <div
                       key={f.name}
-                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1"
+                      className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="truncate max-w-[220px]">{f.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400">{f.size}</span>
-                          {f.url ? (
-                            <button
-                              type="button"
-                              className="text-[#f77f00] hover:underline text-[11px]"
-                              onClick={() => window.open(f.url, "_blank", "noopener,noreferrer")}
-                            >
-                              Open
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      <TaskAttachmentPreview file={f} />
+                      <span className="truncate max-w-[220px]">{f.name}</span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400">{f.size}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2">
-                <Btn tone="neutral" onClick={() => setToast("Open preview player")}>Preview</Btn>
+                <Btn tone="neutral" onClick={() => setToast("Open preview player (demo)")}>Preview</Btn>
                 <Btn
                   tone="neutral"
                   onClick={() => {
                     try {
                       navigator.clipboard?.writeText(task.submission?.link || "");
                     } catch {}
-                    setToast("Submission link copied");
+                    setToast("Submission link copied (demo)");
                   }}
                 >
                   Copy link
@@ -1197,16 +1166,7 @@ function TaskSidePanel({
             </div>
 
             <div className="border border-dashed border-slate-300 dark:border-slate-700 rounded-lg px-2 py-3 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 mb-1 transition-colors">
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                ref={fileInputRef}
-                onChange={(e) => {
-                  onFileUpload(e);
-                  e.currentTarget.value = "";
-                }}
-              />
+              <input type="file" multiple className="hidden" ref={fileInputRef} onChange={onFileUpload} />
               <p>
                 {supplierIsHost
                   ? "Drag & drop content files here, or click to upload."
@@ -1224,25 +1184,9 @@ function TaskSidePanel({
             {uploadedFiles.length > 0 ? (
               <div className="flex flex-col gap-1 mb-2">
                 {uploadedFiles.map((f, i) => (
-                  <div key={i} className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <div className="truncate max-w-[200px]">{f.name}</div>
-                        <div className="text-slate-500 dark:text-slate-400">{f.sizeLabel || f.size || "Attached"}</div>
-                      </div>
-                      {f.url ? (
-                        <button
-                          type="button"
-                          className="text-[#f77f00] hover:underline"
-                          onClick={() => window.open(f.url, "_blank", "noopener,noreferrer")}
-                        >
-                          Open
-                        </button>
-                      ) : (
-                        <span className="text-emerald-500">Attached</span>
-                      )}
-                    </div>
-                    <TaskAttachmentPreview file={f} />
+                  <div key={i} className="flex items-center justify-between text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                    <span className="truncate max-w-[200px]">{f.name}</span>
+                    <span className="text-emerald-500">Attached</span>
                   </div>
                 ))}
               </div>
@@ -2274,6 +2218,10 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
 
   // estimator returns numbers
   assert(typeof estimateTimeMinutes({ type: "live" }) === "number", "estimateTimeMinutes returns number");
+
+  // due calculation range sanity
+  const d = getDeterministicDue(9);
+  assert(d.days >= -2 && d.days <= 7, "getDeterministicDue is within range");
 
   // due label helper
   assert(dueLabelFromDays(0) === "Today", "dueLabelFromDays Today");

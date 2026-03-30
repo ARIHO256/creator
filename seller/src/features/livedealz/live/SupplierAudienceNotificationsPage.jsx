@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierAudienceNotificationsPage.jsx
@@ -25,7 +24,7 @@ import { sellerBackendApi } from "../../../lib/backendApi";
  *
  * Canvas-safe:
  * - No lucide-react imports. Inline SVG icon set provided.
- * - Backed by persisted live tool config via /api/tools/audience-notifications.
+ * - No backend. Wire scheduling, template packs, and QR generation internally as needed.
  * - TailwindCSS assumed.
  */
 
@@ -222,18 +221,9 @@ function toLocalInputValue(d) {
 }
 
 function fromLocalInputValue(v) {
-  if (!v || typeof v !== "string" || !v.includes("T")) {
-    return new Date();
-  }
   const [datePart, timePart] = v.split("T");
-  if (!datePart || !timePart) {
-    return new Date();
-  }
   const [y, m, d] = datePart.split("-").map((x) => Number(x));
   const [hh, mm] = timePart.split(":").map((x) => Number(x));
-  if ([y, m, d, hh, mm].some((value) => !Number.isFinite(value))) {
-    return new Date();
-  }
   return new Date(y, m - 1, d, hh, mm, 0, 0);
 }
 
@@ -509,52 +499,154 @@ function buildClickToChatLink(channel, args) {
 /* ------------------------------ page ------------------------------ */
 
 export default function SupplierAudienceNotificationsPage() {
-  const toolHydratedRef = useRef(false);
-  const toolAutosaveRef = useRef(null);
-
   // Supplier context (minimal): creator involvement must be decided before activation
   const [creatorInvolvement, setCreatorInvolvement] = useState("use_creator"); // use_creator | supplier_creator | not_sure
 
-  // Tool config
+  // Demo session
   const [plan, setPlan] = useState("Pro");
   const [sessionStatus, setSessionStatus] = useState("Scheduled"); // Draft | Scheduled | Live | Ended
-  const [sessionTitle, setSessionTitle] = useState("");
+  const [sessionTitle] = useState("Autumn Beauty Flash");
 
   // Scheduling inputs
-  const [startLocal, setStartLocal] = useState("");
-  const [endLocal, setEndLocal] = useState("");
+  const [startLocal, setStartLocal] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(18, 0, 0, 0);
+    return toLocalInputValue(d);
+  });
+
+  const [endLocal, setEndLocal] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(19, 0, 0, 0);
+    return toLocalInputValue(d);
+  });
 
   const [bufferMinutes, setBufferMinutes] = useState(15);
   const [waNumber, setWaNumber] = useState("+256 700 000 000");
   const [sessionUrl, setSessionUrl] = useState("https://mylivedealz.com/live/LS-20418");
 
   // Template packs
-  const [templatePacks, setTemplatePacks] = useState([]);
-  const [selectedPackId, setSelectedPackId] = useState("");
-  const selectedPack = useMemo(
-    () =>
-      templatePacks.find((p) => p.id === selectedPackId) ?? {
-        id: "",
-        name: "",
-        version: "",
-        approved: false,
-        channels: [],
-        notes: "",
+  const templatePacks = useMemo(
+    () => [
+      {
+        id: "pack_default_v3",
+        name: "Default Reminders",
+        version: "v3.2",
+        approved: true,
+        channels: ["whatsapp", "telegram", "rcs"],
+        notes: "Short, compliance-safe copy. Works well across Africa & SEA.",
         templates: {
-          initiationPrompt: "",
-          t24h: "",
-          t1h: "",
-          t10m: "",
-          live_now: "",
-          deal_drop: "",
-          replay_ready: "",
+          initiationPrompt:
+            "Tap to get Live Session reminders for {{title}}.\nWe’ll only message you after you start the chat.",
+          t24h: "⏰ Reminder: {{title}} starts soon.\nTap here to join + shop: {{link}}",
+          t1h: "⏳ 1 hour to go: {{title}}\nJoin + shop: {{link}}",
+          t10m: "🔥 10 minutes! {{title}}\nTap to join: {{link}}",
+          live_now: "🔴 We are LIVE: {{title}}\nTap to join: {{link}}",
+          deal_drop: "⚡ Deal drop! New offers are live now.\nTap: {{link}}",
+          replay_ready: "🎬 Replay ready: {{title}}\nWatch + shop: {{link}}",
         },
       },
+      {
+        id: "pack_flash_v5",
+        name: "Flash Sales Pack",
+        version: "v5.0",
+        approved: true,
+        channels: ["whatsapp", "telegram", "line", "viber", "rcs"],
+        notes: "Higher urgency language + deal-drop emphasis.",
+        proOnly: true,
+        templates: {
+          initiationPrompt: "Tap to unlock Flash Deal alerts for {{title}}.\nStart chat to opt in.",
+          t24h: "⚡ Flash Deal soon: {{title}}.\nTap to opt in + join: {{link}}",
+          t1h: "🚀 1 hour: {{title}} starts.\nTap: {{link}}",
+          t10m: "🔥 10 min! Dealz dropping soon.\nJoin: {{link}}",
+          live_now: "🔴 LIVE NOW: {{title}}.\nTap to enter: {{link}}",
+          deal_drop: "💥 Deal Drop: limited stock.\nTap to shop: {{link}}",
+          replay_ready: "🎬 Replay + last chance dealz: {{title}}.\nTap: {{link}}",
+        },
+      },
+      {
+        id: "pack_vip_v2",
+        name: "VIP Tone Pack",
+        version: "v2.4",
+        approved: true,
+        channels: ["whatsapp", "telegram", "line"],
+        notes: "More premium tone, softer urgency, higher trust.",
+        templates: {
+          initiationPrompt:
+            "Tap to receive VIP reminders for {{title}}.\nYou’ll only be messaged after you start the chat.",
+          t24h: "Reminder: {{title}} is coming up.\nTap to join when ready: {{link}}",
+          t1h: "Starting in 1 hour: {{title}}.\nTap to join: {{link}}",
+          t10m: "Starting in 10 minutes: {{title}}.\nTap: {{link}}",
+          live_now: "We’re live: {{title}}.\nTap to join: {{link}}",
+          deal_drop: "Deal drop is live.\nTap to shop: {{link}}",
+          replay_ready: "Replay is ready.\nTap to watch: {{link}}",
+        },
+      },
+    ],
+    []
+  );
+
+  const [selectedPackId, setSelectedPackId] = useState(templatePacks[0].id);
+  const selectedPack = useMemo(
+    () => templatePacks.find((p) => p.id === selectedPackId) ?? templatePacks[0],
     [templatePacks, selectedPackId]
   );
 
   // Channels
-  const [channels, setChannels] = useState([]);
+  const channels = useMemo(
+    () => [
+      {
+        key: "whatsapp",
+        name: "WhatsApp",
+        short: "WA",
+        connected: "Connected",
+        supportsQr: true,
+        supportsButtons: true,
+        note: "24h window rules apply. Uses initiation prompt + in-window reminders only.",
+      },
+      {
+        key: "telegram",
+        name: "Telegram",
+        short: "TG",
+        connected: "Connected",
+        supportsQr: true,
+        supportsButtons: true,
+        note: "Recommended for high engagement and low delivery friction.",
+      },
+      {
+        key: "line",
+        name: "LINE",
+        short: "LINE",
+        connected: "Needs re-auth",
+        supportsQr: true,
+        supportsButtons: true,
+        proOnly: true,
+        note: "Pro: unlock advanced templates and per-channel formatting.",
+      },
+      {
+        key: "viber",
+        name: "Viber",
+        short: "Viber",
+        connected: "Connected",
+        supportsQr: true,
+        supportsButtons: true,
+        proOnly: true,
+        note: "Pro: unlock deep links and rich buttons (where supported).",
+      },
+      {
+        key: "rcs",
+        name: "RCS",
+        short: "RCS",
+        connected: "Connected",
+        supportsQr: false,
+        supportsButtons: false,
+        proOnly: true,
+        note: "Pro: RCS/SMS fallback. Buttons vary by device; keep copy short.",
+      },
+    ],
+    []
+  );
 
   const [enabledChannels, setEnabledChannels] = useState({
     whatsapp: true,
@@ -564,7 +656,21 @@ export default function SupplierAudienceNotificationsPage() {
     rcs: false,
   });
 
-  const [reminders, setReminders] = useState([]);
+  const reminders = useMemo(
+    () => [
+      {
+        key: "t24h",
+        label: "T-24h (WA-adjusted)",
+        description: "Initiation prompt goes live (time computed from WhatsApp 24h window).",
+      },
+      { key: "t1h", label: "T-1h", description: "Reminder message to opted-in users." },
+      { key: "t10m", label: "T-10m", description: "Reminder message to opted-in users." },
+      { key: "live_now", label: "Live Now", description: "Sends when the session starts." },
+      { key: "deal_drop", label: "Deal Drop", description: "Manual or scheduled alert when dealz go live." },
+      { key: "replay_ready", label: "Replay Ready", description: "Sends after replay is published." },
+    ],
+    []
+  );
 
   const [enabledReminders, setEnabledReminders] = useState({
     t24h: true,
@@ -640,103 +746,6 @@ export default function SupplierAudienceNotificationsPage() {
     const t = setTimeout(() => setToast(null), 2200);
     return () => clearTimeout(t);
   }, [toast]);
-
-  useEffect(() => {
-    let active = true;
-
-    void sellerBackendApi
-      .getLiveToolConfig("audience-notifications")
-      .then((payload) => {
-        if (!active) return;
-        const nextTemplatePacks = Array.isArray(payload.templatePacks) ? payload.templatePacks : [];
-        const nextChannels = Array.isArray(payload.channels) ? payload.channels : [];
-        const nextReminders = Array.isArray(payload.reminders) ? payload.reminders : [];
-        setCreatorInvolvement(String(payload.creatorInvolvement ?? "use_creator"));
-        setPlan(String(payload.plan ?? "Pro"));
-        setSessionStatus(String(payload.sessionStatus ?? "Scheduled"));
-        setSessionTitle(String(payload.sessionTitle ?? ""));
-        setStartLocal(String(payload.startLocal ?? ""));
-        setEndLocal(String(payload.endLocal ?? ""));
-        setBufferMinutes(Number(payload.bufferMinutes ?? 15));
-        setWaNumber(String(payload.waNumber ?? ""));
-        setSessionUrl(String(payload.sessionUrl ?? ""));
-        setTemplatePacks(nextTemplatePacks);
-        setSelectedPackId(String(payload.selectedPackId ?? nextTemplatePacks[0]?.id ?? ""));
-        setChannels(nextChannels);
-        setEnabledChannels(
-          payload.enabledChannels && typeof payload.enabledChannels === "object" && !Array.isArray(payload.enabledChannels)
-            ? payload.enabledChannels
-            : {}
-        );
-        setReminders(nextReminders);
-        setEnabledReminders(
-          payload.enabledReminders && typeof payload.enabledReminders === "object" && !Array.isArray(payload.enabledReminders)
-            ? payload.enabledReminders
-            : {}
-        );
-        setReplayDelayMinutes(Number(payload.replayDelayMinutes ?? 20));
-        setDealDropMode(String(payload.dealDropMode ?? "manual"));
-        setDealDropAtOffsetMin(Number(payload.dealDropAtOffsetMin ?? 12));
-        toolHydratedRef.current = true;
-      })
-      .catch(() => {
-        toolHydratedRef.current = true;
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!toolHydratedRef.current) return;
-    if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
-    toolAutosaveRef.current = window.setTimeout(() => {
-      void sellerBackendApi.patchLiveToolConfig("audience-notifications", {
-        creatorInvolvement,
-        plan,
-        sessionStatus,
-        sessionTitle,
-        startLocal,
-        endLocal,
-        bufferMinutes,
-        waNumber,
-        sessionUrl,
-        templatePacks,
-        selectedPackId,
-        channels,
-        enabledChannels,
-        reminders,
-        enabledReminders,
-        replayDelayMinutes,
-        dealDropMode,
-        dealDropAtOffsetMin,
-      }).catch(() => undefined);
-    }, 450);
-
-    return () => {
-      if (toolAutosaveRef.current) window.clearTimeout(toolAutosaveRef.current);
-    };
-  }, [
-    creatorInvolvement,
-    plan,
-    sessionStatus,
-    sessionTitle,
-    startLocal,
-    endLocal,
-    bufferMinutes,
-    waNumber,
-    sessionUrl,
-    templatePacks,
-    selectedPackId,
-    channels,
-    enabledChannels,
-    reminders,
-    enabledReminders,
-    replayDelayMinutes,
-    dealDropMode,
-    dealDropAtOffsetMin,
-  ]);
 
   const toggleChannel = (k, v) => setEnabledChannels((s) => ({ ...s, [k]: v }));
   const enabledChannelList = useMemo(() => channels.filter((c) => enabledChannels[c.key]), [channels, enabledChannels]);
@@ -1767,7 +1776,7 @@ export default function SupplierAudienceNotificationsPage() {
                         <div className="whitespace-pre-wrap text-[13px] font-bold text-slate-800 dark:text-slate-200 leading-relaxed italic">“{initiationPromptText}”</div>
                         <div
                           className="rounded-xl bg-orange-500 p-4 ring-1 ring-orange-600 shadow-lg shadow-orange-500/20 text-center transition hover:brightness-105 cursor-pointer"
-                          onClick={() => setToast("Prompt tapped")}
+                          onClick={() => setToast("Prompt tapped (demo)")}
                         >
                           <div className="flex items-center justify-center gap-2 text-sm font-black text-white uppercase tracking-widest">
                             <Link2 className="h-4 w-4" />

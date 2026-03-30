@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { sellerBackendApi } from "../../../lib/backendApi";
-
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/team/SupplierCrewManagerPage").catch(() => undefined);
-
 /**
  * SupplierCrewManagerPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)
@@ -1520,7 +1515,7 @@ export default function SupplierCrewManagerPage() {
               </div>
               {/* TODO(nav): Wire this button to the dedicated advanced roster filters surface once its route is finalized.
                   Consider: open an in-page filters drawer, or navigate to the team filters page if/when introduced. */}
-              <SoftButton onClick={() => push("Advanced filters")}
+              <SoftButton onClick={() => push("Advanced filters (demo)")}
               >
                 <Search className="h-4 w-4" />
                 Filter

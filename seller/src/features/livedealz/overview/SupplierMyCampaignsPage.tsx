@@ -1,21 +1,19 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /**
- * SupplierMyCampaignsPage.jsx (v3)
+ * SupplierMyCampaignsPage.tsx (v4)
  * Controlled Mirroring Mode (Creator → Supplier)
  * ------------------------------------------------
  * ✅ Requested upgrades (this revision):
- * 1) Final step button: “Submit for Approval” (Admin must approve campaign before it becomes active).
- * 2) “Add from Catalog” becomes contextual:
- *    - Show “Add Products”, “Add Services”, or BOTH depending on promoted items scope.
- *    - Clicking opens a Catalog Page experience with:
- *      • Avatar photo
- *      • Item details
- *      • Quantity planned for campaign
- *      • Current price
- *      • Discounted price OR % discount OR amount discount (supported)
- * 3) Campaign creation includes Promo Type + Preferred Promo Arrangement.
+ * 1) Added a top-level “My Giveaways” workspace from My Campaigns with a complete giveaway list / issue table.
+ * 2) Campaign Builder now separates Products / Services into an independent step.
+ * 3) Campaign Builder now includes a dedicated Giveaways step immediately after Products / Services.
+ * 4) Suppliers can add giveaway items from featured campaign items, supplier inventory, or totally external giveaway items.
+ * 5) Giveaway visuals are restricted to approved Asset Library entries only.
+ * 6) Supplier-owned giveaway stock remains the source of truth for Creator / Supplier Live Builder giveaway selectors.
  *
  * Notes:
  * - This file is canvas-safe (no router imports). `go()` simulates navigation.
@@ -25,11 +23,18 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  */
 
 const ORANGE = "#f77f00";
+const MY_GIVEAWAYS_OUTLINE_CLASS = "!border-[#f77f00] dark:!border-[#f77f00] hover:!bg-orange-50 dark:hover:!bg-orange-950/20";
 
 /* ------------------------- helpers ------------------------- */
 
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
+}
+
+function toTitleCaseWords(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function pad2(n) {
@@ -55,6 +60,31 @@ function computeEndDate(startYMD, durationDays) {
   const dur = Number(durationDays || 1);
   if (!startYMD) return "";
   return addDaysUTC(startYMD, Math.max(0, dur - 1));
+}
+
+function formatDateDMY(value) {
+  if (!value) return "—";
+  const raw = String(value).trim();
+  const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+  const dmy = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (dmy) return raw;
+  const dt = new Date(raw);
+  if (!Number.isNaN(dt.getTime())) return `${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}/${dt.getFullYear()}`;
+  return raw;
+}
+
+function campaignLocationValue(entity) {
+  return entity?.locationValue || entity?.region || "—";
+}
+
+function campaignLocationType(entity) {
+  return entity?.locationType || "Region";
+}
+
+function campaignLocationLabel(entity, includeType = false) {
+  const value = campaignLocationValue(entity);
+  return includeType ? `${campaignLocationType(entity)}: ${value}` : value;
 }
 
 function money(currency, value) {
@@ -193,7 +223,7 @@ function ToastStack({ toasts }) {
 
 function PageHeader({ title, badge, actions }) {
   return (
-    <header className="sticky top-0 z-40 w-full bg-white/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
+    <header className="w-full bg-white/80 dark:bg-slate-950/70 backdrop-blur border-b border-slate-200/60 dark:border-slate-800">
       <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 py-3 flex items-start md:items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-slate-50 truncate">{title}</div>
@@ -284,7 +314,35 @@ function Select({ value, onChange, children, className = "" }) {
   );
 }
 
-function Drawer({ open, title, subtitle, onClose, children, footer }) {
+
+function FieldShell({ label, hint, children }) {
+  return (
+    <label className="block">
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{label}</span>
+        {hint ? <span className="text-[11px] text-slate-400 dark:text-slate-500">{hint}</span> : null}
+      </div>
+      {children}
+    </label>
+  );
+}
+
+function TextArea({ value, onChange, placeholder, className = "", rows = 4 }) {
+  return (
+    <textarea
+      value={value}
+      onChange={onChange}
+      rows={rows}
+      placeholder={placeholder}
+      className={cx(
+        "w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400",
+        className
+      )}
+    />
+  );
+}
+
+function Drawer({ open, title, subtitle, onClose, children, footer, widthClass = "sm:w-[560px]" }) {
   return (
     <div className={cx("fixed inset-0 z-[70]", open ? "" : "pointer-events-none")}>
       <div
@@ -296,7 +354,8 @@ function Drawer({ open, title, subtitle, onClose, children, footer }) {
       />
       <div
         className={cx(
-          "absolute top-0 right-0 h-full w-full sm:w-[560px] bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl transition-transform",
+          "absolute top-0 right-0 h-full w-full bg-white dark:bg-slate-950 border-l border-slate-200 dark:border-slate-800 shadow-2xl transition-transform",
+          widthClass,
           open ? "translate-x-0" : "translate-x-full"
         )}
       >
@@ -324,8 +383,8 @@ function Drawer({ open, title, subtitle, onClose, children, footer }) {
 
 function FullscreenModal({ open, title, subtitle, onClose, children, footer }) {
   if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[85] bg-white dark:bg-slate-950 flex flex-col">
+  const modalNode = (
+    <div className="fixed inset-0 z-[120] bg-white dark:bg-slate-950 flex flex-col">
       <div className="h-16 shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/70 backdrop-blur flex items-center justify-between px-3 sm:px-4 md:px-6">
         <div className="min-w-0">
           <div className="text-sm sm:text-base font-extrabold truncate">{title}</div>
@@ -343,6 +402,8 @@ function FullscreenModal({ open, title, subtitle, onClose, children, footer }) {
       ) : null}
     </div>
   );
+  if (typeof document !== "undefined") return createPortal(modalNode, document.body);
+  return modalNode;
 }
 
 function RadioCard({ active, title, desc, onClick, badge }) {
@@ -381,6 +442,14 @@ const OFFER_SCOPES = [
   { k: "Services", label: "Services" },
   { k: "Both", label: "Products & Services" }
 ];
+
+const CAMPAIGN_LOCATION_TYPES = ["Region", "Country"];
+const CAMPAIGN_REGION_OPTIONS = ["East Africa", "West Africa", "Southern Africa", "North Africa", "Central Africa", "Africa / Asia", "Global"];
+const CAMPAIGN_COUNTRY_OPTIONS = ["Uganda", "Kenya", "Tanzania", "Rwanda", "Nigeria", "Ghana", "South Africa", "United Arab Emirates"];
+
+function campaignLocationOptions(type) {
+  return type === "Country" ? CAMPAIGN_COUNTRY_OPTIONS : CAMPAIGN_REGION_OPTIONS;
+}
 
 const PROMO_TYPES = [
   { k: "Discount", label: "Discount" },
@@ -461,8 +530,8 @@ function inferLifecycleText(c) {
 }
 
 function approvalText(c) {
-  if (c.creatorUsageDecision === "I will use a Creator") return c.approvalMode === "Manual" ? "Manual approval" : "Auto approval";
-  return c.approvalMode === "Manual" ? "Internal review" : "Direct to Admin";
+  if (c.creatorUsageDecision !== "I will use a Creator") return "";
+  return c.approvalMode === "Manual" ? "Manual approval" : "Auto approval";
 }
 
 function approvalStatusPill(approvalStatus) {
@@ -470,6 +539,25 @@ function approvalStatusPill(approvalStatus) {
   if (approvalStatus === "Rejected") return { tone: "bad", label: "Rejected" };
   if (approvalStatus === "Approved") return { tone: "good", label: "Approved" };
   return { tone: "neutral", label: "Not submitted" };
+}
+
+const TERMINATION_REASON_OPTIONS = [
+  { value: "for-cause", label: "For cause (breach, fraud, missed deadlines)" },
+  { value: "without-cause", label: "Without cause" },
+  { value: "mutual", label: "Mutual agreement" },
+  { value: "performance", label: "Performance concerns" },
+  { value: "budget", label: "Budget or strategic change" }
+];
+
+function terminationReasonLabel(reason) {
+  return TERMINATION_REASON_OPTIONS.find((option) => option.value === reason)?.label || "Unspecified reason";
+}
+
+function campaignHasActiveContracts(campaign) {
+  if (!campaign) return false;
+  const contractCount = Number(campaign.contractCount) || 0;
+  if (contractCount < 1) return false;
+  return !["Draft", "Completed", "Terminated"].includes(campaign.stage);
 }
 
 
@@ -732,6 +820,250 @@ function buildCreatorGiveawayPayload(campaign, item) {
 }
 
 
+
+
+function giveawayIssueList(campaign, item) {
+  const issues = [];
+  if (!item?.giveaway?.enabled) issues.push({ id: 'disabled', label: 'Disabled', tone: 'neutral' });
+  if (Number(item?.giveaway?.total || 0) < Number(item?.giveaway?.used || 0) + Number(item?.giveaway?.allocated || 0)) {
+    issues.push({ id: 'over', label: 'Over-allocated', tone: 'bad' });
+  } else if (item?.giveaway?.enabled && giveawayAvailability(item) <= Number(item?.giveaway?.lowThreshold || 0)) {
+    issues.push({ id: 'low', label: 'Low availability', tone: 'warn' });
+  }
+  if (item?.isGiveawayExtra && !item?.assetId) issues.push({ id: 'asset', label: 'Needs approved asset', tone: 'warn' });
+  if (campaign?.approvalStatus !== 'Approved') issues.push({ id: 'approval', label: 'Campaign not yet approved', tone: 'neutral' });
+  return issues;
+}
+
+function flattenGiveawayRecords(campaigns) {
+  return (campaigns || []).flatMap((campaign) =>
+    getCampaignGiveawayNodes(campaign).map((item) => ({
+      ...item,
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      campaignStage: campaign.stage,
+      campaignApprovalStatus: campaign.approvalStatus,
+      campaignType: campaign.type,
+      campaignRegion: campaign.region,
+      available: giveawayAvailability(item),
+      health: giveawayHealthTone(item),
+      issues: giveawayIssueList(campaign, item),
+    }))
+  );
+}
+
+function BuilderGiveawayCampaignPreview(builder) {
+  return hydrateCampaignGiveaway({
+    id: '__builder__',
+    name: builder?.name || 'New Campaign Draft',
+    type: builder?.type || 'Shoppable Adz',
+    region: builder?.region || '—',
+    currency: builder?.currency || 'USD',
+    stage: 'Draft',
+    approvalStatus: 'Not submitted',
+    nextAction: 'Complete campaign builder',
+    lastActivity: 'Draft builder state',
+    startDate: builder?.startDate || '',
+    durationDays: builder?.durationDays || 0,
+    endDate: computeEndDate(builder?.startDate || '', builder?.durationDays || 0),
+    items: builder?.items || [],
+    giveawayExtras: builder?.giveawayExtras || [],
+  });
+}
+
+function MyGiveawaysModal({ open, onClose, campaigns, defaultCampaignId, onOpenCampaign, onConfigureItem, onAddGiveaway }) {
+  const [search, setSearch] = useState('');
+  const [healthFilter, setHealthFilter] = useState('All');
+  const [sourceFilter, setSourceFilter] = useState('All');
+  const [campaignFilter, setCampaignFilter] = useState('All');
+
+  useEffect(() => {
+    if (!open) return;
+    setSearch('');
+    setHealthFilter('All');
+    setSourceFilter('All');
+    setCampaignFilter('All');
+  }, [open]);
+
+  const records = useMemo(() => flattenGiveawayRecords(campaigns), [campaigns]);
+  const campaignOptions = useMemo(() => {
+    return Array.from(new Set(records.map((r) => `${r.campaignId}|||${r.campaignName}`)));
+  }, [records]);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return records.filter((record) => {
+      if (healthFilter !== 'All') {
+        const label = record.health?.label || 'Healthy';
+        if (healthFilter === 'Healthy' && label !== 'Healthy') return false;
+        if (healthFilter === 'Low availability' && label !== 'Low availability') return false;
+        if (healthFilter === 'Over-allocated' && label !== 'Over-allocated') return false;
+        if (healthFilter === 'Disabled' && label !== 'Disabled') return false;
+      }
+      if (sourceFilter !== 'All') {
+        if (record.sourceType !== sourceFilter) return false;
+      }
+      if (campaignFilter !== 'All' && record.campaignId !== campaignFilter) return false;
+      if (!q) return true;
+      const hay = `${record.campaignName} ${record.title} ${record.subtitle} ${record.kind} ${record.sourceLabel || ''} ${record.assetTitle || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [records, search, healthFilter, sourceFilter, campaignFilter]);
+
+  const targetCampaignId = useMemo(() => {
+    if (campaignFilter !== 'All') return campaignFilter;
+    return defaultCampaignId || filtered[0]?.campaignId || records[0]?.campaignId || '';
+  }, [campaignFilter, defaultCampaignId, filtered, records]);
+
+  const totals = useMemo(() => {
+    return filtered.reduce(
+      (acc, record) => {
+        acc.total += Number(record.giveaway?.total || 0);
+        acc.used += Number(record.giveaway?.used || 0);
+        acc.allocated += Number(record.giveaway?.allocated || 0);
+        acc.available += Number(record.available || 0);
+        if (record.issues?.length) acc.issueCount += 1;
+        if (record.health?.label === 'Low availability') acc.lowCount += 1;
+        if (record.health?.label === 'Over-allocated') acc.overCount += 1;
+        return acc;
+      },
+      { total: 0, used: 0, allocated: 0, available: 0, issueCount: 0, lowCount: 0, overCount: 0 }
+    );
+  }, [filtered]);
+
+  return (
+    <FullscreenModal
+      open={open}
+      onClose={onClose}
+      title="My Giveaways"
+      subtitle="Supplier-owned giveaway stock across all campaigns · the Creator / Supplier Live Builder reads this source-of-truth"
+      footer={
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+          <div className="text-xs text-slate-500 dark:text-slate-400">This workspace highlights stock issues, approved asset gaps and campaign approval blockers.</div>
+          <div className="flex items-center gap-2">
+            <Btn onClick={onClose}>Close</Btn>
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        <section className="grid grid-cols-2 md:grid-cols-6 gap-3">
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Records</div><div className="mt-2 text-2xl font-black">{filtered.length}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Giveaway entries</div></div>
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Total pool</div><div className="mt-2 text-2xl font-black text-[#f77f00]">{totals.total}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Supplier-defined stock</div></div>
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Used</div><div className="mt-2 text-2xl font-black text-rose-600 dark:text-rose-400">{totals.used}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Already claimed</div></div>
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Allocated</div><div className="mt-2 text-2xl font-black text-amber-600 dark:text-amber-400">{totals.allocated}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Reserved by future lives</div></div>
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Available</div><div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">{totals.available}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Still allocatable</div></div>
+          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Issue rows</div><div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{totals.issueCount}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Low / blocked / asset gaps</div></div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+            <div className="flex-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 px-4 py-2 flex items-center gap-2">
+              <span className="text-slate-400">🔍</span>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search giveaways…" className="w-full bg-transparent outline-none text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select value={healthFilter} onChange={(e) => setHealthFilter(e.target.value)} className="rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-semibold">
+                {['All','Healthy','Low availability','Over-allocated','Disabled'].map((x) => <option key={x}>{x}</option>)}
+              </select>
+              <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-semibold">
+                <option>All</option>
+                <option value="campaign-item">campaign-item</option>
+                <option value="featured">featured</option>
+                <option value="inventory">inventory</option>
+                <option value="external">external</option>
+              </select>
+              <select value={campaignFilter} onChange={(e) => setCampaignFilter(e.target.value)} className="rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-semibold max-w-[260px]">
+                <option value="All">All campaigns</option>
+                {campaignOptions.map((entry) => {
+                  const [id, label] = entry.split('|||');
+                  return <option key={id} value={id}>{label}</option>;
+                })}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <span>Use the current campaign filter or the current campaign selection when adding a new giveaway item from this workspace.</span>
+            <Btn tone="primary" disabled={!targetCampaignId} onClick={() => targetCampaignId && onAddGiveaway?.(targetCampaignId)}>➕ Giveaway Item</Btn>
+          </div>
+
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+            <table className="w-full min-w-[1260px] text-left text-sm">
+              <thead className="bg-slate-50 dark:bg-slate-900/60">
+                <tr>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Campaign</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Item / Service</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Source</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Visual</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Total</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Used</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Allocated</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Available</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Issues</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Updated</th>
+                  <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((record) => (
+                  <tr key={`${record.campaignId}_${record.id}`} className="border-t border-slate-200 dark:border-slate-800">
+                    <td className="px-4 py-3">
+                      <div className="font-extrabold text-slate-900 dark:text-slate-100">{record.campaignName}</div>
+                      <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{record.campaignId} · {record.campaignType} · {record.campaignRegion}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <img src={record.assetPreview || record.avatar || svgAvatarDataUrl(record.title, record.id)} alt={record.title} className="h-11 w-11 rounded-2xl border border-slate-200 dark:border-slate-700 object-cover" />
+                        <div>
+                          <div className="font-extrabold text-slate-900 dark:text-slate-100">{record.title}</div>
+                          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{record.kind} · {record.subtitle || '—'}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3"><Pill tone={record.isGiveawayExtra ? 'warn' : 'neutral'}>{record.sourceLabel}</Pill></td>
+                    <td className="px-4 py-3">
+                      {record.assetTitle ? (
+                        <div>
+                          <div className="font-extrabold text-slate-900 dark:text-slate-100">{record.assetTitle}</div>
+                          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{record.assetDimensions || 'Approved asset'}</div>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-500 dark:text-slate-400">No approved asset linked</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-extrabold">{record.giveaway?.total || 0}</td>
+                    <td className="px-4 py-3 font-extrabold text-rose-600 dark:text-rose-400">{record.giveaway?.used || 0}</td>
+                    <td className="px-4 py-3 font-extrabold text-amber-600 dark:text-amber-400">{record.giveaway?.allocated || 0}</td>
+                    <td className="px-4 py-3 font-extrabold text-emerald-600 dark:text-emerald-400">{record.available}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {record.issues?.length ? record.issues.map((issue) => <Pill key={issue.id} tone={issue.tone}>{issue.label}</Pill>) : <Pill tone="good">No issues</Pill>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{record.giveaway?.updatedAt || '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Btn onClick={() => onOpenCampaign(record.campaignId)}>Open Campaign</Btn>
+                        <Btn tone="primary" onClick={() => onConfigureItem(record.campaignId, record.id)}>Configure</Btn>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!filtered.length ? (
+                  <tr>
+                    <td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">No giveaway records match the current filters.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </FullscreenModal>
+  );
+}
+
+
 /* ------------------------- catalog dataset (preview) ------------------------- */
 
 const CATALOG_ITEMS = [
@@ -820,6 +1152,51 @@ const CATALOG_ITEMS = [
   avatar: svgAvatarDataUrl(it.title, it.id)
 }));
 
+const CATALOG_INVENTORY_BY_SKU = {
+  "RL-01": { total: 26, reserved: 4, locations: ["Main Warehouse 16", "Kampala Hub 10"] },
+  "EB-PRO": { total: 95, reserved: 10, locations: ["Main Warehouse 70", "Kampala Hub 25"] },
+  "BC-VC": { total: 130, reserved: 10, locations: ["Main Warehouse 90", "Downtown Hub 40"] },
+  "SN-26": { total: 70, reserved: 5, locations: ["Main Warehouse 44", "Mall Hub 26"] },
+  "SV-WA": { total: 20, reserved: 2, locations: ["Service capacity 20"] },
+  "SV-SCR": { total: 12, reserved: 1, locations: ["Service capacity 12"] },
+  "SV-PH": { total: 14, reserved: 2, locations: ["Service capacity 14"] },
+  "SV-ADS": { total: 8, reserved: 1, locations: ["Service capacity 8"] }
+};
+
+function getCatalogInventoryMeta(item) {
+  if (!item) return { synced: false, total: 0, reserved: 0, available: 0, label: "Inventory", locations: [] };
+  const sku = item.sku || "";
+  const preset = CATALOG_INVENTORY_BY_SKU[sku] || {};
+  const total = Math.max(0, Number(item.inventoryTotal ?? preset.total ?? item.stock ?? 0));
+  const reserved = Math.max(0, Number(item.inventoryReserved ?? preset.reserved ?? 0));
+  const available = Math.max(0, total - reserved);
+  return {
+    synced: Number.isFinite(total) && total > 0,
+    total,
+    reserved,
+    available,
+    label: item.kind === "Service" ? "Capacity" : "Inventory",
+    locations: item.inventoryLocations || preset.locations || []
+  };
+}
+
+function getCampaignSaleAllocation(item) {
+  if (!item || item.isGiveawayExtra || item.sourceType === "inventory" || item.sourceType === "external") return 0;
+  return Math.max(0, Number(item.plannedQty || 0));
+}
+
+function getGiveawayStockCap(item) {
+  const meta = getCatalogInventoryMeta(item);
+  if (!meta.synced) return Number.POSITIVE_INFINITY;
+  return Math.max(0, meta.available - getCampaignSaleAllocation(item));
+}
+
+function getCatalogSelectionMaxQty(item) {
+  const meta = getCatalogInventoryMeta(item);
+  if (!meta.synced) return 1000000;
+  return Math.max(1, meta.available);
+}
+
 const APPROVED_ASSET_LIBRARY = [
   {
     id: "AS-501",
@@ -893,29 +1270,25 @@ function CatalogCampaignPickerPage({
   const [activeKind, setActiveKind] = useState(initialKind || "Product");
   const [q, setQ] = useState("");
 
-  // draft map: id -> { selected, qty, discountMode, discountValue }
   const [draft, setDraft] = useState({});
 
   useEffect(() => {
     if (!open) return;
 
-    // init active tab
     if (initialKind === "Product" && !allowProducts && allowServices) setActiveKind("Service");
     else if (initialKind === "Service" && !allowServices && allowProducts) setActiveKind("Product");
     else setActiveKind(initialKind || (allowProducts ? "Product" : "Service"));
 
-    // seed draft from existing selection + promo defaults
     const byId = {};
     (existingSelectedItems || []).forEach((sel) => {
       byId[sel.id] = {
         selected: true,
         qty: safeNum(sel.plannedQty, 1),
-        discountMode: sel.discount?.mode || "none",
-        discountValue: safeNum(sel.discount?.value, 0)
+        discountMode: sel.discount?.mode || promoDefaults?.defaultDiscountMode || "none",
+        discountValue: safeNum(sel.discount?.value, promoDefaults?.defaultDiscountValue || 0)
       };
     });
 
-    // ensure all visible items have state
     CATALOG_ITEMS.forEach((it) => {
       if (byId[it.id]) return;
       byId[it.id] = {
@@ -946,46 +1319,36 @@ function CatalogCampaignPickerPage({
     items.forEach((it) => {
       const s = draft[it.id];
       if (!s?.selected) return;
-      const qty = clamp(s.qty, 1, 1000000);
+      const cap = getCatalogSelectionMaxQty(it);
+      const qty = clamp(s.qty, 1, cap);
       const discounted = calcDiscountedPrice(it.price, s.discountMode, s.discountValue);
+      const inv = getCatalogInventoryMeta(it);
       out.push({
         ...it,
         plannedQty: qty,
         discount: { mode: s.discountMode, value: safeNum(s.discountValue, 0) },
         discountedPrice: discounted,
-        discountLabel: formatDiscount(s.discountMode, s.discountValue, campaignCurrency)
+        discountLabel: formatDiscount(s.discountMode, s.discountValue, campaignCurrency),
+        inventoryTotal: inv.total,
+        inventoryReserved: inv.reserved,
+        inventoryAvailable: inv.available,
+        inventoryLocations: inv.locations,
       });
     });
     return out;
   }, [items, draft, campaignCurrency]);
 
-  const selectedCount = useMemo(() => {
-    let n = 0;
-    Object.keys(draft || {}).forEach((id) => {
-      if (draft[id]?.selected) n += 1;
-    });
-    return n;
-  }, [draft]);
-
-  const totalPlanned = useMemo(() => {
-    // sum of selected line totals for the current tab
-    return selectedItems.reduce((sum, it) => sum + it.discountedPrice * it.plannedQty, 0);
-  }, [selectedItems]);
+  const selectedCount = selectedItems.length;
+  const totalPlanned = useMemo(() => selectedItems.reduce((sum, it) => sum + it.discountedPrice * it.plannedQty, 0), [selectedItems]);
 
   const footer = (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
       <div className="text-xs text-slate-500 dark:text-slate-400">
-        Selected: <span className="font-extrabold">{selectedCount}</span> · Tab total: <span className="font-extrabold">{money(campaignCurrency, totalPlanned)}</span>
+        Selected in this view: <span className="font-extrabold">{selectedCount}</span> · Planned campaign value: <span className="font-extrabold">{money(campaignCurrency, totalPlanned)}</span>
       </div>
       <div className="flex items-center gap-2">
         <Btn onClick={onClose}>Cancel</Btn>
-        <Btn
-          tone="primary"
-          disabled={selectedCount === 0}
-          onClick={() => {
-            onConfirm({ kind: activeKind, selected: selectedItems });
-          }}
-        >
+        <Btn tone="primary" disabled={selectedCount === 0} onClick={() => onConfirm({ kind: activeKind, selected: selectedItems })}>
           ✅ Add to Campaign
         </Btn>
       </div>
@@ -996,12 +1359,11 @@ function CatalogCampaignPickerPage({
     <FullscreenModal
       open={open}
       title="Catalog"
-      subtitle="Select campaign items: avatar + details + qty + price + discount + discounted price"
+      subtitle="Select products or services for this campaign, review stock / capacity, and set what should be allocated to the campaign."
       onClose={onClose}
       footer={footer}
     >
       <div className="space-y-3">
-        {/* Tabs */}
         <div className="flex flex-wrap items-center gap-2">
           <Btn
             disabled={!allowProducts}
@@ -1024,18 +1386,17 @@ function CatalogCampaignPickerPage({
 
           <div className="flex-1" />
 
-          <div className="min-w-[240px]">
+          <div className="min-w-[260px]">
             <Input value={q} onChange={setQ} placeholder="Search catalog…" />
           </div>
         </div>
 
-        {/* Promo helper */}
         <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
           <div className="flex items-start justify-between gap-2">
             <div>
               <div className="text-sm font-extrabold">Promo defaults</div>
               <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                These defaults prefill discount fields for newly selected items. You can override per item.
+                These defaults prefill discount fields for newly selected items. You can override per line before adding to the campaign.
               </div>
             </div>
             <Pill tone="brand">{promoDefaults?.promoTypeLabel || "Promo"}</Pill>
@@ -1046,14 +1407,16 @@ function CatalogCampaignPickerPage({
           </div>
         </div>
 
-        {/* Table */}
         <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left">
+            <table className="w-full min-w-[1460px] text-left">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800">
                   <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Item</th>
-                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Qty planned</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Inventory / capacity</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Reserved</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Available</th>
+                  <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Allocate to campaign</th>
                   <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Current price</th>
                   <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Discount</th>
                   <th className="px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Discounted price</th>
@@ -1063,76 +1426,71 @@ function CatalogCampaignPickerPage({
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {items.map((it) => {
                   const s = draft[it.id] || { selected: false, qty: 1, discountMode: "none", discountValue: 0 };
+                  const inv = getCatalogInventoryMeta(it);
+                  const maxQty = getCatalogSelectionMaxQty(it);
+                  const qty = clamp(s.qty, 1, maxQty);
                   const discounted = calcDiscountedPrice(it.price, s.discountMode, s.discountValue);
                   const discountLabel = formatDiscount(s.discountMode, s.discountValue, campaignCurrency);
+                  const remainingAfterAllocation = inv.synced ? Math.max(0, inv.available - qty) : null;
                   return (
-                    <tr key={it.id} className={cx("hover:bg-slate-50 dark:hover:bg-slate-800/30", s.selected ? "bg-amber-50/30 dark:bg-amber-900/10" : "")}
-                    >
+                    <tr key={it.id} className={cx("hover:bg-slate-50 dark:hover:bg-slate-800/30", s.selected ? "bg-amber-50/30 dark:bg-amber-900/10" : "")}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <img src={it.avatar} alt="avatar" className="h-10 w-10 rounded-2xl border border-slate-200 dark:border-slate-700" />
                           <div className="min-w-0">
                             <div className="text-sm font-extrabold truncate text-slate-900 dark:text-slate-50">{it.title}</div>
-                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 truncate">
-                              {it.subtitle} · {it.category} · {it.region} · {it.sku}
-                            </div>
+                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 truncate">{it.subtitle} · {it.category} · {it.region} · {it.sku}</div>
                           </div>
                         </div>
                       </td>
-
                       <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          min={1}
-                          value={s.qty}
-                          onChange={(e) => {
-                            const v = clamp(e.target.value, 1, 1000000);
-                            setDraft((prev) => ({
-                              ...prev,
-                              [it.id]: { ...prev[it.id], qty: v }
-                            }));
-                          }}
-                          className="w-24 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-bold outline-none"
-                          title="Quantity planned for campaign"
-                        />
+                        <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{inv.total}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">{inv.label}{inv.locations?.length ? ` · ${inv.locations.join(" / ")}` : ""}</div>
                       </td>
-
+                      <td className="px-4 py-3">
+                        <div className="text-sm font-extrabold text-amber-700 dark:text-amber-300">{inv.reserved}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Reserved / unavailable</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm font-extrabold text-emerald-700 dark:text-emerald-300">{inv.available}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Currently allocatable</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={maxQty}
+                            value={qty}
+                            onChange={(e) => {
+                              const v = clamp(e.target.value, 1, maxQty);
+                              setDraft((prev) => ({ ...prev, [it.id]: { ...prev[it.id], qty: v } }));
+                            }}
+                            className="w-24 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-bold outline-none"
+                            title="Quantity to allocate for this campaign"
+                          />
+                          {inv.synced ? <Pill tone={qty > inv.available ? "bad" : "neutral"}>Max {maxQty}</Pill> : null}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{inv.synced ? `Remaining after allocation: ${remainingAfterAllocation}` : "No synced inventory cap"}</div>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{money(campaignCurrency, it.price)}</div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400">Current</div>
                       </td>
-
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <select
                             value={s.discountMode}
-                            onChange={(e) => {
-                              const nextMode = e.target.value;
-                              setDraft((prev) => ({
-                                ...prev,
-                                [it.id]: { ...prev[it.id], discountMode: nextMode }
-                              }));
-                            }}
+                            onChange={(e) => setDraft((prev) => ({ ...prev, [it.id]: { ...prev[it.id], discountMode: e.target.value } }))}
                             className="w-32 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-bold outline-none"
                           >
-                            {DISCOUNT_MODES.map((m) => (
-                              <option key={m.k} value={m.k}>
-                                {m.label}
-                              </option>
-                            ))}
+                            {DISCOUNT_MODES.map((m) => <option key={m.k} value={m.k}>{m.label}</option>)}
                           </select>
-
                           <input
                             type="number"
                             disabled={s.discountMode === "none"}
                             value={s.discountValue}
-                            onChange={(e) => {
-                              const v = Math.max(0, safeNum(e.target.value, 0));
-                              setDraft((prev) => ({
-                                ...prev,
-                                [it.id]: { ...prev[it.id], discountValue: v }
-                              }));
-                            }}
+                            onChange={(e) => setDraft((prev) => ({ ...prev, [it.id]: { ...prev[it.id], discountValue: Math.max(0, safeNum(e.target.value, 0)) } }))}
                             className={cx(
                               "w-28 rounded-2xl border px-3 py-2 text-sm font-bold outline-none",
                               s.discountMode === "none"
@@ -1144,38 +1502,22 @@ function CatalogCampaignPickerPage({
                         </div>
                         <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{discountLabel}</div>
                       </td>
-
                       <td className="px-4 py-3">
                         <div className="text-sm font-extrabold text-slate-900 dark:text-slate-50">{money(campaignCurrency, discounted)}</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Line: {money(campaignCurrency, discounted * clamp(s.qty, 1, 1000000))}
-                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">Line: {money(campaignCurrency, discounted * qty)}</div>
                       </td>
-
                       <td className="px-4 py-3">
                         <label className="inline-flex items-center gap-2 text-sm font-bold">
-                          <input
-                            type="checkbox"
-                            checked={!!s.selected}
-                            onChange={() => {
-                              setDraft((prev) => ({
-                                ...prev,
-                                [it.id]: { ...prev[it.id], selected: !prev[it.id]?.selected }
-                              }));
-                            }}
-                          />
+                          <input type="checkbox" checked={!!s.selected} onChange={() => setDraft((prev) => ({ ...prev, [it.id]: { ...prev[it.id], selected: !prev[it.id]?.selected } }))} />
                           <span className="text-slate-700 dark:text-slate-200">Add</span>
                         </label>
                       </td>
                     </tr>
                   );
                 })}
-
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">
-                      No catalog items match your search.
-                    </td>
+                    <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400">No catalog items match your search.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -1183,9 +1525,7 @@ function CatalogCampaignPickerPage({
           </div>
         </div>
 
-        <div className="text-xs text-slate-500 dark:text-slate-400">
-          Integration note: In production, this is a real Catalog route. Selections are returned to Campaign Builder via router state, URL params, or global store.
-        </div>
+        <div className="text-xs text-slate-500 dark:text-slate-400">Integration note: In production, this becomes the supplier catalog / listing selector. The quantity you set here is what gets allocated for sale under the campaign.</div>
       </div>
     </FullscreenModal>
   );
@@ -1208,7 +1548,7 @@ const INIT_CAMPAIGNS = [
     currency: "USD",
     estValue: 2400,
     region: "East Africa",
-    type: "Shoppable Adz + Live",
+    type: "Live + Shoppables",
     startDate: "2026-02-10",
     durationDays: 14,
     endDate: computeEndDate("2026-02-10", 14),
@@ -1307,7 +1647,14 @@ export default function SupplierMyCampaignsPage() {
 
   const [builderOpen, setBuilderOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [myGiveawaysOpen, setMyGiveawaysOpen] = useState(false);
   const [activeCampaign, setActiveCampaign] = useState(null);
+  const [terminationOpen, setTerminationOpen] = useState(false);
+  const [terminationTargetId, setTerminationTargetId] = useState(null);
+  const [terminationReason, setTerminationReason] = useState("");
+  const [terminationExplanation, setTerminationExplanation] = useState("");
+  const [terminationError, setTerminationError] = useState("");
+  const [terminationSubmitting, setTerminationSubmitting] = useState(false);
   const [giveawayEditorOpen, setGiveawayEditorOpen] = useState(false);
   const [giveawayEditorCampaignId, setGiveawayEditorCampaignId] = useState(null);
   const [giveawayEditorItemId, setGiveawayEditorItemId] = useState(null);
@@ -1339,6 +1686,8 @@ export default function SupplierMyCampaignsPage() {
   const [builder, setBuilder] = useState(() => ({
     name: "",
     type: "Shoppable Adz",
+    locationType: "Region",
+    locationValue: "East Africa",
     region: "East Africa",
     currency: "USD",
     estValue: 1000,
@@ -1363,6 +1712,7 @@ export default function SupplierMyCampaignsPage() {
 
     // selected items (campaign catalog)
     items: [],
+    giveawayExtras: [],
 
     // flow
     creatorUsageDecision: "I will use a Creator",
@@ -1373,6 +1723,7 @@ export default function SupplierMyCampaignsPage() {
     notes: "",
     internalOwner: "Supplier Manager"
   }));
+  const createFlowBootstrappedRef = useRef(false);
 
   const builderEndDate = useMemo(() => computeEndDate(builder.startDate, builder.durationDays), [builder.startDate, builder.durationDays]);
 
@@ -1419,23 +1770,36 @@ export default function SupplierMyCampaignsPage() {
     return base;
   }, [campaigns]);
 
+  const activeCampaignId = activeCampaign?.id;
   useEffect(() => {
-    if (!activeCampaign?.id) return;
-    const fresh = campaigns.find((campaign) => campaign.id === activeCampaign.id);
-    if (fresh && fresh !== activeCampaign) {
-      setActiveCampaign(fresh);
-    }
-  }, [campaigns, activeCampaign?.id]);
+    if (!activeCampaignId) return;
+    setActiveCampaign((current) => {
+      if (!current || current.id !== activeCampaignId) return current;
+      const fresh = campaigns.find((campaign) => campaign.id === activeCampaignId);
+      return fresh && fresh !== current ? fresh : current;
+    });
+  }, [campaigns, activeCampaignId]);
+
+  const terminationTarget = useMemo(
+    () => campaigns.find((campaign) => campaign.id === terminationTargetId) || null,
+    [campaigns, terminationTargetId]
+  );
+  const terminationHasActiveContracts = useMemo(
+    () => campaignHasActiveContracts(terminationTarget),
+    [terminationTarget]
+  );
+  const terminationContractCount = Number(terminationTarget?.contractCount || 0);
 
   const overallGiveawayTotals = useMemo(() => sumAllGiveawayTotals(campaigns), [campaigns]);
+  const builderCampaignPreview = useMemo(() => BuilderGiveawayCampaignPreview(builder), [builder]);
   const activeCampaignGiveawayTotals = useMemo(
     () => (activeCampaign ? calcCampaignGiveawayTotals(activeCampaign) : { total: 0, used: 0, allocated: 0, available: 0, enabledCount: 0 }),
     [activeCampaign]
   );
   const activeCampaignGiveawayNodes = useMemo(() => getCampaignGiveawayNodes(activeCampaign), [activeCampaign]);
   const giveawayEditorCampaign = useMemo(
-    () => campaigns.find((campaign) => campaign.id === giveawayEditorCampaignId) || null,
-    [campaigns, giveawayEditorCampaignId]
+    () => (giveawayEditorCampaignId === "__builder__" ? builderCampaignPreview : campaigns.find((campaign) => campaign.id === giveawayEditorCampaignId) || null),
+    [campaigns, giveawayEditorCampaignId, builderCampaignPreview]
   );
   const giveawayEditorItem = useMemo(
     () => getCampaignGiveawayNodes(giveawayEditorCampaign).find((item) => item.id === giveawayEditorItemId) || null,
@@ -1459,8 +1823,8 @@ export default function SupplierMyCampaignsPage() {
   }, [giveawayEditorItem]);
 
   const giveawayAddCampaign = useMemo(
-    () => campaigns.find((campaign) => campaign.id === giveawayAddCampaignId) || null,
-    [campaigns, giveawayAddCampaignId]
+    () => (giveawayAddCampaignId === "__builder__" ? builderCampaignPreview : campaigns.find((campaign) => campaign.id === giveawayAddCampaignId) || null),
+    [campaigns, giveawayAddCampaignId, builderCampaignPreview]
   );
   const giveawayAddFeaturedCandidates = useMemo(
     () => (giveawayAddCampaign?.items || []).map((item) => ensureGiveaway(item)),
@@ -1472,7 +1836,8 @@ export default function SupplierMyCampaignsPage() {
   );
   const giveawayAddInventoryCandidates = useMemo(() => {
     const attachedIds = new Set((giveawayAddCampaign?.items || []).map((item) => item.id));
-    return CATALOG_ITEMS.filter((item) => !attachedIds.has(item.id));
+    const extraLinkedIds = new Set((giveawayAddCampaign?.giveawayExtras || []).map((item) => item.linkedCatalogItemId).filter(Boolean));
+    return CATALOG_ITEMS.filter((item) => !attachedIds.has(item.id) && !extraLinkedIds.has(item.id));
   }, [giveawayAddCampaign]);
   const giveawayAddCatalogItem = useMemo(
     () => giveawayAddInventoryCandidates.find((item) => item.id === giveawayAddCatalogItemId) || null,
@@ -1483,6 +1848,19 @@ export default function SupplierMyCampaignsPage() {
     () => (giveawayAddSource === "featured" && giveawayAddFeaturedItem ? Number(giveawayAddFeaturedItem.giveaway?.used || 0) + Number(giveawayAddFeaturedItem.giveaway?.allocated || 0) : 0),
     [giveawayAddSource, giveawayAddFeaturedItem]
   );
+  const giveawayAddInventoryTarget = useMemo(
+    () => (giveawayAddSource === "featured" ? giveawayAddFeaturedItem : giveawayAddSource === "inventory" ? giveawayAddCatalogItem : null),
+    [giveawayAddSource, giveawayAddFeaturedItem, giveawayAddCatalogItem]
+  );
+  const giveawayAddInventoryMeta = useMemo(() => getCatalogInventoryMeta(giveawayAddInventoryTarget), [giveawayAddInventoryTarget]);
+  const giveawayAddSaleAllocation = useMemo(
+    () => (giveawayAddSource === "featured" && giveawayAddFeaturedItem ? getCampaignSaleAllocation(giveawayAddFeaturedItem) : 0),
+    [giveawayAddSource, giveawayAddFeaturedItem]
+  );
+  const giveawayAddMaxStock = useMemo(() => {
+    if (!giveawayAddInventoryMeta.synced) return Number.POSITIVE_INFINITY;
+    return Math.max(giveawayAddCommittedQty, giveawayAddInventoryMeta.available - giveawayAddSaleAllocation);
+  }, [giveawayAddInventoryMeta, giveawayAddCommittedQty, giveawayAddSaleAllocation]);
 
   useEffect(() => {
     if (!giveawayAddOpen) return;
@@ -1496,6 +1874,12 @@ export default function SupplierMyCampaignsPage() {
     }
   }, [giveawayAddOpen, giveawayAddSource, giveawayAddCatalogItem, giveawayAddFeaturedItem, giveawayAddAssetId]);
 
+  const giveawayEditorInventoryMeta = useMemo(() => getCatalogInventoryMeta(giveawayEditorItem), [giveawayEditorItem]);
+  const giveawayEditorSaleAllocation = useMemo(() => (giveawayEditorItem ? getCampaignSaleAllocation(giveawayEditorItem) : 0), [giveawayEditorItem]);
+  const giveawayEditorMaxStock = useMemo(() => {
+    if (!giveawayEditorInventoryMeta.synced) return Number.POSITIVE_INFINITY;
+    return Math.max(giveawayCommittedQty, giveawayEditorInventoryMeta.available - giveawayEditorSaleAllocation);
+  }, [giveawayEditorInventoryMeta, giveawayCommittedQty, giveawayEditorSaleAllocation]);
   const parsedGiveawayDraftTotal = Number(giveawayDraftTotal || 0);
   const parsedGiveawayLowThreshold = Number(giveawayDraftLowThreshold || 0);
   const giveawayDraftInvalid =
@@ -1503,6 +1887,7 @@ export default function SupplierMyCampaignsPage() {
     (Number.isNaN(parsedGiveawayDraftTotal) ||
       parsedGiveawayDraftTotal < giveawayCommittedQty ||
       parsedGiveawayDraftTotal < 0 ||
+      (Number.isFinite(giveawayEditorMaxStock) && parsedGiveawayDraftTotal > giveawayEditorMaxStock) ||
       Number.isNaN(parsedGiveawayLowThreshold) ||
       parsedGiveawayLowThreshold < 0);
 
@@ -1514,6 +1899,7 @@ export default function SupplierMyCampaignsPage() {
     Number.isNaN(parsedGiveawayAddTotal) ||
     parsedGiveawayAddTotal < giveawayAddCommittedQty ||
     parsedGiveawayAddTotal < 0 ||
+    (Number.isFinite(giveawayAddMaxStock) && parsedGiveawayAddTotal > giveawayAddMaxStock) ||
     Number.isNaN(parsedGiveawayAddLowThreshold) ||
     parsedGiveawayAddLowThreshold < 0 ||
     (giveawayAddSource === "featured" && !giveawayAddFeaturedItem) ||
@@ -1523,10 +1909,10 @@ export default function SupplierMyCampaignsPage() {
 
   const filteredCampaigns = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let result = campaigns.filter((c) => {
+    const result = campaigns.filter((c) => {
       if (activeStageFilter !== "All" && c.stage !== activeStageFilter) return false;
       if (q) {
-        const hay = `${c.name} ${c.type} ${c.region} ${c.creatorUsageDecision} ${c.collabMode} ${c.startDate || ""} ${c.endDate || ""} ${c.approvalStatus || ""} ${c.promoType || ""}`.toLowerCase();
+        const hay = `${c.name} ${campaignLocationType(c)} ${campaignLocationValue(c)} ${c.type} ${c.region} ${c.creatorUsageDecision} ${c.collabMode} ${c.startDate || ""} ${c.endDate || ""} ${c.approvalStatus || ""} ${c.promoType || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -1565,6 +1951,9 @@ export default function SupplierMyCampaignsPage() {
     setBuilder((p) => ({
       ...p,
       name: "",
+      locationType: "Region",
+      locationValue: "East Africa",
+      region: "East Africa",
       estValue: 1000,
       startDate: todayYMD(),
       durationDays: 7,
@@ -1586,9 +1975,120 @@ export default function SupplierMyCampaignsPage() {
     setBuilderOpen(true);
   }
 
+  useEffect(() => {
+    if (createFlowBootstrappedRef.current) return;
+    if (typeof window === "undefined") return;
+
+    const pathname = window.location.pathname || "";
+    const searchParams = new URLSearchParams(window.location.search || "");
+    const shouldOpenCreateFlow =
+      pathname === "/mldz/promos/new" ||
+      searchParams.get("create") === "1" ||
+      searchParams.get("newCampaign") === "1";
+
+    if (!shouldOpenCreateFlow) return;
+
+    createFlowBootstrappedRef.current = true;
+    openCreate();
+  }, [builderOpen]);
+
   function openDetails(c) {
     setActiveCampaign(c);
     setDetailsOpen(true);
+  }
+
+  function openTerminationFlow(campaign) {
+    setTerminationTargetId(campaign.id);
+    setTerminationReason("");
+    setTerminationExplanation("");
+    setTerminationError("");
+    setTerminationSubmitting(false);
+    setTerminationOpen(true);
+  }
+
+  function closeTerminationFlow() {
+    if (terminationSubmitting) return;
+    setTerminationOpen(false);
+    setTerminationTargetId(null);
+    setTerminationReason("");
+    setTerminationExplanation("");
+    setTerminationError("");
+  }
+
+  function submitTerminationFlow() {
+    if (!terminationTarget) return;
+    if (!terminationReason) {
+      setTerminationError("Select a reason for termination before continuing.");
+      return;
+    }
+    if (terminationHasActiveContracts && !terminationExplanation.trim()) {
+      setTerminationError("Provide a clear explanation to start the contract-aware termination flow.");
+      return;
+    }
+
+    const targetCampaign = terminationTarget;
+    const hasActiveContracts = terminationHasActiveContracts;
+    const reason = terminationReason;
+    const reasonLabel = terminationReasonLabel(reason);
+    const explanation = terminationExplanation.trim();
+
+    setTerminationError("");
+    setTerminationSubmitting(true);
+
+    window.setTimeout(() => {
+      const now = Date.now();
+
+      if (hasActiveContracts) {
+        setCampaigns((xs) =>
+          xs.map((x) =>
+            x.id !== targetCampaign.id
+              ? x
+              : {
+                  ...x,
+                  health: "at-risk",
+                  nextAction: "Complete contract termination flow",
+                  lastActivity: `Contract termination requested (${reasonLabel}) · now`,
+                  lastActivityAt: now,
+                  terminationReason: reason,
+                  terminationExplanation: explanation,
+                  terminationRequestedAt: now
+                }
+          )
+        );
+        push("Active contracts detected. Continue termination in Contracts.", "warn");
+        setTerminationSubmitting(false);
+        setTerminationOpen(false);
+        setTerminationTargetId(null);
+        setTerminationReason("");
+        setTerminationExplanation("");
+        go(`/supplier/collabs/contracts?campaignId=${encodeURIComponent(targetCampaign.id)}&from=my-campaigns&termination=requested`);
+        return;
+      }
+
+      setCampaigns((xs) =>
+        xs.map((x) =>
+          x.id !== targetCampaign.id
+            ? x
+            : {
+                ...x,
+                stage: "Terminated",
+                health: "stalled",
+                nextAction: "Campaign ended",
+                lastActivity: `Terminated (${reasonLabel}) · now`,
+                lastActivityAt: now,
+                terminationReason: reason,
+                terminationExplanation: explanation,
+                terminatedAt: now
+              }
+        )
+      );
+      push("Campaign terminated (preview).", "warn");
+      setTerminationSubmitting(false);
+      setTerminationOpen(false);
+      setTerminationTargetId(null);
+      setTerminationReason("");
+      setTerminationExplanation("");
+    }, 650);
   }
 
   function allowProducts(scope) {
@@ -1600,9 +2100,8 @@ export default function SupplierMyCampaignsPage() {
   }
 
   function openCatalog(kind) {
-    // Navigate to real catalog page (preview stub) + open in-app catalog page modal
-    push("Opening Catalog page… (preview)", "info");
-    go(`/supplier/overview/dealz-marketplace?selectForCampaign=1&kind=${kind}`);
+    // Keep the user in the builder and open the in-app catalog overlay only.
+    push("Opening catalog selector…", "info");
     setCatalogKind(kind);
     setCatalogOpen(true);
   }
@@ -1689,7 +2188,9 @@ export default function SupplierMyCampaignsPage() {
       id,
       name,
       type: builder.type,
-      region: builder.region,
+      locationType: builder.locationType,
+      locationValue: builder.locationValue,
+      region: builder.locationValue,
       currency: builder.currency,
       estValue: clamp(builder.estValue, 0, 100000000),
 
@@ -1710,7 +2211,7 @@ export default function SupplierMyCampaignsPage() {
 
       // items
       items: Array.isArray(builder.items) ? builder.items : [],
-      giveawayExtras: [],
+      giveawayExtras: Array.isArray(builder.giveawayExtras) ? builder.giveawayExtras : [],
 
       // flow
       creatorUsageDecision: builder.creatorUsageDecision,
@@ -1826,9 +2327,12 @@ export default function SupplierMyCampaignsPage() {
 
   function openGiveawayAdd(campaign) {
     if (!campaign) return;
-    const firstFeatured = (campaign.items || [])[0] || null;
-    const firstInventory = CATALOG_ITEMS.find((item) => !(campaign.items || []).some((attached) => attached.id === item.id)) || CATALOG_ITEMS[0] || null;
+    const featuredCandidates = (campaign.items || []).map((item) => ensureGiveaway(item));
+    const firstFeatured = featuredCandidates[0] || null;
+    const extraLinkedIds = new Set((campaign.giveawayExtras || []).map((item) => item.linkedCatalogItemId).filter(Boolean));
+    const firstInventory = CATALOG_ITEMS.find((item) => !(campaign.items || []).some((attached) => attached.id === item.id) && !extraLinkedIds.has(item.id)) || CATALOG_ITEMS[0] || null;
     const defaultSource = firstFeatured ? "featured" : firstInventory ? "inventory" : "external";
+    const suggestedAsset = getApprovedAssetForCatalogItem(firstFeatured?.id || firstInventory?.id || "") || APPROVED_ASSET_LIBRARY[0] || null;
     setGiveawayAddCampaignId(campaign.id);
     setGiveawayAddSource(defaultSource);
     setGiveawayAddFeaturedItemId(firstFeatured?.id || "");
@@ -1837,8 +2341,7 @@ export default function SupplierMyCampaignsPage() {
     setGiveawayAddExternalSubtitle("");
     setGiveawayAddExternalKind("Product");
     setGiveawayAddExternalSku("");
-    const defaultAsset = getApprovedAssetForCatalogItem(firstFeatured?.id || firstInventory?.id || "") || APPROVED_ASSET_LIBRARY[0] || null;
-    setGiveawayAddAssetId(defaultAsset?.id || "");
+    setGiveawayAddAssetId(suggestedAsset?.id || "");
     setGiveawayAddTotal(String(firstFeatured ? Math.max(10, Number(firstFeatured.giveaway?.total || 0)) : 10));
     setGiveawayAddLowThreshold(String(firstFeatured?.kind === "Service" ? 2 : 5));
     setGiveawayAddNotes("Use approved Asset Library poster or image only. If the right visual is missing, add it from Asset Library first.");
@@ -1877,7 +2380,42 @@ export default function SupplierMyCampaignsPage() {
     setSavingGiveawayAdd(true);
     await new Promise((resolve) => window.setTimeout(resolve, 650));
 
+    const isBuilderContext = giveawayAddCampaign.id === "__builder__";
+
     if (giveawayAddSource === "featured" && giveawayAddFeaturedItem) {
+      const applyToItems = (items) =>
+        (items || []).map((item) =>
+          item.id !== giveawayAddFeaturedItem.id
+            ? item
+            : {
+                ...item,
+                assetId: asset?.id || item.assetId || "",
+                assetTitle: asset?.title || item.assetTitle || "",
+                assetDimensions: asset?.dimensions || item.assetDimensions || "",
+                assetPreview: asset?.preview || item.assetPreview || item.avatar,
+                giveaway: {
+                  ...(item.giveaway || {}),
+                  enabled: true,
+                  total,
+                  lowThreshold,
+                  notes: giveawayAddNotes,
+                  updatedAt: nowLabel,
+                  audit: [auditEntry, ...((item.giveaway && item.giveaway.audit) || [])]
+                }
+              }
+        );
+
+      if (isBuilderContext) {
+        setBuilder((prev) => ({
+          ...prev,
+          items: applyToItems(prev.items || [])
+        }));
+        setSavingGiveawayAdd(false);
+        setGiveawayAddOpen(false);
+        push("Featured giveaway item configured in builder and ready to sync.", "success");
+        return;
+      }
+
       setCampaigns((prev) =>
         prev.map((campaign) => {
           if (campaign.id !== giveawayAddCampaign.id) return campaign;
@@ -1885,26 +2423,7 @@ export default function SupplierMyCampaignsPage() {
             ...campaign,
             lastActivity: "Featured giveaway source updated · now",
             lastActivityAt: Date.now(),
-            items: (campaign.items || []).map((item) =>
-              item.id !== giveawayAddFeaturedItem.id
-                ? item
-                : {
-                    ...item,
-                    assetId: asset?.id || item.assetId || "",
-                    assetTitle: asset?.title || item.assetTitle || "",
-                    assetDimensions: asset?.dimensions || item.assetDimensions || "",
-                    assetPreview: asset?.preview || item.assetPreview || item.avatar,
-                    giveaway: {
-                      ...(item.giveaway || {}),
-                      enabled: true,
-                      total,
-                      lowThreshold,
-                      notes: giveawayAddNotes,
-                      updatedAt: nowLabel,
-                      audit: [auditEntry, ...((item.giveaway && item.giveaway.audit) || [])]
-                    }
-                  }
-            )
+            items: applyToItems(campaign.items || [])
           };
         })
       );
@@ -1974,6 +2493,17 @@ export default function SupplierMyCampaignsPage() {
       }
     });
 
+    if (isBuilderContext) {
+      setBuilder((prev) => ({
+        ...prev,
+        giveawayExtras: [...(prev.giveawayExtras || []), newEntry]
+      }));
+      setSavingGiveawayAdd(false);
+      setGiveawayAddOpen(false);
+      push("Standalone giveaway item added to the campaign builder.", "success");
+      return;
+    }
+
     setCampaigns((prev) =>
       prev.map((campaign) => {
         if (campaign.id !== giveawayAddCampaign.id) return campaign;
@@ -2015,14 +2545,62 @@ export default function SupplierMyCampaignsPage() {
         : "Creator Builder can no longer draw giveaway stock from this item."
     };
 
+    const isBuilderContext = giveawayEditorCampaign.id === "__builder__";
+
+    if (isBuilderContext) {
+      if (giveawayEditorItem.isGiveawayExtra) {
+        setBuilder((prev) => ({
+          ...prev,
+          giveawayExtras: (prev.giveawayExtras || []).map((item) =>
+            item.id !== giveawayEditorItem.id
+              ? item
+              : {
+                  ...item,
+                  giveaway: {
+                    ...(item.giveaway || {}),
+                    enabled: giveawayDraftEnabled,
+                    total: nextTotal,
+                    lowThreshold: nextThreshold,
+                    notes: giveawayDraftNotes,
+                    updatedAt: nextUpdatedAt,
+                    audit: [auditEntry, ...((item.giveaway && item.giveaway.audit) || [])]
+                  }
+                }
+          )
+        }));
+      } else {
+        setBuilder((prev) => ({
+          ...prev,
+          items: (prev.items || []).map((item) =>
+            item.id !== giveawayEditorItem.id
+              ? item
+              : {
+                  ...item,
+                  giveaway: {
+                    ...(item.giveaway || {}),
+                    enabled: giveawayDraftEnabled,
+                    total: nextTotal,
+                    lowThreshold: nextThreshold,
+                    notes: giveawayDraftNotes,
+                    updatedAt: nextUpdatedAt,
+                    audit: [auditEntry, ...((item.giveaway && item.giveaway.audit) || [])]
+                  }
+                }
+          )
+        }));
+      }
+      setSavingGiveaway(false);
+      push("Builder giveaway stock source saved.", "success");
+      setGiveawayEditorOpen(false);
+      return;
+    }
+
     setCampaigns((xs) =>
       xs.map((campaign) => {
         if (campaign.id !== giveawayEditorCampaign.id) return campaign;
-        return {
-          ...campaign,
-          lastActivity: "Giveaway stock updated · now",
-          lastActivityAt: Date.now(),
-          items: (campaign.items || []).map((item) =>
+        const next = { ...campaign, lastActivity: "Giveaway stock updated · now", lastActivityAt: Date.now() };
+        if (giveawayEditorItem.isGiveawayExtra) {
+          next.giveawayExtras = (campaign.giveawayExtras || []).map((item) =>
             item.id !== giveawayEditorItem.id
               ? item
               : {
@@ -2037,8 +2615,26 @@ export default function SupplierMyCampaignsPage() {
                     audit: [auditEntry, ...(item.giveaway?.audit || [])]
                   }
                 }
-          )
-        };
+          );
+        } else {
+          next.items = (campaign.items || []).map((item) =>
+            item.id !== giveawayEditorItem.id
+              ? item
+              : {
+                  ...item,
+                  giveaway: {
+                    ...item.giveaway,
+                    enabled: giveawayDraftEnabled,
+                    total: nextTotal,
+                    lowThreshold: nextThreshold,
+                    notes: giveawayDraftNotes,
+                    updatedAt: nextUpdatedAt,
+                    audit: [auditEntry, ...(item.giveaway?.audit || [])]
+                  }
+                }
+          );
+        }
+        return next;
       })
     );
 
@@ -2058,7 +2654,7 @@ export default function SupplierMyCampaignsPage() {
   }, [builder.promoType, builder.promoArrangement, builder.defaultDiscountMode, builder.defaultDiscountValue]);
 
   return (
-    <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
+    <div className="min-h-full w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <ToastStack toasts={toasts} />
 
       <PageHeader
@@ -2091,6 +2687,9 @@ export default function SupplierMyCampaignsPage() {
             >
               🛍️ Adz
             </Btn>
+            <Btn className={MY_GIVEAWAYS_OUTLINE_CLASS} onClick={() => setMyGiveawaysOpen(true)} title="Open complete giveaway list">
+              🎁 My Giveaways
+            </Btn>
             <Btn tone="primary" onClick={openCreate} title="Create a campaign">
               ➕ New Campaign
             </Btn>
@@ -2098,7 +2697,7 @@ export default function SupplierMyCampaignsPage() {
         }
       />
 
-      <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-y-auto overflow-x-hidden">
+      <main className="flex-1 flex flex-col w-full px-3 sm:px-4 md:px-6 lg:px-8 py-6 gap-4 overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
           {/* Summary */}
           <section className="flex flex-col md:flex-row items-start md:items-center justify-between gap-2 text-sm">
@@ -2130,40 +2729,40 @@ export default function SupplierMyCampaignsPage() {
             <Pill tone="neutral">👥 Use Creator: <span className="font-extrabold">{modeSummaries.useCreator.count}</span></Pill>
             <Pill tone="neutral">✨ Supplier as Creator: <span className="font-extrabold">{modeSummaries.supplierAsCreator.count}</span></Pill>
             <Pill tone="neutral">⏳ Not sure: <span className="font-extrabold">{modeSummaries.notSure.count}</span></Pill>
-            <Pill tone="brand">🎬 Creators engaged: <span className="font-extrabold">{totals.creatorsEngaged}</span></Pill>
+            <Pill tone="neutral">🎬 Creators Engaged: <span className="font-extrabold">{totals.creatorsEngaged}</span></Pill>
           </section>
 
-          {/* Giveaway source-of-truth summary */}
+          {/* Main campaign KPI cards */}
           <section className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Configured giveaway items</div>
-              <div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{overallGiveawayTotals.enabledCount}</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Products or services with giveaway enabled</div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Total campaigns</div>
+              <div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{campaigns.length}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Across all supplier pipelines</div>
             </div>
             <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Total giveaway pool</div>
-              <div className="mt-2 text-2xl font-black text-[#f77f00]">{overallGiveawayTotals.total}</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Supplier-defined quantity across campaigns</div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Active campaigns</div>
+              <div className="mt-2 text-2xl font-black text-[#f77f00]">{totals.activeCount}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Live pipelines in motion</div>
             </div>
             <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Used</div>
-              <div className="mt-2 text-2xl font-black text-rose-600 dark:text-rose-400">{overallGiveawayTotals.used}</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Already claimed in previous live sessions</div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Pending approvals</div>
+              <div className="mt-2 text-2xl font-black text-amber-600 dark:text-amber-400">{totals.pendingApprovals}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Awaiting supplier or Admin action</div>
             </div>
             <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Allocated</div>
-              <div className="mt-2 text-2xl font-black text-amber-600 dark:text-amber-400">{overallGiveawayTotals.allocated}</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Reserved by upcoming creator sessions</div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Creator-led</div>
+              <div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{modeSummaries.useCreator.count}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Campaigns using creators</div>
             </div>
             <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Currently available</div>
-              <div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">{overallGiveawayTotals.available}</div>
-              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">What Creator Live Builder can still allocate</div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500 font-semibold">Supplier-hosted</div>
+              <div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{modeSummaries.supplierAsCreator.count}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Supplier acts as creator</div>
             </div>
           </section>
 
           <div className="text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-            Giveaway stock is supplier-owned source of truth. The same total, used, allocated and available values power Creator App &gt; Live Builder &gt; Featured Items &gt; + Add Giveaway.
+            Giveaway stock is still managed from <span className="font-extrabold">My Giveaways</span> and from each campaign giveaway configuration. Use the orange-outlined My Giveaways button to manage the supplier-owned source of truth that feeds both Supplier and Creator Live Builder giveaway selectors.
           </div>
 
           {/* Filters */}
@@ -2252,6 +2851,7 @@ export default function SupplierMyCampaignsPage() {
                       key={c.id}
                       campaign={c}
                       onOpen={() => openDetails(c)}
+                      onRequestTerminate={() => openTerminationFlow(c)}
                       onGo={(path) => {
                         push(`Navigate → ${path}`, "info");
                         go(path);
@@ -2316,120 +2916,246 @@ export default function SupplierMyCampaignsPage() {
         }}
       />
 
+      {/* My Giveaways Workspace */}
+      <MyGiveawaysModal
+        open={myGiveawaysOpen}
+        onClose={() => setMyGiveawaysOpen(false)}
+        campaigns={campaigns}
+        defaultCampaignId={activeCampaign?.id || filteredCampaigns[0]?.id || campaigns[0]?.id || ""}
+        onOpenCampaign={(campaignId) => {
+          const campaign = campaigns.find((item) => item.id === campaignId);
+          if (campaign) {
+            setActiveCampaign(campaign);
+            setDetailsOpen(true);
+          }
+          setMyGiveawaysOpen(false);
+        }}
+        onConfigureItem={(campaignId, itemId) => {
+          const campaign = campaigns.find((item) => item.id === campaignId);
+          const giveawayItem = getCampaignGiveawayNodes(campaign).find((item) => item.id === itemId);
+          if (campaign && giveawayItem) {
+            openGiveawayEditor(campaign, giveawayItem);
+            setMyGiveawaysOpen(false);
+          }
+        }}
+        onAddGiveaway={(campaignId) => {
+          const campaign = campaigns.find((item) => item.id === campaignId) || activeCampaign || filteredCampaigns[0] || campaigns[0];
+          if (campaign) {
+            openGiveawayAdd(campaign);
+            setMyGiveawaysOpen(false);
+          }
+        }}
+      />
+
+      {/* Campaign termination flow */}
+      <Drawer
+        open={terminationOpen}
+        title={terminationHasActiveContracts ? "Contract-aware termination" : "Terminate campaign"}
+        subtitle={
+          terminationHasActiveContracts
+            ? "Active contracts detected. Route through Contracts termination workflow."
+            : "Confirm termination with an auditable reason."
+        }
+        onClose={closeTerminationFlow}
+        widthClass="sm:w-[580px]"
+        footer={
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+              {terminationHasActiveContracts
+                ? "Direct termination is blocked while active contracts exist."
+                : "Final confirmation will terminate this campaign immediately."}
+            </div>
+            <div className="flex items-center gap-2">
+              <Btn onClick={closeTerminationFlow} disabled={terminationSubmitting}>Cancel</Btn>
+              <Btn
+                tone={terminationHasActiveContracts ? "primary" : "danger"}
+                onClick={submitTerminationFlow}
+                disabled={terminationSubmitting || !terminationReason || (terminationHasActiveContracts && !terminationExplanation.trim())}
+              >
+                {terminationSubmitting
+                  ? "Processing…"
+                  : terminationHasActiveContracts
+                    ? "Continue in Contracts"
+                    : "Confirm Termination"}
+              </Btn>
+            </div>
+          </div>
+        }
+      >
+        {terminationTarget ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Campaign</div>
+              <div className="mt-1 text-sm font-extrabold text-slate-900 dark:text-slate-100">{terminationTarget.name}</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {terminationTarget.id} · {terminationTarget.stage} · {money(terminationTarget.currency, terminationTarget.estValue)}
+              </div>
+            </div>
+
+            {terminationHasActiveContracts ? (
+              <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-amber-800 dark:text-amber-300">Contract check</div>
+                <div className="mt-1 text-sm font-bold text-amber-900 dark:text-amber-200">
+                  {terminationContractCount} active contract{terminationContractCount === 1 ? "" : "s"} linked to this campaign.
+                </div>
+                <div className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80">
+                  Use the Contracts termination flow so Creator and EVzone Admin notifications remain consistent.
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-900/20 p-3">
+                <div className="text-xs font-black uppercase tracking-[0.16em] text-rose-800 dark:text-rose-300">Final warning</div>
+                <div className="mt-1 text-sm font-bold text-rose-900 dark:text-rose-200">
+                  This action moves the campaign to Terminated.
+                </div>
+                <div className="mt-1 text-xs text-rose-800/80 dark:text-rose-200/80">
+                  Continue only if campaign operations are complete.
+                </div>
+              </div>
+            )}
+
+            <FieldShell label="Reason for termination *">
+              <Select
+                value={terminationReason}
+                onChange={(value) => {
+                  setTerminationReason(value);
+                  if (terminationError) setTerminationError("");
+                }}
+              >
+                <option value="">Select a reason</option>
+                {TERMINATION_REASON_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Select>
+            </FieldShell>
+
+            <FieldShell label={terminationHasActiveContracts ? "Explanation *" : "Explanation"}>
+              <TextArea
+                rows={4}
+                value={terminationExplanation}
+                onChange={(e) => {
+                  setTerminationExplanation(e.target.value);
+                  if (terminationError) setTerminationError("");
+                }}
+                placeholder={
+                  terminationHasActiveContracts
+                    ? "Required: explain the contract impact and why termination is requested."
+                    : "Optional: add any context for audit history."
+                }
+              />
+            </FieldShell>
+
+            {terminationError ? <div className="text-xs font-semibold text-rose-600 dark:text-rose-300">{terminationError}</div> : null}
+            <div className="text-[10px] text-slate-500 dark:text-slate-400">
+              Permission note: Only Supplier Owner/Admin should trigger campaign termination actions.
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-slate-500 dark:text-slate-400">Select a campaign to terminate.</div>
+        )}
+      </Drawer>
+
       {/* Campaign Builder Drawer */}
       <Drawer
         open={builderOpen}
         title="New Campaign"
-        subtitle="Campaign Builder · Promo + Catalog · Submit for Admin approval"
+        subtitle="Campaign Builder · Basics → Products / Services → Giveaways → Collaboration → Submit for Approval"
         onClose={() => setBuilderOpen(false)}
+        widthClass="sm:w-[920px]"
         footer={
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-slate-500 dark:text-slate-400">Step {builderStep} / 4</div>
-            <div className="flex items-center gap-2">
-              <Btn onClick={() => setBuilderStep((s) => Math.max(1, s - 1))} disabled={builderStep === 1}>
-                ← Back
-              </Btn>
-              {builderStep < 4 ? (
-                <Btn
-                  tone="primary"
-                  onClick={() => {
-                    if (builderStep === 1 && !String(builder.name || "").trim()) {
-                      push("Campaign name is required.", "error");
-                      return;
-                    }
-                    setBuilderStep((s) => Math.min(4, s + 1));
-                  }}
-                >
-                  Next →
-                </Btn>
-              ) : (
-                <>
-                  <Btn onClick={saveDraft} title="Save draft">📝 Save draft</Btn>
-                  <Btn tone="primary" onClick={submitForApproval} title="Submit to Admin for approval">
-                    📨 Submit for Approval
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { step: 1, label: "Basics & Promo" },
+                { step: 2, label: "Products / Services" },
+                { step: 3, label: "Giveaways" },
+                { step: 4, label: "Creator Plan" },
+                { step: 5, label: "Review & Submit" },
+              ].map((meta) => (
+                <Pill key={meta.step} tone={builderStep === meta.step ? "brand" : builderStep > meta.step ? "good" : "neutral"}>
+                  {meta.step}. {meta.label}
+                </Pill>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Step {builderStep} / 5</div>
+              <div className="flex items-center gap-2">
+                <Btn onClick={() => setBuilderStep((s) => Math.max(1, s - 1))} disabled={builderStep === 1}>← Back</Btn>
+                {builderStep < 5 ? (
+                  <Btn
+                    tone="primary"
+                    onClick={() => {
+                      if (builderStep === 1 && !String(builder.name || "").trim()) {
+                        push("Campaign name is required.", "error");
+                        return;
+                      }
+                      setBuilderStep((s) => Math.min(5, s + 1));
+                    }}
+                  >
+                    Next →
                   </Btn>
-                </>
-              )}
+                ) : (
+                  <>
+                    <Btn onClick={saveDraft} title="Save draft">📝 Save draft</Btn>
+                    <Btn tone="primary" onClick={submitForApproval} title="Submit to Admin for approval">📨 Submit for Approval</Btn>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         }
       >
         {/* STEP 1 */}
         {builderStep === 1 ? (
-          <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
-              <div className="text-sm font-bold">Basics + Promo + Catalog</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Define identity, duration, promo design, and items to promote.</div>
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-4">
+              <div className="text-sm font-bold">Basics + Promo</div>
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Define the campaign identity, timing, promo design and internal ownership before selecting products or services.</div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Campaign name *</div>
-                <div className="mt-2">
-                  <Input
-                    value={builder.name}
-                    onChange={(v) => setBuilder((p) => ({ ...p, name: v }))}
-                    placeholder="Example: Beauty Flash Week (Combo)"
-                  />
-                </div>
+            <div className="grid grid-cols-1 gap-4">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <FieldShell label="Campaign name" hint="Required">
+                  <Input value={builder.name} onChange={(v) => setBuilder((p) => ({ ...p, name: v }))} placeholder="Example: Beauty Flash Week (Combo)" />
+                </FieldShell>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Campaign type</div>
-                  <div className="mt-2">
-                    <Select value={builder.type} onChange={(v) => setBuilder((p) => ({ ...p, type: v }))}>
-                      <option value="Shoppable Adz">Shoppable Adz</option>
-                      <option value="Live Sessionz">Live Sessionz</option>
-                      <option value="Shoppable Adz + Live">Shoppable Adz + Live</option>
-                      <option value="Live + Clips">Live + Clips</option>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Region</div>
-                  <div className="mt-2">
-                    <Select value={builder.region} onChange={(v) => setBuilder((p) => ({ ...p, region: v }))}>
-                      <option value="East Africa">East Africa</option>
-                      <option value="West Africa">West Africa</option>
-                      <option value="Southern Africa">Southern Africa</option>
-                      <option value="North Africa">North Africa</option>
-                      <option value="Africa / Asia">Africa / Asia</option>
-                      <option value="Global">Global</option>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Currency</div>
-                  <div className="mt-2">
-                    <Select value={builder.currency} onChange={(v) => setBuilder((p) => ({ ...p, currency: v }))}>
-                      <option value="USD">USD</option>
-                      <option value="UGX">UGX</option>
-                      <option value="KES">KES</option>
-                      <option value="TZS">TZS</option>
-                      <option value="EUR">EUR</option>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Planned budget</div>
-                  <div className="mt-2">
-                    <Input
-                      type="number"
-                      value={builder.estValue}
-                      onChange={(v) => setBuilder((p) => ({ ...p, estValue: clamp(v, 0, 100000000) }))}
-                      placeholder="1000"
-                    />
-                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Estimate until contracts are signed.</div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <FieldShell label="Campaign type">
+                  <Select value={builder.type} onChange={(v) => setBuilder((p) => ({ ...p, type: v }))}>
+                    <option value="Shoppable Adz">Shoppable Adz</option>
+                    <option value="Live Sessionz">Live Sessionz</option>
+                    <option value="Live + Shoppables">Live + Shoppables</option>
+                  </Select>
+                </FieldShell>
+                <FieldShell label="Campaign coverage">
+                  <Select value={builder.locationType} onChange={(v) => setBuilder((p) => {
+                    const nextValue = campaignLocationOptions(v)[0] || p.locationValue;
+                    return { ...p, locationType: v, locationValue: nextValue, region: nextValue };
+                  })}>
+                    {CAMPAIGN_LOCATION_TYPES.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </Select>
+                </FieldShell>
+                <FieldShell label={builder.locationType === "Country" ? "Country" : "Region"}>
+                  <Select value={builder.locationValue} onChange={(v) => setBuilder((p) => ({ ...p, locationValue: v, region: v }))}>
+                    {campaignLocationOptions(builder.locationType).map((option) => <option key={option} value={option}>{option}</option>)}
+                  </Select>
+                </FieldShell>
+                <FieldShell label="Currency">
+                  <Select value={builder.currency} onChange={(v) => setBuilder((p) => ({ ...p, currency: v }))}>
+                    <option value="USD">USD</option>
+                    <option value="UGX">UGX</option>
+                    <option value="KES">KES</option>
+                    <option value="TZS">TZS</option>
+                    <option value="EUR">EUR</option>
+                  </Select>
+                </FieldShell>
+                <FieldShell label="Planned budget">
+                  <Input type="number" value={builder.estValue} onChange={(v) => setBuilder((p) => ({ ...p, estValue: clamp(v, 0, 100000000) }))} placeholder="1000" />
+                </FieldShell>
               </div>
 
-              {/* Duration */}
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-bold">Campaign duration</div>
@@ -2437,57 +3163,29 @@ export default function SupplierMyCampaignsPage() {
                   </div>
                   <Pill tone="brand">Max 45 days</Pill>
                 </div>
-
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Start date *</div>
-                    <input
-                      type="date"
-                      value={builder.startDate}
-                      onChange={(e) => setBuilder((p) => ({ ...p, startDate: e.target.value }))}
-                      className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-semibold outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Duration (days) *</div>
-                    <input
-                      type="number"
-                      min={1}
-                      max={45}
-                      value={builder.durationDays}
-                      onChange={(e) => {
-                        const v = clamp(e.target.value, 1, 45);
-                        if (Number(e.target.value) !== v) push("Duration must be between 1 and 45 days.", "warn");
-                        setBuilder((p) => ({ ...p, durationDays: v }));
-                      }}
-                      className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-semibold outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">End date (auto)</div>
-                    <input
-                      type="date"
-                      value={builderEndDate}
-                      disabled
-                      className="mt-2 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none text-slate-700 dark:text-slate-300"
-                    />
-                  </div>
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <FieldShell label="Start date" hint="Required · dd/mm/yyyy">
+                    <input type="date" value={builder.startDate} onChange={(e) => setBuilder((p) => ({ ...p, startDate: e.target.value }))} className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-semibold outline-none" />
+                  </FieldShell>
+                  <FieldShell label="Duration (days)" hint="1–45">
+                    <input type="number" min={1} max={45} value={builder.durationDays} onChange={(e) => setBuilder((p) => ({ ...p, durationDays: clamp(e.target.value, 1, 45) }))} className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm font-semibold outline-none" />
+                  </FieldShell>
+                  <FieldShell label="End date" hint="Auto · dd/mm/yyyy">
+                    <input type="date" value={builderEndDate} disabled className="w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none text-slate-700 dark:text-slate-300" />
+                  </FieldShell>
                 </div>
               </div>
 
-              {/* Promo */}
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-sm font-bold">Promo type & arrangement</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Define the promo mechanism (discount, coupon, bundle, etc.).</div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Define the offer mechanism before selecting items from catalog.</div>
                   </div>
                   <Pill tone="brand">{promoLabels.promoTypeLabel}</Pill>
                 </div>
 
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2">
                   {PROMO_TYPES.map((pt) => (
                     <button
                       key={pt.k}
@@ -2499,7 +3197,6 @@ export default function SupplierMyCampaignsPage() {
                           ...p,
                           promoType: pt.k,
                           promoArrangement: nextArrangement,
-                          // sensible defaults
                           defaultDiscountMode: pt.k === "Discount" || pt.k === "Coupon" ? "percent" : "none",
                           defaultDiscountValue: pt.k === "Discount" || pt.k === "Coupon" ? 10 : 0
                         }));
@@ -2516,204 +3213,58 @@ export default function SupplierMyCampaignsPage() {
                   ))}
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Preferred arrangement</div>
-                    <Select
-                      value={builder.promoArrangement}
-                      onChange={(v) => setBuilder((p) => ({ ...p, promoArrangement: v }))}
-                      className="mt-2"
-                    >
-                      {(PROMO_ARRANGEMENTS[builder.promoType] || []).map((a) => (
-                        <option key={a.k} value={a.k}>
-                          {a.label}
-                        </option>
-                      ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <FieldShell label="Preferred arrangement">
+                    <Select value={builder.promoArrangement} onChange={(v) => setBuilder((p) => ({ ...p, promoArrangement: v }))}>
+                      {(PROMO_ARRANGEMENTS[builder.promoType] || []).map((a) => <option key={a.k} value={a.k}>{a.label}</option>)}
                     </Select>
-                  </div>
-
-                  <div>
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Offer scope</div>
-                    <Select
-                      value={builder.offerScope}
-                      onChange={(v) => setBuilder((p) => ({ ...p, offerScope: v }))}
-                      className="mt-2"
-                    >
-                      {OFFER_SCOPES.map((s) => (
-                        <option key={s.k} value={s.k}>
-                          {s.label}
-                        </option>
-                      ))}
+                  </FieldShell>
+                  <FieldShell label="Offer scope">
+                    <Select value={builder.offerScope} onChange={(v) => setBuilder((p) => ({ ...p, offerScope: v }))}>
+                      {OFFER_SCOPES.map((s) => <option key={s.k} value={s.k}>{s.label}</option>)}
                     </Select>
-                  </div>
+                  </FieldShell>
                 </div>
 
-                {/* Promo extra fields */}
                 {builder.promoType === "Coupon" ? (
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Promo / coupon code</div>
-                      <Input
-                        value={builder.promoCode}
-                        onChange={(v) => setBuilder((p) => ({ ...p, promoCode: v.toUpperCase() }))}
-                        placeholder="Example: TECHFRIDAY"
-                        className="mt-2"
-                      />
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Creators can mention this code in content.</div>
-                    </div>
-                  </div>
+                  <FieldShell label="Promo / coupon code">
+                    <Input value={builder.promoCode} onChange={(v) => setBuilder((p) => ({ ...p, promoCode: v.toUpperCase() }))} placeholder="Example: TECHFRIDAY" />
+                  </FieldShell>
                 ) : null}
 
                 {builder.promoType === "FreeShipping" ? (
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Shipping threshold</div>
-                      <Input
-                        type="number"
-                        value={builder.shippingThreshold}
-                        onChange={(v) => setBuilder((p) => ({ ...p, shippingThreshold: clamp(v, 0, 100000000) }))}
-                        placeholder="0"
-                        className="mt-2"
-                      />
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Example: free shipping over $50.</div>
-                    </div>
-                  </div>
+                  <FieldShell label="Shipping threshold">
+                    <Input type="number" value={builder.shippingThreshold} onChange={(v) => setBuilder((p) => ({ ...p, shippingThreshold: clamp(v, 0, 100000000) }))} placeholder="0" />
+                  </FieldShell>
                 ) : null}
 
                 {builder.promoType === "Gift" ? (
-                  <div className="mt-3">
-                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Gift / bonus note</div>
-                    <textarea
-                      value={builder.giftNote}
-                      onChange={(e) => setBuilder((p) => ({ ...p, giftNote: e.target.value }))}
-                      className="mt-2 w-full min-h-[84px] rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-sm outline-none"
-                      placeholder="Example: Free travel pouch with every bundle purchase"
-                    />
-                  </div>
+                  <FieldShell label="Gift / bonus note">
+                    <TextArea value={builder.giftNote} onChange={(e) => setBuilder((p) => ({ ...p, giftNote: e.target.value }))} placeholder="Example: Free travel pouch with every bundle purchase" rows={4} />
+                  </FieldShell>
                 ) : null}
 
-                <div className="mt-3 rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-bold">Default discount (for catalog)</div>
-                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                        Applies when selecting items, and can be overridden per item.
-                      </div>
-                    </div>
-                    <Btn onClick={applyDefaultDiscountToSelected} title="Apply discount to items already selected">
-                      ✨ Apply to selected
-                    </Btn>
-                  </div>
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Default mode</div>
-                      <Select
-                        value={builder.defaultDiscountMode}
-                        onChange={(v) => setBuilder((p) => ({ ...p, defaultDiscountMode: v }))}
-                        className="mt-2"
-                      >
-                        {DISCOUNT_MODES.map((m) => (
-                          <option key={m.k} value={m.k}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Default value</div>
-                      <Input
-                        type="number"
-                        value={builder.defaultDiscountValue}
-                        onChange={(v) => setBuilder((p) => ({ ...p, defaultDiscountValue: Math.max(0, safeNum(v, 0)) }))}
-                        className="mt-2"
-                        placeholder="10"
-                      />
-                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {formatDiscount(builder.defaultDiscountMode, builder.defaultDiscountValue, builder.currency)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Items */}
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="flex items-start justify-between gap-2">
+                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4 space-y-4">
                   <div>
-                    <div className="text-sm font-bold">Products / Services</div>
-                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                      Select items from Catalog. Each item can have its own planned quantity and discount.
-                    </div>
+                    <div className="text-sm font-bold">Default discount for catalog selection</div>
+                    <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Applies when selecting items and can be overridden per item or per giveaway later.</div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {allowProducts(builder.offerScope) ? (
-                      <Btn tone="primary" onClick={() => openCatalog("Product")}>➕ Add Products</Btn>
-                    ) : null}
-                    {allowServices(builder.offerScope) ? (
-                      <Btn tone={allowProducts(builder.offerScope) ? "neutral" : "primary"} onClick={() => openCatalog("Service")}>
-                        ➕ Add Services
-                      </Btn>
-                    ) : null}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FieldShell label="Default mode">
+                      <Select value={builder.defaultDiscountMode} onChange={(v) => setBuilder((p) => ({ ...p, defaultDiscountMode: v }))}>
+                        {DISCOUNT_MODES.map((m) => <option key={m.k} value={m.k}>{m.label}</option>)}
+                      </Select>
+                    </FieldShell>
+                    <FieldShell label="Default value">
+                      <Input type="number" value={builder.defaultDiscountValue} onChange={(v) => setBuilder((p) => ({ ...p, defaultDiscountValue: Math.max(0, safeNum(v, 0)) }))} placeholder="10" />
+                    </FieldShell>
                   </div>
-                </div>
-
-                <div className="mt-3">
-                  {(builder.items || []).length === 0 ? (
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 text-xs text-slate-500 dark:text-slate-400">
-                      No items selected yet.
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                      {(builder.items || []).map((it) => (
-                        <div
-                          key={it.id}
-                          className="flex items-start justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <img src={it.avatar} alt="avatar" className="h-10 w-10 rounded-2xl border border-slate-200 dark:border-slate-700" />
-                            <div className="min-w-0">
-                              <div className="text-sm font-extrabold truncate">{it.title}</div>
-                              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 truncate">
-                                {it.kind} · Qty: <span className="font-bold">{it.plannedQty || 1}</span> · {it.discountLabel || "No discount"}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                                Price: {money(builder.currency, it.price)} → <span className="font-extrabold">{money(builder.currency, it.discountedPrice ?? it.price)}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Btn
-                              onClick={() => {
-                                // open catalog focused on the item kind
-                                openCatalog(it.kind);
-                              }}
-                            >
-                              ✏️ Edit
-                            </Btn>
-                            <Btn
-                              onClick={() => {
-                                setBuilder((p) => ({ ...p, items: (p.items || []).filter((x) => x.id !== it.id) }));
-                                push("Item removed.", "success");
-                              }}
-                            >
-                              🗑️ Remove
-                            </Btn>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                  Catalog requirement: avatar, details, qty, current price, discount, and discounted price are captured per item.
+                  <div className="text-xs text-slate-500 dark:text-slate-400">{formatDiscount(builder.defaultDiscountMode, builder.defaultDiscountValue, builder.currency)}</div>
                 </div>
               </div>
 
-              {/* Internal owner */}
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Internal owner</div>
-                <div className="mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                <FieldShell label="Internal owner">
                   <Select value={builder.internalOwner} onChange={(v) => setBuilder((p) => ({ ...p, internalOwner: v }))}>
                     <option value="Supplier Owner">Supplier Owner</option>
                     <option value="Supplier Manager">Supplier Manager</option>
@@ -2721,8 +3272,10 @@ export default function SupplierMyCampaignsPage() {
                     <option value="Adz Manager">Adz Manager</option>
                     <option value="Live Producer">Live Producer</option>
                   </Select>
-                </div>
-                <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">(RBAC note) Sensitive actions should be limited to authorized roles.</div>
+                </FieldShell>
+                <FieldShell label="Internal notes">
+                  <TextArea value={builder.notes} onChange={(e) => setBuilder((p) => ({ ...p, notes: e.target.value }))} rows={4} placeholder="Optional planning notes, approval comments, internal instructions…" />
+                </FieldShell>
               </div>
             </div>
           </div>
@@ -2730,13 +3283,168 @@ export default function SupplierMyCampaignsPage() {
 
         {/* STEP 2 */}
         {builderStep === 2 ? (
-          <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
-              <div className="text-sm font-bold">Creator plan (required)</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">This selection drives the workflow.</div>
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-4">
+              <div className="text-sm font-bold">Products / Services</div>
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">This is now an independent step. Open the catalog, set quantities, review current vs discounted prices, and move to Giveaways next.</div>
             </div>
 
-            <div className="grid grid-cols-1 gap-2">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-bold">Catalog selector</div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Use catalog to select campaign items. Each selection captures avatar, details, quantity planned, current price, discount and discounted price.</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {allowProducts(builder.offerScope) ? <Btn tone="primary" onClick={() => openCatalog("Product")}>➕ Add Products</Btn> : null}
+                  {allowServices(builder.offerScope) ? <Btn className="!border-[#f77f00] dark:!border-[#f77f00] hover:!bg-orange-50 dark:hover:!bg-orange-950/20" onClick={() => openCatalog("Service")}>➕ Add Services</Btn> : null}
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Selected items</div><div className="mt-2 text-2xl font-black">{builder.items.length}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Products + services attached to draft</div></div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Offer scope</div><div className="mt-2 text-2xl font-black">{builder.offerScope}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Controls which catalog tabs are enabled</div></div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Promo defaults</div><div className="mt-2 text-lg font-black text-[#f77f00]">{formatDiscount(builder.defaultDiscountMode, builder.defaultDiscountValue, builder.currency)}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Prefills each selected item</div></div>
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Giveaway next</div><div className="mt-2 text-lg font-black text-slate-900 dark:text-slate-100">Step 3</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Configure giveaway stock after selection</div></div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="text-sm font-bold">Selected catalog items</div>
+              <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">If needed, you can already jump into giveaway setup per selected item from this step.</div>
+              <div className="mt-4">
+                {(builder.items || []).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-6 text-center text-sm text-slate-500 dark:text-slate-400">No products or services selected yet. Use Add Products / Add Services above.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {(builder.items || []).map((it) => {
+                      const giveawayNode = ensureGiveaway(it);
+                      const health = giveawayHealthTone(giveawayNode);
+                      return (
+                        <div key={it.id} className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/40 p-4">
+                          <div className="flex flex-col lg:flex-row items-start justify-between gap-4">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <img src={it.avatar} alt="avatar" className="h-12 w-12 rounded-2xl border border-slate-200 dark:border-slate-700" />
+                              <div className="min-w-0">
+                                <div className="text-sm font-extrabold truncate text-slate-900 dark:text-slate-100">{it.title}</div>
+                                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{it.kind} · Qty planned {it.plannedQty || 1} · {it.discountLabel || 'No discount'}</div>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  <Pill tone="neutral">Current {money(builder.currency, it.price)}</Pill>
+                                  <Pill tone="brand">Discounted {money(builder.currency, it.discountedPrice ?? it.price)}</Pill>
+                                  <Pill tone={giveawayNode.giveaway?.enabled ? 'good' : 'neutral'}>{giveawayNode.giveaway?.enabled ? 'Giveaway enabled' : 'Giveaway disabled'}</Pill>
+                                  <Pill tone={health.tone}>{health.label}</Pill>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Btn onClick={() => openCatalog(it.kind)}>✏️ Edit in Catalog</Btn>
+                              <Btn onClick={() => openGiveawayEditor(builderCampaignPreview, giveawayNode)}>🎁 Set Giveaway</Btn>
+                              <Btn tone="danger" onClick={() => { setBuilder((p) => ({ ...p, items: (p.items || []).filter((x) => x.id !== it.id) })); push('Item removed.', 'success'); }}>🗑️ Remove</Btn>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* STEP 3 */}
+        {builderStep === 3 ? (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-4">
+              <div className="text-sm font-bold">Giveaways</div>
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Suppliers define giveaway stock here. Live Builder – whether supplier-hosted or creator-hosted – picks up total, used, allocated and available values from this step and from My Giveaways after launch.</div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Btn tone="primary" onClick={() => openGiveawayAdd(builderCampaignPreview)}>➕ Giveaway Item</Btn>
+              <Btn onClick={openApprovedAssetLibrary}>📚 Approved Asset Library</Btn>
+              <Pill tone="neutral">Featured item / Inventory item / External item supported</Pill>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Configured items</div><div className="mt-2 text-2xl font-black">{calcCampaignGiveawayTotals(builderCampaignPreview).enabledCount}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Giveaway-enabled lines</div></div>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Total pool</div><div className="mt-2 text-2xl font-black text-[#f77f00]">{calcCampaignGiveawayTotals(builderCampaignPreview).total}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Supplier-defined stock</div></div>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Committed</div><div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{calcCampaignGiveawayTotals(builderCampaignPreview).used + calcCampaignGiveawayTotals(builderCampaignPreview).allocated}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used + allocated</div></div>
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Available</div><div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">{calcCampaignGiveawayTotals(builderCampaignPreview).available}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">What Live Builder can still allocate</div></div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-bold">Draft campaign giveaway table</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">This mirrors the supplier-owned giveaway management table you can also reach later from the main My Giveaways workspace.</div>
+                </div>
+              </div>
+              <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[980px] text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900/60">
+                    <tr>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Item / Service</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Source</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Total</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Used</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Allocated</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Available</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400">Health</th>
+                      <th className="px-4 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-400 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getCampaignGiveawayNodes(builderCampaignPreview).map((item) => {
+                      const health = giveawayHealthTone(item);
+                      return (
+                        <tr key={item.id} className="border-t border-slate-200 dark:border-slate-800">
+                          <td className="px-4 py-3">
+                            <div className="flex items-start gap-3">
+                              <img src={item.assetPreview || item.avatar} alt={item.title} className="h-11 w-11 rounded-2xl border border-slate-200 dark:border-slate-700 object-cover" />
+                              <div>
+                                <div className="font-extrabold text-slate-900 dark:text-slate-100">{item.title}</div>
+                                <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{item.kind} · {item.subtitle} · {item.sku}</div>
+                                {item.assetTitle ? <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Approved asset: {item.assetTitle}</div> : null}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3"><Pill tone={item.isGiveawayExtra ? 'warn' : 'neutral'}>{item.sourceLabel || 'Campaign item'}</Pill></td>
+                          <td className="px-4 py-3 font-extrabold text-slate-900 dark:text-slate-100">{item.giveaway?.total || 0}</td>
+                          <td className="px-4 py-3 font-extrabold text-rose-600 dark:text-rose-400">{item.giveaway?.used || 0}</td>
+                          <td className="px-4 py-3 font-extrabold text-amber-600 dark:text-amber-400">{item.giveaway?.allocated || 0}</td>
+                          <td className="px-4 py-3 font-extrabold text-emerald-600 dark:text-emerald-400">{giveawayAvailability(item)}</td>
+                          <td className="px-4 py-3"><Pill tone={health.tone}>{health.label}</Pill></td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <Btn onClick={() => openGiveawayEditor(builderCampaignPreview, item)}>Configure</Btn>
+                              {item.isGiveawayExtra ? (
+                                <Btn tone="danger" onClick={() => { setBuilder((p) => ({ ...p, giveawayExtras: (p.giveawayExtras || []).filter((x) => x.id !== item.id) })); push('Standalone giveaway item removed from draft.', 'success'); }}>Remove</Btn>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {getCampaignGiveawayNodes(builderCampaignPreview).length === 0 ? (
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">No giveaway entries configured yet. Add products or services first, then set giveaways here.</td></tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* STEP 4 */}
+        {builderStep === 4 ? (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-4">
+              <div className="text-sm font-bold">Creator plan & content approval</div>
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">This step stays supplier-facing. Remember, the supplier can also act as the creator if no external creator is engaged.</div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
               {USAGE_DECISIONS.map((v) => (
                 <RadioCard
                   key={v}
@@ -2745,10 +3453,10 @@ export default function SupplierMyCampaignsPage() {
                   badge={v === "I will use a Creator" ? "Collabs" : v === "I will NOT use a Creator" ? "Supplier acts as creator" : "Decide later"}
                   desc={
                     v === "I will use a Creator"
-                      ? "Open Collabs: creators pitch. Invite-only: you invite creators and they accept the invite to collaborate, then negotiation and contract follow."
+                      ? "After Admin approval: Open for Collabs lets creators pitch, while Invite-only lets you invite creators and negotiate after they accept."
                       : v === "I will NOT use a Creator"
-                        ? "Skip collaboration logic. Start at Content Submission stage after Admin approves the campaign."
-                        : "Create the campaign now and decide collaboration mode later (before content submission)."
+                        ? "Skip creator collaboration logic. The supplier hosts or creates content directly, but giveaway stock still flows to Live Builder from this page."
+                        : "Create the campaign now and decide collaboration mode later, before content submission begins."
                   }
                   onClick={() => {
                     setBuilder((p) => ({
@@ -2762,36 +3470,11 @@ export default function SupplierMyCampaignsPage() {
               ))}
             </div>
 
-            {builder.creatorUsageDecision === "I will NOT use a Creator" ? (
-              <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3">
-                <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Supplier acts as Creator</div>
-                <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
-                  Collaboration logic is skipped. After Admin approves the campaign, you proceed to content submission.
-                </div>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {/* STEP 3 */}
-        {builderStep === 3 ? (
-          <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
-              <div className="text-sm font-bold">Collaboration & content approval</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Editable per campaign until content submission.</div>
-            </div>
-
             {builder.creatorUsageDecision === "I will use a Creator" ? (
-              <>
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-bold">Collaboration mode</div>
-                      <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Default is Open for Collabs. Invite-only is private.</div>
-                    </div>
-                    <Pill tone="brand">Default: Open</Pill>
-                  </div>
-
+              <div className="grid grid-cols-1 gap-4">
+                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
+                  <div className="text-sm font-bold">Collaboration mode</div>
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Default is Open for Collabs. Invite-only is private.</div>
                   <div className="mt-3 grid grid-cols-1 gap-2">
                     {COLLAB_MODES.map((m) => (
                       <RadioCard
@@ -2810,10 +3493,9 @@ export default function SupplierMyCampaignsPage() {
                   </div>
                 </div>
 
-                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+                <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                   <div className="text-sm font-bold">Content approval</div>
-                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Manual means you approve creator assets before Admin review.</div>
-
+                  <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Manual means the supplier approves creator assets before Admin review.</div>
                   <div className="mt-3 grid grid-cols-1 gap-2">
                     {APPROVAL_MODES.map((m) => (
                       <RadioCard
@@ -2821,127 +3503,92 @@ export default function SupplierMyCampaignsPage() {
                         active={builder.approvalMode === m}
                         title={m === "Manual" ? "Manual Content Approval" : "Auto Approval"}
                         badge={m}
-                        desc={
-                          m === "Manual"
-                            ? "Creator → Supplier review (approve/request changes/reject) → Admin review → scheduling/execution."
-                            : "Creator → Admin review directly. Supplier can still monitor and comment in the record."
-                        }
+                        desc={m === "Manual" ? "Creator → Supplier review → Admin review → scheduling / execution." : "Creator → Admin review directly. Supplier still sees the record and can comment."}
                         onClick={() => setBuilder((p) => ({ ...p, approvalMode: m }))}
                       />
                     ))}
                   </div>
-
-                  <div className="mt-3">
+                  <div className="mt-4">
                     <label className="flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
-                      <input
-                        type="checkbox"
-                        checked={!!builder.allowMultiCreators}
-                        onChange={(e) => setBuilder((p) => ({ ...p, allowMultiCreators: e.target.checked }))}
-                      />
+                      <input type="checkbox" checked={!!builder.allowMultiCreators} onChange={(e) => setBuilder((p) => ({ ...p, allowMultiCreators: e.target.checked }))} />
                       <span>Allow multiple creators per campaign (split deliverables and partial settlement supported).</span>
                     </label>
                   </div>
                 </div>
-              </>
+              </div>
             ) : builder.creatorUsageDecision === "I am NOT SURE yet" ? (
-              <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3">
-                <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Collab mode can be selected later</div>
-                <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
-                  You can submit for Admin approval now. Before content submission, select Open for Collabs or Invite-only.
-                </div>
+              <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-4">
+                <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Collaboration mode can be chosen later</div>
+                <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">You can submit for Admin approval now, then finalize creator mode before content submission.</div>
               </div>
             ) : (
-              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-sm font-bold">Supplier acts as Creator</div>
-                <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Collaboration settings are skipped. You proceed to content submission after Admin approval.</div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2">
-                  {APPROVAL_MODES.map((m) => (
-                    <RadioCard
-                      key={m}
-                      active={builder.approvalMode === m}
-                      title={m === "Manual" ? "Internal Review" : "Direct to Admin"}
-                      badge={m}
-                      desc={m === "Manual" ? "Internal checks before sending to Admin." : "Submit supplier content directly to Admin review."}
-                      onClick={() => setBuilder((p) => ({ ...p, approvalMode: m }))}
-                    />
-                  ))}
-                </div>
+                <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Collaboration settings are skipped for this path. The supplier hosts or produces content directly, and giveaway stock still feeds the live setup from this page.</div>
               </div>
             )}
           </div>
         ) : null}
 
-        {/* STEP 4 */}
-        {builderStep === 4 ? (
-          <div className="space-y-3">
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
+        {/* STEP 5 */}
+        {builderStep === 5 ? (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-4">
               <div className="text-sm font-bold">Review & submit</div>
-              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                Confirm duration, promo, and items. Submitting triggers Admin approval.
+              <div className="mt-1 text-xs text-slate-600 dark:text-slate-400">Confirm duration, promo, products / services, giveaway stock and creator plan. Submitting triggers Admin approval.</div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-xs font-bold text-slate-500 dark:text-slate-400">Campaign</div><div className="mt-1 text-sm font-extrabold">{builder.name || '(Campaign name)'}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{builder.type} · {campaignLocationType(builder)}: {campaignLocationValue(builder)}</div></div>
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-xs font-bold text-slate-500 dark:text-slate-400">Window</div><div className="mt-1 text-sm font-extrabold">{formatDateDMY(builder.startDate)} → {formatDateDMY(builderEndDate)}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{clamp(builder.durationDays, 1, 45)} day(s)</div></div>
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-xs font-bold text-slate-500 dark:text-slate-400">Promo</div><div className="mt-1 text-sm font-extrabold">{promoLabels.promoTypeLabel}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{promoLabels.promoArrangementLabel}</div></div>
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm"><div className="text-xs font-bold text-slate-500 dark:text-slate-400">Budget</div><div className="mt-1 text-sm font-extrabold text-[#f77f00]">{money(builder.currency, clamp(builder.estValue, 0, 100000000))}</div><div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Planned budget</div></div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+                <div className="text-sm font-bold">Products / Services summary</div>
+                <div className="text-sm font-semibold">{builder.items.length ? `${builder.items.length} selected item(s)` : 'No items selected yet'}</div>
+                {builder.items.length ? (
+                  <div className="flex flex-wrap gap-2">{builder.items.map((it) => <Pill key={it.id} tone="neutral">{it.title}</Pill>)}</div>
+                ) : null}
+              </div>
+              <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+                <div className="text-sm font-bold">Giveaway summary</div>
+                <div className="text-sm font-semibold">Configured lines: {calcCampaignGiveawayTotals(builderCampaignPreview).enabledCount}</div>
+                <div className="flex flex-wrap gap-2">
+                  <Pill tone="brand">Pool {calcCampaignGiveawayTotals(builderCampaignPreview).total}</Pill>
+                  <Pill tone="warn">Allocated {calcCampaignGiveawayTotals(builderCampaignPreview).allocated}</Pill>
+                  <Pill tone="good">Available {calcCampaignGiveawayTotals(builderCampaignPreview).available}</Pill>
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">These values become the supplier-owned source of truth for Live Builder giveaway selection.</div>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-extrabold truncate">{builder.name || "(Campaign name)"}</div>
-                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    {builder.type} · {builder.region} · {builder.currency}
-                  </div>
-                </div>
-                <Pill tone="brand">{money(builder.currency, clamp(builder.estValue, 0, 100000000))}</Pill>
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm space-y-3">
+              <div className="text-sm font-bold">Creator / host plan</div>
+              <div className="text-sm font-semibold">{builder.creatorUsageDecision}</div>
+              <div className="flex flex-wrap gap-2">
+                {builder.creatorUsageDecision === 'I will use a Creator' ? (
+                  <>
+                    <Pill tone="neutral">{builder.collabMode}</Pill>
+                    <Pill tone={builder.approvalMode === 'Manual' ? 'warn' : 'good'}>{builder.approvalMode === 'Manual' ? 'Manual approval' : 'Auto approval'}</Pill>
+                    <Pill tone="neutral">{builder.allowMultiCreators ? 'Multi-creator enabled' : 'Single creator'}</Pill>
+                  </>
+                ) : builder.creatorUsageDecision === 'I am NOT SURE yet' ? (
+                  <>
+                    <Pill tone="neutral">Creator plan pending</Pill>
+                    <Pill tone="neutral">Approval path not set</Pill>
+                  </>
+                ) : null}
               </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">Internal owner: {builder.internalOwner}</div>
+              {builder.notes ? <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3 text-sm text-slate-700 dark:text-slate-300">{builder.notes}</div> : null}
+            </div>
 
-              <div className="mt-3 grid grid-cols-1 gap-2">
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Duration</div>
-                  <div className="mt-1 text-sm font-semibold">
-                    {builder.startDate || "(start date missing)"} → {builderEndDate || "(end date)"} · {clamp(builder.durationDays, 1, 45)} day(s)
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Promo</div>
-                  <div className="mt-1 text-sm font-semibold">
-                    {promoLabels.promoTypeLabel} · {(PROMO_ARRANGEMENTS[builder.promoType] || []).find((a) => a.k === builder.promoArrangement)?.label}
-                  </div>
-                  {builder.promoType === "Coupon" && builder.promoCode ? (
-                    <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">Code: <span className="font-extrabold">{builder.promoCode}</span></div>
-                  ) : null}
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Products / Services</div>
-                  <div className="mt-1 text-sm font-semibold">
-                    {(builder.items || []).length === 0 ? "(no items selected)" : `${builder.items.length} item(s) selected`}
-                  </div>
-                  {(builder.items || []).length ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {(builder.items || []).slice(0, 6).map((it) => (
-                        <Pill key={it.id} tone="neutral">{it.title}</Pill>
-                      ))}
-                      {(builder.items || []).length > 6 ? <Pill tone="neutral">+{(builder.items || []).length - 6} more</Pill> : null}
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-3">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Creator plan</div>
-                  <div className="mt-1 text-sm font-semibold">{builder.creatorUsageDecision}</div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-amber-50 dark:bg-amber-900/10 p-3">
-                  <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Admin approval</div>
-                  <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">
-                    Submitting sends this campaign to Admin for review. Once approved, the campaign becomes active and can enter Collabs/Execution based on your selected workflow.
-                  </div>
-                </div>
-
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  Validation on submit: Start date, duration (1–45), promo type/arrangement, and at least one item must be present.
-                </div>
-              </div>
+            <div className="rounded-3xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-4">
+              <div className="text-sm font-bold text-amber-900 dark:text-amber-300">Admin approval</div>
+              <div className="mt-1 text-xs text-amber-900/80 dark:text-amber-300/80">Submitting sends this campaign to Admin for review. Once approved, the campaign becomes active and proceeds into Collabs or Execution based on your chosen workflow.</div>
             </div>
           </div>
         ) : null}
@@ -2951,7 +3598,7 @@ export default function SupplierMyCampaignsPage() {
       <Drawer
         open={detailsOpen}
         title={activeCampaign ? `${activeCampaign.name}` : "Campaign details"}
-        subtitle={activeCampaign ? `${activeCampaign.id} · ${activeCampaign.type} · ${activeCampaign.region}` : ""}
+        subtitle={activeCampaign ? `${activeCampaign.id} · ${activeCampaign.type} · ${campaignLocationLabel(activeCampaign, true)}` : ""}
         onClose={() => setDetailsOpen(false)}
         footer={
           activeCampaign ? (
@@ -2968,11 +3615,13 @@ export default function SupplierMyCampaignsPage() {
                   <Btn tone="primary" onClick={() => resubmitAfterRejection(activeCampaign)}>🔁 Resubmit</Btn>
                 ) : null}
                 <Btn
+                  className={MY_GIVEAWAYS_OUTLINE_CLASS}
                   onClick={() => {
-                    push("Opening giveaway source-of-truth workspace (preview).", "info");
+                    setMyGiveawaysOpen(true);
+                    push("Opening My Giveaways workspace.", "info");
                   }}
                 >
-                  🎁 Giveaway stock
+                  🎁 My Giveaways
                 </Btn>
                 <Btn
                   tone="primary"
@@ -3005,13 +3654,8 @@ export default function SupplierMyCampaignsPage() {
               </div>
 
               {activeCampaign.approvalStatus === "Pending" ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Btn tone="primary" onClick={() => simulateAdminDecision(activeCampaign, "approve")}>
-                    ✅ Simulate Approve
-                  </Btn>
-                  <Btn tone="danger" onClick={() => simulateAdminDecision(activeCampaign, "reject")}>
-                    ❌ Simulate Reject
-                  </Btn>
+                <div className="mt-3 text-xs text-slate-600 dark:text-slate-300">
+                  Awaiting Admin decision. Approval actions are handled outside this preview page.
                 </div>
               ) : activeCampaign.approvalStatus === "Approved" ? (
                 <div className="mt-3 text-xs text-slate-600 dark:text-slate-300">
@@ -3032,7 +3676,7 @@ export default function SupplierMyCampaignsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
                 <div className="text-xs text-slate-500 dark:text-slate-400 font-bold">Window</div>
-                <div className="mt-1 text-sm font-extrabold">{activeCampaign.startDate || "—"} → {activeCampaign.endDate || "—"}</div>
+                <div className="mt-1 text-sm font-extrabold">{formatDateDMY(activeCampaign.startDate)} → {formatDateDMY(activeCampaign.endDate)}</div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{activeCampaign.durationDays || "—"} days</div>
               </div>
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/30 p-3">
@@ -3271,7 +3915,7 @@ export default function SupplierMyCampaignsPage() {
             {giveawayAddSource === "featured" ? (
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <FieldShell label="Featured campaign item">
-                  <Select value={giveawayAddFeaturedItemId} onChange={(e) => setGiveawayAddFeaturedItemId(e.target.value)}>
+                  <Select value={giveawayAddFeaturedItemId} onChange={(value) => setGiveawayAddFeaturedItemId(value)}>
                     {(giveawayAddFeaturedCandidates || []).map((item) => (
                       <option key={item.id} value={item.id}>{item.title} · {item.kind}</option>
                     ))}
@@ -3284,7 +3928,7 @@ export default function SupplierMyCampaignsPage() {
             {giveawayAddSource === "inventory" ? (
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <FieldShell label="Supplier inventory item">
-                  <Select value={giveawayAddCatalogItemId} onChange={(e) => setGiveawayAddCatalogItemId(e.target.value)}>
+                  <Select value={giveawayAddCatalogItemId} onChange={(value) => setGiveawayAddCatalogItemId(value)}>
                     {(giveawayAddInventoryCandidates || []).map((item) => (
                       <option key={item.id} value={item.id}>{item.title} · {item.kind} · {item.sku}</option>
                     ))}
@@ -3303,10 +3947,10 @@ export default function SupplierMyCampaignsPage() {
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FieldShell label="External giveaway title" hint="Required">
-                    <Input value={giveawayAddExternalTitle} onChange={(e) => setGiveawayAddExternalTitle(e.target.value)} placeholder="e.g. VIP Winner Bundle" />
+                    <Input value={giveawayAddExternalTitle} onChange={(value) => setGiveawayAddExternalTitle(value)} placeholder="e.g. VIP Winner Bundle" />
                   </FieldShell>
                   <FieldShell label="Item type">
-                    <Select value={giveawayAddExternalKind} onChange={(e) => setGiveawayAddExternalKind(e.target.value)}>
+                    <Select value={giveawayAddExternalKind} onChange={(value) => setGiveawayAddExternalKind(value)}>
                       <option>Product</option>
                       <option>Service</option>
                     </Select>
@@ -3314,10 +3958,10 @@ export default function SupplierMyCampaignsPage() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                   <FieldShell label="Subtitle / description">
-                    <Input value={giveawayAddExternalSubtitle} onChange={(e) => setGiveawayAddExternalSubtitle(e.target.value)} placeholder="Short giveaway description" />
+                    <Input value={giveawayAddExternalSubtitle} onChange={(value) => setGiveawayAddExternalSubtitle(value)} placeholder="Short giveaway description" />
                   </FieldShell>
                   <FieldShell label="Reference SKU / code">
-                    <Input value={giveawayAddExternalSku} onChange={(e) => setGiveawayAddExternalSku(e.target.value)} placeholder="e.g. EXT-GIVEAWAY" />
+                    <Input value={giveawayAddExternalSku} onChange={(value) => setGiveawayAddExternalSku(value)} placeholder="e.g. EXT-GIVEAWAY" />
                   </FieldShell>
                 </div>
               </div>
@@ -3329,7 +3973,7 @@ export default function SupplierMyCampaignsPage() {
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Pick an approved image or poster from Asset Library only. Local upload is intentionally blocked here.</div>
                 <div className="mt-4 flex flex-col gap-3">
                   <FieldShell label="Approved poster / image" hint={giveawayAddRequiresAsset ? "Required" : "Optional for featured items"}>
-                    <Select value={giveawayAddAssetId} onChange={(e) => setGiveawayAddAssetId(e.target.value)}>
+                    <Select value={giveawayAddAssetId} onChange={(value) => setGiveawayAddAssetId(value)}>
                       <option value="">Select approved asset</option>
                       {APPROVED_ASSET_LIBRARY.map((asset) => (
                         <option key={asset.id} value={asset.id}>{asset.title} · {asset.dimensions}</option>
@@ -3351,18 +3995,39 @@ export default function SupplierMyCampaignsPage() {
 
               <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
                 <div className="text-sm font-extrabold">Initial giveaway stock</div>
-                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Set the supplier-owned stock object that Creator Builder will consume.</div>
+                <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Set the supplier-owned stock object that Creator Builder will consume. When the giveaway is linked to inventory, stock is frozen against what is actually available.</div>
                 <div className="mt-4 space-y-3">
+                  {giveawayAddInventoryMeta.synced ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-bold">Total {giveawayAddInventoryMeta.label.toLowerCase()}</div>
+                        <div className="mt-2 text-xl font-black text-slate-900 dark:text-slate-100">{giveawayAddInventoryMeta.total}</div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-bold">Reserved / unavailable</div>
+                        <div className="mt-2 text-xl font-black text-amber-700 dark:text-amber-300">{giveawayAddInventoryMeta.reserved}</div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-bold">Available before campaign sale</div>
+                        <div className="mt-2 text-xl font-black text-emerald-700 dark:text-emerald-300">{giveawayAddInventoryMeta.available}</div>
+                      </div>
+                      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-slate-400 font-bold">Allocated for campaign sale</div>
+                        <div className="mt-2 text-xl font-black text-slate-900 dark:text-slate-100">{giveawayAddSaleAllocation}</div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Total giveaway quantity</div>
-                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Committed stock cannot exceed this number.</div>
+                        <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Committed stock cannot exceed this number. {Number.isFinite(giveawayAddMaxStock) ? `Max allowed here: ${giveawayAddMaxStock}.` : 'External giveaway items are manually controlled.'}</div>
                       </div>
                       <div className="flex items-center gap-2">
                         <Btn onClick={() => setGiveawayAddTotal(String(Math.max(giveawayAddCommittedQty, Number(giveawayAddTotal || 0) - 1)))} disabled={Number(giveawayAddTotal || 0) <= giveawayAddCommittedQty}>−</Btn>
                         <Input type="number" value={String(giveawayAddTotal ?? "")} onChange={setGiveawayAddTotal} className="w-24 text-center" />
-                        <Btn onClick={() => setGiveawayAddTotal(String(Math.min(9999, Number(giveawayAddTotal || 0) + 1)))}>＋</Btn>
+                        <Btn onClick={() => setGiveawayAddTotal(String(Math.min(Number.isFinite(giveawayAddMaxStock) ? giveawayAddMaxStock : 9999, Number(giveawayAddTotal || 0) + 1)))} disabled={Number.isFinite(giveawayAddMaxStock) && Number(giveawayAddTotal || 0) >= giveawayAddMaxStock}>＋</Btn>
                       </div>
                     </div>
                   </div>
@@ -3382,9 +4047,10 @@ export default function SupplierMyCampaignsPage() {
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-3">
-                    <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100">Resulting available quantity</div>
+                    <div className="text-[11px] font-bold text-slate-900 dark:text-slate-100">Resulting available giveaway quantity</div>
                     <div className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400">{Math.max(0, Number(giveawayAddTotal || 0) - giveawayAddCommittedQty)}</div>
                     <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Used or allocated quantity already committed: {giveawayAddCommittedQty}</div>
+                    {Number.isFinite(giveawayAddMaxStock) ? <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Frozen cap based on inventory / capacity: {giveawayAddMaxStock}</div> : null}
                   </div>
                 </div>
               </div>
@@ -3418,7 +4084,7 @@ export default function SupplierMyCampaignsPage() {
             <div className="flex items-center gap-2">
               <Btn onClick={() => setGiveawayEditorOpen(false)}>Cancel</Btn>
               <Btn tone="primary" onClick={saveGiveawayConfig} disabled={savingGiveaway || giveawayDraftInvalid}>
-                {savingGiveaway ? "Saving..." : "Save source of truth"}
+                {savingGiveaway ? "Saving..." : "Save"}
               </Btn>
             </div>
           </div>
@@ -3464,7 +4130,7 @@ export default function SupplierMyCampaignsPage() {
                   <div className="flex items-center gap-2">
                     <Btn onClick={() => setGiveawayDraftTotal(String(Math.max(0, Number(giveawayDraftTotal || 0) - 1)))} disabled={!giveawayDraftEnabled || Number(giveawayDraftTotal || 0) <= 0}>−</Btn>
                     <Input type="number" value={String(giveawayDraftTotal ?? "")} onChange={setGiveawayDraftTotal} className="w-24 text-center" />
-                    <Btn onClick={() => setGiveawayDraftTotal(String(Math.min(9999, Number(giveawayDraftTotal || 0) + 1)))} disabled={!giveawayDraftEnabled}>＋</Btn>
+                    <Btn onClick={() => setGiveawayDraftTotal(String(Math.min(Number.isFinite(giveawayEditorMaxStock) ? giveawayEditorMaxStock : 9999, Number(giveawayDraftTotal || 0) + 1)))} disabled={!giveawayDraftEnabled || (Number.isFinite(giveawayEditorMaxStock) && Number(giveawayDraftTotal || 0) >= giveawayEditorMaxStock)}>＋</Btn>
                   </div>
                 </div>
               </div>
@@ -3484,7 +4150,21 @@ export default function SupplierMyCampaignsPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              {giveawayEditorInventoryMeta.synced ? (
+                <>
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/10 p-3 shadow-sm">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 font-bold">Total {giveawayEditorInventoryMeta.label.toLowerCase()}</div>
+                    <div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{giveawayEditorInventoryMeta.total}</div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Supplier inventory source</div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/10 p-3 shadow-sm">
+                    <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 font-bold">Campaign sale allocation</div>
+                    <div className="mt-2 text-2xl font-black text-slate-900 dark:text-slate-100">{giveawayEditorSaleAllocation}</div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Frozen against campaign sales</div>
+                  </div>
+                </>
+              ) : null}
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-rose-50/60 dark:bg-rose-900/10 p-3 shadow-sm">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-rose-600 dark:text-rose-400 font-bold">Used</div>
                 <div className="mt-2 text-2xl font-black text-rose-700 dark:text-rose-300">{giveawayEditorItem.giveaway?.used || 0}</div>
@@ -3497,10 +4177,9 @@ export default function SupplierMyCampaignsPage() {
               </div>
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-emerald-50/60 dark:bg-emerald-900/10 p-3 shadow-sm">
                 <div className="text-[10px] uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300 font-bold">Available</div>
-                <div className="mt-2 text-2xl font-black text-emerald-700 dark:text-emerald-300">
-                  {giveawayDraftEnabled ? Math.max(0, Number(giveawayDraftTotal || 0) - giveawayCommittedQty) : 0}
-                </div>
+                <div className="mt-2 text-2xl font-black text-emerald-700 dark:text-emerald-300">{giveawayDraftEnabled ? Math.max(0, Number(giveawayDraftTotal || 0) - giveawayCommittedQty) : 0}</div>
                 <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">What Creator Live Builder can still allocate</div>
+                {Number.isFinite(giveawayEditorMaxStock) ? <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Frozen cap based on inventory / campaign sale allocation: {giveawayEditorMaxStock}</div> : null}
               </div>
             </div>
 
@@ -3536,7 +4215,7 @@ export default function SupplierMyCampaignsPage() {
 
               {giveawayDraftInvalid ? (
                 <div className="mt-3 rounded-2xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
-                  Validation failed: total giveaway quantity cannot be lower than already committed stock ({giveawayCommittedQty}). Reduce future allocations first or increase total stock.
+                  Validation failed: total giveaway quantity cannot be lower than already committed stock ({giveawayCommittedQty}){Number.isFinite(giveawayEditorMaxStock) ? ` or higher than the frozen stock cap (${giveawayEditorMaxStock}).` : '.'} Reduce future allocations first or increase available inventory.
                 </div>
               ) : giveawayDraftEnabled && Number(giveawayDraftTotal || 0) - giveawayCommittedQty <= Number(giveawayDraftLowThreshold || 0) ? (
                 <div className="mt-3 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
@@ -3608,7 +4287,7 @@ export default function SupplierMyCampaignsPage() {
 
 /* ------------------------- row component ------------------------- */
 
-function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
+function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, onRequestTerminate, push }) {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef(null);
 
@@ -3661,8 +4340,8 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
                 {campaign.id} · {campaign.type}
               </span>
               <span className="text-[10px] text-slate-400 truncate">
-                {campaign.region}
-                {campaign.startDate && campaign.endDate ? ` · ${campaign.startDate} → ${campaign.endDate}` : ""}
+                {campaignLocationLabel(campaign, true)}
+                {campaign.startDate && campaign.endDate ? ` · ${formatDateDMY(campaign.startDate)} → ${formatDateDMY(campaign.endDate)}` : ""}
                 {promoTypeLabel ? ` · ${promoTypeLabel}` : ""}
               </span>
             </div>
@@ -3673,22 +4352,24 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
       <td className="px-6 py-4">
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap gap-2">
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
-              {modeLabel}
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black tracking-[0.06em] border bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+              {toTitleCaseWords(modeLabel)}
             </span>
+            {approvalLabel ? (
+              <span
+                className={cx(
+                  "px-2.5 py-1 rounded-full text-[10px] font-black tracking-[0.06em] border",
+                  campaign.approvalMode === "Manual"
+                    ? "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300"
+                    : "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
+                )}
+              >
+                {toTitleCaseWords(approvalLabel)}
+              </span>
+            ) : null}
             <span
               className={cx(
-                "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
-                campaign.approvalMode === "Manual"
-                  ? "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300"
-                  : "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300"
-              )}
-            >
-              {approvalLabel}
-            </span>
-            <span
-              className={cx(
-                "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                "px-2.5 py-1 rounded-full text-[10px] font-black tracking-[0.06em] border",
                 approvalP.tone === "warn"
                   ? "bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300"
                   : approvalP.tone === "good"
@@ -3698,7 +4379,7 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
                       : "bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
               )}
             >
-              {approvalP.label}
+              {toTitleCaseWords(approvalP.label)}
             </span>
           </div>
           <div className="text-[10px] text-slate-400">{modeMeta}</div>
@@ -3714,12 +4395,12 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
 
       <td className="px-6 py-4">
         <div className="flex flex-col gap-2">
-          <span className={cx("px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all", statusTone(campaign.stage))}>
-            {campaign.stage}
+          <span className={cx("px-2.5 py-1 rounded-full text-[10px] font-black tracking-[0.06em] border transition-all", statusTone(campaign.stage))}>
+            {toTitleCaseWords(campaign.stage)}
           </span>
 
           {needsAttention ? (
-            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300">
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black tracking-[0.06em] border bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-300">
               Action needed
             </span>
           ) : null}
@@ -3771,72 +4452,78 @@ function CampaignRow({ campaign, onOpen, onGo, onSwitchMode, onUpdate, push }) {
             •••
 
             {showMenu ? (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpen();
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
-                >
-                  🧭 Open details
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onGo(actions.links);
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
-                >
-                  🔗 Links Hub
-                </button>
-
-                {canSwitchCollabMode(campaign) ? (
+              <div className="absolute right-0 top-full mt-2 w-[15.25rem] overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl z-50">
+                <div className="py-1.5">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onSwitchMode();
+                      onOpen();
                       setShowMenu(false);
                     }}
-                    className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2.5"
                   >
-                    🔁 Switch collab mode
+                    <span className="w-4 shrink-0 text-center">🧭</span>
+                    <span>Open details</span>
                   </button>
-                ) : null}
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    push("Marked as at-risk (preview).", "warn");
-                    onUpdate({ health: "at-risk", lastActivity: "Health flagged · now", lastActivityAt: Date.now() });
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2"
-                >
-                  ⚠️ Flag at-risk
-                </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onGo(actions.links);
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2.5"
+                  >
+                    <span className="w-4 shrink-0 text-center">🔗</span>
+                    <span>Links Hub</span>
+                  </button>
 
-                <div className="my-2 border-t border-slate-200 dark:border-slate-700" />
+                  {canSwitchCollabMode(campaign) ? (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSwitchMode();
+                        setShowMenu(false);
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-sm text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2.5"
+                    >
+                      <span className="w-4 shrink-0 text-center">🔁</span>
+                      <span>Switch collab mode</span>
+                    </button>
+                  ) : null}
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    push("Campaign terminated (preview).", "warn");
-                    onUpdate({ stage: "Terminated", health: "stalled", nextAction: "Campaign ended", lastActivity: "Terminated · now", lastActivityAt: Date.now() });
-                    setShowMenu(false);
-                  }}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors flex items-center gap-2 text-rose-700 dark:text-rose-300"
-                >
-                  ⛔ Terminate
-                </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      push("Marked as at-risk (preview).", "warn");
+                      onUpdate({ health: "at-risk", lastActivity: "Health flagged · now", lastActivityAt: Date.now() });
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2.5"
+                  >
+                    <span className="w-4 shrink-0 text-center">⚠️</span>
+                    <span>Flag at-risk</span>
+                  </button>
+                </div>
+
+                <div className="border-t border-slate-200 dark:border-slate-700 py-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRequestTerminate?.();
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-4 py-2.5 text-left text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors flex items-center gap-2.5"
+                  >
+                    <span className="w-4 shrink-0 text-center">⛔</span>
+                    <span>Terminate</span>
+                  </button>
+                </div>
               </div>
             ) : null}
           </button>

@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 const ORANGE = "#f77f00";
+const ROUTES = {
+  negotiationRoom: "/mldz/collab/negotiation-room",
+  contracts: "/mldz/collab/contracts",
+};
 
 function cx(...items) {
   return items.filter(Boolean).join(" ");
@@ -368,6 +373,7 @@ const TABS = [
 ];
 
 const STATUS_FILTERS = ["All", "Draft", "New", "In negotiation", "Accepted", "Declined", "Expired"];
+const NEGOTIABLE_STATUSES = ["New", "In negotiation"];
 const CATEGORIES = ["All", "Beauty", "Tech", "Faith-compatible", "EV", "Home & Living"];
 
 function buildCreatorsFromProposals(proposals) {
@@ -1106,6 +1112,7 @@ function ProposalRow({
   onSelect,
   onToggle,
   onOpenNegotiate,
+  onOpenContracts,
   onAccept,
   onDecline,
   isPending,
@@ -1130,7 +1137,7 @@ function ProposalRow({
       ? `${proposal.currency} ${currencyFormat(proposal.baseFeeMin)}`
       : `${proposal.currency} ${currencyFormat(proposal.baseFeeMin)}–${currencyFormat(proposal.baseFeeMax)}`;
 
-  const canNegotiate = !["Declined", "Expired"].includes(proposal.status);
+  const canNegotiate = NEGOTIABLE_STATUSES.includes(proposal.status);
   const canReviewIncoming =
     proposal.origin === "from-creator" &&
     ["New", "In negotiation"].includes(proposal.status);
@@ -1233,6 +1240,7 @@ function ProposalRow({
           <ProposalDetailPanel
             proposal={proposal}
             onOpenNegotiate={onOpenNegotiate}
+            onOpenContracts={onOpenContracts}
             onAccept={onAccept}
             onDecline={onDecline}
             isPending={isPending}
@@ -1244,7 +1252,7 @@ function ProposalRow({
   );
 }
 
-function ProposalDetailPanel({ proposal, onOpenNegotiate, onAccept, onDecline, isPending, isInline }) {
+function ProposalDetailPanel({ proposal, onOpenNegotiate, onOpenContracts, onAccept, onDecline, isPending, isInline }) {
   if (!proposal) {
     return (
       <div className="flex flex-col items-center justify-center text-center text-sm text-slate-500 dark:text-slate-400 min-h-[260px]">
@@ -1264,7 +1272,7 @@ function ProposalDetailPanel({ proposal, onOpenNegotiate, onAccept, onDecline, i
   const originLabel = proposal.origin === "from-creator" ? "From creator" : "My proposal";
   const isIncoming = proposal.origin === "from-creator";
   const canReviewIncoming = isIncoming && ["New", "In negotiation"].includes(proposal.status);
-  const canNegotiate = !["Declined", "Expired"].includes(proposal.status);
+  const canNegotiate = NEGOTIABLE_STATUSES.includes(proposal.status);
   const blockedBySupplierHosted = proposal.creatorUsageDecision === "I will NOT use a Creator";
 
   const statusColorMap = {
@@ -1516,9 +1524,9 @@ function ProposalDetailPanel({ proposal, onOpenNegotiate, onAccept, onDecline, i
               <button
                 type="button"
                 className="px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-extrabold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
-                onClick={() => toast("Open Contracts (demo)")}
+                onClick={onOpenContracts}
               >
-                View Contract
+                Open Contracts
               </button>
               <button
                 type="button"
@@ -1538,6 +1546,7 @@ function ProposalDetailPanel({ proposal, onOpenNegotiate, onAccept, onDecline, i
 }
 
 export default function SupplierProposalsPreviewCanvas() {
+  const navigate = useNavigate();
   const [proposals, setProposals] = useState(PROPOSALS);
   const [tab, setTab] = useState("all");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -1545,8 +1554,6 @@ export default function SupplierProposalsPreviewCanvas() {
   const [minBudget, setMinBudget] = useState("");
   const [selectedProposalId, setSelectedProposalId] = useState(PROPOSALS[0]?.id ?? null);
   const [expandedProposalId, setExpandedProposalId] = useState(null);
-  const [negotiationDrawerOpen, setNegotiationDrawerOpen] = useState(false);
-  const [negotiationProposalId, setNegotiationProposalId] = useState(null);
   const [proposalDrawerOpen, setProposalDrawerOpen] = useState(false);
   const [proposalRecipientId, setProposalRecipientId] = useState(null);
   const [dataState, setDataState] = useState("ready");
@@ -1573,19 +1580,19 @@ export default function SupplierProposalsPreviewCanvas() {
     });
   }, [proposals, tab, statusFilter, categoryFilter, minBudget]);
 
-  const negotiationProposal = useMemo(() => proposals.find((proposal) => proposal.id === negotiationProposalId) ?? null, [proposals, negotiationProposalId]);
-
   useEffect(() => {
     if (selectedProposal) return;
     if (filteredProposals[0]) setSelectedProposalId(filteredProposals[0].id);
   }, [selectedProposal, filteredProposals]);
 
   function openNegotiation(proposal) {
-    setNegotiationProposalId(proposal?.id ?? null);
-    setNegotiationDrawerOpen(true);
-    if (proposal) {
-      toast(`Negotiation workflow opened for ${proposal.creator}.`);
-    }
+    if (!proposal) return;
+    const query = new URLSearchParams();
+    query.set("from", "proposals");
+    query.set("proposalId", proposal.id);
+    query.set("campaign", proposal.campaign);
+    query.set("creator", proposal.creator);
+    navigate(`${ROUTES.negotiationRoom}?${query.toString()}`);
   }
 
   function openNewProposal(proposal) {
@@ -1631,66 +1638,9 @@ export default function SupplierProposalsPreviewCanvas() {
     );
   }
 
-  function applyNegotiation(id, payload) {
-    setProposals((prev) =>
-      prev.map((proposal) => {
-        if (proposal.id !== id) return proposal;
-        const shouldStayAccepted = proposal.status === "Accepted";
-        return {
-          ...proposal,
-          status: shouldStayAccepted ? "Accepted" : "In negotiation",
-          lastActivity: shouldStayAccepted ? "Negotiation updated · just now" : "Negotiation updated · just now",
-          approvalMode: payload.approvalMode,
-          baseFeeMin: payload.baseFeeMin,
-          baseFeeMax: payload.baseFeeMax,
-          commissionPct: payload.commissionPct,
-          currency: payload.currency,
-          deliverables: payload.deliverables,
-          notesShort: payload.message.slice(0, 140) + (payload.message.length > 140 ? "…" : ""),
-        };
-      })
-    );
-    toast(`Negotiation update sent for ${negotiationProposal?.creator || "proposal"}.`);
-  }
-
-  const badge = (
-    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors">
-      <span>📄</span>
-      <span>Structured offers · Terms · Negotiations</span>
-    </span>
-  );
-
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
-      <PageHeader
-        pageTitle="Proposals"
-        badge={badge}
-        right={
-          <>
-            <button
-              className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-              onClick={() => toast("Campaigns Board opened (demo)")}
-              type="button"
-            >
-              View Campaigns Board
-            </button>
-            <button
-              className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white font-extrabold hover:bg-[#e26f00]"
-              onClick={() => openNewProposal(selectedProposal)}
-              type="button"
-            >
-              + New Proposal
-            </button>
-            <button
-              className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-              onClick={() => setDataState((state) => (state === "ready" ? "loading" : state === "loading" ? "error" : "ready"))}
-              type="button"
-            >
-              Demo states
-            </button>
-          </>
-        }
-      />
+      <PageHeader pageTitle="Proposals" />
 
       <main className="flex-1 flex flex-col w-full p-3 sm:p-4 md:p-6 lg:p-8 pt-8 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-3">
@@ -1703,7 +1653,7 @@ export default function SupplierProposalsPreviewCanvas() {
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <button
                 className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                onClick={() => toast("Contracts opened (demo)")}
+                onClick={() => navigate(ROUTES.contracts)}
                 type="button"
               >
                 Open Contracts
@@ -1860,6 +1810,7 @@ export default function SupplierProposalsPreviewCanvas() {
                       onSelect={() => setSelectedProposalId(proposal.id)}
                       onToggle={() => setExpandedProposalId(expandedProposalId === proposal.id ? null : proposal.id)}
                       onOpenNegotiate={() => openNegotiation(proposal)}
+                      onOpenContracts={() => navigate(ROUTES.contracts)}
                       onAccept={handleAccept}
                       onDecline={handleDecline}
                       isPending={isPending && selectedProposal?.id === proposal.id}
@@ -1877,6 +1828,7 @@ export default function SupplierProposalsPreviewCanvas() {
               <ProposalDetailPanel
                 proposal={dataState === "ready" ? selectedProposal : null}
                 onOpenNegotiate={() => selectedProposal && openNegotiation(selectedProposal)}
+                onOpenContracts={() => navigate(ROUTES.contracts)}
                 onAccept={handleAccept}
                 onDecline={handleDecline}
                 isPending={isPending}
@@ -1885,16 +1837,6 @@ export default function SupplierProposalsPreviewCanvas() {
           </section>
         </div>
       </main>
-
-      <NegotiationDrawer
-        open={negotiationDrawerOpen}
-        onClose={() => setNegotiationDrawerOpen(false)}
-        proposal={negotiationProposal}
-        onSubmit={(payload) => {
-          if (!negotiationProposal) return;
-          applyNegotiation(negotiationProposal.id, payload);
-        }}
-      />
 
       <ProposalDrawer
         open={proposalDrawerOpen}

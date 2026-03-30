@@ -1,11 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { sellerBackendApi } from "../../../lib/backendApi";
-
-
-void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/collabs/SupplierCampaignsBoardPage").catch(() => undefined);
-
 /**
  * SupplierCampaignsBoardPage.jsx
  * Controlled Mirroring Mode (Creator → Supplier)
@@ -18,7 +13,6 @@ void sellerBackendApi.getWorkflowScreenState("seller-feature:livedealz/collabs/S
  * - Invite acceptance updates acceptedCreators and can advance stage to Negotiation (when stage is Draft/Invite-only).
  */
 
-const ORANGE = "#f77f00";
 const ROUTES = {
   myCampaigns: "/mldz/campaigns",
   newCampaign: "/mldz/promos/new",
@@ -187,6 +181,234 @@ function canSwitchCollabMode(stage) {
 function makeId(prefix = "ID") {
   return `${prefix}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
 }
+
+/* ----------------------------- Seed data ----------------------------- */
+
+const INITIAL_CAMPAIGNS = [
+  {
+    id: 1,
+    code: "CAMP-11",
+    name: "GlowUp Serum Promo",
+    category: "Beauty & Skincare",
+    categories: ["Beauty", "Skincare"],
+    region: "Africa",
+    language: "English",
+    payBand: "$200–$400 + 5%",
+    budgetMin: 200,
+    budgetMax: 400,
+    commission: 5,
+    deliverables: ["Live", "VOD", "Posts"],
+    liveWindow: "This Friday · 20:00–21:30",
+    timeline: ["Brief call", "Asset handoff", "Live", "Post clips"],
+    summary: "Launch live for GlowUp serum line with flash dealz and limited bundlez.",
+    tags: ["Flash dealz", "New launch", "High volume"],
+
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    stage: "Open for Collabs",
+
+    pitchesCount: 6,
+    invitedCreators: 0,
+    acceptedCreators: [{ name: "Lilian Beauty Plug", handle: "@lilianbeauty" }],
+
+    queue: { pendingSupplier: 2, pendingAdmin: 1, changes: 1 },
+
+    kpis: { views: 192000, ctr: 3.7, conv: 4.8, sales: 2600 },
+
+    pitches: [
+      {
+        id: "P-001",
+        creator: "Lilian Beauty Plug",
+        handle: "@lilianbeauty",
+        fee: 320,
+        currency: "USD",
+        commissionPct: 5,
+        status: "New",
+        message: "I’ll run a 60–75 min live with strong routine story + pinned flash offer. Expect high conversion on bundles."
+      },
+      {
+        id: "P-002",
+        creator: "Amina K.",
+        handle: "@amina.dealz",
+        fee: 280,
+        currency: "USD",
+        commissionPct: 6,
+        status: "Countered",
+        message: "I can do 2 clips + 1 live, but need 48h for delivery confirmation."
+      },
+      {
+        id: "P-003",
+        creator: "StyleByAma",
+        handle: "@stylebyama",
+        fee: 260,
+        currency: "USD",
+        commissionPct: 4,
+        status: "Rejected by creator",
+        message: "Timing conflict this week. Open to next month if slot is Saturday."
+      }
+    ],
+
+    invites: []
+  },
+  {
+    id: 2,
+    code: "CAMP-07",
+    name: "Tech Friday Mega",
+    category: "Tech & Gadgets",
+    categories: ["Tech", "Gadgets"],
+    region: "Africa / Asia",
+    language: "English",
+    payBand: "$600–$900 + 3%",
+    budgetMin: 600,
+    budgetMax: 900,
+    commission: 3,
+    deliverables: ["Live", "Posts"],
+    liveWindow: "Next week · 2-part Tech Friday series",
+    timeline: ["Script prep", "Series 1", "Series 2"],
+    summary: "Two-part Tech Friday series focusing on EV-friendly gadgets and accessories.",
+    tags: ["Series", "EV gadgets", "Q&A heavy"],
+
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-only",
+    approvalMode: "Auto",
+    stage: "Negotiation",
+
+    pitchesCount: 0,
+    invitedCreators: 3,
+    acceptedCreators: [{ name: "TechWithBrian", handle: "@techwithbrian" }],
+
+    queue: { pendingSupplier: 0, pendingAdmin: 2, changes: 0 },
+
+    kpis: { views: 121000, ctr: 4.4, conv: 4.2, sales: 3100 },
+
+    pitches: [],
+
+    invites: [
+      { id: "I-001", creator: "TechWithBrian", handle: "@techwithbrian", status: "Accepted" },
+      { id: "I-002", creator: "Chris M.", handle: "@chris.finds", status: "Pending" },
+      { id: "I-003", creator: "NewWave Creator", handle: "@newwavecreator", status: "Declined" }
+    ]
+  },
+  {
+    id: 3,
+    code: "CAMP-33",
+    name: "Repair Booking Offer",
+    category: "Services / Consultations",
+    categories: ["Services"],
+    region: "Africa",
+    language: "English",
+    payBand: "$0 + commission",
+    budgetMin: 0,
+    budgetMax: 0,
+    commission: 10,
+    deliverables: ["Live", "VOD"],
+    liveWindow: "This month · Flexible slot",
+    timeline: ["Brief", "Service listing", "Live", "Follow-up clips"],
+    summary: "Supplier-hosted service promotion for repair bookings. Light creator involvement possible.",
+    tags: ["Bookings", "Lead-gen", "Evergreen"],
+
+    creatorUsageDecision: "I am NOT SURE yet",
+    collabMode: "Open for Collabs",
+    approvalMode: "Manual",
+    stage: "Draft",
+
+    pitchesCount: 1,
+    invitedCreators: 0,
+    acceptedCreators: [],
+
+    queue: { pendingSupplier: 0, pendingAdmin: 0, changes: 0 },
+
+    kpis: { views: 22000, ctr: 2.1, conv: 4.5, sales: 900 },
+
+    pitches: [
+      {
+        id: "P-010",
+        creator: "LocalFix Live",
+        handle: "@localfix",
+        fee: 120,
+        currency: "USD",
+        commissionPct: 8,
+        status: "New",
+        message: "I can do a demo + testimonial segment. Need clarified pricing and region links."
+      }
+    ],
+
+    invites: []
+  },
+  {
+    id: 4,
+    code: "CAMP-44",
+    name: "Style Bundle Promo",
+    category: "Fashion",
+    categories: ["Fashion"],
+    region: "West Africa",
+    language: "English",
+    payBand: "$150–$250 + 8%",
+    budgetMin: 150,
+    budgetMax: 250,
+    commission: 8,
+    deliverables: ["Posts", "VOD"],
+    liveWindow: "Sat · 16:00",
+    timeline: ["Outfits selection", "Clips", "Scheduling"],
+    summary: "Fashion bundle promo with sizing guidance and region-based links.",
+    tags: ["Bundles", "Try-on", "Sizing"],
+
+    creatorUsageDecision: "I will use a Creator",
+    collabMode: "Invite-only",
+    approvalMode: "Manual",
+    stage: "Supplier Review",
+
+    pitchesCount: 0,
+    invitedCreators: 2,
+    acceptedCreators: [{ name: "StyleByAma", handle: "@stylebyama" }],
+
+    queue: { pendingSupplier: 3, pendingAdmin: 0, changes: 2 },
+
+    kpis: { views: 68000, ctr: 3.0, conv: 2.7, sales: 680 },
+
+    pitches: [],
+
+    invites: [
+      { id: "I-010", creator: "StyleByAma", handle: "@stylebyama", status: "Accepted" },
+      { id: "I-011", creator: "Ama S.", handle: "@stylebyama", status: "Accepted" }
+    ]
+  },
+  {
+    id: 5,
+    code: "CAMP-50",
+    name: "Supplier-hosted EV Accessories Showcase",
+    category: "EV & Mobility",
+    categories: ["EV", "Mobility"],
+    region: "Global",
+    language: "English",
+    payBand: "$0 (Supplier-hosted)",
+    budgetMin: 0,
+    budgetMax: 0,
+    commission: 0,
+    deliverables: ["Live"],
+    liveWindow: "Next month · Flexible slot",
+    timeline: ["Concept", "Supplier content", "Live", "Replay"],
+    summary: "No creator planned. Supplier will host the live directly (acts as creator).",
+    tags: ["Supplier as Creator", "Accessories", "Evergreen"],
+
+    creatorUsageDecision: "I will NOT use a Creator",
+    collabMode: "n/a",
+    approvalMode: "Manual",
+    stage: "Content Submission",
+
+    pitchesCount: 0,
+    invitedCreators: 0,
+    acceptedCreators: [{ name: "(Supplier)", handle: "(you)" }],
+
+    queue: { pendingSupplier: 1, pendingAdmin: 0, changes: 0 },
+
+    kpis: { views: 0, ctr: 0, conv: 0, sales: 0 },
+
+    pitches: [],
+    invites: []
+  }
+];
 
 /* -------------------------- Row + KPI pills -------------------------- */
 
@@ -1388,7 +1610,7 @@ export default function SupplierCampaignsBoardPage() {
     minPitches: ""
   });
 
-  const [campaigns, setCampaigns] = useState<Array<Record<string, any>>>([]);
+  const [campaigns, setCampaigns] = useState(INITIAL_CAMPAIGNS);
 
   const [selectedCampaign, setSelectedCampaign] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
@@ -1502,9 +1724,6 @@ export default function SupplierCampaignsBoardPage() {
 
   const topRight = (
     <>
-      <span className="hidden md:inline-flex px-2.5 py-1 rounded-full bg-slate-900 text-white text-[11px] font-extrabold border border-slate-800">
-        <span className="h-1.5 w-1.5 rounded-full" style={{ background: ORANGE }} /> Orange + Black
-      </span>
       <button
         type="button"
         className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 transition-colors"
@@ -1515,7 +1734,7 @@ export default function SupplierCampaignsBoardPage() {
       <button
         type="button"
         className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white font-extrabold hover:bg-[#e26f00]"
-        onClick={() => safeNav(ROUTES.newCampaign)}
+        onClick={() => safeNav(buildRoute(ROUTES.newCampaign, { create: 1, from: "campaigns-board" }))}
       >
         New Campaign
       </button>
@@ -1873,7 +2092,6 @@ if (typeof window !== "undefined" && window.__MLDZ_TESTS__) {
     if (!cond) throw new Error(`SupplierCampaignsBoardPage test failed: ${msg}`);
   };
 
-  assert(typeof ORANGE === "string" && ORANGE.length > 0, "ORANGE exists");
   assert(typeof cx("a", false && "b", "c") === "string", "cx works");
   assert(typeof formatRange === "function", "formatRange exists");
   assert(canSwitchCollabMode("Draft") === true, "canSwitchCollabMode draft");
