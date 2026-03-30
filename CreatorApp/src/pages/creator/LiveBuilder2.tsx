@@ -129,12 +129,17 @@ function toISODate(d: Date) {
 }
 
 function combineDateTime(dateISO: string, timeHHMM: string) {
-  // dateISO: YYYY-MM-DD, timeHHMM: HH:MM
-  const [y, m, d] = dateISO.split("-").map((x) => parseInt(x, 10));
-  const [hh, mm] = timeHHMM.split(":").map((x) => parseInt(x, 10));
-  const dt = new Date();
-  dt.setFullYear(y, (m || 1) - 1, d || 1);
-  dt.setHours(hh || 0, mm || 0, 0, 0);
+  const now = new Date();
+  const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(String(dateISO || "").trim())
+    ? String(dateISO).trim()
+    : toISODate(now);
+  const safeTime = /^\d{2}:\d{2}$/.test(String(timeHHMM || "").trim())
+    ? String(timeHHMM).trim()
+    : "00:00";
+  const dt = new Date(`${safeDate}T${safeTime}:00`);
+  if (Number.isNaN(dt.getTime())) {
+    return now.toISOString();
+  }
   return dt.toISOString();
 }
 
