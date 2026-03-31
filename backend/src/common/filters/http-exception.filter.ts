@@ -11,6 +11,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
+  private readonly expectedClient404Paths = new Set(['/', '/favicon.ico']);
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -29,10 +30,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
             message: 'Internal server error'
           };
 
-    this.logger.error(
-      `${request.method} ${request.url} -> ${status} (${request.id})`,
-      exception instanceof Error ? exception.stack : String(exception)
-    );
+    const method = String(request.method ?? 'UNKNOWN');
+    const requestUrl = String(request.url ?? '');
+    const requestPath = requestUrl.split('?')[0];
+    const requestId = String(request.id ?? 'unknown');
+
+    if (status >= 500) {
+      this.logger.error(
+        `${method} ${requestUrl} -> ${status} (${requestId})`,
+        exception instanceof Error ? exception.stack : String(exception)
+      );
+    } else if (!(status === 404 && this.expectedClient404Paths.has(requestPath))) {
+      this.logger.warn(`${method} ${requestUrl} -> ${status} (${requestId})`);
+    }
 
     response.header('x-request-id', request.id);
     response.status(status).send({

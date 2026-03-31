@@ -30,8 +30,6 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto.js';
 import { JobsService } from '../jobs/jobs.service.js';
 import { ExportsService } from '../exports/exports.service.js';
 
-const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
-
 type FinanceStatementRecord = {
   id: string;
   period: string;
@@ -68,14 +66,10 @@ export class CommerceService {
   ) {}
 
   async dashboard(userId: string) {
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const [listingCount, orderCount, transactionTotals, reviewAverage, reviewTotal, repliedCount, negativeCount] = await Promise.all([
       this.prisma.marketplaceListing.count({ where: { userId } }),
       this.prisma.order.count({
-        where: {
-          seller: { userId },
-          ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
-        }
+        where: { seller: { userId } }
       }),
       this.prisma.transaction.aggregate({
         where: {
@@ -144,7 +138,6 @@ export class CommerceService {
     const cacheKey = `seller:dashboardSummary:${userId}:${query?.range ?? ''}:${query?.from ?? ''}:${query?.to ?? ''}:${channels.join('|')}:${marketplaces.join('|')}:${warehouses.join('|')}`;
     return this.cache.getOrSet(cacheKey, 15_000, async () => {
       const seller = await this.sellersService.ensureSellerProfile(userId);
-      const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
       const dateRange = this.parseDateRange(query?.from, query?.to);
       const transactionWhere: Prisma.TransactionWhereInput = {
         sellerId: seller.id,
@@ -156,7 +149,6 @@ export class CommerceService {
       const orderWhere: Prisma.OrderWhereInput = {
         sellerId: seller.id,
         createdAt: dateRange ?? undefined,
-        ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {}),
         ...(channels.length > 0 ? { channel: { in: channels } } : {}),
         ...(warehouses.length > 0 ? { warehouse: { in: warehouses } } : {})
       };
@@ -693,11 +685,9 @@ export class CommerceService {
     const { skip, take } = normalizeListQuery(query);
     const channel = (query as SellerOrdersQueryDto | undefined)?.channel;
     const seller = await this.ensureSeller(userId);
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const orders = await this.prisma.order.findMany({
       where: {
         sellerId: seller.id,
-        ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {}),
         ...(channel ? { channel } : {})
       },
       skip,
@@ -730,9 +720,6 @@ export class CommerceService {
   }
 
   async orderDetail(userId: string, id: string, channel?: string) {
-    if (await this.isCompatibilityOrderId(id)) {
-      throw new NotFoundException('Order not found');
-    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: {
@@ -787,9 +774,6 @@ export class CommerceService {
   }
 
   async updateOrder(userId: string, id: string, payload: UpdateOrderDto, channel?: string) {
-    if (await this.isCompatibilityOrderId(id)) {
-      throw new NotFoundException('Order not found');
-    }
     const seller = await this.ensureSeller(userId);
 
     const order = await this.prisma.order.findFirst({
@@ -1038,12 +1022,8 @@ export class CommerceService {
 
   async financeInvoices(userId: string) {
     const seller = await this.ensureSeller(userId);
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const orders = await this.prisma.order.findMany({
-      where: {
-        sellerId: seller.id,
-        ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
-      },
+      where: { sellerId: seller.id },
       orderBy: { createdAt: 'desc' },
       take: 50
     });
@@ -1579,9 +1559,6 @@ export class CommerceService {
   }
 
   async createReturn(userId: string, payload: CreateReturnDto) {
-    if (await this.isCompatibilityOrderId(payload.orderId)) {
-      throw new NotFoundException('Order not found');
-    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: { id: payload.orderId, sellerId: seller.id }
@@ -1630,9 +1607,6 @@ export class CommerceService {
   }
 
   async createDispute(userId: string, payload: CreateDisputeDto) {
-    if (await this.isCompatibilityOrderId(payload.orderId)) {
-      throw new NotFoundException('Order not found');
-    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: { id: payload.orderId, sellerId: seller.id }
@@ -1677,9 +1651,6 @@ export class CommerceService {
   }
 
   private async buildPrintPayload(userId: string, id: string) {
-    if (await this.isCompatibilityOrderId(id)) {
-      throw new NotFoundException('Order not found');
-    }
     const seller = await this.ensureSeller(userId);
     const order = await this.prisma.order.findFirst({
       where: { id, sellerId: seller.id },
@@ -1995,43 +1966,4 @@ export class CommerceService {
     return created.payload;
   }
 
-  private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: {
-        domain: 'sellerfront',
-        entityType: 'mockdb',
-        entityId: { in: SELLERFRONT_COMPAT_RECORD_IDS }
-      },
-      select: { payload: true }
-    });
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload = record.payload;
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        continue;
-      }
-      const orders = (payload as Record<string, unknown>).orders;
-      if (!Array.isArray(orders)) {
-        continue;
-      }
-      for (const order of orders) {
-        if (!order || typeof order !== 'object' || Array.isArray(order)) {
-          continue;
-        }
-        const id = (order as Record<string, unknown>).id;
-        if (typeof id === 'string' && id.trim()) {
-          ids.add(id.trim());
-        }
-      }
-    }
-    return Array.from(ids);
-  }
-
-  private async isCompatibilityOrderId(id: string) {
-    if (!id) {
-      return false;
-    }
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
-    return compatibilityOrderIds.includes(id);
-  }
 }

@@ -40,6 +40,10 @@ dist-ssr/
 # Nested repositories
 /CreatorApp/.git/
 
+# Local-only apps
+/CreatorApp/
+/seller/
+
 # Logs
 *.log
 *.out

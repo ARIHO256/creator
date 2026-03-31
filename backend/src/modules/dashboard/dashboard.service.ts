@@ -7,8 +7,6 @@ import { PrismaService, ReadPrismaService } from '../../platform/prisma/prisma.s
 import { JobsService } from '../jobs/jobs.service.js';
 import { JobsWorker } from '../jobs/jobs.worker.js';
 
-const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
-
 @Injectable()
 export class DashboardService {
   constructor(
@@ -220,14 +218,12 @@ export class DashboardService {
     });
 
     if (user?.role === UserRole.SELLER) {
-      const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
       const [activeListings, openOrders] = await Promise.all([
         this.prisma.marketplaceListing.count({ where: { userId, status: 'ACTIVE' } }),
         this.prisma.order.count({
           where: {
             seller: { userId },
-            status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] },
-            ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+            status: { in: ['NEW', 'CONFIRMED', 'PACKED', 'ON_HOLD'] }
           }
         })
       ]);
@@ -675,7 +671,6 @@ export class DashboardService {
 
   private async computeSellerPublicProfile(userId: string) {
     const seller = await this.resolveSellerWorkspace(userId);
-    const sellerName = seller?.displayName || seller?.name || 'Supplier';
     const sellerId = seller?.id ?? '';
     const config = await this.readWorkspaceSetting(userId, 'seller_public_profile');
 
@@ -715,11 +710,124 @@ export class DashboardService {
       sellerId ? this.prisma.contract.count({ where: { sellerId } }) : Promise.resolve(0)
     ]);
 
-    const profilePayload = (profileSetting?.payload as Record<string, unknown> | null) ?? {};
-    const socialEntries = this.buildSellerSocials(profilePayload);
+    const rawSettingsPayload = (profileSetting?.payload as Record<string, unknown> | null) ?? {};
+    const settingsProfile =
+      rawSettingsPayload.profile && typeof rawSettingsPayload.profile === 'object' && !Array.isArray(rawSettingsPayload.profile)
+        ? (rawSettingsPayload.profile as Record<string, unknown>)
+        : {};
+    const supplierSettings =
+      settingsProfile.supplierSettings &&
+      typeof settingsProfile.supplierSettings === 'object' &&
+      !Array.isArray(settingsProfile.supplierSettings)
+        ? (settingsProfile.supplierSettings as Record<string, unknown>)
+        : {};
+    const supplierProfile =
+      supplierSettings.profile && typeof supplierSettings.profile === 'object' && !Array.isArray(supplierSettings.profile)
+        ? (supplierSettings.profile as Record<string, unknown>)
+        : {};
+    const supplierPreferences =
+      supplierSettings.preferences &&
+      typeof supplierSettings.preferences === 'object' &&
+      !Array.isArray(supplierSettings.preferences)
+        ? (supplierSettings.preferences as Record<string, unknown>)
+        : {};
+    const supplierSocial =
+      supplierSettings.social && typeof supplierSettings.social === 'object' && !Array.isArray(supplierSettings.social)
+        ? (supplierSettings.social as Record<string, unknown>)
+        : {};
+    const identityPayload =
+      settingsProfile.identity && typeof settingsProfile.identity === 'object' && !Array.isArray(settingsProfile.identity)
+        ? (settingsProfile.identity as Record<string, unknown>)
+        : {};
+    const brandingPayload =
+      settingsProfile.branding && typeof settingsProfile.branding === 'object' && !Array.isArray(settingsProfile.branding)
+        ? (settingsProfile.branding as Record<string, unknown>)
+        : {};
+    const supplierBusiness =
+      supplierProfile.business && typeof supplierProfile.business === 'object' && !Array.isArray(supplierProfile.business)
+        ? (supplierProfile.business as Record<string, unknown>)
+        : {};
+    const supplierEnterprise =
+      supplierProfile.enterprise && typeof supplierProfile.enterprise === 'object' && !Array.isArray(supplierProfile.enterprise)
+        ? (supplierProfile.enterprise as Record<string, unknown>)
+        : {};
+
+    const profilePayload = Object.keys(settingsProfile).length > 0 ? settingsProfile : rawSettingsPayload;
+    const baseSocials =
+      profilePayload.socials && typeof profilePayload.socials === 'object' && !Array.isArray(profilePayload.socials)
+        ? (profilePayload.socials as Record<string, unknown>)
+        : {};
+    const baseCustomSocials = Array.isArray(profilePayload.customSocials)
+      ? (profilePayload.customSocials as Array<Record<string, unknown>>)
+      : [];
+    const supplierSocialExtras = Array.isArray(supplierSocial.extra)
+      ? (supplierSocial.extra as Array<Record<string, unknown>>)
+      : [];
+    const supplierPrimaryLabel =
+      this.readString(supplierSocial, 'primaryPlatform') === 'other'
+        ? this.readString(supplierSocial, 'primaryOtherCustomName') || this.readString(supplierSocial, 'primaryOtherPlatform')
+        : this.readString(supplierSocial, 'primaryPlatform');
+    const supplierPrimaryHandle =
+      this.readString(supplierSocial, 'primaryOtherHandle') || this.readString(supplierSocial, 'primaryOtherFollowers');
+
+    const socialPayload: Record<string, unknown> = {
+      ...profilePayload,
+      website:
+        this.readString(profilePayload, 'website') ||
+        this.readString(supplierBusiness, 'website') ||
+        this.readString(supplierEnterprise, 'website'),
+      socials: {
+        ...baseSocials,
+        ...(this.readString(supplierSocial, 'instagram') ? { instagram: this.readString(supplierSocial, 'instagram') } : {}),
+        ...(this.readString(supplierSocial, 'tiktok') ? { tiktok: this.readString(supplierSocial, 'tiktok') } : {}),
+        ...(this.readString(supplierSocial, 'youtube') ? { youtube: this.readString(supplierSocial, 'youtube') } : {})
+      },
+      customSocials: [
+        ...baseCustomSocials,
+        ...supplierSocialExtras
+          .map((entry) => ({
+            label: this.readString(entry, 'platform'),
+            value: this.readString(entry, 'handle')
+          }))
+          .filter((entry) => entry.label && entry.value),
+        ...(supplierPrimaryLabel && supplierPrimaryHandle
+          ? [
+              {
+                label: supplierPrimaryLabel,
+                value: supplierPrimaryHandle
+              }
+            ]
+          : [])
+      ]
+    };
+    const socialEntries = this.buildSellerSocials(socialPayload);
+
+    const sellerName =
+      this.readString(supplierProfile, 'businessName') ||
+      this.readString(identityPayload, 'displayName') ||
+      this.readString(identityPayload, 'legalName') ||
+      seller?.displayName ||
+      seller?.name ||
+      'Supplier';
+    const sellerHandleRaw = this.readString(supplierProfile, 'handle') || this.readString(identityPayload, 'handle') || seller?.handle || this.slugify(sellerName);
+    const targetRegions = this.readStringList(supplierProfile, 'targetRegions');
+    const supplierRegion = this.readString(supplierProfile, 'country') || seller?.region || this.readString(profilePayload, 'region') || 'Global';
+    const supplierModel = this.readString(supplierProfile, 'supplierModel').toLowerCase();
+    const supplierType =
+      seller?.kind === SellerKind.PROVIDER
+        ? 'Services'
+        : supplierModel.includes('service')
+          ? supplierModel.includes('both') || supplierModel.includes('mixed')
+            ? 'Products + Services'
+            : 'Services'
+          : 'Products (Wholesale + Retail)';
     const categories = this.uniqueStrings([
       ...this.readStringList(profilePayload, 'productLines'),
       ...this.readStringList(profilePayload, 'regions'),
+      ...this.readStringList(supplierPreferences, 'productCategories'),
+      ...this.readStringList(supplierPreferences, 'serviceCategories'),
+      this.readString(identityPayload, 'category'),
+      this.readString(supplierProfile, 'supplierModel'),
       ...this.readStringList(seller?.categories),
       seller?.category ?? ''
     ]);
@@ -740,18 +848,28 @@ export class DashboardService {
       supplier: {
         id: sellerId,
         name: sellerName,
-        handle: seller?.handle ? `@${seller.handle.replace(/^@/, '')}` : `@${this.slugify(sellerName)}`,
+        handle: `@${String(sellerHandleRaw).replace(/^@/, '')}`,
         initials: this.buildInitials(sellerName),
-        type: seller?.kind === SellerKind.PROVIDER ? 'Services' : 'Products (Wholesale + Retail)',
-        region: seller?.region || this.readString(profilePayload, 'region') || 'Global',
+        type: supplierType,
+        region: supplierRegion,
         verified: Boolean(seller?.isVerified),
         kyb: Boolean(seller?.isVerified),
-        categoryLine: categories.slice(0, 3).join(' · ') || 'Catalog-backed supplier',
-        shipsTo: this.readString(profilePayload, 'shippingRegions') || 'Ships to Africa / Asia'
+        categoryLine: this.readString(supplierProfile, 'tagline') || categories.slice(0, 3).join(' · ') || 'Catalog-backed supplier',
+        shipsTo:
+          (targetRegions.length ? `Targets ${targetRegions.join(' / ')}` : '') ||
+          this.readString(profilePayload, 'shippingRegions') ||
+          'Ships to Africa / Asia'
       },
       about: {
-        text: this.readString(config, 'about') || this.deriveSellerAbout(sellerName, categories, campaigns.length, listingsCount),
-        collabPreferences: this.readString(config, 'collabPreferences') || this.deriveSellerCollabPreferences(categories, contractsCount),
+        text:
+          this.readString(config, 'about') ||
+          this.readString(supplierProfile, 'bio') ||
+          this.readString(brandingPayload, 'description') ||
+          this.deriveSellerAbout(sellerName, categories, campaigns.length, listingsCount),
+        collabPreferences:
+          this.readString(config, 'collabPreferences') ||
+          this.readString(supplierPreferences, 'notesToCreators') ||
+          this.deriveSellerCollabPreferences(categories, contractsCount),
         categories: categories.slice(0, 6),
         trustNote: this.readString(config, 'trustNote') || this.deriveSellerTrustNote(Boolean(seller?.isVerified), contractsCount)
       },
@@ -766,7 +884,7 @@ export class DashboardService {
       portfolio: campaigns.slice(0, 3).map((campaign: any) => ({
         id: campaign.id,
         title: campaign.title,
-        meta: `${this.readString(campaign.metadata, 'type') || 'Campaign'} · ${seller?.region || 'Global'}`,
+        meta: `${this.readString(campaign.metadata, 'type') || 'Campaign'} · ${supplierRegion}`,
         body: campaign.description || this.readString(campaign.metadata, 'summary') || 'Campaign details are stored in the collaboration workspace.',
         kpis: [
           `Budget ${this.formatMoney(Number(campaign.budget ?? 0), campaign.currency || 'USD')}`,
@@ -778,7 +896,7 @@ export class DashboardService {
         id: opportunity.id,
         title: opportunity.title,
         type: this.readString(opportunity.metadata, 'type') || opportunity.title || 'Campaign opportunity',
-        region: seller?.region || 'Global',
+        region: supplierRegion,
         budget: Number(opportunity.budget ?? 0),
         status: opportunity.status || 'Open'
       })),
@@ -821,7 +939,7 @@ export class DashboardService {
           `Supplier Brand Kit`,
           ``,
           `Brand: ${sellerName}`,
-          `Handle: ${seller?.handle ? `@${seller.handle.replace(/^@/, '')}` : this.slugify(sellerName)}`,
+          `Handle: @${String(sellerHandleRaw).replace(/^@/, '')}`,
           `Categories: ${categories.join(', ') || 'General'}`,
           `Payout window: ${performance.payoutWindow}`,
           `Fulfillment SLA: ${performance.fulfillmentSla}`
@@ -1689,7 +1807,6 @@ export class DashboardService {
   }
 
   private async buildSellerMetrics(userId: string, sellerId: string) {
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     const openOrderStatuses: OrderStatus[] = [
       OrderStatus.NEW,
       OrderStatus.CONFIRMED,
@@ -1705,8 +1822,7 @@ export class DashboardService {
       this.prisma.order.count({
         where: {
           sellerId,
-          status: { in: openOrderStatuses },
-          ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
+          status: { in: openOrderStatuses }
         }
       }),
       this.prisma.sellerReturn.count({
@@ -1747,38 +1863,6 @@ export class DashboardService {
         paid: totalsByStatus.get(TransactionStatus.PAID) ?? 0
       }
     };
-  }
-
-  private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: {
-        domain: 'sellerfront',
-        entityType: 'mockdb',
-        entityId: { in: SELLERFRONT_COMPAT_RECORD_IDS }
-      },
-      select: { payload: true }
-    });
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload = record.payload;
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        continue;
-      }
-      const orders = (payload as Record<string, unknown>).orders;
-      if (!Array.isArray(orders)) {
-        continue;
-      }
-      for (const order of orders) {
-        if (!order || typeof order !== 'object' || Array.isArray(order)) {
-          continue;
-        }
-        const id = (order as Record<string, unknown>).id;
-        if (typeof id === 'string' && id.trim()) {
-          ids.add(id.trim());
-        }
-      }
-    }
-    return Array.from(ids);
   }
 
   private async buildProviderMetrics(userId: string) {

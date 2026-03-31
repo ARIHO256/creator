@@ -8,8 +8,6 @@ import { CreateSellerListingDto } from './dto/create-seller-listing.dto.js';
 import { UpdateSellerProfileDto } from './dto/update-seller-profile.dto.js';
 import { UpdateSellerListingDto } from './dto/update-seller-listing.dto.js';
 
-const SELLERFRONT_COMPAT_RECORD_IDS = ['sellerfront_mockdb_seed', 'sellerfront_mockdb_live'];
-
 @Injectable()
 export class SellersService {
   constructor(
@@ -170,12 +168,8 @@ export class SellersService {
   async listOrders(userId: string, query?: ListQueryDto) {
     const profile = await this.ensureSellerProfile(userId);
     const { skip, take } = normalizeListQuery(query);
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     return this.prisma.order.findMany({
-      where: {
-        sellerId: profile.id,
-        ...(compatibilityOrderIds.length > 0 ? { id: { notIn: compatibilityOrderIds } } : {})
-      },
+      where: { sellerId: profile.id },
       skip,
       take,
       include: {
@@ -192,9 +186,6 @@ export class SellersService {
   }
 
   async getOrder(userId: string, id: string) {
-    if (await this.isCompatibilityOrderId(id)) {
-      throw new NotFoundException('Order not found');
-    }
     const profile = await this.ensureSellerProfile(userId);
     const order = await this.prisma.order.findFirst({
       where: { id, sellerId: profile.id },
@@ -218,12 +209,11 @@ export class SellersService {
   async listTransactions(userId: string, query?: ListQueryDto) {
     const profile = await this.ensureSellerProfile(userId);
     const { skip, take } = normalizeListQuery(query);
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
     return this.prisma.transaction.findMany({
       where: {
         OR: [
-          { userId, ...(compatibilityOrderIds.length > 0 ? { orderId: { notIn: compatibilityOrderIds } } : {}) },
-          { sellerId: profile.id, ...(compatibilityOrderIds.length > 0 ? { orderId: { notIn: compatibilityOrderIds } } : {}) }
+          { userId },
+          { sellerId: profile.id }
         ]
       },
       skip,
@@ -398,45 +388,5 @@ export class SellersService {
     }
 
     return `${base}-${Date.now()}`;
-  }
-
-  private async loadCompatibilityOrderIds() {
-    const records = await this.prisma.appRecord.findMany({
-      where: {
-        domain: 'sellerfront',
-        entityType: 'mockdb',
-        entityId: { in: SELLERFRONT_COMPAT_RECORD_IDS }
-      },
-      select: { payload: true }
-    });
-    const ids = new Set<string>();
-    for (const record of records) {
-      const payload = record.payload;
-      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-        continue;
-      }
-      const orders = (payload as Record<string, unknown>).orders;
-      if (!Array.isArray(orders)) {
-        continue;
-      }
-      for (const order of orders) {
-        if (!order || typeof order !== 'object' || Array.isArray(order)) {
-          continue;
-        }
-        const id = (order as Record<string, unknown>).id;
-        if (typeof id === 'string' && id.trim()) {
-          ids.add(id.trim());
-        }
-      }
-    }
-    return Array.from(ids);
-  }
-
-  private async isCompatibilityOrderId(id: string) {
-    if (!id) {
-      return false;
-    }
-    const compatibilityOrderIds = await this.loadCompatibilityOrderIds();
-    return compatibilityOrderIds.includes(id);
   }
 }

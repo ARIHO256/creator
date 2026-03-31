@@ -21,6 +21,7 @@ const WRAPPER_PROPERTIES = new Set([
   'readConnectionStatus'
 ]);
 const RETRYABLE_RECONNECT_ATTEMPTS = 3;
+const INTERNAL_QUERY_TARGETS = new Set(['quaint::connector::metrics']);
 
 function resolveDatasourceUrl(configService: ConfigService | undefined, role: PrismaRole) {
   const preferredKey = role === 'read' ? 'database.readUrl' : 'database.writeUrl';
@@ -101,7 +102,9 @@ abstract class BasePrismaService extends PrismaClient implements OnModuleInit, O
       this.metrics?.recordDbQuery(model, action, durationMs);
       if (durationMs > this.queryBudgetMs) {
         this.metrics?.recordDbSlowQuery(model, action, durationMs, this.queryBudgetMs);
-        this.logger.warn(`${action} exceeded ${this.queryBudgetMs}ms budget on ${model}: ${durationMs}ms`);
+        if (!INTERNAL_QUERY_TARGETS.has(model)) {
+          this.logger.warn(`${action} exceeded ${this.queryBudgetMs}ms budget on ${model}: ${durationMs}ms`);
+        }
       }
     });
   }

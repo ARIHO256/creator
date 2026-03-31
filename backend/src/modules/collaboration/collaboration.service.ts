@@ -1529,8 +1529,8 @@ export class CollaborationService {
           message.author?.email ??
           null
       })),
-      createdAt: proposal.createdAt?.toISOString?.() ?? proposal.createdAt ?? null,
-      updatedAt: proposal.updatedAt?.toISOString?.() ?? proposal.updatedAt ?? null
+      createdAt: this.toIsoIfValid(proposal.createdAt, null),
+      updatedAt: this.toIsoIfValid(proposal.updatedAt, null)
     };
   }
 
@@ -1545,13 +1545,39 @@ export class CollaborationService {
       currency: campaign.currency,
       seller: campaign.seller?.displayName ?? null,
       creator: campaign.creator?.creatorProfile?.name ?? campaign.creator?.email ?? null,
-      startAt: campaign.startAt?.toISOString?.() ?? campaign.startAt ?? null,
-      endAt: campaign.endAt?.toISOString?.() ?? campaign.endAt ?? null,
-      createdAt: campaign.createdAt?.toISOString?.() ?? campaign.createdAt ?? null,
-      updatedAt: campaign.updatedAt?.toISOString?.() ?? campaign.updatedAt ?? null,
+      startAt: this.toIsoIfValid(campaign.startAt, null),
+      endAt: this.toIsoIfValid(campaign.endAt, null),
+      createdAt: this.toIsoIfValid(campaign.createdAt, null),
+      updatedAt: this.toIsoIfValid(campaign.updatedAt, null),
       metadata,
       ...metadata
     };
+  }
+
+  private toIsoIfValid(value: unknown, fallback: string | null = null): string | null {
+    if (value === null || value === undefined) {
+      return fallback;
+    }
+
+    if (value instanceof Date) {
+      return Number.isNaN(value.getTime()) ? fallback : value.toISOString();
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return fallback;
+      }
+      const parsed = new Date(trimmed);
+      return Number.isNaN(parsed.getTime()) ? trimmed : parsed.toISOString();
+    }
+
+    if (typeof value === 'number') {
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+    }
+
+    return fallback;
   }
 
   private extractCatalogItems(payload: unknown) {
@@ -1925,8 +1951,8 @@ export class CollaborationService {
               ? creatorPayload.verified
               : false
       },
-      startISO: campaign.startAt?.toISOString?.() ?? campaign.startAt ?? new Date().toISOString(),
-      endISO: campaign.endAt?.toISOString?.() ?? campaign.endAt ?? new Date().toISOString(),
+      startISO: this.toIsoIfValid(campaign.startAt, new Date().toISOString()) ?? new Date().toISOString(),
+      endISO: this.toIsoIfValid(campaign.endAt, new Date().toISOString()) ?? new Date().toISOString(),
       notes: typeof metadata.notes === 'string' ? metadata.notes : '',
       shoppable,
       live

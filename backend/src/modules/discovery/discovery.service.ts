@@ -1376,6 +1376,7 @@ export class DiscoveryService {
       ['ACTIVE', 'PENDING_APPROVAL', 'EXECUTING', 'SIGNED'].includes(String(entry.status))
     );
     const completedContracts = params.contracts.filter((entry) => String(entry.status) === 'COMPLETED');
+    const acceptedInvites = params.invites.filter((entry) => String(entry.status) === 'ACCEPTED');
     const openInvites = params.invites.filter((entry) => String(entry.status) === 'PENDING');
     const latestCampaign = [...params.campaigns].sort((left, right) =>
       String(right.startAt || right.updatedAt || '').localeCompare(String(left.startAt || left.updatedAt || ''))
@@ -1424,6 +1425,8 @@ export class DiscoveryService {
       following: params.followed,
       favourite: false,
       collabInviteStatus: openInvites.length > 0 ? 'pending' : 'none',
+      hasAcceptedInvite: acceptedInvites.length > 0,
+      acceptedInviteCount: acceptedInvites.length,
       primaryContact: `@${params.profile.handle}`,
       nextLive: latestCampaign?.startAt ? this.formatCampaignSlot(latestCampaign.startAt) : 'Not scheduled',
       nextAction,
