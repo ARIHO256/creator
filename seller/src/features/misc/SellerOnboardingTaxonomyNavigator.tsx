@@ -10,25 +10,39 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { alpha, useTheme } from "@mui/material/styles";
 import { TreeView, TreeItem } from "@mui/lab";
 
 void sellerBackendApi.getWorkflowScreenState("seller-feature:misc/SellerOnboardingTaxonomyNavigator").catch(() => undefined);
 
-const EV_COLORS = {
+const BRAND_COLORS = {
   primary: "#00B388",
-  primarySoft: "#E6F7F2",
   primaryStrong: "#008565",
   accent: "#FF8A00",
-  accentSoft: "#FFF4E5",
-  bg: "#F5F7FB",
-  surface: "#FFFFFF",
-  surfaceAlt: "#F9FBFF",
-  border: "#E2E8F0",
-  textMain: "#0F172A",
-  textSubtle: "#64748B",
-  textMuted: "#94A3B8",
 };
-const CARD_RADIUS = 2;
+
+const getNavigatorColors = (isDark: boolean) => {
+  return {
+    ...BRAND_COLORS,
+    primarySoft: alpha(BRAND_COLORS.primary, isDark ? 0.18 : 0.12),
+    accentSoft: alpha(BRAND_COLORS.accent, isDark ? 0.22 : 0.14),
+    bg: isDark ? "transparent" : "#F8FBFC",
+    surface: isDark ? "rgba(15, 23, 42, 0.78)" : "#FFFFFF",
+    surfaceAlt: isDark ? "rgba(148, 163, 184, 0.08)" : "#F8FBFF",
+    input: isDark ? "rgba(2, 8, 23, 0.9)" : "#FFFFFF",
+    border: isDark ? "rgba(148, 163, 184, 0.30)" : "#DDE7F0",
+    borderStrong: isDark ? "rgba(148, 163, 184, 0.42)" : "#CBD5E1",
+    textMain: isDark ? "#E2E8F0" : "#0F172A",
+    textSubtle: isDark ? "#A6B5CC" : "#64748B",
+    textMuted: isDark ? "#7C8CA3" : "#94A3B8",
+    shadow: isDark ? "none" : "0 20px 52px -38px rgba(15, 23, 42, 0.45)",
+  };
+};
+
+// Fallback for any module-scope references; component scope overrides this with mode-aware colors.
+const COLORS = getNavigatorColors(false);
+
+const CARD_RADIUS = 3;
 const DEFAULT_TYPES = {
   marketplace: "Marketplace",
   family: "Product Family",
@@ -438,10 +452,55 @@ function SellerOnboardingTaxonomyNavigator({
   copy?: Partial<typeof DEFAULT_COPY>;
   onRetry?: () => void;
 }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  const COLORS = useMemo(() => getNavigatorColors(isDark), [isDark]);
   const taxonomy = taxonomyData ?? initialTaxonomy;
   const typeConfig = { ...DEFAULT_TYPES, ...types };
   const labelConfig = { ...DEFAULT_LABELS, ...labels };
   const copyConfig = { ...DEFAULT_COPY, ...copy };
+  const sectionCardSx = useMemo(
+    () => ({
+      borderRadius: CARD_RADIUS,
+      border: `1px solid ${COLORS.border}`,
+      backgroundColor: COLORS.surface,
+      boxShadow: COLORS.shadow,
+      transition: "background-color .2s ease, border-color .2s ease, box-shadow .2s ease",
+    }),
+    [COLORS]
+  );
+  const fieldSx = useMemo(
+    () => ({
+      "& .MuiInputBase-root": {
+        borderRadius: 2,
+        backgroundColor: COLORS.input,
+        color: COLORS.textMain,
+      },
+      "& .MuiOutlinedInput-notchedOutline": {
+        borderColor: COLORS.border,
+      },
+      "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
+        borderColor: COLORS.borderStrong,
+      },
+      "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
+        borderColor: COLORS.primary,
+      },
+      "& .MuiInputLabel-root": {
+        color: COLORS.textSubtle,
+      },
+      "& .MuiInputLabel-root.Mui-focused": {
+        color: COLORS.primaryStrong,
+      },
+      "& .MuiSvgIcon-root": {
+        color: COLORS.textSubtle,
+      },
+      "& .MuiInputBase-input::placeholder": {
+        color: COLORS.textMuted,
+        opacity: 1,
+      },
+    }),
+    [COLORS]
+  );
   const [search, setSearch] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState(() => {
     const last = selections[selections.length - 1];
@@ -460,16 +519,17 @@ function SellerOnboardingTaxonomyNavigator({
         className={className}
         sx={{
           borderRadius: CARD_RADIUS,
-          border: "1px solid rgba(226,232,240,1)",
-          backgroundColor: EV_COLORS.surface,
+          border: `1px solid ${COLORS.border}`,
+          backgroundColor: COLORS.surface,
           p: 3,
+          boxShadow: COLORS.shadow,
         }}
       >
         <Stack spacing={1.5}>
-          <Typography variant="subtitle2" sx={{ color: EV_COLORS.textMain, fontWeight: 700 }}>
+          <Typography variant="subtitle2" sx={{ color: COLORS.textMain, fontWeight: 700 }}>
             Taxonomy unavailable
           </Typography>
-          <Typography variant="body2" sx={{ color: EV_COLORS.textSubtle }}>
+          <Typography variant="body2" sx={{ color: COLORS.textSubtle }}>
             This step requires taxonomy fetched from the database. Please try again.
           </Typography>
           <Stack direction="row" spacing={1.5}>
@@ -480,8 +540,8 @@ function SellerOnboardingTaxonomyNavigator({
               sx={{
                 borderRadius: 999,
                 textTransform: "none",
-                backgroundColor: EV_COLORS.primary,
-                "&:hover": { backgroundColor: EV_COLORS.primaryStrong },
+                backgroundColor: COLORS.primary,
+                "&:hover": { backgroundColor: COLORS.primaryStrong },
               }}
             >
               Retry
@@ -674,19 +734,19 @@ function SellerOnboardingTaxonomyNavigator({
                 px: 1,
                 py: 0.5,
                 backgroundColor: isCurrent
-                  ? EV_COLORS.primarySoft
+                  ? COLORS.primarySoft
                   : isInProductLines
-                  ? EV_COLORS.surfaceAlt
+                  ? COLORS.surfaceAlt
                   : "transparent",
                 border: isInProductLines
                   ? `1px solid ${
-                      isCurrent ? EV_COLORS.primary : EV_COLORS.border
+                      isCurrent ? COLORS.primary : COLORS.border
                     }`
                   : "1px solid transparent",
               }}
             >
               <IconCategory />
-              <span className="text-sm font-medium" style={{ color: EV_COLORS.textMain }}>
+              <span className="text-sm font-medium" style={{ color: COLORS.textMain }}>
                 {node.name}
               </span>
               <Chip
@@ -695,13 +755,13 @@ function SellerOnboardingTaxonomyNavigator({
                 sx={{
                   backgroundColor:
                     node.type === typeConfig.marketplace
-                      ? EV_COLORS.primarySoft
-                      : EV_COLORS.surface,
+                      ? COLORS.primarySoft
+                      : COLORS.surface,
                   color:
                     node.type === typeConfig.marketplace
-                      ? EV_COLORS.primaryStrong
-                      : EV_COLORS.textSubtle,
-                  borderColor: EV_COLORS.border,
+                      ? COLORS.primaryStrong
+                      : COLORS.textSubtle,
+                  borderColor: COLORS.border,
                   borderWidth: 1,
                   fontSize: "0.65rem",
                   height: 20,
@@ -713,9 +773,9 @@ function SellerOnboardingTaxonomyNavigator({
                   size="small"
                   label="Selected"
                   sx={{
-                    backgroundColor: EV_COLORS.primarySoft,
-                    color: EV_COLORS.primaryStrong,
-                    borderColor: EV_COLORS.primary,
+                    backgroundColor: COLORS.primarySoft,
+                    color: COLORS.primaryStrong,
+                    borderColor: COLORS.primary,
                     borderWidth: 1,
                     fontSize: "0.6rem",
                     height: 18,
@@ -734,21 +794,20 @@ function SellerOnboardingTaxonomyNavigator({
     });
 
   return (
-    <Box className={className} sx={{ backgroundColor: EV_COLORS.bg }}>
+    <Box className={className} sx={{ backgroundColor: COLORS.bg }}>
       <Paper
         elevation={0}
         sx={{
-          borderRadius: CARD_RADIUS,
-          border: `1px solid ${EV_COLORS.primary}`,
-          backgroundColor: EV_COLORS.surface,
+          ...sectionCardSx,
+          borderColor: COLORS.primarySoft,
           p: 3,
           mb: 3,
         }}
       >
-        <Typography variant="h6" sx={{ color: EV_COLORS.textMain, fontWeight: 600 }}>
+        <Typography variant="h6" sx={{ color: COLORS.textMain, fontWeight: 600 }}>
           {copyConfig.title}
         </Typography>
-        <Typography variant="body2" sx={{ color: EV_COLORS.textSubtle, mt: 0.5 }}>
+        <Typography variant="body2" sx={{ color: COLORS.textSubtle, mt: 0.5 }}>
           {copyConfig.subtitle}
         </Typography>
         {!!productLines.length && (
@@ -758,14 +817,14 @@ function SellerOnboardingTaxonomyNavigator({
               label={copyConfig.selectionCountLabel
                 .replace("{count}", String(productLines.length))
                 .replace("{suffix}", productLines.length > 1 ? "s" : "")}
-              sx={{ backgroundColor: EV_COLORS.surfaceAlt, color: EV_COLORS.textSubtle, borderColor: EV_COLORS.border }}
+              sx={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.textSubtle, borderColor: COLORS.border }}
               variant="outlined"
             />
             {marketplaceFromPath && (
               <Chip
                 size="small"
                 label={`${labelConfig.marketplace}: ${marketplaceFromPath.name}`}
-                sx={{ backgroundColor: EV_COLORS.surfaceAlt, color: EV_COLORS.textSubtle, borderColor: EV_COLORS.border }}
+                sx={{ backgroundColor: COLORS.surfaceAlt, color: COLORS.textSubtle, borderColor: COLORS.border }}
                 variant="outlined"
               />
             )}
@@ -777,19 +836,17 @@ function SellerOnboardingTaxonomyNavigator({
         <Paper
           elevation={0}
           sx={{
-            borderRadius: CARD_RADIUS,
-            border: `1px solid ${EV_COLORS.primary}`,
-            backgroundColor: EV_COLORS.surface,
+            ...sectionCardSx,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
           }}
         >
-          <Box sx={{ borderBottom: `1px solid ${EV_COLORS.border}`, p: 3 }}>
+          <Box sx={{ borderBottom: `1px solid ${COLORS.border}`, p: 3 }}>
             <Typography
               variant="subtitle2"
               className="uppercase tracking-[0.2em] text-[11px]"
-              sx={{ color: EV_COLORS.textMuted }}
+              sx={{ color: COLORS.textMuted }}
             >
               {copyConfig.treeTitle}
             </Typography>
@@ -802,6 +859,7 @@ function SellerOnboardingTaxonomyNavigator({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 variant="outlined"
+                sx={fieldSx}
               />
             </Box>
           </Box>
@@ -811,7 +869,7 @@ function SellerOnboardingTaxonomyNavigator({
               defaultCollapseIcon={<IconChevronRight className="rotate-90 text-slate-400" />}
               defaultExpandIcon={<IconChevronRight className="text-slate-500" />}
               onNodeSelect={(_e, nodeId) => handleSelectNode(nodeId)}
-              sx={{ color: EV_COLORS.textMain }}
+              sx={{ color: COLORS.textMain }}
             >
               {renderTree(filteredTaxonomy)}
             </TreeView>
@@ -822,16 +880,14 @@ function SellerOnboardingTaxonomyNavigator({
           <Paper
             elevation={0}
             sx={{
-              borderRadius: CARD_RADIUS,
-              border: `1px solid ${EV_COLORS.primary}`,
-              backgroundColor: EV_COLORS.surface,
+              ...sectionCardSx,
               p: 3,
             }}
           >
-            <Typography variant="subtitle1" sx={{ color: EV_COLORS.textMain, fontWeight: 600, mb: 1 }}>
+            <Typography variant="subtitle1" sx={{ color: COLORS.textMain, fontWeight: 600, mb: 1 }}>
               {copyConfig.quickTitle}
             </Typography>
-            <Typography variant="body2" sx={{ color: EV_COLORS.textSubtle, mb: 2 }}>
+            <Typography variant="body2" sx={{ color: COLORS.textSubtle, mb: 2 }}>
               {copyConfig.quickSubtitle}
             </Typography>
 
@@ -851,7 +907,7 @@ function SellerOnboardingTaxonomyNavigator({
                     const value = String(selected || "");
                     if (!value) {
                       return (
-                        <span style={{ color: EV_COLORS.textMuted }}>
+                        <span style={{ color: COLORS.textMuted }}>
                           Select {labelConfig.marketplace.toLowerCase()}
                         </span>
                       );
@@ -860,6 +916,7 @@ function SellerOnboardingTaxonomyNavigator({
                     return item ? item.name : value;
                   },
                 }}
+                sx={fieldSx}
               >
                 <MenuItem value="" disabled>
                   Select {labelConfig.marketplace.toLowerCase()}
@@ -885,7 +942,7 @@ function SellerOnboardingTaxonomyNavigator({
                     const value = String(selected || "");
                     if (!value) {
                       return (
-                        <span style={{ color: EV_COLORS.textMuted }}>
+                        <span style={{ color: COLORS.textMuted }}>
                           Select {labelConfig.family.toLowerCase()}
                         </span>
                       );
@@ -894,6 +951,7 @@ function SellerOnboardingTaxonomyNavigator({
                     return item ? item.name : value;
                   },
                 }}
+                sx={fieldSx}
               >
                 <MenuItem value="" disabled>
                   Select {labelConfig.family.toLowerCase()}
@@ -919,7 +977,7 @@ function SellerOnboardingTaxonomyNavigator({
                     const value = String(selected || "");
                     if (!value) {
                       return (
-                        <span style={{ color: EV_COLORS.textMuted }}>
+                        <span style={{ color: COLORS.textMuted }}>
                           Select {labelConfig.category.toLowerCase()}
                         </span>
                       );
@@ -928,6 +986,7 @@ function SellerOnboardingTaxonomyNavigator({
                     return item ? item.name : value;
                   },
                 }}
+                sx={fieldSx}
               >
                 <MenuItem value="" disabled>
                   Select {labelConfig.category.toLowerCase()}
@@ -953,7 +1012,7 @@ function SellerOnboardingTaxonomyNavigator({
                     const value = String(selected || "");
                     if (!value) {
                       return (
-                        <span style={{ color: EV_COLORS.textMuted }}>
+                        <span style={{ color: COLORS.textMuted }}>
                           Select {labelConfig.subcategory.toLowerCase()}
                         </span>
                       );
@@ -962,6 +1021,7 @@ function SellerOnboardingTaxonomyNavigator({
                     return item ? item.name : value;
                   },
                 }}
+                sx={fieldSx}
               >
                 <MenuItem value="" disabled>
                   Select {labelConfig.subcategory.toLowerCase()}
@@ -978,14 +1038,12 @@ function SellerOnboardingTaxonomyNavigator({
           <Paper
             elevation={0}
             sx={{
-              borderRadius: CARD_RADIUS,
-              border: `1px solid ${EV_COLORS.primary}`,
-              backgroundColor: EV_COLORS.surface,
+              ...sectionCardSx,
               p: 3,
             }}
           >
             <Box className="flex items-start justify-between gap-2 mb-2">
-              <Typography variant="subtitle1" sx={{ color: EV_COLORS.textMain, fontWeight: 600 }}>
+              <Typography variant="subtitle1" sx={{ color: COLORS.textMain, fontWeight: 600 }}>
                 {copyConfig.selectedTitle}
               </Typography>
               <Button
@@ -993,7 +1051,7 @@ function SellerOnboardingTaxonomyNavigator({
                 variant="text"
                 onClick={handleClearSelection}
                 disabled={!selectedPath.length || disabled}
-                sx={{ textTransform: "none", color: EV_COLORS.textSubtle, minWidth: 0, px: 1 }}
+                sx={{ textTransform: "none", color: COLORS.textSubtle, minWidth: 0, px: 1 }}
               >
                 Clear
               </Button>
@@ -1005,7 +1063,7 @@ function SellerOnboardingTaxonomyNavigator({
                   {selectedPath.map((node, idx) => (
                     <React.Fragment key={node.id}>
                       {idx > 0 && (
-                        <Typography variant="caption" sx={{ color: EV_COLORS.textMuted, mx: 0.25 }}>
+                        <Typography variant="caption" sx={{ color: COLORS.textMuted, mx: 0.25 }}>
                           ›
                         </Typography>
                       )}
@@ -1014,11 +1072,11 @@ function SellerOnboardingTaxonomyNavigator({
                         label={node.name}
                         sx={{
                           backgroundColor:
-                            idx === selectedPath.length - 1 ? EV_COLORS.primarySoft : EV_COLORS.surfaceAlt,
+                            idx === selectedPath.length - 1 ? COLORS.primarySoft : COLORS.surfaceAlt,
                           color:
-                            idx === selectedPath.length - 1 ? EV_COLORS.primaryStrong : EV_COLORS.textSubtle,
+                            idx === selectedPath.length - 1 ? COLORS.primaryStrong : COLORS.textSubtle,
                           borderColor:
-                            idx === selectedPath.length - 1 ? EV_COLORS.primary : EV_COLORS.border,
+                            idx === selectedPath.length - 1 ? COLORS.primary : COLORS.border,
                           borderWidth: 1,
                         }}
                         variant="outlined"
@@ -1026,7 +1084,7 @@ function SellerOnboardingTaxonomyNavigator({
                     </React.Fragment>
                   ))}
                 </Box>
-                <Typography variant="body2" sx={{ color: EV_COLORS.textSubtle, mb: 1.5 }}>
+                <Typography variant="body2" sx={{ color: COLORS.textSubtle, mb: 1.5 }}>
                   {copyConfig.selectedHelper}
                 </Typography>
                 <Stack
@@ -1042,9 +1100,9 @@ function SellerOnboardingTaxonomyNavigator({
                     sx={{
                       textTransform: "none",
                       borderRadius: 999,
-                      backgroundColor: EV_COLORS.accent,
+                      backgroundColor: COLORS.accent,
                       color: "#FFFFFF",
-                      "&:hover": { backgroundColor: EV_COLORS.accent },
+                      "&:hover": { backgroundColor: COLORS.accent },
                     }}
                   >
                     {copyConfig.addButtonLabel}
@@ -1052,7 +1110,7 @@ function SellerOnboardingTaxonomyNavigator({
                 </Stack>
               </>
             ) : (
-              <Typography variant="body2" sx={{ color: EV_COLORS.textMuted }}>
+              <Typography variant="body2" sx={{ color: COLORS.textMuted }}>
                 {copyConfig.selectedEmpty}
               </Typography>
             )}
@@ -1061,25 +1119,23 @@ function SellerOnboardingTaxonomyNavigator({
           <Paper
             elevation={0}
             sx={{
-              borderRadius: CARD_RADIUS,
-              border: `1px solid ${EV_COLORS.primary}`,
-              backgroundColor: EV_COLORS.surface,
+              ...sectionCardSx,
               p: 3,
             }}
           >
             <Box className="flex items-center justify-between gap-2 mb-2">
-              <Typography variant="subtitle1" sx={{ color: EV_COLORS.textMain, fontWeight: 600 }}>
+              <Typography variant="subtitle1" sx={{ color: COLORS.textMain, fontWeight: 600 }}>
                 {copyConfig.listTitle}
               </Typography>
               {productLines.length > 0 && (
-                <Typography variant="caption" sx={{ color: EV_COLORS.textMuted }}>
+                <Typography variant="caption" sx={{ color: COLORS.textMuted }}>
                   {productLines.length} selected
                 </Typography>
               )}
             </Box>
 
             {productLines.length === 0 ? (
-              <Typography variant="body2" sx={{ color: EV_COLORS.textMuted }}>
+              <Typography variant="body2" sx={{ color: COLORS.textMuted }}>
                 {copyConfig.listEmpty}
               </Typography>
             ) : (
@@ -1105,8 +1161,8 @@ function SellerOnboardingTaxonomyNavigator({
                       className="gap-2"
                       sx={{
                         borderRadius: 2,
-                        border: `1px solid ${EV_COLORS.border}`,
-                        backgroundColor: EV_COLORS.surfaceAlt,
+                        border: `1px solid ${COLORS.border}`,
+                        backgroundColor: COLORS.surfaceAlt,
                         p: 1.5,
                         display: "flex",
                         flexDirection: "column",
@@ -1123,7 +1179,7 @@ function SellerOnboardingTaxonomyNavigator({
                             {pathIdx > 0 && (
                               <Typography
                                 variant="caption"
-                                sx={{ color: EV_COLORS.textMuted, mx: 0.25 }}
+                                sx={{ color: COLORS.textMuted, mx: 0.25 }}
                               >
                                 ›
                               </Typography>
@@ -1133,10 +1189,10 @@ function SellerOnboardingTaxonomyNavigator({
                               label={pathNode.name}
                               sx={{
                                 backgroundColor: pathNode.isLast
-                                  ? EV_COLORS.primarySoft
-                                  : EV_COLORS.surface,
-                                color: pathNode.isLast ? EV_COLORS.primaryStrong : EV_COLORS.textSubtle,
-                                borderColor: EV_COLORS.border,
+                                  ? COLORS.primarySoft
+                                  : COLORS.surface,
+                                color: pathNode.isLast ? COLORS.primaryStrong : COLORS.textSubtle,
+                                borderColor: COLORS.border,
                                 borderWidth: 1,
                               }}
                               variant="outlined"
@@ -1165,9 +1221,7 @@ function SellerOnboardingTaxonomyNavigator({
           <Paper
             elevation={0}
             sx={{
-              borderRadius: CARD_RADIUS,
-              border: `1px solid ${EV_COLORS.primary}`,
-              backgroundColor: EV_COLORS.surface,
+              ...sectionCardSx,
               p: 3,
             }}
           >
@@ -1180,11 +1234,11 @@ function SellerOnboardingTaxonomyNavigator({
               <Box>
                 <Typography
                   variant="subtitle1"
-                  sx={{ color: EV_COLORS.textMain, fontWeight: 600, mb: 0.5 }}
+                  sx={{ color: COLORS.textMain, fontWeight: 600, mb: 0.5 }}
                 >
                   {copyConfig.finishTitle}
                 </Typography>
-                <Typography variant="body2" sx={{ color: EV_COLORS.textSubtle, maxWidth: 520 }}>
+                <Typography variant="body2" sx={{ color: COLORS.textSubtle, maxWidth: 520 }}>
                   {copyConfig.finishSubtitle}
                 </Typography>
               </Box>
@@ -1196,12 +1250,12 @@ function SellerOnboardingTaxonomyNavigator({
                 sx={{
                   borderRadius: 999,
                   textTransform: "none",
-                  backgroundColor: EV_COLORS.primary,
+                  backgroundColor: COLORS.primary,
                   color: "#FFFFFF",
                   px: 3,
                   boxShadow: "0 12px 30px rgba(0, 179, 136, 0.3)",
                   "&:hover": {
-                    backgroundColor: EV_COLORS.primaryStrong,
+                    backgroundColor: COLORS.primaryStrong,
                     boxShadow: "0 14px 34px rgba(0, 133, 101, 0.4)",
                   },
                 }}
@@ -1210,7 +1264,7 @@ function SellerOnboardingTaxonomyNavigator({
                 </Button>
                 <Typography
                   variant="caption"
-                  sx={{ color: EV_COLORS.primaryStrong, minHeight: 20 }}
+                  sx={{ color: COLORS.primaryStrong, minHeight: 20 }}
                 >
                   {saveMessage || "\u00A0"}
                 </Typography>

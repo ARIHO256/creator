@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { sellerBackendApi } from "../../../lib/backendApi";
+import AdBuilder from "./AdBuilder_SupplierFacing";
 
 /**
  * SupplierAdzDashboardPage.jsx
@@ -1327,7 +1328,6 @@ export default function SupplierAdzDashboardPage() {
     [totalRevenue7d, isMobile, totalOrders7d, totalClicks7d, avgCvr]
   );
 
-  const builderAd = useMemo(() => (drawerData ? ads.find((a) => a.id === drawerData) : null), [drawerData, ads]);
   const perfAd = useMemo(() => (drawerData ? ads.find((a) => a.id === drawerData) : null), [drawerData, ads]);
 
   return (
@@ -1761,20 +1761,7 @@ export default function SupplierAdzDashboardPage() {
       />
 
       {/* Builder drawer */}
-      <AdBuilderDrawer
-        open={drawer === "builder"}
-        onClose={() => setDrawer(null)}
-        ad={builderAd}
-        toastApi={toastApi}
-        onSaveDraft={(payload) => toastApi.success(`Draft saved (demo): ${payload.name || "Untitled"}`)}
-        onGenerate={() => {
-          if (!builderAd) {
-            toastApi.success("Generated (demo). Create will happen on save in production.");
-            return;
-          }
-          generateAd(builderAd.id);
-        }}
-      />
+      {drawer === "builder" ? <AdBuilder isDrawer={true} onClose={() => setDrawer(null)} initialAdId={drawerData} /> : null}
 
       {toastApi.toast ? <Toast tone={toastApi.toast.tone} message={toastApi.toast.message} onClose={toastApi.clear} /> : null}
     </div>
