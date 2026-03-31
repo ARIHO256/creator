@@ -85,6 +85,30 @@ type AddForm = {
   email: string;
 };
 
+function buildPayoutMethodsPayload(
+  methods: PayoutMethod[],
+  metadata: { kycState: KycState; payoutSchedule: PayoutSchedule; minThreshold: number }
+) {
+  return {
+    methods: methods.map((method) => ({
+      id: method.id,
+      type: method.kind,
+      label: method.label,
+      currency: method.currency,
+      isDefault: method.isDefault,
+      details: {
+        provider: method.provider,
+        country: method.country,
+        status: method.status,
+        masked: method.masked,
+        createdAt: method.createdAt,
+        lastUsedAt: method.lastUsedAt,
+      },
+    })),
+    metadata,
+  };
+}
+
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
 }
@@ -490,14 +514,13 @@ export default function PayoutMethodsPreviewable() {
         setKycState(nextKycState);
         setPayoutSchedule(nextPayoutSchedule);
         setMinThreshold(nextMinThreshold);
-        initialSnapshotRef.current = JSON.stringify({
-          methods: mappedMethods,
-          metadata: {
+        initialSnapshotRef.current = JSON.stringify(
+          buildPayoutMethodsPayload(mappedMethods, {
             kycState: nextKycState,
             payoutSchedule: nextPayoutSchedule,
-            minThreshold: nextMinThreshold
-          }
-        });
+            minThreshold: nextMinThreshold,
+          })
+        );
         hydratedRef.current = true;
       } catch {
         return;
@@ -510,14 +533,7 @@ export default function PayoutMethodsPreviewable() {
   const defaultMethod = useMemo(() => methods.find((m) => m.isDefault) || null, [methods]);
   useEffect(() => {
     if (!hydratedRef.current) return;
-    const payload = {
-      methods: methods.map((method) => ({
-        ...method,
-        type: method.kind,
-        details: { provider: method.provider, country: method.country, status: method.status, masked: method.masked, createdAt: method.createdAt, lastUsedAt: method.lastUsedAt }
-      })),
-      metadata: { kycState, payoutSchedule, minThreshold }
-    };
+    const payload = buildPayoutMethodsPayload(methods, { kycState, payoutSchedule, minThreshold });
     if (JSON.stringify(payload) === initialSnapshotRef.current) return;
     void sellerBackendApi.patchPayoutMethods(payload);
   }, [methods, kycState, payoutSchedule, minThreshold]);

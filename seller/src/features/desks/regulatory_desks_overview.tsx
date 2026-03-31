@@ -1187,12 +1187,19 @@ export default function RegulatoryDesksHome() {
                     const needs = s.status === "Needs changes";
                     const dueSoon = new Date(s.dueAt).getTime() - Date.now() < 3 * 24 * 60 * 60 * 1000;
                     return (
-                      <button
+                      <div
                         key={s.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => openDetail(s.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openDetail(s.id);
+                          }
+                        }}
                         className={cx(
-                          "grid w-full grid-cols-12 gap-2 px-4 py-3 text-left text-xs font-semibold text-slate-700 transition hover:bg-gray-50 dark:hover:bg-slate-800",
+                          "grid w-full cursor-pointer grid-cols-12 gap-2 px-4 py-3 text-left text-xs font-semibold text-slate-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 dark:hover:bg-slate-800",
                           needs && "bg-rose-50/30"
                         )}
                       >
@@ -1294,7 +1301,7 @@ export default function RegulatoryDesksHome() {
                             Open
                           </button>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
 
