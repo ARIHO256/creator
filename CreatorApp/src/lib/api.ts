@@ -1,0 +1,261 @@
+import { invalidateAuthSession } from "./authSession";
+
+export class ApiError extends Error {
+  status: number;
+  details: unknown;
+
+  constructor(message: string, status = 500, details?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.details = details;
+  }
+}
+
+type RequestOptions = Omit<RequestInit, "body"> & {
+  body?: BodyInit | Record<string, unknown> | unknown[] | null;
+};
+
+type ApiEnvelope<T> = {
+  success?: boolean;
+  data?: T;
+  error?: {
+    message?: string;
+    statusCode?: number;
+  };
+};
+
+const RAW_API_BASE =
+  (typeof import.meta !== "undefined" && (import.meta as ImportMeta).env?.VITE_API_URL) || "/api";
+
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function resolveApiBase(rawApiBase: string) {
+  const normalizedBase = rawApiBase.replace(/\/+$/, "");
+  if (!normalizedBase) return "/api";
+
+  if (typeof window === "undefined") {
+    return normalizedBase;
+  }
+
+  if (!/^https?:\/\//i.test(normalizedBase)) {
+    return normalizedBase;
+  }
+
+  try {
+    const configuredUrl = new URL(normalizedBase);
+    const currentUrl = new URL(window.location.href);
+
+    // In local development, keep API requests same-origin so SameSite=Lax auth cookies survive.
+    if (
+      isLoopbackHostname(configuredUrl.hostname) &&
+      isLoopbackHostname(currentUrl.hostname) &&
+      configuredUrl.hostname !== currentUrl.hostname
+    ) {
+      return configuredUrl.pathname.replace(/\/+$/, "") || "/api";
+    }
+  } catch {
+    return normalizedBase;
+  }
+
+  return normalizedBase;
+}
+
+const API_BASE = resolveApiBase(RAW_API_BASE);
+const pendingGetRequests = new Map<string, Promise<unknown>>();
+let pendingAuthRefresh: Promise<boolean> | null = null;
+let refreshBackoffUntil = 0;
+
+export function buildApiUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (API_BASE.endsWith("/api") && normalizedPath.startsWith("/api/")) {
+    return `${API_BASE}${normalizedPath.slice(4)}`;
+  }
+  return `${API_BASE}${normalizedPath}`;
+}
+
+function isJsonBody(body: RequestOptions["body"]) {
+  if (body == null) return false;
+  if (typeof body === "string") return false;
+  if (body instanceof FormData) return false;
+  if (body instanceof URLSearchParams) return false;
+  if (body instanceof Blob) return false;
+  if (body instanceof ArrayBuffer) return false;
+  return true;
+}
+
+function extractErrorMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") return fallback;
+  const envelope = payload as ApiEnvelope<unknown>;
+  if (envelope.error?.message) return envelope.error.message;
+  if (typeof (payload as { message?: unknown }).message === "string") {
+    return (payload as { message: string }).message;
+  }
+  return fallback;
+}
+
+function shouldInvalidateSession(path: string, status: number) {
+  if (status !== 401) return false;
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (normalizedPath.startsWith("/auth/login")) return false;
+  if (normalizedPath.startsWith("/auth/register")) return false;
+  if (normalizedPath.startsWith("/auth/logout")) return false;
+  if (normalizedPath.startsWith("/auth/refresh")) return false;
+  if (normalizedPath.startsWith("/workflow/screen-state/")) return false;
+  return true;
+}
+
+function shouldTryRefresh(path: string, status: number) {
+  if (status !== 401) return false;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (normalizedPath.startsWith("/auth/login")) return false;
+  if (normalizedPath.startsWith("/auth/register")) return false;
+  if (normalizedPath.startsWith("/auth/logout")) return false;
+  if (normalizedPath.startsWith("/auth/refresh")) return false;
+  if (normalizedPath.startsWith("/workflow/screen-state/")) return false;
+  return true;
+}
+
+async function refreshAuthSession() {
+  if (Date.now() < refreshBackoffUntil) {
+    return false;
+  }
+
+  if (pendingAuthRefresh) {
+    return pendingAuthRefresh;
+  }
+
+  pendingAuthRefresh = fetch(buildApiUrl("/auth/refresh"), {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({})
+  })
+    .then((response) => {
+      if (response.ok) {
+        refreshBackoffUntil = 0;
+        return true;
+      }
+      if (response.status === 401 || response.status === 403) {
+        refreshBackoffUntil = Date.now() + 30_000;
+      }
+      return false;
+    })
+    .catch(() => false)
+    .finally(() => {
+      pendingAuthRefresh = null;
+    });
+
+  return pendingAuthRefresh;
+}
+
+async function parseResponse(response: Response) {
+  const text = await response.text();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = String(options.method ?? "GET").toUpperCase();
+  const requestUrl = buildApiUrl(path);
+  const requestKey = `${method}:${requestUrl}`;
+
+  const runRequest = async () => {
+    const headers = new Headers(options.headers ?? {});
+    const body = options.body;
+
+    if (isJsonBody(body) && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    let attemptedRefresh = false;
+
+    while (true) {
+      const response = await fetch(requestUrl, {
+        ...options,
+        credentials: "include",
+        headers,
+        body: isJsonBody(body) ? JSON.stringify(body) : (body as BodyInit | null | undefined)
+      });
+
+      const payload = await parseResponse(response);
+
+      if (!response.ok) {
+        if (!attemptedRefresh && shouldTryRefresh(path, response.status)) {
+          const refreshed = await refreshAuthSession();
+          if (refreshed) {
+            attemptedRefresh = true;
+            continue;
+          }
+        }
+
+        if (shouldInvalidateSession(path, response.status)) {
+          invalidateAuthSession();
+        }
+
+        throw new ApiError(
+          extractErrorMessage(payload, `Request failed with status ${response.status}`),
+          response.status,
+          payload
+        );
+      }
+
+      if (payload && typeof payload === "object" && "success" in (payload as Record<string, unknown>)) {
+        const envelope = payload as ApiEnvelope<T>;
+        if (envelope.success === false) {
+          throw new ApiError(
+            extractErrorMessage(payload, "Request failed"),
+            envelope.error?.statusCode ?? response.status,
+            payload
+          );
+        }
+        return (envelope.data ?? null) as T;
+      }
+
+      return payload as T;
+    }
+  };
+
+  if (method === "GET") {
+    const pending = pendingGetRequests.get(requestKey);
+    if (pending) {
+      return pending as Promise<T>;
+    }
+
+    const nextRequest = runRequest().finally(() => {
+      pendingGetRequests.delete(requestKey);
+    });
+
+    pendingGetRequests.set(requestKey, nextRequest as Promise<unknown>);
+    return nextRequest;
+  }
+
+  return runRequest();
+}
+
+export const api = {
+  get<T>(path: string, options?: Omit<RequestOptions, "body" | "method">) {
+    return request<T>(path, { ...options, method: "GET" });
+  },
+  post<T>(path: string, body?: RequestOptions["body"], options?: Omit<RequestOptions, "body" | "method">) {
+    return request<T>(path, { ...options, method: "POST", body });
+  },
+  patch<T>(path: string, body?: RequestOptions["body"], options?: Omit<RequestOptions, "body" | "method">) {
+    return request<T>(path, { ...options, method: "PATCH", body });
+  },
+  delete<T>(path: string, options?: Omit<RequestOptions, "body" | "method">) {
+    return request<T>(path, { ...options, method: "DELETE" });
+  }
+};

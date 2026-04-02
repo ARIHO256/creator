@@ -1,0 +1,787 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
+import { needsOnboarding, onboardingPathForRole, recordOnboardingStatus } from "./onboardingStatus";
+import { useLocalization } from '../../localization/LocalizationProvider';
+import type { Session } from "../../types/session";
+import type { UserRole } from "../../types/roles";
+import { getCurrentRole } from "../../auth/roles";
+import { readSession, writeSession } from "../../auth/session";
+import { authClient } from "../../lib/authApi";
+import { sellerBackendApi } from "../../lib/backendApi";
+
+// EVzone — Auth Pro v4.4 — JS only (modern, relatable, mobile-first, role-aware)
+// Route: /auth
+// Visual goals:
+//  • Soft gradient background • Centered card on desktop, full-bleed on mobile
+//  • Familiar social buttons row + password visibility toggle + input icons
+//  • Segmented tab pills (Signin / Register); other options moved below to reduce scroll/clutter
+// Features:
+//  • Role selector (Seller / Service Provider)
+//  • Password • Magic Link • OTP • Passkeys (stubs) • 2FA • Recovery
+// Changes in v4.4:
+//  • Removed “what do you sell/provide” field
+//  • Larger checkboxes for easier tapping
+//  • Refined “More options” (bottom) card styling
+type AuthTab = "signin" | "signup" | "passwordless" | "2fa" | "recovery";
+const AUTH_TABS: Array<AuthTab> = ["signin", "signup"];
+
+export type AuthProps = {
+  defaultTab?: "signin" | "signup";
+  onClose?: () => void;
+  variant?: "default" | "modal";
+};
+
+type AuthSecuritySession = {
+  id: string;
+  device?: string;
+  ip?: string;
+  lastActiveAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type AuthPasskey = {
+  id: string;
+  identifier: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  label?: string;
+};
+
+type AuthSecurityState = {
+  twoFactor?: boolean;
+  twoFactorMethod?: string;
+  twoFactorConfig?: { enabled?: boolean; verified?: boolean; secret?: string | null };
+  passkeys?: AuthPasskey[];
+  sessions?: AuthSecuritySession[];
+  trustedDevices?: Array<Record<string, unknown>>;
+};
+
+const ONBOARDING_STORAGE_KEYS = {
+  seller: ["seller_onb_pro_v4", "seller_onb_pro_v3", "seller_onb_review_v1", "seller_onb_ui_v1"],
+  provider: ["provider_onb_pro_v4", "provider_onb_pro_v31", "provider_onb_review_v1", "provider_onb_ui_v1"],
+} as const;
+
+const ONBOARDING_SCREEN_KEYS = {
+  seller: "seller-onboarding",
+  provider: "provider-onboarding",
+} as const;
+
+function readUserAgentDeviceLabel() {
+  if (typeof window === "undefined") return "Browser session";
+  const ua = window.navigator.userAgent || "";
+  if (/iphone|ipad|ios/i.test(ua)) return "Safari / iOS";
+  if (/android/i.test(ua)) return "Chrome / Android";
+  if (/windows/i.test(ua)) return "Browser / Windows";
+  if (/macintosh|mac os/i.test(ua)) return "Browser / macOS";
+  if (/linux/i.test(ua)) return "Browser / Linux";
+  return "Browser session";
+}
+
+function buildAuthSecuritySession(user: Session, trusted: boolean): AuthSecuritySession {
+  return {
+    id: `auth_${user.userId || user.email || "guest"}`,
+    device: readUserAgentDeviceLabel(),
+    ip: "Unknown",
+    lastActiveAt: new Date().toISOString(),
+    metadata: {
+      trusted,
+      current: true,
+      userAgent: typeof window !== "undefined" ? window.navigator.userAgent : "",
+      email: user.email || null,
+      role: user.role || "seller",
+    },
+  };
+}
+
+export default function EVAuthProV4({ defaultTab = "signin", onClose, variant = "default" }: AuthProps = {}) {
+  const brand = useMemo(() => ({ green: '#03CD8C', orange: '#F77F00', ink: '#111827', mist: '#F7F7F7', bg1: '#FDFCFB', bg2: '#F3FAF8' }), []);
+  const { t } = useLocalization();
+  const location = useLocation();
+
+  // Upper card now only shows Sign In and Register
+  const resolvedDefaultTab = useMemo<AuthTab>(() => {
+    const params = new URLSearchParams(location.search);
+    const intentParam = params.get("intent") || params.get("tab") || params.get("mode");
+    const stateDefault = (location.state as { defaultTab?: string } | null)?.defaultTab;
+    const candidate = String(stateDefault || intentParam || defaultTab || "").trim().toLowerCase();
+    if (["signup", "register", "create", "create-account"].includes(candidate)) {
+      return "signup";
+    }
+    return "signin";
+  }, [location.search, location.state, defaultTab]);
+  const initialTab: AuthTab = AUTH_TABS.includes(resolvedDefaultTab) ? resolvedDefaultTab : "signin";
+  const [tab, setTab] = useState<AuthTab>(initialTab);
+  useEffect(() => {
+    setTab(AUTH_TABS.includes(resolvedDefaultTab) ? resolvedDefaultTab : "signin");
+  }, [resolvedDefaultTab]);
+  const [toast, setToast] = useState("");
+  const say = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(""), 1500);
+  };
+
+  // Global role selection
+  const [userType, setUserType] = useState<UserRole>('seller'); // 'seller' | 'provider'
+
+  // Policy
+  const policy = { allowedDomains: ["", "@gmail.com", "@outlook.com", "@evzonecharging.com"] };
+
+  // Session
+  const [session, setSession] = useState<Session | null>(null);
+  useEffect(() => { setSession(readSession()); }, []);
+  const broadcastSessionChange = () => {
+    try { window.dispatchEvent(new Event("session-changed")); } catch { }
+  };
+  const saveSession = (u: Session) => { writeSession(u); setSession(u); broadcastSessionChange(); };
+  const [securityState, setSecurityState] = useState<AuthSecurityState | null>(null);
+  useEffect(() => {
+    if (!session?.accessToken && !session?.token) return;
+    let active = true;
+    void sellerBackendApi
+      .getSecuritySettings()
+      .then((payload) => {
+        if (!active) return;
+        setSecurityState(payload as AuthSecurityState);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [session?.accessToken, session?.token]);
+
+  const goLanding = () => {
+    if (typeof window !== "undefined") {
+      window.location.href = "/";
+    }
+  };
+  const resolvePostAuthRedirect = (_user: Session | null, redirectPath?: string) => {
+    // Explicit rule:
+    // - When a redirectPath is provided (Sign Up), go there (onboarding).
+    // - When no redirectPath is provided (Sign In), ALWAYS go to the dashboard.
+    if (redirectPath) return redirectPath;
+    return "/dashboard";
+  };
+
+  const handleAuthSuccess = (
+    user: Session,
+    message?: string,
+    options: { redirectPath?: string; onboardingRequired?: boolean } = {}
+  ) => {
+    const persistSecurityState = async () => {
+      const sessionUser = {
+        ...user,
+        onboardingRequired: Boolean(options.onboardingRequired),
+      };
+      saveSession(sessionUser);
+      const security = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const nextSession = buildAuthSecuritySession(sessionUser, Boolean(sessionUser.remember));
+      const sessions = Array.isArray(security.sessions) ? security.sessions.filter((entry) => entry?.id !== nextSession.id) : [];
+      const nextSecurity: Record<string, unknown> = {
+        ...security,
+        sessions: [nextSession, ...sessions].slice(0, 20),
+      };
+      if (sessionUser.remember) {
+        const trustedDevices = Array.isArray(security.trustedDevices) ? security.trustedDevices : [];
+        nextSecurity.trustedDevices = [
+          {
+            id: nextSession.id,
+            name: nextSession.device,
+            trusted: true,
+            trustedAt: new Date().toISOString(),
+            lastSeen: nextSession.lastActiveAt,
+          },
+          ...trustedDevices.filter((entry) => entry?.id !== nextSession.id),
+        ].slice(0, 20);
+      }
+      const persisted = await sellerBackendApi.patchSecuritySettings(nextSecurity).catch(() => security);
+      setSecurityState(persisted as AuthSecurityState);
+      if (message) say(message);
+      if (typeof onClose === "function") onClose();
+      const target = resolvePostAuthRedirect(sessionUser, options.redirectPath);
+      setTimeout(() => {
+        if (typeof window !== "undefined") {
+          window.location.href = target;
+        }
+      }, 120);
+    };
+
+    void persistSecurityState();
+  };
+
+  const resetFreshOnboardingState = async (role: UserRole, user: Session) => {
+    saveSession(user);
+    try {
+      recordOnboardingStatus(role, user, "DRAFT");
+    } catch {
+      // ignore local status write failures
+    }
+    if (typeof window !== "undefined") {
+      for (const key of ONBOARDING_STORAGE_KEYS[role]) {
+        window.localStorage.removeItem(key);
+      }
+    }
+    await Promise.allSettled([
+      sellerBackendApi.resetOnboarding(),
+      sellerBackendApi.patchWorkflowScreenState(ONBOARDING_SCREEN_KEYS[role], {
+        ui: { step: 1 },
+        review: {},
+      }),
+    ]);
+  };
+
+  const handleSocialSignIn = async (provider: "google" | "apple") => {
+    say(t(`${provider === "google" ? "Google" : "Apple"} sign-in is not configured yet.`));
+  };
+
+  const handleSocialSignUp = async (provider: "google" | "apple") => {
+    say(t(`${provider === "google" ? "Google" : "Apple"} sign-up is not configured yet.`));
+  };
+
+  // Rate-limit / captcha
+  const [tries, setTries] = useState(0); const bump = () => setTries(n => n + 1);
+  const needCaptcha = tries >= 4;
+
+  // Passkeys (stubs)
+  const hasWebAuthn = typeof window !== "undefined" && !!(window.PublicKeyCredential);
+  const registerPasskey = async (user: Session) => {
+    if (!hasWebAuthn) return say(t("Passkeys not supported"));
+    try {
+      const identifier = (user.userId || user.email || user.phone || "guest").toString();
+      const activeUser = user;
+      if (!activeUser.accessToken && !activeUser.token) {
+        say(t("Sign in first before registering a passkey"));
+        return;
+      }
+      const current = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const nextPasskey: AuthPasskey = {
+        id: "pk_" + Math.random().toString(36).slice(2, 10),
+        identifier,
+        label: readUserAgentDeviceLabel(),
+        createdAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+      };
+      const passkeys = Array.isArray(current.passkeys) ? current.passkeys.filter((entry) => entry.identifier !== identifier) : [];
+      const persisted = await sellerBackendApi.patchSecuritySettings({
+        ...current,
+        passkeys: [nextPasskey, ...passkeys].slice(0, 12),
+      });
+      setSecurityState(persisted as AuthSecurityState);
+      say(t("Passkey registered"));
+    } catch {
+      say(t("Passkey setup failed"));
+    }
+  };
+  const signInPasskey = async (identifier) => {
+    if (!hasWebAuthn) return say(t("Passkeys not supported"));
+    try {
+      const key = String(identifier || "guest");
+      const current = (await sellerBackendApi.getSecuritySettings().catch(() => ({}))) as AuthSecurityState;
+      const match = Array.isArray(current.passkeys)
+        ? current.passkeys.find((entry) => entry.identifier === key)
+        : null;
+      if (!match) return say(t("No passkey on file"));
+      const session = await authClient.signIn({ identifier, password: "", role: userType });
+      handleAuthSuccess(session, t("Signed in with Passkey"));
+    } catch {
+      say(t("Passkey sign-in failed"));
+    }
+  };
+
+  // 2FA TOTP
+  const [totp, setTotp] = useState({ enabled: false, secret: 'JBSWY3DPEHPK3PXP' });
+  useEffect(() => {
+    const config = securityState?.twoFactorConfig;
+    if (!config) return;
+    setTotp({
+      enabled: Boolean(config.enabled),
+      secret: String(config.secret || 'JBSWY3DPEHPK3PXP'),
+    });
+  }, [securityState]);
+  const setupTOTP = () => {
+    const next = {
+      twoFactor: true,
+      twoFactorMethod: "authenticator",
+      twoFactorConfig: { enabled: true, verified: false, secret: 'JBSWY3DPEHPK3PXP' },
+    };
+    setTotp({ enabled: true, secret: 'JBSWY3DPEHPK3PXP' });
+    void sellerBackendApi.patchSecuritySettings(next).then((payload) => {
+      setSecurityState(payload as AuthSecurityState);
+      say(t('TOTP enabled'));
+    }).catch(() => say(t('TOTP enabled')));
+  };
+  const verifyTOTP = (code) => {
+    if (String(code).trim() === '123456') {
+      void sellerBackendApi.patchSecuritySettings({
+        twoFactor: true,
+        twoFactorMethod: "authenticator",
+        twoFactorConfig: { enabled: true, verified: true, secret: totp.secret },
+      }).then((payload) => setSecurityState(payload as AuthSecurityState)).catch(() => undefined);
+      say(t('TOTP verified'));
+      return true;
+    }
+    say(t('Invalid TOTP'));
+    return false;
+  };
+
+  const isModal = variant === "modal";
+
+  const headerSection = (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-[rgba(255,255,255,0.14)] bg-white shadow-sm">
+            <img src="/logo2.jpeg" alt={t("EVzone")} className="h-full w-full object-contain" />
+          </span>
+          <div className="text-sm">
+            <div className="font-extrabold tracking-tight text-white">{t("EVzone")}</div>
+            <div className="text-xs text-[#87a0c3]">{t("Sign in or register")}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="pillbar">
+            {AUTH_TABS.map(t => (
+              <button key={t} onClick={() => setTab(t)} className={`pill ${tab === t ? 'active' : ''}`}>{t === 'signin' ? 'SIGN IN' : 'REGISTER'}</button>
+            ))}
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[rgba(255,255,255,0.14)] text-[#87a0c3] transition hover:border-[rgba(255,255,255,0.24)] hover:text-white"
+              aria-label={t("Close authentication")}
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l12 12M6 18L18 6" /></svg>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="rolebar">
+        <button className={`role ${userType === 'seller' ? 'active' : ''}`} onClick={() => setUserType('seller')}>{t("I'm a Seller")}</button>
+        <button className={`role ${userType === 'provider' ? 'active' : ''}`} onClick={() => setUserType('provider')}>{t("I'm a Service Provider")}</button>
+      </div>
+    </div>
+  );
+
+  const primaryContent = (
+    <section>
+      {tab === 'signin' && <SignIn userType={userType} onDone={(u) => handleAuthSuccess(u, t('Signed in'))} onFail={bump} needCaptcha={needCaptcha} onCaptchaPass={() => setTries(0)} hasWebAuthn={hasWebAuthn} onPasskey={signInPasskey} onForgot={() => setTab('recovery')} onSocial={handleSocialSignIn} />}
+      {tab === 'signup' && (
+        <SignUp
+          userType={userType}
+          policy={policy}
+          onDone={async (u) => {
+            await resetFreshOnboardingState(userType, u);
+            handleAuthSuccess(
+              u,
+              t('Account created'),
+              {
+                redirectPath: userType === 'seller' ? '/seller/onboarding' : '/provider/onboarding',
+                onboardingRequired: true,
+              }
+            );
+          }}
+          onSocial={handleSocialSignUp}
+        />
+      )}
+    </section>
+  );
+
+  let ancillaryContent: React.ReactNode = null;
+  if (variant !== "modal") {
+    ancillaryContent = (
+      <>
+        <div className="auth-subtle mt-3 grid grid-cols-1 gap-2 text-xs">
+          <div className="font-semibold">{t("More ways to sign in")}</div>
+        </div>
+        {(tab === 'passwordless' || tab === '2fa' || tab === 'recovery') && (
+          <section className="auth-secondary mt-3 p-5">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-extrabold">{tab === 'passwordless' ? t('Passwordless options') : tab === '2fa' ? t('Two‑Factor Authentication') : t('Account recovery')}</div>
+              <button className="btn btn-ghost text-xs" onClick={() => setTab('signin')}>{t("Close")}</button>
+            </div>
+            <div className="mb-3 h-px w-full bg-[var(--border-color)]" />
+            {tab === 'passwordless' && <Passwordless userType={userType} onMagic={(u) => handleAuthSuccess(u, t('Magic link used'))} onOTP={(u) => handleAuthSuccess(u, t('Signed in with OTP'))} onPasskeyReg={(u) => registerPasskey(u)} onPasskey={(id) => signInPasskey(id)} hasWebAuthn={hasWebAuthn} onSocial={handleSocialSignIn} />}
+            {tab === '2fa' && <TwoFA totp={totp} onSetup={setupTOTP} onVerify={verifyTOTP} />}
+            {tab === 'recovery' && <Recovery onDone={(id) => say(t('Recovery email sent to') + ' ' + id)} />}
+          </section>
+        )}
+        {!(tab === 'passwordless' || tab === '2fa' || tab === 'recovery') && (
+          <div className="mt-2 grid grid-cols-1 gap-2 text-xs">
+            <div className="inline-flex flex-wrap items-center gap-3">
+              <button className="auth-link" onClick={() => setTab('passwordless')}>{t("Use Magic Link / OTP / Passkey")}</button>
+              <span className="auth-subtle">•</span>
+              <button className="auth-link" onClick={() => setTab('2fa')}>{t("Use 2FA (TOTP)")}</button>
+              <span className="auth-subtle">•</span>
+              <button className="auth-link" onClick={() => setTab('recovery')}>{t("Recover account")}</button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  const sessionCard = session && (
+    <div className="auth-secondary mt-4 p-5 text-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-base font-extrabold">{t("You're signed in")}</div>
+          <div className="auth-subtle text-xs">{t("Signed in as")} <b className="text-[var(--text-primary)]">{session.email || session.userId}</b></div>
+        </div>
+        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--ev-green)] px-3 py-1 text-[11px] font-bold text-white">
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+          {session.role || 'user'}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+        <a href="/dashboard" className="btn btn-primary">{t("Go to Dashboard")}</a>
+        <button
+          className="btn btn-ghost"
+          onClick={() => {
+            if (session?.userId || session?.email) {
+              void sellerBackendApi.signOutDevice(`auth_${session.userId || session.email}`).catch(() => undefined);
+            }
+            void authClient
+              .signOut(session.refreshToken, session.accessToken)
+              .catch(() => undefined);
+            writeSession(null);
+            setSession(null);
+            broadcastSessionChange();
+            say(t('Signed out'));
+            setTimeout(goLanding, 120);
+          }}
+        >
+          {t("Sign out")}
+        </button>
+      </div>
+    </div>
+  );
+
+  const footerNote = variant !== "modal" ? (
+    <div className="mt-5 text-center text-[11px] text-[#60789b]">{t("Protected by EVzone security • Need help?")} <a className="text-[#9fb7da] underline underline-offset-2 hover:text-white" href="/help-support">{t("Help & Support")}</a></div>
+  ) : null;
+
+  const styles = `
+    :root{ --ev-green:${brand.green}; --ev-orange:${brand.orange}; }
+    .bg-grad{
+      background:
+        radial-gradient(900px 480px at 90% -10%, rgba(3,205,140,.08), transparent 60%),
+        radial-gradient(700px 420px at -10% 15%, rgba(247,127,0,.08), transparent 58%),
+        linear-gradient(180deg, #08111f 0%, #07101b 100%);
+    }
+    .auth-panel{
+      border:1px solid #273149;
+      border-radius:18px;
+      background:#121b30;
+      box-shadow:0 18px 40px rgba(0,0,0,.28);
+      overflow:hidden;
+      color:#f4f7fb;
+    }
+    .auth-panel-head{
+      padding:14px;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      background:linear-gradient(180deg, rgba(255,255,255,.02) 0%, rgba(255,255,255,0) 100%);
+    }
+    .auth-panel-body{ padding:20px 16px 16px; }
+    .auth-secondary{
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:16px;
+      background:rgba(6,13,26,.32);
+      color:#f4f7fb;
+    }
+    .btn{ border-radius:12px; padding:12px 14px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+    .btn-primary{ background:var(--ev-orange); color:#fff; box-shadow:0 10px 24px rgba(247,127,0,.28); }
+    .btn-primary:hover{ filter:brightness(1.02); }
+    .btn-ghost{ background:#141e35; border:1px solid #44506d; color:#f4f7fb; }
+    .btn-ghost:hover{ background:#17233d; border-color:#5d6a88; }
+    .btn-icon{ border:1px solid #44506d; background:#0e1628; color:#f4f7fb; border-radius:10px; height:40px; display:inline-flex; align-items:center; gap:8px; padding:0 12px; }
+    .btn-icon:hover{ background:#142036; border-color:#5d6a88; }
+    .input{ border:1px solid #44506d; border-radius:12px; padding:12px 40px 12px 40px; width:100%; background:#141e35; color:#f4f7fb; }
+    .input::placeholder{ color:#8fa3c4; }
+    .input:focus{ outline:3px solid rgba(3,205,140,.18); border-color:rgba(3,205,140,.45); }
+    .field{ position:relative; }
+    .field .ico{ position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#8fa3c4; opacity:.9; }
+    .field .trail{ position:absolute; right:10px; top:50%; transform:translateY(-50%); color:#8fa3c4; }
+    .pillbar{ display:flex; gap:6px; padding:4px; border:1px solid #3a4763; border-radius:14px; background:#141d31; }
+    .pill{ min-width:108px; padding:9px 14px; border-radius:11px; font-weight:800; font-size:12px; color:#f4f7fb; transition:all .18s ease; }
+    .pill:hover{ background:rgba(255,255,255,.05); }
+    .pill.active{ background:#f3fff8; color:#006e51; border:1px solid #59f0c2; box-shadow:0 0 0 1px rgba(89,240,194,.18) inset; }
+    .rolebar{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.45fr); gap:8px; padding:6px; border:1px dashed #44506d; border-radius:14px; background:#141d31; }
+    .role{ min-width:0; min-height:40px; padding:10px 14px; border-radius:10px; font-weight:800; font-size:13px; color:#f4f7fb; transition:all .18s ease; text-align:left; white-space:nowrap; }
+    .role:hover{ background:rgba(255,255,255,.05); }
+    .role.active{ background:#fffaf5; color:#9a4b00; border:2px solid var(--ev-orange); }
+    .divider{ display:flex; align-items:center; gap:10px; color:#7f94b6; font-size:11px; }
+    .divider:before,.divider:after{ content:""; height:1px; background:#3a4763; flex:1; }
+    .auth-subtle{ color:#87a0c3; }
+    .auth-link{ color:#d6e2f5; text-decoration:underline; text-underline-offset:3px; }
+    .auth-link:hover{ color:#ffffff; }
+    .auth-error{ color:#ffb4b4; }
+    input[type='checkbox']{ width:16px; height:16px; accent-color: #ffffff; }
+    @media (max-width: 480px){ .wrap{ padding:14px !important; } .btn{ padding:12px; } .pill{ min-width:92px; } .rolebar{ grid-template-columns:minmax(0,1fr) minmax(0,1.55fr); } .role{ font-size:12px; padding:10px 12px; } }
+    .modal-shell{ border-radius:18px; border:1px solid #273149; background:#121b30; box-shadow:0 30px 120px rgba(0,0,0,.35); max-height:90vh; overflow-y:auto; overscroll-behavior:contain; color:#f4f7fb; }
+  `;
+  const shellStyle = { "--ink": brand.ink } as React.CSSProperties;
+
+  return (
+    <div
+      className={`${isModal ? "w-full max-w-[430px]" : "min-h-screen"} text-[--ink]`}
+      style={shellStyle}
+    >
+      <style>{styles}</style>
+      {isModal ? (
+        <div className="modal-shell">
+          <div className="auth-panel">
+            <div className="auth-panel-head">{headerSection}</div>
+            <div className="auth-panel-body">
+              {primaryContent}
+              {ancillaryContent}
+              {sessionCard}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-grad min-h-screen">
+          <div className="wrap mx-auto w-full max-w-[404px] px-3 py-10 sm:px-4 sm:py-10">
+            <div className="auth-panel">
+              <div className="auth-panel-head">{headerSection}</div>
+              <div className="auth-panel-body">
+                {primaryContent}
+                {ancillaryContent}
+                {sessionCard}
+              </div>
+            </div>
+            {footerNote}
+          </div>
+        </div>
+      )}
+
+      {toast && (<div className="fixed bottom-4 left-0 right-0 z-40 grid place-items-center"><span className="inline-flex items-center gap-2 rounded-full border border-[#33415f] bg-[#121b30] px-3 py-1 text-sm font-semibold text-white"><span className="inline-block h-2 w-2 rounded-full" style={{ background: brand.green }} /> {toast}</span></div>)}
+
+    </div>
+  );
+}
+
+/* ---------------- Components ---------------- */
+const Icon = {
+  Mail: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16v16H4z" /><path d="M22 6l-10 7L2 6" /></svg>),
+  Lock: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="11" width="14" height="8" rx="2" /><path d="M12 11V7a4 4 0 1 1 8 0v4" /></svg>),
+  Phone: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92V21a1 1 0 0 1-1.09 1 19.86 19.86 0 0 1-8.63-3.07A19.5 19.5 0 0 1 3.07 11.72 19.86 19.86 0 0 1 0 3.09 1 1 0 0 1 1 2h4.09A1 1 0 0 1 6 2.91a12.44 12.44 0 0 0 .7 2.2 1 1 0  1-1.47A1 1 0 0 1 13.9 12a12.44 12.44 0 0 0 2.2.7A1 1 0 0 1 16.09 14V18a1 1 0 0 1-1 1z" /></svg>),
+  Key: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 15a4 4 0 1 0 7.9 1H14l4-4-3-3-4 4v3.1A4 4 0 0 0 3 15z" /></svg>),
+  Eye: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>),
+  EyeOff: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l18 18M10.6 10.6A3 3 0 0 0 9 12a3 3 0 0 0 3 3 3 3 0 0 0 2-5.4" /><path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a20.9 20.9 0 0 1 5.11-6.36" /></svg>),
+  Google: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M21.35 11.1H12v2.9h5.3c-.23 1.5-1.8 4.4-5.3 4.4-3.19 0-5.8-2.64-5.8-5.9s2.61-5.9 5.8-5.9c1.82 0 3.04.76 3.74 1.41l2.55-2.46C16.9 3.4 14.71 2.5 12 2.5 6.98 2.5 3 6.48 3 11.5S6.98 20.5 12 20.5c6.25 0 8.53-4.38 8.53-6.67 0-.45-.05-.74-.18-1.08z" /></svg>),
+  Apple: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M16.37 1.64A4.55 4.55 0 0 0 13.6 3a4.1 4.1 0 0 0-1 2.93 4.7 4.7 0 0 0 3.77-1.89 4.3 4.3 0 0 0 .99-2.4zM21 17.55c-.53 1.2-1.16 2.39-2.08 3.72-1.16 1.67-2.5 3.75-4.25 3.76-1.67 0-2.1-1.08-3.93-1.08s-2.33 1.06-3.99 1.09c-1.7.03-3.01-1.81-4.17-3.47C1.5 18.78.01 15.13 1.6 12.58c.77-1.25 2.15-2.05 3.64-2.08 1.43-.03 2.78.97 3.9.97 1.1 0 1.7-.97 3.93-.98 1.18 0 2.42.5 3.3 1.2a7.03 7.03 0 0 1 1.96 2.3c-1.71.98-2.52 3.18-1.33 5.56z" /></svg>),
+  MS: () => (<svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor"><path d="M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z" /></svg>)
+};
+
+function Captcha({ onPass }) {
+  const { t } = useLocalization();
+  const [ok, setOk] = useState(false);
+  return (
+    <div className="mt-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface-1)] p-2 text-xs text-[var(--text-primary)]">
+      <label className="inline-flex items-center gap-2">
+        <input type="checkbox" className="ck" checked={ok} onChange={e => setOk(e.target.checked)} />
+        {t("I'm not a robot")}
+      </label>
+      <button className="ml-2 rounded border border-[var(--border-color)] px-2 py-1 text-xs text-[var(--text-primary)]" onClick={() => ok ? onPass() : null} disabled={!ok}>{t("Verify")}</button>
+    </div>
+  );
+}
+
+function SocialRow({ onSocial }: { onSocial?: (provider: "google" | "apple") => void }) {
+  const { t } = useLocalization();
+  const handleSocial = onSocial || (() => {});
+  return (
+    <div className="mt-2 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+      <button type="button" className="btn-icon" title={t("Continue with Google")} onClick={() => handleSocial("google")}><Icon.Google />{t(" Google")}</button>
+      <button type="button" className="btn-icon" title={t("Continue with Apple")} onClick={() => handleSocial("apple")}><Icon.Apple />{t(" Apple")}</button>
+    </div>
+  );
+}
+
+function SignIn({ userType, onDone, onFail, needCaptcha, onCaptchaPass, hasWebAuthn, onPasskey, onForgot, onSocial }) {
+  const { t } = useLocalization();
+  const [email, setEmail] = useState(""); const [pwd, setPwd] = useState(""); const [show, setShow] = useState(false); const [remember, setRemember] = useState(true);
+  const [error, setError] = useState("");
+  const signIn = async () => {
+    const identifier = email.trim();
+    if (!identifier) { setError(t("Enter email")); onFail(); return; }
+    setError("");
+    try {
+      const session = await authClient.signIn({ identifier, password: pwd, role: userType });
+      onDone({ ...session, remember });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Sign in failed");
+      setError(message);
+      onFail();
+    }
+  };
+  const handleForgot = onForgot || (() => { });
+  return (
+    <section>
+      <div className="text-lg font-extrabold">{t("Welcome back")}</div>
+      <div className="auth-subtle text-xs">{userType === 'seller' ? t('Sign in to your EVzone Seller account') : t('Sign in to your EVzone Service Provider account')}</div>
+
+      <SocialRow onSocial={onSocial} />
+      <div className="my-3 divider">{t("or continue with email")}</div>
+
+      <div className="grid grid-cols-1 gap-2 text-sm">
+        <div className="field"><span className="ico"><Icon.Mail /></span><input className="input" placeholder={t("Email / Phone Number")} value={email} onChange={e => setEmail(e.target.value)} /></div>
+        <div className="field"><span className="ico"><Icon.Lock /></span><input className="input" placeholder={t("Password")} type={show ? 'text' : 'password'} value={pwd} onChange={e => setPwd(e.target.value)} /><button type="button" className="trail" onClick={() => setShow(s => !s)} aria-label={t("Toggle password")}><span>{show ? <Icon.EyeOff /> : <Icon.Eye />}</span></button></div>
+        {error && <div className="auth-error text-xs">{error}</div>}
+        {needCaptcha && <Captcha onPass={onCaptchaPass} />}
+        <label className="auth-subtle mt-1 inline-flex items-center gap-2 text-xs"><input type="checkbox" className="ck" checked={remember} onChange={e => setRemember(e.target.checked)} /> {t("Remember this device")}</label>
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button className="btn btn-primary" onClick={signIn}>{t("Continue")}</button>
+          {hasWebAuthn && <button className="btn btn-ghost" onClick={() => onPasskey(email || 'user')} title={t("Use Passkey")}><Icon.Key /> {t("Passkey")}</button>}
+        </div>
+        <div className="mt-2 text-right text-xs"><button type="button" className="auth-link" onClick={handleForgot}>{t("Forgot password?")}</button></div>
+      </div>
+    </section>
+  );
+}
+
+function Passwordless({ userType, onMagic, onOTP, onPasskeyReg, onPasskey, hasWebAuthn, onSocial }) {
+  const { t } = useLocalization();
+  const [email, setEmail] = useState(""); const [phone, setPhone] = useState(""); const [otpSent, setOtpSent] = useState(false); const [otp, setOtp] = useState("");
+  const [error, setError] = useState("");
+  const sendMagic = async () => {
+    if (!email.trim()) return;
+    setError("");
+    try {
+      const session = await authClient.signIn({ identifier: email, password: "", role: userType });
+      onMagic({ ...session, auth: "magic" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Magic link sign-in failed");
+      setError(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
+    }
+  };
+  const sendOTP = () => setOtpSent(true);
+  const verifyOTP = async () => {
+    if (otp.trim() !== "123456") return;
+    const identifier = phone || email;
+    if (!identifier) return;
+    setError("");
+    try {
+      const session = await authClient.signIn({ identifier, password: "", role: userType });
+      onOTP({ ...session, auth: "otp" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("OTP sign-in failed");
+      setError(message.includes("Invalid credentials") ? t("No account found. Register first.") : message);
+    }
+  };
+  const regPasskey = () => onPasskeyReg({ userId: email || phone, email, phone });
+  return (
+    <section>
+      <div className="text-lg font-extrabold">{t("Passwordless options")}</div>
+      <div className="auth-subtle text-xs">{t("Magic Link")} • {t("Phone OTP")} • {t("Passkeys")}</div>
+      <SocialRow onSocial={onSocial} />
+      <div className="my-3 divider">{t("or continue without a password")}</div>
+      <div className="grid grid-cols-1 gap-3 text-sm">
+        {error && <div className="auth-error text-xs">{error}</div>}
+        <div>
+          <div className="auth-subtle mb-1 text-xs">{t("Magic Link")}</div>
+          <div className="field"><span className="ico"><Icon.Mail /></span><input className="input" placeholder={t("Email / Phone Number")} value={email} onChange={e => setEmail(e.target.value)} /></div>
+          <div className="mt-2 inline-flex items-center gap-2"><button className="btn btn-ghost" onClick={sendMagic}>{t("Send Magic Link")}</button>{hasWebAuthn && <button className="btn btn-ghost" onClick={regPasskey}>{t("Register Passkey")}</button>}{hasWebAuthn && <button className="btn btn-primary" onClick={() => onPasskey(email || 'user')}>{t("Sign in with Passkey")}</button>}</div>
+        </div>
+        <div>
+          <div className="auth-subtle mb-1 text-xs">{t("Phone OTP")}</div>
+          <div className="field"><span className="ico"><Icon.Phone /></span><input className="input" placeholder={t("+256 700 000 000")} value={phone} onChange={e => setPhone(e.target.value)} /></div>
+          <div className="mt-2 inline-flex items-center gap-2"><button className="btn btn-ghost" onClick={sendOTP}>{t("Send OTP")}</button>{otpSent && (<><input className="input" placeholder={t("123456")} value={otp} onChange={e => setOtp(e.target.value)} /><button className="btn btn-primary" onClick={verifyOTP}>{t("Verify")}</button></>)}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SignUp({ policy, userType, onDone, onSocial }) {
+  const { t } = useLocalization();
+  const [firstName, setFirstName] = useState("");
+  const [otherNames, setOtherNames] = useState("");
+  const [email, setEmail] = useState("");
+  const [pwd, setPwd] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [show, setShow] = useState(false);
+  const [agree, setAgree] = useState(false);
+  const [error, setError] = useState("");
+  const name = `${firstName}${otherNames ? ` ${otherNames}` : ""}`.trim();
+  const okDomain = policy.allowedDomains.some(sfx => !sfx || email.endsWith(sfx));
+  const strong = pwd.length >= 8;
+  const match = pwd && confirm && pwd === confirm;
+  const isDisabled = !firstName || !email || !strong || !agree || !okDomain || !match;
+  const create = async () => {
+    if (!agree) { setError(t("Please accept the policies to continue")); return; }
+    if (!firstName || !email || !strong || !okDomain || !match) return;
+    setError("");
+    try {
+      const session = await authClient.signUp({ name, email, password: pwd, role: userType });
+      await onDone(session);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Sign up failed");
+      setError(message);
+    }
+  };
+  return (
+    <section>
+      <div className="text-lg font-extrabold">{t("Create your account")}</div>
+      <div className="auth-subtle text-xs">{userType === 'seller' ? t('Start your store with EVzone') : t('Start your service business with EVzone')}</div>
+      <div className="mt-2 rounded-xl border border-[rgba(148,163,184,0.28)] bg-[rgba(15,23,42,0.28)] px-3 py-2 text-xs text-[#c6d4f2]">
+        {t("One email is used for one EVzone account. That account can add seller, provider, or creator access, but it cannot register the same role twice.")}
+      </div>
+      <SocialRow onSocial={onSocial} />
+      <div className="my-3 divider">{t("or sign up with email")}</div>
+      <div className="grid grid-cols-1 gap-2 text-sm">
+        <div className="field"><span className="ico"><svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 14a4 4 0 1 0-8 0" /><circle cx="12" cy="8" r="4" /><path d="M6 21v-1a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v1" /></svg></span><input className="input" placeholder={t("First Name")} value={firstName} onChange={e => setFirstName(e.target.value)} /></div>
+        <div className="field"><span className="ico"><svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 14a4 4 0 1 0-8 0" /><circle cx="12" cy="8" r="4" /><path d="M6 21v-1a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v1" /></svg></span><input className="input" placeholder={t("Other Names")} value={otherNames} onChange={e => setOtherNames(e.target.value)} /></div>
+        <div className="field"><span className="ico"><Icon.Mail /></span><input className="input" placeholder={t("Email / Phone Number")} value={email} onChange={e => setEmail(e.target.value)} /></div>
+        <div className="field"><span className="ico"><Icon.Lock /></span><input className="input" placeholder={t("Create password")} type={show ? 'text' : 'password'} value={pwd} onChange={e => setPwd(e.target.value)} /><button type="button" className="trail" onClick={() => setShow(s => !s)} aria-label={t("Toggle password")}>{show ? <Icon.EyeOff /> : <Icon.Eye />}</button></div>
+        <div className="field"><span className="ico"><Icon.Lock /></span><input className="input" placeholder={t("Confirm password")} type={show ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)} /><button type="button" className="trail" onClick={() => setShow(s => !s)} aria-label={t("Toggle password")}>{show ? <Icon.EyeOff /> : <Icon.Eye />}</button></div>
+        {confirm && !match && <div className="auth-error text-xs">{t("Passwords do not match")}</div>}
+        {!okDomain && <div className="auth-error text-xs">{t("Email domain not allowed by policy")}</div>}
+        {error && <div className="auth-error text-xs">{error}</div>}
+        <label className="auth-subtle inline-flex items-center gap-2 text-xs"><input type="checkbox" className="ck" checked={agree} onChange={e => { setAgree(e.target.checked); setError(""); }} /> {t("I agree to the policies")}</label>
+        <div className="mt-1 text-right"><button className={`btn btn-primary ${isDisabled ? 'bg-gray-300 text-gray-500 cursor-not-allowed hover:bg-gray-300' : ''}`} onClick={create} disabled={isDisabled}>{t("Create account")}</button></div>
+      </div>
+    </section>
+  );
+}
+
+function TwoFA({ totp, onSetup, onVerify }) {
+  const { t } = useLocalization();
+  const [code, setCode] = useState("");
+  return (
+    <section>
+      <div className="text-lg font-extrabold">{t("Two‑Factor Authentication")}</div>
+      <div className="auth-subtle text-xs">{totp.enabled ? t('Enter your 6‑digit code') : t('Setup with your authenticator app and then verify')}</div>
+      {!totp.enabled && (<div className="mt-2 rounded-lg border border-[var(--border-color)] bg-[var(--surface-2)] p-2 text-xs text-[var(--text-primary)]">{t("Secret (demo): ")}<b>{totp.secret}</b></div>)}
+      <div className="mt-2 inline-flex items-center gap-2 text-sm">
+        {!totp.enabled && <button className="btn btn-ghost" onClick={onSetup}>{t("Setup")}</button>}
+        <input className="input" placeholder={t("123456")} value={code} onChange={e => setCode(e.target.value)} />
+        <button className="btn btn-primary" onClick={() => onVerify(code)}>{t("Verify")}</button>
+      </div>
+    </section>
+  );
+}
+
+function Recovery({ onDone }) {
+  const { t } = useLocalization();
+  const [identifier, setIdentifier] = useState("");
+  const [error, setError] = useState("");
+  const send = async () => {
+    setError("");
+    try {
+      await authClient.resetPassword(identifier);
+      onDone(identifier);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Recovery failed");
+      setError(message);
+    }
+  };
+  return (
+    <section>
+      <div className="text-lg font-extrabold">{t("Account recovery")}</div>
+      <div className="auth-subtle text-xs">{t("Enter your email to receive a recovery link")}</div>
+      <div className="mt-2 inline-flex items-center gap-2 text-sm"><input className="input" placeholder={t("Email / Phone Number")} value={identifier} onChange={e => setIdentifier(e.target.value)} /><button className="btn btn-ghost" onClick={send}>{t("Send link")}</button></div>
+      {error && <div className="auth-error mt-2 text-xs">{error}</div>}
+    </section>
+  );
+}

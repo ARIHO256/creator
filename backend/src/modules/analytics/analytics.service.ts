@@ -534,9 +534,11 @@ export class AnalyticsService {
           || this.readNumber(data, 'impressions')
           || attributed.views
       );
-      const clicksTotal = Math.round(campaign.performance?.clicks ?? this.readNumber(performanceData, 'clicks') || attributed.clicks);
+      const clicksTotal = Math.round(
+        (campaign.performance?.clicks ?? this.readNumber(performanceData, 'clicks')) || attributed.clicks
+      );
       const purchasesTotal = Math.round(
-        campaign.performance?.purchases ?? this.readNumber(performanceData, 'purchases') || attributed.purchases
+        (campaign.performance?.purchases ?? this.readNumber(performanceData, 'purchases')) || attributed.purchases
       );
       const fallbackSales = this.readNumber(performanceData, 'earnings') || this.readNumber(data, 'revenue');
       const campaignSales = salesByCampaign.get(campaign.id) ?? 0;
