@@ -41,8 +41,8 @@ dist-ssr/
 /CreatorApp/.git/
 
 # Local-only apps
-/CreatorApp/
-/seller/
+
+
 
 # Logs
 *.log

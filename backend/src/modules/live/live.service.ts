@@ -121,6 +121,8 @@ export class LiveService {
         durationMin: session.durationMin,
         workloadScore: session.workloadScore,
         conflict: session.conflict,
+        startISO: session.startISO,
+        endISO: session.endISO,
         weekday: session.weekday,
         dateLabel: session.dateLabel,
         time: session.timeLabel

@@ -124,25 +124,35 @@ export class AdzService {
   async campaigns(userId: string) {
     const campaigns = await this.prisma.adzCampaign.findMany({
       where: { userId },
+      include: { performance: true },
       orderBy: { updatedAt: 'desc' }
     });
-    return campaigns.map((campaign) => this.serializeCampaign(campaign));
+    const context = await this.buildCampaignHydrationContext(campaigns, userId);
+    return campaigns.map((campaign) =>
+      this.serializeCampaign(this.hydrateCampaignForDashboard(campaign, context))
+    );
   }
   async campaign(userId: string, id: string) {
     const campaign = await this.prisma.adzCampaign.findFirst({
-      where: { id, userId }
+      where: { id, userId },
+      include: { performance: true }
     });
     if (!campaign) {
       throw new NotFoundException('Campaign not found');
     }
-    return this.serializeCampaign(campaign);
+    const context = await this.buildCampaignHydrationContext([campaign], userId);
+    return this.serializeCampaign(this.hydrateCampaignForDashboard(campaign, context));
   }
   async marketplace(userId: string) {
     const campaigns = await this.prisma.adzCampaign.findMany({
       where: { isMarketplace: true },
+      include: { performance: true },
       orderBy: { updatedAt: 'desc' }
     });
-    return campaigns.map((campaign) => this.serializeCampaign(campaign));
+    const context = await this.buildCampaignHydrationContext(campaigns, userId);
+    return campaigns.map((campaign) =>
+      this.serializeCampaign(this.hydrateCampaignForDashboard(campaign, context))
+    );
   }
   createCampaign(userId: string, body: UpsertAdzCampaignDto) {
     const sanitized = this.ensureObjectPayload(this.extractPayload(body));
@@ -316,6 +326,267 @@ export class AdzService {
     const date = new Date(String(value));
     if (Number.isNaN(date.valueOf())) return null;
     return date;
+  }
+
+  private parseJsonObject(value: unknown) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return {};
+  }
+
+  private readString(value: unknown) {
+    return typeof value === 'string' && value.trim() ? value.trim() : '';
+  }
+
+  private readStringFrom(source: Record<string, unknown>, ...keys: string[]) {
+    for (const key of keys) {
+      const value = this.readString(source[key]);
+      if (value) return value;
+    }
+    return '';
+  }
+
+  private readStringList(value: unknown) {
+    if (Array.isArray(value)) {
+      return value.map((entry) => this.readString(entry)).filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      return value
+        .split(/[,\n|]/g)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    }
+    return [];
+  }
+
+  private readNumber(value: unknown, fallback = 0) {
+    const num = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  private readBoolean(value: unknown) {
+    return Boolean(value);
+  }
+
+  private normalizeIso(value: unknown) {
+    const parsed = this.parseDate(value);
+    return parsed ? parsed.toISOString() : '';
+  }
+
+  private parseCategories(raw: unknown) {
+    if (typeof raw !== 'string' || !raw.trim()) return [] as string[];
+    return raw
+      .split(/[,\n|]/g)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  private fallbackSupplierProfile(seller: {
+    id: string;
+    name: string;
+    displayName: string;
+    category: string | null;
+    categories: string | null;
+    storefront: { logoUrl: string | null; coverUrl: string | null } | null;
+  } | null) {
+    if (!seller) {
+      return { name: 'Supplier', category: 'General', logoUrl: '' };
+    }
+    const categories = this.parseCategories(seller.categories);
+    return {
+      name: seller.displayName || seller.name || 'Supplier',
+      category: seller.category || categories[0] || 'General',
+      logoUrl: seller.storefront?.logoUrl || seller.storefront?.coverUrl || ''
+    };
+  }
+
+  private async buildCampaignHydrationContext(
+    campaigns: Array<{
+      id: string;
+      userId: string;
+      data: unknown;
+    }>,
+    fallbackUserId: string
+  ) {
+    const sourceCampaignIds = Array.from(
+      new Set(
+        campaigns
+          .map((campaign) => this.parseJsonObject(campaign.data))
+          .flatMap((data) => [
+            this.readStringFrom(data, 'campaignId', 'sourceCampaignId')
+          ])
+          .filter(Boolean)
+      )
+    );
+
+    const [fallbackSeller, sourceCampaigns] = await Promise.all([
+      this.prisma.seller.findFirst({
+        where: { userId: fallbackUserId },
+        include: { storefront: true }
+      }),
+      sourceCampaignIds.length
+        ? this.prisma.campaign.findMany({
+            where: { id: { in: sourceCampaignIds } },
+            include: {
+              seller: { include: { storefront: true } },
+              creator: { include: { creatorProfile: true } }
+            }
+          })
+        : Promise.resolve([])
+    ]);
+
+    return {
+      fallbackSupplier: this.fallbackSupplierProfile(fallbackSeller),
+      sourceCampaignMap: new Map(sourceCampaigns.map((campaign) => [campaign.id, campaign]))
+    };
+  }
+
+  private hydrateCampaignForDashboard(
+    campaign: {
+      id: string;
+      userId: string;
+      status: string;
+      title: string | null;
+      budget: number | null;
+      currency: string;
+      isMarketplace: boolean;
+      data: unknown;
+      createdAt: Date;
+      updatedAt: Date;
+      performance?: {
+        clicks: number;
+        purchases: number;
+        earnings: number;
+        data: unknown;
+      } | null;
+    },
+    context: {
+      fallbackSupplier: { name: string; category: string; logoUrl: string };
+      sourceCampaignMap: Map<string, any>;
+    }
+  ) {
+    const data = this.parseJsonObject(campaign.data);
+    const linkedCampaignId = this.readStringFrom(data, 'campaignId', 'sourceCampaignId');
+    const linkedCampaign = linkedCampaignId ? context.sourceCampaignMap.get(linkedCampaignId) : null;
+    const linkedMeta = this.parseJsonObject(linkedCampaign?.metadata);
+    const performanceData = this.parseJsonObject(campaign.performance?.data);
+
+    const supplierData = this.parseJsonObject(data.supplier);
+    const linkedSupplier = linkedCampaign?.seller
+      ? {
+          name: linkedCampaign.seller.displayName || linkedCampaign.seller.name || context.fallbackSupplier.name,
+          category:
+            linkedCampaign.seller.category ||
+            this.parseCategories(linkedCampaign.seller.categories)[0] ||
+            context.fallbackSupplier.category,
+          logoUrl:
+            linkedCampaign.seller.storefront?.logoUrl ||
+            linkedCampaign.seller.storefront?.coverUrl ||
+            context.fallbackSupplier.logoUrl
+        }
+      : context.fallbackSupplier;
+
+    const creatorProfile = linkedCampaign?.creator?.creatorProfile || null;
+    const creatorData = this.parseJsonObject(data.creator);
+    const creator = {
+      name: this.readString(creatorData.name) || this.readString(creatorProfile?.name) || 'Creator',
+      handle:
+        this.readString(creatorData.handle) ||
+        (this.readString(creatorProfile?.handle)
+          ? `@${this.readString(creatorProfile?.handle).replace(/^@/, '')}`
+          : '@creator'),
+      avatarUrl: this.readString(creatorData.avatarUrl),
+      verified: this.readBoolean(creatorData.verified || creatorProfile?.verified)
+    };
+
+    const offers = Array.isArray(data.offers) ? data.offers : [];
+    const hasGenerated =
+      this.readBoolean(data.generated) ||
+      ['generated', 'scheduled', 'live', 'active', 'pending_approval'].includes(
+        String(campaign.status || '').toLowerCase()
+      );
+    const clicks7d = this.readNumber(data.clicks7d, this.readNumber(campaign.performance?.clicks, 0));
+    const orders7d = this.readNumber(data.orders7d, this.readNumber(campaign.performance?.purchases, 0));
+    const revenue7d = this.readNumber(data.revenue7d, this.readNumber(campaign.performance?.earnings, 0));
+    const impressions7d = this.readNumber(
+      data.impressions7d,
+      this.readNumber(performanceData.impressions7d, Math.max(clicks7d * 12, clicks7d))
+    );
+
+    const startISO =
+      this.normalizeIso(data.startISO) ||
+      this.normalizeIso(data.startsAtISO) ||
+      (linkedCampaign?.startAt ? linkedCampaign.startAt.toISOString() : '') ||
+      campaign.createdAt.toISOString();
+    const endISO =
+      this.normalizeIso(data.endISO) ||
+      this.normalizeIso(data.endsAtISO) ||
+      (linkedCampaign?.endAt ? linkedCampaign.endAt.toISOString() : '') ||
+      campaign.updatedAt.toISOString();
+
+    const enrichedData = {
+      ...data,
+      campaignName:
+        this.readStringFrom(data, 'campaignName', 'name', 'title') ||
+        this.readString(campaign.title) ||
+        this.readString(linkedCampaign?.title) ||
+        `Ad ${campaign.id}`,
+      campaignSubtitle:
+        this.readStringFrom(data, 'campaignSubtitle', 'subtitle') ||
+        this.readString(linkedCampaign?.description),
+      supplier: {
+        name: this.readString(supplierData.name) || linkedSupplier.name,
+        category: this.readString(supplierData.category) || linkedSupplier.category,
+        logoUrl: this.readString(supplierData.logoUrl) || linkedSupplier.logoUrl
+      },
+      creator,
+      hostRole:
+        this.readString(data.hostRole) ||
+        (this.readStringFrom(data, 'creatorUsage', 'creatorUsageDecision').toLowerCase() === 'i will not use a creator'
+          ? 'Supplier'
+          : 'Creator'),
+      creatorUsage:
+        this.readStringFrom(data, 'creatorUsage', 'creatorUsageDecision') ||
+        this.readString(linkedMeta.creatorUsageDecision) ||
+        'I will use a Creator',
+      collabMode: this.readString(data.collabMode) || this.readString(linkedMeta.collabMode) || 'Open for Collabs',
+      approvalMode: this.readString(data.approvalMode) || this.readString(linkedMeta.approvalMode) || 'Manual',
+      platforms: this.readStringList(data.platforms),
+      startISO,
+      endISO,
+      timezone: this.readString(data.timezone) || 'Africa/Kampala',
+      heroImageUrl: this.readString(data.heroImageUrl),
+      heroIntroVideoUrl: this.readString(data.heroIntroVideoUrl),
+      compensation:
+        this.parseJsonObject(data.compensation).type ||
+        this.parseJsonObject(data.compensation).model
+          ? this.parseJsonObject(data.compensation)
+          : { type: 'Commission', commissionRate: 0, flatFee: 0, currency: campaign.currency || 'USD' },
+      offers,
+      generated: hasGenerated,
+      hasBrokenLink: this.readBoolean(data.hasBrokenLink),
+      lowStock:
+        this.readBoolean(data.lowStock) ||
+        offers.some((offer) => {
+          const entry = this.parseJsonObject(offer);
+          return (
+            String(entry.type || '').toUpperCase() === 'PRODUCT' &&
+            this.readNumber(entry.stockLeft, -1) > 0 &&
+            this.readNumber(entry.stockLeft, -1) <= 5
+          );
+        }),
+      impressions7d,
+      clicks7d,
+      orders7d,
+      revenue7d,
+      currency: this.readString(data.currency) || campaign.currency || 'USD'
+    } as Record<string, unknown>;
+
+    return {
+      ...campaign,
+      data: enrichedData
+    };
   }
 
   private resolveScopedIdentifier(userId: string, publicId: string, prefix: string) {

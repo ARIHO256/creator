@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#03CD8C" />
+    <link rel="icon" href="/logo2.jpeg" />
+    <title>EVzone Seller App</title>
+    <script>
+      (function () {
+        var key = "theme_mode";
+        var legacyKey = "evzone_supplierhub_theme_mode_v1";
+        var mode = "system";
+        try {
+          var stored = localStorage.getItem(key);
+          if (stored === "light" || stored === "dark" || stored === "system") {
+            mode = stored;
+          } else {
+            var legacy = localStorage.getItem(legacyKey);
+            if (legacy === '"light"' || legacy === "light") mode = "light";
+            if (legacy === '"dark"' || legacy === "dark") mode = "dark";
+          }
+        } catch (error) {}
+
+        var prefersDark = false;
+        try {
+          prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        } catch (error) {}
+
+        var resolvedMode = mode === "system" ? (prefersDark ? "dark" : "light") : mode;
+        var root = document.documentElement;
+        var applyMode = function (next) {
+          root.classList.toggle("dark", next === "dark");
+          root.style.colorScheme = next;
+          root.setAttribute("data-shell-theme", next);
+        };
+        applyMode(resolvedMode);
+
+        if (mode === "system") {
+          try {
+            var media = window.matchMedia("(prefers-color-scheme: dark)");
+            var onChange = function (event) {
+              applyMode(event.matches ? "dark" : "light");
+            };
+            if (typeof media.addEventListener === "function") {
+              media.addEventListener("change", onChange);
+            } else if (typeof media.addListener === "function") {
+              media.addListener(onChange);
+            }
+          } catch (error) {}
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
