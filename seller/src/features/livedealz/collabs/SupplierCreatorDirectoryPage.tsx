@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierCreatorDirectoryPage.jsx
@@ -26,6 +27,116 @@ import React, { useEffect, useMemo, useState } from "react";
 
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
+}
+
+function initialsFromValue(name, fallback = "CR") {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => String(part[0] || "").toUpperCase())
+    .join("");
+  return initials || fallback;
+}
+
+function toNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toString(value, fallback = "") {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
+}
+
+function toStringArray(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  if (typeof value === "string") {
+    return value
+      .split(/[,\n|]/g)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function resolveAvatarBg(tier) {
+  if (tier === "Gold") return "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:border-amber-800";
+  if (tier === "Silver") return "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800/50 dark:text-slate-200 dark:border-slate-700";
+  return "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-200 dark:border-orange-800";
+}
+
+function normalizeTier(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (normalized.includes("gold")) return "Gold";
+  if (normalized.includes("silver")) return "Silver";
+  return "Bronze";
+}
+
+function normalizeCreatorRecord(record, index = 0) {
+  const id = toString(record?.id || record?.profileId, `creator-${index + 1}`);
+  const name = toString(record?.name, "Creator");
+  const handleRaw = toString(record?.handle, id);
+  const handle = handleRaw.startsWith("@") ? handleRaw : `@${handleRaw}`;
+  const categories = toStringArray(record?.categories);
+  const tier = normalizeTier(record?.tier);
+  const rating = Number(toNumber(record?.rating, 0).toFixed(1));
+  const followers = Math.max(0, Math.round(toNumber(record?.followers, 0)));
+  const livesCompleted = Math.max(0, Math.round(toNumber(record?.livesCompleted, 0)));
+  const ctr = Number(toNumber(record?.ctr, 0).toFixed(1));
+  const conversion = Number(toNumber(record?.conversion, 0).toFixed(1));
+  const region = toString(record?.region, "Global");
+  const platforms = Array.isArray(record?.platforms)
+    ? record.platforms
+        .map((item) => (typeof item === "string" ? { platform: item } : item))
+        .filter((item) => toString(item?.platform))
+        .map((item) => ({ platform: toString(item?.platform) }))
+    : [];
+  const trustBadges = toStringArray(record?.trustBadges);
+  const fitScore = Math.round(toNumber(record?.fitScore, 0));
+  const collabStatus = toString(record?.collabStatus, "Open to collabs");
+  return {
+    id,
+    name,
+    handle,
+    initials: toString(record?.initials, initialsFromValue(name, "CR")),
+    avatarBg: toString(record?.avatarBg, resolveAvatarBg(tier)),
+    tagline: toString(record?.tagline, "Creator profile"),
+    categories: categories.length ? categories : ["General"],
+    followers,
+    livesCompleted,
+    ctr,
+    conversion,
+    rating: rating > 0 ? rating : 4.0,
+    tier,
+    badge: toString(record?.badge, tier === "Gold" ? "Top Creator" : tier === "Silver" ? "High Trust" : "Rising"),
+    collabStatus: collabStatus || "Open to collabs",
+    region,
+    languages: toStringArray(record?.languages).length ? toStringArray(record?.languages) : ["English"],
+    relationship: toString(record?.relationship, "New"),
+    fitScore,
+    fitReason: toString(record?.fitReason, "Audience fit details will appear here."),
+    followersTrend: toString(record?.followersTrend, followers >= 50000 ? "up" : "flat"),
+    livesTrend: toString(record?.livesTrend, livesCompleted >= 10 ? "up" : "flat"),
+    orderTrend: toString(record?.orderTrend, conversion >= 2.5 ? "up" : "flat"),
+    trustBadges,
+    lastActive: toString(record?.lastActive, "Recently active"),
+    platforms,
+    isActivelyCollaborating: Boolean(record?.isActivelyCollaborating),
+    hasActiveCampaigns: Boolean(record?.hasActiveCampaigns),
+    isSaved: Boolean(record?.isSaved),
+  };
+}
+
+function normalizeCampaignRecord(record, index = 0) {
+  const id = toString(record?.id, `campaign-${index + 1}`);
+  return {
+    id,
+    name: toString(record?.title || record?.name, `Campaign ${index + 1}`),
+  };
 }
 
 function useScrollLock(locked) {
@@ -295,7 +406,7 @@ function CreatorCard({ creator, saved, onToggleSave, onInvite, isRecommended, is
   );
 }
 
-function InviteModal({ creator, campaigns, onClose }) {
+function InviteModal({ creator, campaigns, onClose, onInviteSent }) {
   const [message, setMessage] = useState(
     `Hi ${creator.name}, I’d like to collaborate with you on an upcoming MyLiveDealz campaign. Your audience fit looks strong for our offer.\n\nAre you available to discuss terms and timeline?`
   );
@@ -316,7 +427,7 @@ function InviteModal({ creator, campaigns, onClose }) {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [simOutcome, setSimOutcome] = useState("sent"); // sent | rejected | changes | renegotiate
+  const [submitError, setSubmitError] = useState("");
 
   useScrollLock(true);
 
@@ -324,33 +435,49 @@ function InviteModal({ creator, campaigns, onClose }) {
 
   const selectedCampaign = campaigns.find((c) => c.id === campaignId) || campaigns[0];
 
-  const handleSendInvite = () => {
+  const handleSendInvite = async () => {
     if (!message.trim() || !canInvite) return;
+    setSubmitError("");
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
+      const parsedBudget = Number(budget);
+      const hasBudget = Number.isFinite(parsedBudget) && parsedBudget > 0;
+      await sellerBackendApi.createCreatorInvite({
+        creatorHandle: creator.handle,
+        campaignId: campaignId || undefined,
+        campaignTitle: selectedCampaign?.name,
+        title: `Invite to collaborate on ${selectedCampaign?.name || "MyLiveDealz campaign"}`,
+        message,
+        currency,
+        baseFee: hasBudget ? parsedBudget : undefined,
+        estimatedValue: hasBudget ? parsedBudget : undefined,
+        fitScore: Number.isFinite(Number(creator.fitScore)) ? Number(creator.fitScore) : undefined,
+        fitReason: creator.fitReason || undefined,
+        category: Array.isArray(creator.categories) ? creator.categories[0] : undefined,
+        region: creator.region || undefined,
+        metadata: {
+          creatorUsageDecision,
+          collabMode,
+          approvalMode,
+          model,
+          deadlineDays: Number(deadline) || null,
+          invitedFrom: "supplier_creator_directory",
+        },
+      });
       setIsSubmitting(false);
       setIsSuccess(true);
+      if (typeof onInviteSent === "function") {
+        onInviteSent(`Invite sent to ${creator.name}.`);
+      }
       setTimeout(() => onClose(), 1600);
-    }, 1200);
+    } catch (error) {
+      setIsSubmitting(false);
+      setSubmitError(error instanceof Error && error.message ? error.message : "Could not send invite right now.");
+    }
   };
 
-  const outcomeCopy =
-    simOutcome === "sent"
-      ? "Invite sent!"
-      : simOutcome === "rejected"
-        ? "Creator declined"
-        : simOutcome === "changes"
-          ? "Changes requested"
-          : "Renegotiation requested";
-
-  const outcomeDesc =
-    simOutcome === "sent"
-      ? `${creator.name} has been notified. You can track the invite status in Proposals/Contracts.`
-      : simOutcome === "rejected"
-        ? `${creator.name} declined due to timing. Consider inviting another creator or adjusting deadlines.`
-        : simOutcome === "changes"
-          ? `${creator.name} requested changes to budget/deliverables. Continue in Negotiation Room.`
-          : `${creator.name} wants to renegotiate payout terms. Continue in Negotiation Room.`;
+  const outcomeCopy = "Invite sent!";
+  const outcomeDesc = `${creator.name} has been notified. You can track status in Proposals/Contracts.`;
 
   return (
     <div className="fixed inset-0 z-[60] flex justify-end bg-black/40 backdrop-blur-[2px] transition-all animate-in fade-in duration-300" onClick={onClose}>
@@ -383,8 +510,8 @@ function InviteModal({ creator, campaigns, onClose }) {
         <div className="flex-1 overflow-y-auto p-3 space-y-3 relative">
           {isSuccess ? (
             <div className="absolute inset-0 z-10 bg-white dark:bg-slate-900 flex flex-col items-center justify-center p-6 animate-in fade-in duration-300">
-              <div className={cx("h-16 w-16 rounded-full flex items-center justify-center mb-4", simOutcome === "sent" ? "bg-emerald-100 dark:bg-emerald-900/30" : simOutcome === "rejected" ? "bg-rose-100 dark:bg-rose-900/30" : "bg-amber-100 dark:bg-amber-900/30")}>
-                <span className="text-3xl">{simOutcome === "sent" ? "🎉" : simOutcome === "rejected" ? "⛔" : "📝"}</span>
+              <div className="h-16 w-16 rounded-full flex items-center justify-center mb-4 bg-emerald-100 dark:bg-emerald-900/30">
+                <span className="text-3xl">🎉</span>
               </div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-2">{outcomeCopy}</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 text-center">{outcomeDesc}</p>
@@ -565,25 +692,11 @@ function InviteModal({ creator, campaigns, onClose }) {
             </p>
           </section>
 
-          {/* Demo outcome selector (kept subtle) */}
+          {/* Delivery mode */}
           <section className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-950 dark:bg-slate-800/50 p-3">
-            <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200">Demo outcome</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {[{ id: "sent", label: "Sent" }, { id: "rejected", label: "Creator rejects" }, { id: "changes", label: "Changes requested" }, { id: "renegotiate", label: "Renegotiation" }].map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  className={cx(
-                    "px-3 py-1.5 rounded-full border text-[11px] font-extrabold",
-                    simOutcome === o.id
-                      ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100"
-                      : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
-                  )}
-                  onClick={() => setSimOutcome(o.id)}
-                >
-                  {o.label}
-                </button>
-              ))}
+            <div className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200">Delivery</div>
+            <div className="mt-2 text-[11px] text-slate-600 dark:text-slate-300">
+              Invites are sent to the backend and appear in collaboration invites/proposals.
             </div>
           </section>
 
@@ -594,20 +707,15 @@ function InviteModal({ creator, campaigns, onClose }) {
                 ? "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
                 : "bg-[#f77f00] hover:bg-[#e26f00]"
             )}
-            onClick={() => {
-              if (!canInvite) return;
-              // simulate outcome mapping
-              setIsSubmitting(true);
-              setTimeout(() => {
-                setIsSubmitting(false);
-                setIsSuccess(true);
-              }, 900);
-            }}
+            onClick={handleSendInvite}
             disabled={isSubmitting || !canInvite}
             type="button"
           >
             {isSubmitting ? "Sending invite..." : canInvite ? "Send invite" : "Invite disabled"}
           </button>
+          {submitError ? (
+            <div className="text-[11px] text-rose-600 dark:text-rose-300">{submitError}</div>
+          ) : null}
 
           {/* Permission comment */}
           <div className="text-[10px] text-slate-500">
@@ -752,179 +860,48 @@ export default function SupplierCreatorDirectoryPage() {
   const [savedCreatorIds, setSavedCreatorIds] = useState([]);
   const [selectedCreator, setSelectedCreator] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [creators, setCreators] = useState([]);
+  const [supplierCampaigns, setSupplierCampaigns] = useState([]);
 
   const [dataState, setDataState] = useState("loading"); // loading | ready | error
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
-    const t = setTimeout(() => setDataState("ready"), 320);
-    return () => clearTimeout(t);
-  }, []);
-
-  const creators = useMemo(
-    () => [
-      {
-        id: "CR-001",
-        name: "Lilian Beauty Plug",
-        handle: "@lilianbeauty",
-        initials: "LB",
-        avatarBg: "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/20 dark:text-pink-200 dark:border-pink-800",
-        tagline: "Skincare routines, live tutorials, and product reviews.",
-        categories: ["Beauty", "Skincare"],
-        followers: 128000,
-        livesCompleted: 22,
-        ctr: 3.9,
-        conversion: 2.4,
-        rating: 4.8,
-        tier: "Gold",
-        badge: "Top Creator",
-        collabStatus: "Open to collabs",
-        region: "East Africa",
-        languages: ["English", "Swahili"],
-        relationship: "2 past campaigns",
-        fitScore: 94,
-        fitReason: "Strong Beauty conversion with clear CTA cadence. Great fit for time-bound Dealz.",
-        followersTrend: "up",
-        livesTrend: "up",
-        orderTrend: "flat",
-        trustBadges: ["Verified", "On-time delivery"],
-        lastActive: "Active this week",
-        platforms: [{ platform: "TikTok" }, { platform: "Instagram" }, { platform: "WhatsApp" }],
-        isActivelyCollaborating: true,
-        hasActiveCampaigns: true
-      },
-      {
-        id: "CR-002",
-        name: "TechWithBrian",
-        handle: "@techwithbrian",
-        initials: "TB",
-        avatarBg: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-200 dark:border-blue-800",
-        tagline: "Unboxings, EV gadgets and smart home.",
-        categories: ["Tech", "Gadgets", "EV"],
-        followers: 210000,
-        livesCompleted: 31,
-        ctr: 4.4,
-        conversion: 2.9,
-        rating: 4.7,
-        tier: "Gold",
-        badge: "Top Creator",
-        collabStatus: "Invite only",
-        region: "Pan-Africa",
-        languages: ["English"],
-        relationship: "1 Tech Friday series",
-        fitScore: 90,
-        fitReason: "High CTR in Tech. Strong live demo rhythm and conversion consistency.",
-        followersTrend: "up",
-        livesTrend: "up",
-        orderTrend: "up",
-        trustBadges: ["Verified", "Low disputes"],
-        lastActive: "Live 2 days ago",
-        platforms: [{ platform: "YouTube" }, { platform: "TikTok" }, { platform: "Telegram" }],
-        isActivelyCollaborating: true,
-        hasActiveCampaigns: false
-      },
-      {
-        id: "CR-003",
-        name: "Grace Faith Wellness",
-        handle: "@gracefaithwellness",
-        initials: "GW",
-        avatarBg: "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-200 dark:border-emerald-800",
-        tagline: "Faith-compatible wellness, calm routines, and lifestyle talk.",
-        categories: ["Faith", "Wellness"],
-        followers: 54000,
-        livesCompleted: 14,
-        ctr: 2.8,
-        conversion: 3.1,
-        rating: 4.9,
-        tier: "Silver",
-        badge: "High Trust",
-        collabStatus: "Open to collabs",
-        region: "East Africa",
-        languages: ["English"],
-        relationship: "New (no campaigns yet)",
-        fitScore: 88,
-        fitReason: "High retention and trust. Strong fit for faith-friendly product lines.",
-        followersTrend: "up",
-        livesTrend: "flat",
-        orderTrend: "flat",
-        trustBadges: ["Low return rate"],
-        lastActive: "Active this week",
-        platforms: [{ platform: "Facebook" }, { platform: "WhatsApp" }],
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: true
-      },
-      {
-        id: "CR-004",
-        name: "StyleByAma",
-        handle: "@stylebyama",
-        initials: "SA",
-        avatarBg: "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-200 dark:border-purple-800",
-        tagline: "Try-ons, street style, and live haul sessions.",
-        categories: ["Fashion"],
-        followers: 72000,
-        livesCompleted: 12,
-        ctr: 3.1,
-        conversion: 2.2,
-        rating: 4.3,
-        tier: "Silver",
-        badge: "Style Specialist",
-        collabStatus: "Open to collabs",
-        region: "West Africa",
-        languages: ["English", "French"],
-        relationship: "New",
-        fitScore: 76,
-        fitReason: "Good reach and styling authority. Best for apparel launches and bundles.",
-        followersTrend: "up",
-        livesTrend: "up",
-        orderTrend: "up",
-        trustBadges: [],
-        lastActive: "Active this month",
-        platforms: [{ platform: "Instagram" }, { platform: "TikTok" }],
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: false
-      },
-      {
-        id: "CR-005",
-        name: "NewWave Creator",
-        handle: "@newwavecreator",
-        initials: "NW",
-        avatarBg: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900/30 dark:text-slate-200 dark:border-slate-800",
-        tagline: "Short-form reviews and EV accessories.",
-        categories: ["Tech", "EV"],
-        followers: 12000,
-        livesCompleted: 3,
-        ctr: 4.0,
-        conversion: 1.8,
-        rating: 4.2,
-        tier: "Bronze",
-        badge: "Rising",
-        collabStatus: "Open to collabs",
-        region: "East Africa",
-        languages: ["English"],
-        relationship: "New",
-        fitScore: 69,
-        fitReason: "Rising creator with strong hooks; needs tighter offer framing to lift conversion.",
-        followersTrend: "flat",
-        livesTrend: "up",
-        orderTrend: "flat",
-        trustBadges: [],
-        lastActive: "Active this week",
-        platforms: [{ platform: "TikTok" }],
-        isActivelyCollaborating: false,
-        hasActiveCampaigns: false
-      }
-    ],
-    []
-  );
-
-  const supplierCampaigns = useMemo(
-    () => [
-      { id: "CAMP-11", name: "Beauty Flash Dealz" },
-      { id: "CAMP-07", name: "Tech Friday Mega" },
-      { id: "CAMP-21", name: "GlowUp Serum Promo" },
-      { id: "CAMP-33", name: "Repair Booking Offer" }
-    ],
-    []
-  );
+    let cancelled = false;
+    setDataState("loading");
+    Promise.all([sellerBackendApi.getAllCreators(), sellerBackendApi.getCampaignWorkspace()])
+      .then(([creatorRows, campaignRows]) => {
+        if (cancelled) return;
+        const nextCreators = Array.isArray(creatorRows)
+          ? creatorRows.map((record, index) => normalizeCreatorRecord(record, index)).filter((creator) => creator.id)
+          : [];
+        const workspaceCampaignRows = Array.isArray(campaignRows?.campaigns) ? campaignRows.campaigns : [];
+        const nextCampaigns = Array.isArray(workspaceCampaignRows)
+          ? workspaceCampaignRows.map((record, index) => normalizeCampaignRecord(record, index)).filter((campaign) => campaign.id)
+          : [];
+        const legacyCampaigns = Array.isArray(campaignRows)
+          ? campaignRows.map((record, index) => normalizeCampaignRecord(record, index)).filter((campaign) => campaign.id)
+          : [];
+        const mergedCampaigns = nextCampaigns.length ? nextCampaigns : legacyCampaigns;
+        setCreators(nextCreators);
+        setSupplierCampaigns(mergedCampaigns);
+        setSavedCreatorIds(nextCreators.filter((creator) => creator.isSaved).map((creator) => creator.id));
+        setDataState("ready");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message =
+          error instanceof Error && error.message ? error.message : "Creator directory failed to load from backend.";
+        setAiHint(message);
+        setCreators([]);
+        setSupplierCampaigns([]);
+        setSavedCreatorIds([]);
+        setDataState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadTick]);
 
   const handleFilterChange = (setter, val) => {
     setIsTransitioning(true);
@@ -961,10 +938,6 @@ export default function SupplierCreatorDirectoryPage() {
         const order = { Gold: 3, Silver: 2, Bronze: 1 };
         if ((order[c.tier] || 0) < (order[minTier] || 0)) return false;
       }
-
-      // Supplier should generally not see creators who are not seeking.
-      // (In a fuller version, you can add a toggle to show unavailable profiles.)
-      if (c.collabStatus === "Not seeking") return false;
 
       return true;
     });
@@ -1007,9 +980,31 @@ export default function SupplierCreatorDirectoryPage() {
     });
     return arr;
   }, [tabFilteredCreators, sortBy]);
+  const categoryOptions = useMemo(
+    () => ["All", ...Array.from(new Set(creators.flatMap((creator) => creator.categories))).sort((a, b) => a.localeCompare(b))],
+    [creators]
+  );
+  const regionOptions = useMemo(
+    () => ["All", ...Array.from(new Set(creators.map((creator) => creator.region).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [creators]
+  );
+  const languageOptions = useMemo(
+    () => ["All", ...Array.from(new Set(creators.flatMap((creator) => creator.languages).filter(Boolean))).sort((a, b) => a.localeCompare(b))],
+    [creators]
+  );
 
-  const toggleSave = (creatorId) => {
-    setSavedCreatorIds((prev) => (prev.includes(creatorId) ? prev.filter((x) => x !== creatorId) : [...prev, creatorId]));
+  const toggleSave = async (creatorId) => {
+    const currentlySaved = savedCreatorIds.includes(creatorId);
+    const nextSaved = !currentlySaved;
+    setSavedCreatorIds((prev) => (nextSaved ? [...prev, creatorId] : prev.filter((x) => x !== creatorId)));
+    setCreators((prev) => prev.map((creator) => (creator.id === creatorId ? { ...creator, isSaved: nextSaved } : creator)));
+    try {
+      await sellerBackendApi.followCreator(creatorId, { follow: nextSaved });
+    } catch {
+      setSavedCreatorIds((prev) => (currentlySaved ? [...prev, creatorId] : prev.filter((x) => x !== creatorId)));
+      setCreators((prev) => prev.map((creator) => (creator.id === creatorId ? { ...creator, isSaved: currentlySaved } : creator)));
+      setAiHint("Could not update saved creator right now. Please try again.");
+    }
   };
 
   const openInvite = (creator) => {
@@ -1032,20 +1027,7 @@ export default function SupplierCreatorDirectoryPage() {
     setAiHint("Pick 2 creators: one high-CTR for reach, one high-conversion for revenue. Keep approval turnaround under 6 hours for best outcomes.");
   };
 
-  const headerRight = (
-    <>
-      <button
-        type="button"
-        className="hidden px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 text-[11px] font-extrabold"
-        onClick={() => setDataState((s) => (s === "error" ? "ready" : "error"))}
-        title="Simulate error state (demo)"
-        aria-hidden="true"
-        tabIndex={-1}
-      >
-        ⚠️ Test
-      </button>
-    </>
-  );
+  const headerRight = null;
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-100 transition-colors overflow-x-hidden">
@@ -1083,17 +1065,7 @@ export default function SupplierCreatorDirectoryPage() {
                   value={categoryFilter}
                   onChange={(e) => handleFilterChange(setCategoryFilter, e.target.value)}
                 >
-                  {[
-                    "All",
-                    "Beauty",
-                    "Skincare",
-                    "Tech",
-                    "Gadgets",
-                    "EV",
-                    "Faith",
-                    "Wellness",
-                    "Fashion"
-                  ].map((opt) => (
+                  {categoryOptions.map((opt) => (
                     <option key={opt} value={opt} className="bg-white dark:bg-slate-900">
                       {opt === "All" ? "All Categories" : opt}
                     </option>
@@ -1108,16 +1080,7 @@ export default function SupplierCreatorDirectoryPage() {
                   value={regionFilter}
                   onChange={(e) => handleFilterChange(setRegionFilter, e.target.value)}
                 >
-                  {[
-                    "All",
-                    "East Africa",
-                    "West Africa",
-                    "Central Africa",
-                    "Southern Africa",
-                    "North Africa",
-                    "Pan-Africa",
-                    "Global"
-                  ].map((opt) => (
+                  {regionOptions.map((opt) => (
                     <option key={opt} value={opt} className="bg-white dark:bg-slate-900">
                       {opt === "All" ? "All Regions" : opt}
                     </option>
@@ -1132,16 +1095,7 @@ export default function SupplierCreatorDirectoryPage() {
                   value={languageFilter}
                   onChange={(e) => handleFilterChange(setLanguageFilter, e.target.value)}
                 >
-                  {[
-                    "All",
-                    "English",
-                    "French",
-                    "Arabic",
-                    "Swahili",
-                    "Portuguese",
-                    "Chinese (Simplified)",
-                    "Spanish"
-                  ].map((opt) => (
+                  {languageOptions.map((opt) => (
                     <option key={opt} value={opt} className="bg-white dark:bg-slate-900">
                       {opt === "All" ? "All Languages" : opt}
                     </option>
@@ -1243,13 +1197,15 @@ export default function SupplierCreatorDirectoryPage() {
                 <div className="min-w-0">
                   <div className="text-sm font-extrabold text-rose-900 dark:text-rose-200">Creator directory failed to load</div>
                   <div className="text-xs text-rose-800 dark:text-rose-300 mt-1">
-                    Check network connectivity or try again. (Demo error state)
+                    Check network connectivity or try again.
                   </div>
                   <div className="mt-3 flex gap-2">
                     <button
                       type="button"
                       className="px-4 py-2 rounded-full bg-slate-900 text-white text-[11px] font-extrabold"
-                      onClick={() => setDataState("ready")}
+                      onClick={() => {
+                        setReloadTick((value) => value + 1);
+                      }}
                     >
                       Retry
                     </button>
@@ -1263,6 +1219,11 @@ export default function SupplierCreatorDirectoryPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          ) : null}
+          {dataState === "loading" ? (
+            <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-xs text-slate-600 dark:text-slate-300">
+              Loading creators from backend...
             </div>
           ) : null}
         </div>
@@ -1371,7 +1332,12 @@ export default function SupplierCreatorDirectoryPage() {
       </main>
 
       {showInvite && selectedCreator ? (
-        <InviteModal creator={selectedCreator} campaigns={supplierCampaigns} onClose={closeInvite} />
+        <InviteModal
+          creator={selectedCreator}
+          campaigns={supplierCampaigns}
+          onClose={closeInvite}
+          onInviteSent={(message) => setAiHint(message)}
+        />
       ) : null}
 
       {isAiDialogOpen ? (

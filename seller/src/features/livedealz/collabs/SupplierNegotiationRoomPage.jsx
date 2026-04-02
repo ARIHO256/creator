@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { sellerBackendApi } from "../../../lib/backendApi";
 
 /**
  * SupplierNegotiationRoomPage.jsx
@@ -21,8 +23,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
  * - Campaign-level settings surfaced: Collaboration mode + Content approval mode.
  * - Edge cases supported: creator declines, supplier ends negotiation, renegotiation reopen.
  *
- * Canvas-safe:
- * - No react-router imports. Demo uses internal state for entry context.
+ * Runtime notes:
+ * - Reads proposalId from URL query and loads negotiation room from backend.
  * - No external icon libs.
  */
 
@@ -30,9 +32,62 @@ const ORANGE = "#f77f00";
 const GREEN = "#03cd8c";
 
 const STATUS_STEPS = ["Draft", "Negotiating", "Final review", "Contract created"];
+const DEFAULT_TERMS = {
+  deliverables:
+    "• 1x 60–90 min live session\n• 3x short clips (15–30s)\n• 2x stories with CTA",
+  schedule:
+    "• Live date: To be agreed\n• Assets delivery: To be agreed\n• Payment timing: To be agreed",
+  compensation:
+    "• Flat fee: To be agreed\n• Commission: To be agreed\n• Payment terms: To be agreed"
+};
 
 function cx(...xs) {
   return xs.filter(Boolean).join(" ");
+}
+
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function asString(value, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function initialsFromName(value, fallback = "CR") {
+  const parts = String(value || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("");
+  return initials || fallback;
+}
+
+function normalizeStage(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "draft") return "Draft";
+  if (normalized === "final review" || normalized === "final-review") return "Final review";
+  if (normalized === "contract created" || normalized === "contract-created") return "Contract created";
+  return "Negotiating";
+}
+
+function formatMessageTime(value) {
+  if (!value) return "Now";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Now";
+  return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function parseBulletList(value) {
+  const raw = String(value || "");
+  return raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^[•-]\s*/, "").trim())
+    .filter(Boolean);
 }
 
 function PageHeader({ pageTitle, badge, right }) {
@@ -127,35 +182,124 @@ function Toast({ text, tone = "info", onClose }) {
 /* ----------------------------- Page ----------------------------- */
 
 export default function SupplierNegotiationRoomPage() {
-  // Entry context (canvas-safe replacement for router state)
-  // In production, this comes from:
-  // - Open Collabs pitch selection OR
-  // - Invite-Only acceptance event OR
-  // - Proposal details screen.
-  const [entry, setEntry] = useState("invite-accepted"); // invite-accepted | open-collabs-pitch | direct
+  const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const proposalId = asString(searchParams.get("proposalId"));
+  const queryCampaign = asString(searchParams.get("campaign"), "Campaign");
+  const queryCreator = asString(searchParams.get("creator"), "Creator");
 
+  const [entry, setEntry] = useState("direct");
   const [creatorUsageDecision, setCreatorUsageDecision] = useState("I will use a Creator");
   const [collabMode, setCollabMode] = useState("Invite-only");
   const [approvalMode, setApprovalMode] = useState("Manual");
+  const [status, setStatus] = useState("Negotiating");
+  const [closedReason, setClosedReason] = useState(null);
+  const [baseTerms, setBaseTerms] = useState(DEFAULT_TERMS);
+  const [terms, setTerms] = useState(DEFAULT_TERMS);
+  const [messages, setMessages] = useState([]);
+  const [proposalRoom, setProposalRoom] = useState(null);
+  const [loadingRoom, setLoadingRoom] = useState(true);
+  const [roomError, setRoomError] = useState("");
+  const [savingTerms, setSavingTerms] = useState(false);
+  const [syncingRoom, setSyncingRoom] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [draftMessage, setDraftMessage] = useState("");
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [toastTone, setToastTone] = useState("info");
+  const [appliedSuggestions, setAppliedSuggestions] = useState([]);
+  const fileInputRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const requestRef = useRef(0);
 
   const supplierAsCreator = creatorUsageDecision === "I will NOT use a Creator";
 
-  const [status, setStatus] = useState("Negotiating");
-  const [closedReason, setClosedReason] = useState(null);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const baseTerms = useMemo(
-    () => ({
-      deliverables:
-        "• 1x 60–90 min live session (Autumn Beauty Flash)\n• 3x short clips (15–30s) for Shoppable Adz\n• 2x Instagram stories with swipe-up",
-      schedule:
-        "• Live date: Friday, 20:00–21:30 EAT\n• Clips delivery: within 48 hours after live\n• Stories: 24 hours before and after live\n\n• Payment timing: 50% upfront, 50% 7 days after live",
-      compensation:
-        "• Flat fee: $400\n• Commission: 5% on live-driven sales\n• Payment terms: 50% upfront, 50% 7 days after live"
-    }),
-    []
-  );
+  const toastIt = (msg, tone = "info") => {
+    setToastTone(tone);
+    setToast(msg);
+  };
 
-  const [terms, setTerms] = useState(baseTerms);
+  const loadNegotiationRoom = async (opts = {}) => {
+    const silent = opts.silent === true;
+    if (!proposalId) {
+      setLoadingRoom(false);
+      setRoomError("Missing proposalId. Open this page from Proposals to load live negotiation data.");
+      setProposalRoom(null);
+      setMessages([]);
+      return null;
+    }
+    if (!silent) setLoadingRoom(true);
+    setRoomError("");
+    const requestId = ++requestRef.current;
+    try {
+      const payload = await sellerBackendApi.getCollaborationProposalNegotiationRoom(proposalId);
+      if (requestId !== requestRef.current) return null;
+
+      const room = asRecord(payload);
+      const summary = asRecord(room.summary);
+      const metadata = asRecord(room.metadata);
+      const roomTerms = asRecord(room.terms);
+      const creatorName = asString(summary.creatorName, queryCreator);
+      const sellerName = asString(summary.sellerName, "Supplier");
+      const mappedTerms = {
+        deliverables: asString(roomTerms.deliverables, DEFAULT_TERMS.deliverables),
+        schedule: asString(roomTerms.schedule, DEFAULT_TERMS.schedule),
+        compensation: asString(roomTerms.compensation, DEFAULT_TERMS.compensation)
+      };
+      const roomMessages = Array.isArray(room.messages) ? room.messages : [];
+      const mappedMessages = roomMessages
+        .map((entryMessage, index) => {
+          const messageRecord = asRecord(entryMessage);
+          const messageType = asString(messageRecord.messageType, "COMMENT").toUpperCase();
+          const author = asString(messageRecord.author);
+          let from = "creator";
+          if (messageType === "SYSTEM") from = "system";
+          if (author && author.toLowerCase() === sellerName.toLowerCase()) from = "supplier";
+          return {
+            id: asString(messageRecord.id, `${index + 1}`),
+            from,
+            name: from === "system" ? "System" : from === "supplier" ? "You (Supplier)" : author || creatorName || "Creator",
+            time: formatMessageTime(messageRecord.createdAt),
+            body: asString(messageRecord.body)
+          };
+        })
+        .filter((entryMessage) => entryMessage.body);
+
+      setProposalRoom({
+        ...room,
+        summary,
+        metadata
+      });
+      setEntry(asString(room.entryContext, "direct"));
+      setCreatorUsageDecision(asString(room.creatorUsageDecision, "I will use a Creator"));
+      setCollabMode(asString(room.collabMode, "Invite-only"));
+      setApprovalMode(asString(room.approvalMode, "Manual"));
+      setStatus(normalizeStage(room.stage));
+      setClosedReason(asString(room.closedReason) || null);
+      setBaseTerms(mappedTerms);
+      setTerms(mappedTerms);
+      setMessages(mappedMessages);
+      setAppliedSuggestions([]);
+      setLoadingRoom(false);
+      return room;
+    } catch (error) {
+      if (requestId !== requestRef.current) return null;
+      setLoadingRoom(false);
+      setProposalRoom(null);
+      setRoomError(error instanceof Error ? error.message : "Failed to load negotiation room from database.");
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    void loadNegotiationRoom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalId]);
 
   const hasChanges = useMemo(
     () => ({
@@ -192,7 +336,6 @@ export default function SupplierNegotiationRoomPage() {
     []
   );
 
-  const [appliedSuggestions, setAppliedSuggestions] = useState([]);
   const visibleSuggestions = useMemo(
     () => clauseSuggestions.filter((s) => !appliedSuggestions.includes(s.id)),
     [clauseSuggestions, appliedSuggestions]
@@ -202,124 +345,170 @@ export default function SupplierNegotiationRoomPage() {
     if (supplierAsCreator) return;
     setTerms((prev) => ({
       ...prev,
-      compensation:
-        prev.compensation + (String(prev.compensation || "").endsWith("\n") ? "" : "\n") + `• ${text}`
+      compensation: prev.compensation + (String(prev.compensation || "").endsWith("\n") ? "" : "\n") + `• ${text}`
     }));
-    setAppliedSuggestions((p) => [...p, id]);
+    setAppliedSuggestions((current) => [...current, id]);
   };
 
-  // Chat
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      from: "system",
-      name: "System",
-      time: "10:07",
-      body:
-        "Invite-only: Creator accepted invite to collaborate. Negotiation room opened. (Demo)"
-    },
-    {
-      id: 2,
-      from: "creator",
-      name: "Ronald (Creator)",
-      time: "10:12",
-      body:
-        "Thanks for inviting me. I can do the live + clips package. I’d like to clarify commission scope and usage rights."
-    },
-    {
-      id: 3,
-      from: "supplier",
-      name: "You (Supplier)",
-      time: "10:18",
-      body:
-        "Great. I updated the schedule and compensation draft. Please review the kill-fee and exclusivity clause suggestions." 
+  const updateRoomSettings = async (patch, successMessage) => {
+    if (!proposalId) {
+      toastIt("Missing proposalId. Open this page from Proposals to sync changes.", "warn");
+      return;
     }
-  ]);
+    setSyncingRoom(true);
+    try {
+      await sellerBackendApi.updateCollaborationProposalNegotiationRoom(proposalId, patch);
+      await loadNegotiationRoom({ silent: true });
+      if (successMessage) toastIt(successMessage, "success");
+    } catch (error) {
+      toastIt(error instanceof Error ? error.message : "Failed to update negotiation room.", "error");
+    } finally {
+      setSyncingRoom(false);
+    }
+  };
 
-  const [draftMessage, setDraftMessage] = useState("");
-  const [attachedFile, setAttachedFile] = useState(null);
-  const fileInputRef = useRef(null);
+  const canEditTerms = !supplierAsCreator && !closedReason && !savingTerms;
 
-  const messagesEndRef = useRef(null);
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const saveTermUpdates = async () => {
+    if (!canEditTerms) return;
+    if (!proposalId) {
+      toastIt("Missing proposalId. Cannot save live negotiation terms.", "error");
+      return;
+    }
+    setSavingTerms(true);
+    try {
+      await sellerBackendApi.updateCollaborationProposalNegotiationRoom(proposalId, { terms });
+      await loadNegotiationRoom({ silent: true });
+      toastIt("Terms update saved", "success");
+    } catch (error) {
+      toastIt(error instanceof Error ? error.message : "Failed to save terms.", "error");
+    } finally {
+      setSavingTerms(false);
+    }
+  };
 
-  const sendMessage = () => {
+  const moveToFinalReview = async () => {
+    if (closedReason) return;
+    setStatus("Final review");
+    await updateRoomSettings({ stage: "Final review" }, "Moved to Final review");
+  };
+
+  const createContract = async () => {
+    if (closedReason) return;
+    if (!proposalId) {
+      toastIt("Missing proposalId. Cannot create contract.", "error");
+      return;
+    }
+    setSyncingRoom(true);
+    try {
+      await sellerBackendApi.transitionCollaborationProposal(proposalId, { status: "ACCEPTED" });
+      await loadNegotiationRoom({ silent: true });
+      toastIt("Contract created", "success");
+    } catch (error) {
+      toastIt(error instanceof Error ? error.message : "Failed to create contract.", "error");
+    } finally {
+      setSyncingRoom(false);
+    }
+  };
+
+  const endNegotiation = async (reason) => {
+    if (!proposalId) {
+      toastIt("Missing proposalId. Cannot close negotiation.", "error");
+      return;
+    }
+    setSyncingRoom(true);
+    try {
+      await sellerBackendApi.closeCollaborationProposalNegotiationRoom(proposalId, { reason });
+      await loadNegotiationRoom({ silent: true });
+      toastIt("Negotiation closed", "warn");
+    } catch (error) {
+      toastIt(error instanceof Error ? error.message : "Failed to close negotiation.", "error");
+    } finally {
+      setSyncingRoom(false);
+    }
+  };
+
+  const reopenNegotiation = async () => {
+    if (!proposalId) {
+      toastIt("Missing proposalId. Cannot reopen negotiation.", "error");
+      return;
+    }
+    setSyncingRoom(true);
+    try {
+      await sellerBackendApi.reopenCollaborationProposalNegotiationRoom(proposalId);
+      await loadNegotiationRoom({ silent: true });
+      toastIt("Renegotiation reopened", "success");
+    } catch (error) {
+      toastIt(error instanceof Error ? error.message : "Failed to reopen negotiation.", "error");
+    } finally {
+      setSyncingRoom(false);
+    }
+  };
+
+  const sendMessage = async () => {
     if (closedReason) return;
     const trimmed = String(draftMessage || "").trim();
     if (!trimmed && !attachedFile) return;
+    if (!proposalId) {
+      toastIt("Missing proposalId. Cannot send live negotiation message.", "error");
+      return;
+    }
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: prev.length + 1,
-        from: "supplier",
-        name: "You (Supplier)",
-        time: "Now",
-        body: attachedFile ? `${trimmed}\n\n📎 Attached: ${attachedFile.name}` : trimmed
-      }
-    ]);
-    setDraftMessage("");
-    setAttachedFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    const body = attachedFile
+      ? `${trimmed}${trimmed ? "\n\n" : ""}Attached file: ${attachedFile.name}`
+      : trimmed;
+    setSendingMessage(true);
+    try {
+      const created = await sellerBackendApi.createCollaborationProposalMessage(proposalId, {
+        body,
+        messageType: "COMMENT"
+      });
+      const createdRecord = asRecord(created);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: asString(createdRecord.id, `${Date.now()}`),
+          from: "supplier",
+          name: "You (Supplier)",
+          time: formatMessageTime(createdRecord.createdAt),
+          body: asString(createdRecord.body, body)
+        }
+      ]);
+      setDraftMessage("");
+      setAttachedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      toastIt("Message sent", "success");
+    } catch (error) {
+      toastIt(error instanceof Error ? error.message : "Failed to send message.", "error");
+    } finally {
+      setSendingMessage(false);
+    }
   };
 
-  const pushSystem = (body) => {
-    setMessages((prev) => [
-      ...prev,
-      { id: prev.length + 1, from: "system", name: "System", time: "Now", body }
-    ]);
-  };
-
-  // Toast
-  const [toast, setToast] = useState(null);
-  const [toastTone, setToastTone] = useState("info");
-
-  const toastIt = (msg, tone = "info") => {
-    setToastTone(tone);
-    setToast(msg);
-  };
-
-  const canEditTerms = !supplierAsCreator && !closedReason;
-
-  const saveTermUpdates = () => {
-    if (!canEditTerms) return;
-    pushSystem("Supplier updated terms. Creator notified. (Demo)");
-    toastIt("Terms update saved", "success");
-  };
-
-  const moveToFinalReview = () => {
-    if (closedReason) return;
-    setStatus("Final review");
-    pushSystem("Supplier moved negotiation to Final review. (Demo)");
-    toastIt("Moved to Final review", "success");
-  };
-
-  const createContract = () => {
-    if (closedReason) return;
-    setStatus("Contract created");
-    pushSystem(
-      `Contract created. Next steps: ${approvalMode === "Manual" ? "Supplier approves content before Admin review." : "Content goes to Admin directly."} (Demo)`
-    );
-    toastIt("Contract created", "success");
-  };
-
-  const endNegotiation = (reason) => {
-    setClosedReason(reason);
-    pushSystem(`Negotiation ended by Supplier. Reason: ${reason}. (Demo)`);
-    toastIt("Negotiation closed", "warn");
-  };
-
-  const reopenNegotiation = () => {
-    setClosedReason(null);
-    pushSystem("Negotiation reopened (renegotiation). (Demo)");
-    toastIt("Renegotiation reopened", "success");
-  };
+  const summary = asRecord(proposalRoom?.summary);
+  const metadata = asRecord(proposalRoom?.metadata);
+  const creatorName = asString(summary.creatorName, queryCreator || "Creator");
+  const creatorHandle = asString(summary.creatorHandle, "@creator");
+  const sellerName = asString(summary.sellerName, "Supplier");
+  const campaignTitle = asString(summary.campaignTitle, queryCampaign || "Campaign");
+  const campaignDescription = asString(
+    metadata.campaignSummary,
+    asString(metadata.messageShort, "Negotiation details synchronized from proposal data.")
+  );
+  const liveWindow = asString(metadata.scheduleHint, "Schedule in terms panel");
+  const region = asString(metadata.region, "Region not set");
+  const category = asString(metadata.category, "General");
+  const lastUpdatedAt = asString(proposalRoom?.updatedAt);
+  const lastUpdatedLabel = (() => {
+    if (!lastUpdatedAt) return "Last updated: —";
+    const parsed = new Date(lastUpdatedAt);
+    return Number.isNaN(parsed.getTime()) ? `Last updated: ${lastUpdatedAt}` : `Last updated: ${parsed.toLocaleString()}`;
+  })();
+  const deliverableHighlights = parseBulletList(terms.deliverables);
 
   const pageBadge = (
     <span className="text-xs text-slate-500 dark:text-slate-300">
-      Negotiation ID: N-221 · Autumn Beauty Flash · Invite-only collaboration
+      {`Proposal: ${proposalId || "—"} · ${campaignTitle} · ${collabMode} collaboration`}
     </span>
   );
 
@@ -327,28 +516,24 @@ export default function SupplierNegotiationRoomPage() {
     <>
       <Btn
         tone="ghost"
-        onClick={() => {
-          toastIt("Opening proposals (demo)");
-        }}
+        onClick={() => navigate("/mldz/collab/proposals")}
         title="Back to proposals"
       >
         ← Proposals
       </Btn>
       <Btn
         tone="ghost"
-        onClick={() => {
-          toastIt("Opening contracts (demo)");
-        }}
-        title="Open contract record"
+        onClick={() => navigate("/mldz/collab/contracts")}
+        title="Open contracts"
       >
-        ✍️ Contract
+        ✍️ Contracts
       </Btn>
       {closedReason ? (
-        <Btn tone="primary" onClick={reopenNegotiation} title="Reopen negotiation">
+        <Btn tone="primary" onClick={() => void reopenNegotiation()} title="Reopen negotiation" disabled={syncingRoom}>
           🔁 Reopen
         </Btn>
       ) : (
-        <EndNegotiationMenu onEnd={endNegotiation} />
+        <EndNegotiationMenu onEnd={(reason) => void endNegotiation(reason)} disabled={syncingRoom} />
       )}
     </>
   );
@@ -359,28 +544,40 @@ export default function SupplierNegotiationRoomPage() {
 
       <main className="flex-1 flex flex-col w-full px-[0.55%] py-6 gap-4 overflow-y-auto overflow-x-hidden">
         <div className="w-full max-w-full flex flex-col gap-4">
+          {roomError ? (
+            <section className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/10 p-3 text-sm text-amber-900 dark:text-amber-300">
+              {roomError}
+            </section>
+          ) : null}
+
+          {loadingRoom ? (
+            <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-sm text-slate-600 dark:text-slate-300">
+              Loading negotiation room from database…
+            </section>
+          ) : null}
+
           {/* Top summary + status bar */}
           <section className="bg-white dark:bg-slate-900 rounded-2xl transition-colors shadow-sm p-3 sm:p-4 flex flex-col gap-3 text-sm">
             <div className="flex flex-col xl:flex-row gap-3 md:gap-4 justify-between">
               <div className="flex-1 flex gap-3">
                 <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-md font-semibold dark:font-bold transition-colors">
-                  RY
+                  {initialsFromName(creatorName)}
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-md font-semibold dark:font-bold">Ronald (Creator)</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-900 text-white">Verified Creator</span>
+                    <span className="text-md font-semibold dark:font-bold">{creatorName}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-slate-900 text-white">{creatorHandle}</span>
                   </div>
-                  <p className="text-sm font-medium mb-0.5">Autumn Beauty Flash · Serum Launch</p>
+                  <p className="text-sm font-medium mb-0.5">{campaignTitle}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-300 mb-0.5">
-                    Live + Shoppable Adz campaign to push the new serum across East Africa.
+                    {campaignDescription}
                   </p>
                   <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-300 mt-1">
-                    <span>Live window: Friday · 20:00–21:30 EAT</span>
+                    <span>{`Live window: ${liveWindow}`}</span>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
-                    <span>Region: East Africa · Online only</span>
+                    <span>{`Region: ${region}`}</span>
                     <span className="h-1 w-1 rounded-full bg-slate-300" />
-                    <span>Category: Beauty & Skincare</span>
+                    <span>{`Category: ${category}`}</span>
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -392,16 +589,26 @@ export default function SupplierNegotiationRoomPage() {
                     <Pill tone={entry === "invite-accepted" ? "good" : "neutral"} title="How this room was opened">
                       Entry: {entry === "invite-accepted" ? "Invite accepted" : entry === "open-collabs-pitch" ? "Open collabs pitch" : "Direct"}
                     </Pill>
+                    <Pill tone={proposalId ? "good" : "warn"} title="Negotiation data source">
+                      {proposalId ? "Live DB source" : "No DB source"}
+                    </Pill>
                   </div>
                 </div>
               </div>
 
               <div className="w-full xl:w-72 flex flex-col justify-between gap-2">
-                <AgreementStatusBar status={status} onStep={(s) => !closedReason && setStatus(s)} />
+                <AgreementStatusBar
+                  status={status}
+                  onStep={(step) => {
+                    if (closedReason) return;
+                    setStatus(step);
+                    void updateRoomSettings({ stage: step }, "Agreement stage updated");
+                  }}
+                />
 
                 <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-200 mt-1">
-                  <span>Last updated: 2h ago</span>
-                  <span>Owner: Supplier</span>
+                  <span>{lastUpdatedLabel}</span>
+                  <span>{`Owner: ${sellerName}`}</span>
                 </div>
 
                 {closedReason ? (
@@ -419,9 +626,9 @@ export default function SupplierNegotiationRoomPage() {
             <div className="mt-2 border-t border-slate-100 dark:border-slate-700 pt-2">
               <h3 className="text-xs font-semibold dark:font-bold mb-1">Proposed deliverables</h3>
               <ul className="list-disc pl-4 text-sm text-slate-600 dark:text-slate-200 space-y-0.5">
-                <li>1x 60–90 min live session focussed on the new serum.</li>
-                <li>3x short clips for Shoppable Adz (15–30 seconds each).</li>
-                <li>2x stories before and after the live (CTA + countdown).</li>
+                {(deliverableHighlights.length ? deliverableHighlights : ["Deliverables not defined yet."]).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
               </ul>
             </div>
           </section>
@@ -486,11 +693,25 @@ export default function SupplierNegotiationRoomPage() {
                       tone="success"
                       className="flex-1"
                       onClick={() => {
-                        pushSystem("Supplier requested a quick call to finalize details. (Demo)");
-                        toastIt("Call request sent", "success");
+                        if (!proposalId) {
+                          toastIt("Missing proposalId. Cannot notify creator.", "warn");
+                          return;
+                        }
+                        void sellerBackendApi
+                          .createCollaborationProposalMessage(proposalId, {
+                            body: "Supplier requested a quick call to finalize details.",
+                            messageType: "COMMENT"
+                          })
+                          .then(() => {
+                            toastIt("Call request sent", "success");
+                            return loadNegotiationRoom({ silent: true });
+                          })
+                          .catch((error) => {
+                            toastIt(error instanceof Error ? error.message : "Failed to send call request.", "error");
+                          });
                       }}
                       title="Request a quick call"
-                      disabled={supplierAsCreator}
+                      disabled={supplierAsCreator || syncingRoom}
                     >
                       📞 Request call
                     </Btn>
@@ -499,8 +720,8 @@ export default function SupplierNegotiationRoomPage() {
                       <Btn
                         tone="primary"
                         className="flex-1"
-                        onClick={status === "Final review" ? createContract : moveToFinalReview}
-                        disabled={supplierAsCreator}
+                        onClick={() => void (status === "Final review" ? createContract() : moveToFinalReview())}
+                        disabled={supplierAsCreator || syncingRoom}
                         title={status === "Final review" ? "Create contract" : "Move to Final review"}
                       >
                         {status === "Final review" ? (
@@ -529,12 +750,12 @@ export default function SupplierNegotiationRoomPage() {
             {/* Chat thread */}
             <div className="flex flex-col gap-3">
               <ChatThread
-                disabled={!!closedReason || supplierAsCreator}
+                disabled={!!closedReason || supplierAsCreator || sendingMessage || syncingRoom}
                 disabledReason={supplierAsCreator ? "Campaign is Supplier-hosted (no creator involved)." : closedReason ? "Negotiation closed." : ""}
                 messages={messages}
                 draftMessage={draftMessage}
                 onDraftChange={setDraftMessage}
-                onSend={sendMessage}
+                onSend={() => void sendMessage()}
                 onAttach={() => fileInputRef.current?.click()}
                 attachedFile={attachedFile}
                 messagesEndRef={messagesEndRef}
@@ -548,17 +769,18 @@ export default function SupplierNegotiationRoomPage() {
                 }}
               />
 
-              {/* Demo controls (kept subtle, can be removed in production) */}
+              {/* Negotiation room controls */}
               <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-                <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Demo controls</div>
+                <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Room settings</div>
                 <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <div className="text-[11px] text-slate-500">Entry</div>
                     <select
                       value={entry}
                       onChange={(e) => {
-                        setEntry(e.target.value);
-                        toastIt("Entry context updated", "info");
+                        const next = e.target.value;
+                        setEntry(next);
+                        void updateRoomSettings({ entryContext: next }, "Entry context updated");
                       }}
                       className="mt-1 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
                     >
@@ -573,9 +795,9 @@ export default function SupplierNegotiationRoomPage() {
                     <select
                       value={approvalMode}
                       onChange={(e) => {
-                        setApprovalMode(e.target.value);
-                        pushSystem(`Approval mode set to ${e.target.value}. (Demo)`);
-                        toastIt("Approval mode updated", "success");
+                        const next = e.target.value;
+                        setApprovalMode(next);
+                        void updateRoomSettings({ approvalMode: next }, "Approval mode updated");
                       }}
                       className="mt-1 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
                     >
@@ -589,9 +811,9 @@ export default function SupplierNegotiationRoomPage() {
                     <select
                       value={creatorUsageDecision}
                       onChange={(e) => {
-                        setCreatorUsageDecision(e.target.value);
-                        pushSystem(`Creator usage decision updated: ${e.target.value}. (Demo)`);
-                        toastIt("Creator usage updated", "info");
+                        const next = e.target.value;
+                        setCreatorUsageDecision(next);
+                        void updateRoomSettings({ creatorUsageDecision: next }, "Creator usage updated");
                       }}
                       className="mt-1 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
                     >
@@ -606,9 +828,9 @@ export default function SupplierNegotiationRoomPage() {
                     <select
                       value={collabMode}
                       onChange={(e) => {
-                        setCollabMode(e.target.value);
-                        pushSystem(`Collab mode set to ${e.target.value}. (Demo)`);
-                        toastIt("Collab mode updated", "info");
+                        const next = e.target.value;
+                        setCollabMode(next);
+                        void updateRoomSettings({ collabMode: next }, "Collab mode updated");
                       }}
                       className="mt-1 w-full rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold outline-none"
                     >
@@ -619,7 +841,7 @@ export default function SupplierNegotiationRoomPage() {
                 </div>
 
                 <div className="mt-2 text-[11px] text-slate-500">
-                  Permission note: In production, only Supplier Owner/Admin should change governance settings.
+                  Permission note: only Supplier Owner/Admin should change governance settings.
                 </div>
               </div>
             </div>
@@ -663,7 +885,7 @@ function AgreementStatusBar({ status, onStep }) {
                   circleClass
                 )}
                 onClick={() => onStep?.(step)}
-                title="(Demo) Click to set status"
+                title="Set agreement status"
               >
                 {completed ? "✓" : idx + 1}
               </button>
@@ -980,7 +1202,7 @@ function CollapsibleWrapper({ title, children, defaultExpanded = false }) {
 
 /* ----------------------------- End negotiation menu (inline) ----------------------------- */
 
-function EndNegotiationMenu({ onEnd }) {
+function EndNegotiationMenu({ onEnd, disabled = false }) {
   const [open, setOpen] = useState(false);
 
   const reasons = [
@@ -997,6 +1219,7 @@ function EndNegotiationMenu({ onEnd }) {
         tone="danger"
         onClick={() => setOpen((s) => !s)}
         title="End negotiation"
+        disabled={disabled}
       >
         ⛔ End
       </Btn>
@@ -1012,9 +1235,11 @@ function EndNegotiationMenu({ onEnd }) {
                 type="button"
                 className="w-full text-left px-3 py-2 rounded-xl hover:bg-gray-50 dark:bg-slate-950 dark:hover:bg-slate-800 text-sm"
                 onClick={() => {
+                  if (disabled) return;
                   setOpen(false);
                   onEnd?.(r);
                 }}
+                disabled={disabled}
               >
                 {r}
               </button>

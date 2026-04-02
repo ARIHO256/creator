@@ -5,6 +5,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { FlexiblePayloadValidationPipe } from '../../common/pipes/flexible-payload-validation.pipe.js';
 import { RequestUser } from '../../common/types/request-user.type.js';
 import { CollaborationService } from './collaboration.service.js';
+import { CloseProposalNegotiationRoomDto } from './dto/close-proposal-negotiation-room.dto.js';
 import { CreateAssetDto } from './dto/create-asset.dto.js';
 import { CreateProposalMessageDto } from './dto/create-proposal-message.dto.js';
 import { CreateProposalDto } from './dto/create-proposal.dto.js';
@@ -15,6 +16,7 @@ import { ReviewAssetDto } from './dto/review-asset.dto.js';
 import { TerminateContractDto } from './dto/terminate-contract.dto.js';
 import { TransitionProposalDto } from './dto/transition-proposal.dto.js';
 import { UpdateProposalDto } from './dto/update-proposal.dto.js';
+import { UpdateProposalNegotiationRoomDto } from './dto/update-proposal-negotiation-room.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
 import { UpsertWorkspaceCampaignDto } from './dto/upsert-workspace-campaign.dto.js';
 
@@ -67,15 +69,40 @@ export class CollaborationController {
   @RateLimit({ limit: 20, windowMs: 60_000 })
   createProposal(@CurrentUser() user: RequestUser, @Body() body: CreateProposalDto) { return this.service.createProposal(user.sub, body); }
   @Get('proposals/:id') proposal(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.proposal(user.sub, id); }
+  @Get('proposals/:id/negotiation-room')
+  proposalNegotiationRoom(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.proposalNegotiationRoom(user.sub, id); }
   @Patch('proposals/:id')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   updateProposal(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: UpdateProposalDto) { return this.service.updateProposal(user.sub, id, body); }
+  @Patch('proposals/:id/negotiation-room')
+  @RateLimit({ limit: 40, windowMs: 60_000 })
+  updateProposalNegotiationRoom(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() body: UpdateProposalNegotiationRoomDto
+  ) {
+    return this.service.updateProposalNegotiationRoom(user.sub, id, body);
+  }
   @Post('proposals/:id/messages')
   @RateLimit({ limit: 40, windowMs: 60_000 })
   proposalMessage(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: CreateProposalMessageDto) { return this.service.proposalMessage(user.sub, id, body); }
   @Post('proposals/:id/transition')
   @RateLimit({ limit: 20, windowMs: 60_000 })
   proposalTransition(@CurrentUser() user: RequestUser, @Param('id') id: string, @Body() body: TransitionProposalDto) { return this.service.proposalTransition(user.sub, id, body); }
+  @Post('proposals/:id/negotiation-room/close')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  closeProposalNegotiationRoom(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+    @Body() body: CloseProposalNegotiationRoomDto
+  ) {
+    return this.service.closeProposalNegotiationRoom(user.sub, id, body);
+  }
+  @Post('proposals/:id/negotiation-room/reopen')
+  @RateLimit({ limit: 20, windowMs: 60_000 })
+  reopenProposalNegotiationRoom(@CurrentUser() user: RequestUser, @Param('id') id: string) {
+    return this.service.reopenProposalNegotiationRoom(user.sub, id);
+  }
 
   @Get('contracts') contracts(@CurrentUser() user: RequestUser) { return this.service.contracts(user.sub); }
   @Get('contracts/:id') contract(@CurrentUser() user: RequestUser, @Param('id') id: string) { return this.service.contract(user.sub, id); }

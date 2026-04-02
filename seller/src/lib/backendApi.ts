@@ -1122,15 +1122,17 @@ export const sellerBackendApi = {
     const pageSize = 100;
     const allCreators: Array<Record<string, unknown>> = [];
     let offset = 0;
+    let hasMore = true;
 
-    while (true) {
+    while (hasMore) {
       const batch = await request<Array<Record<string, unknown>>>(`/api/creators?limit=${pageSize}&offset=${offset}`);
       const rows = Array.isArray(batch) ? batch : [];
       allCreators.push(...rows);
       if (rows.length < pageSize) {
-        break;
+        hasMore = false;
+      } else {
+        offset += pageSize;
       }
-      offset += pageSize;
     }
 
     return allCreators;
@@ -1158,8 +1160,15 @@ export const sellerBackendApi = {
     }),
   getCollaborationProposal: (id: string) =>
     request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}`),
+  getCollaborationProposalNegotiationRoom: (id: string) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/negotiation-room`),
   updateCollaborationProposal: (id: string, body: Record<string, unknown>) =>
     request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  updateCollaborationProposalNegotiationRoom: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/negotiation-room`, {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
@@ -1172,6 +1181,15 @@ export const sellerBackendApi = {
     request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/transition`, {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  closeCollaborationProposalNegotiationRoom: (id: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/negotiation-room/close`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  reopenCollaborationProposalNegotiationRoom: (id: string) =>
+    request<Record<string, unknown>>(`/api/proposals/${encodeURIComponent(id)}/negotiation-room/reopen`, {
+      method: "POST",
     }),
   getCollaborationContracts: () => request<Array<Record<string, unknown>>>("/api/contracts"),
   getCollaborationTask: (id: string) =>

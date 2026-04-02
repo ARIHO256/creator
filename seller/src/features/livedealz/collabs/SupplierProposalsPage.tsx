@@ -167,6 +167,38 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function toOptionalNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function normalizeApprovalMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized.startsWith("auto")) return "Auto";
+  return "Manual";
+}
+
+function toShortDate(value) {
+  const parsed = new Date(String(value || ""));
+  if (Number.isNaN(parsed.getTime())) return "TBD";
+  return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function bulletLines(lines) {
+  const cleaned = Array.isArray(lines)
+    ? lines.map((entry) => String(entry || "").trim()).filter(Boolean)
+    : [];
+  if (!cleaned.length) return "";
+  return cleaned.map((line) => (line.startsWith("•") || line.startsWith("-") ? line : `• ${line}`)).join("\n");
+}
+
+function formatFileSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value <= 0) return "0 KB";
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(value / 1024))} KB`;
+}
+
 function normalizeProposalStatus(value) {
   const normalized = String(value || "").trim().toUpperCase();
   if (normalized === "DRAFT") return "Draft";
@@ -193,6 +225,8 @@ function mapProposalRecord(record) {
   const status = normalizeProposalStatus(record?.status);
   return {
     id: String(record?.id || ""),
+    creatorId: String(record?.creatorId || metadata?.creatorUserId || ""),
+    campaignId: String(record?.campaignId || ""),
     creator,
     initials: String(metadata?.creatorInitials || initialsFromName(creator)),
     campaign: String(record?.campaignTitle || record?.campaign || record?.title || "Campaign"),
@@ -235,10 +269,18 @@ function mapSupplierCampaign(record) {
   const metadata = record?.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata) ? record.metadata : {};
   return {
     id: String(record?.id || ""),
+    sellerId: String(record?.sellerId || metadata?.sellerId || ""),
+    creatorId: String(record?.creatorId || metadata?.creatorId || ""),
     title: String(record?.title || "Campaign"),
     subtitle: String(record?.category || metadata?.category || "MyLiveDealz"),
     summary: String(record?.description || metadata?.summary || "Campaign summary"),
     type: String(metadata?.campaignType || metadata?.type || metadata?.promoType || "Campaign"),
+    category: String(record?.category || metadata?.category || "General"),
+    region: String(metadata?.region || "Global"),
+    collabMode: String(metadata?.collabMode || "Invite-only"),
+    creatorUsageDecision: String(metadata?.creatorUsageDecision || "I will use a Creator"),
+    approvalMode: String(metadata?.approvalMode || "Manual"),
+    currency: String(record?.currency || metadata?.currency || "USD"),
     fitLabel: String(metadata?.fitLabel || "Best-match creator profile"),
     timelineLabel: String(metadata?.timelineLabel || "Custom timeline"),
     suggestedFee: toNumber(metadata?.suggestedFee ?? record?.budget ?? 0),
@@ -260,11 +302,13 @@ function buildCreatorsFromProposals(proposals) {
 
   proposals.forEach((proposal) => {
     if (!proposal.creator || proposal.creator === "Supplier-hosted opportunity") return;
+    const creatorKey = proposal.creatorId || proposal.creator;
 
     const meta = CREATOR_META[proposal.creator] || {};
-    if (!grouped.has(proposal.creator)) {
-      grouped.set(proposal.creator, {
-        id: proposal.creator,
+    if (!grouped.has(creatorKey)) {
+      grouped.set(creatorKey, {
+        id: creatorKey,
+        userId: proposal.creatorId || "",
         name: proposal.creator,
         initials: proposal.initials,
         tagline: meta.tagline || proposal.notesShort,
@@ -286,7 +330,7 @@ function buildCreatorsFromProposals(proposals) {
       return;
     }
 
-    const current = grouped.get(proposal.creator);
+    const current = grouped.get(creatorKey);
     current.categories = Array.from(new Set([...(current.categories || []), proposal.category]));
     current.lifetimeRevenue += proposal.estimatedValue;
     if (!["Declined", "Expired"].includes(proposal.status)) {
@@ -362,7 +406,7 @@ function BadgePill({ tone = "neutral", children }) {
   );
 }
 
-function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) {
+function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns, onSaveDraft, onSendProposal }) {
   useScrollLock(open);
 
   const fileRef = useRef(null);
@@ -464,29 +508,141 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
     setAttachments((prev) => prev.filter((item) => item.id !== id));
   }
 
+  function buildProposalPayload(status) {
+    const creatorUserId = String(creator?.userId || campaign?.creatorId || "").trim();
+    if (!creatorUserId) {
+      throw new Error("Selected creator is missing a backend creatorId. Pick a creator that already exists in proposals.");
+    }
+
+    const cleanedDeliverables = deliverables.map((item) => String(item || "").trim()).filter(Boolean);
+    const feeValue = toOptionalNumber(proposedFee);
+    const commissionValue = toOptionalNumber(String(commission || "").replace(/%/g, ""));
+    const normalizedApprovalMode = normalizeApprovalMode(approvalMode);
+    const campaignCurrency = String(campaign?.currency || "USD");
+    const timeline = {
+      preferredStart,
+      deliveryDate,
+      responseBy
+    };
+    const scheduleLines = [
+      `Preferred start: ${toShortDate(preferredStart)}`,
+      `Preferred delivery: ${toShortDate(deliveryDate)}`,
+      `Response by: ${toShortDate(responseBy)}`,
+      "Payment timing: To be agreed"
+    ];
+    const compensationLines = [
+      pricingModel ? `Pricing model: ${pricingModel}` : "",
+      Number.isFinite(feeValue) ? `Proposed fee: ${campaignCurrency} ${Number(feeValue).toLocaleString()}` : "",
+      Number.isFinite(commissionValue) ? `Commission: ${commissionValue}%` : "",
+      "Final payout schedule: To be agreed"
+    ].filter(Boolean);
+    const terms = {
+      deliverables: bulletLines(cleanedDeliverables),
+      schedule: bulletLines(scheduleLines),
+      compensation: bulletLines(compensationLines)
+    };
+    const reviewSlaHours = Math.max(
+      1,
+      Math.round((new Date(responseBy).getTime() - Date.now()) / (1000 * 60 * 60))
+    );
+
+    return {
+      campaignId: campaign?.id || undefined,
+      creatorId: creatorUserId,
+      title: proposalTitle.trim(),
+      summary: notes.trim() || `Proposal for ${creator?.name || "creator"} linked to ${campaign?.title || "campaign"}.`,
+      amount: feeValue,
+      currency: campaignCurrency,
+      status,
+      metadata: {
+        proposalSource: "Supplier Proposals Drawer",
+        inviteDirection: "seller_to_creator",
+        creatorInitials: creator?.initials || initialsFromName(creator?.name || "Creator"),
+        creatorUserId,
+        offerType: scope,
+        type: scope,
+        category: campaign?.category || "General",
+        region: campaign?.region || "Global",
+        pricingModel,
+        baseFee: feeValue ?? 0,
+        baseFeeMin: feeValue ?? 0,
+        baseFeeMax: feeValue ?? 0,
+        commissionPct: commissionValue ?? 0,
+        estimatedValue: feeValue ?? 0,
+        currency: campaignCurrency,
+        messageShort: notes.trim().slice(0, 240),
+        notes,
+        deliverablesList: cleanedDeliverables,
+        scheduleHint: `${toShortDate(preferredStart)} → ${toShortDate(deliveryDate)} · Respond by ${toShortDate(responseBy)}`,
+        reviewSlaHours: Number.isFinite(reviewSlaHours) ? reviewSlaHours : 6,
+        creatorUsageDecision: campaign?.creatorUsageDecision || "I will use a Creator",
+        collabMode: campaign?.collabMode || "Invite-only",
+        approvalMode: normalizedApprovalMode,
+        timeline,
+        attachments: attachments.map((item) => ({
+          id: item.id,
+          name: item.name,
+          sizeLabel: item.sizeLabel,
+          typeLabel: item.typeLabel
+        })),
+        terms,
+        negotiationRoom: {
+          entryContext: "direct",
+          stage: status === "DRAFT" ? "Draft" : "Negotiating",
+          creatorUsageDecision: campaign?.creatorUsageDecision || "I will use a Creator",
+          collabMode: campaign?.collabMode || "Invite-only",
+          approvalMode: normalizedApprovalMode,
+          terms
+        },
+        lastActivity: status === "DRAFT" ? "Draft saved · Recently" : "Submitted · Recently"
+      }
+    };
+  }
+
   async function saveDraft() {
+    if (!onSaveDraft) return;
     setSavingDraft(true);
     setBanner(null);
-    await new Promise((resolve) => window.setTimeout(resolve, 700));
-    setSavingDraft(false);
-    setBanner({
-      tone: "info",
-      title: "Proposal draft saved",
-      text: `Your draft proposal for ${creator?.name || "this creator"} is ready to revisit.`,
-    });
+    try {
+      const payload = buildProposalPayload("DRAFT");
+      const created = await onSaveDraft(payload);
+      setBanner({
+        tone: "info",
+        title: "Proposal draft saved",
+        text: `Draft ${created?.id ? `(${created.id}) ` : ""}for ${creator?.name || "this creator"} was saved to backend.`,
+      });
+    } catch (error) {
+      setBanner({
+        tone: "error",
+        title: "Draft save failed",
+        text: error instanceof Error ? error.message : "Could not save draft proposal.",
+      });
+    } finally {
+      setSavingDraft(false);
+    }
   }
 
   async function sendProposal() {
-    if (!canSend) return;
+    if (!canSend || !onSendProposal) return;
     setSendingProposal(true);
     setBanner(null);
-    await new Promise((resolve) => window.setTimeout(resolve, 950));
-    setSendingProposal(false);
-    setBanner({
-      tone: "success",
-      title: "Proposal sent",
-      text: `${creator?.name || "The creator"} will receive your proposal with linked campaign, scope, deliverables, pricing and timeline.`,
-    });
+    try {
+      const payload = buildProposalPayload("SUBMITTED");
+      const created = await onSendProposal(payload);
+      setBanner({
+        tone: "success",
+        title: "Proposal sent",
+        text: `${creator?.name || "The creator"} will receive proposal ${created?.id ? `(${created.id})` : ""} with linked campaign, scope, deliverables, pricing and timeline.`,
+      });
+    } catch (error) {
+      setBanner({
+        tone: "error",
+        title: "Send failed",
+        text: error instanceof Error ? error.message : "Could not send proposal.",
+      });
+    } finally {
+      setSendingProposal(false);
+    }
   }
 
   if (!open) return null;
@@ -613,7 +769,15 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
 
             <div className="space-y-5">
               {banner ? (
-                <div className={`rounded-2xl border p-4 ${banner.tone === "success" ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20" : "border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20"}`}>
+                <div
+                  className={`rounded-2xl border p-4 ${
+                    banner.tone === "success"
+                      ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20"
+                      : banner.tone === "error"
+                      ? "border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20"
+                      : "border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-900/20"
+                  }`}
+                >
                   <div className="font-black text-slate-900 dark:text-slate-50">{banner.title}</div>
                   <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">{banner.text}</div>
                 </div>
@@ -708,7 +872,32 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
 
                 <div className="mt-4">
                   <ProposalFieldShell label="Attachments" hint="Campaign brief, deliverable guide, pricing sheet, audience notes">
-                    <input ref={fileRef} type="file" className="hidden" />
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      className="hidden"
+                      multiple
+                      onChange={(event) => {
+                        const files = Array.from(event.target.files || []);
+                        if (!files.length) return;
+                        setAttachments((prev) => [
+                          ...prev,
+                          ...files.map((file) => {
+                            const ext = String(file.name || "")
+                              .split(".")
+                              .pop()
+                              ?.toUpperCase() || "FILE";
+                            return {
+                              id: `${Date.now()}-${file.name}-${file.size}`,
+                              name: file.name || "attachment",
+                              sizeLabel: formatFileSize(file.size),
+                              typeLabel: ext
+                            };
+                          })
+                        ]);
+                        event.target.value = "";
+                      }}
+                    />
                     <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/60 p-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <button className="px-3 py-2 rounded-full bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-sm font-bold" onClick={() => fileRef.current?.click()} type="button">
@@ -750,10 +939,10 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns }) 
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="text-xs text-slate-500 dark:text-slate-400">Save draft to continue later, or send when title, deliverables, commercial terms and timeline are complete.</div>
             <div className="flex flex-col sm:flex-row gap-2">
-              <button className="px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-sm font-black text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60" onClick={saveDraft} disabled={savingDraft} type="button">
+              <button className="px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-sm font-black text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60" onClick={saveDraft} disabled={savingDraft || sendingProposal} type="button">
                 {savingDraft ? "Saving draft..." : "Save draft"}
               </button>
-              <button className="px-4 py-3 rounded-2xl bg-[#f77f00] text-white text-sm font-black hover:bg-[#e26f00] shadow-lg shadow-orange-100 dark:shadow-none disabled:opacity-60" onClick={sendProposal} disabled={!canSend || sendingProposal} type="button">
+              <button className="px-4 py-3 rounded-2xl bg-[#f77f00] text-white text-sm font-black hover:bg-[#e26f00] shadow-lg shadow-orange-100 dark:shadow-none disabled:opacity-60" onClick={sendProposal} disabled={!canSend || sendingProposal || savingDraft} type="button">
                 {sendingProposal ? "Sending proposal..." : "Send proposal"}
               </button>
             </div>
@@ -1540,6 +1729,29 @@ export default function SupplierProposalsPreviewCanvas() {
     );
   }
 
+  async function handleSaveDraftProposal(payload) {
+    const created = await sellerBackendApi.createCollaborationProposal(payload);
+    await loadWorkspaceData();
+    if (created?.id) {
+      setSelectedProposalId(String(created.id));
+      setExpandedProposalId(String(created.id));
+    }
+    toast("Proposal draft saved to backend.");
+    return created;
+  }
+
+  async function handleSendProposal(payload) {
+    const created = await sellerBackendApi.createCollaborationProposal(payload);
+    await loadWorkspaceData();
+    if (created?.id) {
+      setSelectedProposalId(String(created.id));
+      setExpandedProposalId(String(created.id));
+    }
+    setProposalDrawerOpen(false);
+    toast("Proposal sent and captured in backend.");
+    return created;
+  }
+
   return (
     <div className="min-h-screen w-full flex flex-col bg-[#f2f2f2] dark:bg-slate-950 text-slate-900 dark:text-slate-50 transition-colors overflow-x-hidden">
       <PageHeader pageTitle="Proposals" />
@@ -1751,6 +1963,8 @@ export default function SupplierProposalsPreviewCanvas() {
         creators={creators}
         initialCreator={creators.find((item) => item.id === proposalRecipientId) || creators[0] || null}
         campaigns={supplierCampaigns}
+        onSaveDraft={handleSaveDraftProposal}
+        onSendProposal={handleSendProposal}
       />
 
       <ToastArea />

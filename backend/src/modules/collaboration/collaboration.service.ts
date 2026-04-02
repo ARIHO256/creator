@@ -4,6 +4,7 @@ import { CampaignStatus, Prisma } from '@prisma/client';
 import { normalizeFileIntake } from '../../common/files/file-intake.js';
 import { sanitizePayload } from '../../common/sanitizers/payload-sanitizer.js';
 import { PrismaService } from '../../platform/prisma/prisma.service.js';
+import { CloseProposalNegotiationRoomDto } from './dto/close-proposal-negotiation-room.dto.js';
 import { CreateAssetDto } from './dto/create-asset.dto.js';
 import { CreateProposalMessageDto } from './dto/create-proposal-message.dto.js';
 import { CreateProposalDto } from './dto/create-proposal.dto.js';
@@ -13,6 +14,7 @@ import { CreateTaskDto } from './dto/create-task.dto.js';
 import { ReviewAssetDto } from './dto/review-asset.dto.js';
 import { TransitionProposalDto } from './dto/transition-proposal.dto.js';
 import { UpdateProposalDto } from './dto/update-proposal.dto.js';
+import { UpdateProposalNegotiationRoomDto } from './dto/update-proposal-negotiation-room.dto.js';
 import { UpdateTaskDto } from './dto/update-task.dto.js';
 
 @Injectable()
@@ -479,6 +481,193 @@ export class CollaborationService {
     }
 
     return this.serializeProposal(proposal);
+  }
+
+  async proposalNegotiationRoom(userId: string, id: string) {
+    const proposal = await this.loadProposalForNegotiationRoom(userId, id);
+    return this.serializeProposalNegotiationRoom(proposal);
+  }
+
+  async updateProposalNegotiationRoom(userId: string, id: string, payload: UpdateProposalNegotiationRoomDto) {
+    const proposal = await this.loadProposalForNegotiationRoom(userId, id);
+    await this.assertSupplierNegotiationAccess(userId, proposal);
+
+    const metadata = this.normalizeCampaignMetadata(proposal.metadata);
+    const negotiationRoom = this.readMetadataRecord(metadata, 'negotiationRoom');
+    const closedReason = this.readMetadataString(negotiationRoom, 'closedReason');
+    if (closedReason) {
+      throw new BadRequestException('Negotiation is closed. Reopen it before editing.');
+    }
+
+    const now = new Date().toISOString();
+    const nextTerms = this.deepMerge(
+      this.readMetadataRecord(negotiationRoom, 'terms'),
+      this.normalizeNegotiationTermPatch(payload.terms)
+    );
+    const roomPatch: Record<string, unknown> = {
+      updatedAt: now,
+      updatedByUserId: userId,
+      terms: nextTerms
+    };
+    if (payload.entryContext) {
+      roomPatch.entryContext = this.normalizeNegotiationEntryContext(payload.entryContext);
+    }
+    if (payload.creatorUsageDecision) {
+      roomPatch.creatorUsageDecision = this.normalizeCreatorUsageDecision(payload.creatorUsageDecision);
+    }
+    if (payload.collabMode) {
+      roomPatch.collabMode = this.normalizeNegotiationCollabMode(payload.collabMode);
+    }
+    if (payload.approvalMode) {
+      roomPatch.approvalMode = this.normalizeNegotiationApprovalMode(payload.approvalMode);
+    }
+    if (payload.stage) {
+      roomPatch.stage = this.normalizeNegotiationStage(payload.stage);
+    }
+
+    const nextNegotiationRoom = sanitizePayload(
+      this.deepMerge(negotiationRoom, roomPatch),
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Record<string, unknown>;
+    const nextMetadata = sanitizePayload(
+      this.deepMerge(metadata, {
+        negotiationRoom: nextNegotiationRoom,
+        terms: nextTerms,
+        creatorUsageDecision:
+          this.readMetadataString(nextNegotiationRoom, 'creatorUsageDecision') ||
+          this.readMetadataString(metadata, 'creatorUsageDecision') ||
+          'I will use a Creator',
+        collabMode:
+          this.readMetadataString(nextNegotiationRoom, 'collabMode') ||
+          this.readMetadataString(metadata, 'collabMode') ||
+          'Invite-only',
+        approvalMode:
+          this.readMetadataString(nextNegotiationRoom, 'approvalMode') ||
+          this.readMetadataString(metadata, 'approvalMode') ||
+          'Manual'
+      }),
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Record<string, unknown>;
+
+    await this.prisma.proposal.update({
+      where: { id: proposal.id },
+      data: {
+        metadata: nextMetadata as Prisma.InputJsonValue
+      }
+    });
+
+    await this.prisma.proposalMessage.create({
+      data: {
+        proposalId: proposal.id,
+        authorUserId: userId,
+        body: 'Supplier updated negotiation room settings and terms.',
+        messageType: 'SYSTEM'
+      }
+    });
+
+    const refreshed = await this.loadProposalForNegotiationRoom(userId, id);
+    return this.serializeProposalNegotiationRoom(refreshed);
+  }
+
+  async closeProposalNegotiationRoom(userId: string, id: string, payload: CloseProposalNegotiationRoomDto) {
+    const proposal = await this.loadProposalForNegotiationRoom(userId, id);
+    await this.assertSupplierNegotiationAccess(userId, proposal);
+
+    const reason = String(payload.reason || '').trim();
+    if (!reason) {
+      throw new BadRequestException('A close reason is required');
+    }
+
+    const metadata = this.normalizeCampaignMetadata(proposal.metadata);
+    const negotiationRoom = this.readMetadataRecord(metadata, 'negotiationRoom');
+    const now = new Date().toISOString();
+    const nextNegotiationRoom = sanitizePayload(
+      this.deepMerge(negotiationRoom, {
+        closedReason: reason,
+        closedAt: now,
+        closedByUserId: userId,
+        reopenedAt: null,
+        reopenedByUserId: null,
+        updatedAt: now,
+        updatedByUserId: userId
+      }),
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Record<string, unknown>;
+    const nextMetadata = sanitizePayload(
+      this.deepMerge(metadata, {
+        negotiationRoom: nextNegotiationRoom,
+        negotiationClosedReason: reason,
+        negotiationClosedAt: now
+      }),
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Record<string, unknown>;
+
+    await this.prisma.proposal.update({
+      where: { id: proposal.id },
+      data: {
+        metadata: nextMetadata as Prisma.InputJsonValue
+      }
+    });
+
+    await this.prisma.proposalMessage.create({
+      data: {
+        proposalId: proposal.id,
+        authorUserId: userId,
+        body: `Negotiation closed by supplier. Reason: ${reason}.`,
+        messageType: 'SYSTEM'
+      }
+    });
+
+    const refreshed = await this.loadProposalForNegotiationRoom(userId, id);
+    return this.serializeProposalNegotiationRoom(refreshed);
+  }
+
+  async reopenProposalNegotiationRoom(userId: string, id: string) {
+    const proposal = await this.loadProposalForNegotiationRoom(userId, id);
+    await this.assertSupplierNegotiationAccess(userId, proposal);
+
+    const metadata = this.normalizeCampaignMetadata(proposal.metadata);
+    const negotiationRoom = this.readMetadataRecord(metadata, 'negotiationRoom');
+    const now = new Date().toISOString();
+    const nextNegotiationRoom = sanitizePayload(
+      this.deepMerge(negotiationRoom, {
+        closedReason: null,
+        closedAt: null,
+        closedByUserId: null,
+        reopenedAt: now,
+        reopenedByUserId: userId,
+        updatedAt: now,
+        updatedByUserId: userId
+      }),
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Record<string, unknown>;
+    const nextMetadata = sanitizePayload(
+      this.deepMerge(metadata, {
+        negotiationRoom: nextNegotiationRoom,
+        negotiationClosedReason: null,
+        negotiationClosedAt: null
+      }),
+      { maxDepth: 8, maxArrayLength: 250, maxKeys: 250 }
+    ) as Record<string, unknown>;
+
+    await this.prisma.proposal.update({
+      where: { id: proposal.id },
+      data: {
+        metadata: nextMetadata as Prisma.InputJsonValue
+      }
+    });
+
+    await this.prisma.proposalMessage.create({
+      data: {
+        proposalId: proposal.id,
+        authorUserId: userId,
+        body: 'Negotiation reopened.',
+        messageType: 'SYSTEM'
+      }
+    });
+
+    const refreshed = await this.loadProposalForNegotiationRoom(userId, id);
+    return this.serializeProposalNegotiationRoom(refreshed);
   }
 
   async updateProposal(userId: string, id: string, payload: UpdateProposalDto) {
@@ -1502,6 +1691,151 @@ export class CollaborationService {
     );
   }
 
+  private async loadProposalForNegotiationRoom(userId: string, id: string) {
+    const proposal = await this.prisma.proposal.findFirst({
+      where: { id, ...this.proposalAccessClause(userId) },
+      include: {
+        campaign: true,
+        seller: true,
+        creator: {
+          include: {
+            creatorProfile: true
+          }
+        },
+        messages: {
+          include: {
+            author: {
+              include: {
+                creatorProfile: true,
+                sellerProfile: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'asc' }
+        }
+      }
+    });
+
+    if (!proposal) {
+      throw new NotFoundException('Proposal not found');
+    }
+
+    return proposal;
+  }
+
+  private async assertSupplierNegotiationAccess(userId: string, proposal: any) {
+    const actor = await this.loadActor(userId);
+    if (['ADMIN', 'SUPPORT'].includes(actor.role ?? '')) {
+      return;
+    }
+
+    if (proposal.seller?.userId && proposal.seller.userId === userId) {
+      return;
+    }
+
+    throw new ForbiddenException('Only the supplier workspace owner can modify negotiation room settings');
+  }
+
+  private serializeProposalNegotiationRoom(proposal: any) {
+    const metadata = this.normalizeCampaignMetadata(proposal.metadata);
+    const negotiationRoom = this.readMetadataRecord(metadata, 'negotiationRoom');
+    const roomTerms = this.readMetadataRecord(negotiationRoom, 'terms');
+    const metadataTerms = this.readMetadataRecord(metadata, 'terms');
+    const amountText =
+      typeof proposal.amount === 'number' && Number.isFinite(Number(proposal.amount))
+        ? `${proposal.currency || 'USD'} ${Number(proposal.amount).toLocaleString()}`
+        : '';
+
+    const terms = {
+      deliverables:
+        this.readMetadataString(roomTerms, 'deliverables') ||
+        this.readMetadataString(metadataTerms, 'deliverables') ||
+        this.toBulletList(metadata.deliverablesList) ||
+        this.toBulletList(metadata.deliverables) ||
+        (typeof proposal.summary === 'string' && proposal.summary.trim()
+          ? `• ${proposal.summary.trim()}`
+          : 'Deliverables to be agreed in negotiation.'),
+      schedule:
+        this.readMetadataString(roomTerms, 'schedule') ||
+        this.readMetadataString(metadataTerms, 'schedule') ||
+        this.toBulletList(metadata.schedule) ||
+        this.toBulletList(metadata.timeline) ||
+        'Schedule to be agreed in negotiation.',
+      compensation:
+        this.readMetadataString(roomTerms, 'compensation') ||
+        this.readMetadataString(metadataTerms, 'compensation') ||
+        (amountText
+          ? `• Budget reference: ${amountText}\n• Final payout terms to be agreed in negotiation.`
+          : 'Compensation to be agreed in negotiation.')
+    };
+
+    const stage = this.normalizeNegotiationStage(
+      this.readMetadataString(negotiationRoom, 'stage') || this.mapProposalStatusToNegotiationStage(proposal.status)
+    );
+    const closedReason =
+      this.readMetadataString(negotiationRoom, 'closedReason') ||
+      this.readMetadataString(metadata, 'negotiationClosedReason');
+    const creatorName = proposal.creator?.creatorProfile?.name ?? proposal.creator?.email ?? 'Creator';
+    const creatorHandle = proposal.creator?.creatorProfile?.handle
+      ? this.normalizeCreatorHandle(proposal.creator.creatorProfile.handle)
+      : '@creator';
+    const approvalMode = this.normalizeNegotiationApprovalMode(
+      this.readMetadataString(negotiationRoom, 'approvalMode') ||
+      this.readMetadataString(metadata, 'approvalMode')
+    );
+
+    return {
+      proposalId: proposal.id,
+      proposalStatus: proposal.status,
+      stage,
+      closed: Boolean(closedReason),
+      closedReason: closedReason || null,
+      entryContext: this.normalizeNegotiationEntryContext(
+        this.readMetadataString(negotiationRoom, 'entryContext') ||
+        this.readMetadataString(metadata, 'entryContext')
+      ),
+      creatorUsageDecision: this.normalizeCreatorUsageDecision(
+        this.readMetadataString(negotiationRoom, 'creatorUsageDecision') ||
+        this.readMetadataString(metadata, 'creatorUsageDecision')
+      ),
+      collabMode: this.normalizeNegotiationCollabMode(
+        this.readMetadataString(negotiationRoom, 'collabMode') ||
+        this.readMetadataString(metadata, 'collabMode')
+      ),
+      approvalMode,
+      summary: {
+        campaignId: proposal.campaignId ?? null,
+        campaignTitle: proposal.campaign?.title ?? this.readMetadataString(metadata, 'campaignTitle') ?? proposal.title,
+        sellerId: proposal.sellerId,
+        sellerName: proposal.seller?.displayName ?? null,
+        creatorId: proposal.creatorId,
+        creatorName,
+        creatorHandle,
+        amount: proposal.amount ?? null,
+        currency: proposal.currency ?? 'USD'
+      },
+      terms,
+      riskHints: this.buildNegotiationRiskHints(terms, approvalMode),
+      messages: Array.isArray(proposal.messages)
+        ? proposal.messages.map((message: any) => ({
+            id: message.id,
+            authorUserId: message.authorUserId ?? null,
+            author:
+              message.author?.creatorProfile?.name ??
+              message.author?.sellerProfile?.displayName ??
+              message.author?.email ??
+              null,
+            body: message.body,
+            messageType: message.messageType ?? 'COMMENT',
+            createdAt: this.toIsoIfValid(message.createdAt, null)
+          }))
+        : [],
+      metadata,
+      createdAt: this.toIsoIfValid(proposal.createdAt, null),
+      updatedAt: this.toIsoIfValid(proposal.updatedAt, null)
+    };
+  }
+
   private serializeProposal(proposal: any) {
     const metadata = this.normalizeCampaignMetadata(proposal.metadata);
     return {
@@ -1532,6 +1866,128 @@ export class CollaborationService {
       createdAt: this.toIsoIfValid(proposal.createdAt, null),
       updatedAt: this.toIsoIfValid(proposal.updatedAt, null)
     };
+  }
+
+  private normalizeNegotiationTermPatch(value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {};
+    }
+
+    const record = value as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    for (const key of ['deliverables', 'schedule', 'compensation']) {
+      const candidate = record[key];
+      if (typeof candidate === 'string' && candidate.trim()) {
+        patch[key] = candidate.trim();
+      }
+    }
+    return patch;
+  }
+
+  private normalizeNegotiationEntryContext(value: string) {
+    const normalized = String(value || '').trim().toLowerCase().replace(/[_\s]+/g, '-');
+    if (normalized === 'invite-accepted') return 'invite-accepted';
+    if (normalized === 'open-collabs-pitch') return 'open-collabs-pitch';
+    return 'direct';
+  }
+
+  private normalizeCreatorUsageDecision(value: string) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return 'I will use a Creator';
+    if (normalized.includes('not use')) return 'I will NOT use a Creator';
+    if (normalized.includes('not sure') || normalized.includes('unsure')) return 'I am NOT SURE yet';
+    return 'I will use a Creator';
+  }
+
+  private normalizeNegotiationCollabMode(value: string) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized.includes('open')) return 'Open for Collabs';
+    return 'Invite-only';
+  }
+
+  private normalizeNegotiationApprovalMode(value: string) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'auto' ? 'Auto' : 'Manual';
+  }
+
+  private normalizeNegotiationStage(value: string) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'draft') return 'Draft';
+    if (normalized === 'final review' || normalized === 'final-review') return 'Final review';
+    if (normalized === 'contract created' || normalized === 'contract-created') return 'Contract created';
+    return 'Negotiating';
+  }
+
+  private mapProposalStatusToNegotiationStage(status: string) {
+    const normalized = String(status || '').trim().toUpperCase();
+    if (normalized === 'DRAFT') return 'Draft';
+    if (normalized === 'IN_REVIEW') return 'Final review';
+    if (normalized === 'ACCEPTED') return 'Contract created';
+    return 'Negotiating';
+  }
+
+  private toBulletList(value: unknown) {
+    if (!Array.isArray(value)) {
+      return '';
+    }
+
+    const lines = value
+      .map((entry) => this.toTextValue(entry))
+      .filter(Boolean);
+    if (!lines.length) {
+      return '';
+    }
+
+    return lines
+      .map((line) => (line.startsWith('•') || line.startsWith('-') ? line : `• ${line}`))
+      .join('\n');
+  }
+
+  private toTextValue(value: unknown): string {
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      for (const key of ['title', 'label', 'name', 'value', 'text']) {
+        const candidate = record[key];
+        if (typeof candidate === 'string' && candidate.trim()) {
+          return candidate.trim();
+        }
+      }
+    }
+    return '';
+  }
+
+  private buildNegotiationRiskHints(
+    terms: { deliverables: string; schedule: string; compensation: string },
+    approvalMode: 'Manual' | 'Auto'
+  ) {
+    const hints: string[] = [];
+    const deliverables = terms.deliverables.toLowerCase();
+    const schedule = terms.schedule.toLowerCase();
+    const compensation = terms.compensation.toLowerCase();
+
+    if (!schedule.includes('payment')) {
+      hints.push('Payment timing is not clearly defined in the schedule.');
+    }
+    if (!deliverables.includes('clips') && !deliverables.includes('stories')) {
+      hints.push('No evergreen/promo assets beyond the live are defined.');
+    }
+    if (!compensation.includes('kill fee')) {
+      hints.push('No kill fee specified if campaign is cancelled last minute.');
+    }
+    if (!compensation.includes('exclusivity')) {
+      hints.push('No exclusivity window set. Consider limiting competing promotions.');
+    }
+    if (approvalMode === 'Auto') {
+      hints.push('Auto approval is enabled. Ensure brand-compliance rules are explicit.');
+    }
+
+    return hints;
   }
 
   private serializeWorkspaceCampaign(campaign: any) {
@@ -2288,5 +2744,12 @@ export class CollaborationService {
   private readMetadataString(metadata: Record<string, unknown>, key: string) {
     const value = metadata[key];
     return typeof value === 'string' && value.trim() ? value.trim() : '';
+  }
+
+  private readMetadataRecord(metadata: Record<string, unknown>, key: string) {
+    const value = metadata[key];
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
   }
 }
