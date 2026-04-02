@@ -69,6 +69,34 @@ function fmtTime(iso: string) {
   return d.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+type ParsedNotificationMessage = {
+  headline: string;
+  details: string[];
+  reason?: string;
+};
+
+function parseNotificationMessage(message: string): ParsedNotificationMessage {
+  const normalized = message.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return { headline: "No message body provided.", details: [] };
+  }
+
+  const reasonMatch = normalized.match(/(?:for[- ]cause|reason)\s*:\s*([^.!?]+[.!?]?)/i);
+  const reason = reasonMatch?.[1]?.trim();
+
+  const sentences = normalized
+    .replace(/\s*([.!?])\s+/g, "$1|")
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return {
+    headline: sentences[0] || normalized,
+    details: sentences.slice(1),
+    reason,
+  };
+}
+
 function downloadText(filename: string, content: string) {
   const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -331,6 +359,10 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
 
   const [detail, setDetail] = useState<NotifItem | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const parsedDetailMessage = useMemo(
+    () => (detail ? parseNotificationMessage(detail.message) : null),
+    [detail]
+  );
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (t: Omit<Toast, "id">) => {
@@ -810,8 +842,40 @@ export default function NotificationsPage({ onNavigate }: { onNavigate?: Navigat
         {detail ? (
           <div className="space-y-3">
             <div className="rounded-3xl border border-slate-200/70 bg-white dark:bg-slate-900/70 p-4">
-              <div className="text-xs font-extrabold text-slate-600">Message</div>
-              <div className="mt-2 text-sm font-semibold text-slate-800">{detail.message}</div>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Message</div>
+                <div className="text-[11px] font-semibold text-slate-400">{detail.message.trim().length} chars</div>
+              </div>
+              <div className="mt-3 rounded-2xl border border-slate-200/70 bg-slate-50/80 dark:bg-slate-950/70 p-3">
+                <div className="text-[15px] font-semibold leading-6 text-slate-900 dark:text-slate-100 break-words">
+                  {parsedDetailMessage?.headline || detail.message}
+                </div>
+
+                {parsedDetailMessage?.reason ? (
+                  <div className="mt-3 rounded-2xl border border-orange-200/80 bg-orange-50/70 dark:bg-orange-950/30 p-3">
+                    <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-orange-700 dark:text-orange-300">
+                      Reason highlighted
+                    </div>
+                    <div className="mt-1 text-sm font-semibold leading-6 text-slate-800 dark:text-slate-100 break-words">
+                      {parsedDetailMessage.reason}
+                    </div>
+                  </div>
+                ) : null}
+
+                {parsedDetailMessage?.details?.length ? (
+                  <div className="mt-3">
+                    <div className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Details</div>
+                    <div className="mt-2 space-y-2">
+                      {parsedDetailMessage.details.map((line, index) => (
+                        <div key={`${detail.id}-detail-line-${index}`} className="flex items-start gap-2">
+                          <span className="mt-[7px] h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />
+                          <span className="text-sm font-medium leading-6 text-slate-700 dark:text-slate-200 break-words">{line}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Badge tone={categoryTone(detail.category)}>{detail.category}</Badge>
                 <Badge tone={priorityTone(detail.priority)}>{detail.priority}</Badge>

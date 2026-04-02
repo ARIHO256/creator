@@ -25,6 +25,7 @@ type NotificationPriority = "high" | "normal" | "low";
 type Notification = {
   id: string;
   type: Tab;
+  kind: string;
   title: string;
   message: string;
   time: string;
@@ -32,6 +33,7 @@ type Notification = {
   priority: NotificationPriority;
   meta: { seller: string; campaign: string };
   cta: string;
+  targetPath: string;
 };
 
 function notificationTargetPage(type: Tab): PageId {
@@ -49,6 +51,93 @@ function notificationTargetPage(type: Tab): PageId {
 function notificationTargetPath(type: Tab): string {
   const page = notificationTargetPage(type);
   return `/${page}`;
+}
+
+function toMetadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function inferNotificationType(
+  rawType: unknown,
+  kind: string,
+  metadata: Record<string, unknown>
+): Tab {
+  const normalizedType = String(rawType || "").trim().toLowerCase();
+  if (
+    normalizedType === "proposal" ||
+    normalizedType === "invite" ||
+    normalizedType === "live" ||
+    normalizedType === "earnings"
+  ) {
+    return normalizedType as Tab;
+  }
+
+  const lowerKind = kind.toLowerCase();
+  if (lowerKind.includes("invite")) return "invite";
+  if (lowerKind.includes("proposal")) return "proposal";
+  if (lowerKind.includes("contract")) return "proposal";
+  if (lowerKind.includes("live")) return "live";
+  if (lowerKind.includes("earning") || lowerKind.includes("payout") || lowerKind.includes("finance")) {
+    return "earnings";
+  }
+
+  if (readString(metadata.proposalId)) return "proposal";
+  if (readString(metadata.inviteId)) return "invite";
+  if (readString(metadata.contractId)) return "proposal";
+  return "system";
+}
+
+function buildNotificationTargetPath(
+  type: Tab,
+  kind: string,
+  metadata: Record<string, unknown>
+): string {
+  const directPath =
+    readString(metadata.targetPath) ||
+    readString(metadata.path) ||
+    readString(metadata.route) ||
+    readString(metadata.link);
+  if (directPath.startsWith("/")) {
+    return directPath;
+  }
+
+  const proposalId = readString(metadata.proposalId);
+  const inviteId = readString(metadata.inviteId);
+  const contractId = readString(metadata.contractId);
+  const taskId = readString(metadata.taskId);
+  const assetId = readString(metadata.assetId);
+  const campaignId = readString(metadata.campaignId);
+  const lowerKind = kind.toLowerCase();
+
+  if (proposalId) {
+    if (lowerKind.includes("message") || lowerKind.includes("transition")) {
+      return `/proposal-room?proposalId=${encodeURIComponent(proposalId)}&from=notifications`;
+    }
+    return `/proposals?proposalId=${encodeURIComponent(proposalId)}`;
+  }
+  if (inviteId) {
+    return `/invites?inviteId=${encodeURIComponent(inviteId)}`;
+  }
+  if (contractId) {
+    return `/contracts?contractId=${encodeURIComponent(contractId)}`;
+  }
+  if (taskId) {
+    return `/task-board?taskId=${encodeURIComponent(taskId)}`;
+  }
+  if (assetId) {
+    return `/asset-library?assetId=${encodeURIComponent(assetId)}`;
+  }
+  if (campaignId) {
+    return `/creator-campaigns?campaignId=${encodeURIComponent(campaignId)}`;
+  }
+
+  return notificationTargetPath(type);
 }
 
 function normalizePriority(priority: unknown): NotificationPriority {
@@ -71,18 +160,19 @@ function formatRelativeTime(value?: string | null) {
 }
 
 function mapBackendNotification(notification: CreatorNotification): Notification {
-  const metadata = notification.metadata || {};
+  const metadata = toMetadataRecord(notification.metadata);
+  const kind = readString(notification.kind) || "notification";
+  const type = inferNotificationType(notification.type, kind, metadata);
   const priority =
     normalizePriority(
       metadata.priority ||
-      (notification.type === "proposal" || notification.type === "live" ? "high" : "normal")
+      (type === "proposal" || type === "live" ? "high" : "normal")
     );
 
   return {
     id: notification.id,
-    type: (["proposal", "invite", "live", "earnings", "system"].includes(notification.type)
-      ? notification.type
-      : "system") as Tab,
+    type,
+    kind,
     title: notification.title,
     message: notification.message,
     time: formatRelativeTime(notification.createdAt || notification.updatedAt),
@@ -95,15 +185,16 @@ function mapBackendNotification(notification: CreatorNotification): Notification
     cta:
       typeof metadata.cta === "string" && metadata.cta.trim()
         ? metadata.cta
-        : notification.type === "proposal"
+        : type === "proposal"
           ? "Review proposal"
-          : notification.type === "invite"
+          : type === "invite"
             ? "Open invite"
-            : notification.type === "live"
+            : type === "live"
               ? "Open live studio"
-              : notification.type === "earnings"
+              : type === "earnings"
                 ? "View earnings"
-                : "Open settings"
+                : "Open settings",
+    targetPath: buildNotificationTargetPath(type, kind, metadata)
   };
 }
 
@@ -257,7 +348,7 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
     }
 
     onClose();
-    navigate(notificationTargetPath(notification.type));
+    navigate(notification.targetPath || notificationTargetPath(notification.type));
   };
 
   const openSettings = () => {
@@ -554,7 +645,7 @@ function NotificationAccordionRow({
     n.priority === "high"
       ? "ring-[#f77f00]/40 dark:ring-[#f77f00]/60"
       : "ring-slate-200 dark:ring-slate-700";
-  const targetPage = notificationTargetPage(n.type);
+  const targetLabel = n.targetPath || notificationTargetPath(n.type);
 
   return (
     <div
@@ -590,7 +681,7 @@ function NotificationAccordionRow({
           </div>
           <div className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mt-0.5">{n.message}</div>
           <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-            Opens <span className="font-semibold text-slate-700 dark:text-slate-200">{targetPage}</span> · {n.cta}
+            Opens <span className="font-semibold text-slate-700 dark:text-slate-200">{targetLabel}</span> · {n.cta}
           </div>
           <div className="mt-1 flex items-center gap-1 text-tiny">
             <span className="px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
