@@ -371,7 +371,7 @@ export class AnalyticsService {
     const sellerId = seller?.id ?? '';
     const sellerName = seller?.displayName || seller?.name || 'Seller workspace';
 
-    const [events, transactions, campaigns, deliveredOrders] = await Promise.all([
+    const [events, transactions, campaigns, adzCampaigns, deliveredOrders] = await Promise.all([
       this.prisma.analyticsEvent.findMany({
         where: { userId, createdAt: { gte: since } },
         select: { eventType: true, value: true, meta: true, createdAt: true },
@@ -384,7 +384,7 @@ export class AnalyticsService {
           status: { in: [TransactionStatus.PENDING, TransactionStatus.AVAILABLE, TransactionStatus.PAID] },
           createdAt: { gte: since }
         },
-        select: { amount: true, createdAt: true }
+        select: { amount: true, metadata: true, createdAt: true }
       }),
       sellerId
         ? this.prisma.campaign.findMany({
@@ -402,6 +402,15 @@ export class AnalyticsService {
             }
           })
         : Promise.resolve([]),
+      this.prisma.adzCampaign.findMany({
+        where: {
+          userId,
+          OR: [{ updatedAt: { gte: since } }, { createdAt: { gte: since } }]
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 24,
+        include: { performance: true }
+      }),
       sellerId
         ? this.prisma.order.count({
             where: {
@@ -417,53 +426,155 @@ export class AnalyticsService {
       const meta = this.parseEventMeta(event.meta);
       return String(meta.workspaceRole || 'SELLER').toUpperCase() === 'SELLER';
     });
+    const sellerCategories = this.readStringList(seller?.categories).map((entry) => entry.toLowerCase());
+    const primarySellerCategory = this.readString(seller?.category) || sellerCategories[0] || 'Beauty';
     const filteredCampaigns = campaigns.filter((campaign) => {
-      if (category === 'All') return true;
-      const metadata = campaign.metadata && typeof campaign.metadata === 'object' && !Array.isArray(campaign.metadata)
-        ? (campaign.metadata as Record<string, unknown>)
-        : {};
+      const metadata = this.parseJsonObject(campaign.metadata);
       const tags = this.readStringList(metadata, 'categories');
-      const primary = this.readString(metadata, 'category');
-      return [primary, ...tags].some((entry) => entry.toLowerCase() === category.toLowerCase());
+      const primary = this.readString(metadata, 'category') || primarySellerCategory;
+      return this.matchesRankCategoryFilter(category, primary, tags);
+    });
+    const filteredAdzCampaigns = adzCampaigns.filter((campaign) => {
+      const data = this.parseJsonObject(campaign.data);
+      const tags = this.readStringList(data, 'categories');
+      const primary = this.readString(data, 'category') || primarySellerCategory;
+      return this.matchesRankCategoryFilter(category, primary, tags);
     });
 
-    const views = this.sumEventValues(filteredEvents, 'VIEW', 'SELLER');
-    const clicks = this.sumEventValues(filteredEvents, 'CLICK', 'SELLER');
-    const purchases = this.sumEventValues(filteredEvents, 'PURCHASE', 'SELLER');
-    const salesDriven = transactions.reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
+    const eventAttributionByCampaign = new Map<string, { views: number; clicks: number; purchases: number }>();
+    for (const event of filteredEvents) {
+      const meta = this.parseEventMeta(event.meta);
+      const campaignKey = this.readStringFromKeys(meta, ['campaignId', 'campaign_id', 'sourceCampaignId', 'adzCampaignId', 'adId']);
+      if (!campaignKey) continue;
+      const current = eventAttributionByCampaign.get(campaignKey) ?? { views: 0, clicks: 0, purchases: 0 };
+      if (event.eventType === 'VIEW') current.views += Number(event.value ?? 0);
+      if (event.eventType === 'CLICK') current.clicks += Number(event.value ?? 0);
+      if (event.eventType === 'PURCHASE') current.purchases += Number(event.value ?? 0);
+      eventAttributionByCampaign.set(campaignKey, current);
+    }
+
+    const salesByCampaign = new Map<string, number>();
+    for (const entry of transactions) {
+      const meta = this.parseJsonObject(entry.metadata);
+      const campaignKey = this.readStringFromKeys(meta, ['campaignId', 'campaign_id', 'sourceCampaignId', 'adzCampaignId', 'adId']);
+      if (!campaignKey) continue;
+      const current = salesByCampaign.get(campaignKey) ?? 0;
+      salesByCampaign.set(campaignKey, current + Number(entry.amount ?? 0));
+    }
+
+    const adzTotals = filteredAdzCampaigns.reduce(
+      (sum, campaign) => {
+        const performanceData = this.parseJsonObject(campaign.performance?.data);
+        const adzViews = this.readNumber(performanceData, 'impressions')
+          || this.readNumber(performanceData, 'views')
+          || this.readNumber(performanceData, 'viewCount');
+        sum.views += Math.round(adzViews);
+        sum.clicks += Math.round(campaign.performance?.clicks ?? this.readNumber(performanceData, 'clicks'));
+        sum.purchases += Math.round(campaign.performance?.purchases ?? this.readNumber(performanceData, 'purchases'));
+        sum.sales += Number((campaign.performance?.earnings ?? this.readNumber(performanceData, 'earnings')).toFixed(2));
+        return sum;
+      },
+      { views: 0, clicks: 0, purchases: 0, sales: 0 }
+    );
+
+    const views = this.sumEventValues(filteredEvents, 'VIEW', 'SELLER') + adzTotals.views;
+    const clicks = this.sumEventValues(filteredEvents, 'CLICK', 'SELLER') + adzTotals.clicks;
+    const purchases = this.sumEventValues(filteredEvents, 'PURCHASE', 'SELLER') + adzTotals.purchases;
+    const salesDriven = transactions.reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0) + adzTotals.sales;
     const avgViewers = Math.round(views / Math.max(1, range === '7' ? 7 : range === '90' ? 90 : 30));
     const ctr = clicks > 0 || views > 0 ? Number(((clicks / Math.max(1, views)) * 100).toFixed(2)) : 0;
     const conversion = purchases > 0 || clicks > 0 ? Number(((purchases / Math.max(1, clicks)) * 100).toFixed(2)) : 0;
 
-    const xp = campaigns.length * 50 + deliveredOrders * 40 + Math.round(purchases * 6) + Math.round(clicks * 0.08);
+    const xp =
+      (campaigns.length + filteredAdzCampaigns.length) * 50 +
+      deliveredOrders * 40 +
+      Math.round(purchases * 6) +
+      Math.round(clicks * 0.08);
     const rank = this.buildRank(xp);
     const trend = this.buildRankTrend(filteredEvents, transactions, since, Number(range));
-    const campaignRows = filteredCampaigns.slice(0, 6).map((campaign, index) => {
-      const metadata = campaign.metadata && typeof campaign.metadata === 'object' && !Array.isArray(campaign.metadata)
-        ? (campaign.metadata as Record<string, unknown>)
-        : {};
-      const sales = this.readNumber(metadata, 'salesDriven') || this.readNumber(metadata, 'revenue') || Number(campaign.budget ?? 0);
-      const engagements = this.readNumber(metadata, 'engagements')
-        || this.readNumber(metadata, 'views')
-        || this.readNumber(metadata, 'clicks')
-        || 0;
-      const convRate = this.readNumber(metadata, 'conversionRate') || conversion;
-      const conversions = this.readNumber(metadata, 'conversions')
-        || this.readNumber(metadata, 'purchases')
-        || Math.round((Math.max(engagements, 0) * Math.max(convRate, 0)) / 100);
-      const categoryLabel = this.readString(metadata, 'category') || this.readStringList(metadata, 'categories')[0] || seller?.category || 'Beauty';
+    const regularCampaignRows = filteredCampaigns.map((campaign, index) => {
+      const metadata = this.parseJsonObject(campaign.metadata);
+      const attributed = eventAttributionByCampaign.get(campaign.id) ?? { views: 0, clicks: 0, purchases: 0 };
+      const fallbackClicks = this.readNumber(metadata, 'clicks');
+      const fallbackViews = this.readNumber(metadata, 'views');
+      const fallbackEngagements = this.readNumber(metadata, 'engagements');
+      const clicksTotal = Math.round(attributed.clicks || fallbackClicks);
+      const viewsTotal = Math.round(attributed.views || fallbackViews);
+      const engagements = Math.round(fallbackEngagements || viewsTotal || clicksTotal);
+      const conversions = Math.round(
+        attributed.purchases || this.readNumber(metadata, 'conversions') || this.readNumber(metadata, 'purchases')
+      );
+      const campaignSales = salesByCampaign.get(campaign.id) ?? 0;
+      const fallbackSales = this.readNumber(metadata, 'salesDriven') || this.readNumber(metadata, 'revenue');
+      const sales = Number((campaignSales || fallbackSales || Number(campaign.budget ?? 0)).toFixed(2));
+      const fallbackConvRate = this.readNumber(metadata, 'conversionRate');
+      const convRate = clicksTotal > 0
+        ? Number(((conversions / clicksTotal) * 100).toFixed(2))
+        : Number((fallbackConvRate || conversion).toFixed(2));
+      const categoryLabel = this.readString(metadata, 'category') || this.readStringList(metadata, 'categories')[0] || primarySellerCategory;
       return {
         id: index + 1,
         campaignId: campaign.id,
         name: campaign.title || `Campaign ${index + 1}`,
         seller: sellerName,
         category: this.normalizeRankCategory(categoryLabel),
-        sales: Number(sales.toFixed(2)),
-        engagements: Math.round(engagements),
-        conversions: Math.round(conversions),
-        convRate: Number(convRate.toFixed(2))
+        sales,
+        engagements,
+        conversions,
+        convRate
       };
     });
+    const adzCampaignRows = filteredAdzCampaigns.map((campaign, index) => {
+      const data = this.parseJsonObject(campaign.data);
+      const performanceData = this.parseJsonObject(campaign.performance?.data);
+      const attributed = eventAttributionByCampaign.get(campaign.id) ?? { views: 0, clicks: 0, purchases: 0 };
+      const impressions = Math.round(
+        this.readNumber(performanceData, 'impressions')
+          || this.readNumber(performanceData, 'views')
+          || this.readNumber(data, 'impressions')
+          || attributed.views
+      );
+      const clicksTotal = Math.round(campaign.performance?.clicks ?? this.readNumber(performanceData, 'clicks') || attributed.clicks);
+      const purchasesTotal = Math.round(
+        campaign.performance?.purchases ?? this.readNumber(performanceData, 'purchases') || attributed.purchases
+      );
+      const fallbackSales = this.readNumber(performanceData, 'earnings') || this.readNumber(data, 'revenue');
+      const campaignSales = salesByCampaign.get(campaign.id) ?? 0;
+      const sales = Number((campaignSales || campaign.performance?.earnings || fallbackSales || Number(campaign.budget ?? 0)).toFixed(2));
+      const fallbackConvRate = this.readNumber(performanceData, 'conversionRate') || this.readNumber(data, 'conversionRate');
+      const convRate = clicksTotal > 0
+        ? Number(((purchasesTotal / clicksTotal) * 100).toFixed(2))
+        : Number((fallbackConvRate || conversion).toFixed(2));
+      const categoryLabel = this.readString(data, 'category') || this.readStringList(data, 'categories')[0] || primarySellerCategory;
+      return {
+        id: regularCampaignRows.length + index + 1,
+        campaignId: campaign.id,
+        name: campaign.title || `Ad Campaign ${index + 1}`,
+        seller: sellerName,
+        category: this.normalizeRankCategory(categoryLabel),
+        sales,
+        engagements: Math.max(impressions, clicksTotal),
+        conversions: purchasesTotal,
+        convRate
+      };
+    });
+    const campaignRows = [...regularCampaignRows, ...adzCampaignRows]
+      .sort((a, b) => b.sales - a.sales || b.engagements - a.engagements)
+      .slice(0, 6)
+      .map((row, index) => ({ ...row, id: index + 1 }));
+    if (!campaignRows.length && (salesDriven > 0 || clicks > 0 || views > 0 || purchases > 0)) {
+      campaignRows.push({
+        id: 1,
+        campaignId: 'summary',
+        name: 'Account performance',
+        seller: sellerName,
+        category: this.normalizeRankCategory(category === 'All' ? primarySellerCategory : category),
+        sales: Number(salesDriven.toFixed(2)),
+        engagements: Math.round(Math.max(views, clicks)),
+        conversions: Math.round(purchases),
+        convRate: Number(conversion.toFixed(2))
+      });
+    }
 
     const benchmarks = {
       viewersPercentile: this.percentile(avgViewers, 250, 1400),
@@ -867,6 +978,28 @@ export class AnalyticsService {
     if (normalized.includes('faith') || normalized.includes('worship')) return 'Faith';
     if (normalized.includes('tech') || normalized.includes('elect') || normalized.includes('gadget')) return 'Tech';
     return 'Beauty';
+  }
+
+  private matchesRankCategoryFilter(category: string, primary: string, categories: string[]) {
+    if (category === 'All') return true;
+    const target = category.toLowerCase();
+    return [primary, ...categories].some((entry) => entry.toLowerCase() === target);
+  }
+
+  private parseJsonObject(value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return {} as Record<string, unknown>;
+    }
+    return value as Record<string, unknown>;
+  }
+
+  private readStringFromKeys(value: unknown, keys: string[]) {
+    const source = this.parseJsonObject(value);
+    for (const key of keys) {
+      const candidate = this.readString(source, key);
+      if (candidate) return candidate;
+    }
+    return '';
   }
 
   private readStringList(value: unknown, key?: string) {
