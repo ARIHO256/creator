@@ -223,6 +223,9 @@ async function switchWorkspaceRole(targetRole: UserRole): Promise<string | null>
       const refreshedToken = await refreshAccessToken();
       if (refreshedToken) {
         token = refreshedToken;
+      } else {
+        handleUnauthorizedResponse();
+        return null;
       }
     }
 
@@ -232,7 +235,16 @@ async function switchWorkspaceRole(targetRole: UserRole): Promise<string | null>
       if (refreshedToken) {
         token = refreshedToken;
         authMeResponse = await fetchAuthMe(token);
+      } else {
+        handleUnauthorizedResponse();
+        return null;
       }
+    }
+    if (!authMeResponse.ok) {
+      if (authMeResponse.status === 401) {
+        handleUnauthorizedResponse();
+      }
+      return null;
     }
 
     const authMe = authMeResponse.data;
@@ -271,9 +283,15 @@ async function switchWorkspaceRole(targetRole: UserRole): Promise<string | null>
       if (refreshedToken) {
         token = refreshedToken;
         ({ response, payload } = await makeSwitchRequest(token));
+      } else {
+        handleUnauthorizedResponse();
+        return null;
       }
     }
     if (!response.ok) {
+      if (response.status === 401) {
+        handleUnauthorizedResponse();
+      }
       return null;
     }
 

@@ -473,12 +473,22 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns, on
     setCommission((prev) => (prev ? prev : campaign.suggestedCommission ? String(campaign.suggestedCommission) : ""));
   }, [campaign]);
 
-  const canSend =
-    !!creator &&
-    !!campaign &&
-    proposalTitle.trim().length > 0 &&
-    deliverables.some((item) => item.trim().length > 0) &&
-    (proposedFee.trim().length > 0 || commission.trim().length > 0);
+  const hasCreator = !!creator;
+  const hasCampaign = !!campaign;
+  const hasTitle = proposalTitle.trim().length > 0;
+  const hasDeliverables = deliverables.some((item) => item.trim().length > 0);
+  const hasCommercialTerms = proposedFee.trim().length > 0 || commission.trim().length > 0;
+
+  const canSend = hasCreator && hasCampaign && hasTitle && hasDeliverables && hasCommercialTerms;
+
+  const sendReadinessItems = [
+    { id: "creator", label: "Creator selected", ok: hasCreator },
+    { id: "campaign", label: "Campaign linked", ok: hasCampaign },
+    { id: "title", label: "Proposal title added", ok: hasTitle },
+    { id: "deliverables", label: "At least one deliverable", ok: hasDeliverables },
+    { id: "commercial", label: "Fee or commission entered", ok: hasCommercialTerms },
+  ];
+  const sendBlockingReasons = sendReadinessItems.filter((item) => !item.ok).map((item) => item.label);
 
   function updateDeliverable(index, value) {
     setDeliverables((prev) => prev.map((item, itemIndex) => (itemIndex === index ? value : item)));
@@ -730,6 +740,15 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns, on
                 <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">Choose the supplier campaign this proposal should anchor to.</div>
 
                 <div className="mt-4 space-y-3">
+                  {campaigns.length === 0 ? (
+                    <div className="rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10 p-4">
+                      <div className="text-sm font-black text-amber-900 dark:text-amber-300">No linked campaign available</div>
+                      <div className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                        Send proposal stays inactive until at least one supplier campaign is returned from backend.
+                      </div>
+                    </div>
+                  ) : null}
+
                   {campaigns.map((item) => {
                     const selected = item.id === selectedCampaignId;
                     return (
@@ -937,12 +956,37 @@ function ProposalDrawer({ open, onClose, creators, initialCreator, campaigns, on
 
         <div className="border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-950/95 backdrop-blur px-4 sm:px-5 py-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="text-xs text-slate-500 dark:text-slate-400">Save draft to continue later, or send when title, deliverables, commercial terms and timeline are complete.</div>
+            <div className="min-w-0">
+              <div className="text-xs text-slate-500 dark:text-slate-400">Save draft to continue later, or send when title, deliverables, commercial terms and timeline are complete.</div>
+              {!canSend ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {sendReadinessItems.map((item) => (
+                    <span
+                      key={item.id}
+                      className={cx(
+                        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                        item.ok
+                          ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300"
+                          : "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300"
+                      )}
+                    >
+                      {item.ok ? "Done:" : "Missing:"} {item.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <button className="px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 text-sm font-black text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60" onClick={saveDraft} disabled={savingDraft || sendingProposal} type="button">
                 {savingDraft ? "Saving draft..." : "Save draft"}
               </button>
-              <button className="px-4 py-3 rounded-2xl bg-[#f77f00] text-white text-sm font-black hover:bg-[#e26f00] shadow-lg shadow-orange-100 dark:shadow-none disabled:opacity-60" onClick={sendProposal} disabled={!canSend || sendingProposal || savingDraft} type="button">
+              <button
+                className="px-4 py-3 rounded-2xl bg-[#f77f00] text-white text-sm font-black hover:bg-[#e26f00] shadow-lg shadow-orange-100 dark:shadow-none disabled:opacity-60"
+                onClick={sendProposal}
+                disabled={!canSend || sendingProposal || savingDraft}
+                title={!canSend ? `Missing: ${sendBlockingReasons.join(", ")}` : ""}
+                type="button"
+              >
                 {sendingProposal ? "Sending proposal..." : "Send proposal"}
               </button>
             </div>

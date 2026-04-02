@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { useScrollLock } from "../hooks/useScrollLock";
 import type { PageId } from "../layouts/CreatorShellLayout";
-import { getNavBadge } from "./navigationBadges";
+import { getNavBadge, refreshNavigationBadges, useNavigationBadges } from "./navigationBadges";
 
 type MobileMenuProps = {
   isOpen: boolean;
@@ -29,6 +29,12 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
   onChangePage
 }) => {
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
+  useNavigationBadges();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void refreshNavigationBadges();
+  }, [isOpen, activePage]);
 
   // Lock background scroll when open
   useScrollLock(isOpen);

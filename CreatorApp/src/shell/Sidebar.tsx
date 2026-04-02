@@ -1,7 +1,7 @@
 
 import React from "react";
 import type { PageId } from "../layouts/CreatorShellLayout";
-import { getNavBadge } from "./navigationBadges";
+import { getNavBadge, refreshNavigationBadges, useNavigationBadges } from "./navigationBadges";
 
 type SidebarProps = {
   activePage: PageId;
@@ -100,6 +100,11 @@ const navSections: NavSection[] = [
 
 export const Sidebar: React.FC<SidebarProps> = ({ activePage, onChangePage, onLogout: _onLogout }) => {
   const sidebarRef = React.useRef<HTMLDivElement>(null);
+  useNavigationBadges();
+
+  React.useEffect(() => {
+    void refreshNavigationBadges();
+  }, [activePage]);
 
   React.useEffect(() => {
     // With remounting fixed in App.tsx, the sidebar naturally preserves scroll.

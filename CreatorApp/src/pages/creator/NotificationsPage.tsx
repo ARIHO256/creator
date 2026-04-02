@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import { useNotification } from "../../contexts/NotificationContext";
 import { creatorApi, type CreatorNotification } from "../../lib/creatorApi";
@@ -32,6 +33,23 @@ type Notification = {
   meta: { seller: string; campaign: string };
   cta: string;
 };
+
+function notificationTargetPage(type: Tab): PageId {
+  const pageMap: Record<Tab, PageId> = {
+    all: "settings",
+    proposal: "proposals",
+    invite: "invites",
+    live: "live-studio",
+    earnings: "earnings",
+    system: "settings"
+  };
+  return pageMap[type] || "settings";
+}
+
+function notificationTargetPath(type: Tab): string {
+  const page = notificationTargetPage(type);
+  return `/${page}`;
+}
 
 function normalizePriority(priority: unknown): NotificationPriority {
   const normalized = String(priority || "").trim().toLowerCase();
@@ -90,12 +108,12 @@ function mapBackendNotification(notification: CreatorNotification): Notification
 }
 
 export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: externalUnreadCount, onChangePage }: NotificationsPanelProps) {
+  const navigate = useNavigate();
   const { showSuccess, showNotification } = useNotification();
   // const [selectedId, setSelectedId] = useState<number | null>(null);
   const [unreadOnly, setUnreadOnly] = useState(false);
   // const [dnd, setDnd] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [visibleCount, setVisibleCount] = useState(5);
   const [allNotifs, setAllNotifs] = useState<Notification[]>([]);
@@ -200,47 +218,51 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
     };
   }, [open, onClose, buttonRef]);
 
-  useEffect(() => {
-    // Reset expanded if current expanded notification is filtered out
-    if (expandedId && !notifications.some((n) => n.id === expandedId)) {
-      setExpandedId(null);
-    }
-  }, [notifications, expandedId]);
-
   const markAllRead = () => {
     setAllNotifs((current) => current.map((notification) => ({ ...notification, unread: false })));
     void creatorApi.markAllNotificationsRead().catch(() => {
       setSyncError("Failed to sync the read-all action.");
     });
     showSuccess("All notifications marked as read");
-    setExpandedId(null);
     setUnreadOnly(false);
     setActiveTab("all");
   };
 
-  const handleToggleExpand = (id: string) => {
-    if (expandedId === id) {
-      setExpandedId(null);
-    } else {
-      setExpandedId(id);
-      const notif = allNotifs.find(n => n.id === id);
-      if (notif && notif.unread) {
-        setAllNotifs((current) =>
-          current.map((notification) =>
-            notification.id === id ? { ...notification, unread: false } : notification
-          )
-        );
-        void creatorApi.markNotificationRead(id).catch(() => {
-          setSyncError("Failed to sync notification state.");
-        });
-        showNotification(`Marked “${notif.title}” as read`);
-      }
+  const openNotification = (notification: Notification) => {
+    if (notification.unread) {
+      setAllNotifs((current) =>
+        current.map((item) =>
+          item.id === notification.id ? { ...item, unread: false } : item
+        )
+      );
+      void creatorApi.markNotificationRead(notification.id).catch(() => {
+        setSyncError("Failed to sync notification state.");
+      });
+      showNotification(`Marked “${notification.title}” as read`);
     }
+
+    try {
+      window.localStorage.setItem(
+        "mldz:last-notification",
+        JSON.stringify({
+          id: notification.id,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          time: Date.now()
+        })
+      );
+    } catch {
+      // Best effort only.
+    }
+
+    onClose();
+    navigate(notificationTargetPath(notification.type));
   };
 
   const openSettings = () => {
     onClose();
-    onChangePage?.("settings");
+    navigate("/settings");
   };
 
   return (
@@ -394,9 +416,7 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
                     <NotificationAccordionRow
                       key={n.id}
                       n={n}
-                      expanded={expandedId === n.id}
-                      onToggle={() => handleToggleExpand(n.id)}
-                      onClose={onClose}
+                      onOpen={() => openNotification(n)}
                       onToggleRead={(id) => {
                         const notif = allNotifs.find((notification) => notification.id === id);
                         if (!notif) return;
@@ -417,7 +437,6 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
                           setSyncError("Failed to sync notification state.");
                         });
                       }}
-                      onChangePage={onChangePage}
                     />
                   ))}
                   {notifications.length > visibleCount && (
@@ -438,7 +457,7 @@ export function NotificationsPanel({ open, onClose, buttonRef, unreadCount: exte
                 className="px-4 py-2 rounded-full bg-[#f77f00] text-white hover:bg-[#e26f00] transition-colors whitespace-nowrap font-medium"
                 onClick={() => {
                   onClose();
-                  onChangePage?.("settings");
+                  navigate("/settings");
                   // Auto-scroll to notification preferences section
                   setTimeout(() => {
                     window.location.hash = 'notifications';
@@ -512,107 +531,97 @@ export default function CreatorNotificationsPanelDemo() {
   );
 }
 
-function NotificationAccordionRow({ n, expanded, onToggle, onToggleRead, onClose, onChangePage }: {
+function NotificationAccordionRow({
+  n,
+  onOpen,
+  onToggleRead
+}: {
   n: Notification;
-  expanded: boolean;
-  onToggle: () => void;
+  onOpen: () => void;
   onToggleRead: (id: string) => void;
-  onClose: () => void;
-  onChangePage?: (page: PageId) => void;
 }) {
-  const icon = n.type === "proposal" ? "📄" : n.type === "live" ? "🎥" : n.type === "earnings" ? "💰" : n.type === "invite" ? "🤝" : "🛡️";
-  const ring = n.priority === "high" ? "ring-[#f77f00]/40 dark:ring-[#f77f00]/60" : "ring-slate-200 dark:ring-slate-700";
+  const icon =
+    n.type === "proposal"
+      ? "📄"
+      : n.type === "live"
+        ? "🎥"
+        : n.type === "earnings"
+          ? "💰"
+          : n.type === "invite"
+            ? "🤝"
+            : "🛡️";
+  const ring =
+    n.priority === "high"
+      ? "ring-[#f77f00]/40 dark:ring-[#f77f00]/60"
+      : "ring-slate-200 dark:ring-slate-700";
+  const targetPage = notificationTargetPage(n.type);
 
   return (
-    <div className="bg-white dark:bg-slate-900 transition-colors">
-      {/* Notification header - clickable */}
-      <button
-        className={`w-full text-left p-3 flex items-start gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${expanded ? "bg-slate-50 dark:bg-slate-800" : ""
-          }`}
-        onClick={onToggle}
-        type="button"
-      >
-        <div className={`h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center ring-1 ${ring} transition-colors flex-shrink-0`}>
+    <div
+      className="bg-white dark:bg-slate-900 transition-colors p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      aria-label={`Open notification: ${n.title}`}
+    >
+      <div className="flex items-start gap-2">
+        <div
+          className={`h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center ring-1 ${ring} transition-colors flex-shrink-0`}
+        >
           <span aria-hidden>{icon}</span>
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50 line-clamp-1">{n.title}</div>
+            <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50 line-clamp-1">
+              {n.title}
+            </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               {n.unread ? <span className="h-2 w-2 rounded-full bg-[#f77f00]" title="Unread" /> : null}
               <span className="text-xs text-slate-400 dark:text-slate-500">{n.time}</span>
-              <span className="text-slate-400 dark:text-slate-500">{expanded ? "▲" : "▼"}</span>
+              <span className="text-xs font-bold text-[#f77f00]">Open</span>
             </div>
           </div>
           <div className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mt-0.5">{n.message}</div>
+          <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            Opens <span className="font-semibold text-slate-700 dark:text-slate-200">{targetPage}</span> · {n.cta}
+          </div>
           <div className="mt-1 flex items-center gap-1 text-tiny">
-            <span className="px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">{n.meta.seller}</span>
-            <span className="px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">{n.type}</span>
+            <span className="px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+              {n.meta.seller}
+            </span>
+            <span className="px-2 py-0.5 rounded-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+              {n.type}
+            </span>
             {n.priority === "high" ? (
-              <span className="px-2 py-0.5 rounded-full bg-[#fff4e5] dark:bg-[#8a4b00]/20 border border-[#ffd19a] dark:border-[#8a4b00] text-[#8a4b00] dark:text-[#ffd19a]">Urgent</span>
+              <span className="px-2 py-0.5 rounded-full bg-[#fff4e5] dark:bg-[#8a4b00]/20 border border-[#ffd19a] dark:border-[#8a4b00] text-[#8a4b00] dark:text-[#ffd19a]">
+                Urgent
+              </span>
             ) : null}
           </div>
         </div>
-      </button>
-
-      {/* Expandable details */}
-      <div
-        className={`overflow-hidden transition-all duration-300 ${expanded ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
-          }`}
-      >
-        <div className="px-3 pb-3 pt-1 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-700">
-          <div className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed break-words whitespace-pre-wrap mb-3">
-            {n.message}
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 transition-colors">
-            <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Recommended action</div>
-            <div className="text-sm font-semibold dark:font-bold text-slate-900 dark:text-slate-50 mb-3">{n.cta}</div>
-            <div className="flex flex-col sm:flex-row flex-wrap gap-2">
-              <button
-                className="px-4 py-2 rounded-full bg-[#f77f00] text-white hover:bg-[#e26f00] text-sm font-medium transition-colors flex-shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose(); // Close panel before navigating
-                  // Navigate based on notification type
-                  const pageMap: Record<string, PageId> = {
-                    proposal: "proposals",
-                    invite: "invites",
-                    live: "live-studio",
-                    earnings: "earnings",
-                    system: "settings"
-                  };
-                  const targetPage = pageMap[n.type];
-
-                  if (targetPage) {
-                    onChangePage?.(targetPage);
-                    console.log(`Open ${n.type} -> ${targetPage}`);
-                  } else {
-                    // Fallback or do nothing if page doesn't exist
-                    console.log("No specific page for this notification type");
-                  }
-                }}
-              >
-                Open
-              </button>
-              <button
-                className="px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 transition-colors flex-shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleRead(n.id);
-                }}
-              >
-                {n.unread ? "Mark read" : "Mark unread"}
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Tip: High-value items (proposals, payout events, live countdowns) should be prioritised.
-          </div>
-        </div>
       </div>
-    </div >
+
+      <div className="mt-2 ml-10 flex flex-wrap gap-2" onClick={(event) => event.stopPropagation()}>
+        <button
+          className="px-3 py-1.5 rounded-full bg-[#f77f00] text-white hover:bg-[#e26f00] text-xs font-medium transition-colors"
+          onClick={onOpen}
+        >
+          Open now
+        </button>
+        <button
+          className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 transition-colors"
+          onClick={() => onToggleRead(n.id)}
+        >
+          {n.unread ? "Mark read" : "Mark unread"}
+        </button>
+      </div>
+    </div>
   );
 }
