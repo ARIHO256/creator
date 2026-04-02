@@ -372,18 +372,49 @@ function lookupLabels(value: unknown): string[] {
 function lookupPayoutMethodCards(
   value: unknown
 ): Array<{ key: string; title: string; desc: string }> {
-  if (!Array.isArray(value)) return [];
-  return value
+  const fallback: Array<{ key: string; title: string; desc: string }> = [
+    { key: "Bank", title: "Bank", desc: "Direct bank transfer to your account." },
+    { key: "Mobile Money", title: "Mobile Money", desc: "Receive payouts to your mobile wallet." },
+    { key: "PayPal / Wallet", title: "PayPal / Wallet", desc: "Use a wallet provider for cross-border payouts." },
+    { key: "AliPay", title: "AliPay", desc: "Payouts to AliPay accounts." },
+    { key: "WeChat Pay", title: "WeChat Pay", desc: "Payouts to WeChat Pay wallets." }
+  ];
+
+  const toUiMethodLabel = (rawValue: string): string => {
+    const normalized = rawValue.trim().toLowerCase().replace(/[\s/-]+/g, "_");
+    if (!normalized) return "";
+    if (normalized === "bank" || normalized === "bank_account") return "Bank";
+    if (normalized === "mobile_money" || normalized === "mobilemoney") return "Mobile Money";
+    if (normalized === "alipay" || normalized === "ali_pay") return "AliPay";
+    if (normalized === "wechat_pay" || normalized === "wechatpay" || normalized === "wechat") return "WeChat Pay";
+    if (
+      normalized === "paypal" ||
+      normalized === "wallet" ||
+      normalized === "paypal_wallet" ||
+      normalized === "other_local"
+    ) {
+      return "PayPal / Wallet";
+    }
+    return rawValue.trim();
+  };
+
+  if (!Array.isArray(value)) return fallback;
+  const parsed = value
     .map((entry) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
       const record = entry as Record<string, unknown>;
-      const key = String(record.key || record.value || "").trim();
-      const title = String(record.title || record.label || key).trim();
+      const rawKey = String(record.key || record.value || "").trim();
+      const rawTitle = String(record.title || record.label || rawKey).trim();
+      const canonical = toUiMethodLabel(rawKey || rawTitle);
+      const key = canonical || rawKey || rawTitle;
+      const title = canonical || rawTitle || rawKey;
       const desc = String(record.desc || record.helper || "").trim();
       if (!key || !title) return null;
       return { key, title, desc };
-    })
-    .filter((entry): entry is { key: string; title: string; desc: string } => Boolean(entry));
+    });
+
+  const methods = parsed.filter((entry): entry is { key: string; title: string; desc: string } => Boolean(entry));
+  return methods.length > 0 ? methods : fallback;
 }
 
 const STEPS = [
@@ -408,6 +439,8 @@ const SOCIAL_PRIMARY = [
 const OTHER_SOCIAL_OPTIONS = ["Facebook", "X (Twitter)", "Snapchat", "Kwai", "LinkedIn", "Twitch", "Pinterest", "Other"];
 
 const COLLAB_MODELS = ["Flat fee", "Commission", "Hybrid"];
+const DEFAULT_PRODUCT_SERVICE_LINES = ["Service", "Product", "Digital product", "Consulting", "Training"];
+const DEFAULT_CONTENT_FORMATS = ["Live Sessionz", "Short video", "Long-form video", "Image post", "Story"];
 
 // Policies (summaries must be visible on-page; full text shown in a modal)
 const POLICY_LIBRARY = {
@@ -1524,9 +1557,13 @@ export default function CreatorOnboardingWorldClassV25() {
   const productServiceLines = useMemo(() => {
     const serviceCategories = lookupLabels(lookups.serviceCategories);
     const productCategories = lookupLabels(lookups.productCategories);
-    return Array.from(new Set([...serviceCategories, ...productCategories]));
+    const merged = Array.from(new Set([...serviceCategories, ...productCategories].filter(Boolean)));
+    return merged.length > 0 ? merged : DEFAULT_PRODUCT_SERVICE_LINES;
   }, [lookups.productCategories, lookups.serviceCategories]);
-  const contentFormats = useMemo(() => lookupLabels(lookups.contentFormats), [lookups.contentFormats]);
+  const contentFormats = useMemo(() => {
+    const formats = lookupLabels(lookups.contentFormats);
+    return formats.length > 0 ? formats : DEFAULT_CONTENT_FORMATS;
+  }, [lookups.contentFormats]);
   const payoutMethods = useMemo(
     () => lookupPayoutMethodCards(lookups.payoutMethodCards),
     [lookups.payoutMethodCards]
@@ -2950,6 +2987,9 @@ export default function CreatorOnboardingWorldClassV25() {
                     <Chip key={c} label={c} selected={(form.preferences.lines || []).includes(c)} onClick={() => toggleInArray("preferences.lines", c)} />
                   ))}
                 </div>
+                {(form.preferences.lines || []).length === 0 ? (
+                  <p className="text-[10px] text-red-500">Select at least one product/service line.</p>
+                ) : null}
                 <div className="mt-2">
                   <input
                     className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-[11px] bg-slate-50 dark:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 focus:border-slate-400 dark:focus:border-slate-500 outline-none text-slate-900 dark:text-white"
@@ -2989,6 +3029,9 @@ export default function CreatorOnboardingWorldClassV25() {
                       <Chip key={f} label={f} selected={(form.preferences.formats || []).includes(f)} onClick={() => toggleInArray("preferences.formats", f)} />
                     ))}
                   </div>
+                  {(form.preferences.formats || []).length === 0 ? (
+                    <p className="text-[10px] text-red-500">Select at least one content format.</p>
+                  ) : null}
                 </div>
               </div>
 

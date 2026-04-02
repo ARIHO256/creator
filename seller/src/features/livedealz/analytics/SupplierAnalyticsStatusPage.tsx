@@ -285,22 +285,10 @@ function parseGoals(value: unknown): GoalRow[] {
     .filter((row) => Boolean(row.id) && Boolean(row.label));
 }
 
-function createEmptyTrend(range: Range): TrendPoint[] {
-  const days = range === "7" ? 7 : range === "90" ? 90 : 30;
-  const now = new Date();
-  const rows: TrendPoint[] = [];
-  for (let i = days - 1; i >= 0; i--) {
-    const day = new Date(now);
-    day.setDate(now.getDate() - i);
-    rows.push({
-      label: day.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-      views: 0,
-      clicks: 0,
-      conversions: 0,
-      sales: 0,
-    });
-  }
-  return rows;
+function parseNumberSeries(value: unknown): number[] {
+  return asArray(value)
+    .map((entry) => toNumber(entry, Number.NaN))
+    .filter((entry) => Number.isFinite(entry));
 }
 
 export default function AnalyticsRankDetailPage() {
@@ -343,46 +331,19 @@ export default function AnalyticsRankDetailPage() {
     });
     return scoped.slice(0, 6);
   }, [campaigns, category, leaderboardMode]);
-  const trend = useMemo<TrendPoint[]>(() => {
-    const points = parseTrend(rankPayload.trend);
-    return points.length ? points : createEmptyTrend(timeRange);
-  }, [rankPayload, timeRange]);
+  const trend = useMemo<TrendPoint[]>(() => parseTrend(rankPayload.trend), [rankPayload]);
 
   const rankMomentum = useMemo(() => {
-    if (!trend.length) return [rank.pointsCurrent];
-    let running = Math.max(0, rank.pointsCurrent - trend.length * 8);
+    const apiSeries = parseNumberSeries(rankPayload.rankMomentum);
+    if (apiSeries.length) return apiSeries;
+    if (!trend.length) return [];
+    let running = 0;
     return trend.map((entry) => {
-      running += Math.round(entry.conversions * 6 + entry.clicks * 0.08);
+      running += Math.max(0, Math.round(entry.conversions));
       return running;
     });
-  }, [rank.pointsCurrent, trend]);
-  const goals = useMemo(() => {
-    const apiGoals = parseGoals(rankPayload.goals);
-    if (apiGoals.length) return apiGoals;
-    return [
-      {
-        id: "goal-1",
-        label: "Average viewers per live",
-        current: metrics.avgViewers,
-        target: Math.max(metrics.avgViewers, Math.round(metrics.avgViewers * 1.2)),
-        unit: "viewers" as const,
-      },
-      {
-        id: "goal-2",
-        label: "Conversion rate",
-        current: metrics.conversion,
-        target: Number(Math.max(metrics.conversion, metrics.conversion * 1.15).toFixed(1)),
-        unit: "%" as const,
-      },
-      {
-        id: "goal-3",
-        label: "Monthly sales driven",
-        current: metrics.salesDriven,
-        target: Math.max(metrics.salesDriven, Math.round(metrics.salesDriven * 1.18)),
-        unit: "USD" as const,
-      },
-    ];
-  }, [rankPayload, metrics]);
+  }, [rankPayload, trend]);
+  const goals = useMemo(() => parseGoals(rankPayload.goals), [rankPayload]);
 
   function onExport() {
     const rows: Record<string, string | number>[] = trend.map((t) => ({
@@ -450,6 +411,7 @@ export default function AnalyticsRankDetailPage() {
           <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1.4fr)] gap-3 items-start">
             <PerformanceMetricsPanel
               metrics={metrics}
+              trend={trend}
               timeRange={timeRange}
               onChangeTimeRange={setTimeRange}
               category={category}
@@ -556,7 +518,11 @@ function RankBanner({
             <span className="text-slate-500 dark:text-slate-300">Last {rankMomentum.length} days</span>
           </div>
           <div className="mt-2 rounded-2xl border transition-colors border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-2">
-            <MiniLineChart values={rankMomentum} height={54} color={TOKENS.orange} />
+            {rankMomentum.length ? (
+              <MiniLineChart values={rankMomentum} height={54} color={TOKENS.orange} />
+            ) : (
+              <div className="text-xs text-slate-500 dark:text-slate-300 px-2 py-3">No momentum data from backend for this range.</div>
+            )}
           </div>
           <div className="mt-2 flex items-center justify-between text-xs text-slate-500 dark:text-slate-300">
             <span>Viewer pct: {benchmarks.viewersPercentile}th</span>
@@ -887,13 +853,17 @@ function TrendsPanel({
       </div>
 
       <div className="mt-2 rounded-2xl border transition-colors border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-2">
-        <MultiLineChart
-          data={trend}
-          xKey="label"
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          series={series as any}
-          height={280}
-        />
+        {trend.length ? (
+          <MultiLineChart
+            data={trend}
+            xKey="label"
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            series={series as any}
+            height={280}
+          />
+        ) : (
+          <div className="text-xs text-slate-500 dark:text-slate-300 px-2 py-3">No trend data from backend for this range.</div>
+        )}
       </div>
 
       <div className="mt-2 rounded-2xl border transition-colors border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/50 p-3 flex gap-2">
@@ -1007,12 +977,14 @@ function PercentileRow({ label, pct, hint }: { label: string; pct: number; hint?
 
 function PerformanceMetricsPanel({
   metrics,
+  trend,
   timeRange,
   onChangeTimeRange,
   category,
   onChangeCategory,
 }: {
   metrics: Metrics;
+  trend: TrendPoint[];
   timeRange: Range;
   onChangeTimeRange: (v: Range) => void;
   category: Category;
@@ -1097,7 +1069,7 @@ function PerformanceMetricsPanel({
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
         {cards.map((card) => (
-          <MetricCard key={card.id} card={card} />
+          <MetricCard key={card.id} card={card} trend={trend} />
         ))}
       </div>
     </div>
@@ -1106,6 +1078,7 @@ function PerformanceMetricsPanel({
 
 function MetricCard({
   card,
+  trend,
 }: {
   card: {
     id: string;
@@ -1115,6 +1088,7 @@ function MetricCard({
     tagline: string;
     series: "views" | "clicks" | "conversions" | "sales";
   };
+  trend: TrendPoint[];
 }) {
   const isMoney = card.unit === "USD";
   const valueLabel = isMoney
@@ -1124,14 +1098,11 @@ function MetricCard({
       : card.value.toLocaleString();
 
   const sparkValues = useMemo(() => {
-    // Lightweight spark values (demo). In real use, pass series points.
-    const base = card.series === "views" ? 22 : card.series === "clicks" ? 10 : card.series === "conversions" ? 8 : 14;
-    return Array.from({ length: 10 }).map((_, i) => {
-      const t = i / 9;
-      const wave = Math.sin(t * Math.PI * 2) * 0.22;
-      return base * (1 + wave + (t - 0.5) * 0.12);
+    return trend.map((point) => {
+      const value = point[card.series];
+      return Number.isFinite(Number(value)) ? Number(value) : 0;
     });
-  }, [card.series]);
+  }, [card.series, trend]);
 
   return (
     <div className="border border-slate-200 dark:border-slate-800 rounded-2xl px-3 py-2 bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-2">
@@ -1224,12 +1195,11 @@ function ConversionsByCampaignPanel({ campaigns, mode }: { campaigns: CampaignRo
   // Convert to a chart-friendly series.
   const items = useMemo(() => {
     return campaigns.map((c) => {
-      // Approx conversions: sales / avg basket (demo). In real, use real conversions.
-      const conversions = Math.max(1, Math.round(c.sales / 120));
+      const conversions = Math.max(0, Math.round(c.conversions));
       return {
         label: c.name,
         value: mode === "sales" ? c.sales : c.engagements,
-        hint: mode === "sales" ? `${conversions} conv (est.)` : `${conversions} conv (est.)`,
+        hint: `${conversions.toLocaleString()} conversions`,
       };
     });
   }, [campaigns, mode]);
@@ -1309,6 +1279,14 @@ function ImprovementSuggestions({ metrics, rank, benchmarks }: { metrics: Metric
 }
 
 function GoalsPanel({ goals }: { goals: GoalRow[] }) {
+  if (!goals.length) {
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-3 md:p-4 text-xs transition-colors">
+        <div className="text-sm font-semibold">Goals & personal KPIs</div>
+        <p className="text-xs text-slate-500 dark:text-slate-300 mt-1">No goal targets were returned by backend for this range/category yet.</p>
+      </div>
+    );
+  }
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-3 md:p-4 flex flex-col gap-2 text-xs transition-colors">
       <div className="flex items-center justify-between mb-1">
